@@ -45,7 +45,7 @@ func TestGalleryCleanupExtremeGroupsPerformance100K(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.ContentBlob{},
 		&meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoEditRecipe{}, &meta.PhotoCollection{},
 		&meta.PhotoCollectionAsset{},
 	); err != nil {

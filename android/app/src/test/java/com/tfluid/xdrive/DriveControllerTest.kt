@@ -12,6 +12,48 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DriveControllerTest {
+    @Test fun peopleScopeRetiresLateResultsAndUsesPersonRange() = runTest {
+        val person = GalleryPerson("auto:v1:" + "a".repeat(64), "", 1, true)
+        val photo = GalleryAsset(DriveNode(7, 1, "face.jpg", "file", 12, revision = 2),
+            "image", contentKey = "sha256:" + "b".repeat(64))
+        val late = CompletableDeferred<List<GalleryPerson>>()
+        var requests = 0
+        var personPages = 0
+        var analysisRequests = 0
+        val service = object : Service() {
+            override suspend fun reanalyzeGalleryFaces(accessToken: String) { analysisRequests++ }
+            override suspend fun galleryPeople(accessToken: String, suggested: Boolean, offset: Int): List<GalleryPerson> {
+                requests++
+                return if (requests == 1) listOf(person) else withContext(NonCancellable) { late.await() }
+            }
+            override suspend fun galleryPersonPage(accessToken: String, selected: GalleryPerson,
+                offset: Int, initialLatest: Boolean, search: String, kind: String,
+                sortBy: String, sortDir: String): GalleryPage {
+                assertEquals(person, selected); personPages++
+                return GalleryPage(listOf(photo), 1, 0)
+            }
+        }
+        val c = controller(this, service)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryPeople(); runCurrent()
+        assertEquals(listOf(person), c.state.value.galleryPeople)
+        c.reanalyzeGalleryFaces(); runCurrent()
+        c.reanalyzeGalleryFaces(); runCurrent()
+        assertEquals(1, analysisRequests)
+        assertTrue(c.state.value.galleryFaceRequestAccepted)
+        c.openGalleryPerson(person); runCurrent()
+        assertEquals(1, personPages)
+        assertEquals(listOf(photo), c.state.value.galleryItems)
+        c.closeGalleryPerson(); runCurrent()
+        c.openGalleryLibrary(); runCurrent()
+        late.complete(listOf(person)); runCurrent()
+        assertEquals(GalleryPrimaryTab.LIBRARY, c.state.value.galleryPrimaryTab)
+        assertTrue(c.state.value.galleryPeople.isEmpty())
+        assertNull(c.state.value.gallerySelectedPerson)
+        c.close()
+    }
+
     @Test fun galleryCompactSelectionKeepsPwaTwoRowDockClearance() {
         assertEquals(144f, galleryDockClearance(true, false).value, 0f)
         assertEquals(144f, galleryDockClearance(true, true).value, 0f)

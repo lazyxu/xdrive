@@ -45,7 +45,7 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoEditRecipe{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {
 		t.Fatal(err)

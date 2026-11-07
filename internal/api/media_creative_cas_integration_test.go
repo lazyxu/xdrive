@@ -84,7 +84,7 @@ func TestMediaCreativeAuthenticatedGoPostgresCASUnixWorker(t *testing.T) {
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceCollection{},
 		&meta.SourceCollectionItem{}, &meta.MediaMetadata{},
 		&meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{},
 		&meta.PhotoMetadata{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoCreativeGeneration{}, &meta.PhotoHostAdmissionGate{},
 	); err != nil {
@@ -101,7 +101,12 @@ func TestMediaCreativeAuthenticatedGoPostgresCASUnixWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workerSocket := filepath.Join(t.TempDir(), "creative.sock")
+	socketDir, err := os.MkdirTemp(os.TempDir(), "face-cs-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+	workerSocket := filepath.Join(socketDir, "creative.sock")
 	listener, err := net.Listen("unix", workerSocket)
 	if err != nil {
 		t.Fatal(err)

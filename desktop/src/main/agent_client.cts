@@ -1858,6 +1858,7 @@ export type AgentMediaCreativeGeneration = {
 }
 
 export type AgentMediaItem = {
+  content_key?: string
   node: AgentCloudNode
   metadata: AgentMediaMetadata
   asset_kind?: string
@@ -2845,6 +2846,10 @@ export class AgentIPCClient {
 
   releaseCache() {
     return this.request<AgentCacheReleaseResult>('POST', '/v1/cache/release', undefined, 130_000)
+  }
+
+  mediaContent(input: unknown, signal?: AbortSignal) {
+    return this.request<unknown>('POST', '/v1/media/content', input, 30_000, signal)
   }
 
   mediaItem(nodeID: number, signal?: AbortSignal) {

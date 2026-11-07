@@ -4126,6 +4126,19 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cancelSourceRun(sourceID, runID.trim())
   }, false))
+  ipcMain.handle('agent:media-content', (event, input: unknown, requestID: unknown) =>
+    runAgentAction<unknown>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      requireAgentCapability(hello, 'media-content-identity')
+      if (!input || typeof input !== 'object' || Array.isArray(input) || JSON.stringify(input).length > 131072) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid photo content request.')
+      }
+      // The owning Agent validates the closed operation/key schema; it never
+      // accepts a URL, method, arbitrary headers or another Owner's credentials.
+      return requireAgentClient().mediaContent(input, signal)
+    }), false))
+
   ipcMain.handle('agent:get-media-item', (event, nodeID: unknown, requestIDValue: unknown) =>
     runAgentAction<AgentMediaItem>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()

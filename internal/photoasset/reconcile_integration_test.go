@@ -47,7 +47,7 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {
 		t.Fatal(err)
@@ -365,25 +365,36 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 		t.Fatalf("description was overwritten by PhotoAsset reconciliation: %q", favoriteMetadata.Description)
 	}
 
-	// A genuinely changed File/MediaMetadata row must still refresh its
-	// PhotoResource and technical PhotoMetadata, without renumbering the asset.
+	// Changed original bytes acquire a new immutable content identity. The
+	// new resource and technical metadata must not overwrite the old photo.
 	singleID := idsBefore[nodes[2].ID]
 	var beforeSingleResource meta.PhotoResource
 	if err := db.Where("asset_id = ?", singleID).First(&beforeSingleResource).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&meta.File{}).
-		Where("node_id = ?", nodes[2].ID).Update("size", 307).Error; err != nil {
+		Where("node_id = ?", nodes[2].ID).Updates(map[string]any{"size": 307, "sha256": strings.Repeat("e", 64)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.Node{}).Where("id = ?", nodes[2].ID).Update("revision", 2).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&meta.MediaMetadata{}).
 		Where("node_id = ?", nodes[2].ID).
-		Updates(map[string]any{"width": 1401, "height": 801}).Error; err != nil {
+		Updates(map[string]any{"width": 1401, "height": 801, "node_revision": 2, "sha256": strings.Repeat("e", 64)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ReconcileOwner(context.Background(), db, owner.ID); err != nil {
 		t.Fatal(err)
 	}
+	var newSingle meta.PhotoAsset
+	if err := db.Where("owner_id = ? AND content_key = ?", owner.ID, "sha256:"+strings.Repeat("e", 64)).First(&newSingle).Error; err != nil {
+		t.Fatal(err)
+	}
+	if newSingle.ID == singleID {
+		t.Fatal("changed original reused old photo identity")
+	}
+	singleID = newSingle.ID
 	var updatedSingleResource meta.PhotoResource
 	if err := db.Where("asset_id = ?", singleID).First(&updatedSingleResource).Error; err != nil {
 		t.Fatal(err)

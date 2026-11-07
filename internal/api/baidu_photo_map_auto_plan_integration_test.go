@@ -105,8 +105,8 @@ func TestBaiduPhotoMapAutoPlanOwnerGPSNoConsentPostgres(t *testing.T) {
 	defer pool.Close()
 
 	// The per-photo consent table is deliberately NOT migrated at all.
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.BaiduPhotoMapPosition{}, &meta.BaiduPhotoMapIndexIntent{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.BaiduPhotoMapPosition{}, &meta.BaiduPhotoMapIndexIntent{}); err != nil {
 		t.Fatal(err)
 	}
 	forbidden := db.Migrator().HasTable(&meta.BaiduPhotoMapConsent{})

@@ -1,3 +1,5 @@
+import type { PhotoContentSources } from '../../ui/shared/src/photo-content-identity'
+import { photoContentPath, photoContentSelection, validPhotoContentKey } from '../../ui/shared/src/photo-content-identity'
 import { xDriveBaiduNativeCellsFilterParams, xDriveBaiduNativeViewportRangeParams, xDriveValidBaiduNativeViewportRangePage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
 import { xDriveValidBaiduNativeCellsPage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cells'
 import {
@@ -1881,8 +1883,12 @@ export class XDriveApi {
     return this.request<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' })
   }
 
-  mediaItem(nodeID: number, signal?: AbortSignal) {
-    return this.request<MediaItem>(`/api/v1/media/items/${nodeID}`, { signal })
+  mediaContentSources(key: string, cursor = '', signal?: AbortSignal) {
+    return this.request<PhotoContentSources>(`${photoContentPath(0, key)}/sources?cursor=${encodeURIComponent(cursor)}`, { signal })
+  }
+
+  mediaItem(nodeID: number, signal?: AbortSignal, contentKey?: string) {
+    return this.request<MediaItem>(photoContentPath(nodeID, contentKey), { signal })
   }
 
   nodeLocation(nodeID: number, signal?: AbortSignal) {
@@ -2792,13 +2798,13 @@ export class XDriveApi {
     )
   }
 
-  setMediaAlbumCover(albumID: string, revision: number, nodeID: number) {
+  setMediaAlbumCover(albumID: string, revision: number, nodeID: number, contentKey?: string) {
     return this.request<MediaAlbum>(
       `/api/v1/media/albums/${encodeURIComponent(albumID)}/cover`,
       {
         method: 'PUT',
         headers: { 'If-Match': `"${revision}"` },
-        body: JSON.stringify({ node_id: nodeID }),
+        body: JSON.stringify(contentKey === undefined ? { node_id: nodeID } : { content_key: contentKey }),
       },
     )
   }
@@ -2813,20 +2819,21 @@ export class XDriveApi {
     )
   }
 
-  addMediaAlbumItems(albumID: string, revision: number, nodeIDs: number[]) {
+  addMediaAlbumItems(albumID: string, revision: number, nodeIDs: number[], contentKeys?: string[]) {
     return this.request<MediaAlbum>(
       `/api/v1/media/albums/${encodeURIComponent(albumID)}/items`,
       {
         method: 'POST',
         headers: { 'If-Match': `"${revision}"` },
-        body: JSON.stringify({ node_ids: nodeIDs }),
+        body: JSON.stringify({ ...photoContentSelection(nodeIDs, contentKeys) }),
       },
     )
   }
 
-  removeMediaAlbumItem(albumID: string, revision: number, nodeID: number) {
+  removeMediaAlbumItem(albumID: string, revision: number, nodeID: number, contentKey?: string) {
+    if (contentKey !== undefined && !validPhotoContentKey(contentKey)) throw new Error('照片原件标识无效')
     return this.request<MediaAlbum>(
-      `/api/v1/media/albums/${encodeURIComponent(albumID)}/items/${nodeID}`,
+      `/api/v1/media/albums/${encodeURIComponent(albumID)}/${contentKey === undefined ? `items/${nodeID}` : `content/${encodeURIComponent(contentKey)}`}`,
       {
         method: 'DELETE',
         headers: { 'If-Match': `"${revision}"` },
@@ -2902,9 +2909,9 @@ export class XDriveApi {
 
 
 
-  setMediaFavorite(nodeID: number, favorite: boolean) {
+  setMediaFavorite(nodeID: number, favorite: boolean, contentKey?: string) {
     return this.request<{ favorite: boolean }>(
-      `/api/v1/media/items/${nodeID}/favorite`,
+      `${photoContentPath(nodeID, contentKey)}/favorite`,
       {
         method: 'PATCH',
         body: JSON.stringify({ favorite }),
@@ -2912,29 +2919,29 @@ export class XDriveApi {
     )
   }
 
-  setMediaFavoriteBatch(nodeIDs: number[], favorite: boolean) {
+  setMediaFavoriteBatch(nodeIDs: number[], favorite: boolean, contentKeys?: string[]) {
     return this.request<{ updated: number; favorite: boolean }>(
       '/api/v1/media/batch/favorite',
       {
         method: 'PATCH',
-        body: JSON.stringify({ node_ids: nodeIDs, favorite }),
+        body: JSON.stringify({ ...photoContentSelection(nodeIDs, contentKeys), favorite }),
       },
     )
   }
 
-  addMediaTagsBatch(nodeIDs: number[], tags: string[]) {
+  addMediaTagsBatch(nodeIDs: number[], tags: string[], contentKeys?: string[]) {
     return this.request<{ updated: number; tags: string[] }>(
       '/api/v1/media/batch/tags',
       {
         method: 'POST',
-        body: JSON.stringify({ node_ids: nodeIDs, tags }),
+        body: JSON.stringify({ ...photoContentSelection(nodeIDs, contentKeys), tags }),
       },
     )
   }
 
-  setMediaTags(nodeID: number, tags: string[]) {
+  setMediaTags(nodeID: number, tags: string[], contentKey?: string) {
     return this.request<{ tags: string[] }>(
-      `/api/v1/media/items/${nodeID}/tags`,
+      `${photoContentPath(nodeID, contentKey)}/tags`,
       {
         method: 'PATCH',
         body: JSON.stringify({ tags }),
@@ -2942,9 +2949,9 @@ export class XDriveApi {
     )
   }
 
-  setMediaPeople(nodeID: number, people: string[]) {
+  setMediaPeople(nodeID: number, people: string[], contentKey?: string) {
     return this.request<{ people: string[] }>(
-      `/api/v1/media/items/${nodeID}/people`,
+      `${photoContentPath(nodeID, contentKey)}/people`,
       {
         method: 'PATCH',
         body: JSON.stringify({ people }),
@@ -2952,9 +2959,9 @@ export class XDriveApi {
     )
   }
 
-  setMediaDescription(nodeID: number, description: string) {
+  setMediaDescription(nodeID: number, description: string, contentKey?: string) {
     return this.request<{ description: string }>(
-      `/api/v1/media/items/${nodeID}/description`,
+      `${photoContentPath(nodeID, contentKey)}/description`,
       {
         method: 'PATCH',
         body: JSON.stringify({ description }),

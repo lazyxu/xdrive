@@ -53,7 +53,7 @@ func TestMediaPlaceHierarchyGenuinePostgresOwnerAndCursor(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.MediaDerivedResource{},
-		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoAnalysisState{}, &meta.PhotoPlaceLabel{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {

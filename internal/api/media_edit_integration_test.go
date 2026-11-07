@@ -57,7 +57,7 @@ func TestPhotoEditRecipePresentationFollowsSourceFingerprint(t *testing.T) {
 
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
-		&meta.PhotoAsset{}, &meta.PhotoMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoMetadata{},
 		&meta.PhotoResource{}, &meta.PhotoEditRecipe{},
 	); err != nil {
 		t.Fatal(err)

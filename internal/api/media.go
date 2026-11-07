@@ -104,6 +104,7 @@ type mediaResourceDTO struct {
 }
 
 type mediaItemDTO struct {
+	ContentKey       string                    `json:"content_key,omitempty"`
 	Node             nodeDTO                   `json:"node"`
 	Metadata         mediaMetadataDTO          `json:"metadata"`
 	AssetID          uint64                    `json:"asset_id,omitempty"`
@@ -122,9 +123,11 @@ type mediaItemDTO struct {
 }
 
 type mediaTimelineGroupDTO struct {
-	Key        string `json:"key"`
-	ItemCount  int64  `json:"item_count"`
-	StartIndex int64  `json:"start_index"`
+	Key         string `json:"key"`
+	ItemCount   int64  `json:"item_count"`
+	StartIndex  int64  `json:"start_index"`
+	minSortTime *time.Time
+	maxSortTime *time.Time
 }
 
 type mediaTimelineGroupSetsDTO struct {
@@ -306,6 +309,10 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "resolve photo asset failed")
 		return
 	}
+	if expected := c.Param("contentKey"); expected != "" && presentation.ContentKey != expected {
+		fail(c, http.StatusNotFound, "photo content changed")
+		return
+	}
 	ocr, err := s.mediaOCRDetails(c.Request.Context(), node.OwnerID, node, metadata)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "read OCR result failed")
@@ -313,6 +320,7 @@ func (s *Server) getMediaItem(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, mediaItemDTO{
+		ContentKey:       presentation.ContentKey,
 		Node:             toNodeDTO(node),
 		Metadata:         toMediaMetadataDTO(metadata),
 		AssetID:          presentation.ID,
@@ -368,14 +376,14 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 		Table("xd_photo_collections AS pc").
 		Select(
 			"pc.album_folder_id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json, COUNT(DISTINCT album_n.id) AS item_count, "+
-				"COALESCE(MAX(CASE WHEN album_n.id = pc.preferred_cover_node_id AND mm.media_kind IN ? THEN album_n.id END), MIN(CASE WHEN album_n.id IS NOT NULL AND lower(mm.mime_type) IN ? THEN pa.primary_node_id END)) AS cover_node_id, "+
+				"COALESCE(MAX(CASE WHEN ((pc.preferred_cover_content_key <> '' AND pa.content_key = pc.preferred_cover_content_key) OR (pc.preferred_cover_content_key = '' AND album_n.id = pc.preferred_cover_node_id)) AND mm.media_kind IN ? THEN album_n.id END), MIN(CASE WHEN album_n.id IS NOT NULL AND lower(mm.mime_type) IN ? THEN pa.primary_node_id END)) AS cover_node_id, "+
 				"MAX(CASE WHEN album_n.id IS NOT NULL THEN COALESCE(pm.captured_at, pc.updated_at) ELSE pc.updated_at END) AS updated_at",
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
 			thumbnailMIMEs,
 		).
 		Joins("LEFT JOIN xd_photo_collection_assets AS pca ON pca.collection_id = pc.id").
 		Joins("LEFT JOIN xd_photo_assets AS pa ON pa.id = pca.asset_id AND pa.owner_id = pc.owner_id").
-		Joins("LEFT JOIN xd_nodes AS album_n ON album_n.id = pa.primary_node_id AND album_n.owner_id = pc.owner_id AND album_n.deleted_at IS NULL").
+		Joins("LEFT JOIN xd_nodes AS album_n ON album_n.id = pa.primary_node_id AND album_n.owner_id = pc.owner_id AND album_n.deleted_at IS NULL AND "+photoasset.CurrentContentBindingSQL("pa")).
 		Joins("LEFT JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
 		Joins("LEFT JOIN xd_media_metadata AS mm ON mm.node_id = pa.primary_node_id").
 		Where("pc.owner_id = ? AND pc.state = ?", uid, meta.PhotoCollectionStateActive).
@@ -564,8 +572,25 @@ func (s *Server) mediaItemsBaseQuery(
 			uid,
 		).
 		Joins(
-			"JOIN xd_nodes AS n ON n.id = xd_media_metadata.node_id AND n.deleted_at IS NULL",
-		).
+			"JOIN xd_nodes AS n ON n.id = xd_media_metadata.node_id AND n.owner_id = pa.owner_id AND n.deleted_at IS NULL",
+		)
+	if options.BaiduViewport != nil {
+		b := *options.BaiduViewport
+		if options.BaiduCell != nil || b.CoordinateSpace != meta.BaiduPhotoMapSpaceBD09LL || !b.valid() {
+			return nil, fmt.Errorf("invalid Owner map viewport selection")
+		}
+		projection, ok := meta.BaiduPhotoMapProjectionForSpace(b.CoordinateSpace)
+		if !ok {
+			return nil, fmt.Errorf("invalid map viewport projection")
+		}
+		// Reuse the exact /cells Owner/source/revision selection. A second
+		// membership join over the same tables can be severely underestimated
+		// and repeatedly rescan 95k rows once content validation is included.
+		query = baiduPhotoMapOwnerEligibleQueryWithMediaAlias(ctx, s.DB, uid, b, projection, "xd_media_metadata").
+			Model(&meta.MediaMetadata{})
+	}
+	query = query.
+		Where(photoasset.CurrentContentBindingSQL("pa")).
 		Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
 		Where(
 			"xd_media_metadata.owner_id = ? AND xd_media_metadata.media_kind IN ?",
@@ -586,21 +611,6 @@ func (s *Server) mediaItemsBaseQuery(
 			return nil, err
 		}
 		query = query.Where("n.id IN (?)", memberNodes)
-	}
-	if options.BaiduViewport != nil {
-		// The current-map photo wall shares the EXACT consent/source/revision
-		// predicate with /cells. Never send native BD09 bounds to WGS84 filters.
-		b := *options.BaiduViewport
-		if options.BaiduCell != nil || b.CoordinateSpace != meta.BaiduPhotoMapSpaceBD09LL || !b.valid() {
-			return nil, fmt.Errorf("invalid Owner map viewport selection")
-		}
-		projection, ok := meta.BaiduPhotoMapProjectionForSpace(b.CoordinateSpace)
-		if !ok {
-			return nil, fmt.Errorf("invalid map viewport projection")
-		}
-		members := baiduPhotoMapOwnerEligibleQuery(ctx, s.DB, uid, b, projection).
-			Select("p.primary_node_id")
-		query = query.Where("n.id IN (?)", members)
 	}
 
 	if albumKey == "" {
@@ -709,6 +719,7 @@ func (s *Server) materializeMediaItems(
 				memberIDs = options.foldIndex.members(row.NodeID)
 			}
 			out = append(out, mediaItemDTO{
+				ContentKey:    presentation.ContentKey,
 				FoldMemberIDs: memberIDs,
 				Node:          toNodeDTO(node),
 				Metadata:      toMediaMetadataDTO(row),
@@ -862,6 +873,16 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 		Key         string `gorm:"column:group_key"`
 		ItemCount   int64  `gorm:"column:item_count"`
 		UnknownRank int    `gorm:"column:unknown_rank"`
+		MinSortTime *time.Time
+		MaxSortTime *time.Time
+	}
+	pageBoundsSQL := ""
+	if options.BaiduViewport != nil {
+		column := "xd_media_metadata.captured_at"
+		if options.SortBy == "added" {
+			column = "n.created_at"
+		}
+		pageBoundsSQL = ", MIN(" + column + ") AS min_sort_time, MAX(" + column + ") AS max_sort_time"
 	}
 
 	var rows []groupRow
@@ -870,7 +891,7 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 		Select(
 			expression +
 				" AS group_key, COUNT(DISTINCT xd_media_metadata.node_id) AS item_count, " +
-				unknownRankSQL + " AS unknown_rank",
+				unknownRankSQL + " AS unknown_rank" + pageBoundsSQL,
 		).
 		Group(expression).
 		Order(mediaTimelineUnknownOrder(options)).
@@ -886,9 +907,11 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 			continue
 		}
 		day = append(day, mediaTimelineGroupDTO{
-			Key:        row.Key,
-			ItemCount:  row.ItemCount,
-			StartIndex: startIndex,
+			Key:         row.Key,
+			ItemCount:   row.ItemCount,
+			StartIndex:  startIndex,
+			minSortTime: row.MinSortTime,
+			maxSortTime: row.MaxSortTime,
 		})
 		startIndex += row.ItemCount
 	}
@@ -897,6 +920,63 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 		Month: collapseMediaTimelineGroups(day, 7),
 		Day:   day,
 	}, nil
+}
+
+// The first Range already computed exact ordered day groups. Limit its page
+// sort to a timestamp range containing the requested rows, while retaining
+// the original Owner/content/source predicates. This avoids sorting the whole
+// map viewport again. Later sparse pages keep their independent Count/Range.
+func mediaFirstPageTimelineQuery(query *gorm.DB, options mediaQueryOptions, sets mediaTimelineGroupSetsDTO, total int64, limit int) (*gorm.DB, bool) {
+	if limit <= 0 || total <= int64(limit) {
+		return query, false
+	}
+	var boundary *time.Time
+	includeUnknown := false
+	var covered int64
+	for _, day := range sets.Day {
+		if day.Key == "unknown" && options.SortBy != "added" {
+			includeUnknown = true
+		} else {
+			value := day.minSortTime
+			if options.SortDir == "asc" {
+				value = day.maxSortTime
+			}
+			if value == nil {
+				return query, false
+			}
+			if boundary == nil || (options.SortDir == "asc" && value.After(*boundary)) || (options.SortDir != "asc" && value.Before(*boundary)) {
+				boundary = value
+			}
+		}
+		covered += day.ItemCount
+		if covered >= int64(limit) {
+			break
+		}
+	}
+	if covered < int64(limit) || covered >= total {
+		return query, false
+	}
+	column := "xd_media_metadata.captured_at"
+	if options.SortBy == "added" {
+		column = "n.created_at"
+	}
+	if boundary == nil {
+		if !includeUnknown {
+			return query, false
+		}
+		return query.Session(&gorm.Session{}).Where(column + " IS NULL"), true
+	}
+	// Real MIN/MAX instants include every tie and also remain safe when local
+	// calendar dates are not monotonic across historical timezone transitions.
+	comparison := " >= ?"
+	if options.SortDir == "asc" {
+		comparison = " <= ?"
+	}
+	predicate := column + comparison
+	if includeUnknown {
+		predicate = "(" + predicate + " OR " + column + " IS NULL)"
+	}
+	return query.Session(&gorm.Session{}).Where(predicate, *boundary), true
 }
 
 func (s *Server) queryMediaItemRange(
@@ -1035,7 +1115,17 @@ func (s *Server) queryMediaItemRange(
 			TimelineGroupSets: timelineGroupSets,
 		}, nil
 	}
-	items, err := s.materializeMediaItems(ctx, uid, query, limit, offset, options)
+	pageQuery, narrowed := query, false
+	if options.BaiduViewport != nil && offset == 0 && timelineGroupSets != nil {
+		pageQuery, narrowed = mediaFirstPageTimelineQuery(query, options, *timelineGroupSets, totalCount, limit)
+	}
+	items, err := s.materializeMediaItems(ctx, uid, pageQuery, limit, offset, options)
+	if err == nil && narrowed && len(items) < limit {
+		// A concurrent deletion/replacement can shrink the measured leading
+		// range. Re-read once from the original fresh authorized scope to fill
+		// the page; never reuse old IDs or loop without a bound.
+		items, err = s.materializeMediaItems(ctx, uid, query, limit, offset, options)
+	}
 	if err != nil {
 		return mediaItemRangeDTO{}, err
 	}

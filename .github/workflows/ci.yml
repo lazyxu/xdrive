@@ -1296,6 +1296,7 @@ jobs:
           bash -n scripts/ci/gitlab-server-image.sh
           bash -n scripts/ci/gitlab-caddy-image.sh
           bash -n scripts/ci/test-photo-face-image.sh
+          bash -n scripts/ci/test-photo-face-real-model.sh
           bash -n scripts/ci/photo-face-runtime-cache-key.sh
           bash -n scripts/ci/test-photo-face-runtime-cache.sh
           bash scripts/ci/test-photo-face-runtime-cache.sh
@@ -1581,13 +1582,16 @@ jobs:
         id: photo-face-build
         shell: bash
         run: bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
-      # Source-only OCR PR fixture stays isolated from ordinary artifact jobs.
-      # The shared script is also used by the post-build master/tag smoke below.
+      # Real face models exercise the exact PR source; master/tag use the
+      # detached smoke below to preserve the image publishing prerequisite.
       - uses: actions/setup-go@v5
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-')
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         with:
           go-version: "1.25.x"
           cache: true
+      - name: Real face detection, clustering, content and Owner isolation
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: bash scripts/ci/test-photo-face-real-model.sh
       - name: Real JPEG PP-OCR and Gallery search PostgreSQL integration
         if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/photo-ocr-real-jpeg-')
         run: bash scripts/ci/test-photo-ocr-real-model.sh
@@ -1635,6 +1639,8 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
+      - name: Real face detection and Gallery content smoke
+        run: bash scripts/ci/test-photo-face-real-model.sh
       - name: Real JPEG PP-OCR and Gallery search PostgreSQL smoke
         run: bash scripts/ci/test-photo-ocr-real-model.sh
 

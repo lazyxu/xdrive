@@ -28,6 +28,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"github.com/lazyxu/xdrive/internal/version"
 	"gorm.io/driver/postgres"
@@ -107,7 +108,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		// Mirror those empty production tables in this disposable fixture.
 		&meta.Source{}, &meta.SourceItem{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
-		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollectionAsset{},
 		// GET /media/items/:id includes Owner-fenced OCR state, even when
 		// this fixture has no analysis results. Real tables must exist so a
@@ -461,6 +462,37 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	stage = "livp-thumbnail"
+	// The fixture replaced a seeded PNG with a real complete LIVP. Install
+	// both original-member rows as the production indexer does, then explicitly
+	// bind this synthetic map fixture to that NEW immutable bundle identity.
+	liveResources, err := mediaDerivedResourcesFromLIVPContainer(liveInfo.ContainerJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range liveResources {
+		liveResources[i].NodeID, liveResources[i].OwnerID = liveNode.ID, liveOwner.ID
+		liveResources[i].NodeRevision, liveResources[i].SHA256 = liveNode.Revision, liveChecksum
+	}
+	if err := db.Create(&liveResources).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := photoasset.ReconcileOwner(context.Background(), db, liveOwner.ID); err != nil {
+		t.Fatal(err)
+	}
+	var currentLiveAsset meta.PhotoAsset
+	if err := db.Where("owner_id = ? AND primary_node_id = ? AND content_key <> ''", liveOwner.ID, liveNode.ID).
+		Take(&currentLiveAsset).Error; err != nil {
+		t.Fatal(err)
+	}
+	if currentLiveAsset.Kind != meta.PhotoAssetKindLivePhoto || !photoasset.ValidContentKey(currentLiveAsset.ContentKey) {
+		t.Fatal("LIVP map fixture is not bound to complete original content")
+	}
+	for _, model := range []any{&meta.BaiduPhotoMapPosition{}, &meta.BaiduPhotoMapConsent{}} {
+		if err := db.Model(model).Where("asset_id = ?", liveAsset.ID).Update("asset_id", currentLiveAsset.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	liveAsset = currentLiveAsset
 	var liveMetadata meta.MediaMetadata
 	if err := db.Where("node_id = ?", liveNode.ID).Take(&liveMetadata).Error; err != nil {
 		t.Fatal(err)

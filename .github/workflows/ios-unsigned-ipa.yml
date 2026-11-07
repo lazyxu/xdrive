@@ -34,6 +34,15 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Verify immutable photo and person selectors
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativePhotoContentIdentity.swift \
+            ios/tests/NativePhotoContentIdentityChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-content-identity"
+          "$RUNNER_TEMP/xdrive-ios-content-identity"
+
       - name: Verify persistent unified Gallery fingerprint index
         run: |
           set -euo pipefail

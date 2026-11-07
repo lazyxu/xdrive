@@ -1,0 +1,77 @@
+{
+  "date": "2026-11-07",
+  "environment": "Windows host, isolated PostgreSQL 16 Alpine Docker container, one database/runner",
+  "dataset": "100000 synthetic original metadata rows; no physical originals or image decoding",
+  "order": [
+    "legacy",
+    "content-before-case",
+    "content",
+    "legacy",
+    "content-before-case",
+    "content",
+    "legacy",
+    "content-before-case",
+    "content"
+  ],
+  "samples": [
+    {
+      "sample": 1,
+      "variant": "legacy",
+      "count_ms": 18.646,
+      "page50_ms": 1.032
+    },
+    {
+      "sample": 1,
+      "variant": "content-before-case",
+      "count_ms": 1014.17,
+      "page50_ms": 345.186
+    },
+    {
+      "sample": 1,
+      "variant": "content",
+      "count_ms": 992.254,
+      "page50_ms": 21.132
+    },
+    {
+      "sample": 2,
+      "variant": "legacy",
+      "count_ms": 24.872,
+      "page50_ms": 1.038
+    },
+    {
+      "sample": 2,
+      "variant": "content-before-case",
+      "count_ms": 1002.092,
+      "page50_ms": 357.695
+    },
+    {
+      "sample": 2,
+      "variant": "content",
+      "count_ms": 1035.494,
+      "page50_ms": 19.783
+    },
+    {
+      "sample": 3,
+      "variant": "legacy",
+      "count_ms": 22.129,
+      "page50_ms": 0.523
+    },
+    {
+      "sample": 3,
+      "variant": "content-before-case",
+      "count_ms": 985.634,
+      "page50_ms": 345.485
+    },
+    {
+      "sample": 3,
+      "variant": "content",
+      "count_ms": 1009.3,
+      "page50_ms": 18.249
+    }
+  ],
+  "predicate_sha256_lf": "249a58ff5621b662f84dca09a64b28d223f6d5ad4c650feb760213e7c2b01dc6",
+  "source": "internal/photoasset/content_evidence.go",
+  "test": "TestPhotoContentBindingPerformance100K",
+  "scope": "SQL integrity predicate COUNT and ORDER BY id LIMIT 50 only",
+  "interpretation": "CASE preserves validation and avoids the OR form planner/JIT cost. Median page50 345.485 -> 19.783 ms; baseline without content validation 1.032 ms. Integrity COUNT remains about 1 second. Not an end-to-end or physical 100k-media result."
+}

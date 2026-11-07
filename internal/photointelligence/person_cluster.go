@@ -78,7 +78,7 @@ type workingPersonCluster struct {
 
 func PersonClusterAnalyzerVersion() string {
 	spec := fmt.Sprintf(
-		"greedy-centroid:v1:join=%.2f:anchor=%.2f:merge=%.2f:merge-anchor=%.2f:min=%d:same-asset=forbid",
+		"greedy-centroid:v1:join=%.2f:anchor=%.2f:merge=%.2f:merge-anchor=%.2f:min=%d:same-asset=forbid:current-source-v2",
 		personClusterJoinCentroidThreshold,
 		personClusterJoinAnchorThreshold,
 		personClusterMergeCentroidThreshold,
@@ -191,6 +191,7 @@ func (r *PersonClusterRunner) personClusterCandidates(
 			"pf.embedding_format = ? AND octet_length(pf.embedding) > 0",
 			"f32le",
 		).
+		Where(CurrentFaceEvidenceSQL("pf", "pa")).
 		Group("pa.owner_id")
 
 	var candidates []personClusterCandidate
@@ -343,6 +344,7 @@ func (r *PersonClusterRunner) loadOwnerClusterFaces(
 			"pf.embedding_format = ? AND octet_length(pf.embedding) > 0",
 			"f32le",
 		).
+		Where(CurrentFaceEvidenceSQL("pf", "pa")).
 		Order("pa.id ASC, pf.detection_key ASC, pf.id ASC").
 		Scan(&rows).Error
 	if err != nil {

@@ -57,7 +57,7 @@ func TestSuggestedPeopleReadyProjectionAndItems(t *testing.T) {
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoAnalysisState{}, &meta.PhotoFace{},
 		&meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
 		&meta.PhotoPersonClusterState{},
@@ -182,6 +182,7 @@ func TestSuggestedPeopleReadyProjectionAndItems(t *testing.T) {
 	if err := db.Create(&faces).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedCurrentFaceEvidence(t, db, faces)
 	memberships := []meta.PhotoPersonClusterFace{
 		{ClusterID: cluster.ID, FaceID: faces[0].ID, Confidence: 0.91},
 		{ClusterID: cluster.ID, FaceID: faces[1].ID, Confidence: 0.98},

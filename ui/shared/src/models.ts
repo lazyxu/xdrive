@@ -723,6 +723,8 @@ export interface MediaResource {
 }
 
 export interface MediaItem {
+	/** Immutable original/bundle identity, scoped to the authenticated Owner. */
+	content_key?: string
   node: Node
   metadata: MediaMetadata
   /** Detail-only OCR evidence, excluded from paginated Gallery ranges. */

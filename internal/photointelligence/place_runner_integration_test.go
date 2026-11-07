@@ -87,7 +87,7 @@ func TestPlaceRunnerPersistsAndInvalidatesDerivedLabels(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{},
 		&meta.Node{},
-		&meta.PhotoAsset{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoMetadata{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoPlaceLabel{},

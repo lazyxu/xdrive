@@ -81,7 +81,7 @@ func placesOverview100KSeed(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
-		&meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{},
+		&meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoEditRecipe{}, &meta.PhotoMetadata{}, &meta.PhotoResource{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {

@@ -52,7 +52,7 @@ func TestMediaGalleryFirstOpenPerformance100K(t *testing.T) {
 		&meta.MediaDerivedResource{},
 		&meta.MediaGroup{},
 		&meta.MediaGroupItem{},
-		&meta.PhotoAsset{},
+		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoResource{},
 		&meta.PhotoMetadata{},
 		&meta.PhotoEditRecipe{},

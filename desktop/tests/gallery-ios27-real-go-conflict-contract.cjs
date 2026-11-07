@@ -22,8 +22,8 @@ test('P1-3c2c Mobile/Wide retain a single shared Gallery/DataSource/controller a
   assert.match(gallery, /<MediaVirtualTimeline/)
   assert.match(gallery, /<XDriveMediaGallerySelectionToolbar/)
   assert.match(toolbar, /data-xdrive-gallery-album-picker/)
-  assert.match(adapter, /addToAlbum: \(albumID, revision, nodeIDs\) =>/)
-  assert.match(api, /addMediaAlbumItems\(albumID: string, revision: number, nodeIDs: number\[\]\)/)
+  assert.match(adapter, /addToAlbum: \(albumID, revision, nodeIDs, contentKeys\) =>/)
+  assert.match(api, /addMediaAlbumItems\(albumID: string, revision: number, nodeIDs: number\[\], contentKeys\?: string\[\]\)/)
   assert.match(go, /func \(s \*Server\) addMediaAlbumItems\(c \*gin\.Context\)/)
 })
 

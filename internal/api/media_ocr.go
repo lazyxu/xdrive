@@ -29,7 +29,7 @@ func mediaOCRInputFingerprint(sha string, nodeID, revision uint64) string {
 	return fmt.Sprintf("media-analysis-node-%d-%d-v%d-%d", nodeID, revision, mediapkg.AnalysisPreviewVersion, mediapkg.AnalysisPreviewEdge)
 }
 
-// Must match photointelligence.faceInputFingerprintSQL. Alias is a fixed
+// Must match photointelligence.facePreviewFingerprintSQL (Smart transport). Alias is a fixed
 // source-code identifier, never derived from an HTTP/query parameter.
 func mediaOCRInputFingerprintSQL(fileAlias string) string {
 	return fmt.Sprintf("CASE WHEN COALESCE(trim(%[1]s.sha256), '') <> '' "+

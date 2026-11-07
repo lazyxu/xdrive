@@ -16,7 +16,8 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
     listMusicChildren: (parentID) => api.list(parentID),
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query, signal) => api.mediaItemRange('', limit, offset, query, signal),
-    getItem: (nodeID, signal) => api.mediaItem(nodeID, signal),
+    listContentSources: (key, cursor, signal) => api.mediaContentSources(key, cursor, signal),
+    getItem: (nodeID, signal, contentKey) => api.mediaItem(nodeID, signal, contentKey),
     listFacets: (query, albumID) => api.mediaFacets(query, albumID),
     getIndexStatus: () => api.mediaIndexStatus(),
     createSelectionSnapshot: (query, albumID, day) =>
@@ -156,9 +157,9 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
           : api.mediaAnalysisPreviewURL(nodeID, signal, revision, onProgress)
       }
     },
-    setFavorite: (nodeID, favorite) => api.setMediaFavorite(nodeID, favorite),
-    setFavoriteBatch: (nodeIDs, favorite) => api.setMediaFavoriteBatch(nodeIDs, favorite),
-    addTagsBatch: (nodeIDs, tags) => api.addMediaTagsBatch(nodeIDs, tags),
+    setFavorite: (nodeID, favorite, contentKey) => api.setMediaFavorite(nodeID, favorite, contentKey),
+    setFavoriteBatch: (nodeIDs, favorite, contentKeys) => api.setMediaFavoriteBatch(nodeIDs, favorite, contentKeys),
+    addTagsBatch: (nodeIDs, tags, contentKeys) => api.addMediaTagsBatch(nodeIDs, tags, contentKeys),
     deleteItems: (items) => api.createFileOperation(
       'delete',
       items.map((item) => ({ id: item.node.id, revision: item.node.revision })),
@@ -172,9 +173,9 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
         ? api.download(item.node)
         : api.downloadArchive(ids, 'xdrive-live-photo.zip')
     },
-    setTags: (nodeID, tags) => api.setMediaTags(nodeID, tags),
-    setPeople: (nodeID, people) => api.setMediaPeople(nodeID, people),
-    setDescription: (nodeID, description) => api.setMediaDescription(nodeID, description),
+    setTags: (nodeID, tags, contentKey) => api.setMediaTags(nodeID, tags, contentKey),
+    setPeople: (nodeID, people, contentKey) => api.setMediaPeople(nodeID, people, contentKey),
+    setDescription: (nodeID, description, contentKey) => api.setMediaDescription(nodeID, description, contentKey),
     saveEditRecipe: (nodeID, input) => api.saveMediaEditRecipe(nodeID, input),
     resetEditRecipe: (nodeID, revision) => api.resetMediaEditRecipe(nodeID, revision),
     createCreativeGeneration: (nodeID, input) =>
@@ -192,12 +193,12 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
     renameAlbum: (albumID, revision, name) =>
       api.renameMediaAlbum(albumID, revision, name),
     deleteAlbum: (albumID, revision) => api.deleteMediaAlbum(albumID, revision),
-    setAlbumCover: (albumID, revision, nodeID) =>
-      api.setMediaAlbumCover(albumID, revision, nodeID),
-    addToAlbum: (albumID, revision, nodeIDs) =>
-      api.addMediaAlbumItems(albumID, revision, nodeIDs),
-    removeFromAlbum: (albumID, revision, nodeID) =>
-      api.removeMediaAlbumItem(albumID, revision, nodeID),
+    setAlbumCover: (albumID, revision, nodeID, contentKey) =>
+      api.setMediaAlbumCover(albumID, revision, nodeID, contentKey),
+    addToAlbum: (albumID, revision, nodeIDs, contentKeys) =>
+      api.addMediaAlbumItems(albumID, revision, nodeIDs, contentKeys),
+    removeFromAlbum: (albumID, revision, nodeID, contentKey) =>
+      api.removeMediaAlbumItem(albumID, revision, nodeID, contentKey),
   })
   // The normal Gallery data source stays authoritative. Only the routed Web
   // Viewer's one-item download may borrow the exact Task Center receipt. Do

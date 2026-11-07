@@ -291,7 +291,7 @@ func openMediaPersonIntegrityTestDB(t *testing.T, suffix string) *gorm.DB {
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
 		&meta.PhotoCollection{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{},
 		&meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
 		&meta.PhotoPersonClusterState{},

@@ -119,6 +119,7 @@ var desktopIPCCapabilities = []string{
 	"media-duplicate-organize-plan",
 	"media-duplicate-organize-apply",
 	"media-album-folders",
+	"media-content-identity",
 	"external-sources",
 	"device-backup-read",
 	"cloud-quota-read",
@@ -860,6 +861,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("DELETE /v1/media/album/item", h.removeMediaAlbumItem)
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
 	mux.HandleFunc("PATCH /v1/media/favorite", h.mediaFavorite)
+	mux.HandleFunc("POST /v1/media/content", h.mediaContent)
 	mux.HandleFunc("PATCH /v1/media/favorites", h.mediaFavoriteBatch)
 	mux.HandleFunc("POST /v1/media/tags/batch", h.mediaTagsBatch)
 	mux.HandleFunc("PATCH /v1/media/tags", h.mediaTags)

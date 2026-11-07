@@ -44,7 +44,7 @@ func TestLoadPhotoIntelligenceDatabaseStatus(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{},
-		&meta.PhotoAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{},
 		&meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
 		&meta.PhotoPersonClusterState{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPlaceLabel{},

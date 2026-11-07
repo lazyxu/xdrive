@@ -24,16 +24,14 @@ func reconcileCollectionsDB(
 ) (int, int, error) {
 	desired := make(map[string]*desiredCollection)
 
-	var assets []meta.PhotoAsset
-	if err := tx.Where("owner_id = ?", ownerID).Find(&assets).Error; err != nil {
-		return 0, 0, err
+	// Every retained file location contributes its folder/source provenance.
+	// A canonical photo can belong to several albums without copying media.
+	primaryIDs := make([]uint64, 0, len(nodeToAsset))
+	assetByPrimary := nodeToAsset
+	for id := range nodeToAsset {
+		primaryIDs = append(primaryIDs, id)
 	}
-	primaryIDs := make([]uint64, 0, len(assets))
-	assetByPrimary := make(map[uint64]uint64, len(assets))
-	for _, asset := range assets {
-		primaryIDs = append(primaryIDs, asset.PrimaryNodeID)
-		assetByPrimary[asset.PrimaryNodeID] = asset.ID
-	}
+	sort.Slice(primaryIDs, func(i, j int) bool { return primaryIDs[i] < primaryIDs[j] })
 	if len(primaryIDs) != 0 {
 		// Avoid expanding all 100k primary IDs into a single PostgreSQL
 		// statement (65,535 extended-protocol bind parameter limit).

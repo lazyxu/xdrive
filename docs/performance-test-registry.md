@@ -1,3 +1,59 @@
+## Photo content identity · first map page bounded by exact timeline (2026-11-07)
+
+- Exact HEAD `1ae552ad7722111ae10257d4c7c56171de29ce1f` failed the
+  [existing 95k paired gate twice](https://github.com/lazyxu/xdrive/actions/runs/42286170067):
+  591.161 → 654.710 ms and 930.721 → 1033.591 ms. The earlier direct-join
+  local pass below was not sufficient; both CI failures remain recorded.
+- The first Range already aggregates exact day groups. Retain their private
+  MIN/MAX timestamps to restrict the first page sort, including ties and unknown
+  dates, without changing its Owner/current-content/source filters or full count.
+  Later sparse pages retain the independent query. Concurrent deletions that
+  shorten the measured range trigger at most one fresh unrestricted refill.
+- Same PostgreSQL 17 dataset/runner and original six-sample order: baseline
+  median **528.029 ms**, candidate **337.126 ms** (ratio **0.6385**, 36.2% less).
+  All six samples kept 95,000 members, exact groups, two SQL phases and disjoint
+  48-row pages. Original 1.10 ratio / 3,000 ms thresholds remain unchanged.
+- [Samples, exact source fingerprints and previous failures](performance-evidence/photo-content-map-first-range-20261107.json).
+  Local synthetic SQL evidence only; not real media, native UI, provider
+  conversion or exact-HEAD CI acceptance. Timestamp/order tests additionally
+  exercise both directions, added date, time zones, unknown-first and concurrent
+  deletion against the complete authorized sort.
+
+## Photo content identity · existing 95k map Range regression (2026-11-07)
+
+- The original 100k legacy-photo / 115k metadata fixture exposed a real 12-second
+  timeout after adding content validation. PostgreSQL repeatedly scanned a
+  severely underestimated map membership join. Reuse the exact shared map
+  Owner/source query directly; check the constant Owner once via EXISTS.
+- Same PostgreSQL 17 dataset/runner, unchanged six-sample order and assertions:
+  baseline median **539.152 ms**, candidate **540.563 ms** (ratio **1.0026**).
+  All samples retained 95,000 members, exact day groups, two SQL phases and
+  disjoint 48-row pages. Original 1.10 ratio and 3,000 ms limits both passed.
+- The baseline builder now replaces only the frozen Gallery/map query functions,
+  preserving current DTOs and tests in both arms. Whole-file historical overlays
+  had failed compilation after the content-key DTO addition.
+- [Local samples, source fingerprints and rejected intermediate measurement](performance-evidence/photo-content-map-20261107.json).
+  This is synthetic legacy-map SQL evidence, not physical media, model, native
+  UI, provider conversion or exact-HEAD CI acceptance. The separate keyed-original
+  predicate measurement below retains its own scope.
+
+## Photo content binding · 100k SQL paired measurement (2026-11-07)
+
+- Same Windows host and PostgreSQL 16 Alpine Docker database, 100,000 synthetic
+  photo/original metadata rows. Three alternating legacy / full-check OR /
+  equivalent full-check CASE samples; all COUNT results were 100,000 and pages 50.
+- Full-check page medians: OR **345.485 ms**, CASE **19.783 ms** (94.3% less).
+  The unguarded legacy median was **1.032 ms**; the new integrity check is not
+  faster than that baseline. Full-check COUNT remains about **1.0 s**.
+- EXPLAIN identified the OR estimate/JIT overhead; CASE preserves all Owner,
+  original count/digest/size and current-reference predicates. Retain this
+  measured rewrite, without changing database-wide JIT settings.
+- [All nine samples and predicate fingerprint](performance-evidence/photo-content-binding-20261107.json).
+  Reproduce with `XD_TEST_DATABASE_URL` and `XD_PHOTO_CONTENT_PERF=1`, then
+  `go test ./internal/photoasset -run '^TestPhotoContentBindingPerformance100K$' -count=1 -v`.
+- This measures SQL only. Reconciliation, 100k physical originals, model inference,
+  native UI and production latency are not measured by this fixture.
+
 ## P073 · 真实100k Share 游标分页隐藏窗口→Go 取消（2026-10-22）
 
 ## PWA-P1M · Owner 100k mixed Viewer ABBA before/after #2808 (2026-10-27)

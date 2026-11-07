@@ -1914,6 +1914,9 @@ struct XDriveIOSNativeServerMediaAlbums: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 Text("云端相册归属于当前 Server Owner，与 iPhone 本机相册分开管理。")
                     .font(.caption).foregroundStyle(.secondary)
+                NavigationLink {
+                    XDriveIOSNativeGalleryPeople(login: login)
+                } label: { Label("人物与人物建议", systemImage: "person.2") }
                 ForEach(albums) { album in
                     NavigationLink {
                         XDriveIOSNativeServerMediaWall(

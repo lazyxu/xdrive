@@ -1,3 +1,5 @@
+import type { PhotoContentSources } from '../../../ui/shared/src/photo-content-identity'
+import type { MediaItem, MediaAlbum } from '@xdrive/shared'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import { xDriveDesktopDecodeViewerPreviewURL, xDriveDesktopRegisterLegacyJPEGViewerPreviewURL } from './desktopViewerPreviewDecode'
 
@@ -14,6 +16,9 @@ export function createDesktopMediaGalleryDataSource(
   durableJobsSupported = false,
   downloadCorrelationSupported = false,
 ) {
+  const content = <T,>(input: unknown, signal?: AbortSignal) => xDriveDesktopViewportRequest(
+    signal, requestID => agent.photoContent<T>(input, requestID),
+  )
   return createXDriveMediaGalleryDataSource({
     loadMusicRoot: () => agent.cloudRoot(),
     listMusicChildren: (parentID) => agent.cloudChildren(parentID),
@@ -23,7 +28,9 @@ export function createDesktopMediaGalleryDataSource(
       (requestID) => agent.getMediaItemRange('', limit, offset, query, requestID),
     ),
     // Properties has its own existing request cancellation contract in Main.
-    getItem: (nodeID, signal) => {
+    listContentSources: (key, cursor, signal) => content<PhotoContentSources>({ operation: 'sources', content_key: key, cursor: cursor ? Number(cursor) : 0 }, signal),
+    getItem: (nodeID, signal, contentKey) => {
+      if (contentKey !== undefined) return content<MediaItem>({ operation: 'get', content_key: contentKey }, signal)
       signal?.throwIfAborted()
       const requestID = 'ocr-detail-' + Date.now().toString(36) + '-' +
         (++mediaOCRDetailRequestSequence).toString(36)
@@ -274,9 +281,9 @@ export function createDesktopMediaGalleryDataSource(
           (url) => agent.releaseCloudFilePreviewURL(url)),
       }
     },
-    setFavorite: (nodeID, favorite) => agent.setMediaFavorite(nodeID, favorite),
-    setFavoriteBatch: (nodeIDs, favorite) => agent.setMediaFavoriteBatch(nodeIDs, favorite),
-    addTagsBatch: (nodeIDs, tags) => agent.addMediaTagsBatch(nodeIDs, tags),
+    setFavorite: (nodeID, favorite, contentKey) => contentKey === undefined ? agent.setMediaFavorite(nodeID, favorite) : content<{ favorite: boolean }>({ operation: 'favorite', content_key: contentKey, favorite: favorite }),
+    setFavoriteBatch: (nodeIDs, favorite, contentKeys) => contentKeys === undefined ? agent.setMediaFavoriteBatch(nodeIDs, favorite) : content<unknown>({ operation: 'favorite_batch', content_keys: contentKeys, favorite: favorite }),
+    addTagsBatch: (nodeIDs, tags, contentKeys) => contentKeys === undefined ? agent.addMediaTagsBatch(nodeIDs, tags) : content<unknown>({ operation: 'tags_batch', content_keys: contentKeys, tags: tags }),
     deleteItems: (items) => agent.cloudCreateFileOperation(
       'delete',
       items.map((item) => ({ id: item.node.id, revision: item.node.revision })),
@@ -311,9 +318,9 @@ export function createDesktopMediaGalleryDataSource(
         ? agent.cloudDownload(item.node.id, item.node.name)
         : agent.cloudDownloadArchive(ids)
     },
-    setTags: (nodeID, tags) => agent.setMediaTags(nodeID, tags),
-    setPeople: (nodeID, people) => agent.setMediaPeople(nodeID, people),
-    setDescription: (nodeID, description) => agent.setMediaDescription(nodeID, description),
+    setTags: (nodeID, tags, contentKey) => contentKey === undefined ? agent.setMediaTags(nodeID, tags) : content<{ tags: string[] }>({ operation: 'tags', content_key: contentKey, tags: tags }),
+    setPeople: (nodeID, people, contentKey) => contentKey === undefined ? agent.setMediaPeople(nodeID, people) : content<{ people: string[] }>({ operation: 'people', content_key: contentKey, people: people }),
+    setDescription: (nodeID, description, contentKey) => contentKey === undefined ? agent.setMediaDescription(nodeID, description) : content<{ description: string }>({ operation: 'description', content_key: contentKey, description: description }),
     saveEditRecipe: (nodeID, input) => agent.saveMediaEditRecipe(nodeID, input),
     resetEditRecipe: (nodeID, revision) => agent.resetMediaEditRecipe(nodeID, revision),
     createCreativeGeneration: (nodeID, input) =>
@@ -331,11 +338,8 @@ export function createDesktopMediaGalleryDataSource(
     renameAlbum: (albumID, revision, name) =>
       agent.renameMediaAlbum(albumID, revision, name),
     deleteAlbum: (albumID, revision) => agent.deleteMediaAlbum(albumID, revision),
-    setAlbumCover: (albumID, revision, nodeID) =>
-      agent.setMediaAlbumCover(albumID, revision, nodeID),
-    addToAlbum: (albumID, revision, nodeIDs) =>
-      agent.addMediaAlbumItems(albumID, revision, nodeIDs),
-    removeFromAlbum: (albumID, revision, nodeID) =>
-      agent.removeMediaAlbumItem(albumID, revision, nodeID),
+    setAlbumCover: (albumID, revision, nodeID, contentKey) => contentKey === undefined ? agent.setMediaAlbumCover(albumID, revision, nodeID) : content<MediaAlbum>({ operation: 'album_cover', album_id: albumID, revision, content_key: contentKey }),
+    addToAlbum: (albumID, revision, nodeIDs, contentKeys) => contentKeys === undefined ? agent.addMediaAlbumItems(albumID, revision, nodeIDs) : content<MediaAlbum>({ operation: 'album_add', album_id: albumID, revision, content_keys: contentKeys }),
+    removeFromAlbum: (albumID, revision, nodeID, contentKey) => contentKey === undefined ? agent.removeMediaAlbumItem(albumID, revision, nodeID) : content<MediaAlbum>({ operation: 'album_remove', album_id: albumID, revision, content_key: contentKey }),
   })
 }

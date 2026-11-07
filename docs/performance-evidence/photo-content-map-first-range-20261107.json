@@ -1,0 +1,131 @@
+{
+  "environment": "Local Windows Docker / PostgreSQL17 / Linux Go binary; one disposable synthetic dataset",
+  "baseline_commit": "2ace3f56539db54be8c7433aea0727b0e15c6a94",
+  "candidate_parent_commit": "1ae552ad7722111ae10257d4c7c56171de29ce1f",
+  "candidate_is_uncommitted_working_tree": true,
+  "candidate_source_sha256_lf": {
+    "internal/api/media.go": "06fe1f176619101f12820d18634182831ce5048dedc0fdff9388a9caed633dcd",
+    "internal/api/baidu_photo_map_viewport.go": "87cf1dda2ab6681e51bf59726d71b3c9691730b0de6435ad5950857c0bf87a8e",
+    "internal/photoasset/content_evidence.go": "249a58ff5621b662f84dca09a64b28d223f6d5ad4c650feb760213e7c2b01dc6"
+  },
+  "dataset": "100000 legacy logical photos / 115000 metadata rows, synthetic BD09, 95000 viewport members",
+  "retained_change": "Reuse exact grouped MIN/MAX instants to bound first-page timestamp sorting; preserve Owner/current-content/source predicates, count, ties and independent later pages. A concurrent range shrink retries once against the original current scope.",
+  "samples": [
+    {
+      "arm": "before",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 533.412,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "after",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 342.334,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "after",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 333.218,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "before",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 528.029,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "before",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 527.588,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    },
+    {
+      "arm": "after",
+      "camera_count": 95000,
+      "first_page_sql_count": 2,
+      "group_sql": 1,
+      "items": 48,
+      "latency_ms": 337.126,
+      "next_items": 48,
+      "owner_assets": 100000,
+      "page_sql": 1,
+      "provider_conversion_verified": false,
+      "standalone_count_sql": 0,
+      "timeline_count": 95000,
+      "workload": "owner100k_two_cities_95k_camera_gallery_range"
+    }
+  ],
+  "before_median_ms": 528.029,
+  "after_median_ms": 337.126,
+  "after_over_before": 0.6384611451264987,
+  "original_limits": {
+    "median_ratio_max": 1.1,
+    "candidate_sample_max_ms": 3000
+  },
+  "prior_exact_head_failures": [
+    {
+      "head": "1ae552ad7722111ae10257d4c7c56171de29ce1f",
+      "url": "https://github.com/lazyxu/xdrive/actions/runs/42286170067/attempts/1",
+      "before_median_ms": 591.161,
+      "after_median_ms": 654.71
+    },
+    {
+      "head": "1ae552ad7722111ae10257d4c7c56171de29ce1f",
+      "url": "https://github.com/lazyxu/xdrive/actions/runs/42286170067/attempts/2",
+      "before_median_ms": 930.721,
+      "after_median_ms": 1033.591
+    }
+  ],
+  "scope_limitations": [
+    "Not physical photo bytes, browser/native performance or provider conversion",
+    "Legacy map fixture; separate content-binding 100k fixture measures keyed-original predicate",
+    "Local validation is not exact-HEAD CI evidence; the instrumentation SHA was the parent plus working-tree edits"
+  ]
+}

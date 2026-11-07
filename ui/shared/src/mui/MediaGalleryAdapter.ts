@@ -1,3 +1,4 @@
+import type { PhotoContentSources } from '../photo-content-identity'
 import type {
   MediaAlbum,
   MediaAlbumFolder,
@@ -96,7 +97,8 @@ export interface XDriveMediaGalleryPort {
     query?: MediaGalleryQuery,
     signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
-  getItem?: (nodeID: number, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<MediaItem>>
+  listContentSources?: (key: string, cursor?: string, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<PhotoContentSources>>
+  getItem?: (nodeID: number, signal?: AbortSignal, contentKey?: string) => Promise<XDriveMediaGalleryTransportResult<MediaItem>>
   listFacets?: (
     query?: MediaGalleryQuery,
     albumID?: string,
@@ -351,16 +353,13 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   setFavorite?: (
     nodeID: number,
-    favorite: boolean,
-  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+    favorite: boolean, contentKey?: string) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   setFavoriteBatch?: (
     nodeIDs: number[],
-    favorite: boolean,
-  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+    favorite: boolean, contentKeys?: string[]) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   addTagsBatch?: (
     nodeIDs: number[],
-    tags: string[],
-  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+    tags: string[], contentKeys?: string[]) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   deleteItems?: (
     items: MediaItem[],
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
@@ -374,16 +373,13 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   setTags?: (
     nodeID: number,
-    tags: string[],
-  ) => Promise<XDriveMediaGalleryTransportResult<string[] | { tags: string[] }>>
+    tags: string[], contentKey?: string) => Promise<XDriveMediaGalleryTransportResult<string[] | { tags: string[] }>>
   setPeople?: (
     nodeID: number,
-    people: string[],
-  ) => Promise<XDriveMediaGalleryTransportResult<string[] | { people: string[] }>>
+    people: string[], contentKey?: string) => Promise<XDriveMediaGalleryTransportResult<string[] | { people: string[] }>>
   setDescription?: (
     nodeID: number,
-    description: string,
-  ) => Promise<XDriveMediaGalleryTransportResult<string | { description: string }>>
+    description: string, contentKey?: string) => Promise<XDriveMediaGalleryTransportResult<string | { description: string }>>
   saveEditRecipe?: (
     nodeID: number,
     input: MediaEditRecipeInput,
@@ -430,18 +426,15 @@ export interface XDriveMediaGalleryPort {
   setAlbumCover?: (
     albumID: string,
     revision: number,
-    nodeID: number,
-  ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
+    nodeID: number, contentKey?: string) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
   addToAlbum?: (
     albumID: string,
     revision: number,
-    nodeIDs: number[],
-  ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
+    nodeIDs: number[], contentKeys?: string[]) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
   removeFromAlbum?: (
     albumID: string,
     revision: number,
-    nodeID: number,
-  ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
+    nodeID: number, contentKey?: string) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
 }
 
 export function xDriveMediaGalleryTrashRoots(
@@ -498,8 +491,10 @@ export function createXDriveMediaGalleryDataSource(
     listItemRange: (limit, offset, query, signal) => resolveXDriveTransport(
       port.listItemRange(limit, offset, query, signal),
     ),
+    listContentSources: port.listContentSources
+      ? (key, cursor, signal) => resolveXDriveTransport(port.listContentSources!(key, cursor, signal)) : undefined,
     getItem: port.getItem
-      ? (nodeID, signal) => resolveXDriveTransport(port.getItem!(nodeID, signal))
+      ? (nodeID, signal, contentKey) => resolveXDriveTransport(port.getItem!(nodeID, signal, contentKey))
       : undefined,
     listFacets: port.listFacets
       ? (query, albumID) => resolveXDriveTransport(port.listFacets!(query, albumID))
@@ -804,18 +799,18 @@ export function createXDriveMediaGalleryDataSource(
         }
       : undefined,
     setFavorite: port.setFavorite
-      ? async (nodeID, favorite) => {
-          await resolveXDriveTransport(port.setFavorite!(nodeID, favorite))
+      ? async (nodeID, favorite, contentKey) => {
+          await resolveXDriveTransport(port.setFavorite!(nodeID, favorite, contentKey))
         }
       : undefined,
     setFavoriteBatch: port.setFavoriteBatch
-      ? async (nodeIDs, favorite) => {
-          await resolveXDriveTransport(port.setFavoriteBatch!(nodeIDs, favorite))
+      ? async (nodeIDs, favorite, contentKeys) => {
+          await resolveXDriveTransport(port.setFavoriteBatch!(nodeIDs, favorite, contentKeys))
         }
       : undefined,
     addTagsBatch: port.addTagsBatch
-      ? async (nodeIDs, tags) => {
-          await resolveXDriveTransport(port.addTagsBatch!(nodeIDs, tags))
+      ? async (nodeIDs, tags, contentKeys) => {
+          await resolveXDriveTransport(port.addTagsBatch!(nodeIDs, tags, contentKeys))
         }
       : undefined,
     deleteItems: port.deleteItems
@@ -839,20 +834,20 @@ export function createXDriveMediaGalleryDataSource(
         }
       : undefined,
     setTags: port.setTags
-      ? async (nodeID, tags) => {
-          const result = await resolveXDriveTransport(port.setTags!(nodeID, tags))
+      ? async (nodeID, tags, contentKey) => {
+          const result = await resolveXDriveTransport(port.setTags!(nodeID, tags, contentKey))
           return Array.isArray(result) ? result : result.tags
         }
       : undefined,
     setPeople: port.setPeople
-      ? async (nodeID, people) => {
-          const result = await resolveXDriveTransport(port.setPeople!(nodeID, people))
+      ? async (nodeID, people, contentKey) => {
+          const result = await resolveXDriveTransport(port.setPeople!(nodeID, people, contentKey))
           return Array.isArray(result) ? result : result.people
         }
       : undefined,
     setDescription: port.setDescription
-      ? async (nodeID, description) => {
-          const result = await resolveXDriveTransport(port.setDescription!(nodeID, description))
+      ? async (nodeID, description, contentKey) => {
+          const result = await resolveXDriveTransport(port.setDescription!(nodeID, description, contentKey))
           return typeof result === 'string' ? result : result.description
         }
       : undefined,
@@ -908,18 +903,18 @@ export function createXDriveMediaGalleryDataSource(
         }
       : undefined,
     setAlbumCover: port.setAlbumCover
-      ? (albumID, revision, nodeID) => resolveXDriveTransport(
-          port.setAlbumCover!(albumID, revision, nodeID),
+      ? (albumID, revision, nodeID, contentKey) => resolveXDriveTransport(
+          port.setAlbumCover!(albumID, revision, nodeID, contentKey),
         )
       : undefined,
     addToAlbum: port.addToAlbum
-      ? (albumID, revision, nodeIDs) => resolveXDriveTransport(
-          port.addToAlbum!(albumID, revision, nodeIDs),
+      ? (albumID, revision, nodeIDs, contentKeys) => resolveXDriveTransport(
+          port.addToAlbum!(albumID, revision, nodeIDs, contentKeys),
         )
       : undefined,
     removeFromAlbum: port.removeFromAlbum
-      ? (albumID, revision, nodeID) => resolveXDriveTransport(
-          port.removeFromAlbum!(albumID, revision, nodeID),
+      ? (albumID, revision, nodeID, contentKey) => resolveXDriveTransport(
+          port.removeFromAlbum!(albumID, revision, nodeID, contentKey),
         )
       : undefined,
   }

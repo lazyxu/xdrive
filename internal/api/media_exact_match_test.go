@@ -274,8 +274,24 @@ func TestExactMediaMatchRealIOSLiveArchive(t *testing.T) {
 			if err != nil || rejected.State != "unmatched" {
 				t.Fatal("outer archive digest accepted as still digest")
 			}
-		} else if match.State != "ambiguous" {
-			t.Fatalf("two different container formats must remain ambiguous: %+v", match)
+		} else {
+			if match.State != "matched" {
+				t.Fatalf("equal full Live originals did not collapse into one photo: %+v", match)
+			}
+			var assets []meta.PhotoAsset
+			if err := db.Where("owner_id = ?", user.ID).Find(&assets).Error; err != nil {
+				t.Fatal(err)
+			}
+			if len(assets) != 1 || !strings.HasPrefix(assets[0].ContentKey, photoasset.BundleContentKeyPrefix) {
+				t.Fatalf("Live content identity missing: %+v", assets)
+			}
+			var sources int64
+			if err := db.Model(&meta.PhotoAssetOccurrence{}).Where("asset_id = ? AND active", assets[0].ID).Count(&sources).Error; err != nil {
+				t.Fatal(err)
+			}
+			if sources != 2 {
+				t.Fatalf("Live source copies lost: %d", sources)
+			}
 		}
 	}
 }
