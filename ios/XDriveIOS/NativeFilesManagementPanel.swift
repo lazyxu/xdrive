@@ -414,7 +414,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         .accessibilityIdentifier("native-ios-files-folder-upload")
                         Text("完整保留选中文件夹及子目录。前台最多 128 个文件、64 个目录、总计 512 MiB、8 层；先完成整棵目录检查，失败不自动重传。")
                             .font(.footnote).foregroundStyle(.secondary)
-                        Text("单文件最大 1 GiB（需足够本机暂存空间）；批量最多 64 个文件，逐项核对收据。失败或结果未知时停止后续上传。")
+                        Text("单文件最大 1 GiB 私有暂存；如果文件提供者授予安全读取权限，可直接上传最大 8 GiB 的文件，无需再复制一份原件。批量最多 64 个文件，逐项核对收据。失败或结果未知时停止后续上传。")
                             .font(.footnote).foregroundStyle(.secondary)
                         if uploader.busy {
                             Button("取消当前上传", role: .cancel) {
