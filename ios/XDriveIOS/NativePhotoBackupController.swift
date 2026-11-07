@@ -465,6 +465,14 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                        !plan.requiresFullLibraryReconciliation {
                         let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: selected)
                         do {
+                            // The user explicitly confirmed THIS original.
+                            // Only a proven local item failure may transition
+                            // back to pending under the current PhotoKit token.
+                            // Unknown ACKs were stopped by the global receipt
+                            // preflight before reaching this branch.
+                            _ = try await queue.retryFailedSingle(
+                                owner: selected, localIdentifier: localIdentifier
+                            )
                             selectedRevision = try await queue.pendingForSingle(
                                 owner: selected, localIdentifier: localIdentifier
                             )
@@ -476,7 +484,23 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         }
                     }
                     try Task.checkCancellation()
+                    guard self.displayEpoch == uiEpoch,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                          XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, selected),
+                          UIApplication.shared.applicationState == .active else {
+                        throw XDriveIOSNativeSessionError.staleSession
+                    }
                     await reporter.begin()
+                    // SourceRun start may suspend. A sign-out or scene/Owner
+                    // switch after the one-item PhotoKit queue CAS must abort
+                    // before the very first UploadSession.
+                    try Task.checkCancellation()
+                    guard self.displayEpoch == uiEpoch,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                          XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, selected),
+                          UIApplication.shared.applicationState == .active else {
+                        throw XDriveIOSNativeSessionError.staleSession
+                    }
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
                         onSourceProgress: { value in

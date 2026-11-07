@@ -134,6 +134,48 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         }
     }
 
+    /// A single explicit PhotosPicker confirmation may retry one previously
+    /// failed revision. Bulk automatic retry and ambiguous UploadSession ACK
+    /// resolution remain separate paths. No new token or revision is created.
+    func retryFailedSingle(
+        owner: XDriveNativeOwnerRoot, localIdentifier: String
+    ) throws -> Bool {
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline() else { return false }
+        guard baseline.authorization == epoch.authorization else {
+            throw Failure.unauthorizedOrChanged
+        }
+        guard XDriveIOSPhotoKitLibraryEpoch.matches(
+            baseline.token, as: epoch.token
+        ) else { return false }
+        guard let row = try store.status(for: localIdentifier),
+              row.state == .failed else { return false }
+        // An ID currently excluded by Photos authorization or deleted from
+        // the library cannot be silently requeued for later automatic writes.
+        let assets = PHAsset.fetchAssets(
+            withLocalIdentifiers: [localIdentifier], options: nil
+        )
+        guard assets.firstObject != nil else { return false }
+        try Task.checkCancellation()
+        try verifyAuthorization(stillMatches: epoch)
+        let original = XDriveIOSPhotoBackupChangeQueueStore.Pending(
+            localIdentifier: localIdentifier, revision: row.revision, priority: 0
+        )
+        let retried = try store.retryFailed(
+            original, expectedBaselineToken: baseline.token,
+            authorization: epoch.authorization
+        )
+        guard retried else { return false }
+        let after = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard after.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(
+                  epoch.serialized, as: after.token
+              ) else { throw Failure.unauthorizedOrChanged }
+        try verifyAuthorization(stillMatches: epoch)
+        return true
+    }
+
     /// Read the explicitly selected PhotoKit revision with an indexed lookup.
     /// An item beyond the first 64 auto-queue candidates must still be found.
     /// This creates no upload receipt and never rebases missing history.

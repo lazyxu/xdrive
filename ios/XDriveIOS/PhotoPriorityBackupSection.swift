@@ -33,7 +33,7 @@ struct XDriveIOSPhotoPriorityBackupSection: View {
                 Text(errorMessage).font(.footnote).foregroundStyle(.orange)
                     .accessibilityIdentifier("native-ios-photo-priority-error")
             }
-            Text("仅处理本次明确选择的原件，不改变自动备份范围或扫描游标。上传结果不确定时仍会暂停并要求收据核对。")
+            Text("仅处理本次明确选择的原件，不改变自动备份范围或扫描游标。若该项存在已确认无不确定写入的失败记录，会仅重新排队这一版本；未知 ACK 仍须先核对，不能盲目重传。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .confirmationDialog(

@@ -258,11 +258,70 @@ import Foundation
                                                 authorization: 3))
             try expect(try reopened.failureReasonCounts().isEmpty)
             try expect(try reopened.status(for: "reason-video")?.failureReasonCode == nil)
+            // A second item-local failure of the same queued revision must
+            // NOT redisplay the previous attempt's old reason code.
+            try expect(try reopened.settle(
+                item, result: .failed, expectedBaselineToken: Data([11]),
+                authorization: 3
+            ))
+            try expect(try reopened.status(for: "reason-video")?.failureReasonCode == nil)
+            try expect(try reopened.retryFailed(
+                item, expectedBaselineToken: Data([11]), authorization: 3
+            ))
             _ = try reopened.apply(inserted: [], updated: ["reason-video"], deleted: [],
                                    expectedToken: Data([11]), nextToken: Data([12]),
                                    authorization: 3)
             try expect(try reopened.status(for: "reason-video")?.failureReasonCode == nil)
             try expect(try reopened.failureReasonCounts().isEmpty)
+        }
+        // One manually selected failed item may be outside the first
+        // 64 priority-ordered failures. Indexed ID+revision retry must
+        // affect only that item, regardless of automatic batch ordering.
+        let beyond64 = dir.appendingPathComponent("selected-beyond-64.sqlite3")
+        do {
+            let large = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: beyond64)
+            let names = (0..<70).map { "selection-\($0)" }
+            let before = Data([20]), after = Data([21])
+            try expect(try large.installBaselineIfAbsent(
+                token: before, authorization: 3
+            ))
+            _ = try large.apply(
+                inserted: Set(names), updated: [], deleted: [],
+                expectedToken: before, nextToken: after, authorization: 3
+            )
+            for id in names {
+                let candidate = XDriveIOSPhotoBackupChangeQueueStore.Pending(
+                    localIdentifier: id, revision: 1, priority: 2
+                )
+                try expect(try large.settle(
+                    candidate, result: .failed,
+                    expectedBaselineToken: after, authorization: 3
+                ))
+            }
+            let head = try large.failed(limit: 64)
+            try expect(head.count == 64)
+            let included = Set(head.map(\.localIdentifier))
+            guard let selectedID = names.first(where: { !included.contains($0) }),
+                  let status = try large.status(for: selectedID),
+                  status.state == .failed else {
+                preconditionFailure("70 failed revisions must include a non-head item")
+            }
+            let single = XDriveIOSPhotoBackupChangeQueueStore.Pending(
+                localIdentifier: selectedID, revision: status.revision, priority: 0
+            )
+            try expect(try !large.retryFailed(
+                .init(localIdentifier: selectedID, revision: status.revision + 1, priority: 0),
+                expectedBaselineToken: after, authorization: 3
+            ))
+            try expect(try large.retryFailed(
+                single, expectedBaselineToken: after, authorization: 3
+            ))
+            try expect(try large.status(for: selectedID)?.state == .pending)
+            try expect(try large.counts() == .init(
+                pending: 1, failed: 69, waitingICloud: 0,
+                confirmed: 0, missingLocal: 0
+            ))
+            try expect(try large.failed(limit: 64).count == 64)
         }
         print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation+failure codes: PASS")
     }
