@@ -1,7 +1,8 @@
 import type { XDriveClipboardDataPort } from '../../../ui/shared/src/mui/ClipboardPage'
+import { XDriveDesktopClipboardObservationGate } from './desktopClipboardObservationGate'
 
 // Desktop never receives a Server bearer. The selected authenticated Agent
-// owns each narrow operation; OS clipboard is read only on a user's click.
+// owns each narrow operation; automatic OS polling is strictly opt-in and page-bound.
 export function createDesktopClipboardDataPort(
   agent: Pick<Window['xdriveDesktop']['agent'],
     'cloudClipboardVault' | 'cloudClipboardCheck' | 'cloudClipboardList' |
@@ -24,6 +25,7 @@ export function createDesktopClipboardDataPort(
     verify(signal)
     return unwrap(result)
   }
+  const observation = new XDriveDesktopClipboardObservationGate()
   return {
     ownerScopeKey,
     claimScope(vault) {
@@ -50,8 +52,29 @@ export function createDesktopClipboardDataPort(
       verify()
       return text
     },
+    watchLocalClipboard: async (onChange, signal) => {
+      verify(signal)
+      observation.reset() // Never send the clipboard contents present on enable.
+      const delay = () => new Promise<void>(resolve => {
+        const done = () => { window.clearTimeout(timer); signal.removeEventListener('abort', done); resolve() }
+        const timer = window.setTimeout(done, 1000)
+        signal.addEventListener('abort', done, { once: true })
+      })
+      try {
+        while (!signal.aborted) {
+          verify(signal)
+          if (document.visibilityState === 'visible') {
+            const observed = observation.consider(window.xdriveDesktop.readClipboardText(), true)
+            verify(signal)
+            if (observed !== null) await onChange(observed)
+          }
+          await delay()
+        }
+      } finally { observation.reset() }
+    },
     copyText: async text => {
       verify()
+      observation.suppressLocalWrite(text)
       window.xdriveDesktop.copyText(text)
       verify()
     },

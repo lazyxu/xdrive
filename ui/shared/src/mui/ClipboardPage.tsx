@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Box, Button, Card, Divider, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, Divider, FormControlLabel, Stack, Switch, TextField, Typography } from '@mui/material'
 import {
   xDriveClipboardDeriveKey, xDriveClipboardEncrypt, xDriveClipboardDecrypt,
   xDriveClipboardValidateText, xDriveClipboardMakeVaultCheck,
@@ -38,6 +38,8 @@ export type XDriveClipboardDataPort = {
   claimScope?(vault: { owner_id?: number }): string
   /** Optional authenticated SSE. The existing foreground refresh remains a fallback. */
   watchChanges?(onChange: () => void, signal: AbortSignal): Promise<void>
+  /** Desktop-only, opt-in, unlocked and visible monitoring; callback does not read Web clipboard. */
+  watchLocalClipboard?(onChange: (text: string) => Promise<void>, signal: AbortSignal): Promise<void>
 }
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
@@ -68,6 +70,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const [message, setMessage] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
   const [retryExpired, setRetryExpired] = useState(false)
+  const [monitorEnabled, setMonitorEnabled] = useState(false)
   const active = useRef(true)
   const actionFence = useRef(new XDriveClipboardActionFence())
   const generation = useRef(0)
@@ -212,17 +215,18 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     }
   }
 
-  const send = async () => {
-    if (!key || !aadScope || busy) return
+  const send = async (observedText?: string) => {
+    if (!key || !aadScope || busy || (observedText !== undefined && pending.current)) return
+    const textAtStart = observedText ?? draft
     const actionToken = actionFence.current.capture()
     setMessage('')
-    try { xDriveClipboardValidateText(draft) } catch (error) {
+    try { xDriveClipboardValidateText(textAtStart) } catch (error) {
       setMessage(errorLabel(error)); return
     }
     if (pending.current) {
       // An unknown server ACK is not proof of failure. Editing or pasting a
       // different draft must not silently discard the original retry receipt.
-      if (pending.current.text !== draft) {
+      if (pending.current.text !== textAtStart) {
         setRetryExpired(true)
         setMessage('上一条发送回执仍未确认。请先核对历史，或明确放弃旧回执后再发送新内容。')
         return
@@ -239,14 +243,14 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     const controller = new AbortController()
     writeController.current = controller
     try {
-      if (pending.current?.text !== draft) {
+      if (pending.current?.text !== textAtStart) {
         const client_event_id = crypto.randomUUID()
-        const encrypted = await xDriveClipboardEncrypt(key, aadScope, client_event_id, draft)
+        const encrypted = await xDriveClipboardEncrypt(key, aadScope, client_event_id, textAtStart)
         // AES-GCM is not abortable: Lock can happen while encryption is pending.
         // Do not resurrect the previous Owner/session's retry cache.
         if (!active.current || controller.signal.aborted ||
             !actionFence.current.isCurrent(actionToken)) return
-        pending.current = { text: draft, createdAt: Date.now(), item: { client_event_id, ...encrypted } }
+        pending.current = { text: textAtStart, createdAt: Date.now(), item: { client_event_id, ...encrypted } }
       }
       if (!active.current || controller.signal.aborted ||
           !actionFence.current.isCurrent(actionToken)) return
@@ -254,8 +258,8 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (!active.current || controller.signal.aborted ||
           !actionFence.current.isCurrent(actionToken)) return
       pending.current = null
-      setDraft(current => current === draft ? '' : current)
-      setMessage('已加密发送至当前账号的剪贴板历史。')
+      setDraft(current => observedText === undefined && current === textAtStart ? '' : current)
+      setMessage(observedText === undefined ? '已加密发送至当前账号的剪贴板历史。' : '已自动加密发送剪贴板变化。')
       void load()
     } catch (error) {
       if (active.current && !controller.signal.aborted &&
@@ -265,6 +269,26 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (active.current && actionFence.current.isCurrent(actionToken)) setBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (!monitorEnabled || !key || !aadScope || !port.watchLocalClipboard) return
+    const controller = new AbortController()
+    let alive = true
+    void port.watchLocalClipboard(async text => {
+      // Do not overwrite a manually edited draft, an uncertain receipt, or
+      // another in-flight action. The watcher never retries unknown ACKs.
+      if (!alive || controller.signal.aborted || !active.current ||
+          busy || draft.length > 0 || pending.current || document.visibilityState !== 'visible') return
+      await send(text)
+    }, controller.signal).catch(error => {
+      if (alive && active.current && !controller.signal.aborted) {
+        setMonitorEnabled(false)
+        setMessage('系统剪贴板监控已停止：' + errorLabel(error))
+      }
+    })
+    return () => { alive = false; controller.abort() }
+  // React state changes re-arm the observer with a new local baseline.
+  }, [monitorEnabled, key, aadScope, port, busy, draft])
 
   const runAction = async (action: (signal: AbortSignal) => Promise<void>, success: string) => {
     if (busy) return
@@ -321,6 +345,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     setBusy(false)
     setConfirmClear(false)
     setRetryExpired(false)
+    setMonitorEnabled(false)
     setMessage('剪贴板已锁定，本地明文和密钥已从页面状态清除。')
   }
 
@@ -336,7 +361,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
         {key ? <Button color="inherit" onClick={lock}>锁定</Button> : null}
       </Stack>
       <Alert severity="info">
-        此 Web MVP 不会监听系统剪贴板，也不会自动同步密码或验证码。
+        Web/PWA 不会监听系统剪贴板。Desktop 监听默认关闭；仅在解锁且此页面可见时，可明确开启自动加密发送。
         使用 HTTPS/localhost；不同浏览器需输入相同的独立剪贴板口令。
         忘记口令后旧消息无法解密。
       </Alert>
@@ -364,6 +389,11 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               <TextField label="输入内容" multiline minRows={3} maxRows={10} fullWidth
                 value={draft} onChange={event => { setDraft(event.target.value); setRetryExpired(false) }}
                 helperText="最多 64 KiB；不会在浏览器本地持久保存。" />
+              {port.watchLocalClipboard ? (
+                <FormControlLabel control={<Switch checked={monitorEnabled}
+                    onChange={(_, checked) => setMonitorEnabled(checked)} />}
+                  label="Desktop 自动同步系统剪贴板（默认关闭；可能包含密码、验证码或其他敏感文本）" />
+              ) : null}
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button variant="contained" disabled={busy || !draft.length} onClick={() => { void send() }}>
                   {busy ? '处理中…' : '加密发送'}
