@@ -899,6 +899,44 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
   }
   const notesImageMaxBytes = 20 * 1_048_576
   const api: XDriveSynologyBackupLocalClient = {
+    async clipboardAvailable(signal) {
+      const result = await request<{ available: boolean }>('/v1/cloud-clipboard-capability',
+        'GET', undefined, signal)
+      return result.available === true
+    },
+    clipboardVault(signal) {
+      return request('/v1/cloud-clipboard-vault', 'GET', undefined, signal)
+    },
+    clipboardCheck(ownerScope, value, signal) {
+      return request('/v1/cloud-clipboard-check', 'POST',
+        { ...value, owner_scope: notesOwnerScope(ownerScope) }, signal)
+    },
+    clipboardList(before, signal) {
+      if (before !== undefined && (!Number.isSafeInteger(before) || before <= 0)) {
+        throw new Error('无效的剪贴板历史游标')
+      }
+      const query = before ? '?before=' + encodeURIComponent(String(before)) : ''
+      return request('/v1/cloud-clipboard-list' + query, 'GET', undefined, signal)
+    },
+    clipboardCreate(ownerScope, item, signal) {
+      if (new TextEncoder().encode(item.ciphertext).length > 90000 ||
+          (item.kind !== 'text/plain' && item.kind !== 'text/uri-list')) {
+        throw new Error('无效的剪贴板密文')
+      }
+      return request('/v1/cloud-clipboard-create', 'POST',
+        { ...item, owner_scope: notesOwnerScope(ownerScope) }, signal)
+    },
+    async clipboardDelete(ownerScope, id, signal) {
+      if (!Number.isSafeInteger(id) || id <= 0) throw new Error('无效的剪贴板条目')
+      const response = await request<{ deleted: boolean }>('/v1/cloud-clipboard-delete',
+        'POST', { id, owner_scope: notesOwnerScope(ownerScope) }, signal)
+      if (response.deleted !== true) throw new Error('剪贴板删除回执未确认')
+    },
+    async clipboardClear(ownerScope, signal) {
+      const response = await request<{ cleared: boolean }>('/v1/cloud-clipboard-clear',
+        'POST', { owner_scope: notesOwnerScope(ownerScope) }, signal)
+      if (response.cleared !== true) throw new Error('剪贴板清空回执未确认')
+    },
     async notesAvailable(signal) {
       const value = await request<{ available: boolean }>(
         '/v1/cloud-notes-capability', 'GET', undefined, signal)
