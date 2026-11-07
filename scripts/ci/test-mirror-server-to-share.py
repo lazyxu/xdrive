@@ -176,6 +176,34 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn(secret, stderr.getvalue())
         self.assertNotIn('PRIVATE-CAPABILITY', stderr.getvalue())
 
+    def test_share_grant_errors_report_only_fixed_safe_categories(self):
+        secret = 'https://private-user:secret@example.invalid/#/s/PRIVATE-CAPABILITY'
+        cases = (
+            ('Share password is required; configure the secret', 'password-required'),
+            ('Target is not a writable folder share (enable view_upload)', 'upload-grant-required'),
+            ('Share API GET failed with HTTP 401', 'authorization-or-link'),
+            ('Share API GET failed with HTTP 403', 'authorization-or-link'),
+            ('Share API GET failed with HTTP 404', 'authorization-or-link'),
+            ('Share API GET failed with HTTP 410', 'authorization-or-link'),
+            ('Share API GET failed after bounded retries (URLError)', 'transport-unavailable'),
+            (secret, 'unknown'),
+        )
+        for detail, expected in cases:
+            with self.subTest(expected=expected, detail_is_private=detail == secret):
+                stderr = io.StringIO()
+                with patch.object(self.share, 'verify_grant', side_effect=mirror.MirrorError(detail)), \
+                     patch.object(mirror, 'Share', return_value=self.share), \
+                     patch.dict(mirror.os.environ, {'XDRIVE_CLIENT_MIRROR_SHARE_URL': 'configured'}), \
+                     patch.object(mirror.sys, 'argv', ['mirror', 'publish', '--directory', str(self.root)]), \
+                     redirect_stderr(stderr):
+                    self.assertEqual(mirror.main(), 1)
+                self.assertEqual(stderr.getvalue(),
+                                 f'Server release verification failed [share-grant:{expected}]; '
+                                 'no publication may be assumed\n')
+                self.assertNotIn(secret, stderr.getvalue())
+                self.assertNotIn('PRIVATE-CAPABILITY', stderr.getvalue())
+                self.assertEqual(self.finalized, [])
+
     def test_github_package_fetch_failure_reports_fixed_stage(self):
         secret = 'https://secret.example.invalid/release?token=private'
         item = self.manifest['packages']['postgres']
