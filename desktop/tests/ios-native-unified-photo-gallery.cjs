@@ -173,6 +173,11 @@ test('iOS cloud-first Gallery never starts original-byte scans on view, refresh 
             timeline.indexOf('localTotal = try await scanner.start'),
     'cloud page must be admitted before PhotoKit snapshot starts')
   assert.match(timeline, /cloudReadFailed = true[\s\S]*?cursor\.cloudEnd = true/)
+  assert.match(timeline, /本机照片读取已中断；云端照片仍可浏览/)
+  assert.match(timeline, /localWindowStillAuthorized\(permission: permission, epoch: localEpoch\)/)
+  assert.match(timeline, /window\.removeAll[\s\S]*?if case \.local = \$0/)
+  assert.match(timeline, /visible\.removeAll \{ \$0\.local != nil \}/)
+  assert.match(timeline, /resolved\.removeAll \{ \$0\.local != nil \}/)
   assert.match(timeline, /&& !cloudReadFailed/)
 
   assert.match(timeline, /let needsCloudProof = checkedLocal != nil \|\| !localProbes\.isEmpty/)
