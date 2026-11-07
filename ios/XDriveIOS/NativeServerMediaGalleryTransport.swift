@@ -256,10 +256,13 @@ struct XDriveIOSNativeMediaGalleryReader {
 
     func page(offset: Int, albumID: String? = nil,
               placeID: String? = nil, search: String = "",
-              person: XDriveIOSNativeMediaPerson? = nil) async throws -> XDriveIOSNativeMediaRange {
+              person: XDriveIOSNativeMediaPerson? = nil,
+              captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil)
+        async throws -> XDriveIOSNativeMediaRange {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard offset >= 0 && offset <= 10_000_000,
               query.unicodeScalars.count <= 200,
+              (captureRange == nil || captureRange!.valid),
               (person == nil || (person!.isValid && albumID == nil && placeID == nil)),
               (placeID == nil || (
                   albumID == nil &&
@@ -282,6 +285,14 @@ struct XDriveIOSNativeMediaGalleryReader {
         ]
         if !query.isEmpty {
             parameters.append(URLQueryItem(name: "q", value: query))
+        }
+        if let captureRange {
+            parameters.append(URLQueryItem(name: "captured_from",
+                                           value: captureRange.fromRFC3339))
+            parameters.append(URLQueryItem(name: "captured_to",
+                                           value: captureRange.toRFC3339))
+            // Explicit UTC instants are independent from the Owner device's
+            // day boundary while retaining the calendar-selected membership.
         }
         if let placeID {
             // Original Server Owner GPS place, never synthetic map-region.
@@ -412,9 +423,11 @@ struct XDriveIOSNativeMediaGalleryReader {
     /// Reuses this Reader's HTTPS-only, no-redirect authenticated transport.
     func mapOverview(
         bounds: XDriveIOSNativeOwnerMapBounds,
-        detail: Bool = false
+        detail: Bool = false,
+        captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     ) async throws -> XDriveIOSNativeOwnerMapOverview {
-        guard XDriveIOSNativeOwnerMapOverviewPolicy.validBounds(bounds) else {
+        guard XDriveIOSNativeOwnerMapOverviewPolicy.validBounds(bounds),
+              (captureRange == nil || captureRange!.valid) else {
             throw XDriveIOSNativeMediaReadFailure.invalidPage
         }
         var query = [
@@ -424,6 +437,12 @@ struct XDriveIOSNativeMediaGalleryReader {
             URLQueryItem(name: "north", value: String(bounds.north))
         ]
         if detail { query.append(URLQueryItem(name: "detail", value: "1")) }
+        if let captureRange {
+            query.append(URLQueryItem(name: "captured_from",
+                                      value: captureRange.fromRFC3339))
+            query.append(URLQueryItem(name: "captured_to",
+                                      value: captureRange.toRFC3339))
+        }
         let url = try endpoint("/api/v1/media/places/overview", query: query)
         let bytes = try await read(url, maximum: XDriveIOSNativeOwnerMapOverviewPolicy.maximumBytes)
         let overview = try JSONDecoder().decode(XDriveIOSNativeOwnerMapOverview.self, from: bytes)
