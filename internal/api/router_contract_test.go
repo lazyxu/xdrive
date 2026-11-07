@@ -119,6 +119,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/clipboard/vault", suite: "clipboard-owner-e2ee"},
 		{method: "PUT", path: "/api/v1/clipboard/vault/check", suite: "clipboard-owner-e2ee"},
 		{method: "GET", path: "/api/v1/clipboard/items", suite: "clipboard-owner-e2ee"},
+        {method: "GET", path: "/api/v1/clipboard/events", suite: "clipboard-owner-sse"},
 		{method: "POST", path: "/api/v1/clipboard/items", suite: "clipboard-owner-e2ee"},
 		{method: "DELETE", path: "/api/v1/clipboard/items/:id", suite: "clipboard-owner-e2ee"},
 		{method: "DELETE", path: "/api/v1/clipboard/items", suite: "clipboard-owner-e2ee"},
