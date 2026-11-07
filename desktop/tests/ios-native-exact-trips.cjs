@@ -148,8 +148,11 @@ test('trip year navigation filters only verified Owner trip IDs, never broadens 
   assert.match(list, /Array\(Set\([\s\S]*?\)\)\.sorted\(by: >\)/);
   assert.match(list, /availableYears\.filter \{[\s\S]*?selectedYear == nil \|\| selectedYear == \$0/);
   assert.match(list, /ForEach\(trips\.filter \{[\s\S]*?\$0\.end_date\.hasPrefix\(year\)/);
-  assert.match(list, /Button\("所有年份"\) \{ selectedYear = nil \}/);
-  assert.match(list, /native-ios-exact-trips-year-filter/);
+  assert.match(list, /yearButton\(nil, title: "全部"\)/);
+  assert.match(list, /native-ios-exact-trips-year-strip/);
+  assert.match(list, /ScrollView\(\.horizontal, showsIndicators: false\)/);
+  assert.match(list, /safeAreaInset\(edge: \.top, spacing: 0\)/);
+  assert.doesNotMatch(list, /Button\("所有年份"\)|native-ios-exact-trips-year-filter/);
   assert.match(list, /onChange\(of: login\.owner\) \{ _ in[\s\S]*?selectedYear = nil[\s\S]*?invalidate\(\)/);
   assert.match(list, /loadedOwner = expected[\s\S]*?trips = items/);
   assert.match(list, /XDriveIOSNativeExactTripWall\(/);
@@ -189,4 +192,21 @@ test('native Swift catches write the View message, never the immutable caught Er
   for (const snippet of after) {
     assert.doesNotMatch(snippet, /(?<!self\.)\berror\s*=\s*"/);
   }
+});
+
+test('Apple-like horizontal Trips year strip never recomputes Owner membership', () => {
+  const list = ui.slice(ui.indexOf('struct XDriveIOSNativeExactTripsScreen: View {'),
+    ui.indexOf('struct XDriveIOSNativeExactTripWall: View {'));
+  const yearButton = list.slice(list.indexOf('private func yearButton('),
+    list.indexOf('var body: some View'));
+  assert.match(yearButton, /let selected = selectedYear == year/);
+  assert.match(yearButton, /Button \{ selectedYear = year \}/);
+  assert.match(yearButton, /Capsule\(\)/);
+  assert.match(yearButton, /accessibilityAddTraits\(selected \? \.isSelected : \[\]\)/);
+  assert.match(yearButton, /native-ios-exact-trip-year-/);
+  assert.match(yearButton, /\.disabled\(busy \|\| phase != \.active\)/);
+  assert.match(list, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/);
+  assert.match(list, /yearButton\(nil, title: "全部"\)/);
+  assert.match(list, /yearButton\(year, title: year\)/);
+  assert.doesNotMatch(yearButton, /exactTripPage|URLSession|reader\./);
 });

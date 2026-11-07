@@ -27,6 +27,28 @@ struct XDriveIOSNativeExactTripsScreen: View {
             ? candidate : "UTC"
     }
 
+    private func yearButton(_ year: String?, title: String) -> some View {
+        let selected = selectedYear == year
+        return Button { selectedYear = year } label: {
+            Text(title)
+                .font(.subheadline.weight(selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Color.white : Color.primary)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 36)
+                .background(
+                    selected ? Color.accentColor :
+                        Color(uiColor: .secondarySystemGroupedBackground),
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(busy || phase != .active)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier(
+            "native-ios-exact-trip-year-" + (year ?? "all")
+        )
+    }
+
     var body: some View {
         List {
             Section {
@@ -71,21 +93,29 @@ struct XDriveIOSNativeExactTripsScreen: View {
                 }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            // Apple Photos Trips exposes years as a horizontal row above
+            // the collections. This filters only the <=100 currently
+            // authenticated Owner trip DTOs; it does not authorize any media.
+            if !availableYears.isEmpty, let owner = loadedOwner,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        yearButton(nil, title: "全部")
+                        ForEach(availableYears, id: \.self) { year in
+                            yearButton(year, title: year)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .background(.regularMaterial)
+                .accessibilityIdentifier("native-ios-exact-trips-year-strip")
+            }
+        }
         .navigationTitle("旅行地点")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button("所有年份") { selectedYear = nil }
-                    ForEach(availableYears, id: \.self) { year in
-                        Button(year) { selectedYear = year }
-                    }
-                } label: {
-                    Label(selectedYear ?? "年份", systemImage: "calendar")
-                }
-                .disabled(availableYears.isEmpty || busy || phase != .active)
-                .accessibilityIdentifier("native-ios-exact-trips-year-filter")
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("刷新") { reload() }.disabled(busy || phase != .active)
             }
