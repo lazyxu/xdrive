@@ -7,7 +7,6 @@ import {
 import type { XDriveWorkspaceHostAdapter } from '@xdrive/ui/mui'
 import { createXDriveSynologyOwnerGallerySource } from '../../ui/shared/src/mui/SynologyOwnerGallerySource'
 import { xDriveSynologyReadOwnerLoginDiagnostics } from '../../ui/shared/src/synology-owner-diagnostics'
-import { createXDriveDSMClipboardPort } from './synologyClipboardPort'
 
 /**
  * DSM-only authenticated transport adapter for the shared xDrive application.
