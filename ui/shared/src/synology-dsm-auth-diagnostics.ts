@@ -3,7 +3,8 @@
  */
 const dsmReasonByStatus: Readonly<Record<number, readonly string[]>> = {
   401: ['dsm-session-rejected'],
-  403: ['dsm-principal-unapproved', 'dsm-authority-unavailable', 'dsm-csrf-rejected'],
+  403: ['dsm-principal-unapproved', 'dsm-authority-unavailable',
+    'dsm-csrf-rejected', 'dsm-request-invalid'],
   503: [
     'agent-unavailable', 'server-connection-unavailable', 'nas-inventory-unavailable',
     'dsm-auth-environment', 'dsm-auth-timeout', 'dsm-auth-helper-failed',
@@ -41,6 +42,8 @@ export function xDriveDSMAuthenticationFailureMessage(failure: unknown): string 
     return 'DSM 套件授权配置缺失或不可安全读取（HTTP 403 · dsm-authority-unavailable）。请检查 NAS 上的套件授权文件及权限；当前不会自动重建授权。'
   if (status(403, 'dsm-csrf-rejected'))
     return 'DSM 请求的 Origin 或 CSRF 校验失败（HTTP 403 · dsm-csrf-rejected）。请保持同一 HTTPS 地址及端口，刷新 DSM 后重试；没有执行任何备份写入。'
+  if (status(403, 'dsm-request-invalid'))
+    return 'DSM 备份请求格式或内容长度不符合约束（HTTP 403 · dsm-request-invalid）。该请求未执行；请刷新页面并确认套件 UI 与 CGI 版本一致。'
   if (detail.includes('HTTP 401)'))
     return 'DSM 认证请求返回 HTTP 401，但没有可信的会话拒绝原因码。请从 DSM HTTPS 登录入口重新登录，并检查 CGI 请求是否使用相同主机及端口。'
   if (detail.includes('HTTP 403)'))

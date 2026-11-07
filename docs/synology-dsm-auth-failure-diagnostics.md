@@ -51,6 +51,8 @@ contacts `xdrive-agent` and never authorizes a Source/Root mutation.
   the browser cannot automatically create authority.
 - `403 dsm-csrf-rejected`: same-origin/CSRF proof invalid; refresh from the
   original DSM origin. No backup command is executed.
+- `403 dsm-request-invalid`: an authenticated POST violates the bounded
+  request method/body contract; it is not a failed DSM login or CSRF proof.
 - `503 agent-unavailable`: DSM auth passed but the package Agent is not
   reachable; this is not NAS share ACL failure.
 

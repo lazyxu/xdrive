@@ -478,8 +478,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		current := csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)
 		previous := csrf(key, username, r.Header.Get("Cookie"), r.Host, interval-1)
 		if !validOrigin(r) || len(token) != len(current) ||
-			(subtle.ConstantTimeCompare([]byte(token), []byte(current)) != 1 && subtle.ConstantTimeCompare([]byte(token), []byte(previous)) != 1) ||
-			(r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/cloud-create-folder" && r.URL.Path != "/v1/cloud-rename-node" && r.URL.Path != "/v1/cloud-delete-node" && r.URL.Path != "/v1/cloud-move-node" && r.URL.Path != "/v1/cloud-copy-node" && r.URL.Path != "/v1/cloud-upload-file" && !isDSMOwnerNotesWrite(r.URL.Path) && !isDSMClipboardWrite(r.URL.Path) && !isDSMOwnerNotesImageWrite(r.URL.Path) && !isLocalBackupManagementMutation(r.URL.Path) && r.ContentLength != 0) ||
+			(subtle.ConstantTimeCompare([]byte(token), []byte(current)) != 1 && subtle.ConstantTimeCompare([]byte(token), []byte(previous)) != 1) {
+			w.Header().Set("X-XDrive-DSM-Failure", "dsm-csrf-rejected")
+			http.Error(w, "CSRF validation failed", http.StatusForbidden)
+			return
+		}
+		// A malformed POST body or forbidden payload is not evidence that
+		// the browser's valid Origin/CSRF proof was rejected.
+		if (r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/cloud-create-folder" && r.URL.Path != "/v1/cloud-rename-node" && r.URL.Path != "/v1/cloud-delete-node" && r.URL.Path != "/v1/cloud-move-node" && r.URL.Path != "/v1/cloud-copy-node" && r.URL.Path != "/v1/cloud-upload-file" && !isDSMOwnerNotesWrite(r.URL.Path) && !isDSMClipboardWrite(r.URL.Path) && !isDSMOwnerNotesImageWrite(r.URL.Path) && !isLocalBackupManagementMutation(r.URL.Path) && r.ContentLength != 0) ||
 			((r.URL.Path == "/v1/schedule" || r.URL.Path == "/v1/nas-share-preflight") && (r.ContentLength < 2 || r.ContentLength > 1024)) ||
 			(r.URL.Path == "/v1/server-login" && (r.ContentLength < 2 || r.ContentLength > 8192)) ||
 			((r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" || r.URL.Path == "/v1/cloud-create-folder" || r.URL.Path == "/v1/cloud-rename-node" || r.URL.Path == "/v1/cloud-delete-node" || r.URL.Path == "/v1/cloud-move-node" || r.URL.Path == "/v1/cloud-copy-node") && (r.ContentLength < 2 || r.ContentLength > 1024)) ||
@@ -488,8 +494,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			(isDSMClipboardWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmClipboardBodyMax)) ||
 			(isDSMOwnerNotesImageWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmNotesImageUploadJSONMax)) ||
 			(isLocalBackupManagementMutation(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > localBackupManagementBodyLimit(r.URL.Path))) {
-			w.Header().Set("X-XDrive-DSM-Failure", "dsm-csrf-rejected")
-			http.Error(w, "CSRF validation failed", http.StatusForbidden)
+			w.Header().Set("X-XDrive-DSM-Failure", "dsm-request-invalid")
+			http.Error(w, "DSM request validation failed", http.StatusForbidden)
 			return
 		}
 	}

@@ -72,7 +72,8 @@ const code = auth.xDriveDSMSafeFailureCode
 const hint = auth.xDriveDSMAuthenticationFailureMessage
 for(const [status,allowed] of [
   [401,['dsm-session-rejected']],
-  [403,['dsm-principal-unapproved','dsm-authority-unavailable','dsm-csrf-rejected']],
+  [403,['dsm-principal-unapproved','dsm-authority-unavailable',
+    'dsm-csrf-rejected','dsm-request-invalid']],
   [503,['dsm-auth-environment','dsm-auth-timeout','dsm-auth-helper-failed',
     'dsm-auth-response-invalid','dsm-auth-unavailable','agent-unavailable',
     'nas-inventory-unavailable','server-connection-unavailable']],
@@ -98,7 +99,8 @@ for(const [http,reason,expected] of [
   [503,'dsm-auth-unavailable','程序异常'],
   [403,'dsm-principal-unapproved','套件界面授权'],
   [403,'dsm-authority-unavailable','授权配置缺失'],
-  [403,'dsm-csrf-rejected','CSRF 校验失败']]){
+  [403,'dsm-csrf-rejected','CSRF 校验失败'],
+  [403,'dsm-request-invalid','请求格式或内容长度']]){
   const message=hint(new Error(`DSM backup request rejected (HTTP ${http}) [${reason}]`))
   assert.ok(message?.includes(expected),'unsafe/missing DSM auth diagnosis '+reason)
   assert.match(message,/HTTP (401|403|503)/)

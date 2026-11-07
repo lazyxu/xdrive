@@ -188,6 +188,14 @@ func TestDSMPrincipalAndCSRFHaveDifferentForbiddenDiagnosticCodes(t *testing.T) 
 		csrf.Header().Get("X-XDrive-DSM-Failure") != "dsm-csrf-rejected" {
 		t.Fatal("invalid DSM CSRF or Origin was not distinguished")
 	}
+	// A valid Origin and CSRF token must not be blamed for an invalid body.
+	boundToken := getCSRF(t, g)
+	invalidBody := requestSchedule(g, http.MethodPost, "/v1/schedule?source_id=42",
+		strings.Repeat("X", 1100), "https://nas.example:5001", boundToken)
+	if invalidBody.Code != http.StatusForbidden ||
+		invalidBody.Header().Get("X-XDrive-DSM-Failure") != "dsm-request-invalid" {
+		t.Fatal("malformed DSM POST was incorrectly classified as CSRF rejection")
+	}
 	if ok := request(g, http.MethodGet, "/v1/bootstrap", "", ""); ok.Code != 200 ||
 		ok.Header().Get("X-XDrive-DSM-Failure") != "" {
 		t.Fatal("valid DSM bootstrap leaked an old diagnostic or failed")
