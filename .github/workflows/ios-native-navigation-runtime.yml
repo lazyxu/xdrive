@@ -62,6 +62,10 @@ jobs:
               out.write("SMOKE_SIM="+d["udid"]+"\n")
           print("Simulator",runtime,d["name"],d["udid"])
           PY
+          # GITHUB_ENV applies to subsequent steps, not this shell. Reuse
+          # the exact selected simulator locally before attempting to boot.
+          SMOKE_SIM="$(sed -n 's/^SMOKE_SIM=//p' "$GITHUB_ENV" | tail -1)"
+          test -n "$SMOKE_SIM"
           xcrun simctl boot "$SMOKE_SIM"
           xcrun simctl bootstatus "$SMOKE_SIM" -b
       - name: Run real XCUITest Gallery-Files transitions
