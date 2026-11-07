@@ -769,7 +769,7 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
     return { ready: false, label: '请在已绑定的 Android 设备上配置；Server 不执行 MediaStore 原件读取或后台上传' }
   }
   if (row.source.kind === 'local_folder') {
-    return { ready: false, label: '本机同步执行器尚未启用，请先完成本地目录授权' }
+    return { ready: false, label: '请在已绑定设备的「文件夹备份」中运行；Server 不远程扫描本地文件夹' }
   }
   const { source, latestRun, credential } = row
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
