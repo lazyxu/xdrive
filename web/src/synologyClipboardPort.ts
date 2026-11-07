@@ -54,15 +54,23 @@ export function createXDriveDSMClipboardPort(
       scope => cgi.clipboardDelete(scope, id, signal), signal),
     clear: signal => checked(scope => cgi.clipboardClear(scope, signal), signal),
     readText: async () => {
-      await current()
       if (!window.isSecureContext || typeof navigator.clipboard?.readText !== 'function') {
         throw new Error('DSM 浏览器未允许读取系统剪贴板')
       }
-      return navigator.clipboard.readText()
+      // Start the permission-gated read synchronously in the user's click;
+      // the awaited Owner proof gates whether its bytes may enter React.
+      const read = navigator.clipboard.readText()
+      const text = await read
+      await current()
+      return text
     },
     copyText: async text => {
+      // Clipboard API may lose transient user activation after an async CGI
+      // proof. The parent Host already verified this Owner and removes its
+      // page on focus/session drift. Finish by re-checking Owner afterwards.
+      const write = xDriveBrowserCopyText(text)
+      await write
       await current()
-      await xDriveBrowserCopyText(text)
     },
   }
 }
