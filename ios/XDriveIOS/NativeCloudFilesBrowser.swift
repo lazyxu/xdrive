@@ -2053,6 +2053,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         .padding(.vertical, 8)
         .listRowInsets(EdgeInsets())
         .listRowSeparator(.hidden)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("native-ios-files-grid")
     }
 
@@ -2390,6 +2391,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(.bar)
+                    // Keep each local section button visible to UI accessibility.
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("native-ios-files-quick-rail")
                 }
             }
