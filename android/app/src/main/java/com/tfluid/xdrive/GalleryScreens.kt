@@ -641,7 +641,7 @@ internal fun ColumnScope.Gallery(
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("搜索全部照片与视频", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(value = searchDraft, onValueChange = { if (it.length <= 200) searchDraft = it },
-                label = { Text("搜索图库") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                label = { Text("照片名称、标签或识别文字") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                     .testTag("gallery-search-input"))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { searchOpen = false },
