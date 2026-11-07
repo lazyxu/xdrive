@@ -59,3 +59,61 @@ func TestMediaExactTripMapViewportParamsFailClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestMediaExactTripPromotionRequiresOneSideAwayEvidence(t *testing.T) {
+    day := func(n int, lat, lon int64, count int64) mediaMemoryTripDay {
+        date := time.Date(2026, time.January, n, 0, 0, 0, 0, time.UTC)
+        return mediaMemoryTripDay{
+            Date: date, DateKey: date.Format("2006-01-02"),
+            LatitudeCell: lat, LongitudeCell: lon, ItemCount: count,
+        }
+    }
+    original := []mediaMemoryTripDay{
+        day(1, 5, 5, 3), day(2, 5, 5, 3),
+        day(3, 5, 5, 7), day(4, 40, 40, 3),
+        day(5, 45, 45, 4), day(6, 5, 5, 10),
+        day(7, 70, 70, 3), day(8, 75, 75, 4),
+        day(9, 5, 5, 3),
+    }
+    candidates := []mediaMemoryTripDay{
+        day(1, 40, 40, 2), // isolated routine: no neighboring away day
+        day(3, 40, 40, 2), // first travel-day transition
+        day(6, 45, 45, 2), // return home AND another trip: ambiguous
+        day(9, 75, 75, 1), // below genuine off-home evidence threshold
+    }
+    chosen := mediaExactTripPromoteTransitDays(original, candidates, 5, 5)
+    if chosen[0].LatitudeCell != 5 ||
+        chosen[2].LatitudeCell != 40 ||
+        chosen[5].LatitudeCell != 5 ||
+        chosen[8].LatitudeCell != 5 {
+        t.Fatalf("away-day promotion merged home/commute/overlapping trips: %+v", chosen)
+    }
+    segments := mediaMemoryTripSegments(chosen)
+    if len(segments) != 2 ||
+        len(segments[0].Days) != 3 ||
+        len(segments[1].Days) != 2 {
+        t.Fatalf("two independent home-separated trips were merged: %+v", segments)
+    }
+}
+
+func TestMapOverviewDisplayOnlyBucketBoundsNeverWidenBeyondFitted(t *testing.T) {
+    fitted := mediaPlaceViewportBounds{
+        West: 170, South: -20, East: -170, North: 20,
+    }
+    var count int
+    for row := 0; row < 8; row++ {
+        for col := 0; col < 8; col++ {
+            b, ok := mediaMapOverviewBucketBounds(fitted, row, col)
+            if !ok || !b.valid() || b.North <= b.South {
+                t.Fatalf("invalid WGS84 aggregate rectangle %d,%d: %+v", row, col, b)
+            }
+            count++
+        }
+    }
+    if count != 64 { t.Fatal("missing one aggregate display region") }
+    for _, invalid := range [][2]int{{-1, 0}, {0, 8}, {8, 0}} {
+        if _, ok := mediaMapOverviewBucketBounds(fitted, invalid[0], invalid[1]); ok {
+            t.Fatalf("invalid region index admitted: %v", invalid)
+        }
+    }
+}
