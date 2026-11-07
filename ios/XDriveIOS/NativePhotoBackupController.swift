@@ -484,7 +484,23 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         }
                     }
                     try Task.checkCancellation()
+                    guard self.displayEpoch == uiEpoch,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                          XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, selected),
+                          UIApplication.shared.applicationState == .active else {
+                        throw XDriveIOSNativeSessionError.staleSession
+                    }
                     await reporter.begin()
+                    // SourceRun start may suspend. A sign-out or scene/Owner
+                    // switch after the one-item PhotoKit queue CAS must abort
+                    // before the very first UploadSession.
+                    try Task.checkCancellation()
+                    guard self.displayEpoch == uiEpoch,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                          XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, selected),
+                          UIApplication.shared.applicationState == .active else {
+                        throw XDriveIOSNativeSessionError.staleSession
+                    }
                     let result = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: selected, managedForeground: managed,
                         onSourceProgress: { value in
