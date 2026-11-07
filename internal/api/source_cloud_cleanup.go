@@ -321,7 +321,7 @@ func (s *Server) trashSourceCloudCleanup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"source_id": after.SourceID, "trash_node_id": after.TargetNodeID,
 		"trash_node_revision": after.TargetRevision + 1,
-		"node_count": after.NodeCount, "status": "trashed",
+		"node_count":          after.NodeCount, "status": "trashed",
 		"restore_path": "/api/v1/trash/" + strconv.FormatUint(after.TargetNodeID, 10) + "/restore",
 	})
 }

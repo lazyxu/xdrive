@@ -3,8 +3,8 @@ package pullworker
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -368,7 +368,10 @@ type failFirstYikeHandler struct {
 func (h *failFirstYikeHandler) RunPullSource(_ context.Context, source meta.Source) (client.SyncRun, error) {
 	h.called <- source.ID
 	if source.ID == 101 {
-		return client.SyncRun{}, errors.New("Yike credentials expired for Source 101")
+		// The fake test has no DB; an already-started Run is enough to
+		// verify independent Source dispatch without simulating a failed
+		// preflight that needs a durable SQL retry transaction.
+		return client.SyncRun{ID: "failed-yike-run", SourceID: source.ID, Status: meta.SyncRunStatusFailed}, errors.New("Yike credentials expired for Source 101")
 	}
 	return client.SyncRun{ID: "other-yike-run", SourceID: source.ID, Status: meta.SyncRunStatusCompleted}, nil
 }
@@ -378,7 +381,7 @@ func (h *failFirstYikeHandler) RunPullSource(_ context.Context, source meta.Sour
 func TestYikePullSourceFailureDoesNotBlockIndependentSource(t *testing.T) {
 	handler := &failFirstYikeHandler{called: make(chan uint64, 2)}
 	runner := &Runner{
-		Handlers: map[string]SourceHandler{"yike_photos": handler},
+		Handlers:       map[string]SourceHandler{"yike_photos": handler},
 		MaxConcurrency: 2,
 	}
 	report, err := runner.runSources(context.Background(), []meta.Source{

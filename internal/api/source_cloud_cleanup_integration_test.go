@@ -211,7 +211,7 @@ func TestSourceCloudCleanupRejectsUnsafeSharesWritersAndCrossSourceHistory(t *te
 		SourceRevision: src.Revision, SourceTargetID: target.ID,
 		ParentID: &target.ID, Name: "still-pending.jpg",
 		ConflictPolicy: meta.UploadConflictPolicyFail,
-		TotalSize: 10, ChunkSize: 4096, ChunkCount: 1,
+		TotalSize:      10, ChunkSize: 4096, ChunkCount: 1,
 		Status: meta.UploadStatusActive, ExpiresAt: now.Add(time.Hour),
 	}
 	if err := db.Create(&session).Error; err != nil {
