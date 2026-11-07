@@ -235,6 +235,19 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var nativeNavigation by remember(state.nativeUiSessionId, nativeAuthenticated) {
         mutableStateOf(NativeHomeNavigation())
     }
+    // A text share from another Owner epoch is discarded, never re-sent.
+    // A valid ACTION_SEND opens the native dynamic Clipboard and fills a draft;
+    // the user still must unlock and explicitly tap Send.
+    LaunchedEffect(incomingClipboardText, state.nativeUiSessionId,
+        state.server, state.username, nativeAuthenticated) {
+        val shared = incomingClipboardText ?: return@LaunchedEffect
+        if (!nativeAuthenticated || shared.epoch != state.nativeUiSessionId ||
+            shared.server != state.server || shared.username != state.username) {
+            onIncomingClipboardConsumed()
+            return@LaunchedEffect
+        }
+        nativeNavigation = nativeNavigation.open(NativeHomeShortcut.CLIPBOARD)
+    }
     // Only the first fully verified Owner root of this login lands in Gallery.
     // On reselecting Files, or on an incomplete/failed login, never hijack it.
     var galleryFirstPending by remember(state.nativeUiSessionId, nativeAuthenticated, galleryFirstOnLogin) {
