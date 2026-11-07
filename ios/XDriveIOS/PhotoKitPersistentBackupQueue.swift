@@ -380,6 +380,30 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         return result
     }
 
+    /// Read one 32-row page of the locally persisted change queue. When a
+    /// baseline is missing or history is behind the current PhotoKit generation,
+    /// return nil (unknown) instead of stale rows. This is UI-only metadata.
+    func page(owner: XDriveNativeOwnerRoot,
+              state: XDriveIOSPhotoBackupChangeQueueStore.ItemState? = nil,
+              offset: Int = 0, limit: Int = 32)
+        throws -> [XDriveIOSPhotoBackupChangeQueueStore.QueueRow]? {
+        guard (1...32).contains(limit), (0...1_000_000).contains(offset)
+        else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline(),
+              baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(baseline.token, as: epoch.token)
+        else { return nil }
+        let rows = try store.page(state: state, offset: offset, limit: limit)
+        let after = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard after.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(epoch.serialized, as: after.token)
+        else { return nil }
+        try verifyAuthorization(stillMatches: epoch)
+        return rows
+    }
+
     /// Whether every persisted PhotoKit change event has been replayed. The
     /// automatic runner must defer its date-filtered scan while this is false:
     /// an older-dated imported photo may still be waiting behind the event cap.
