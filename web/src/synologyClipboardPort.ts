@@ -21,7 +21,7 @@ export function createXDriveDSMClipboardPort(
         !status.server || !status.username || !status.owner_scope) {
       throw new Error('DSM Owner 未授权，剪贴板已不可用')
     }
-    if (ownerScope && (ownerScope !== status.owner_scope || server !== status.server)) {
+    if (ownerScope !== status.owner_scope || (server && server !== status.server)) {
       throw new Error('DSM Owner 已变化，必须重新进入并解锁剪贴板')
     }
     signal?.throwIfAborted()
