@@ -309,7 +309,9 @@ struct XDriveIOSUnifiedPhotoTile: View {
                 }
             }
             .clipped()
-            .overlay(alignment: .bottomTrailing) {
+            .overlay(alignment: .topTrailing) {
+                // Keep the independent source/presence badge unobstructed
+                // in compact grids; the media icon uses the same shared style.
                 XDriveIOSNativePhotoWallMediaBadge(
                     isVideo: row.isVideo, isLive: row.isLive
                 )

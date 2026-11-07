@@ -172,7 +172,7 @@ test('local, Owner place and unified Gallery share an inert video/Live badge wit
   assert.match(cloudTile, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: item\.isVideo, isLive: item\.isLive/)
   assert.match(cloudTile, /model\.thumbnail\(item, login: login\)/)
   assert.match(cluster, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: item\.isVideo, isLive: item\.isLive/)
-  assert.match(unified, /\.overlay\(alignment: \.bottomTrailing\) \{\s*XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: row\.isVideo, isLive: row\.isLive/)
+  assert.match(unified, /\.overlay\(alignment: \.topTrailing\) \{[\s\S]*?XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: row\.isVideo, isLive: row\.isLive/)
   assert.match(unified, /\.overlay\(alignment: \.bottomLeading\) \{\s*Label\(row\.presence\.title, systemImage: row\.presence\.symbol\)/)
   assert.match(unified, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
   assert.doesNotMatch(shared, /PHAsset|PHPhotoLibrary|URLSession|UploadSession|accessToken|verifiedAuthorization|Keychain/)
