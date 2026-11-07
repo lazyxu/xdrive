@@ -9275,6 +9275,12 @@ function registerIPCHandlers() {
     })))
     if (!attempt.current()) return { ok: false, error: { code: 'server_canceled', message: '登录操作已取消。' } }
     if (result.ok) {
+      // Explicit native re-login may update the Agent's trusted HTTPS CA or
+      // RefreshToken without changing the same Owner/Server status fields.
+      // Retire the old Chromium TLS verdict, Cookie and map Guest before
+      // seeding the newly verified Owner. Never keep an old trust generation.
+      closeDesktopPlacesGuests()
+      closeSecureBaiduMapWindow()
       loginHistory = recordSuccessfulLogin(loginHistory, {
         server,
         username,
