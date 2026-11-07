@@ -98,6 +98,17 @@ async function bootElectron(boot,env,bootstrap){
     assert.equal(row.actualWebVite,true)
     assert.equal(row.realGuest,true)
     assert.equal(row.noNestedLogin,true)
+    assert.equal(row.exactOwnerCells,9)
+    assert.equal(row.exactFavorites,3)
+    assert.equal(row.exactFamily,3)
+    assert.equal(row.exactFamilyFavorites,2)
+    assert.equal(row.exactViewerRange,9)
+    assert.equal(row.viewerMetadata,true)
+    assert.equal(row.noUnrelatedMapBearerAccess,true)
+    if(boot===2){
+      assert.equal(row.nativeLogoutBlockedOldMap,true)
+      assert.equal(row.oldMapHiddenAfterLogout,true)
+    }
     return row
   }finally{
     await stop(proc)
@@ -163,16 +174,34 @@ async function main(){
       "require('./scripts/places-desktop-production-web-electron-main.cjs')\n",
       {mode:0o600})
     const results=[]
+    const logoutReady=path.join(dir,'agent-logout-ready')
+    const logoutDone=path.join(dir,'agent-logout-done')
     for(let boot=1;boot<=2;boot++){
-      results.push(await bootElectron(boot,{
+      const running=bootElectron(boot,{
         ...env,XD_DESKTOP_PLACES_PRODUCTION_ORIGIN:fixture.url,
         XD_DESKTOP_PLACES_PRODUCTION_OWNER:fixture.owner,
-      },bootstrap))
-      const status=await ipc.status()
-      assert.equal(status.configured,true)
-      assert.equal(status.username,fixture.owner)
+        XD_DESKTOP_PLACES_LOGOUT_READY:logoutReady,
+        XD_DESKTOP_PLACES_LOGOUT_DONE:logoutDone,
+      },bootstrap)
+      if(boot===2){
+        // Keep the genuine production Electron Main and WebView running while
+        // its independent, already-authenticated Go Agent logs out.
+        await Promise.race([
+          until(()=>fs.existsSync(logoutReady),100000,
+            'live production WebView waiting for native logout'),
+          running.then(()=>{throw Error('Desktop exited before native logout')},
+            error=>{throw error}),
+        ])
+        await ipc.logout()
+        fs.writeFileSync(logoutDone,'logout',{mode:0o600})
+      }
+      results.push(await running)
+      if(boot===1){
+        const status=await ipc.status()
+        assert.equal(status.configured,true)
+        assert.equal(status.username,fixture.owner)
+      }
     }
-    await ipc.logout()
     console.log('XDRIVE_PLACES_PRODUCTION_MAIN_WEB_COMPLETE '+JSON.stringify({
       passed:true,actualGinPostgres:true,actualAgent:true,
       productionDesktopMain:true,productionDesktopPreload:true,
@@ -180,6 +209,9 @@ async function main(){
       productionMapGuest:true,restarts:results.length,
       AgentSessionRetained:true,savedDesktopPassword:false,
       noSecondLogin:true,OwnerExact:true,syntheticPhotoFixture:true,
+      actualSignedOwnerCells:true,scopedAlbumFavoritesAndDate:true,
+      actualViewerMetadata:true,mapBearerRouteFence:true,
+      actualAgentLogoutDuringWebView:true,retiredOldOwnerGuest:true,
       // No manual test, provider SDK, installed Windows or production server.
       physicalSystemTested:false,
     }))
