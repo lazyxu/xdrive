@@ -1,6 +1,12 @@
-# Server updates from an xDrive Share
+# Historical Server updates from an xDrive Share
 
-Linux AMD64 Server can use a read-only folder Share as its master update source:
+**Publisher retired (2026-11-07).** New master/offline releases are now
+published only through verified GitHub Releases. The old automated and manual
+Share mirror publishers have been deleted, not merely disabled with an opt-in
+variable. Existing cloud files are left unchanged.
+
+Linux AMD64 Server can still consume **previously mirrored, signed** releases
+from a read-only folder Share, subject to existing trust and rollback checks:
 
 ```sh
 xdrive-server update --source xdrive --channel master
@@ -12,40 +18,17 @@ bytes; the local verifier authenticates them independently. Stable and other
 architectures are rejected. Existing GitHub/GitLab sources remain available.
 Client installation and their source selectors are separate from this Server command.
 
-## Publication and quick transfer
+## Historical immutable layout (read-only)
 
-The offline publisher produces immutable component releases, then an attested
-`delivery.json` binding the complete Manifest and installer to the master commit
-and first-parent generation. Only published, verified GitHub releases are
-mirrored. Interrupted drafts resume by verifying existing assets and adding
-missing assets; conflicting bytes are never overwritten.
+Old releases remain under `xDrive-Server/packages/` and
+`xDrive-Server/master/` with signed component manifests and an authenticated
+`delivery.json` completion marker. They are **not** deleted or rewritten by
+retiring the uploader.
 
-Enable the same repository secret `XDRIVE_CLIENT_MIRROR_SHARE_URL`, optional
-`XDRIVE_CLIENT_MIRROR_SHARE_PASSWORD`, and variable
-`XDRIVE_CLIENT_MIRROR_ENABLED=true` described in the
-[client mirror setup](client-artifact-share-mirror.md). Use a private
-`view_upload` capability and a separate read-only consumer capability for the
-same folder. No Owner login or upload token is installed on consuming hosts.
-
-The directory layout is:
-
-```text
-xDrive-Server/packages/<full-package-sha256>/<filename>
-xDrive-Server/master/<generation>-<full-commit>/manifest.json
-xDrive-Server/master/<generation>-<full-commit>/xdrive-offline.py
-xDrive-Server/master/<generation>-<full-commit>/delivery-attestation.jsonl
-xDrive-Server/master/<generation>-<full-commit>/delivery.json
-```
-
-`delivery.json` is uploaded last. Existing files are checked by size and SHA-256.
-New paths initialize an ordinary Share upload with SHA-256 and size: a Server
-that already has a current matching file visible under this Share returns a
-finalized receipt without receiving data chunks. Other files use the same
-bounded chunk/resume protocol. This preserves Share and Owner isolation.
-
-If a mirror failure makes the source CI run fail, rerun its failed jobs. A new
-manual dispatch still requires a successful source CI run; it does not bypass
-the publication prerequisites.
+The Share updater cannot discover new GitHub Releases through this historical
+directory. Use `xdrive-server update --source github --channel master` (or
+the existing GitLab source) for new updates. Do not enable anonymous upload
+or recreate the retired Share mirror to work around a stale source.
 
 ## Trusted initial configuration
 

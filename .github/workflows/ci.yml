@@ -184,9 +184,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Publisher-only PRs need the exact immutable Share delivery contracts, not
-  # Android, Desktop, Go image builds or signed release publication. On master
-  # and stable tags both jobs run as part of the complete Final Gate.
+  # Publisher-only PRs validate exact GitHub offline release identity without
+  # unrelated Android, Desktop or image builds; master and v* remain full.
   offline-release-tests:
     needs: pr-scope
     if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'offline-release'
@@ -196,13 +195,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - name: Test exact GitHub package selection and Share upload/readback
+      - name: Verify exact GitHub offline package and draft recovery contracts
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ci/mirror-server-to-share.py scripts/ci/mirror-clients-to-share.py
-          python3 scripts/ci/test-mirror-clients-to-share.py -q
+          python3 -m py_compile scripts/ci/mirror-server-to-share.py
           python3 scripts/ci/test-mirror-server-to-share.py -q
+          python3 -m unittest discover -s scripts/ci -p 'test_retired_share_mirror.py'
 
   offline-security-contract:
     needs: pr-scope
@@ -225,7 +224,7 @@ jobs:
       # A scoped PR can edit its own regression tests. Run the already trusted
       # master tests on the candidate publisher too, so changing tests cannot
       # silently weaken the existing security baseline.
-      - name: Re-run trusted base Share publisher regression suite
+      - name: Re-run trusted base GitHub offline publisher regression suite
         if: github.event_name == 'pull_request' && needs.pr-scope.outputs.scope == 'offline-release'
         shell: bash
         env:
@@ -2743,7 +2742,6 @@ jobs:
     uses: ./.github/workflows/offline-packages.yml
     with:
       ci_run_id: ${{ github.run_id }}
-    secrets: inherit
 
   publish-stable:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
