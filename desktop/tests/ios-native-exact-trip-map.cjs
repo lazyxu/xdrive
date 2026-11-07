@@ -143,7 +143,7 @@ test('trip map fails closed on 64-place overflow and distinguishes stale trip fr
 });
 
 test('trip map keeps camera on sheet dismissal and refresh while revoking stale pins', () => {
-  assert.match(map, /private func reload\(preservingCamera: Bool = false\)/)
+  assert.match(map, /private func reload\([\s\S]*?preservingCamera: Bool = false,[\s\S]*?bounds: XDriveIOSNativeOwnerMapBounds\? = nil/)
   const closures = [...map.matchAll(/\.sheet\(item: \$selected(?:Place|Cluster), onDismiss: \{/g)]
   assert.equal(closures.length, 2)
   assert.match(map, /if activeOwner \{ reload\(preservingCamera: true\) \} else \{ invalidate\(\) \}/)
