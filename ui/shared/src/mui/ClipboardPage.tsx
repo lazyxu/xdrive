@@ -189,7 +189,14 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     try { xDriveClipboardValidateText(draft) } catch (error) {
       setMessage(errorLabel(error)); return
     }
-    if (pending.current?.text === draft) {
+    if (pending.current) {
+      // An unknown server ACK is not proof of failure. Editing or pasting a
+      // different draft must not silently discard the original retry receipt.
+      if (pending.current.text !== draft) {
+        setRetryExpired(true)
+        setMessage('上一条发送回执仍未确认。请先核对历史，或明确放弃旧回执后再发送新内容。')
+        return
+      }
       const age = Date.now() - pending.current.createdAt
       if (!Number.isFinite(age) || age < 0 || age >= CLIPBOARD_PENDING_RETRY_WINDOW_MS) {
         setRetryExpired(true)
@@ -335,12 +342,12 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                   onClick={() => { void pasteFromBrowser() }}>
                   从系统剪贴板读取
                 </Button>
-                {retryExpired && pending.current?.text === draft ? (
-                  <Button variant="outlined" color="warning" onClick={() => {
+                {retryExpired && pending.current ? (
+                  <Button variant="outlined" color="warning" disabled={busy} onClick={() => {
                     pending.current = null
                     setRetryExpired(false)
                     setMessage('已放弃旧回执。请先核对历史，再决定是否重新发送。')
-                  }}>放弃过期重试</Button>
+                  }}>{pending.current.text === draft ? '放弃过期重试' : '放弃待确认回执'}</Button>
                 ) : null}
               </Stack>
             </Stack>
