@@ -2081,11 +2081,30 @@ caddy_env_recover_interrupted() {
   return 1
 }
 
+# A long-lived observer may predate a host group-membership repair. chmod by
+# an owner outside the directory's group clears setgid on Linux, so even a
+# nominally read-only observer can make new 0660 snapshots unreadable by Server.
+# Check the process's actual groups (not account database membership) BEFORE
+# prepare_dir can touch the existing bridge. Do not guess rootless mapped IDs.
+caddy_observer_group_ready() {
+  local dir="$1" gid groups
+  [[ -e "$dir" || -L "$dir" ]] || return 0
+  [[ -d "$dir" && ! -L "$dir" ]] || return 1
+  [[ "$(id -u)" != 0 ]] || return 0
+  gid="$(stat -c '%g' -- "$dir")" || return 1
+  groups=" $(id -G) " || return 1
+  if [[ "$groups" != *" $gid "* ]]; then
+    echo "xDrive Caddy observer has stale process groups; restart the read-only observer from a fresh host login." >&2
+    return 1
+  fi
+}
+
 caddy_compat_observe_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh caddy-observe" >&2; return 2; }
   local dir sha current pid i main_pulse_at_entry
   command -v flock >/dev/null 2>&1 || return 1
-  dir="$(prepare_dir)"
+  caddy_observer_group_ready "$(control_dir)" || return 1
+  dir="$(prepare_dir)" || return 1
   sha="$(caddy_host_control_script_sha)" || return 1
   exec 7>"$dir/caddy-observer.lock"
   flock -n 7 || return 0
@@ -2099,6 +2118,7 @@ caddy_compat_observe_cmd() {
   main_pulse_at_entry="$(cat "$dir/caddy-main-sample.sha" 2>/dev/null || true)"
   while true; do
     [[ ! -e "$dir/caddy-observer-stop" ]] || return 0
+    caddy_observer_group_ready "$dir" || return 1
     current="$(caddy_host_control_script_sha)" || current=""
     if [[ "$current" != "$sha" ]]; then
       # The installed source changed again during an upgrade. Release our

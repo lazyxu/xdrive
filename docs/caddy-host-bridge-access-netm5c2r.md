@@ -66,3 +66,30 @@ Tests cover bounded root/non-root group handling, existing files, Rootless,
 userns, malformed Docker security information, hostile symlinks, and
 independent witness/mount results. Repository CI is not a substitute for
 checking permissions on the physical production host.
+
+## A long-lived observer can retain obsolete groups
+
+Updating an installer's group membership does not update already-running
+processes. Inspect the observer PID's `/proc/<pid>/status` `Groups` line, not
+only `id <account>`. On Linux, an owner outside the directory's group can
+silently clear setgid by running `chmod 2770`. Subsequent 0660 snapshots then
+inherit its primary group and the Server's management reads can return 503,
+even while the Caddy HTTPS listener remains healthy.
+
+The read-only Caddy observer checks its actual groups against the existing
+bridge directory before preparing or publishing observations. An obsolete
+process exits without changing the bridge. This check does not guess mapped
+GIDs or grant new permissions.
+
+For an existing stale observer, first verify its PID, command, UID and
+installation directory. Use that installation's `caddy-observer-stop` flag
+to stop only the read-only observer; wait for it to exit, then run the
+existing `server-control.sh start` from a fresh login with the required
+supplementary group. An already-running main controller stays running.
+Verify fresh snapshots remain 0660 with the correct group and execute the
+running Server's `caddy-host config-check` repeatedly. Do not restart Caddy,
+delete its state or broaden directory access to repair an observation error.
+
+`scripts/test-caddy-observer-groups.sh` reproduces the actual Linux setgid
+behavior with an isolated UID/GID fixture and verifies both stale-process
+refusal and fresh-process publication readable by the Server UID.

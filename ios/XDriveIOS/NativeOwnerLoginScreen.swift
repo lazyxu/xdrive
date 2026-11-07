@@ -78,6 +78,11 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
+                            Text(XDriveIOSNativeBuildIdentity.label)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .accessibilityIdentifier("native-ios-prelogin-build")
                             // Stop-only operation remains available even
                             // when login/Keychain or the Server is unavailable.
                             Button("紧急停止本机相册自动备份", role: .destructive) {
