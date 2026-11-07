@@ -39,6 +39,7 @@ type mediaPlaceDTO struct {
 	SampleLatitude  float64    `json:"sample_latitude"`
 	SampleLongitude float64    `json:"sample_longitude"`
 	CoordinateKind  string     `json:"coordinate_kind"`
+	DisplayBounds   *mediaPlaceViewportBounds `json:"display_bounds,omitempty"`
 	ID              string     `json:"id"`
 	Name            string     `json:"name"`
 	Latitude        float64    `json:"latitude"`
