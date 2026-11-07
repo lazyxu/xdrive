@@ -164,6 +164,7 @@ test('Single shared map host previews a fresh Parent-only Range and cancels stal
 
 test('390px trusted photo drawer uses safe-area layout and touch-only pointer grip',()=>{
   const sheet=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+  const gallery=read('ui/shared/src/mui/MediaGallery.tsx')
   const host=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   assert.match(sheet,/data-xdrive-places-photo-drawer-grip/)
   // The map sheet lives in one trusted Parent and is rendered identically
