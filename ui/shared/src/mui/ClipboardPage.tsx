@@ -34,6 +34,8 @@ export type XDriveClipboardDataPort = {
   /** Must be initiated by the user's gesture; never silently query OS clipboard. */
   readText?(): Promise<string>
   copyText(text: string): Promise<void>
+  /** Canonical v1 AES AAD scope for native hosts, derived from verified Owner ID. */
+  claimScope?(vault: { owner_id?: number }): string
   /** Optional authenticated SSE. The existing foreground refresh remains a fallback. */
   watchChanges?(onChange: () => void, signal: AbortSignal): Promise<void>
 }
