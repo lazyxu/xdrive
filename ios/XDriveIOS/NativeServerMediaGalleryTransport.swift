@@ -285,6 +285,57 @@ struct XDriveIOSNativeMediaGalleryReader {
         return page
     }
 
+    /// B2 v2: the read-only, current Owner trips list. The legacy
+    /// /media/memories trip:v1 date heuristic is deliberately not accepted.
+    /// This shares exactly the existing HTTPS/TLS, no-redirect bearer Reader.
+    func exactTrips(timeZone: String, limit: Int = 100) async throws
+        -> [XDriveIOSNativeExactTrip] {
+        guard XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone),
+              (1...XDriveIOSNativeExactTripPolicy.maximumTrips).contains(limit)
+        else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+        let url = try endpoint("/api/v1/media/trips", query: [
+            URLQueryItem(name: "time_zone", value: timeZone),
+            URLQueryItem(name: "limit", value: String(limit))
+        ])
+        let bytes = try await read(url, maximum: 128 * 1_024)
+        let trips = try JSONDecoder().decode([XDriveIOSNativeExactTrip].self, from: bytes)
+        guard trips.count <= limit, XDriveIOSNativeExactTripPolicy.validTrips(trips)
+        else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        return trips
+    }
+
+    /// The exact current trip membership is resolved afresh server-side.
+    /// A changed total, stale v2 ID, changed Owner or unauthorized current
+    /// item must fail closed; no all-Owner date-range fallback is permitted.
+    func exactTripPage(
+        _ trip: XDriveIOSNativeExactTrip, offset: Int, timeZone: String
+    ) async throws -> XDriveIOSNativeMediaRange {
+        guard XDriveIOSNativeExactTripPolicy.validTrip(trip),
+              XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone),
+              offset >= 0,
+              offset % Self.pageSize == 0,
+              offset <= trip.item_count
+        else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+        let url = try endpoint("/api/v1/media/trips/\(trip.id)/items", query: [
+            URLQueryItem(name: "time_zone", value: timeZone),
+            URLQueryItem(name: "range", value: "true"),
+            URLQueryItem(name: "limit", value: String(Self.pageSize)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ])
+        let bytes = try await read(url, maximum: 2 * 1_048_576)
+        let page = try JSONDecoder().decode(XDriveIOSNativeMediaRange.self, from: bytes)
+        guard XDriveIOSNativeExactTripPolicy.validWindow(
+            requestedOffset: offset, responseOffset: page.offset,
+            responseLimit: page.limit, responseTotal: page.total_count,
+            itemIDs: page.items.map(\.id), expectedTotal: trip.item_count
+        ), page.items.allSatisfy({
+            $0.node.revision > 0 && $0.node.size >= 0 &&
+            $0.node.type == "file"
+        })
+        else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+        return page
+    }
+
     /// Bounded WGS84 Owner map overview; MapKit must never receive BD09.
     /// Reuses this Reader's HTTPS-only, no-redirect authenticated transport.
     func mapOverview(

@@ -599,6 +599,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-owner-map-selection-policy"
           node --test desktop/tests/ios-native-owner-map-gallery.cjs
 
+      - name: Verify native exact Owner trip ID and sparse Range reader
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeExactTripPolicy.swift \
+            ios/tests/NativeExactTripPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-owner-exact-trip-policy"
+          "$RUNNER_TEMP/xdrive-ios-owner-exact-trip-policy"
+          node --test desktop/tests/ios-native-exact-trips.cjs
+
       - name: Verify native Files Owner Range, search and fixed-tab wiring
         run: |
           set -euo pipefail
