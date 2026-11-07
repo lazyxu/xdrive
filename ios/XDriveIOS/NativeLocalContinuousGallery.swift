@@ -273,7 +273,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                 Button("从 iCloud 下载原件并分享") {
                                     onShare(candidate, true)
                                 }
-                                if let priorityAction, backupBadgeOwner != nil {
+                                if let priorityAction {
                                     Button(visibleBackupQueueStates[candidate.id]?.state == "failed"
                                         ? "核对并重试失败原件" : "优先备份此原件") {
                                         priorityAction(
@@ -397,7 +397,12 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         }
         .onChange(of: backupBadgeOwner) { _ in
             badgeReadEpoch = UUID()
+            queueHistoryCurrent = false
             visibleBackupQueueStates = [:]
+            Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
+        }
+        .onChange(of: onlyNewSince) { _ in
+            queueHistoryCurrent = false
             Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
         }
         .onChange(of: badgeRefresh) { _ in
@@ -410,6 +415,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
             } else {
                 badgeReadEpoch = UUID()
+                queueHistoryCurrent = false
                 visibleBackupQueueStates = [:]
             }
         }
@@ -419,6 +425,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 precedingCapturedAt = nil
                 retainedGeneration = nil
             }
+            queueHistoryCurrent = false
             visibleBackupQueueStates = [:]
             badgeReadEpoch = UUID()
             if let scanner { Task { await scanner.reset() } }
