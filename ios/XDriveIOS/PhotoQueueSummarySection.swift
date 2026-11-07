@@ -1,5 +1,6 @@
 import SwiftUI
 import Photos
+import UIKit
 
 /// Owner-scoped local PhotoKit queue status. Lifecycle and refresh ownership
 /// live here so the large backup settings form does not inherit extra state
