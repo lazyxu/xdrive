@@ -433,7 +433,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if r.URL.Path == "/v1/run" || r.URL.Path == "/v1/control" || r.URL.Path == "/v1/nas-share-preflight" || r.URL.Path == "/v1/server-login" || r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" || r.URL.Path == "/v1/cloud-create-folder" || r.URL.Path == "/v1/cloud-rename-node" || r.URL.Path == "/v1/cloud-delete-node" || r.URL.Path == "/v1/cloud-move-node" || r.URL.Path == "/v1/cloud-copy-node" || r.URL.Path == "/v1/cloud-upload-file" || isDSMOwnerNotesWrite(r.URL.Path) || isDSMOwnerNotesImageWrite(r.URL.Path) ||
+	if r.URL.Path == "/v1/run" || r.URL.Path == "/v1/control" || r.URL.Path == "/v1/nas-share-preflight" || r.URL.Path == "/v1/server-login" || r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" || r.URL.Path == "/v1/cloud-create-folder" || r.URL.Path == "/v1/cloud-rename-node" || r.URL.Path == "/v1/cloud-delete-node" || r.URL.Path == "/v1/cloud-move-node" || r.URL.Path == "/v1/cloud-copy-node" || r.URL.Path == "/v1/cloud-upload-file" || isDSMOwnerNotesWrite(r.URL.Path) || isDSMClipboardWrite(r.URL.Path) || isDSMOwnerNotesImageWrite(r.URL.Path) ||
 		(isLocalBackupManagementMutation(r.URL.Path) && !(r.URL.Path == "/v1/local-rules" && r.Method == http.MethodGet)) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
