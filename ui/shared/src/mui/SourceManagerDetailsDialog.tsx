@@ -189,7 +189,7 @@ export function XDriveSourceDetailsDialog({
               <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
                 <Stack spacing={1}>
                   <MuiTypography variant="body2">
-                    本机文件夹已登记，但同步执行器尚未启用。必须在拥有该目录的 Desktop 上授权；不能从 Web 指定电脑路径。
+                    文件夹 Push 由来源绑定设备上的 xdrive-agent 执行。请在该设备上授权本地目录并开始备份；Server 和其他设备不会远程扫描。来源已登记不等于目录已授权。
                   </MuiTypography>
                   {onAuthorizeLocalFolder ? (
                     <MuiButton size="small" variant="outlined" onClick={() => void onAuthorizeLocalFolder(row)}>
@@ -210,6 +210,11 @@ export function XDriveSourceDetailsDialog({
                 </Stack>
               </XDriveDescriptionItem>
               <XDriveDescriptionItem label="工作方式">{detail.modeLabel}</XDriveDescriptionItem>
+              {detail.deviceID ? (
+                <XDriveDescriptionItem label="绑定设备">
+                  <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{detail.deviceID}</MuiTypography>
+                </XDriveDescriptionItem>
+              ) : null}
               <XDriveDescriptionItem label="状态">
                 <XDriveStatusBadge tone={detail.state.tone} label={detail.state.label} />
               </XDriveDescriptionItem>
