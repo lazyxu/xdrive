@@ -468,7 +468,7 @@ struct XDriveIOSNativeExactTripWall: View {
                 page = nil
                 previousPage = nil
                 viewerReturnID = nil
-                error = "该旅行照片成员已变化，请返回旅行列表刷新。"
+                self.error = "该旅行照片成员已变化，请返回旅行列表刷新。"
             }
         }
     }
@@ -509,7 +509,7 @@ struct XDriveIOSNativeExactTripWall: View {
                 selected = item
             } catch is CancellationError {
             } catch {
-                if epoch == ticket { error = "照片已变化，请刷新旅行成员。" }
+                if epoch == ticket { self.error = "照片已变化，请刷新旅行成员。" }
             }
         }
     }
