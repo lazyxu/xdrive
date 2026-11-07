@@ -456,6 +456,9 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var showingMap = false
     @State private var mapCamera: MKCoordinateRegion?
     @State private var mapJump: XDriveIOSNativeLocalMapJump?
+    // The PhotoKit calendar's authorized day is a transient map entry scope,
+    // not an index of media IDs or a persistent location history.
+    @State private var calendarMapRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var pendingViewerMapJump: XDriveIOSNativeLocalMapJump?
     @State private var showingAlbumPicker = false
     @State private var albumPickerCandidates: [XDrivePhotoKitScanCandidate] = []
@@ -760,7 +763,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         },
                         cameraOnEntry: mapCamera,
                         onLibraryCameraChange: { next in mapCamera = next },
-                        mediaFilter: mediaFilter
+                        mediaFilter: mediaFilter,
+                        inheritedCaptureRange: calendarMapRange
                     )
                     .environment(\.xdriveNativeLocalMapJump, mapJump)
                 }
@@ -859,7 +863,14 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             }
             if authorized && selected == nil && !loading && total == 0 { reload() }
         }
+        .onChange(of: exactDateTarget) { value in
+            if let value {
+                calendarMapRange = XDriveIOSNativePhotoMapCaptureRange.dayKey(
+                    value.dayKey)
+            }
+        }
         .onChange(of: mediaFilter) { _ in
+            calendarMapRange = nil
             exactDateTarget = nil
             guard phase == .active else { return }
             selectionMode = false
@@ -872,6 +883,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         .onChange(of: phase) { value in
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             if value != .active {
+                calendarMapRange = nil
                 exactDateTarget = nil
                 accessibilityFocusedTileID = nil
                 cancelSharePreparation()
