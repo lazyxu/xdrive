@@ -82,7 +82,7 @@ function buildInlineFixture(config = {}) {
     destroy() {disposed++}
     pointToPixel(p) {return {x:p.lng+100,y:p.lat+100}}
     addOverlay(label) {this.labels.push(label)}
-    removeOverlay(label) {this.labels=this.labels.filter(x=>x!==label)}
+    removeOverlay(label) {if (!config.sdkDelayedRemove) this.labels=this.labels.filter(x=>x!==label)}
     addEventListener(name,fn) {this.events.set(name,fn)}
     removeEventListener(name) {this.events.delete(name)}
     fire(name) {this.events.get(name)?.()}
@@ -338,4 +338,45 @@ test('inline responsive map size change revokes stale photo pixels and re-querie
   const finalCount=f.cancels.length
   f.resizeObservers[0].fire()
   assert.equal(f.cancels.length,finalCount,'no resize callback after disposal')
+})
+
+test('bootstrap 1,198 total never appears as a 397-photo camera label, even with delayed SDK removal', async () => {
+  const f=buildInlineFixture({sdkDelayedRemove:true})
+  const worldSelection={cell_x:0,cell_y:0,asset_id:111,node_id:211,node_revision:3,photo_count:1198}
+  const world={latitude:30,longitude:119,count:1198,selection:worldSelection}
+  const cameraSelection={cell_x:2,cell_y:3,asset_id:222,node_id:322,node_revision:4,photo_count:397}
+  const camera={latitude:31,longitude:120,count:397,selection:cameraSelection}
+  const visible=()=>f.map.labels.filter(label=>label.style?.display!=='none')
+
+  assert.equal(f.host.replaceAuthorizedCells([world],false),true)
+  assert.equal(await f.host.beginAuthorizedInlineSession(new AbortController().signal),true)
+  assert.equal(visible().length,0,
+    'initial worldwide overview fits the camera but must not render a global count')
+  assert.equal(f.host.replaceAuthorizedCells([camera],true),true)
+  assert.equal(visible().length,1)
+  assert.match(visible()[0].text,/397张/)
+  const cameraLabel=visible()[0]
+  assert.equal(f.host.setPhotoCoverSelections([cameraSelection]),true)
+  assert.equal(cameraLabel.style.display,'none',
+    'numeric camera label is hidden synchronously, even if removeOverlay is delayed')
+  assert.equal(visible().length,0,'one trusted photo cover owns the entire marker layer')
+  cameraLabel.trigger()
+  assert.deepEqual(f.clicks,[],'removed numeric SDK click listener stays inert')
+
+  // Simulate an earlier live-camera 1,198 count being replaced by the
+  // current signed 397 count before the provider physically removes its DOM.
+  assert.equal(f.host.setPhotoCoverSelections([]),true)
+  assert.equal(f.host.replaceAuthorizedCells([world],true),true)
+  const obsolete=visible().at(-1)
+  assert.match(obsolete.text,/1,198张/)
+  assert.equal(f.host.replaceAuthorizedCells([camera],true),true)
+  assert.equal(obsolete.style.display,'none')
+  assert.deepEqual(visible().map(label=>label.text),['▣ 397张'])
+  obsolete.trigger()
+  assert.deepEqual(f.clicks,[],'old global/camera marker cannot reopen stale photos')
+  assert.equal(f.host.setPhotoCoverSelections([cameraSelection]),true)
+  assert.equal(visible().length,0)
+  assert.equal(f.host.replaceAuthorizedCells([camera],'untrusted'),false,
+    'invalid camera presentation scope cannot make labels clickable')
+  f.host.dispose()
 })
