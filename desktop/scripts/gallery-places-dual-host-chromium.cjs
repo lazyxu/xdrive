@@ -2001,6 +2001,10 @@ async function testMobilePhotoDrawer(browser,mode,port){
       await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
     await swipeMobileDrawerGrip(page,'up')
     await drawer.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').waitFor({state:'visible'})
+    // The shared virtual Gallery measures its visible rows after the
+    // expansion state commits. Confirm actual mounted pixels, not just header.
+    await drawer.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor({state:'visible'})
     record(mode+': real upward touch restores full trusted Gallery grid',
       await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
     const before=await page.evaluate(()=>window.__mapProbe.galleryPageReads.filter(
@@ -4093,9 +4097,20 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
       focused&&photos===9&&errors.length===0)
     await page.getByRole('button',{name:'关闭照片抽屉'}).click()
     await drawer.waitFor({state:'hidden'})
+    const authorizedBeforeReopen=await page.evaluate(()=>
+      window.__mapProbe.photoPreviewRanges.length)
     await cover.focus()
     await cover.press('Enter')
     await drawer.waitFor({state:'visible'})
+    // Do not count old mounted Cell cards or the first empty virtual frame.
+    // A new signed /cell-items page must be accepted before the visible
+    // 9-photo viewport can count as successfully reopened.
+    await page.waitForFunction(before=>{
+      const pages=window.__mapProbe.photoPreviewRanges
+      return pages.length>before && pages.at(-1)?.total===9
+    },authorizedBeforeReopen)
+    await drawer.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor({state:'visible'})
     record(mode+': '+scheme+' current map cover keyboard Enter reopens Owner drawer',
       await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===9&&
       errors.length===0)
