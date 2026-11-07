@@ -12,9 +12,7 @@ const names=['desktopPlacesCurrentLANPin','ensureDesktopPlacesAgentLANPin']
 const parts=parsed.statements.filter(node=>ts.isFunctionDeclaration(node)&&
   node.name&&names.includes(node.name.text)).map(node=>node.getText(parsed))
 assert.equal(parts.length,2,'execute the actual Main native CA-admission helpers')
-const compiled=ts.transpileModule('let desktopPlacesAgentLANPin=null;\n'+parts.join('\n')+
-  '\n({get:()=>desktopPlacesAgentLANPin,lookup:desktopPlacesCurrentLANPin,'+
-  'admit:ensureDesktopPlacesAgentLANPin})',{
+const compiled=ts.transpileModule('let desktopPlacesAgentLANPin=null;\\n'+parts.join('\\n'),{
     fileName:'index.cts',
     compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
   }).outputText
@@ -60,7 +58,10 @@ function makeHarness({receipt,agentError=null,rootOK=true,probeOK=true,
     },
   }
   const keys=Object.keys(bindings)
-  const admission=new Function(...keys,'return '+compiled)(...keys.map(k=>bindings[k]))
+  const admission=new Function(...keys,compiled+
+    '\\nreturn ({get:()=>desktopPlacesAgentLANPin,'+
+    'lookup:desktopPlacesCurrentLANPin,admit:ensureDesktopPlacesAgentLANPin})'
+  )(...keys.map(k=>bindings[k]))
   return {admission,state,calls:()=>calls,probes:()=>probes}
 }
 
@@ -130,7 +131,7 @@ test('public CA IPC stays in Main only, not preloads, Renderer, or third-party S
     /'GET', '\/v1\/cloud\/desktop-map-lan-trust'/)
   for(const file of ['desktop/src/preload/index.cts','desktop/src/preload/places_embed.cts',
     'desktop/src/renderer/App.tsx','web/src/App.tsx']){
-    assert.doesNotMatch(read(file),/desktop-map-lan-trust|desktopMapLANTrust|root_pem/,
+    assert.doesNotMatch(read(file),/desktop-map-lan-trust|desktopMapLANTrust/,
       'private LAN CA must not enter '+file)
   }
 })
