@@ -248,8 +248,7 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 	}
 	// An independently authenticated session for the same Owner is not part
 	// of this revoked Agent's browser lineage; foreign Owner also survives.
-	if got := request(http.MethodGet, "/api/v1/me", independent.AccessToken, "", "");
-		got.Code != http.StatusOK {
+	if got := request(http.MethodGet, "/api/v1/me", independent.AccessToken, "", ""); got.Code != http.StatusOK {
 		t.Fatalf("Agent logout revoked an independent Owner login: HTTP %d", got.Code)
 	}
 	if _, code := readCells(independent.AccessToken, ""); code != http.StatusForbidden {
