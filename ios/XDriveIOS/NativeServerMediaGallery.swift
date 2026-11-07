@@ -1331,6 +1331,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     let albumID: String?
     let placeID: String?
     let search: String
+    let captureRange: XDriveIOSNativePhotoMapCaptureRange?
     let offset: Int
     let expectedTotal: Int
     let density: XDriveIOSNativePhotoWallDensity
@@ -1385,15 +1386,17 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                     textFont: .caption
                 ) {
                     model.load(login: login, albumID: albumID, placeID: placeID,
-                               offset: offset, search: search)
+                               offset: offset, search: search,
+                                captureRange: captureRange)
                 }
             }
         }
         .id("cloud-range:\(offset)")
-        .task(id: "\(offset)-\(search)-\(albumID ?? "")-\(placeID ?? "")-\(login.owner?.ownerID ?? 0)-\(viewerActive)") {
+        .task(id: "\(offset)-\(search)-\(captureRange?.fromRFC3339 ?? "")-\(captureRange?.toRFC3339 ?? "")-\(albumID ?? "")-\(placeID ?? "")-\(login.owner?.ownerID ?? 0)-\(viewerActive)") {
             guard !viewerActive else { return }
             model.load(login: login, albumID: albumID, placeID: placeID,
-                       offset: offset, search: search)
+                       offset: offset, search: search,
+                        captureRange: captureRange)
         }
         .onChange(of: model.busy) { pending in
             guard !pending, let page = model.page else { return }
