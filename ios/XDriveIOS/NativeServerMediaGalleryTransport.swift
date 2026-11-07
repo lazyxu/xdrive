@@ -133,8 +133,8 @@ private final class XDriveIOSNativeMediaRejectRedirect: XDriveIOSServerTLSDelega
     }
 }
 
-/// Read-only native transport. Uses the same Server's documented media
-/// endpoints as Web/PWA; never imports a browser cookie or writes CAS.
+/// Owner-authenticated native media transport including explicit OCR queue requests.
+/// Uses the HTTPS endpoints shared with Web/PWA; never imports cookies or writes CAS.
 struct XDriveIOSNativeMediaGalleryReader {
     static let pageSize = 48
     let owner: XDriveNativeOwnerRoot
@@ -232,6 +232,22 @@ struct XDriveIOSNativeMediaGalleryReader {
             throw XDriveIOSNativeMediaReadFailure.invalidScope
         }
         return escaped
+    }
+
+    func ocr(_ target: XDriveIOSNativeOCRTarget) async throws -> XDriveIOSNativeOCRResult? {
+        guard target.id > 0, target.revision > 0, target.size >= 0 else {
+            throw XDriveIOSNativeMediaReadFailure.invalidScope
+        }
+        let bytes = try await read(try endpoint("/api/v1/media/items/\(target.id)"), maximum: 128 * 1024)
+        return try XDriveIOSNativeOCRPolicy.detail(bytes, target: target)
+    }
+
+    /// Explicit whole-Owner reanalysis: same durable queue as Web; one POST, no retry.
+    func reanalyzeOCR() async throws {
+        let body = try JSONEncoder().encode(["kinds": ["smart_search"]])
+        let bytes = try await read(try endpoint("/api/v1/photo-intelligence/reanalyze"),
+            method: "POST", maximum: 4096, body: body, expectedStatus: 202)
+        try XDriveIOSNativeOCRPolicy.acceptReanalysis(bytes, ownerID: owner.ownerID)
     }
 
     func page(offset: Int, albumID: String? = nil,

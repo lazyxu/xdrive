@@ -17,6 +17,45 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class XDriveApiTest {
+    @Test fun ocrReadsCurrentPrivateDetailAndRejectsStaleRevision() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val original = DriveNode(7, 1, "photo.jpg", "file", 12, revision = 4)
+            val payload = """{"node":{"id":7,"parent_id":1,"name":"photo.jpg","type":"file","size":12,"revision":4},
+                "metadata":{"media_kind":"image","has_thumbnail":true},
+                "ocr":{"state":"ready","text":"中文 XDRIVE"}}"""
+            server.enqueue(MockResponse().setBody(payload))
+            assertEquals("中文 XDRIVE", api.filesMediaItem("owner-secret", original).ocr!!.text)
+            val request = server.takeRequest()
+            assertEquals("/api/v1/media/items/7", request.path)
+            assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+            server.enqueue(MockResponse().setBody(payload.replace("\"revision\":4", "\"revision\":5")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.filesMediaItem("owner-secret", original)
+            }.reason)
+        } }
+    }
+
+    @Test fun ocrReanalysisRequiresExactOwnerAndAcceptedReceipt() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val me = """{"id":11,"username":"owner","role":"user","must_change_password":false,
+                "pwa_offline_instance_id":"test-instance"}"""
+            for ((status, owner) in listOf(202 to 11, 200 to 11, 202 to 12)) {
+                server.enqueue(MockResponse().setBody(me))
+                server.enqueue(MockResponse().setResponseCode(status).setBody(
+                    """{"owner_id":$owner,"accepted":["smart_search"]}"""))
+                if (status == 202 && owner == 11) api.reanalyzePhotoOCR("owner-secret")
+                else assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                    api.reanalyzePhotoOCR("owner-secret")
+                }.reason)
+                assertEquals("/api/v1/me", server.takeRequest().path)
+                val req = server.takeRequest()
+                assertEquals("POST", req.method)
+                assertEquals("/api/v1/photo-intelligence/reanalyze", req.path)
+                assertEquals(Json.parseToJsonElement("""{"kinds":["smart_search"]}"""),
+                    Json.parseToJsonElement(req.body.readUtf8()))
+            }
+        } }
+    }
     @Test fun faceReanalysisRequires202AndExactOwnerReceiptWithoutReplay() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             val me = """{"id":7,"username":"owner","role":"user","must_change_password":false,"pwa_offline_instance_id":"server-one"}"""
