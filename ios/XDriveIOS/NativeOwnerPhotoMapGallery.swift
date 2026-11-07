@@ -206,7 +206,9 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
     }
 }
 
-private struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
+// Presentation-only MapKit surface shared by ordinary Owner maps and exact
+// trip-only maps. Data selection and authentication stay in their callers.
+struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     let overview: XDriveIOSNativeOwnerMapOverview?
     let coverImages: [String: UIImage]
     let markersEnabled: Bool

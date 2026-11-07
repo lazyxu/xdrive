@@ -651,6 +651,17 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-owner-exact-trip-policy"
           node --test desktop/tests/ios-native-exact-trips.cjs
 
+      - name: Verify trip-only Owner MapKit scope and dateline camera
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeOwnerPhotoMapOverview.swift \
+            ios/XDriveIOS/NativeExactTripMapCameraPolicy.swift \
+            ios/tests/NativeExactTripMapCameraPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-exact-trip-map-camera"
+          "$RUNNER_TEMP/xdrive-ios-exact-trip-map-camera"
+          node --test desktop/tests/ios-native-exact-trip-map.cjs
+
       - name: Verify native Files Owner Range, search and fixed-tab wiring
         run: |
           set -euo pipefail
