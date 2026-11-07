@@ -270,3 +270,62 @@ enum XDriveIOSNativeFilesPagePolicy {
             }
     }
 }
+
+
+/// Identical authenticated child-position contract to Web/PWA. This endpoint
+/// provides the exact new sort/group ordinal without scanning 100k siblings.
+struct XDriveIOSNativeFilesChildPosition: Decodable {
+    let node_id: UInt64
+    let revision: UInt64
+    let index: Int
+    let sort: String
+    let order: String
+    let group: String
+    let folders_first: Bool
+}
+
+/// No scroll jump may be committed solely from a returned ordinal. The
+/// destination 64-row Server Range must prove the same original Node revision.
+enum XDriveIOSNativeFilesReanchorPolicy {
+    static func pageOffset(
+        _ position: XDriveIOSNativeFilesChildPosition,
+        node: XDriveIOSNativeFilesNode, parentID: UInt64,
+        sort: String, order: String, grouping: String, foldersFirst: Bool
+    ) -> Int? {
+        guard parentID > 0, node.id > 0, node.revision > 0,
+              node.parent_id == parentID,
+              position.node_id == node.id,
+              position.revision == node.revision,
+              position.index >= 0,
+              position.index < XDriveIOSNativeFilesPagePolicy.maximumCount,
+              position.sort == sort, position.order == order,
+              position.group == grouping,
+              position.folders_first == foldersFirst,
+              XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order),
+              ["none", "type", "modified", "size"].contains(grouping)
+        else { return nil }
+        return (position.index / XDriveIOSNativeFilesPagePolicy.pageSize) *
+            XDriveIOSNativeFilesPagePolicy.pageSize
+    }
+
+    static func verifiedDestination(
+        _ page: XDriveIOSNativeFilesRange,
+        position: XDriveIOSNativeFilesChildPosition,
+        node: XDriveIOSNativeFilesNode, parentID: UInt64,
+        sort: String, order: String, grouping: String, foldersFirst: Bool
+    ) -> Bool {
+        guard let offset = pageOffset(
+            position, node: node, parentID: parentID,
+            sort: sort, order: order, grouping: grouping, foldersFirst: foldersFirst
+        ), page.offset == offset, page.total_count > position.index,
+              XDriveIOSNativeFilesPagePolicy.validChildren(
+                page, parentID: parentID, offset: offset, sort: sort, order: order
+              ) else { return false }
+        let localIndex = position.index - offset
+        guard localIndex >= 0, localIndex < page.items.count else { return false }
+        let found = page.items[localIndex]
+        return found.id == node.id && found.revision == node.revision &&
+            found.parent_id == parentID && found.type == node.type &&
+            found.name == node.name && found.size == node.size
+    }
+}
