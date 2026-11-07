@@ -5165,7 +5165,8 @@ export class XDriveApi {
       while (!signal.aborted) {
         const next = await reader.read()
         if (next.done) break
-        pending += decoder.decode(next.value, { stream: true }).replace(/\r\n/g, '\n')
+        pending += decoder.decode(next.value, { stream: true })
+        pending = pending.replace(/\r\n/g, '\n')
         if (pending.length > 8192) throw new Error('剪贴板通知帧超过安全上限。')
         let boundary = pending.indexOf('\n\n')
         while (boundary >= 0) {
