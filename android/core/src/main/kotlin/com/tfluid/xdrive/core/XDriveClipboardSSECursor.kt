@@ -47,7 +47,7 @@ class XDriveClipboardSSECursor(after: Long = 0L) {
                 require(value == "{}") { "Clipboard SSE may not carry content" }
                 dataSeen = true
             }
-            "retry" -> require(value.toIntOrNull() in 0..60_000)
+            "retry" -> require(value.toIntOrNull()?.let { it in 0..60_000 } == true)
             else -> throw IllegalArgumentException("Unknown Clipboard SSE field")
         }
         return false
