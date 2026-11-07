@@ -189,7 +189,14 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     try { xDriveClipboardValidateText(draft) } catch (error) {
       setMessage(errorLabel(error)); return
     }
-    if (pending.current?.text === draft) {
+    if (pending.current) {
+      // An unknown server ACK is not proof of failure. Editing or pasting a
+      // different draft must not silently discard the original retry receipt.
+      if (pending.current.text !== draft) {
+        setRetryExpired(true)
+        setMessage('上一条发送回执仍未确认。请先核对历史，或明确放弃旧回执后再发送新内容。')
+        return
+      }
       const age = Date.now() - pending.current.createdAt
       if (!Number.isFinite(age) || age < 0 || age >= CLIPBOARD_PENDING_RETRY_WINDOW_MS) {
         setRetryExpired(true)
