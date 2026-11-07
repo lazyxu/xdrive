@@ -428,6 +428,7 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
         sections: xDriveWorkspaceHostSections({
           adminRoleVerified: host.adminRoleVerified === true,
           showNotes: Boolean(notesPort),
+          showClipboard: Boolean(clipboardPort),
         }),
       }}
       onNavigate={(key) => {
