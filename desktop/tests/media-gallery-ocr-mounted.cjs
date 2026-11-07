@@ -12,8 +12,20 @@ const js = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   fileName: filename, compilerOptions: { module: ts.ModuleKind.CommonJS,
     target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
 }).outputText
+// Load the actual shared content identity implementation. A stub here would
+// miss OCR reads from an older photo revision or a replaced original.
+const identityFilename = path.resolve(__dirname, '../../ui/shared/src/photo-content-identity.ts')
+const identityJS = ts.transpileModule(fs.readFileSync(identityFilename, 'utf8'), {
+  fileName: identityFilename, compilerOptions: { module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+}).outputText
+const identity = {}
+new Function('exports', 'require', identityJS)(identity, name => {
+  throw Error('Unexpected content-identity dependency ' + name)
+})
 const exported = {}
 new Function('exports', 'require', js)(exported, name => {
+  if (name === '../photo-content-identity') return identity
   if (name === 'react') return React
   if (name === 'react/jsx-runtime') return require(name)
   if (name === '@mui/material') return new Proxy({}, { get: (_, key) => String(key) })
