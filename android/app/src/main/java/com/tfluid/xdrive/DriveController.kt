@@ -4715,6 +4715,11 @@ class DriveController(
     suspend fun clipboardClear() {
         withNotesOwner { service, token -> service.clipboardClear(token) }
     }
+    /** Foreground-only Owner SSE. A new verified bearer is requested on each
+     * bounded stream connection, and the Owner is rechecked after it closes.
+     */
+    suspend fun clipboardWatch(after: Long, onChange: suspend () -> Unit): Long =
+        withNotesOwner { service, token -> service.clipboardWatch(token, after, onChange) }
 
     suspend fun notesInitialize() {
         withNotesOwner { service, token -> service.notesInitialize(token) }
