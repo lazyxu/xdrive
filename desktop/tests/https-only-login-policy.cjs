@@ -72,7 +72,30 @@ test('iOS simplifies route selection without TLS or Owner identity bypass', () =
   assert.match(route, /guard data\.count < maxBytes/)
   assert.match(route, /throw AuthFailure\.invalidLANProbe/)
   assert.match(route, /return origin/)
-  assert.doesNotMatch(route, /serverTrust|SecTrust|allowsInsecureHTTPLoads/)
+  // Only the anonymous endpoint-choice path must remain free of custom
+  // trust overrides. The separate stage-3 IP probe now intentionally uses a
+  // shared, strictly pinned Apple Security challenge callback to diagnose
+  // a genuine TLS rejection, so banning "serverTrust" in the whole file
+  // would reject a secure implementation rather than detect a bypass.
+  const choiceStart = route.indexOf('    static func selectOrigin(origin: URL, lanIP: String) async throws -> URL')
+  const choiceEnd = route.indexOf('    /// Reuse the Desktop bootstrap:', choiceStart)
+  assert.ok(choiceStart >= 0 && choiceEnd > choiceStart,
+    'selectOrigin security boundary remains explicit and testable')
+  const anonymousChoice = route.slice(choiceStart, choiceEnd)
+  assert.doesNotMatch(anonymousChoice,
+    /serverTrust|SecTrust|NSURLAuthenticationMethodServerTrust|allowsInsecureHTTPLoads|allowInsecure/)
+  assert.match(anonymousChoice, /\.cannotConnectToHost, \.timedOut, \.networkConnectionLost/)
+  assert.doesNotMatch(anonymousChoice, /\.serverCertificateUntrusted|\.secureConnectionFailed/,
+    'TLS identity failures must not fall back to credential-bearing DNS login')
+  const pinnedTrust = read('ios/XDriveIOS/NativeLANTrust.swift')
+  assert.match(route, /override func urlSession\(_ session: URLSession, didReceive challenge:/)
+  assert.match(route, /super\.urlSession\(session, didReceive: challenge\)/)
+  assert.match(route, /disposition == \.cancelAuthenticationChallenge/)
+  assert.match(pinnedTrust, /SecTrustSetAnchorCertificatesOnly\(trust, true\)/)
+  assert.match(pinnedTrust, /SecTrustSetNetworkFetchAllowed\(trust, false\)/)
+  assert.match(pinnedTrust, /SecPolicyCreateSSL\(true, target\.ip as CFString\)/)
+  assert.match(pinnedTrust, /return SecTrustEvaluateWithError\(trust, nil\)/)
+  assert.doesNotMatch(route + pinnedTrust, /allowsInsecureHTTPLoads|trustAllCertificates|InsecureSkipVerify/)
   assert.match(login, /let origin = try await XDriveIOSNativeLANLoginRoute\.selectOrigin/)
   assert.match(login, /origin: origin,\s*accessToken: accessToken/)
 })
