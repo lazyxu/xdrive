@@ -615,13 +615,13 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
 	// Clipboard is a separate Owner-scoped API; it never uses Files copy/paste.
-    mux.HandleFunc("GET /v1/cloud/clipboard/vault", h.cloudClipboardVault)
-    mux.HandleFunc("PUT /v1/cloud/clipboard/check", h.cloudClipboardCheck)
-    mux.HandleFunc("GET /v1/cloud/clipboard/items", h.cloudClipboardList)
-    mux.HandleFunc("POST /v1/cloud/clipboard/items", h.cloudClipboardCreate)
-    mux.HandleFunc("DELETE /v1/cloud/clipboard/items", h.cloudClipboardClear)
-    mux.HandleFunc("DELETE /v1/cloud/clipboard/items/{id}", h.cloudClipboardDelete)
-    mux.HandleFunc("POST /v1/cloud/notes/namespace", h.cloudNotesNamespace)
+	mux.HandleFunc("GET /v1/cloud/clipboard/vault", h.cloudClipboardVault)
+	mux.HandleFunc("PUT /v1/cloud/clipboard/check", h.cloudClipboardCheck)
+	mux.HandleFunc("GET /v1/cloud/clipboard/items", h.cloudClipboardList)
+	mux.HandleFunc("POST /v1/cloud/clipboard/items", h.cloudClipboardCreate)
+	mux.HandleFunc("DELETE /v1/cloud/clipboard/items", h.cloudClipboardClear)
+	mux.HandleFunc("DELETE /v1/cloud/clipboard/items/{id}", h.cloudClipboardDelete)
+	mux.HandleFunc("POST /v1/cloud/notes/namespace", h.cloudNotesNamespace)
 	mux.HandleFunc("GET /v1/cloud/notes", h.cloudNotesList)
 	mux.HandleFunc("POST /v1/cloud/notes", h.cloudNotesCreate)
 	mux.HandleFunc("POST /v1/cloud/notes/import-ios", h.cloudNotesImportIOS)
@@ -1005,9 +1005,9 @@ func (h *desktopIPCHandler) viewerDownloadCapabilities() []string {
 	if _, notes := h.ctrl.(desktopIPCNotesPort); notes {
 		capabilities = append(capabilities, "cloud-notes")
 	}
-    if _, clipboard := h.ctrl.(desktopIPCClipboardPort); clipboard {
-        capabilities = append(capabilities, "cloud-clipboard")
-    }
+	if _, clipboard := h.ctrl.(desktopIPCClipboardPort); clipboard {
+		capabilities = append(capabilities, "cloud-clipboard")
+	}
 	if !h.backupOnly {
 		if _, supported := h.ctrl.(interface {
 			CloudIssueDesktopMapGuestGrant(context.Context) (client.DesktopMapGuestGrant, error)

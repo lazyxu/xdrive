@@ -130,7 +130,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		{http.MethodGet, "/api/v1/clipboard/vault"},
 		{http.MethodPut, "/api/v1/clipboard/vault/check"},
 		{http.MethodGet, "/api/v1/clipboard/items"},
-        {http.MethodGet, "/api/v1/clipboard/events"},
+		{http.MethodGet, "/api/v1/clipboard/events"},
 		{http.MethodPost, "/api/v1/clipboard/items"},
 		{http.MethodDelete, "/api/v1/clipboard/items/1"},
 		{http.MethodDelete, "/api/v1/clipboard/items"},
@@ -272,11 +272,11 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	}
 	request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
 		strings.NewReader(payload(firstID, ciphertext)), http.StatusOK)
-    var changeCount int64
-    if err := db.Model(&meta.ClipboardChange{}).Where("owner_id = ?", ownerA.ID).
-        Count(&changeCount).Error; err != nil || changeCount != 1 {
-        t.Fatalf("first create must append one Owner event, idempotent retry none: %v count=%d", err, changeCount)
-    }
+	var changeCount int64
+	if err := db.Model(&meta.ClipboardChange{}).Where("owner_id = ?", ownerA.ID).
+		Count(&changeCount).Error; err != nil || changeCount != 1 {
+		t.Fatalf("first create must append one Owner event, idempotent retry none: %v count=%d", err, changeCount)
+	}
 	request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
 		strings.NewReader(payload(firstID, base64.StdEncoding.EncodeToString([]byte("different secure data")))),
 		http.StatusConflict)
@@ -370,16 +370,16 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	if retained != clipboardPageSize {
 		t.Fatalf("concurrent same-Owner sends retained %d rows, wanted %d", retained, clipboardPageSize)
 	}
-    if err := db.Model(&meta.ClipboardChange{}).
-        Where("owner_id = ?", ownerA.ID).Count(&changeCount).Error; err != nil ||
-        changeCount == 0 || changeCount > clipboardChangeCap {
-        t.Fatalf("SSE events must be bounded per Owner: %v count=%d", err, changeCount)
-    }
-    var bEvents int64
-    if err := db.Model(&meta.ClipboardChange{}).
-        Where("owner_id = ?", ownerB.ID).Count(&bEvents).Error; err != nil || bEvents != 0 {
-        t.Fatalf("one Owner's events reached another Owner: %v count=%d", err, bEvents)
-    }
+	if err := db.Model(&meta.ClipboardChange{}).
+		Where("owner_id = ?", ownerA.ID).Count(&changeCount).Error; err != nil ||
+		changeCount == 0 || changeCount > clipboardChangeCap {
+		t.Fatalf("SSE events must be bounded per Owner: %v count=%d", err, changeCount)
+	}
+	var bEvents int64
+	if err := db.Model(&meta.ClipboardChange{}).
+		Where("owner_id = ?", ownerB.ID).Count(&bEvents).Error; err != nil || bEvents != 0 {
+		t.Fatalf("one Owner's events reached another Owner: %v count=%d", err, bEvents)
+	}
 	other = request(t, router, http.MethodGet, "/api/v1/clipboard/items", b, nil, http.StatusOK)
 	if json.Unmarshal(other.Body.Bytes(), &otherList) != nil || len(otherList.Items) != 0 {
 		t.Fatalf("concurrent Owner A writes leaked to Owner B: %s", other.Body.String())

@@ -115,7 +115,7 @@ internal fun nativePhotoBackupCanConfirm(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
+internal fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
     onDownload: ((DriveNode) -> Unit)? = null,
     onUpload: (() -> Unit)? = null, galleryFirstOnLogin: Boolean = true,

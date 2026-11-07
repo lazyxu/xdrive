@@ -35,10 +35,10 @@ func (ClipboardItem) TableName() string { return "xd_clipboard_items" }
 // contains no plaintext, key material, nonce or even encrypted payload; clients
 // re-fetch the bounded mailbox through the existing revocable Owner API.
 type ClipboardChange struct {
-    ID uint64 `gorm:"primaryKey"`
-    OwnerID uint64 `gorm:"not null;index:idx_clipboard_change_owner,priority:1"`
-    Kind string `gorm:"size:12;not null"`
-    CreatedAt time.Time `gorm:"not null;index:idx_clipboard_change_owner,priority:2"`
+	ID        uint64    `gorm:"primaryKey"`
+	OwnerID   uint64    `gorm:"not null;index:idx_clipboard_change_owner,priority:1"`
+	Kind      string    `gorm:"size:12;not null"`
+	CreatedAt time.Time `gorm:"not null;index:idx_clipboard_change_owner,priority:2"`
 }
 
 func (ClipboardChange) TableName() string { return "xd_clipboard_changes" }

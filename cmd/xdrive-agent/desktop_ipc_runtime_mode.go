@@ -2,7 +2,7 @@ package main
 
 import (
 	"net/http"
-    "strconv"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -181,22 +181,26 @@ func validBackupOnlyNoteID(value string) bool {
 // Backup-only DSM receives only these explicitly audited six Owner Clipboard
 // operations; a path prefix alone never admits unrelated cloud methods.
 func backupOnlyAllowedClipboardRequest(method, path string) bool {
-    switch path {
-    case "/v1/cloud/clipboard/vault", "/v1/cloud/clipboard/items":
-        return method == http.MethodGet || (path == "/v1/cloud/clipboard/items" &&
-            (method == http.MethodPost || method == http.MethodDelete))
-    case "/v1/cloud/clipboard/check":
-        return method == http.MethodPut
-    }
-    const prefix = "/v1/cloud/clipboard/items/"
-    if !strings.HasPrefix(path, prefix) || method != http.MethodDelete {return false}
-    raw := strings.TrimPrefix(path,prefix)
-    id,err:=strconv.ParseUint(raw,10,64)
-    return err==nil && id>0 && strconv.FormatUint(id,10)==raw
+	switch path {
+	case "/v1/cloud/clipboard/vault", "/v1/cloud/clipboard/items":
+		return method == http.MethodGet || (path == "/v1/cloud/clipboard/items" &&
+			(method == http.MethodPost || method == http.MethodDelete))
+	case "/v1/cloud/clipboard/check":
+		return method == http.MethodPut
+	}
+	const prefix = "/v1/cloud/clipboard/items/"
+	if !strings.HasPrefix(path, prefix) || method != http.MethodDelete {
+		return false
+	}
+	raw := strings.TrimPrefix(path, prefix)
+	id, err := strconv.ParseUint(raw, 10, 64)
+	return err == nil && id > 0 && strconv.FormatUint(id, 10) == raw
 }
 
 func fullAgentOnlyRequest(method, path string) bool {
-    if backupOnlyAllowedClipboardRequest(method, path) {return false}
+	if backupOnlyAllowedClipboardRequest(method, path) {
+		return false
+	}
 	if backupOnlyAllowedNotesRequest(method, path) {
 		return false
 	}
