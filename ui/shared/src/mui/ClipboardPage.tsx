@@ -7,6 +7,7 @@ import {
 } from '../clipboard-crypto'
 import { XDriveClipboardActionFence } from '../clipboard-action-fence'
 import { xDriveClipboardEncryptForDevice, type XDriveClipboardTargetWire } from '../clipboard-target-crypto'
+import { ClipboardFileNodePicker, type ClipboardFileBrowsePort } from './ClipboardFileNodePicker'
 
 export type XDriveClipboardItem = {
   id: number
@@ -57,6 +58,7 @@ export type XDriveClipboardDataPort = {
   /** Owner session only; public X25519 keys, no source/backup grants. */
   listDevices?(signal?: AbortSignal): Promise<{ devices: XDriveClipboardTargetDevice[] }>
   revokeDevice?(deviceID: string, signal?: AbortSignal): Promise<void>
+  browseFiles?: ClipboardFileBrowsePort
 }
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
@@ -91,6 +93,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const [targetDevices, setTargetDevices] = useState<XDriveClipboardTargetDevice[]>([])
   const [targetID, setTargetID] = useState('')
   const [confirmRevoke, setConfirmRevoke] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [referenceKind, setReferenceKind] = useState<'text' | 'image' | 'file'>('text')
   const [nodeID, setNodeID] = useState('')
   const active = useRef(true)
@@ -409,6 +412,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     setTargetDevices([])
     setTargetID('')
     setConfirmRevoke(false)
+    setPickerOpen(false)
     setReferenceKind('text')
     setNodeID('')
     setMonitorEnabled(false)
@@ -458,7 +462,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               {port.listDevices ? (
                 <Stack spacing={1}>
                   <TextField select label="发送范围" value={targetID}
-                    onChange={e => { setTargetID(e.target.value); setConfirmRevoke(false) }} size="small">
+                    onChange={e => { setTargetID(e.target.value); setConfirmRevoke(false); setPickerOpen(false) }} size="small">
                     <MenuItem value="">当前 Owner 所有已解锁客户端（广播）</MenuItem>
                     {targetDevices.map(device => (
                       <MenuItem key={device.device_id} value={device.device_id}>
@@ -474,10 +478,29 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                         <MenuItem value="image">现有云端图片引用</MenuItem>
                         <MenuItem value="file">现有云端文件引用</MenuItem>
                       </TextField>
-                      {referenceKind !== 'text' ? <TextField label="已上传的云端文件 ID"
-                        size="small" inputProps={{ inputMode: 'numeric' }}
-                        value={nodeID} onChange={e => setNodeID(e.target.value)}
-                        helperText="引用现有 CAS/UploadSession 完成的文件；不会重新上传或复制原件。" /> : null}
+                      {referenceKind !== 'text' ? (
+                        <>
+                          <TextField label="已上传的云端文件 ID"
+                            size="small" inputProps={{ inputMode: 'numeric', readOnly: !!port.browseFiles }}
+                            value={nodeID} onChange={e => setNodeID(e.target.value)}
+                            helperText="引用现有 CAS/UploadSession 完成的文件；不会重新上传或复制原件。" />
+                          {port.browseFiles ? (
+                            <>
+                              <Button size="small" variant="outlined" disabled={busy}
+                                onClick={() => setPickerOpen(true)}>从云端文件选择</Button>
+                              <ClipboardFileNodePicker
+                                open={pickerOpen && !!key && !!targetID}
+                                port={port.browseFiles} kind={referenceKind}
+                                onClose={() => setPickerOpen(false)}
+                                onSelect={item => {
+                                  setNodeID(String(item.id))
+                                  setPickerOpen(false)
+                                }}
+                              />
+                            </>
+                          ) : null}
+                        </>
+                      ) : null}
                       {port.revokeDevice ? (
                         confirmRevoke ? (
                           <Alert severity="warning" action={

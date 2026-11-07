@@ -16,6 +16,22 @@ export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: stri
     clear: signal => api.clipboardClear(signal),
     listDevices: signal => api.clipboardDevices(signal),
     revokeDevice: (id, signal) => api.clipboardRevokeDevice(id, signal),
+    browseFiles: {
+      root: async signal => {
+        const root = await api.root(signal)
+        return { id: root.id, name: root.name, type: root.type, size: root.size }
+      },
+      page: async (folderID, cursor, signal) => {
+        const result = await api.listPageAbortable(
+          folderID, { limit: 50, cursor, sort: 'name', order: 'asc' }, signal)
+        return {
+          items: result.items.map(item => ({
+            id: item.id, name: item.name, type: item.type, size: item.size,
+          })),
+          next_cursor: result.next_cursor,
+        }
+      },
+    },
     copyText: text => xDriveBrowserCopyText(text),
     watchChanges: (onChange, signal) => api.clipboardWatchChanges(onChange, signal),
     readText: async () => {
