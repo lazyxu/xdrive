@@ -95,6 +95,9 @@ private struct XDriveIOSNativePhotoPriorityActionKey: EnvironmentKey {
 private struct XDriveIOSNativePhotoProcessingIDKey: EnvironmentKey {
     static let defaultValue: String? = nil
 }
+private struct XDriveIOSNativePhotoOnlyNewSinceKey: EnvironmentKey {
+    static let defaultValue: Date? = nil
+}
 extension EnvironmentValues {
     var xdriveNativePhotoPriorityAction: ((String, Bool) -> Void)? {
         get { self[XDriveIOSNativePhotoPriorityActionKey.self] }
@@ -103,5 +106,9 @@ extension EnvironmentValues {
     var xdriveNativePhotoProcessingID: String? {
         get { self[XDriveIOSNativePhotoProcessingIDKey.self] }
         set { self[XDriveIOSNativePhotoProcessingIDKey.self] = newValue }
+    }
+    var xdriveNativePhotoOnlyNewSince: Date? {
+        get { self[XDriveIOSNativePhotoOnlyNewSinceKey.self] }
+        set { self[XDriveIOSNativePhotoOnlyNewSinceKey.self] = newValue }
     }
 }
