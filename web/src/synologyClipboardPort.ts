@@ -40,7 +40,7 @@ export function createXDriveDSMClipboardPort(
   return {
     // A single DSM browser Host instance never persists a key; Server/Owner
     // scope is checked on every request. This key is UI lifecycle-only.
-    ownerScopeKey: 'dsm:' + window.location.origin,
+    ownerScopeKey: 'dsm:' + expectedOwnerScope,
     claimScope(vault) {
       if (!Number.isSafeInteger(vault.owner_id) || !vault.owner_id || !server) {
         throw new Error('未取得经过认证的 DSM Clipboard Owner ID')
