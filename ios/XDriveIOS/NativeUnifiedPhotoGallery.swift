@@ -59,7 +59,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 // Viewing thumbnails must never start a whole-library SHA-256
                 // job. A user explicitly starts the optional read-only audit.
                 guard explicitOriginalAudit, phase == .active, selected == nil else { return }
+                let request = indexRequest
                 await timeline.scanLocal(login: login, retryUnavailable: retryUnavailable)
+                if indexRequest == request { explicitOriginalAudit = false }
             }
             .onAppear {
                 photoObserver.start()
@@ -70,7 +72,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 photoObserver.stop()
                 // A full-screen viewer temporarily covers the wall. Preserve
                 // its cursor index until the viewer returns to its exact row.
-                if selected == nil { started = false; timeline.reset(); wall.reset() }
+                if selected == nil {
+                    started = false
+                    explicitOriginalAudit = false
+                    timeline.reset()
+                    wall.reset()
+                    indexRequest = UUID()
+                }
             }
             .onChange(of: photoObserver.change) { _ in reset() }
             .onChange(of: login.owner) { _ in
