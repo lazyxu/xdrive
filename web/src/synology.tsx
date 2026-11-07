@@ -395,10 +395,15 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
     return cgi && notesOwnerScope
       ? createXDriveDSMNotesPort(cgi, notesOwnerScope, notesImagesEnabled) : undefined
   }, [host, notesOwnerScope, notesImagesEnabled])
+  const clipboardPort = useMemo(() => {
+    const cgi = host.services?.localBackupClient
+    return cgi && clipboardOwnerScope
+      ? createXDriveDSMClipboardPort(cgi, clipboardOwnerScope) : undefined
+  }, [host, clipboardOwnerScope])
   const notesHost = useMemo(() => ({
     ...host,
-    services: { ...host.services, notesPage: notesPort },
-  }), [host, notesPort])
+    services: { ...host.services, notesPage: notesPort, clipboardPage: clipboardPort },
+  }), [host, notesPort, clipboardPort])
   // Shared application navigation owns the same-route refresh lifecycle,
   // Server-admin gate and disposable foreground priority for every Host.
   // DSM contributes only authenticated domain ports, never page-specific JSX.
