@@ -124,6 +124,10 @@ struct XDriveIOSClipboardItem: Codable, Identifiable {
     let ciphertext: String
     let created_at: String
     let expires_at: String
+    let target_device_id: String?
+    let ephemeral_key: String?
+    let wrapped_key: String?
+    let node_id: UInt64?
     var encrypted: XDriveIOSClipboardCrypto.Encrypted {
         .init(client_event_id: client_event_id, kind: kind, nonce: nonce, ciphertext: ciphertext)
     }
@@ -148,11 +152,14 @@ private final class XDriveIOSClipboardRejectRedirects:
 struct XDriveIOSNativeClipboardClient {
     let owner: XDriveNativeOwnerRoot
     let token: String
-    init(owner: XDriveNativeOwnerRoot, accessToken: String) throws {
+    let deviceProof: XDriveIOSBackgroundDeviceProof?
+    init(owner: XDriveNativeOwnerRoot, accessToken: String,
+         deviceProof: XDriveIOSBackgroundDeviceProof? = nil) throws {
         guard owner.ownerID > 0, owner.origin.scheme == "https",
               !accessToken.isEmpty else { throw XDriveIOSClipboardCrypto.Failure.invalidOwner }
         self.owner = owner
         token = accessToken
+        self.deviceProof = deviceProof
     }
 
     var newVaultScope: String { 
@@ -181,6 +188,10 @@ struct XDriveIOSNativeClipboardClient {
         req.httpShouldHandleCookies = false
         req.timeoutInterval = 30
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let deviceProof {
+            req.setValue(deviceProof.deviceID, forHTTPHeaderField: "X-XDrive-Device-ID")
+            req.setValue(deviceProof.secret, forHTTPHeaderField: "X-XDrive-Device-Token")
+        }
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         if let body {
@@ -224,6 +235,10 @@ struct XDriveIOSNativeClipboardClient {
         request.httpShouldHandleCookies = false
         request.timeoutInterval = 25
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let deviceProof {
+            request.setValue(deviceProof.deviceID, forHTTPHeaderField: "X-XDrive-Device-ID")
+            request.setValue(deviceProof.secret, forHTTPHeaderField: "X-XDrive-Device-Token")
+        }
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         let config = URLSessionConfiguration.ephemeral
@@ -266,6 +281,20 @@ struct XDriveIOSNativeClipboardClient {
         // Incomplete trailing frames are never trusted; reconnect full GET
         // recovers any missed invalidation or pruned change cursor.
         return decoder.cursor
+    }
+
+    func enrollClipboardDevice(publicKey: String) async throws {
+        guard deviceProof != nil, Data(base64Encoded: publicKey)?.count == 32 else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+        }
+        struct Body: Encodable { let public_key: String }
+        struct Receipt: Decodable { let device_id: String; let public_key: String }
+        let result = try await request("/api/v1/clipboard/devices/self",
+            method: "PUT", body: JSONEncoder().encode(Body(public_key: publicKey)),
+            response: Receipt.self)
+        guard result.device_id == deviceProof?.deviceID, result.public_key == publicKey else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+        }
     }
 
     func vault() async throws -> XDriveIOSClipboardVault {
@@ -315,6 +344,10 @@ struct XDriveIOSNativeClipboardClient {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let deviceProof {
+            request.setValue(deviceProof.deviceID, forHTTPHeaderField: "X-XDrive-Device-ID")
+            request.setValue(deviceProof.secret, forHTTPHeaderField: "X-XDrive-Device-Token")
+        }
         request.httpShouldHandleCookies = false
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false

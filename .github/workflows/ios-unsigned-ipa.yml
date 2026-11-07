@@ -72,6 +72,10 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-clipboard-share"
           node --test desktop/tests/ios-native-clipboard-share-extension.cjs
 
+      - name: Verify native Clipboard device-bound key and Owner proof contracts
+        run: |
+          node --test desktop/tests/ios-native-clipboard-device-e2ee.cjs
+
       - name: Verify immutable photo and person selectors
         run: |
           set -euo pipefail

@@ -11,6 +11,8 @@ struct XDriveIOSNativeClipboardScreen: View {
     @State private var key: SymmetricKey?
     @State private var aadScope = ""
     @State private var ownerAtUnlock: XDriveNativeOwnerRoot?
+    @State private var recipientPrivateKey: Curve25519.KeyAgreement.PrivateKey?
+    @State private var recipientProof: XDriveIOSBackgroundDeviceProof?
     @State private var draft = ""
     @State private var items: [Decrypted] = []
     @State private var loading = false
@@ -74,6 +76,16 @@ struct XDriveIOSNativeClipboardScreen: View {
                             else { message = "本机剪贴板没有可读取的文本。" }
                         }.disabled(busy)
                         Spacer()
+                    }
+                    if recipientProof == nil {
+                        Button("启用本机设备定向加密接收") {
+                            Task { await enableDeviceReceipt() }
+                        }.disabled(busy)
+                        Text("需先在此账号注册本机设备。单独授权 Clipboard，不启用相册备份。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Label("设备定向接收已启用", systemImage: "checkmark.shield")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     if retryNeedsAbandon && pending != nil {
                         Button("放弃待确认回执") {
@@ -184,7 +196,8 @@ struct XDriveIOSNativeClipboardScreen: View {
             lock()
             throw XDriveIOSClipboardCrypto.Failure.invalidOwner
         }
-        return try XDriveIOSNativeClipboardClient(owner: proof.owner, accessToken: proof.accessToken)
+        return try XDriveIOSNativeClipboardClient(owner: proof.owner,
+            accessToken: proof.accessToken, deviceProof: recipientProof)
     }
 
     @MainActor
@@ -230,6 +243,35 @@ struct XDriveIOSNativeClipboardScreen: View {
     }
 
     @MainActor
+    private func enableDeviceReceipt() async {
+        guard !busy, key != nil else { return }
+        let generation = sessionGeneration
+        busy = true
+        defer { if sessionGeneration == generation { busy = false } }
+        do {
+            let current = try await authorizedClient(for: generation)
+            guard let proof = try await XDriveIOSDeviceEnrollment.shared.clipboardDeviceProof(
+                owner: current.owner, accessToken: current.token) else {
+                message = "请先在当前账号注册并核验此 iPhone 的设备身份。"
+                return
+            }
+            let privateKey = try XDriveIOSClipboardDeviceCrypto.privateKey(owner: current.owner)
+            let deviceClient = try XDriveIOSNativeClipboardClient(
+                owner: current.owner, accessToken: current.token, deviceProof: proof)
+            try await deviceClient.enrollClipboardDevice(
+                publicKey: privateKey.publicKey.rawRepresentation.base64EncodedString())
+            guard sessionGeneration == generation, ownerAtUnlock == current.owner,
+                  key != nil else { return }
+            recipientPrivateKey = privateKey
+            recipientProof = proof
+            message = "此 iPhone 已获 Clipboard 设备定向接收授权。"
+            await refresh()
+        } catch {
+            if sessionGeneration == generation { message = error.localizedDescription }
+        }
+    }
+
+    @MainActor
     private func refresh() async {
         guard let localKey = key, !currentScope.isEmpty, !loading else { return }
         let generation = sessionGeneration
@@ -239,8 +281,20 @@ struct XDriveIOSNativeClipboardScreen: View {
         do {
             let client = try await authorizedClient(for: generation)
             let result = try await client.list()
+            let deviceKey = recipientPrivateKey
+            let deviceID = recipientProof?.deviceID
             let decoded = result.items.map { item in
-                Decrypted(source: item, text: try? XDriveIOSClipboardCrypto.decrypt(
+                if let target = item.target_device_id, !target.isEmpty {
+                    let clear: String?
+                    if let deviceKey, let deviceID, target == deviceID {
+                        clear = try? XDriveIOSClipboardDeviceCrypto.decrypt(
+                            item, ownerScope: scope, deviceID: deviceID, privateKey: deviceKey)
+                    } else {
+                        clear = nil
+                    }
+                    return Decrypted(source: item, text: clear)
+                }
+                return Decrypted(source: item, text: try? XDriveIOSClipboardCrypto.decrypt(
                     item.encrypted, key: localKey, scope: scope))
             }
             try Task.checkCancellation()
@@ -344,6 +398,8 @@ struct XDriveIOSNativeClipboardScreen: View {
         pending = nil
         retryNeedsAbandon = false
         ownerAtUnlock = nil
+        recipientPrivateKey = nil
+        recipientProof = nil
         loading = false
         busy = false
         confirmClear = false
