@@ -336,7 +336,14 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                         canMatch = false
                     }
                 }
-                if !canMatch { resolved = resolved.map { $0.unresolved(.cloudUnavailable) } }
+                if !canMatch {
+                    // The Owner cloud page may be fully readable even if the
+                    // optional exact-match endpoint (or local fingerprint DB)
+                    // fails. Do not misreport its media as unavailable.
+                    resolved = resolved.map {
+                        $0.unresolved($0.cloud != nil ? .matchUnavailable : .cloudUnavailable)
+                    }
+                }
                 guard current(ticket, login: login, owner: expected) else { return }
                 if !localWindowStillAuthorized(permission: permission, epoch: localEpoch) {
                     cursor.localEnd = true
@@ -355,7 +362,7 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
             next = cursor.finished ? nil : cursor
             completed = true
             if reader != nil && !canMatch && !cloudReadFailed {
-                notice = "暂时无法确认本机与云端的对应关系。请刷新或检查服务器版本。"
+                notice = "照片可继续浏览；来源精确匹配暂不可用，不影响云端内容。"
             }
         } catch is CancellationError {
         } catch {
