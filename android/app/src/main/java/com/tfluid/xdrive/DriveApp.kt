@@ -115,10 +115,13 @@ internal fun nativePhotoBackupCanConfirm(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
+internal fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
     onDownload: ((DriveNode) -> Unit)? = null,
-    onUpload: (() -> Unit)? = null, galleryFirstOnLogin: Boolean = true) {
+    onUpload: (() -> Unit)? = null, galleryFirstOnLogin: Boolean = true,
+    incomingClipboardText: NativeIncomingClipboardText? = null,
+    onIncomingClipboardConsumed: () -> Unit = {},
+) {
     val state by controller.state.collectAsStateWithLifecycle()
     val androidContext = LocalContext.current
     // Private selection is scoped to this authenticated login epoch; no URI
@@ -231,6 +234,19 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     // A real authentication epoch, not a username, owns native navigation.
     var nativeNavigation by remember(state.nativeUiSessionId, nativeAuthenticated) {
         mutableStateOf(NativeHomeNavigation())
+    }
+    // A text share from another Owner epoch is discarded, never re-sent.
+    // A valid ACTION_SEND opens the native dynamic Clipboard and fills a draft;
+    // the user still must unlock and explicitly tap Send.
+    LaunchedEffect(incomingClipboardText, state.nativeUiSessionId,
+        state.server, state.username, nativeAuthenticated) {
+        val shared = incomingClipboardText ?: return@LaunchedEffect
+        if (!nativeAuthenticated || shared.epoch != state.nativeUiSessionId ||
+            shared.server != state.server || shared.username != state.username) {
+            onIncomingClipboardConsumed()
+            return@LaunchedEffect
+        }
+        nativeNavigation = nativeNavigation.open(NativeHomeShortcut.CLIPBOARD)
     }
     // Only the first fully verified Owner root of this login lands in Gallery.
     // On reselecting Files, or on an incomplete/failed login, never hijack it.
@@ -774,7 +790,12 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         },
                         onOpenDefaultMap = { selectNativeTab(NativeHomeTab.DYNAMIC) },
                         onChooseDynamic = { dynamicPickerOpen = true },
-                        notesController = controller)
+                        notesController = controller,
+                        incomingClipboardText = incomingClipboardText?.takeIf {
+                            it.epoch == state.nativeUiSessionId &&
+                                it.server == state.server && it.username == state.username
+                        }?.text,
+                        onIncomingClipboardConsumed = onIncomingClipboardConsumed)
                     else -> Unit
                 }
             } else when (state.screen) {

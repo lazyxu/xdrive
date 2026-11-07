@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -23,6 +24,7 @@ const (
 	clipboardPageSize  = 50
 	clipboardMaxText   = 64 << 10
 	clipboardMaxWire   = 128 << 10
+	clipboardChangeCap = 256
 )
 
 var errClipboardInvalid = errors.New("invalid encrypted clipboard payload")
@@ -106,7 +108,7 @@ func (s *Server) clipboardVault(c *gin.Context) {
 
 func clipboardVaultDTO(vault meta.ClipboardVault) gin.H {
 	return gin.H{
-		"salt": vault.Salt, "kdf": "PBKDF2-SHA256", "iterations": 310000,
+		"salt": vault.Salt, "owner_id": vault.OwnerID, "kdf": "PBKDF2-SHA256", "iterations": 310000,
 		"check_nonce": vault.CheckNonce, "check_ciphertext": vault.CheckCiphertext,
 		"aad_scope": vault.AADScope,
 	}
@@ -194,6 +196,103 @@ func clipboardSameItem(existing meta.ClipboardItem, request clipboardWriteReques
 		existing.Ciphertext == request.Ciphertext
 }
 
+// appendClipboardChangeTx is called only while holding the Owner vault row
+// lock, keeping multi-instance message and notification order consistent.
+func appendClipboardChangeTx(tx *gorm.DB, ownerID uint64, kind string) error {
+	if err := tx.Create(&meta.ClipboardChange{
+		OwnerID: ownerID, Kind: kind, CreatedAt: time.Now().UTC(),
+	}).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`
+DELETE FROM xd_clipboard_changes WHERE owner_id = ?
+AND id NOT IN (SELECT id FROM (
+    SELECT id FROM xd_clipboard_changes WHERE owner_id = ?
+    ORDER BY id DESC LIMIT ?
+) AS retained)`, ownerID, ownerID, clipboardChangeCap).Error
+}
+
+// An authenticated SSE connection transports ONLY change cursors. A disconnect,
+// auth expiry or cursor eviction is repaired by a full Owner-scoped GET /items;
+// no ciphertext, key, token or OS clipboard data enters an event.
+func (s *Server) streamClipboardEvents(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Header("X-Accel-Buffering", "no")
+	uid := userID(c)
+	opening, admitted := currentUser(c)
+	if uid == 0 || !admitted {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	// Only notify while the EXACT authenticated session remains live.
+	// The stream has a 20-second lifetime, but account disable, password
+	// reset or session-version revocation must stop the old Owner's events
+	// at the next batch/tick, not wait for a reconnect.
+	after := uint64(0)
+	raw := c.Query("after")
+	if raw == "" {
+		raw = c.GetHeader("Last-Event-ID")
+	}
+	if raw != "" {
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid clipboard event cursor"})
+			return
+		}
+		after = value
+	}
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
+	c.Status(http.StatusOK)
+	fmt.Fprint(c.Writer, "retry: 2000\nevent: sync\ndata: {}\n\n")
+	c.Writer.Flush()
+	ticker := time.NewTicker(1500 * time.Millisecond)
+	defer ticker.Stop()
+	// 20s max stream lifetime forces bearer re-authentication on reconnect.
+	deadline := time.NewTimer(20 * time.Second)
+	defer deadline.Stop()
+	for {
+		var current meta.User
+		if err := s.DB.WithContext(c.Request.Context()).
+			Select("session_version", "disabled_at", "must_change_password").
+			Where("id = ?", uid).Take(&current).Error; err != nil ||
+			current.DisabledAt != nil ||
+			current.MustChangePassword ||
+			current.SessionVersion != opening.SessionVersion {
+			return
+		}
+		var ids []uint64
+		err := s.DB.WithContext(c.Request.Context()).Model(&meta.ClipboardChange{}).
+			Where("owner_id = ? AND id > ?", uid, after).
+			Order("id ASC").Limit(64).Pluck("id", &ids).Error
+		if err != nil {
+			return
+		}
+		for _, id := range ids {
+			if _, err := fmt.Fprintf(c.Writer, "id: %d\nevent: change\ndata: {}\n\n", id); err != nil {
+				return
+			}
+			after = id
+		}
+		if len(ids) > 0 {
+			c.Writer.Flush()
+		}
+		if len(ids) == 64 {
+			continue
+		}
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-deadline.C:
+			return
+		case <-ticker.C:
+			if _, err := fmt.Fprint(c.Writer, ": ping\n\n"); err != nil {
+				return
+			}
+			c.Writer.Flush()
+		}
+	}
+}
+
 func (s *Server) createClipboardItem(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	uid := userID(c)
@@ -250,7 +349,7 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 		}
 		// Retain only the 50 newest live items from this Owner. This is a
 		// metadata-only mailbox and must not touch Nodes, uploads or CAS.
-		return tx.Exec(`
+		if err := tx.Exec(`
 DELETE FROM xd_clipboard_items
 WHERE owner_id = ?
   AND (expires_at <= ?
@@ -261,7 +360,10 @@ WHERE owner_id = ?
            ORDER BY id DESC LIMIT ?
          ) AS recent
        ))`,
-			uid, now, uid, now, clipboardPageSize).Error
+			uid, now, uid, now, clipboardPageSize).Error; err != nil {
+			return err
+		}
+		return appendClipboardChangeTx(tx, uid, "create")
 	})
 	if err != nil {
 		if errors.Is(err, errClipboardVaultNotReady) || errors.Is(err, gorm.ErrRecordNotFound) {
@@ -343,13 +445,28 @@ func (s *Server) deleteClipboardItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid clipboard item ID"})
 		return
 	}
-	res := s.DB.WithContext(c.Request.Context()).
-		Where("owner_id = ? AND id = ?", uid, id).Delete(&meta.ClipboardItem{})
-	if res.Error != nil {
+	var deleted bool
+	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var vault meta.ClipboardVault
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("owner_id = ?", uid).First(&vault).Error; err != nil {
+			return err
+		}
+		result := tx.Where("owner_id = ? AND id = ?", uid, id).Delete(&meta.ClipboardItem{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		deleted = true
+		return appendClipboardChangeTx(tx, uid, "delete")
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard store unavailable"})
 		return
 	}
-	if res.RowsAffected == 0 {
+	if !deleted {
 		c.JSON(http.StatusNotFound, gin.H{"error": "clipboard item not found"})
 		return
 	}
@@ -363,8 +480,22 @@ func (s *Server) clearClipboardItems(c *gin.Context) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
-	if err := s.DB.WithContext(c.Request.Context()).Where("owner_id = ?", uid).
-		Delete(&meta.ClipboardItem{}).Error; err != nil {
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var vault meta.ClipboardVault
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("owner_id = ?", uid).First(&vault).Error; err != nil {
+			return err
+		}
+		result := tx.Where("owner_id = ?", uid).Delete(&meta.ClipboardItem{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		return appendClipboardChangeTx(tx, uid, "clear")
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard store unavailable"})
 		return
 	}
