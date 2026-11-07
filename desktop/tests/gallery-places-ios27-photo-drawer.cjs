@@ -139,7 +139,11 @@ test('Single shared map host previews a fresh Parent-only Range and cancels stal
   assert.equal((surface.match(/<XDriveMediaGalleryPlacesPhotoDrawer/g)||[]).length,1)
   assert.match(surface,/xDriveMountBaiduInlineMap/)
   assert.match(surface,/xDriveMountBaiduIsolatedFrame/)
-  assert.match(sheet,/revision=\{item.node.revision\}/)
+  assert.match(gallery,/revision=\{item.node.revision\}/)
+  assert.match(gallery,/export function MediaTile\(/)
+  assert.match(gallery,/export function MediaVirtualTileGrid\(/)
+  assert.match(sheet,/<MediaVirtualTileGrid/)
+  assert.match(sheet,/<MediaTile/)
   assert.match(sheet,/onOpenPhoto\(item,position\(\)\)/)
   assert.match(sheet,/onClick=\{event => \{/)
   assert.match(sheet,/data-xdrive-places-photo-drawer-open-all/)
@@ -200,24 +204,36 @@ test('390px trusted photo drawer uses safe-area layout and touch-only pointer gr
   assert.match(sheet,/overscrollBehavior:'contain',touchAction:'auto'/)
   assert.match(sheet,/<Dialog open onClose=\{onClose\} fullWidth maxWidth="md"/)
   assert.match(sheet,/data-xdrive-places-album-dialog/)
-  assert.match(sheet,/repeat\(auto-fill, minmax\(108px, 1fr\)\)/)
-  // Cards opt out of double-tap click suppression while their scroll parent
-  // remains free to handle native horizontal/vertical scrolling.
-  assert.match(sheet,/appearance:'none',touchAction:'manipulation'/)
+  assert.match(sheet,/minTileWidth=\{108\}/)
+  assert.match(sheet,/collection=\{collection\}/)
+  assert.match(sheet,/onPointerDownCapture=\{event =>/)
+  assert.match(sheet,/onClickCapture=\{event =>/)
+  assert.match(sheet,/onLoadMore\(\)/)
+  assert.match(sheet,/new XDriveMediaThumbnailScheduler\(loadThumbnail\)/)
+  // The trusted Parent now uses the exact Gallery virtual surface and tile.
+  // No parallel tile renderer or all-item DOM grid may be reintroduced.
+  assert.match(gallery,/data-xdrive-places-photo-drawer-item=\{placesDrawer \? item.node.id : undefined\}/)
+  assert.match(gallery,/\.\.\.\(placesDrawer \? \{ component: 'button', type: 'button'/)
+  assert.doesNotMatch(sheet,/items\.map\(item => \(\s*<Box key=\{item.node.id\} component="button"/)
+  assert.match(sheet,/items\.slice\(0,8\)\.map/)
   // Real stationary touch/pen activation is routed only by the trusted photo
   // button and never by Child map SDK, with scroll/long-press/pointercancel
   // exclusions and a compatibility-click singleflight.
   assert.match(sheet,/const photoTouch = useRef/)
   // Real touch termination is consumed even if it was rejected; keyboard
   // activation and a subsequent true mouse pointer remain independent.
-  assert.ok(sheet.includes('onPointerCancel={event => {'))
+  assert.ok(sheet.includes('onPointerCancelCapture={event => {'))
   assert.ok(sheet.includes('touchActivated.current={nodeID:tap.nodeID,at:event.timeStamp}'))
   assert.ok(sheet.includes('if (!event.isPrimary) {'))
   assert.ok(sheet.includes("if (event.pointerType === 'mouse') touchActivated.current=null"))
-  assert.match(sheet,/onPointerMove=\{event =>/)
+  assert.match(sheet,/onPointerMoveCapture=\{event =>/)
   assert.match(sheet,/Math\.hypot\(event\.clientX-tap\.startX,event\.clientY-tap\.startY\)>12/)
   assert.match(sheet,/event\.timeStamp-tap\.startAt>700/)
-  assert.match(sheet,/touchActivated\.current=\{nodeID:item\.node\.id,at:event\.timeStamp\}/)
+  assert.match(sheet,/touchActivated\.current=\{nodeID:tap\.nodeID,at:event\.timeStamp\}/)
+  assert.match(sheet,/listRef\.current\?\.contains\(tile\)/)
+  assert.match(sheet,/items\.find\(item => item\.node\.id === id\)/)
+  assert.match(sheet,/event\.preventDefault\(\)/)
+  assert.match(sheet,/event\.stopPropagation\(\)/)
   assert.match(sheet,/event\.timeStamp-handled\.at<900/)
   assert.doesNotMatch(sheet,/dispatchEvent\(|\.click\(\)/)
   // The fixed photo strip is removed; the real count and complete camera-wall
