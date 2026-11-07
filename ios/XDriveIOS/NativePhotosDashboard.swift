@@ -23,7 +23,7 @@ private enum XDriveIOSNativeGallerySource: String, CaseIterable, Identifiable {
 }
 
 private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
-    case notes, backup, transfers, sync, storage, devices, diagnostics
+    case notes, clipboard, backup, transfers, sync, storage, devices, diagnostics
     var id: String { rawValue }
     var title: String {
         switch self {
