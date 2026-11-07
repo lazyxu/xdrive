@@ -68,7 +68,18 @@ func queryMediaExactTripSegments(
 	if err != nil {
 		return nil, err
 	}
-	segments := mediaMemoryTripSegments(days)
+	// Start from conservative home evidence, then add genuine
+	// off-home travel transitions that share a neighboring away day.
+	// Never add all photos from a calendar date without real GPS proof.
+	recognitionDays := days
+	if homeLat, homeLon, ok := mediaExactTripHome(days); ok {
+		away, lookupErr := queryMediaExactTripAwayDays(
+			ctx, db, ownerID, zone, homeLat, homeLon)
+		if lookupErr != nil { return nil, lookupErr }
+		recognitionDays = mediaExactTripPromoteTransitDays(
+			days, away, homeLat, homeLon)
+	}
+	segments := mediaMemoryTripSegments(recognitionDays)
 	segments, err = verifyMediaExactTripMembership(ctx, db, ownerID, zone, days, segments)
 	if err != nil {
 		return nil, err
