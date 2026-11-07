@@ -62,7 +62,7 @@ stale_header = release.split(stale, 1)[1].split(marker, 1)[0]
 assert "id: snapshot_eligibility" in stale_header
 assert 'echo "publish=true" >> "$GITHUB_OUTPUT"' in stale_header
 assert 'echo "publish=false" >> "$GITHUB_OUTPUT"' in stale_header
-assert release.count("steps.snapshot_eligibility.outputs.publish == 'true'") == 5, "four floating-channel steps plus one publish-only cleanup notifier"
+assert release.count("steps.snapshot_eligibility.outputs.publish == 'true'") == 6, ("four floating-channel steps, cleanup notifier, and DSM Package Center publisher must be gated")
 for step, condition in (
     ("Probe snapshot Git ref authorization before release mutation",
      "if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'"),
@@ -74,12 +74,20 @@ for step, condition in (
      "if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'"),
     ("Notify bounded queued-CI prune after verified Snapshot publication",
      "if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'"),
+    ("Publish immutable DSM Package Center feed",
+     "if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'"),
 ):
     step_start = "      - name: " + step + "\n"
     assert release.count(step_start) == 1, step
     step_header = release.split(step_start, 1)[1].split("\n      - name:", 1)[0]
     assert condition in step_header.split("        run: |", 1)[0], step
 assert 'if: startsWith(github.ref, \x27refs/tags/v\x27)' in release, "stable release remains independent"
+dsm_marker = "      - name: Publish immutable DSM Package Center feed\n"
+assert release.index(dsm_marker) > release.index("      - name: Publish GitHub Release\n")
+dsm_step = release.split(dsm_marker, 1)[1]
+assert "GH_TOKEN: ${{ github.ref == 'refs/heads/master' && steps.snapshot_app_token.outputs.token || github.token }}" in dsm_step
+assert 'bash scripts/ci/publish-dsm-package-source.sh "$channel" release "$GITHUB_SHA"' in dsm_step
+assert 'channel=edge' in dsm_step and 'channel=stable' in dsm_step
 
 OLD = "a" * 40
 NEW = "b" * 40

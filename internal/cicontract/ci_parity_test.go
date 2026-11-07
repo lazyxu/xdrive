@@ -841,8 +841,23 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 			"-f event_type=xdrive_snapshot_published",
 		)
 	}
-	if got := strings.Count(githubRelease, "steps.snapshot_eligibility.outputs.publish == 'true'"); got != 5 {
-		t.Errorf("GitHub Snapshot must guard four floating-channel steps plus one post-publish notifier, got %d", got)
+	// The sixth guarded occurrence is the DSM Package Center publication:
+	// it can advance /edge only after the exact Snapshot eligibility check,
+	// and /stable only from the verified v* release path.
+	const dsmMarker = "      - name: Publish immutable DSM Package Center feed\n"
+	dsmSections := strings.Split(githubRelease, dsmMarker)
+	if len(dsmSections) != 2 {
+		t.Error("GitHub Snapshot must have exactly one guarded DSM Package Center publisher")
+	} else {
+		dsmPublisher := strings.SplitN(dsmSections[1], "\n      - name:", 2)[0]
+		requireRaw(t, "GitHub DSM feed exact-release publication guard", dsmPublisher,
+			"if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'",
+			"channel=edge", "channel=stable",
+			"bash scripts/ci/publish-dsm-package-source.sh \"$channel\" release \"$GITHUB_SHA\"",
+		)
+	}
+	if got := strings.Count(githubRelease, "steps.snapshot_eligibility.outputs.publish == 'true'"); got != 6 {
+		t.Errorf("GitHub Snapshot must guard four floating-channel steps, post-publish notifier and DSM Package Center, got %d", got)
 	}
 
 	releaseAssets := []string{
