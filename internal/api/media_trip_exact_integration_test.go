@@ -283,6 +283,17 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 			t.Fatal("foreign Owner resolved another Owner trip")
 		}
 	}
+	// A very large same-trip location set may not be silently truncated
+	// to a plausible-looking top-64 MapKit result with a wrong total.
+	for i := 0; i < 70; i++ {
+		lat := 10.025 + float64(i%10)*0.0125
+		lon := 10.025 + float64(i/10)*0.0125
+		add(owner.ID, root.ID, fmt.Sprintf("trip-map-many-%d.jpg", i), 5, &lat, &lon)
+	}
+	if overflow, err := server.queryMediaExactTripMap(
+		ctx, owner.ID, segment, "UTC"); err == nil {
+		t.Fatalf("oversized exact trip map incorrectly returned %d cells", len(overflow.Items))
+	}
 	// A GPS edit that makes home dominant on a former trip day must revoke
 	// the old exact segment rather than silently falling back to date range.
 	if err := db.Model(&meta.MediaMetadata{}).
