@@ -387,7 +387,7 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
               state: XDriveIOSPhotoBackupChangeQueueStore.ItemState? = nil,
               offset: Int = 0, limit: Int = 32)
         throws -> [XDriveIOSPhotoBackupChangeQueueStore.QueueRow]? {
-        guard (1...32).contains(limit), (0...1_000_000).contains(offset)
+        guard (1...33).contains(limit), (0...1_000_000).contains(offset)
         else { throw Failure.invalidReplayLimit }
         try verifyOwner(owner)
         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
