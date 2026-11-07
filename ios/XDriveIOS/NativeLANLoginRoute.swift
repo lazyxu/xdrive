@@ -89,24 +89,65 @@ enum XDriveIOSNativeLANLoginRoute {
             throw XDriveIOSLANPairingFailure.invalidRoot
         }
         do {
-            try await probeVersion(local, mode: .verifyingPairing(target, der))
+            try await probeVersion(local, mode: .verifyingPairing(target, der), pairing: true)
         } catch {
             try Task.checkCancellation()
-            throw XDriveIOSLANPairingFailure.invalidRoot
+            // NEVER describe a timeout, redirect, non-200/HTML /version
+            // response or URLSession transport failure as an invalid CA.
+            // Only the actual SecTrust rejection is an IP certificate error.
+            throw pairingProbeFailure(error)
         }
         return (target, XDriveIOSLANPairing(domain: domain, rootDER: der))
     }
 
-    private static func probeVersion(_ origin: URL, mode: XDriveIOSServerTLSDelegate.TrustMode) async throws {
+    /// Only fixed, non-secret categories and OS numbers are exposed to the
+    /// user. No URL, response body, token or arbitrary localized description.
+    static func pairingProbeFailure(_ error: Error) -> XDriveIOSLANPairingFailure {
+        if let known = error as? XDriveIOSLANPairingFailure { return known }
+        if let url = error as? URLError {
+            switch url.code {
+            case .timedOut:
+                return .ipConnectionTimedOut
+            case .secureConnectionFailed, .serverCertificateUntrusted,
+                 .serverCertificateHasBadDate, .serverCertificateNotYetValid,
+                 .serverCertificateHasUnknownRoot:
+                return .ipCertificateInvalid
+            default:
+                return .ipConnectionUnavailable(url.errorCode)
+            }
+        }
+        if let failure = error as? AuthFailure {
+            switch failure {
+            case .redirectRefused: return .ipVersionRedirect
+            case .invalidLANProbe: return .ipVersionInvalid
+            default: return .ipVersionInvalid
+            }
+        }
+        return .ipVersionInvalid
+    }
+
+    private static func probeVersion(
+        _ origin: URL, mode: XDriveIOSServerTLSDelegate.TrustMode,
+        pairing: Bool = false
+    ) async throws {
+        // Pairing is user-initiated and may include the FIRST local network
+        // permission/TLS handshake. Its old 3-second limit could mislabel a
+        // slow but healthy IP endpoint as a certificate mismatch.
+        let timeout: TimeInterval = pairing ? 8 : 3
         let data = try await read(origin, path: "/api/v1/version", mode: mode,
-                                  mimeType: "application/json", maxBytes: 16_384, timeout: 3)
+                                  mimeType: "application/json", maxBytes: 16_384,
+                                  timeout: timeout, pairing: pairing)
         guard let json = try? JSONDecoder().decode(XDriveIOSLANVersion.self, from: data),
               !json.version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              json.version.utf8.count <= 256 else { throw AuthFailure.invalidLANProbe }
+              json.version.utf8.count <= 256 else {
+            if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
+            throw AuthFailure.invalidLANProbe
+        }
     }
 
     private static func read(_ origin: URL, path: String, mode: XDriveIOSServerTLSDelegate.TrustMode,
-                             mimeType: String, maxBytes: Int, timeout: TimeInterval) async throws -> Data {
+                             mimeType: String, maxBytes: Int, timeout: TimeInterval,
+                             pairing: Bool) async throws -> Data {
         guard var parts = URLComponents(url: origin, resolvingAgainstBaseURL: false) else {
             throw AuthFailure.invalidLANProbe
         }
@@ -126,24 +167,48 @@ enum XDriveIOSNativeLANLoginRoute {
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.timeoutIntervalForRequest = timeout
         config.timeoutIntervalForResource = timeout + 1
-        let session = URLSession(
-            configuration: config,
-            delegate: XDriveIOSLANProbeRejectRedirects(mode: mode), delegateQueue: nil
-        )
+        let verifier = XDriveIOSLANProbeRejectRedirects(mode: mode)
+        let session = URLSession(configuration: config, delegate: verifier, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
-        let (bytes, response) = try await session.bytes(for: request)
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await session.bytes(for: request)
+        } catch {
+            try Task.checkCancellation()
+            // URLSession may surface an explicit authentication-challenge
+            // rejection as NSURLErrorCancelled (-999), rather than the
+            // certificate-specific error. Record only the trust callback's
+            // disposition, not untrusted message text or certificate bytes.
+            if verifier.rejectedServerTrust {
+                if pairing { throw XDriveIOSLANPairingFailure.ipCertificateInvalid }
+                throw URLError(.serverCertificateUntrusted)
+            }
+            throw error
+        }
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else {
             throw AuthFailure.invalidLANProbe
         }
-        if (300..<400).contains(http.statusCode) { throw AuthFailure.redirectRefused }
-        guard http.statusCode == 200, http.url == url, http.mimeType == mimeType,
+        if (300..<400).contains(http.statusCode) {
+            if pairing { throw XDriveIOSLANPairingFailure.ipVersionRedirect }
+            throw AuthFailure.redirectRefused
+        }
+        if http.statusCode != 200 {
+            if pairing { throw XDriveIOSLANPairingFailure.ipVersionStatus(http.statusCode) }
+            throw AuthFailure.invalidLANProbe
+        }
+        guard http.url == url, http.mimeType == mimeType,
               http.expectedContentLength <= Int64(maxBytes) else {
+            if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
             throw AuthFailure.invalidLANProbe
         }
         var data = Data()
         for try await byte in bytes {
-            guard data.count < maxBytes else { throw AuthFailure.invalidLANProbe }
+            guard data.count < maxBytes else {
+                if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
+                throw AuthFailure.invalidLANProbe
+            }
             data.append(byte)
         }
         return data
@@ -153,6 +218,28 @@ enum XDriveIOSNativeLANLoginRoute {
 private struct XDriveIOSLANVersion: Decodable { let version: String }
 
 private final class XDriveIOSLANProbeRejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+    private let stateLock = NSLock()
+    private var trustWasRejected = false
+
+    var rejectedServerTrust: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return trustWasRejected
+    }
+
+    override func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                             completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        super.urlSession(session, didReceive: challenge) { [weak self] disposition, credential in
+            if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust &&
+                disposition == .cancelAuthenticationChallenge {
+                self?.stateLock.lock()
+                self?.trustWasRejected = true
+                self?.stateLock.unlock()
+            }
+            completionHandler(disposition, credential)
+        }
+    }
+
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
