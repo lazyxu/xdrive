@@ -19,7 +19,7 @@ test('one native Files picker supports explicit bounded multi-selection, retains
   assert.match(panel, /uploader\.start\(\s*files: pickedURLs, login: login/)
   assert.match(panel, /native-ios-files-manual-batch-upload/)
   assert.match(panel, /showingMultiImporter = false/)
-  assert.match(policy, /static let maximumFiles = 8/)
+  assert.match(policy, /static let maximumFiles = 64/)
   assert.match(policy, /Set\(names\.map \{ \$0\.lowercased\(\) \}\)\.count == files\.count/)
   assert.match(policy, /files\.allSatisfy\(\{ \$0\.isFileURL \}\)/)
 })
@@ -68,7 +68,7 @@ test('foreground file upload stays sequential; only cancellable folder preflight
   assert.match(stager, /mayStage\(\s*bytes: originalSize\.int64Value, freeDiskBytes: freeBytes/)
   assert.match(stager, /try fm\.copyItem\(at: pickedURL, to: target\)/)
   assert.match(upload, /当前文件超过 1 GiB/)
-  assert.match(panel, /批量最多 8 个文件，逐项核对收据/)
+  assert.match(panel, /批量最多 64 个文件，逐项核对收据/)
 
   // Folder enumeration is bounded preflight work, not an upload transport.
   // It runs off the main actor only so large provider trees do not freeze UI,

@@ -776,6 +776,26 @@ private struct XDriveIOSNativeFilesFolder: Hashable {
     let name: String
 }
 
+/// The dashboard owns the app-wide tab bar; Files owns this smaller native rail.
+private enum XDriveIOSNativeFilesQuickSection: String, CaseIterable, Identifiable {
+    case recent, browse, favorites
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .recent: return "最近"
+        case .browse: return "浏览"
+        case .favorites: return "收藏"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .recent: return "clock"
+        case .browse: return "folder"
+        case .favorites: return "star"
+        }
+    }
+}
+
 /// iOS fixed Files tab: genuine native bounded Owner directory navigation
 /// and whole-library search. File previews use the separate native L3 Viewer;
 /// Owner-bound creation, transfers and mutations live in the native action sheet.
@@ -797,6 +817,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot?
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
+    @StateObject private var chunked = XDriveIOSNativeFilesChunkedMutationModel()
+    @State private var quickSection: XDriveIOSNativeFilesQuickSection = .browse
     @StateObject private var batchExport = XDriveIOSNativeFilesBatchExportModel()
     // Row actions reuse the existing verified Server writers, not a second API.
     @StateObject private var quickMutation = XDriveIOSNativeFilesMutationModel()
@@ -923,7 +945,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var canSelectPage: Bool {
         !model.loading && !selectAllBusy && model.verifiedPage && !isGlobalSearch &&
             login.owner != nil && !model.entries.isEmpty &&
-            !batchTrash.busy && !batchTarget.busy &&
+            !batchTrash.busy && !batchTarget.busy && !chunked.busy &&
             !batchExport.busy && batchExport.prepared.isEmpty
     }
 
@@ -1616,7 +1638,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @ViewBuilder private var filesBatchOperations: some View {
             if selecting {
                 Section("批量操作") {
-                    Text("已选 \(selectedIDs.count) 项（最多 200 项，可跨已加载窗口；服务器逐项复核）")
+                    Text("已选 \(selectedIDs.count) 项（最多 2048 项；服务端每批原子处理 200 项）")
                         .font(.footnote).foregroundStyle(.secondary)
                     if selectAllBusy {
                         HStack(spacing: 8) {
@@ -1651,6 +1673,21 @@ struct XDriveIOSNativeFilesBrowser: View {
                     if let status = batchExport.status {
                         Text(status).font(.footnote).foregroundStyle(.secondary)
                             .accessibilityIdentifier("native-ios-files-batch-export-status")
+                    }
+                    if chunked.busy {
+                        ProgressView("正在分批处理已选项目…")
+                        Button("停止后续批次", role: .cancel) {
+                            chunked.cancelCurrent()
+                        }
+                        .accessibilityIdentifier("native-ios-files-chunked-cancel")
+                    }
+                    if let status = chunked.status {
+                        Text(status).font(.footnote).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-files-chunked-status")
+                    }
+                    if selectedIDs.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
+                        Text("服务端每批最多原子处理 200 项；已确认批次不会整体回滚。")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     if batchTrash.busy {
                         ProgressView("正在处理已选项目…")
@@ -1715,16 +1752,16 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .disabled(!canSelectPage || selectedIDs.isEmpty)
                 .accessibilityIdentifier("native-ios-files-batch-move")
                 Menu {
-                    Button("全选当前目录（最多 200 项）") {
+                    Button("全选当前目录（最多 2048 项）") {
                         selectAllCurrentFolder()
                     }
                     .disabled(!canSelectPage ||
-                        model.total > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected)
+                        model.total > XDriveIOSNativeFilesSelectionPolicy.maximumSelectedSnapshots)
                     .accessibilityIdentifier("native-ios-files-select-all-server")
-                    Button("选择已加载项目（最多 200 项）") {
+                    Button("选择已加载项目（最多 2048 项）") {
                         guard canSelectPage else { return }
                         for entry in model.entries where !selectedIDs.contains(entry.id) {
-                            if selectedIDs.count >= XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
+                            if selectedIDs.count >= XDriveIOSNativeFilesSelectionPolicy.maximumSelectedSnapshots {
                                 break
                             }
                             selectedIDs.insert(entry.id)
@@ -1739,19 +1776,23 @@ struct XDriveIOSNativeFilesBrowser: View {
                         .disabled(selectedIDs.isEmpty)
                     Divider()
                     Button("复制到剪贴板") { captureSelection(.copy) }
-                        .disabled(!canSelectPage || selectedIDs.isEmpty)
+                        .disabled(!canSelectPage || selectedIDs.isEmpty ||
+                          selectedIDs.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected)
                         .accessibilityIdentifier("native-ios-files-batch-clipboard-copy")
                     Button("剪切到剪贴板") { captureSelection(.move) }
-                        .disabled(!canSelectPage || selectedIDs.isEmpty)
+                        .disabled(!canSelectPage || selectedIDs.isEmpty ||
+                          selectedIDs.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected)
                         .accessibilityIdentifier("native-ios-files-batch-clipboard-cut")
                     Button("为已选项目设置标签") { openBatchTags() }
-                        .disabled(!canSelectPage || selectedIDs.isEmpty)
+                        .disabled(!canSelectPage || selectedIDs.isEmpty ||
+                          selectedIDs.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected)
                         .accessibilityIdentifier("native-ios-files-batch-tags")
                     Divider()
                     Button("已选项批量下载并导出") {
                         prepareSelectedExport()
                     }
-                    .disabled(!canSelectPage || selectedIDs.isEmpty)
+                    .disabled(!canSelectPage || selectedIDs.count < 2 ||
+                              selectedIDs.count > XDriveIOSNativeFilesBatchExportPolicy.maximumFiles)
                     .accessibilityIdentifier("native-ios-files-batch-export")
                     Button("已选项移入回收站", role: .destructive) {
                         showingBatchTrashConfirmation = true
@@ -2043,7 +2084,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if selecting {
                     Button("完成") {
-                        guard !batchTrash.busy, !batchTarget.busy,
+                        guard !batchTrash.busy, !batchTarget.busy, !chunked.busy,
                               !batchExport.busy, batchExport.prepared.isEmpty else { return }
                         cancelSelectAllRead()
                         model.cancelAdjacent()
@@ -2051,7 +2092,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                         selectedIDs.removeAll()
                         selectedSnapshots.removeAll()
                     }
-                    .disabled(batchTrash.busy || batchTarget.busy ||
+                    .disabled(batchTrash.busy || batchTarget.busy || chunked.busy ||
                               batchExport.busy || !batchExport.prepared.isEmpty)
                     .accessibilityIdentifier("native-ios-files-selection-done")
                 }
@@ -2175,8 +2216,55 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
+    /// Reuse canonical Owner-scoped Recent/Favorites views; Browse keeps its
+    /// verified NavigationLinks and model while switching the Files-local rail.
+    @ViewBuilder private var filesMain: some View {
+        if isHome {
+            VStack(spacing: 0) {
+                switch quickSection {
+                case .recent:
+                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
+                case .browse:
+                    filesChrome
+                case .favorites:
+                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+                }
+                if !selecting {
+                    HStack(spacing: 8) {
+                        ForEach(XDriveIOSNativeFilesQuickSection.allCases) { option in
+                            Button {
+                                guard !batchTrash.busy, !batchTarget.busy,
+                                      !chunked.busy, !selectAllBusy else { return }
+                                quickSection = option
+                            } label: {
+                                Label(option.title, systemImage: option.symbol)
+                                    .font(.caption)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(quickSection == option ? Color.accentColor : Color.secondary)
+                            .background(
+                                quickSection == option ? Color.accentColor.opacity(0.12) : Color.clear,
+                                in: Capsule()
+                            )
+                            .accessibilityIdentifier("native-ios-files-section-" + option.rawValue)
+                            .accessibilityValue(quickSection == option ? "已选择" : "未选择")
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.bar)
+                    .accessibilityIdentifier("native-ios-files-quick-rail")
+                }
+            }
+        } else {
+            filesChrome
+        }
+    }
+
     private var filesModals: some View {
-        filesChrome
+        filesMain
         .alert("前往文件夹", isPresented: $showingPathPrompt) {
             TextField("例如 /工作/文档", text: $pathDraft)
                 .textInputAutocapitalization(.never)
@@ -2330,15 +2418,26 @@ struct XDriveIOSNativeFilesBrowser: View {
                           intent.items.allSatisfy({ selected in
                             selectedSnapshots[selected.id] == selected
                           }) else { return }
-                    batchTarget.perform(
-                        intent.kind, items: intent.items,
-                        sourceParentID: intent.sourceParentID,
-                        destination: target, login: login
-                    ) {
-                        selecting = false
-                        selectedIDs.removeAll()
-                        selectedSnapshots.removeAll()
-                        reload(resetOffset: true)
+                    if intent.items.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
+                        chunked.perform(
+                            .target(kind: intent.kind, destination: target),
+                            items: intent.items, parentID: intent.sourceParentID,
+                            login: login
+                        ) { outcome in
+                            reload(resetOffset: true)
+                            quickActionNotice = outcome
+                        }
+                    } else {
+                        batchTarget.perform(
+                            intent.kind, items: intent.items,
+                            sourceParentID: intent.sourceParentID,
+                            destination: target, login: login
+                        ) {
+                            selecting = false
+                            selectedIDs.removeAll()
+                            selectedSnapshots.removeAll()
+                            reload(resetOffset: true)
+                        }
                     }
                 }
             } else {
@@ -2355,16 +2454,25 @@ struct XDriveIOSNativeFilesBrowser: View {
                 guard selecting, canSelectPage,
                       let folderID = parentID,
                       selectedIDs == Set(chosenItems.map(\.id)),
-                      XDriveIOSNativeFilesBatchTrashPolicy.validSelection(
-                        chosenItems, parentID: folderID
-                      ) else { return }
-                batchTrash.trash(
-                    chosenItems, parentID: folderID, login: login
-                ) {
-                    selecting = false
-                    selectedIDs.removeAll()
-                    selectedSnapshots.removeAll()
-                    reload(resetOffset: true)
+                      XDriveIOSNativeFilesSelectionPolicy.validItems(
+                        snapshots: selectedSnapshots, selectedIDs: selectedIDs,
+                        parentID: folderID
+                      ) != nil else { return }
+                if chosenItems.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
+                    chunked.perform(.trash, items: chosenItems,
+                                    parentID: folderID, login: login) { outcome in
+                        reload(resetOffset: true)
+                        quickActionNotice = outcome
+                    }
+                } else {
+                    batchTrash.trash(
+                        chosenItems, parentID: folderID, login: login
+                    ) {
+                        selecting = false
+                        selectedIDs.removeAll()
+                        selectedSnapshots.removeAll()
+                        reload(resetOffset: true)
+                    }
                 }
             }
         } message: {
@@ -2531,6 +2639,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
+            chunked.invalidate()
             searchOptions.invalidate()
             if isHome, let current = login.owner,
                let retained = favoriteShortcutsOwner,
@@ -2558,6 +2667,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            chunked.invalidate()
             quickMutation.invalidate()
             quickDestinationWriter.invalidate()
             quickFavorite.invalidate()
@@ -2687,11 +2797,11 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     /// PWA parity: explicitly Select All only when the authoritative Server
-    /// directory has at most 200 items. Never select just the visible page.
+    /// directory has at most 2048 items. Never select just the visible page.
     private func selectAllCurrentFolder() {
         guard selecting, canSelectPage, let owner = login.owner,
               let folderID = parentID, model.total > 0,
-              model.total <= XDriveIOSNativeFilesBatchTrashPolicy.maxSelected,
+              model.total <= XDriveIOSNativeFilesSelectionPolicy.maximumSelectedSnapshots,
               model.canResume(
                 owner: owner, folderID: folderID, query: activeQuery,
                 filters: searchFilters, sort: sort, order: order,
@@ -2775,7 +2885,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         if selectedIDs.contains(entry.id) {
             selectedIDs.remove(entry.id)
             selectedSnapshots.removeValue(forKey: entry.id)
-        } else if selectedIDs.count < XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
+        } else if selectedIDs.count < XDriveIOSNativeFilesSelectionPolicy.maximumSelectedSnapshots {
             selectedIDs.insert(entry.id)
             selectedSnapshots[entry.id] = entry.node
         }
@@ -2934,7 +3044,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
-    /// The existing native Viewer only accepts 64 same-parent file targets.
+    /// The native Viewer accepts up to 256 same-parent verified window files.
     /// Center its immutable window on the selected file instead of passing
     /// an unbounded continuously loaded file list into L3.
     private func containsVerifiedNode(_ node: XDriveIOSNativeFilesNode) -> Bool {
@@ -3110,9 +3220,10 @@ struct XDriveIOSNativeFilesBrowser: View {
               let owner = login.owner, let sourceParentID = parentID,
               !chosenItems.isEmpty,
               selectedIDs == Set(chosenItems.map(\.id)),
-              XDriveIOSNativeFilesBatchTrashPolicy.validSelection(
-                chosenItems, parentID: sourceParentID
-              ) else { return }
+              XDriveIOSNativeFilesSelectionPolicy.validItems(
+                snapshots: selectedSnapshots, selectedIDs: selectedIDs,
+                parentID: sourceParentID
+              ) != nil else { return }
         batchDestinationIntent = XDriveIOSNativeFilesBatchDestinationIntent(
             owner: owner, items: chosenItems, sourceParentID: sourceParentID,
             kind: kind

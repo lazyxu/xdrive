@@ -23,7 +23,7 @@ test('one real Owner-verified native Files page supports bounded multi-copy and 
   assert.match(page, /Button \{\s*openBatchDestination\(\.copy\)/)
   assert.match(page, /Button \{\s*openBatchDestination\(\.move\)/)
   assert.match(page, /private func openBatchDestination\(/)
-  assert.match(page, /XDriveIOSNativeFilesBatchTrashPolicy\.validSelection\(\s*chosenItems, parentID: sourceParentID/)
+  assert.match(page, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(\s*snapshots: selectedSnapshots, selectedIDs: selectedIDs,\s*parentID: sourceParentID/)
   assert.match(page, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
   assert.match(page, /selectedSnapshots\[selected\.id\] == selected/)
   assert.match(page, /selected: intent\.items\[0\], selectedItems: intent\.items/)
@@ -90,7 +90,7 @@ test('native batch action does not retry a lost commit and cancels on Owner or p
 
 test('native copy and move use the same 200-item bounded verified selection as Server', () => {
   assert.match(sourcePolicy, /static let maxSelected = 200/)
-  assert.match(page, /selectedIDs\.count < XDriveIOSNativeFilesBatchTrashPolicy\.maxSelected/)
+  assert.match(page, /selectedIDs\.count < XDriveIOSNativeFilesSelectionPolicy\.maximumSelectedSnapshots/)
   assert.doesNotMatch(page, /selectedIDs\.formIntersection\(visibleIDs\)/)
   assert.match(page, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
   assert.match(page, /selectedIDs == Set\(intent\.items\.map\(\\\.id\)\)/)

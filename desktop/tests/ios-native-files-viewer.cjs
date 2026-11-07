@@ -80,7 +80,7 @@ test('Owner, Node revision, exact MIME and ticket are checked before payload use
   assert.match(reader, /throw XDriveIOSNativeFilesPreviewError.tooLarge/);
   assert.match(view, /导出上限 1 GiB/);
   assert.match(reader, /PDFDocument\(data: bytes\), document\.pageCount > 0/);
-  assert.match(policy, /static let maximumLoadedRows = 64/);
+  assert.match(policy, /static let maximumLoadedRows = 4 \* 64/);
   assert.match(policy, /Set\(loaded\.map\(\\\.id\)\)\.count == loaded\.count/);
   assert.match(policy, /return files\[fileIndex \+ direction\]/);
   assert.doesNotMatch(reader, /POST.*UploadSession|FileManager\.default\.createFile|WKWebView/);
@@ -156,7 +156,7 @@ test('unsupported, oversized, undecodable and failed-player Files previews expos
   assert.doesNotMatch(modal, /URLSessionConfiguration|download-ticket|FileManager\.default\.moveItem/);
 });
 
-test('L3 navigation can escape an unsupported or oversize file within the verified 64-row page', () => {
+test('L3 navigation can escape an unsupported or oversize file within the bounded 256-row verified window', () => {
   assert.match(policy, /private static func validFileRow\(_ node: XDriveIOSNativeFilesNode\)/);
   assert.match(policy, /guard validFileRow\(node\) else \{ return false \}/);
   assert.match(policy, /guard authorized, validFileRow\(current\),/);

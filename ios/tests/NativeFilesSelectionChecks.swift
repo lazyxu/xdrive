@@ -61,8 +61,17 @@ struct XDriveIOSNativeFilesSelectionChecks {
         let overflowStore = Dictionary(uniqueKeysWithValues: overflow.map { ($0, node($0)) })
         require(Selection.validItems(snapshots: overflowStore,
                                      selectedIDs: Set(overflow),
+                                     parentID: 7)?.count == 201,
+                "201 verified nodes are selectable, but require separate Server transactions")
+        let excessive = (1...2049).map { UInt64($0) }
+        let excessiveStore = Dictionary(uniqueKeysWithValues: excessive.map { ($0, node($0)) })
+        require(Selection.validItems(snapshots: excessiveStore,
+                                     selectedIDs: Set(excessive),
                                      parentID: 7) == nil,
-                "cannot select 201 nodes even across many windows")
+                "2049 nodes exceed the bounded UI snapshot cap")
+        require(!XDriveIOSNativeFilesBatchTrashPolicy.validSelection(
+                    Array(overflowStore.values), parentID: 7),
+                "Server atomic batch must still refuse 201 entries")
         print("Native Files cross-window selection policy passed")
     }
 }

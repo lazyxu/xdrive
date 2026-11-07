@@ -104,10 +104,15 @@ struct XDriveIOSNativeFilesViewerPolicyChecks {
             current: first, in: [first, node(20, parent: 8)],
             direction: 1, authorized: true
         ) == nil, "cross-directory navigation")
+        let fourPages = (0..<256).map { node(UInt64($0 + 1)) }
         require(XDriveIOSNativeFilesViewerPolicy.neighbor(
-            current: first, in: (0..<65).map { node(UInt64($0 + 1)) },
+            current: fourPages[63], in: fourPages, direction: 1,
+            authorized: true
+        ) == fourPages[64], "adjacent navigation crosses former 64-row boundary")
+        require(XDriveIOSNativeFilesViewerPolicy.neighbor(
+            current: first, in: (0..<257).map { node(UInt64($0 + 1)) },
             direction: 1, authorized: true
-        ) == nil, "overlong page")
+        ) == nil, "overlong four-page window rejected")
         require(!XDriveIOSNativeFilesViewerPolicy.canPreview(
             node(15, "huge.pdf", size: 65 * 1_048_576)
         ), "bounded PDF")

@@ -44,7 +44,7 @@ final class XDriveIOSNativeFilesBatchExportModel: ObservableObject {
 
     func invalidSelection() {
         guard !busy && prepared.isEmpty else { return }
-        status = "批量导出仅支持同一文件夹内的 2–8 个不同文件；总原件大小不能超过 512 MiB。"
+        status = "批量导出仅支持同一文件夹内的 2–32 个不同文件；总原件大小不能超过 2 GiB，单文件不能超过 1 GiB。"
     }
 
     func cancelCurrentTransfer() {
