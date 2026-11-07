@@ -8156,6 +8156,7 @@ export function XDriveMediaGallery({
           {placesPanels.map ? (
           <XDriveMediaGalleryPlacesMap
             compact={compactGallery}
+            photoTileMinWidth={minTileWidth}
             places={places}
             totalCount={placesTotalCount}
             listBaiduNativeCells={listBaiduNativeCells}
