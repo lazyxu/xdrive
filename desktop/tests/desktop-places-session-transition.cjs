@@ -56,7 +56,7 @@ function harness({legacy=false,disabled=false,holdProxy=false}={}){
       v.storages.slice().sort().join(',')])},
   })}
   const dependencies={
-    session,agentState:state,AgentIPCError,
+    exports:{},session,agentState:state,AgentIPCError,
     requireAgentClient:()=>({async desktopMapLANTrust(){
       if(legacy)throw new AgentIPCError(404)
       if(disabled)throw new AgentIPCError(403)
@@ -175,7 +175,7 @@ test('real publishAgentState closes both map windows on selected IP change',()=>
     server:origin,connection_ip:'192.168.7.8',auth_status:'已登录'}}
   const calls=[]
   const env={
-    initial:previous,JSON,
+    exports:{},initial:previous,JSON,
     desktopPlacesGuests:new Map([[9,true]]),
     desktopPlacesPending:null,desktopPlacesWebReady:null,desktopPlacesWebPending:null,
     secureBaiduMapWindow:{},
