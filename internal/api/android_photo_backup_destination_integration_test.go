@@ -126,6 +126,30 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndGrouped(t *testing.T) {
 	if source.Name != "Pixel 原件" || source.Revision != 1 {
 		t.Fatalf("Owner-only generic mutation changed native Source: %+v", source)
 	}
+	// An Owner may read a phone's run history but cannot cancel its active
+	// native backup without a device-scoped executor proof.
+	runID := uuid.NewString()
+	activeRun := meta.SyncRun{
+		ID: runID, SourceID: source.ID, SourceRevision: source.Revision,
+		Mode: meta.SourceRunModeSync, Trigger: meta.SyncRunTriggerManual,
+		Status: meta.SyncRunStatusRunning, TargetNodeID: source.TargetNodeID,
+		StartedAt: time.Now().UTC(),
+	}
+	if err := db.Create(&activeRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/sources/%d/runs/%s/cancel", source.ID, runID),
+		token, nil, http.StatusForbidden, nil)
+	var unchangedRun meta.SyncRun
+	if err := db.First(&unchangedRun, "id = ?", runID).Error; err != nil ||
+		unchangedRun.CancelRequestedAt != nil {
+		t.Fatalf("Owner-only cancellation changed native run: %+v err=%v", unchangedRun, err)
+	}
+	if err := db.Model(&meta.SyncRun{}).Where("id = ?", runID).
+		Update("status", meta.SyncRunStatusCancelled).Error; err != nil {
+		t.Fatal(err)
+	}
 	boundDeviceID, bound := meta.SourceDeviceID(source)
 	if !bound || boundDeviceID != device.ID || source.Kind != meta.SourceKindAndroidPhotos ||
 		!source.TargetManaged || source.TargetNodeID == nil ||

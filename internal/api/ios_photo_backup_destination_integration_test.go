@@ -123,6 +123,30 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 		stored.TargetNodeID == nil || *stored.TargetNodeID != result.TargetNodeID {
 		t.Fatalf("Source must own exact managed Node: %+v", stored)
 	}
+	// Generic Owner-only run cancellation must not interrupt the local
+	// PhotoKit backup. Preserve the Source and durable running record.
+	runID := uuid.NewString()
+	activeRun := meta.SyncRun{
+		ID: runID, SourceID: stored.ID, SourceRevision: stored.Revision,
+		Mode: meta.SourceRunModeSync, Trigger: meta.SyncRunTriggerManual,
+		Status: meta.SyncRunStatusRunning, TargetNodeID: stored.TargetNodeID,
+		StartedAt: time.Now().UTC(),
+	}
+	if err := db.Create(&activeRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/sources/%d/runs/%s/cancel", stored.ID, runID),
+		ownerToken, nil, http.StatusForbidden, nil)
+	var unchangedRun meta.SyncRun
+	if err := db.First(&unchangedRun, "id = ?", runID).Error; err != nil ||
+		unchangedRun.CancelRequestedAt != nil {
+		t.Fatalf("Owner-only cancellation changed iOS run: %+v err=%v", unchangedRun, err)
+	}
+	if err := db.Model(&meta.SyncRun{}).Where("id = ?", runID).
+		Update("status", meta.SyncRunStatusCancelled).Error; err != nil {
+		t.Fatal(err)
+	}
 	// Current read and idempotent repeated PUT never allocate a second
 	// Source or Node when the exact one already exists.
 	readBack := read(http.MethodGet, ownerToken, "", http.StatusOK, headers)

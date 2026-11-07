@@ -1021,7 +1021,11 @@ func (s *Server) requestSourceRunCancelWithGuard(
 		).First(&source).Error; err != nil {
 			return err
 		}
-		if source.Kind == meta.SourceKindLocalFolder && guard == nil {
+		if guard == nil && (source.Kind == meta.SourceKindLocalFolder ||
+			nativePhotoSourceRunKind(source.Kind)) {
+			// Generic Owner-only cancellation is not an executor grant.
+			// A phone must not be stopped by the Web Source Manager, and a
+			// SourceRun bearer cannot be upgraded into an Owner mutation.
 			return errLocalSourceExecutorTransactionUnauthorized
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
