@@ -242,7 +242,7 @@ const scenarios = [
     ]
   },
   {
-    "name": "18 Files Home child pop avoids two duplicate shortcut reads",
+    "name": "18 Files Home child pop retains links and only refreshes changed projection",
     "checks": [
       {
         "file": "f",
@@ -281,7 +281,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "func matches\\(_ owner: XDriveNativeOwnerRoot\\?\\) -> Bool",
+        "pattern": "func matches\\(_ owner: XDriveNativeOwnerRoot\\?,\\s*kind: XDriveIOSNativeFilesCollectionKind\\) -> Bool",
         "flags": ""
       },
       {
@@ -306,12 +306,12 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "if preserveVerifiedRows && matches\\(expected\\) \\{\\s*suspendForNavigation\\(\\)",
+        "pattern": "if preserveVerifiedRows && matches\\(expected, kind: kind\\) \\{\\s*suspendForNavigation\\(\\)",
         "flags": ""
       },
       {
         "file": "c",
-        "pattern": "if model\\.loading && !model\\.matches\\(login\\.owner\\)",
+        "pattern": "if !model\\.matches\\(login\\.owner, kind: kind\\) \\{\\s*if model\\.loading",
         "flags": ""
       }
     ]
@@ -321,7 +321,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.sheet\\(item: \\$locateIntent, onDismiss: \\{[\\s\\S]*?if !model\\.matches\\(login\\.owner\\) \\{ reload\\(\\)",
+        "pattern": "\\.sheet\\(item: \\$locateIntent, onDismiss: \\{[\\s\\S]*?if !model\\.matches\\(login\\.owner, kind: kind\\) \\{ reload\\(\\) \\}",
         "flags": ""
       }
     ]
@@ -346,12 +346,12 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "guard model\\.matches\\(login\\.owner\\) else \\{ return \\[\\] \\}",
+        "pattern": "guard model\\.matches\\(login\\.owner, kind: kind\\) else \\{ return \\[\\] \\}",
         "flags": ""
       },
       {
         "file": "c",
-        "pattern": "loadedOwner = nil\\s*items = \\[\\]",
+        "pattern": "loadedOwner = nil\\s*loadedKind = nil\\s*items = \\[\\]",
         "flags": ""
       }
     ]
@@ -387,6 +387,221 @@ const scenarios = [
       {
         "file": "a",
         "pattern": "min\\(64, max\\(0, expectedTotal - offset\\)\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "29 Home's verified Favorites refresh silently on child return",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)\\s*\\} else \\{[\\s\\S]*?loadFavoriteShortcuts\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "30 Home Favorites refresh preserves verified link identities",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "favoriteShortcuts\\.load\\(\\s*\\.favorites, login: login, preserveVerifiedRows: sameOwner",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "31 Home Quick Access shared model still skips duplicate Owner requests",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "quickAccess\\.load\\(login: login\\)",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "32 Recent nested-folder return quietly revalidates current list",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.onAppear \\{\\s*guard phase == \\.active else \\{ return \\}[\\s\\S]*?reload\\(preserveVerifiedRows: true\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "33 Favorites nested-folder return quietly revalidates current list",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "model\\.matches\\(login\\.owner, kind: kind\\)[\\s\\S]*?reload\\(preserveVerifiedRows: true\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "34 Viewer dismissal and onAppear do not start two reads",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "selectedFile == nil && locateIntent == nil &&\\s*managementIntent == nil \\{[\\s\\S]*?reload\\(preserveVerifiedRows: true\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "35 Locate read-only dismissal reuses the exact Owner projection",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.sheet\\(item: \\$locateIntent, onDismiss: \\{[\\s\\S]*?if !model\\.matches\\(login\\.owner, kind: kind\\) \\{ reload\\(\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "36 SwiftUI reused collection StateObject cannot confuse Recent with Favorites",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "private var loadedKind: XDriveIOSNativeFilesCollectionKind\\?",
+        "flags": ""
+      },
+      {
+        "file": "c",
+        "pattern": "loadedKind == kind else \\{ return false \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "37 Collection invalidation also clears its old projection kind",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "func invalidate\\(\\) \\{[\\s\\S]*?loadedOwner = nil\\s*loadedKind = nil\\s*items = \\[\\]",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "38 Successful collection GET attaches Owner and kind before publishing items",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "loadedOwner = expected\\s*loadedKind = kind\\s*items = fetched\\s*verified = true",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "39 Collection heading will not show another kind's cached rows",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "guard model\\.matches\\(login\\.owner, kind: kind\\) else \\{ return \\[\\] \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "40 Kind mismatch shows loading or explicit retry, never an empty-old-category flash",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if !model\\.matches\\(login\\.owner, kind: kind\\) \\{\\s*if model\\.loading \\{[\\s\\S]*?ProgressView\\(\"正在核验当前文件列表…\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "41 Same Owner and kind only can reuse rows on a quiet GET",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if preserveVerifiedRows && matches\\(expected, kind: kind\\) \\{\\s*suspendForNavigation\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "42 Rapid changed collection route invalidates stale async reads",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.onChange\\(of: kind\\) \\{ _ in[\\s\\S]*?model\\.invalidate\\(\\)[\\s\\S]*?if phase == \\.active \\{ reload\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "43 Old kind's file Viewer and locate intent are retired on route switch",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.onChange\\(of: kind\\) \\{ _ in[\\s\\S]*?selectedFile = nil[\\s\\S]*?locateIntent = nil[\\s\\S]*?managementIntent = nil",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "44 Collection child pop suspends obsolete GET without dropping links",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if selectedFile == nil && locateIntent == nil && managementIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "45 Album directory hidden PhotoKit revision triggers fresh read on return",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "lastConfirmedRevision == libraryMonitor\\.revision",
+        "flags": ""
+      },
+      {
+        "file": "a",
+        "pattern": "if !currentPage \\{ reload\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "46 Album directory stops monitor on scene inactivity, not child navigation",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "if state == \\.active \\{[\\s\\S]*?\\} else \\{\\s*libraryMonitor\\.stop\\(\\)\\s*invalidate\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "47 Inactive Files collection does not start an unnecessary network GET on appear",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.onAppear \\{\\s*guard phase == \\.active else \\{ return \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "48 Collection stale result cannot commit after the epoch or Owner has changed",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "guard epoch == ticket,\\s*XDriveIOSNativePhotoOwnerScope\\.matches\\(login\\.owner, expected\\)",
         "flags": ""
       }
     ]
