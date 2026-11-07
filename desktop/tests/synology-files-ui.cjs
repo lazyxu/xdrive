@@ -13,12 +13,18 @@ const web = fs.readFileSync(path.join(repo, 'web', 'src', 'App.tsx'), 'utf8') + 
 const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + sourceModule
 const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceConnectorConfigFields.tsx'), 'utf8')
 
-test('Synology File Station is a distinct generic Pull preset', () => {
+test('Synology File Station remains a history-only connector, not a new Pull preset', () => {
   assert.match(shared, /SupportedExternalSourceKind = 'synology_photos' \| 'synology_files' \| 'yike_photos'/)
-  assert.match(shared, /value: 'synology_files_pull'/)
-  assert.match(shared, /kind: 'synology_files'/)
-  assert.match(shared, /label: '群晖 File Station'/)
-  assert.match(shared, /同步选定目录中的任意文件和文件夹/)
+  assert.match(shared, /if \(kind === 'synology_files'\) return 'synology_files_pull'/)
+  const options = shared.slice(
+    shared.indexOf('export const externalSourceCreateOptions:'),
+    shared.indexOf('export const synologyPhotoSpaceOptions:'),
+  )
+  assert.ok(options.length > 0)
+  assert.match(options, /value: 'yike_pull'/)
+  assert.match(options, /value: 'local_push'/)
+  assert.doesNotMatch(options, /value: 'synology_(files|photos)_pull'/)
+  assert.match(shared, /isSynologyPullTemporarilyDisabled/)
 })
 
 test('File Station roots are validated separately from Photos spaces', () => {

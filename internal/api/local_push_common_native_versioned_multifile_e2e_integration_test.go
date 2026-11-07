@@ -78,7 +78,7 @@ func TestLocalPushCommonNativeVersionedFilesAThenBThenUpdatedA(t *testing.T) {
 		OwnerID: owner.ID, Name: "Local v2",
 		Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush,
 		SyncMode: meta.SourceSyncModeBackup, Status: meta.SourceStatusPaused,
-		Revision: 7, TargetNodeID: &parent.ID,
+		Revision: 7, TargetNodeID: &parent.ID, DeviceID: &device.ID, TargetManaged: true,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)

@@ -80,7 +80,7 @@ func TestLocalPushNativeToGinPhysicalStageAndCancellation(t *testing.T) {
 				OwnerID: owner.ID, Name: "Native originals",
 				Kind: meta.SourceKindLocalFolder, Direction: meta.SourceDirectionPush,
 				SyncMode: meta.SourceSyncModeBackup, Status: meta.SourceStatusPaused,
-				Revision: 7, TargetNodeID: &target.ID,
+				Revision: 7, TargetNodeID: &target.ID, DeviceID: &device.ID, LocalCreatorDeviceID: &device.ID,
 			}
 			if err := db.Create(&source).Error; err != nil {
 				t.Fatal(err)

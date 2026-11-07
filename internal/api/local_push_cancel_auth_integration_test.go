@@ -49,6 +49,7 @@ func TestLocalFolderCancelRequiresOwningDeviceAndCurrentRootProof(t *testing.T) 
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
 		Revision: 1, TargetNodeID: &targetID,
+		DeviceID: &device.ID, LocalCreatorDeviceID: &device.ID,
 	}
 	// Synthetic active rows isolate the cancellation authorization boundary;
 	// public local_folder activation/BeginSourceRun remain hard-denied.
@@ -224,7 +225,8 @@ func TestNonLocalSourceRunCancellationKeepsOwnerJWTBehavior(t *testing.T) {
 		t.Fatal(err)
 	}
 	dsmURL := fmt.Sprintf("/api/v1/sources/%d/runs/%s/cancel", dsm.ID, dsmRun.ID)
-	request(t, router, http.MethodPost, dsmURL, token, nil, http.StatusForbidden)
+	// The dedicated DSM Photos Push executor is retired (410), not merely unauthenticated.
+	request(t, router, http.MethodPost, dsmURL, token, nil, http.StatusGone)
 	var savedDSM meta.SyncRun
 	if err := db.Where("id = ?", dsmRun.ID).First(&savedDSM).Error; err != nil {
 		t.Fatal(err)

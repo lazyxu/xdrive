@@ -93,8 +93,15 @@ func TestIOSDeviceIdentityCannotClaimLocalSourceOrCrossOwner(t *testing.T) {
 	local := fmt.Sprintf(
 		`{"name":"iPhone Photos local claim","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":%d}`, target.ID,
 	)
+	// User-supplied target IDs are invalid for every managed Source,
+	// even before the caller's device capability is evaluated.
 	requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerToken,
-		strings.NewReader(local), http.StatusForbidden, headers)
+		strings.NewReader(local), http.StatusBadRequest, headers)
+	// With a Server-provisioned target, an iOS identity-only credential
+	// still must not acquire desktop Agent local_folder rights.
+	localWithoutTarget := `{"name":"iPhone Photos local claim","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual"}`
+	requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerToken,
+		strings.NewReader(localWithoutTarget), http.StatusForbidden, headers)
 
 	request(t, router, http.MethodPost,
 		"/api/v1/devices/"+enrolled.Device.ID+"/revoke",

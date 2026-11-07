@@ -92,6 +92,70 @@ data class NativeAndroidDeviceEnrollment(
     override fun toString(): String = "NativeAndroidDeviceEnrollment([redacted])"
 }
 
+
+/**
+ * One Server-owned Android Photos Source target. This response never grants
+ * upload capability; no Owner root or local Device name can substitute for
+ * the verified Source/Node tuple. Sensitive Device secrets are never serialized.
+ */
+data class NativeAndroidPhotoDestination(
+    val configured: Boolean,
+    val deviceId: String,
+    val suggestedName: String? = null,
+    val name: String? = null,
+    val sourceId: Long? = null,
+    val sourceRevision: Long? = null,
+    val targetNodeId: Long? = null,
+    val targetPath: String? = null,
+) {
+    init {
+        require(runCatching {
+            java.util.UUID.fromString(deviceId).toString() == deviceId
+        }.getOrDefault(false))
+        if (configured) {
+            require(suggestedName == null && name != null && validDriveNodeName(name) &&
+                sourceId != null && sourceId > 0 &&
+                sourceRevision != null && sourceRevision > 0 &&
+                targetNodeId != null && targetNodeId > 0 &&
+                targetPath == "同步文件夹/Push/" + name)
+        } else {
+            require(name == null && sourceId == null && sourceRevision == null &&
+                targetNodeId == null && targetPath == null &&
+                suggestedName != null && validDriveNodeName(suggestedName))
+        }
+    }
+
+    override fun toString(): String = "NativeAndroidPhotoDestination([redacted])"
+}
+
+
+/** Exact accepted Go SyncRun identity; not a library-wide completion claim. */
+data class NativeAndroidPhotoSourceRun(
+    val id: String,
+    val sourceId: Long,
+    val sourceRevision: Long,
+    val targetNodeId: Long,
+) {
+    init {
+        require(runCatching { java.util.UUID.fromString(id).toString() == id }
+            .getOrDefault(false) && sourceId > 0 && sourceRevision > 0 && targetNodeId > 0)
+    }
+    override fun toString() = "NativeAndroidPhotoSourceRun([redacted])"
+}
+
+/** Only cumulative, receipt-backed counters; no URI, filename or full-inventory assertion. */
+data class NativeAndroidPhotoRunCounts(
+    val scanned: Int = 0,
+    val uploaded: Int = 0,
+    val alreadyVerified: Int = 0,
+    val failed: Int = 0,
+) {
+    init {
+        require(scanned >= 0 && uploaded >= 0 && alreadyVerified >= 0 &&
+            failed >= 0 && uploaded + alreadyVerified <= scanned)
+    }
+}
+
 data class DriveNode(
     val id: Long,
     val parentId: Long? = null,
@@ -391,6 +455,39 @@ interface XDriveService {
     suspend fun verifyNativeAndroidDevice(
         accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
     ): Unit = throw ApiException(501, "Android device identity verification unavailable")
+
+    /** Read-only current Owner+Android-Device managed Source/Target discovery. */
+    suspend fun nativeAndroidPhotoDestination(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+    ): NativeAndroidPhotoDestination =
+        throw ApiException(501, "Android managed photo destination unavailable")
+    /** Explicit user configuration only: cannot be called by an upload retry. */
+    suspend fun configureNativeAndroidPhotoDestination(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, name: String,
+    ): NativeAndroidPhotoDestination =
+        throw ApiException(501, "Android managed photo provisioning unavailable")
+
+    /** Device-bound native SourceRun telemetry for bounded Android batches. */
+    suspend fun beginNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, runId: String, trigger: String,
+    ): NativeAndroidPhotoSourceRun =
+        throw ApiException(501, "Android SourceRun begin unavailable")
+    suspend fun progressNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+        counts: NativeAndroidPhotoRunCounts,
+    ) { throw ApiException(501, "Android SourceRun progress unavailable") }
+    suspend fun heartbeatNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+    ) { throw ApiException(501, "Android SourceRun heartbeat unavailable") }
+    suspend fun finishNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+        counts: NativeAndroidPhotoRunCounts, status: String,
+    ) { throw ApiException(501, "Android SourceRun finish unavailable") }
+
     /** Native Clipboard never borrows Photo, SourceRun or Files credentials.
      * Existing test stubs default to unsupported rather than falsely succeeding.
      */
@@ -521,6 +618,22 @@ interface XDriveService {
         originalSha256: String, resumeKey: String,
         openSource: () -> InputStream, onProgress: (Long) -> Unit = {},
     ): DriveNode = uploadFile(accessToken, parent, name, size, openSource, onProgress)
+
+    /** Managed Android Source/Device/Target CAS writer; no generic Owner-root
+     * fallback, no new physical uploader, no unverified receipt replay. */
+    suspend fun uploadManagedAndroidPhotoOriginal(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        name: String, size: Long, originalSha256: String, resumeKey: String,
+        openSource: () -> InputStream, onProgress: (Long) -> Unit = {},
+    ): DriveNode = throw ApiException(501, "Android managed photo writer unavailable")
+
+    /** Managed original read-only exact receipt query, not a retry. */
+    suspend fun inspectManagedAndroidPhotoUpload(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        name: String, size: Long, originalSha256: String, resumeKey: String,
+    ): DriveNode? = throw ApiException(501, "Android managed photo receipt lookup unavailable")
 
     /** Owner-JWT read-only exact lookup: null = ACTIVE / no finalized proof.
      * Missing/expired/ambiguous responses throw and NEVER authorize replay. */
@@ -730,6 +843,147 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         // Go returns only one Owner-bound, unrevoked identity proof.
         if (result.size != 1 || result.string("device_id") != enrolled.deviceId)
             invalidPayload()
+    }
+
+
+    /** The same narrowly scoped Device credential as Go's managed destination
+     * API. No automatic enrollment, permission upgrade or write to Owner root. */
+    override suspend fun nativeAndroidPhotoDestination(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+    ): NativeAndroidPhotoDestination = parseNativeAndroidPhotoDestination(
+        request("android/photos/backup-destination", accessToken,
+            deviceIdentity = enrolled), enrolled, false)
+
+    override suspend fun configureNativeAndroidPhotoDestination(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, name: String,
+    ): NativeAndroidPhotoDestination {
+        require(validDriveNodeName(name) && name.toByteArray(Charsets.UTF_8).size <= 128 &&
+            name == name.trim()) { "Invalid managed Android photo folder name" }
+        return parseNativeAndroidPhotoDestination(
+            request("android/photos/backup-destination", accessToken,
+                values = mapOf("name" to name), method = "PUT", deviceIdentity = enrolled),
+            enrolled, true)
+    }
+
+    private fun parseNativeAndroidPhotoDestination(
+        raw: JsonObject, enrolled: NativeAndroidDeviceEnrollment, requireConfigured: Boolean,
+    ): NativeAndroidPhotoDestination {
+        try {
+            if (raw.string("device_id") != enrolled.deviceId) invalidPayload()
+            val configured = when (raw["configured"]) {
+                JsonPrimitive(true) -> true
+                JsonPrimitive(false) -> false
+                else -> invalidPayload()
+            }
+            if (requireConfigured && !configured) invalidPayload()
+            return if (configured) {
+                if (raw.keys != setOf("configured", "source_id", "source_revision",
+                        "device_id", "name", "target_node_id", "target_path")) invalidPayload()
+                NativeAndroidPhotoDestination(
+                    configured = true, deviceId = enrolled.deviceId,
+                    name = raw.string("name"), sourceId = raw.long("source_id"),
+                    sourceRevision = raw.long("source_revision"),
+                    targetNodeId = raw.long("target_node_id"),
+                    targetPath = raw.string("target_path"))
+            } else {
+                if (raw.keys != setOf("configured", "device_id", "suggested_name")) invalidPayload()
+                NativeAndroidPhotoDestination(
+                    configured = false, deviceId = enrolled.deviceId,
+                    suggestedName = raw.string("suggested_name"))
+            }
+        } catch (_: IllegalArgumentException) {
+            invalidPayload()
+        }
+    }
+
+
+    private fun verifyAndroidSourceRunScope(
+        enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        run: NativeAndroidPhotoSourceRun? = null,
+    ): Long {
+        require(destination.configured && destination.deviceId == enrolled.deviceId &&
+            destination.sourceId != null && destination.sourceRevision != null &&
+            destination.targetNodeId != null && destination.name != null &&
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
+        if (run != null) require(run.sourceId == destination.sourceId &&
+            run.sourceRevision == destination.sourceRevision &&
+            run.targetNodeId == destination.targetNodeId)
+        return requireNotNull(destination.sourceId)
+    }
+
+    private fun nativeAndroidPhotoRunSummary(c: NativeAndroidPhotoRunCounts) =
+        JsonObject(mapOf(
+            "scanned_items" to JsonPrimitive(c.scanned),
+            "scanned_bytes" to JsonPrimitive(0),
+            "new_items" to JsonPrimitive(c.uploaded),
+            "new_bytes" to JsonPrimitive(0),
+            "unchanged_items" to JsonPrimitive(c.alreadyVerified),
+            "unchanged_bytes" to JsonPrimitive(0),
+            "failed_items" to JsonPrimitive(c.failed),
+        ))
+
+    override suspend fun beginNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, runId: String, trigger: String,
+    ): NativeAndroidPhotoSourceRun {
+        val sourceID = verifyAndroidSourceRunScope(enrolled, destination)
+        require(trigger == "manual" || trigger == "scheduled")
+        require(runCatching { java.util.UUID.fromString(runId).toString() == runId }
+            .getOrDefault(false))
+        val payload = request("sources/$sourceID/runs", accessToken,
+            deviceIdentity = enrolled, bodyObject = JsonObject(mapOf(
+                "run_id" to JsonPrimitive(runId), "trigger" to JsonPrimitive(trigger))))
+        if (payload.string("id") != runId || payload.string("status") != "running" ||
+            payload.long("source_id") != sourceID ||
+            payload.long("source_revision") != destination.sourceRevision ||
+            payload.long("target_node_id") != destination.targetNodeId) invalidPayload()
+        return NativeAndroidPhotoSourceRun(
+            runId, sourceID, requireNotNull(destination.sourceRevision),
+            requireNotNull(destination.targetNodeId))
+    }
+
+    override suspend fun progressNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+        counts: NativeAndroidPhotoRunCounts,
+    ) {
+        val sourceID = verifyAndroidSourceRunScope(enrolled, destination, run)
+        request("sources/$sourceID/runs/" + run.id + "/progress", accessToken,
+            deviceIdentity = enrolled,
+            bodyObject = JsonObject(mapOf("summary" to nativeAndroidPhotoRunSummary(counts))),
+            emptyResponse = true)
+    }
+
+    override suspend fun heartbeatNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+    ) {
+        val sourceID = verifyAndroidSourceRunScope(enrolled, destination, run)
+        request("sources/$sourceID/runs/" + run.id + "/heartbeat", accessToken,
+            deviceIdentity = enrolled, bodyObject = JsonObject(emptyMap()), emptyResponse = true)
+    }
+
+    override suspend fun finishNativeAndroidPhotoSourceRun(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination, run: NativeAndroidPhotoSourceRun,
+        counts: NativeAndroidPhotoRunCounts, status: String,
+    ) {
+        val sourceID = verifyAndroidSourceRunScope(enrolled, destination, run)
+        require(status in setOf("completed", "partial", "failed", "cancelled") &&
+            (status != "completed" || counts.failed == 0))
+        // A bounded Android MediaStore page is never a complete library scan.
+        val payload = request("sources/$sourceID/runs/" + run.id + "/finish", accessToken,
+            deviceIdentity = enrolled,
+            bodyObject = JsonObject(mapOf(
+                "status" to JsonPrimitive(status),
+                "complete_inventory" to JsonPrimitive(false),
+                "summary" to nativeAndroidPhotoRunSummary(counts))),
+        )
+        if (payload.string("id") != run.id || payload.string("status") != status ||
+            payload.long("source_id") != sourceID ||
+            payload.long("source_revision") != run.sourceRevision ||
+            payload.long("target_node_id") != run.targetNodeId) invalidPayload()
     }
 
     private fun notesRow(data: JsonObject): OwnerNoteRow {
@@ -1664,20 +1918,42 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     override suspend fun uploadFile(
         accessToken: String, parent: DriveNode, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit,
-    ): DriveNode = uploadFileWithPhotoIdentity(
-        accessToken, parent, name, size, openSource, onProgress, null, null)
+    ): DriveNode {
+        require(parent.isDirectory)
+        return uploadFileWithPhotoIdentity(
+            accessToken, parent.id, name, size, openSource, onProgress, null, null)
+    }
 
     override suspend fun uploadNativePhotoOriginal(
         accessToken: String, parent: DriveNode, name: String, size: Long,
         originalSha256: String, resumeKey: String,
         openSource: () -> InputStream, onProgress: (Long) -> Unit,
-    ): DriveNode = uploadFileWithPhotoIdentity(
-        accessToken, parent, name, size, openSource, onProgress, originalSha256, resumeKey)
+    ): DriveNode {
+        require(parent.isDirectory)
+        return uploadFileWithPhotoIdentity(accessToken, parent.id, name, size,
+            openSource, onProgress, originalSha256, resumeKey)
+    }
+
+    override suspend fun uploadManagedAndroidPhotoOriginal(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        name: String, size: Long, originalSha256: String, resumeKey: String,
+        openSource: () -> InputStream, onProgress: (Long) -> Unit,
+    ): DriveNode {
+        require(destination.configured && destination.deviceId == enrolled.deviceId &&
+            destination.targetNodeId != null && destination.sourceId != null &&
+            destination.sourceRevision != null && destination.name != null &&
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
+        return uploadFileWithPhotoIdentity(
+            accessToken, requireNotNull(destination.targetNodeId), name, size,
+            openSource, onProgress, originalSha256, resumeKey, enrolled)
+    }
 
     private suspend fun uploadFileWithPhotoIdentity(
-        accessToken: String, parent: DriveNode, name: String, size: Long,
+        accessToken: String, parentId: Long, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit,
         originalSha256: String?, resumeKey: String?,
+        deviceIdentity: NativeAndroidDeviceEnrollment? = null,
     ): DriveNode = withContext(Dispatchers.IO) {
         NativeUploadAdmission.withWriter {
         require((resumeKey == null && originalSha256 == null) ||
@@ -1685,13 +1961,15 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 resumeKey.matches(Regex("and_[0-9a-f]{64}")) &&
                 originalSha256.matches(Regex("[0-9a-f]{64}")) && size > 0))
 
-        require(parent.isDirectory && parent.id > 0 && validDriveNodeName(name) && size >= 0)
+        require(parentId > 0 && validDriveNodeName(name) && size >= 0)
         require(validToken(accessToken)) { "Invalid access token" }
         val chunkSize = 8 * 1024 * 1024
         val chunkCount = if (size == 0L) 0L else ((size - 1) / chunkSize + 1)
+        val uploadPath = if (deviceIdentity != null)
+            "android/photos/managed/uploads" else "uploads"
         require(chunkCount <= 1_000_000) { "Upload has too many chunks" }
-        val session = request("uploads", accessToken, bodyObject = JsonObject(mapOf(
-            "parent_id" to JsonPrimitive(parent.id),
+        val session = request(uploadPath, accessToken, deviceIdentity = deviceIdentity, bodyObject = JsonObject(mapOf(
+            "parent_id" to JsonPrimitive(parentId),
             "name" to JsonPrimitive(name),
             "size" to JsonPrimitive(size),
             "chunk_size" to JsonPrimitive(chunkSize),
@@ -1702,7 +1980,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         ) else emptyMap())))
         val id = session.string("id")
         if (!id.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")) ||
-            session.long("parent_id") != parent.id ||
+            session.long("parent_id") != parentId ||
             session.string("name") != name || session.long("size") != size ||
             session.long("chunk_size") != chunkSize.toLong() ||
             session.long("chunk_count") != chunkCount ||
@@ -1713,7 +1991,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         // reuse. Only an exact finalized Node+SHA is proof; no chunk replay.
         if (status == "finalized" && resumeKey != null) {
             val result = node(session["result"] as? JsonObject ?: invalidPayload())
-            if (result.id <= 0 || result.parentId != parent.id ||
+            if (result.id <= 0 || result.parentId != parentId ||
                 result.type != "file" || result.name != name ||
                 result.size != size || result.revision <= 0) invalidPayload()
             onProgress(size)
@@ -1743,7 +2021,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                     val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {
                         "%02x".format(Locale.ROOT, it.toInt() and 0xff)
                     }
-                    val ack = putUploadChunk(accessToken, id, index, bytes, hash)
+                    val ack = putUploadChunk(accessToken, id, index, bytes, hash, deviceIdentity)
                     if (ack.long("index") != index.toLong() ||
                         ack.long("size") != wanted.toLong() ||
                         !ack.string("sha256").equals(hash, ignoreCase = true)) invalidPayload()
@@ -1752,19 +2030,20 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 }
                 if (input.read() != -1) throw ApiException(0, "Selected file grew during upload")
             }
-            val finalized = request("uploads/$id/finalize", accessToken,
-                bodyObject = JsonObject(emptyMap()), longRunning = true)
+            val finalized = request("$uploadPath/$id/finalize", accessToken,
+                bodyObject = JsonObject(emptyMap()), longRunning = true,
+                deviceIdentity = deviceIdentity)
             if (finalized.string("id") != id || finalized.string("status") != "finalized" ||
-                finalized.long("parent_id") != parent.id ||
+                finalized.long("parent_id") != parentId ||
                 finalized.long("size") != size) invalidPayload()
             val result = node(finalized["result"] as? JsonObject ?: invalidPayload())
-            if (result.id <= 0 || result.type != "file" || result.parentId != parent.id ||
+            if (result.id <= 0 || result.type != "file" || result.parentId != parentId ||
                 result.name != name || result.size != size || result.revision <= 0)
                 invalidPayload()
             completed = true
             result
         } finally {
-            if (!completed) {
+            if (!completed && deviceIdentity == null) {
                 // May already be finalized after a lost ACK. DELETE is best effort;
                 // it cannot remove a finalized Node. Never retry the finalize write.
                 withContext(NonCancellable) {
@@ -1786,12 +2065,35 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     override suspend fun inspectNativePhotoUpload(
         accessToken: String, parentId: Long, name: String, size: Long,
         originalSha256: String, resumeKey: String,
+    ): DriveNode? = inspectNativePhotoUploadExact(
+        accessToken, parentId, name, size, originalSha256, resumeKey, null)
+
+    override suspend fun inspectManagedAndroidPhotoUpload(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        destination: NativeAndroidPhotoDestination,
+        name: String, size: Long, originalSha256: String, resumeKey: String,
+    ): DriveNode? {
+        require(destination.configured && destination.deviceId == enrolled.deviceId &&
+            destination.targetNodeId != null && destination.sourceId != null &&
+            destination.sourceRevision != null && destination.name != null &&
+            destination.targetPath == "同步文件夹/Push/" + destination.name)
+        return inspectNativePhotoUploadExact(
+            accessToken, requireNotNull(destination.targetNodeId), name, size,
+            originalSha256, resumeKey, enrolled)
+    }
+
+    private suspend fun inspectNativePhotoUploadExact(
+        accessToken: String, parentId: Long, name: String, size: Long,
+        originalSha256: String, resumeKey: String,
+        deviceIdentity: NativeAndroidDeviceEnrollment?,
     ): DriveNode? {
         require(validToken(accessToken) && parentId > 0 && size > 0 &&
             validDriveNodeName(name) &&
             originalSha256.matches(Regex("[0-9a-f]{64}")) &&
             resumeKey.matches(Regex("and_[0-9a-f]{64}")))
-        val dto = request("uploads/android-photo-receipt", accessToken,
+        val lookupPath = if (deviceIdentity != null)
+            "android/photos/managed/uploads/resume-lookup" else "uploads/android-photo-receipt"
+        val dto = request(lookupPath, accessToken, deviceIdentity = deviceIdentity,
             bodyObject = JsonObject(mapOf(
                 "resume_key" to JsonPrimitive(resumeKey),
                 "parent_id" to JsonPrimitive(parentId),
@@ -1822,13 +2124,20 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     private suspend fun putUploadChunk(
         accessToken: String, sessionId: String, index: Int,
         bytes: ByteArray, checksum: String,
+        deviceIdentity: NativeAndroidDeviceEnrollment? = null,
     ): JsonObject = suspendCancellableCoroutine { continuation ->
+        val prefix = if (deviceIdentity != null) "android/photos/managed/uploads" else "uploads"
         val url = address.url.toHttpUrlOrNull()!!.newBuilder()
-            .addPathSegments("api/v1/uploads/$sessionId/chunks/$index").build()
-        val request = Request.Builder().url(url)
+            .addPathSegments("api/v1/$prefix/$sessionId/chunks/$index").build()
+        val builder = Request.Builder().url(url)
             .header("Authorization", "Bearer $accessToken")
             .header("X-Chunk-SHA256", checksum)
             .header("Accept", "application/json")
+        if (deviceIdentity != null) {
+            builder.header("X-XDrive-Device-ID", deviceIdentity.deviceId)
+            builder.header("X-XDrive-Device-Token", deviceIdentity.deviceToken)
+        }
+        val request = builder
             .put(bytes.toRequestBody("application/octet-stream".toMediaType())).build()
         val call = http.newCall(request)
         call.timeout().timeout(0, TimeUnit.MILLISECONDS)
@@ -2888,14 +3197,34 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         deviceIdentity: NativeAndroidDeviceEnrollment? = null,
         expectedStatus: Int? = null,
     ): JsonElement {
-        // Device headers are allowed on exactly one read-only identity route.
-        // A token never appears in the query, URI, body or ordinary API calls.
+        // Native Device credentials are restricted to exact identity and
+        // managed-destination routes. Never attach them to ordinary Files,
+        // uploads, a redirect, source mutation or an arbitrary caller URL.
+        val nativeIdentityRequest = path == "devices/self" && method == null &&
+            values == null
+        val nativeDestinationRequest = path == "android/photos/backup-destination" &&
+            ((method == null && values == null) ||
+                (method == "PUT" && values?.keys == setOf("name")))
+        val managedAndroidSourceRun = path.matches(
+            Regex("sources/[1-9][0-9]*/runs(?:/[0-9a-fA-F-]{36}/(?:progress|heartbeat|finish))?")) &&
+            method == null && bodyObject != null
+        val managedAndroidInit = path == "android/photos/managed/uploads" &&
+            method == null && bodyObject != null
+        val managedAndroidResume = path == "android/photos/managed/uploads/resume-lookup" &&
+            method == null && bodyObject != null
+        val managedAndroidFinalize = path.matches(
+            Regex("android/photos/managed/uploads/[0-9a-fA-F-]{36}/finalize")) &&
+            method == null && bodyObject != null && longRunning
+        val nativeManagedUploadRequest =
+            managedAndroidInit || managedAndroidResume || managedAndroidFinalize
         require(deviceIdentity == null ||
-            (path == "devices/self" && accessToken != null && method == null &&
-                values == null && query.isEmpty() && ifMatch == null &&
-                numberValues.isEmpty() && bodyObject == null &&
-                !longRunning && pathTailSegments.isEmpty())) {
-            "Device credentials may only be used for the current Owner identity GET"
+            (accessToken != null &&
+                (nativeIdentityRequest || nativeDestinationRequest ||
+                    nativeManagedUploadRequest || managedAndroidSourceRun) &&
+                query.isEmpty() && ifMatch == null && numberValues.isEmpty() &&
+                (bodyObject == null || nativeManagedUploadRequest || managedAndroidSourceRun) &&
+                (!longRunning || managedAndroidFinalize) && pathTailSegments.isEmpty())) {
+            "Device credentials are restricted to native identity, destination and managed originals"
         }
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             // Authenticated album IDs may be opaque (including reserved characters):

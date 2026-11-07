@@ -63,6 +63,8 @@ class NativePhotoBatchControlsUiTest {
         var granted by mutableStateOf(true)
         var state by mutableStateOf(ready.copy(
             nativePhotoDeviceVerified = true,
+            nativePhotoTargetConfigured = true,
+            nativePhotoTargetName = "Pixel Backup",
             nativePhotoBatchScanned = 64,
             nativePhotoBatchUploaded = 8,
             nativePhotoBatchNextAfterId = 500,
@@ -97,6 +99,38 @@ class NativePhotoBatchControlsUiTest {
             state = state.copy(screen = Screen.LOGIN, nativeUiSessionId = 0)
         }
         compose.onNodeWithTag("native-photo-batch-open").assertDoesNotExist()
+    }
+
+    @Test fun verifiedDeviceWithoutManagedTargetCannotUploadOrEnableBackground() {
+        var starts = 0
+        var enables = 0
+        compose.setContent {
+            XDriveTheme {
+                NativePhotoBatchControls(
+                    ready.copy(nativePhotoDeviceVerified = true,
+                        nativePhotoTargetConfigured = false),
+                    fullReadGrant = true,
+                    onRequestReadGrant = {},
+                    onEnrollDevice = {},
+                    onStartBatch = { starts++ },
+                    onCancelBatch = {},
+                    onEnableAuto = { enables++ },
+                )
+            }
+        }
+        compose.onNodeWithTag("native-photo-batch-open").performClick()
+        compose.onNodeWithTag("native-photo-managed-target-status")
+            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("native-photo-managed-target-configure")
+            .performScrollTo().assertIsEnabled()
+        compose.onNodeWithTag("native-photo-batch-confirm-open")
+            .performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("native-photo-auto-enable")
+            .performScrollTo().assertIsNotEnabled()
+        compose.runOnIdle {
+            assertEquals(0, starts)
+            assertEquals(0, enables)
+        }
     }
 
     @Test fun runningForegroundUploadCanStopButNotOpenAnotherWriter() {

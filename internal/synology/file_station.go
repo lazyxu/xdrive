@@ -79,6 +79,20 @@ type FileStationSession struct {
 	closed bool
 }
 
+func (s *FileStationSession) DeviceName(ctx context.Context) string {
+	if s == nil || s.client == nil {
+		return ""
+	}
+	s.mu.Lock()
+	auth := s.auth
+	closed := s.closed
+	s.mu.Unlock()
+	if closed {
+		return ""
+	}
+	return s.client.deviceName(ctx, auth)
+}
+
 func (c *Client) ConnectFileStation(ctx context.Context) (*FileStationSession, error) {
 	apis, err := c.fileStationAPIInfo(ctx)
 	if err != nil {
@@ -113,7 +127,7 @@ func (c *Client) TestFileStation(ctx context.Context) (AccountInfo, error) {
 	if _, err := session.ListSharesPage(ctx, 0, 1); err != nil {
 		return AccountInfo{}, fmt.Errorf("verify Synology File Station session: %w", err)
 	}
-	return AccountInfo{Username: c.username}, nil
+	return AccountInfo{Username: c.username, DeviceName: session.DeviceName(ctx)}, nil
 }
 
 func (c *Client) fileStationAPIInfo(ctx context.Context) (map[string]apiInfo, error) {

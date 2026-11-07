@@ -25,24 +25,26 @@ test('iOS destination is a dedicated Owner+Device-scoped Server Source, never a 
   assert.match(server, /Status: meta\.SourceStatusPaused/);
   assert.match(server, /TargetManaged = true/);
   assert.match(server, /createLocalPushManagedTargetTx\(/);
-  assert.match(source, /if req\.Kind == meta\.SourceKindIOSPhotos \{/);
-  assert.match(source, /if current\.Kind == meta\.SourceKindIOSPhotos \{/);
-  assert.match(source, /if source\.Kind == meta\.SourceKindIOSPhotos \{/);
+  assert.match(source, /if req\.Kind == meta\.SourceKindIOSPhotos \|\| req\.Kind == meta\.SourceKindAndroidPhotos/);
+  assert.match(source, /if current\.Kind == meta\.SourceKindIOSPhotos \|\| current\.Kind == meta\.SourceKindAndroidPhotos \{/);
+  assert.match(source, /if source\.Kind == meta\.SourceKindIOSPhotos \|\| source\.Kind == meta\.SourceKindAndroidPhotos \{/);
+  assert.match(source, /errors\.Is\(err, errAndroidPhotoSourceRunUnauthorized\)/);
 });
 
 test('server is sole authority for actual Node/Path and never adopts a user-supplied target id', () => {
   assert.match(server, /managedSourceTargetAncestorIDsTx\(/);
-  assert.match(server, /managedPushDeviceFolderName\(device\)/);
+  assert.doesNotMatch(server, /managedPushDeviceFolderName\(device\)/)
+  assert.match(server, /createLocalPushManagedTargetTx\(c\.Request\.Context\(\), tx, source, device\)/);
   assert.match(server, /renameManagedSourceTargetTx\(tx, source, name\)/);
   assert.match(server, /"target_node_id": target\.ID/);
   assert.match(server, /"target_path":\s*path/);
   assert.match(server, /"configured":\s*false/);
   assert.match(server, /"suggested_name": suggestedIOSPhotoDestinationName\(device\.Name\)/);
-  assert.match(managed, /\[\]string\{yikeTargetRootName,\s*"Push"\}/);
+  assert.match(pullManaged, /segments = \[\]string\{yikeTargetRootName, "Push"\}/);
   assert.match(pullManaged, /\[\]string\{yikeTargetRootName,\s*"Pull",\s*connector\}/);
   assert.doesNotMatch(managed, /"设备备份"/);
   assert.doesNotMatch(pullManaged, /"远程拉取"/);
-  assert.match(managed, /\[\]string\{meta\.SourceKindLocalFolder, meta\.SourceKindIOSPhotos\}/);
+  assert.match(pullManaged, /source\.Kind != meta\.SourceKindLocalFolder && source\.Kind != meta\.SourceKindIOSPhotos/);
   assert.doesNotMatch(server, /TargetNodeID\s+uint64.*json/);
   assert.doesNotMatch(server, /createUploadSession\(|finalizeUploadSession\(/);
 });

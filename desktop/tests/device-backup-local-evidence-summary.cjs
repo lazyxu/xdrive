@@ -45,7 +45,7 @@ test('owning Desktop can only inspect generation-scoped advisory evidence count'
   assert.match(types, /XDriveLocalBackupEvidenceSummary/)
   assert.match(app, /localEvidenceSummary:\s*localBackupEvidenceSummary/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
-  assert.match(page, /evidenceSummary: Boolean\(localEvidenceSummary\)/)
+  assert.match(page, /evidenceSummary: folder\.status !== 'archived' && Boolean\(localEvidenceSummary\)/)
   assert.match(page, /localActions\.evidenceSummary \?/)
   assert.match(page, /localOwnsFolder\(evidenceSummaryTarget\.id\)/)
   assert.match(page, /evidenceSummaryTarget.source === source/)

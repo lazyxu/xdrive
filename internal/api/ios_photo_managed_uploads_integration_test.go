@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
@@ -54,8 +56,8 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 		t.Fatalf("invalid managed Photo Source/Node: %+v", response)
 	}
 	scope := iosPhotoManagedUploadScope{
-		ownerID: owner.ID, deviceID: device.ID,
-		sourceID: response.SourceID, targetID: response.TargetNodeID,
+		ownerID: owner.ID, deviceID: device.ID, sourceID: response.SourceID,
+		sourceRevision: 1, targetID: response.TargetNodeID,
 	}
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ios/photos/managed/uploads", nil)
@@ -103,14 +105,54 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 	}
 	session := meta.UploadSession{
 		ID: uuid.NewString(), OwnerID: owner.ID,
+		SourceID: response.SourceID, SourceRevision: scope.sourceRevision,
+		SourceDeviceID: device.ID, SourceTargetID: response.TargetNodeID,
 		ParentID: &response.TargetNodeID, Name: name, RequestedName: name,
 		ConflictPolicy: meta.UploadConflictPolicyFail, TotalSize: req.Size,
-		ChunkSize: req.ChunkSize, SHA256: digest, ResumeKey: key,
-		Status: meta.UploadStatusActive,
+		ChunkSize: req.ChunkSize, ChunkCount: 1, SHA256: digest, ResumeKey: key,
+		Status: meta.UploadStatusActive, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	// All transaction rechecks load the persisted UploadSession, not the
+	// caller's struct. Write the real row before exercising each authority.
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := requireSourceRunOrLocalPushFinalizeTx(
 		ctx, db, c, session, response.TargetNodeID); err != nil {
 		t.Fatalf("valid managed iOS finalize denied: %v", err)
+	}
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, c, session); err != nil {
+		t.Fatalf("valid iOS UploadPart transaction denied: %v", err)
+	}
+	// Each hostile tuple is altered in the DATABASE itself. Merely changing
+	// the caller's copy would not test the locked durable-row authorization.
+	for _, scenario := range []struct {
+		name   string
+		column string
+		value  any
+	}{
+		{"wrong device", "source_device_id", uuid.NewString()},
+		{"stale Source revision", "source_revision", scope.sourceRevision + 1},
+		{"wrong target", "source_target_id", root.ID},
+		{"legacy unbound session", "source_id", uint64(0)},
+	} {
+		rollback := errors.New("restore hostile session after assertion")
+		err := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&meta.UploadSession{}).Where("id = ?", session.ID).
+				Update(scenario.column, scenario.value).Error; err != nil {
+				return err
+			}
+			if err := server.requireUploadChunkAuthorityTx(ctx, tx, c, session); !errors.Is(err, errManagedSourceWriteDenied) {
+				return fmt.Errorf("%s reached UploadPart transaction: %v", scenario.name, err)
+			}
+			return rollback
+		})
+		if !errors.Is(err, rollback) {
+			t.Fatalf("%s hostile session test failed: %v", scenario.name, err)
+		}
+	}
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, regular, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("plain Owner adopted iOS Source session: %v", err)
 	}
 	if err := requireSourceRunOrLocalPushFinalizeTx(
 		ctx, db, regular, session, response.TargetNodeID); !errors.Is(err, errManagedSourceWriteDenied) {
@@ -129,5 +171,8 @@ func TestIOSPhotoManagedUploadExactSourceDeviceAndNodeAdmission(t *testing.T) {
 	if err := requireSourceRunOrLocalPushFinalizeTx(
 		ctx, db, c, session, response.TargetNodeID); !errors.Is(err, errManagedSourceWriteDenied) {
 		t.Fatalf("revoked iPhone finalized old session: %v", err)
+	}
+	if err := server.requireUploadChunkAuthorityTx(ctx, db, c, session); !errors.Is(err, errManagedSourceWriteDenied) {
+		t.Fatalf("revoked iPhone committed UploadPart: %v", err)
 	}
 }

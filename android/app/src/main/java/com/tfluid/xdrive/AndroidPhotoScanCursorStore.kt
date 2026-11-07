@@ -106,9 +106,16 @@ internal class AndroidPhotoScanCursorStore(
     private fun hashOwner(owner: NativePhotoBackupOwner): String {
         require(ServerAddress.parse(owner.serverOrigin).url == owner.serverOrigin)
         // Root revision intentionally excluded: uploads change it.
-        val body = listOf(owner.serverOrigin, owner.instanceId,
+        val legacyFields = listOf(owner.serverOrigin, owner.instanceId,
             owner.ownerId.toString(), owner.username,
-            owner.rootNodeId.toString(), owner.deviceId).joinToString("\u0000")
+            owner.rootNodeId.toString(), owner.deviceId)
+        // Preserve the legacy digest for old Owner-root checkpoints. A new
+        // Source or Target gets an entirely new scan cursor and cannot skip
+        // MediaStore rows confirmed only beneath a different managed Node.
+        val managedFields = if (owner.managedSourceId > 0L)
+            listOf(owner.managedSourceId.toString(), owner.managedTargetNodeId.toString())
+            else emptyList()
+        val body = (legacyFields + managedFields).joinToString("\u0000")
         return MessageDigest.getInstance("SHA-256")
             .digest(body.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }

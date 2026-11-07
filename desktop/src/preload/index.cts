@@ -675,6 +675,12 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cancel-device-backup-local-evidence-preflight', requestID),
   removeDeviceBackupLocalSource: (sourceID: number, revision: number) =>
     ipcRenderer.invoke('agent:remove-device-backup-local-source', sourceID, revision),
+  getDeviceBackupLocalArchiveSettings: (sourceID: number) =>
+    ipcRenderer.invoke('agent:get-device-backup-local-archive-settings', sourceID),
+  archiveDeviceBackupLocalSource: (sourceID: number, revision: number) =>
+    ipcRenderer.invoke('agent:archive-device-backup-local-source', sourceID, revision),
+  restoreDeviceBackupLocalSource: (sourceID: number, revision: number) =>
+    ipcRenderer.invoke('agent:restore-device-backup-local-source', sourceID, revision),
   getDeviceBackupRuns: (sourceID: number, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-device-backup-runs', sourceID, limit, offset),
   getSourceRuns: (sourceID: number, limit = 1, offset = 0) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit, offset),
   getSourceRunFailures: (sourceID: number, runID: string, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-source-run-failures', sourceID, runID, limit, offset),

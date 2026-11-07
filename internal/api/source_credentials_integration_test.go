@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -145,37 +146,40 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}
 	credentialTestErr = nil
 
-	synologyTestBody := `{"kind":"synology_photos","payload":{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}}`
-	credentialTestErr = context.DeadlineExceeded
-	synologyTimeout := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
-		strings.NewReader(synologyTestBody), http.StatusGatewayTimeout, map[string]string{"Content-Type": "application/json"})
-	if !strings.Contains(synologyTimeout.Body.String(), "synology_timeout") {
-		t.Fatalf("Synology timeout response=%s", synologyTimeout.Body.String())
+	// Synology credential diagnostics are dormant at the public API, including
+	// both legacy connector kinds. The mock must never see these requests.
+	for _, kind := range []string{synologySourceKind, synologyFilesSourceKind} {
+		beforeKind, beforePayload := testedKind, string(testedPayload)
+		body := fmt.Sprintf(`{"kind":%q,"payload":{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}}`, kind)
+		response := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
+			strings.NewReader(body), http.StatusGone, map[string]string{"Content-Type": "application/json"})
+		if testedKind != beforeKind || string(testedPayload) != beforePayload || strings.Contains(response.Body.String(), "secret") {
+			t.Fatalf("dormant Synology credential probe invoked remote tester or leaked secret: %s", response.Body.String())
+		}
 	}
 
-	credentialTestErr = fmt.Errorf("%w: %w", synology.ErrUnavailable, syscall.ECONNREFUSED)
-	synologyRefused := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
-		strings.NewReader(synologyTestBody), http.StatusBadGateway, map[string]string{"Content-Type": "application/json"})
-	if !strings.Contains(synologyRefused.Body.String(), "synology_connection_refused") ||
-		!strings.Contains(synologyRefused.Body.String(), "\"detail\"") ||
-		!strings.Contains(synologyRefused.Body.String(), "端口拒绝连接") {
-		t.Fatalf("Synology refused response=%s", synologyRefused.Body.String())
+	// Keep Synology-specific TLS, refused-connection and timeout error mapping
+	// covered directly, so enabling the adapter later does not lose diagnostics.
+	for _, tc := range []struct {
+		err    error
+		status int
+		code   string
+		detail string
+	}{
+		{context.DeadlineExceeded, http.StatusGatewayTimeout, "synology_timeout", ""},
+		{fmt.Errorf("%w: %w", synology.ErrUnavailable, syscall.ECONNREFUSED),
+			http.StatusBadGateway, "synology_connection_refused", "端口拒绝连接"},
+		{fmt.Errorf("%w: %w", synology.ErrUnavailable, x509.UnknownAuthorityError{Cert: &x509.Certificate{}}),
+			http.StatusBadGateway, "synology_tls_unknown_authority", "证书"},
+	} {
+		response := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(response)
+		writeSourceCredentialTestError(c, synologySourceKind, tc.err)
+		if response.Code != tc.status || !strings.Contains(response.Body.String(), tc.code) ||
+			(tc.detail != "" && !strings.Contains(response.Body.String(), tc.detail)) {
+			t.Fatalf("Synology diagnostic error %v: HTTP %d %s", tc.err, response.Code, response.Body.String())
+		}
 	}
-	credentialTestErr = nil
-
-	credentialTestErr = fmt.Errorf(
-		"%w: %w",
-		synology.ErrUnavailable,
-		x509.UnknownAuthorityError{Cert: &x509.Certificate{}},
-	)
-	synologyTLS := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
-		strings.NewReader(synologyTestBody), http.StatusBadGateway, map[string]string{"Content-Type": "application/json"})
-	if !strings.Contains(synologyTLS.Body.String(), "synology_tls_unknown_authority") ||
-		!strings.Contains(synologyTLS.Body.String(), "\"detail\"") ||
-		!strings.Contains(synologyTLS.Body.String(), "证书") {
-		t.Fatalf("Synology TLS diagnostic response=%s", synologyTLS.Body.String())
-	}
-	credentialTestErr = nil
 
 	var userA meta.User
 	if err := db.Where("username = ?", "credential-alice").First(&userA).Error; err != nil {
@@ -185,16 +189,18 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err := db.Where("owner_id = ? AND parent_id IS NULL", userA.ID).First(&rootA).Error; err != nil {
 		t.Fatal(err)
 	}
+	// Historical unbound Yike Source: credential verification must provision a
+	// dedicated uid_* managed target. The Owner root is ordinary data and must
+	// never be adopted or used as a Source target.
 	source := meta.Source{
-		OwnerID:      userA.ID,
-		Name:         "Yike Photos",
-		Kind:         "yike_photos",
-		Direction:    meta.SourceDirectionPull,
-		SyncMode:     meta.SourceSyncModeBackup,
-		RunMode:      meta.SourceRunModeSync,
-		Status:       meta.SourceStatusActive,
-		Revision:     1,
-		TargetNodeID: &rootA.ID,
+		OwnerID:   userA.ID,
+		Name:      "Yike Photos",
+		Kind:      "yike_photos",
+		Direction: meta.SourceDirectionPull,
+		SyncMode:  meta.SourceSyncModeBackup,
+		RunMode:   meta.SourceRunModeSync,
+		Status:    meta.SourceStatusActive,
+		Revision:  1,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
@@ -254,11 +260,9 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		t.Fatalf("Synology Push persisted server credentials=%d", pushCredentialCount)
 	}
 
-	// Synology Pull uses the same encrypted SourceCredential store as Yike but
-	// carries a structured DSM credential payload. Saving a validated
-	// credential activates the paused Pull source; status/test endpoints never
-	// return plaintext. Plaintext is available only through the explicit,
-	// audited short-lived reveal endpoint.
+	// Previously configured remote Synology Pull credentials stay encrypted
+	// and Owner-readable, but cannot be rotated, activated or removed while
+	// the connector is disabled for the DSM folder-Push MVP.
 	synologyPull := meta.Source{
 		OwnerID: userA.ID, Name: "Synology Pull Credential", Kind: synologySourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
@@ -268,101 +272,46 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err := db.Create(&synologyPull).Error; err != nil {
 		t.Fatal(err)
 	}
-	synologyPullCredentialPath := fmt.Sprintf("/api/v1/sources/%d/credential", synologyPull.ID)
-	synologyCredentialBody := `{"payload":{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}}`
-	requestWithHeaders(t, router, http.MethodPut, synologyPullCredentialPath, tokenA,
-		strings.NewReader(synologyCredentialBody), http.StatusOK,
-		map[string]string{"Content-Type": "application/json"})
-	if testedKind != synologySourceKind ||
-		string(testedPayload) != `{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}` {
-		t.Fatalf("Synology credential test kind=%q payload=%s", testedKind, testedPayload)
-	}
-	var activatedSynologyPull meta.Source
-	if err := db.First(&activatedSynologyPull, synologyPull.ID).Error; err != nil {
+	legacyCiphertext := []byte("opaque-historical-ciphertext")
+	if err := db.Create(&meta.SourceCredential{
+		SourceID: synologyPull.ID, Ciphertext: legacyCiphertext, KeyVersion: 1,
+	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if activatedSynologyPull.Status != meta.SourceStatusActive || activatedSynologyPull.Revision != 2 {
-		t.Fatalf("Synology Pull not activated after credential save: %+v", activatedSynologyPull)
-	}
+	synologyPullCredentialPath := fmt.Sprintf("/api/v1/sources/%d/credential", synologyPull.ID)
+	request(t, router, http.MethodPost, synologyPullCredentialPath+"/test", tokenA, nil, http.StatusGone)
 	synologyStatus := request(t, router, http.MethodGet, synologyPullCredentialPath, tokenA, nil, http.StatusOK)
 	if !strings.Contains(synologyStatus.Body.String(), `"configured":true`) ||
-		strings.Contains(synologyStatus.Body.String(), "secret") ||
-		strings.Contains(synologyStatus.Body.String(), "username") ||
-		strings.Contains(synologyStatus.Body.String(), "base_url") {
-		t.Fatalf("Synology credential status leaked or missing state: %s", synologyStatus.Body.String())
+		strings.Contains(synologyStatus.Body.String(), "opaque-historical") {
+		t.Fatalf("historical Synology credential status leaked or disappeared: %s", synologyStatus.Body.String())
 	}
-	synologyRevealPath := fmt.Sprintf("/api/v1/sources/%d/credential/reveal", synologyPull.ID)
-	synologyReveal := request(t, router, http.MethodPost, synologyRevealPath, tokenA, nil, http.StatusOK)
-	if synologyReveal.Header().Get("Cache-Control") != "no-store" ||
-		!strings.Contains(synologyReveal.Body.String(), `"field":"password"`) ||
-		!strings.Contains(synologyReveal.Body.String(), `"value":"secret"`) ||
-		!strings.Contains(synologyReveal.Body.String(), `"expires_in_seconds":30`) ||
-		strings.Contains(synologyReveal.Body.String(), "base_url") ||
-		strings.Contains(synologyReveal.Body.String(), "username") {
-		t.Fatalf("Synology reveal returned unsafe payload: headers=%v body=%s", synologyReveal.Header(), synologyReveal.Body.String())
+	synologyCredentialBody := `{"payload":{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}}`
+	requestWithHeaders(t, router, http.MethodPut, synologyPullCredentialPath, tokenA,
+		strings.NewReader(synologyCredentialBody), http.StatusGone,
+		map[string]string{"Content-Type": "application/json"})
+	request(t, router, http.MethodGet, synologyPullCredentialPath, tokenB, nil, http.StatusNotFound)
+	var encrypted meta.SourceCredential
+	if err := db.Where("source_id = ?", synologyPull.ID).Take(&encrypted).Error; err != nil {
+		t.Fatal(err)
 	}
-	request(t, router, http.MethodPost, synologyRevealPath, tokenB, nil, http.StatusNotFound)
-	// Each DSM parameter is editable independently. The Server merges the
-	// unchanged ciphertext locally, validates the resulting complete bundle
-	// through the existing real connector-test boundary, and never returns
-	// the preserved username or password to the settings form.
-	for _, change := range []struct {
-		patch string
-		want  string
-	}{
-		{
-			`{"payload":{"base_url":"https://nas2.example:5001"}}`,
-			`{"base_url":"https://nas2.example:5001","username":"alice","password":"secret"}`,
-		},
-		{
-			`{"payload":{"username":"new-alice"}}`,
-			`{"base_url":"https://nas2.example:5001","username":"new-alice","password":"secret"}`,
-		},
-		{
-			`{"payload":{"password":"rotated-secret"}}`,
-			`{"base_url":"https://nas2.example:5001","username":"new-alice","password":"rotated-secret"}`,
-		},
-	} {
-		saved := requestWithHeaders(t, router, http.MethodPut, synologyPullCredentialPath, tokenA,
-			strings.NewReader(change.patch), http.StatusOK,
-			map[string]string{"Content-Type": "application/json"})
-		if strings.Contains(saved.Body.String(), "rotated-secret") ||
-			strings.Contains(saved.Body.String(), "new-alice") {
-			t.Fatalf("partial DSM save leaked credential text: %s", saved.Body.String())
-		}
-		if testedKind != synologySourceKind || string(testedPayload) != change.want {
-			t.Fatalf("DSM partial update failed complete validation: kind=%q payload=%s", testedKind, testedPayload)
-		}
-		stored, err := sourcecredential.Get(context.Background(), db, server.ConnectorSecrets, synologyPull)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(stored) != change.want {
-			clear(stored)
-			t.Fatal("DSM single-field update corrupted unchanged encrypted fields")
-		}
-		clear(stored)
+	if !bytes.Equal(encrypted.Ciphertext, legacyCiphertext) {
+		t.Fatal("disabled Synology Pull replaced its historical ciphertext")
 	}
-	finalDSMReveal := request(t, router, http.MethodPost, synologyRevealPath, tokenA, nil, http.StatusOK)
-	if !strings.Contains(finalDSMReveal.Body.String(), `"value":"rotated-secret"`) ||
-		strings.Contains(finalDSMReveal.Body.String(), "new-alice") {
-		t.Fatal("DSM reveal returned the wrong field or leaked the account name")
-	}
-	request(t, router, http.MethodPost, synologyRevealPath, tokenB, nil, http.StatusNotFound)
+	// Credential revocation is still Owner-controlled even for dormant Sources.
 	request(t, router, http.MethodDelete, synologyPullCredentialPath, tokenA, nil, http.StatusNoContent)
-	var pausedSynologyPull meta.Source
-	if err := db.First(&pausedSynologyPull, synologyPull.ID).Error; err != nil {
+	var stillPaused meta.Source
+	if err := db.First(&stillPaused, synologyPull.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if pausedSynologyPull.Status != meta.SourceStatusPaused || pausedSynologyPull.Revision != 3 {
-		t.Fatalf("Synology Pull not paused after credential deletion: %+v", pausedSynologyPull)
+	if stillPaused.Revision != 2 || stillPaused.Status != meta.SourceStatusPaused {
+		t.Fatalf("Owner credential revocation changed Source lifecycle incorrectly: %+v", stillPaused)
 	}
-	var synologyCredentialCount int64
-	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", synologyPull.ID).Count(&synologyCredentialCount).Error; err != nil {
+	var credentialCount int64
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", synologyPull.ID).Count(&credentialCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if synologyCredentialCount != 0 {
-		t.Fatalf("Synology Pull credential rows=%d want=0", synologyCredentialCount)
+	if credentialCount != 0 {
+		t.Fatalf("revoked historical credential still persisted: %d", credentialCount)
 	}
 
 	statusPath := fmt.Sprintf("/api/v1/sources/%d/credential", source.ID)

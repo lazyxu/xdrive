@@ -146,7 +146,7 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{},
-		&meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{},
+		&meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.LocalPushQuotaHold{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{}, &meta.SourceCredential{},
 		&meta.SourceConnectorConfig{}, &meta.SourceItemMetadata{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
@@ -270,6 +270,38 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 	}
 
 	scanRun, scanResult, err := runner.RunSource(context.Background(), source)
+	// The historic connector implementation stays intact, but the public
+	// SourceRun route is deliberately disabled during the DSM folder-Push MVP.
+	// Re-enable the full scan/sync checks below only through production policy;
+	// never introduce a test-only transport or authorization bypass.
+	if meta.SynologyPullTemporarilyDisabled(source.Kind, source.Direction) {
+		if err == nil || !strings.Contains(err.Error(), "(410)") {
+			t.Fatalf("disabled Synology Photos Pull must reject SourceRun admission: run=%+v err=%v", scanRun, err)
+		}
+		if remote.downloadOpens != 0 {
+			t.Fatalf("disabled Synology Photos Pull downloaded remote originals: %d", remote.downloadOpens)
+		}
+		var runs, items, collections int64
+		if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", source.ID).Count(&runs).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", source.ID).Count(&items).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&meta.SourceCollection{}).Where("source_id = ?", source.ID).Count(&collections).Error; err != nil {
+			t.Fatal(err)
+		}
+		var kept meta.Source
+		if err := db.First(&kept, source.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if runs != 0 || items != 0 || collections != 0 ||
+			kept.Revision != source.Revision || kept.TargetNodeID == nil ||
+			*kept.TargetNodeID != target.ID || kept.Status != meta.SourceStatusActive {
+			t.Fatalf("disabled Synology Photos Pull mutated durable Source state: runs=%d items=%d collections=%d kept=%+v", runs, items, collections, kept)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

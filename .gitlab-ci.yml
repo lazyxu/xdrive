@@ -219,29 +219,6 @@ build-client-core:
       - release/synology/*.spk
       - release/synology/*.spk.sha256
 
-build-source-agent:
-  # Keep in-flight master publication inputs noninterruptible.
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
-      interruptible: false
-    - when: on_success
-  image: $XDRIVE_CI_GO_IMAGE
-  extends: .go-linux-cache
-  stage: package
-  needs: []
-  tags:
-    - linux
-  script:
-    - bash scripts/ci/gitlab-source-agent.sh
-  artifacts:
-    name: "xdrive-source-agent-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
-    expire_in: 14 days
-    when: on_success
-    paths:
-      - release/source-agent/xdrive-source-agent-linux-amd64
-      - release/source-agent/xdrive-source-agent-linux-arm64
-      - release/source-agent/xdrive-source-agent-linux-armv7
-
 package-linux-client:
   # Keep in-flight master publication inputs noninterruptible.
   rules:

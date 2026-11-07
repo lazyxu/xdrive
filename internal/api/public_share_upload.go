@@ -89,6 +89,10 @@ func (s *Server) publicShareUploadAuthorization(c *gin.Context) (meta.Share, met
 	}
 	c.Header("Cache-Control", "private, no-store")
 	c.Set("userID", share.OwnerID)
+	// Preserve the verified, narrow Share identity for the common CAS
+	// UploadPart write transaction. This never grants an Owner JWT.
+	c.Set("xdriveShareUploadID", share.ID)
+	c.Set("xdriveShareUploadGrant", share)
 	return share, root, true
 }
 

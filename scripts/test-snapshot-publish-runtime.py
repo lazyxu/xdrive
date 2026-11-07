@@ -34,10 +34,11 @@ def save():
     state_path.write_text(json.dumps(state))
 
 def put_assets(paths):
-    state["assets"] = {
+    # GitHub's --clobber updates matching assets; it does NOT remove old names.
+    state["assets"].update({
         Path(p).name: "sha256:" + hashlib.sha256(Path(p).read_bytes()).hexdigest()
         for p in paths
-    }
+    })
     save()
 
 if args[:2] == ["release", "view"]:
@@ -89,11 +90,33 @@ if args[:1] == ["api"]:
         sys.exit(0)
     if "/releases/tags/snapshot" in endpoint:
         assert state["exists"]
-        assets = [{"name":n,"digest":v} for n,v in state["assets"].items()]
-        if os.getenv("TEST_WRONG_REMOTE_DIGEST") == "1" and assets:
-            assets[0]["digest"] = "sha256:" + "0" * 64
+        assets = [
+            {"id": int(hashlib.sha1(n.encode()).hexdigest()[:12], 16), "name": n, "digest": v}
+            for n, v in state["assets"].items()
+        ]
+        if os.getenv("TEST_WRONG_REMOTE_DIGEST") == "1":
+            for asset in assets:
+                if asset["name"] == "install.sh":
+                    asset["digest"] = "sha256:" + "0" * 64
+                    break
         event("metadata")
         print(json.dumps({"assets":assets}))
+        sys.exit(0)
+    if "/releases/assets/" in endpoint:
+        if "--method" not in args or args[args.index("--method") + 1] != "DELETE":
+            sys.exit("unrecognized asset mutation")
+        if os.getenv("TEST_FAIL_DELETE") == "1":
+            sys.exit(43)
+        asset_id = int(endpoint.rsplit("/", 1)[-1])
+        matching = [
+            name for name in state["assets"]
+            if int(hashlib.sha1(name.encode()).hexdigest()[:12], 16) == asset_id
+        ]
+        if len(matching) != 1:
+            sys.exit("unknown release asset ID")
+        deleted_name = matching[0]
+        del state["assets"][deleted_name]
+        event("delete:" + deleted_name)
         sys.exit(0)
     if "/git/refs/tags/snapshot" in endpoint and "--method" in args:
         assert args[args.index("--method") + 1] == "PATCH"
@@ -106,7 +129,7 @@ if args[:1] == ["api"]:
 sys.exit("unexpected gh call: " + " ".join(args))
 '''
 
-def run_case(label, existing=True, **switches):
+def run_case(label, existing=True, prior_assets=None, **switches):
     with tempfile.TemporaryDirectory(prefix="xdrive-snapshot-publish-") as tmp:
         p = Path(tmp)
         (p / "release").mkdir()
@@ -123,7 +146,11 @@ def run_case(label, existing=True, **switches):
         statefile = p / "state.json"
         statefile.write_text(json.dumps({
             "exists":existing,"tag":OLD if existing else "",
-            "assets":{"old.txt":"sha256:" + "1" * 64} if existing else {},
+            "assets": (prior_assets if prior_assets is not None else {
+                "xdrive-source-agent-linux-amd64": "sha256:" + "1" * 64,
+                "xdrive-source-agent-linux-arm64": "sha256:" + "2" * 64,
+                "xdrive-source-agent-linux-armv7": "sha256:" + "3" * 64,
+            }) if existing else {},
             "events":[],"ref_reads":0,"notes":"","title":"",
         }))
         env = {
@@ -145,10 +172,15 @@ assert state["exists"] and state["tag"] == NEW
 assert set(state["assets"]) == {"install.sh","SHA256SUMS.txt"}
 assert state["events"].index("upload") < state["events"].index("metadata") < state["events"].index("patch")
 assert "release" not in state["events"]
+assert sorted(event for event in state["events"] if event.startswith("delete:")) == [
+    "delete:xdrive-source-agent-linux-amd64",
+    "delete:xdrive-source-agent-linux-arm64",
+    "delete:xdrive-source-agent-linux-armv7",
+]
 assert chr(96) + NEW + chr(96) in state["notes"]
 assert state["title"] == "xDrive snapshot " + NEW[:12]
 
-for key in ("TEST_FAIL_UPLOAD","TEST_WRONG_REMOTE_DIGEST","TEST_STALE_SOURCE","TEST_MOVE_REF"):
+for key in ("TEST_FAIL_UPLOAD","TEST_WRONG_REMOTE_DIGEST","TEST_STALE_SOURCE","TEST_MOVE_REF","TEST_FAIL_DELETE"):
     bad, state = run_case(key, **{key:"1"})
     assert bad.returncode != 0, (key, bad.stdout, bad.stderr)
     assert "patch" not in state["events"], (key, state["events"])
@@ -157,13 +189,36 @@ for key in ("TEST_FAIL_UPLOAD","TEST_WRONG_REMOTE_DIGEST","TEST_STALE_SOURCE","T
         assert state["tag"] == OLD, (key, state["tag"])
     if key == "TEST_STALE_SOURCE":
         assert "upload" not in state["events"]
+    if key == "TEST_WRONG_REMOTE_DIGEST":
+        assert not any(event.startswith("delete:") for event in state["events"])
+
+# Unrelated stale files must NEVER be pruned by the retirement allowlist.
+unknown, state = run_case("unknown-asset", prior_assets={
+    "unexpected-other.bin": "sha256:" + "4" * 64,
+})
+assert unknown.returncode != 0, (unknown.stdout, unknown.stderr)
+assert "unexpected-other.bin" in state["assets"]
+assert not any(event.startswith("delete:") for event in state["events"])
+assert state["tag"] == OLD
+
+# The versioned SPK cleanup contract remains intact.
+spk, state = run_case("old-spk", prior_assets={
+    "xdrivenas-armada38x-0.1.0-8748.spk": "sha256:" + "5" * 64,
+    "xdrivenas-armada38x-0.1.0-8748.spk.sha256": "sha256:" + "6" * 64,
+})
+assert spk.returncode == 0, (spk.stdout, spk.stderr)
+assert sorted(event for event in state["events"] if event.startswith("delete:")) == [
+    "delete:xdrivenas-armada38x-0.1.0-8748.spk",
+    "delete:xdrivenas-armada38x-0.1.0-8748.spk.sha256",
+]
+assert state["tag"] == NEW
 
 new_release, state = run_case("first-snapshot", existing=False)
 assert new_release.returncode == 0, new_release.stderr
 assert state["exists"] and state["tag"] == NEW
 assert "create" in state["events"] and "metadata" in state["events"]
 assert "patch" not in state["events"], "Initial Snapshot creates its own tag"
-print("snapshot publication E2E mock: existing/new, upload failure, digest mismatch, stale source and moved tag passed")
+print("snapshot publication E2E mock: retired Source Agent/SPK cleanup, unknown asset refusal, existing/new, upload/digest/delete failure, stale source and moved tag passed")
 
 
 # GHCR source regression: execute the *actual* image-push shell without a

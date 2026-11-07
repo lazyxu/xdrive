@@ -3,6 +3,7 @@ package synology
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -364,5 +365,19 @@ func TestDiagnoseConnectionErrorIncludesDSMAPIErrorCode(t *testing.T) {
 	if diagnostic.Code != "synology_auth_failed" ||
 		!strings.Contains(diagnostic.Detail, "400") {
 		t.Fatalf("diagnostic=%+v", diagnostic)
+	}
+}
+
+func TestSynologyDeviceNameFromData(t *testing.T) {
+	got := synologyDeviceNameFromData(json.RawMessage(`{"hostname":"nas-home"}`))
+	if got != "nas-home" {
+		t.Fatalf("device name=%q want nas-home", got)
+	}
+	got = synologyDeviceNameFromData(json.RawMessage(`{"server_name":"office-nas"}`))
+	if got != "office-nas" {
+		t.Fatalf("server name=%q want office-nas", got)
+	}
+	if got := synologyDeviceNameFromData(json.RawMessage(`{"model":"DS923+"}`)); got != "" {
+		t.Fatalf("model is not a device name: %q", got)
 	}
 }

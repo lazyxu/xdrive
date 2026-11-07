@@ -17,7 +17,7 @@ import (
 func makeLocalOperationFixture(t *testing.T) localDirectoryChallengeDBFixture {
 	t.Helper()
 	f := makeLocalDirectoryChallengeDBFixture(t)
-	if err := f.primary.AutoMigrate(&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{},
+	if err := f.primary.AutoMigrate(&meta.AuditEvent{}, &meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{},
 		&meta.LocalPushFirstLeafOperationCommit{}, &meta.LocalPushFileTerminal{}); err != nil {
 		t.Fatal(err)
 	}

@@ -30,14 +30,8 @@ release-assets:
   stage: release-build
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
-      needs:
-        - job: build-source-agent
-          artifacts: true
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
       when: on_success
-      needs:
-        - job: build-source-agent
-          artifacts: true
     - when: never
   script:
     - bash scripts/ci/gitlab-release-assets.sh
@@ -46,8 +40,6 @@ release-assets:
     expire_in: 14 days
     when: on_success
     paths:
-      - release/xdrive-source-agent-linux-amd64
-      - release/xdrive-source-agent-linux-arm64
       - release/xdrive-server-install.sh
       - release/server-backup.sh
       - release/server-backup-scheduled.sh

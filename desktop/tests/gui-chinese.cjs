@@ -79,7 +79,8 @@ const renderer = [
   desktopClientUpdatePanel,
   desktopHostFrame,
 ].join('\n')
-const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
+// DSM Photos Push is retired; verify the supported folder backup form instead.
+const synologyFolderBackupSetup = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyBackupSourceSetup.tsx'), 'utf8')
 const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogTitle.tsx'), 'utf8')
 const dialogActions = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogActions.tsx'), 'utf8')
 const dialogContent = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogContent.tsx'), 'utf8')
@@ -172,9 +173,11 @@ test('desktop GUI defaults to Chinese', () => {
     assert.ok(main.includes(text), `missing Chinese desktop system label: ${text}`)
   }
 
-  for (const text of ['群晖 DSM 配置', 'DSM 操作示意图', '上一步', '下一步', '完成']) {
-    assert.ok(synologyGuide.includes(text), `missing Chinese Synology guide label: ${text}`)
+  for (const text of ['创建 NAS 本机备份来源', '我确认在当前 NAS', '每 6 小时自动增量备份']) {
+    assert.ok(synologyFolderBackupSetup.includes(text), `missing Chinese DSM folder backup label: ${text}`)
   }
+  assert.equal(fs.existsSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx')), false,
+    'retired standalone DSM Photos Push guide must not return')
 
   assert.match(html, /<html lang="zh-CN">/)
   assert.match(html, /<title>xDrive 桌面版<\/title>/)
@@ -354,7 +357,8 @@ test('desktop transient management surfaces use shared modal features', () => {
 
 test('desktop dialogs share one title, paper, content, and action treatment', () => {
   assert.ok(renderer.includes('XDriveDialogTitle') && renderer.includes('xDriveDialogPaperProps'), 'Desktop UI is not using the cross-client dialog chrome')
-  assert.ok(synologyGuide.includes("from './DialogTitle'") && synologyGuide.includes('XDriveDialogTitle'), 'Synology guide is not using the cross-client dialog title')
+  assert.ok(synologyFolderBackupSetup.includes('XDriveSynologyBackupSourceSetup'),
+    'supported DSM folder backup setup must remain in the shared UI')
   assert.ok(dialogTitle.includes('aria-label="关闭弹窗"'), 'shared dialog title is missing the close control')
   assert.ok(dialogTitle.includes('export const xDriveDialogPaperProps'), 'shared dialog paper contract is missing')
   assert.ok(dialogActions.includes('export function XDriveDialogActions({'), 'shared dialog actions component is missing')
@@ -498,7 +502,9 @@ test('shared SourceManager owns create, settings and connector forms', () => {
   assert.ok(sharedSourceManager.includes('values={createValues}'), 'SourceManager must pass create form state into the create dialog')
   assert.ok(sharedSourceManager.includes('value={values.preset}'), 'shared Source create preset is not bound inside the create dialog')
   assert.equal((sharedSourceManager.match(/<XDriveSourceNameField\b/g) || []).length, 2, 'Source create/settings name fields must stay shared')
-  assert.equal((sharedSourceManager.match(/<XDriveSourceRunModeField\b/g) || []).length, 2, 'Source create/settings run-mode fields must stay shared')
+  // Separate DSM Push and generic connector create branches share the same
+  // field component, plus the settings branch: no duplicate local widgets.
+  assert.equal((sharedSourceManager.match(/<XDriveSourceRunModeField\b/g) || []).length, 3, 'DSM Push/generic create and settings run-mode fields must stay shared')
   assert.equal((sharedSourceManager.match(/<XDriveSourceStatusField\b/g) || []).length, 1, 'Source settings status field must stay shared')
   assert.equal((sharedSourceManager.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'Source create/settings schedule fields must stay shared')
   assert.equal((sharedSourceManager.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'Source create/settings ignore-rules fields must stay shared')
@@ -570,14 +576,17 @@ test('shared SourceManager preserves Yike and Synology connector safety UX', () 
   assert.ok(sharedSourceManager.includes('XDriveYikeCookieHelp'), 'shared Yike Cookie guide is missing')
   assert.ok(sharedSourceManager.includes('yikeConnectorNotice'), 'Yike private-API notice is missing')
   assert.ok(sharedSourceManager.includes('yikeRateLimitNotice'), 'Yike rate-limit notice is missing')
-  assert.ok(sharedSourceManager.includes('yikeManagedTargetDisplayLabel'), 'Yike managed target display label is missing')
+  assert.ok(sharedSourceManager.includes('externalSourceDisplayTargetPath(setting.source)'), 'Yike managed target must display the actual Server path')
   assert.ok(sharedSourceManager.includes('存储子目录'), 'Yike managed target explanation is missing')
-  assert.ok(sharedSourceManager.includes('已自动撤销'), 'Source create rollback feedback is missing')
-  assert.ok(sharedSourceManager.includes('自动回滚也失败'), 'Source rollback failure fallback is missing')
+  // Source + reserved target are committed atomically: a later credential
+  // failure must not claim the name was automatically revoked or recycled.
+  assert.ok(sharedSourceManager.includes('未自动删除或归档'), 'Source create failure must preserve the managed leaf')
+  assert.ok(sharedSourceManager.includes('目标目录及名称已保留'), 'Source create failure must state the reserved target persists')
   assert.ok(sharedSourceManager.includes('label="一刻相册 Cookie"'), 'single Yike Cookie field is missing')
   assert.ok(sharedSourceManager.includes('revealedValue={credentialReveal?.field ==='), 'audited Yike Cookie reveal is missing')
   assert.ok(sharedSourceManager.includes('onHide={onHideCredential}'), 'revealed Cookie must be concealed on demand')
-  assert.ok(sharedSourceManager.includes("manualTriggerExecutor === 'source_agent'"), 'DSM guide must remain limited to source-agent connectors')
+  assert.equal(sharedSourceManager.includes("manualTriggerExecutor === 'source_agent'"), false,
+    'retired DSM Photos Push source-agent must not reappear in SourceManager')
   assert.ok(sharedSourceManager.includes("createProfile.credential === 'synology_dsm'"), 'Synology credential UI must remain profile-driven')
   assert.ok(sharedSourceManager.includes('externalSourceCredentialLabel'), 'credential actions must stay connector-neutral')
 })
