@@ -5207,6 +5207,11 @@ export class XDriveApi {
     )
   }
 
+  clipboardDevices(signal?: AbortSignal) {
+    return this.request<{ devices: import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardTargetDevice[] }>(
+      '/api/v1/clipboard/devices', { cache: 'no-store', signal })
+  }
+
   clipboardItems(before?: number, signal?: AbortSignal) {
     const query = before ? '?before=' + encodeURIComponent(String(before)) : ''
     return this.request<{
@@ -5217,9 +5222,13 @@ export class XDriveApi {
 
   clipboardCreate(item: {
     client_event_id: string
-    kind: import('../../ui/shared/src/clipboard-crypto').XDriveClipboardKind
+    kind: import('../../ui/shared/src/clipboard-target-crypto').XDriveClipboardTargetKind
     nonce: string
     ciphertext: string
+    target_device_id?: string
+    ephemeral_key?: string
+    wrapped_key?: string
+    node_id?: number
   }, signal?: AbortSignal) {
     return this.request<import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardItem>(
       '/api/v1/clipboard/items', {
