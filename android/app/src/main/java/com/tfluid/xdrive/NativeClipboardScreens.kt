@@ -120,7 +120,9 @@ internal fun NativeClipboardScreen(
         while (stillSession(snapshot) && key != null) {
             try {
                 after = controller.clipboardWatch(after) {
-                    if (stillSession(snapshot) && key != null) refresh()
+                    withContext(Dispatchers.Main.immediate) {
+                        if (stillSession(snapshot) && key != null) refresh()
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
