@@ -69,12 +69,14 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     let query: XDriveIOSNativeUnifiedGalleryQuery
     let density: XDriveIOSNativePhotoWallDensity
     let displayActive: Bool
+    let retainWhileCovered: Bool
     let open: (XDriveIOSNativeUnifiedGalleryPage, Int) -> Void
     let loaded: () -> Void
     let pairing: (XDriveIOSNativeUnifiedPhoto) -> Void
     @StateObject private var model = XDriveIOSNativeUnifiedPhotoTimeline()
     @State private var visible = false
     @State private var retry = UUID()
+    @State private var acceptedGeneration: UUID?
 
     var body: some View {
         content
@@ -85,15 +87,43 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 if model.completed { wall.measure(page: page.id, height: Double(height)) }
             }
             .onAppear { visible = true }
-            .onDisappear { visible = false; model.reset() }
+            .onDisappear {
+                visible = false
+                if !retainWhileCovered {
+                    acceptedGeneration = nil
+                    model.reset()
+                }
+            }
             .task(id: "\(visible):\(displayActive):\(retry)") {
                 guard visible, displayActive, wall.failure == nil,
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { model.reset(); return }
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else {
+                    if !retainWhileCovered {
+                        acceptedGeneration = nil
+                        model.reset()
+                    }
+                    return
+                }
                 let ticket = wall.generation
+                // Keep only an exact previously verified 48-row range on
+                // child/Viewer return; ordinary scroll eviction still drops it.
+                if acceptedGeneration == ticket, model.completed,
+                   model.belongs(to: login.owner) {
+                    loaded()
+                    return
+                }
                 await model.load(from: page.start, filter: filter, login: login, query: query, library: wall.library)
                 guard !Task.isCancelled, visible, displayActive, wall.generation == ticket,
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { model.reset(); return }
-                if wall.accept(model, page: page.id) { loaded() }
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else {
+                    if !retainWhileCovered {
+                        acceptedGeneration = nil
+                        model.reset()
+                    }
+                    return
+                }
+                if wall.accept(model, page: page.id) {
+                    acceptedGeneration = ticket
+                    loaded()
+                }
             }
     }
 

@@ -37,6 +37,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @StateObject private var wall = XDriveIOSNativeUnifiedPhotoWall()
     @StateObject private var photoObserver = XDriveIOSUnifiedPhotoObserver()
     @State private var selected: XDriveIOSNativeUnifiedGallerySelection?
+    // Explicit child NavigationLink state is available before parent onDisappear.
+    @State private var showingPeople = false
+    @State private var showingThumbnailCache = false
     @State private var sourceFilter: XDriveIOSNativeGalleryPresence?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
@@ -80,6 +83,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             .onChange(of: photoObserver.change) { _ in reset() }
             .onChange(of: login.owner) { _ in
+                showingPeople = false; showingThumbnailCache = false
                 sourceFilter = nil; query = .init(); draft = .init(); reset()
             }
             .onChange(of: sourceFilter) { _ in resetWall() }
@@ -128,7 +132,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 }
                 .accessibilityLabel("缩略图大小")
                 .accessibilityIdentifier("native-ios-unified-wall-density")
-                NavigationLink {
+                NavigationLink(isActive: $showingThumbnailCache) {
                     XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
                 } label: {
                     Image(systemName: "internaldrive")
@@ -154,6 +158,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
                                     filter: sourceFilter, query: query, density: wallDensity,
                                     displayActive: selected == nil && phase == .active,
+                                     retainWhileCovered: selected != nil ||
+                                         showingPeople || showingThumbnailCache,
                                     open: { payload, position in
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
                                         selected = .init(owner: owner, page: payload, position: position)
@@ -190,7 +196,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private var filters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack {
-                NavigationLink {
+                NavigationLink(isActive: $showingPeople) {
                     XDriveIOSNativeGalleryPeople(login: login)
                 } label: { Label("人物", systemImage: "person.2") }
                 .accessibilityIdentifier("native-ios-gallery-people")
