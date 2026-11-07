@@ -921,6 +921,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var searchReturnNodeID: UInt64?
     @State private var lastAppearedNodeID: UInt64?
     @State private var pendingNavigationReturnNodeID: UInt64?
+    @State private var arrangementTicket = UUID()
+    @State private var arrangementTask: Task<Void, Never>?
     @State private var sort = "name"
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
     @State private var order = "asc"
@@ -2747,6 +2749,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func suspendVisibleRange() {
+        cancelArrangementReanchor()
         cancelPathLookup()
         cancelSelectAllRead()
         clearInternalDrag()
@@ -2862,6 +2865,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             managementIntent = nil
             versionHistoryIntent = nil
             locateIntent = nil
+            cancelArrangementReanchor()
             showingTagManager = false
             tagManagerOwner = nil
             selectedFile = nil
@@ -2904,24 +2908,41 @@ struct XDriveIOSNativeFilesBrowser: View {
                 selectedSnapshots.removeValue(forKey: id)
             }
         }
-        .onChange(of: sort) { _ in reload(resetOffset: true) }
-        .onChange(of: order) { _ in reload(resetOffset: true) }
+        .onChange(of: sort) { _ in reloadKeepingArrangementAnchor() }
+        .onChange(of: order) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: viewMode) { next in
             if next == "grid" { inlineFolders.invalidate() }
+            // Layout-only change keeps the same verified identities. Do not
+            // reset the Owner Range or jump to the first row when toggling grid.
+            guard !isHome, !isGlobalSearch, !selecting,
+                  let folderID = parentID, let owner = login.owner,
+                  model.canReanchor(
+                    owner: owner, folderID: folderID,
+                    query: activeQuery, filters: searchFilters
+                  ), let anchor = lastAppearedNodeID,
+                  model.entries.contains(where: { $0.id == anchor }) else { return }
+            Task { @MainActor in
+                await Task.yield()
+                guard viewMode == next,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      model.entries.contains(where: { $0.id == anchor }) else { return }
+                returnScroll.scrollTo(anchor, anchor: .center)
+            }
         }
-        .onChange(of: grouping) { _ in
-            if !isHome && !isGlobalSearch { reload(resetOffset: true) }
-        }
-        .onChange(of: foldersFirst) { _ in
-            if !isHome && !isGlobalSearch { reload(resetOffset: true) }
-        }
+        .onChange(of: grouping) { _ in reloadKeepingArrangementAnchor() }
+        .onChange(of: foldersFirst) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: model.loading) { loading in
             guard !loading, selectedFile == nil else { return }
-            if let returnID = pendingNavigationReturnNodeID {
+            if let returnID = pendingNavigationReturnNodeID,
+               let folderID = parentID,
+               model.canResume(
+                 owner: login.owner, folderID: folderID,
+                 query: activeQuery, filters: searchFilters,
+                 sort: sort, order: order,
+                 grouping: grouping, foldersFirst: foldersFirst
+               ), model.entries.contains(where: { $0.id == returnID }) {
                 pendingNavigationReturnNodeID = nil
-                if focusedNode == nil, lastViewedFile == nil,
-                   model.verifiedPage,
-                   model.entries.contains(where: { $0.id == returnID }) {
+                if focusedNode == nil, lastViewedFile == nil {
                     returnScroll.scrollTo(returnID, anchor: .center)
                 }
             }
@@ -3701,7 +3722,92 @@ struct XDriveIOSNativeFilesBrowser: View {
         )
     }
 
+    private func cancelArrangementReanchor() {
+        arrangementTicket = UUID()
+        arrangementTask?.cancel()
+        arrangementTask = nil
+    }
+
+    /// Preserve one currently verified visible identity across Server sort
+    /// and grouping changes. The child-position endpoint yields an ordinal;
+    /// a separate authenticated 64-row Range must prove the exact revision
+    /// before that ordinal can replace the old window.
+    private func reloadKeepingArrangementAnchor() {
+        cancelArrangementReanchor()
+        guard !isHome, !isGlobalSearch, !selecting,
+              let owner = login.owner, let folderID = parentID,
+              model.canReanchor(
+                owner: owner, folderID: folderID,
+                query: activeQuery, filters: searchFilters
+              ),
+              let anchored = model.entries.first(where: {
+                $0.id == lastAppearedNodeID
+              })?.node ?? model.entries.first?.node
+        else {
+            reload(resetOffset: true)
+            return
+        }
+        let token = arrangementTicket
+        let expectedSort = sort, expectedOrder = order
+        let expectedGrouping = grouping, expectedFoldersFirst = foldersFirst
+        arrangementTask = Task { @MainActor in
+            defer {
+                if arrangementTicket == token { arrangementTask = nil }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
+                else { throw XDriveIOSNativeFilesReadError.invalidScope }
+                let reader = XDriveIOSNativeFilesReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                let position = try await reader.childPosition(
+                    parentID: folderID, node: anchored,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                )
+                guard let nextOffset = XDriveIOSNativeFilesReanchorPolicy.pageOffset(
+                    position, node: anchored, parentID: folderID,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                let next = try await reader.children(
+                    parentID: folderID, offset: nextOffset,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                )
+                try Task.checkCancellation()
+                guard XDriveIOSNativeFilesReanchorPolicy.verifiedDestination(
+                    next, position: position, node: anchored,
+                    parentID: folderID, sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                guard arrangementTicket == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      parentID == folderID, sort == expectedSort,
+                      order == expectedOrder, grouping == expectedGrouping,
+                      foldersFirst == expectedFoldersFirst else { return }
+                offset = nextOffset
+                pendingNavigationReturnNodeID = anchored.id
+                reload()
+            } catch is CancellationError {
+                // A newer navigation/sort or Owner wins.
+            } catch {
+                guard arrangementTicket == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      parentID == folderID, sort == expectedSort,
+                      order == expectedOrder, grouping == expectedGrouping,
+                      foldersFirst == expectedFoldersFirst else { return }
+                // Never approximate the ordinal or silently reuse stale rows.
+                quickActionNotice = "无法确认原位置，已从目录开头安全重新读取。"
+                reload(resetOffset: true)
+            }
+        }
+    }
+
     private func reload(resetOffset: Bool = false) {
+        cancelArrangementReanchor()
         cancelSelectAllRead()
         selectAllNotice = nil
         clearInternalDrag()
