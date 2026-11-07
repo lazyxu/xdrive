@@ -294,6 +294,7 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
   const theme = useTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [notesOwnerScope, setNotesOwnerScope] = useState('')
+  const [clipboardOwnerScope, setClipboardOwnerScope] = useState('')
   const [notesImagesEnabled, setNotesImagesEnabled] = useState(false)
   // A DSM package login is not an xDrive Owner login. Only expose the shared
   // Notes route after the original Agent's current Owner and Notes capability
