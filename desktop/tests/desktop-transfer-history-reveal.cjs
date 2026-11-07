@@ -54,5 +54,7 @@ test('compact transfer rows show absolute timestamps and keyboard-accessible fil
   assert.ok(popover.includes('canOpenTask={(task) => revealDestination(task) !== null}'))
   assert.ok(popover.includes("if (destination === 'local') onShowInLocal?.(task)"))
   assert.ok(desktop.includes('openTransferLocal(task.id)'))
+  assert.ok(desktop.includes('const locatorID = fileID ?? parentID'), 'cloud reveal must follow the file after a move')
   assert.ok(desktop.includes('getNodeLocation(locatorID)'))
+  assert.ok(desktop.includes('无法定位云端文件：文件已移动、删除或所在目录不可用。'))
 })
