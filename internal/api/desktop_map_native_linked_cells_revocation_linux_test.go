@@ -31,7 +31,7 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.DesktopMapGuestGrant{},
 		&meta.BaiduJSAPIMapEpoch{}, &meta.AuditEvent{},
-		&meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
+		&meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.MediaMetadata{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{},
 		&meta.PhotoAssetOccurrence{}, &meta.PhotoAssetIdentityAlias{},
 		&meta.PhotoEditRecipe{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
