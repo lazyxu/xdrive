@@ -361,6 +361,19 @@ enum class ApiFailureReason { UNKNOWN, CURRENT_PASSWORD_INCORRECT, DNS, CONNECTI
 
 class ApiException(val statusCode: Int, message: String, val reason: ApiFailureReason = ApiFailureReason.UNKNOWN) : IOException(message)
 
+data class OwnerClipboardVault(
+    val ownerID: Long, val salt: String, val kdf: String, val iterations: Int,
+    val checkNonce: String, val checkCiphertext: String, val aadScope: String,
+)
+data class OwnerClipboardItem(
+    val id: Long, val clientEventID: String, val kind: String,
+    val nonce: String, val ciphertext: String,
+    val createdAt: String, val expiresAt: String,
+) {
+    val wire get() = XDriveClipboardCrypto.Wire(clientEventID,kind,nonce,ciphertext)
+}
+data class OwnerClipboardPage(val items: List<OwnerClipboardItem>,val nextBefore: Long?)
+
 interface XDriveService {
     suspend fun login(username: String, password: String): AuthSession
     suspend fun refresh(refreshToken: String): AuthSession
