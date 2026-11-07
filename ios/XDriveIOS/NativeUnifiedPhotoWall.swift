@@ -98,7 +98,11 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     }
 
     @ViewBuilder private var content: some View {
-        if model.completed && model.belongs(to: login.owner) {
+        // Show authorized, explicitly unverified first-page thumbnails as
+        // soon as a bounded window arrives. Never label them paired, or
+        // advance pagination, before the exact SHA-256/Owner proof finishes.
+        if model.belongs(to: login.owner) &&
+            (model.completed || (!model.rows.isEmpty && filter == nil && query == .init())) {
             let groups = Dictionary(grouping: model.rows) { $0.capturedAt.map { Calendar.current.startOfDay(for: $0) } }
             let days = groups.keys.sorted { ($0 ?? .distantPast) > ($1 ?? .distantPast) }
             VStack(alignment: .leading, spacing: 10) {
@@ -125,6 +129,10 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 if model.rows.isEmpty {
                     Text(model.next == nil ? "已浏览到底，没有更多符合条件的照片" : "正在查找符合条件的照片…")
                         .font(.footnote).foregroundStyle(.secondary).frame(minHeight: 36)
+                }
+                if !model.completed {
+                    ProgressView("正在核对当前可见照片来源…")
+                        .font(.footnote).accessibilityIdentifier("native-ios-gallery-visible-proof")
                 }
                 if let message = model.notice { Text(message).font(.footnote).foregroundStyle(.secondary) }
             }
