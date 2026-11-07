@@ -63,7 +63,6 @@ func (s *Server) resolveMediaExactTrip(
 	return mediaMemoryTripSegment{}, false, nil
 }
 
-
 func (s *Server) queryMediaExactTripMap(
 	ctx context.Context, ownerID uint64,
 	segment mediaMemoryTripSegment, zone string,
@@ -102,7 +101,7 @@ func (s *Server) queryMediaExactTripMapViewport(
 		return mediaExactTripMapDTO{}, err
 	}
 	out := mediaExactTripMapDTO{
-		Items: make([]mediaPlaceDTO, 0, mediaExactTripMapMaxPlaces),
+		Items:          make([]mediaPlaceDTO, 0, mediaExactTripMapMaxPlaces),
 		TripPhotoCount: tripCount,
 	}
 	if expected == 0 {
@@ -110,13 +109,13 @@ func (s *Server) queryMediaExactTripMapViewport(
 	}
 	latCell, lonCell := mediaExactTripPlaceExpressions()
 	type placeRow struct {
-		LatitudeCell int64
-		LongitudeCell int64
-		SampleLatitude float64
+		LatitudeCell    int64
+		LongitudeCell   int64
+		SampleLatitude  float64
 		SampleLongitude float64
-		ItemCount int64
-		CoverNodeID *uint64
-		UpdatedAt *time.Time
+		ItemCount       int64
+		CoverNodeID     *uint64
+		UpdatedAt       *time.Time
 	}
 	var rows []placeRow
 	err = scoped.Session(&gorm.Session{}).
@@ -127,7 +126,7 @@ func (s *Server) queryMediaExactTripMapViewport(
 			"MIN(CASE WHEN lower(xd_media_metadata.mime_type) IN ? THEN xd_media_metadata.node_id ELSE NULL END) AS cover_node_id, "+
 			"MAX(xd_media_metadata.captured_at) AS updated_at",
 			listMemoryThumbnailMIMEs()).
-		Group(latCell+", "+lonCell).
+		Group(latCell + ", " + lonCell).
 		Order("item_count DESC, latitude_cell ASC, longitude_cell ASC").
 		Limit(mediaExactTripMapMaxPlaces + 1).
 		Scan(&rows).Error
@@ -162,11 +161,11 @@ func (s *Server) queryMediaExactTripMapViewport(
 	// genuine GPS extrema so a dense city is not one giant world bucket.
 	var extent mediaMapOverviewExtent
 	if err := scoped.Session(&gorm.Session{}).
-		Select("MIN(xd_media_metadata.latitude) AS min_latitude, "+
-			"MAX(xd_media_metadata.latitude) AS max_latitude, "+
-			"MIN(xd_media_metadata.longitude) AS min_longitude, "+
-			"MAX(xd_media_metadata.longitude) AS max_longitude, "+
-			"MIN(CASE WHEN xd_media_metadata.longitude < 0 THEN xd_media_metadata.longitude + 360 ELSE xd_media_metadata.longitude END) AS min_shifted_longitude, "+
+		Select("MIN(xd_media_metadata.latitude) AS min_latitude, " +
+			"MAX(xd_media_metadata.latitude) AS max_latitude, " +
+			"MIN(xd_media_metadata.longitude) AS min_longitude, " +
+			"MAX(xd_media_metadata.longitude) AS max_longitude, " +
+			"MIN(CASE WHEN xd_media_metadata.longitude < 0 THEN xd_media_metadata.longitude + 360 ELSE xd_media_metadata.longitude END) AS min_shifted_longitude, " +
 			"MAX(CASE WHEN xd_media_metadata.longitude < 0 THEN xd_media_metadata.longitude + 360 ELSE xd_media_metadata.longitude END) AS max_shifted_longitude").
 		Scan(&extent).Error; err != nil {
 		return mediaExactTripMapDTO{}, err
@@ -177,12 +176,12 @@ func (s *Server) queryMediaExactTripMapViewport(
 	}
 	rowExpr, colExpr := mediaMapOverviewBuckets(fitted)
 	type aggregateRow struct {
-		BucketRow int
-		BucketCol int
-		SampleLatitude float64
+		BucketRow       int
+		BucketCol       int
+		SampleLatitude  float64
 		SampleLongitude float64
-		ItemCount int64
-		CoverNodeID *uint64
+		ItemCount       int64
+		CoverNodeID     *uint64
 	}
 	var aggregates []aggregateRow
 	err = scoped.Session(&gorm.Session{}).
@@ -192,7 +191,7 @@ func (s *Server) queryMediaExactTripMapViewport(
 			"COUNT(DISTINCT xd_media_metadata.node_id) AS item_count, "+
 			"MIN(CASE WHEN lower(xd_media_metadata.mime_type) IN ? THEN xd_media_metadata.node_id ELSE NULL END) AS cover_node_id",
 			listMemoryThumbnailMIMEs()).
-		Group(rowExpr+", "+colExpr).
+		Group(rowExpr + ", " + colExpr).
 		Order("bucket_row ASC, bucket_col ASC").
 		Limit(mediaExactTripMapMaxPlaces + 1).Scan(&aggregates).Error
 	if err != nil {
@@ -211,14 +210,16 @@ func (s *Server) queryMediaExactTripMapViewport(
 			return mediaExactTripMapDTO{}, fmt.Errorf("invalid exact trip aggregate cell")
 		}
 		region, ok := mediaMapOverviewBucketBounds(fitted, r.BucketRow, r.BucketCol)
-		if !ok { return mediaExactTripMapDTO{}, fmt.Errorf("invalid trip display region") }
+		if !ok {
+			return mediaExactTripMapDTO{}, fmt.Errorf("invalid trip display region")
+		}
 		out.Items = append(out.Items, mediaPlaceDTO{
-			ID: fmt.Sprintf("trip-region:%d:%d", r.BucketRow, r.BucketCol),
-			Name: fmt.Sprintf("旅行照片区域 %d-%d", r.BucketRow+1, r.BucketCol+1),
+			ID:       fmt.Sprintf("trip-region:%d:%d", r.BucketRow, r.BucketCol),
+			Name:     fmt.Sprintf("旅行照片区域 %d-%d", r.BucketRow+1, r.BucketCol+1),
 			Latitude: r.SampleLatitude, Longitude: r.SampleLongitude,
 			SampleLatitude: r.SampleLatitude, SampleLongitude: r.SampleLongitude,
 			CoordinateKind: "map_region_sample", DisplayBounds: &region,
-			ItemCount: r.ItemCount,
+			ItemCount:   r.ItemCount,
 			CoverNodeID: r.CoverNodeID,
 		})
 		out.TotalPhotoCount += r.ItemCount

@@ -21,7 +21,7 @@ import (
 // every selected Owner photo Range.
 type mediaCaptureBounds struct {
 	From time.Time
-	To time.Time
+	To   time.Time
 }
 
 func (s *mediaCaptureBounds) valid() bool {
@@ -71,16 +71,24 @@ func parseMediaMapOverviewScopedQuery(raw string) (
 	}
 	if len(fromValues) == 0 {
 		if len(zoneValues) == 1 {
-			if _, _, err := mediaIANAZone(zone); err != nil { return bounds, detail, nil, err }
+			if _, _, err := mediaIANAZone(zone); err != nil {
+				return bounds, detail, nil, err
+			}
 		}
 		return bounds, detail, nil, nil
 	}
 	from, err := mediaCapturedBoundary(fromValues[0], zone)
-	if err != nil { return bounds, detail, nil, err }
+	if err != nil {
+		return bounds, detail, nil, err
+	}
 	to, err := mediaCapturedBoundary(toValues[0], zone)
-	if err != nil { return bounds, detail, nil, err }
+	if err != nil {
+		return bounds, detail, nil, err
+	}
 	scope := &mediaCaptureBounds{From: from, To: to}
-	if !scope.valid() { return bounds, detail, nil, fmt.Errorf("invalid capture window") }
+	if !scope.valid() {
+		return bounds, detail, nil, fmt.Errorf("invalid capture window")
+	}
 	return bounds, detail, scope, nil
 }
 
@@ -221,25 +229,27 @@ func mediaMapOverviewFittedBounds(
 // bucket selected by the authorized aggregate; zooming this rectangle sends
 // a new Owner-scoped query and may reveal canonical place IDs.
 func mediaMapOverviewBucketBounds(
-    bounds mediaPlaceViewportBounds, row, col int,
+	bounds mediaPlaceViewportBounds, row, col int,
 ) (mediaPlaceViewportBounds, bool) {
-    if !bounds.valid() || row < 0 || row >= mediaMapOverviewAxis ||
-        col < 0 || col >= mediaMapOverviewAxis {
-        return mediaPlaceViewportBounds{}, false
-    }
-    rowSpan := (bounds.North - bounds.South) / mediaMapOverviewAxis
-    lonSpan := bounds.East - bounds.West
-    if lonSpan < 0 { lonSpan += 360 }
-    colSpan := lonSpan / mediaMapOverviewAxis
-    startLon := bounds.West + float64(col)*colSpan
-    endLon := startLon + colSpan
-    region := mediaPlaceViewportBounds{
-        South: bounds.South + float64(row)*rowSpan,
-        North: bounds.South + float64(row+1)*rowSpan,
-        West: mediaMapOverviewNormalizeLongitude(startLon),
-        East: mediaMapOverviewNormalizeLongitude(endLon),
-    }
-    return region, region.valid()
+	if !bounds.valid() || row < 0 || row >= mediaMapOverviewAxis ||
+		col < 0 || col >= mediaMapOverviewAxis {
+		return mediaPlaceViewportBounds{}, false
+	}
+	rowSpan := (bounds.North - bounds.South) / mediaMapOverviewAxis
+	lonSpan := bounds.East - bounds.West
+	if lonSpan < 0 {
+		lonSpan += 360
+	}
+	colSpan := lonSpan / mediaMapOverviewAxis
+	startLon := bounds.West + float64(col)*colSpan
+	endLon := startLon + colSpan
+	region := mediaPlaceViewportBounds{
+		South: bounds.South + float64(row)*rowSpan,
+		North: bounds.South + float64(row+1)*rowSpan,
+		West:  mediaMapOverviewNormalizeLongitude(startLon),
+		East:  mediaMapOverviewNormalizeLongitude(endLon),
+	}
+	return region, region.valid()
 }
 
 func mediaMapOverviewBuckets(bounds mediaPlaceViewportBounds) (string, string) {
@@ -261,7 +271,9 @@ func queryMediaPlacesMapOverview(
 	bounds mediaPlaceViewportBounds, detail bool, optional ...*mediaCaptureBounds,
 ) (mediaPlacesMapOverviewDTO, error) {
 	var scope *mediaCaptureBounds
-	if len(optional) > 0 { scope = optional[0] }
+	if len(optional) > 0 {
+		scope = optional[0]
+	}
 	if len(optional) > 1 || (scope != nil && !scope.valid()) ||
 		ctx == nil || ctx.Err() != nil || db == nil || ownerID == 0 || !bounds.valid() {
 		return mediaPlacesMapOverviewDTO{}, fmt.Errorf("invalid map overview")
@@ -425,7 +437,9 @@ LIMIT 65`, longitudeSort)
 			return mediaPlacesMapOverviewDTO{}, fmt.Errorf("invalid spatial summary")
 		}
 		region, ok := mediaMapOverviewBucketBounds(fitted, item.BucketRow, item.BucketCol)
-		if !ok { return mediaPlacesMapOverviewDTO{}, fmt.Errorf("invalid display-only region bounds") }
+		if !ok {
+			return mediaPlacesMapOverviewDTO{}, fmt.Errorf("invalid display-only region bounds")
+		}
 		out.TotalPhotoCount += item.ItemCount
 		out.Items = append(out.Items, mediaPlaceDTO{
 			ID: fmt.Sprintf("map-region:q:%s:%s:%s:%s:%d:%d",
@@ -440,7 +454,7 @@ LIMIT 65`, longitudeSort)
 			SampleLatitude:  item.SampleLatitude,
 			SampleLongitude: item.SampleLongitude,
 			CoordinateKind:  "map_region_sample",
-			DisplayBounds: &region,
+			DisplayBounds:   &region,
 			ItemCount:       item.ItemCount,
 			CoverNodeID:     item.CoverNodeID,
 		})

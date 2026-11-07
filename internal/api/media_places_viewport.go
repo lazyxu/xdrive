@@ -140,7 +140,9 @@ func queryMediaPlacesViewport(
 	bounds mediaPlaceViewportBounds, limit, offset int, optional ...*mediaCaptureBounds,
 ) (mediaPlacesViewportDTO, error) {
 	var scope *mediaCaptureBounds
-	if len(optional) > 0 { scope = optional[0] }
+	if len(optional) > 0 {
+		scope = optional[0]
+	}
 	if ctx == nil || ctx.Err() != nil || db == nil || ownerID == 0 ||
 		limit < 1 || limit > mediaPlaceViewportMaxLimit ||
 		offset < 0 || offset > mediaPlacePageMaxOffset ||

@@ -75,7 +75,9 @@ func queryMediaExactTripSegments(
 	if homeLat, homeLon, ok := mediaExactTripHome(days); ok {
 		away, lookupErr := queryMediaExactTripAwayDays(
 			ctx, db, ownerID, zone, homeLat, homeLon)
-		if lookupErr != nil { return nil, lookupErr }
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
 		recognitionDays = mediaExactTripPromoteTransitDays(
 			days, away, homeLat, homeLon)
 	}
