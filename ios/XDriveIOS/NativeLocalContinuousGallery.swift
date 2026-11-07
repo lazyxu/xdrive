@@ -68,29 +68,11 @@ struct XDriveIOSNativeSquarePhotoTile: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipped()
             }
-            if candidate.kind == "video" {
-                Group {
-                    if let durationLabel {
-                        Text(durationLabel)
-                            .font(.caption2.weight(.semibold))
-                            .monospacedDigit()
-                    } else {
-                        Image(systemName: "play.fill")
-                            .font(.caption2.weight(.semibold))
-                    }
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 3)
-                .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
-                .padding(4)
-            } else if candidate.isLive {
-                Image(systemName: "livephoto")
-                    .font(.title3)
-                    .foregroundStyle(.white)
-                    .padding(5)
-                    .shadow(radius: 2)
-            }
+            XDriveIOSNativePhotoWallMediaBadge(
+                isVideo: candidate.kind == "video",
+                isLive: candidate.isLive,
+                verifiedDuration: durationLabel
+            )
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 3))

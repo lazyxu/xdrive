@@ -165,21 +165,26 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
 })
 
 test('P1-09: videos, Live badges and date groups match Gallery; map cannot acquire album write controls', () => {
-  const { map, cluster, gallery, album } = sources
+  const { map, cluster, gallery, album, shared } = sources
   const tile = fragment(gallery, 'struct XDriveIOSNativeSquarePhotoTile: View',
     '/// Metadata-only virtual page.')
-  assert.match(tile, /if candidate\.kind == "video"/)
-  assert.match(tile, /Text\(durationLabel\)/)
-  assert.match(tile, /asset\.duration/)
-  assert.match(tile, /else if candidate\.isLive/)
-  assert.match(tile, /Image\(systemName: "livephoto"\)/)
+  assert.match(tile, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: candidate\.kind == "video",\s*isLive: candidate\.isLive,\s*verifiedDuration: durationLabel/)
+  assert.match(shared, /if isVideo \{[\s\S]*?if let verifiedDuration \{\s*Text\(verifiedDuration\)\.monospacedDigit\(\)/)
+  assert.match(tile, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers: \[candidate\.id\], options: nil/)
+  assert.match(tile, /asset\.creationDate == candidate\.capturedAt/)
+  assert.match(tile, /asset\.modificationDate == candidate\.modifiedAt/)
+  assert.match(tile, /asset\.mediaType == \.video/)
+  assert.match(tile, /seconds: asset\.duration/)
+  assert.match(shared, /else if isLive \{\s*Image\(systemName: "livephoto"\)/)
   assert.match(tile, /loader\.cancel\(\)/)
   assert.equal((map.match(/XDriveIOSNativeSquarePhotoTile\(candidate: item\)/g) || []).length, 2)
   assert.match(gallery, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
   assert.match(album, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
   assert.match(album, /@State private var selectionMode = false/)
   assert.match(album, /selectedCandidates: \[String: XDrivePhotoKitScanCandidate\]/)
-  assert.match(cluster, /if item\.isLive \|\| item\.isVideo/)
+  assert.match(cluster, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: item\.isVideo, isLive: item\.isLive/)
+  assert.match(shared, /\.accessibilityHidden\(true\)/)
+  assert.doesNotMatch(shared, /PHAsset|PHPhotoLibrary|URLSession|UploadSession/)
   const place = fragment(map, 'private struct XDriveIOSMapSpatialAlbum: View', '/// One native map route')
   assert.doesNotMatch(place, /PHAssetChangeRequest|deleteAssets\(|removeAssets\(/)
   assert.doesNotMatch(cluster, /PHAssetChangeRequest|deleteAssets\(|removeAssets\(/)

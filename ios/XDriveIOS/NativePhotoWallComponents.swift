@@ -95,6 +95,44 @@ struct XDriveIOSNativePhotoWallRetryMessage: View {
 }
 
  
+/// Presentation-only media type badge shared by local PhotoKit, cloud Owner,
+/// map-place and unified Gallery square tiles. Only an independently verified
+/// PhotoKit duration may be displayed; unknown cloud duration stays an icon.
+/// The parent tile owns the accessible media label and all authorization.
+struct XDriveIOSNativePhotoWallMediaBadge: View {
+    let isVideo: Bool
+    let isLive: Bool
+    var verifiedDuration: String? = nil
+
+    var body: some View {
+        Group {
+            if isVideo {
+                Group {
+                    if let verifiedDuration {
+                        Text(verifiedDuration).monospacedDigit()
+                    } else {
+                        Image(systemName: "play.fill")
+                    }
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 3)
+                .background(Color.black.opacity(0.55),
+                            in: RoundedRectangle(cornerRadius: 4))
+                .padding(4)
+            } else if isLive {
+                Image(systemName: "livephoto")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .padding(5)
+                    .shadow(radius: 2)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// Selection indicator only. The page remains responsible for membership,
 /// batch-action rights, accessibility text and selection lifecycle.
 struct XDriveIOSNativePhotoWallSelectionIndicator: View {

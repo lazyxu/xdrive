@@ -309,12 +309,12 @@ struct XDriveIOSUnifiedPhotoTile: View {
                 }
             }
             .clipped()
-            .overlay(alignment: .topLeading) {
-                if row.isLive || row.isVideo {
-                    Label(row.isLive ? "实况" : "视频", systemImage: row.isLive ? "livephoto" : "play.fill")
-                        .font(.caption2.weight(.semibold)).foregroundStyle(.white)
-                        .padding(4).background(.black.opacity(0.65), in: Capsule()).padding(4)
-                }
+            .overlay(alignment: .topTrailing) {
+                // Keep the independent source/presence badge unobstructed
+                // in compact grids; the media icon uses the same shared style.
+                XDriveIOSNativePhotoWallMediaBadge(
+                    isVideo: row.isVideo, isLive: row.isLive
+                )
             }
             .overlay(alignment: .bottomLeading) {
                 Label(row.presence.title, systemImage: row.presence.symbol)

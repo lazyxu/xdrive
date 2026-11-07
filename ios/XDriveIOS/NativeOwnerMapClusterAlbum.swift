@@ -439,13 +439,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                             .frame(width: tile.size.width,
                                    height: tile.size.height)
                     }
-                    if item.isLive || item.isVideo {
-                        Image(systemName: item.isLive ? "livephoto" : "play.fill")
-                            .font(.caption).foregroundStyle(.white)
-                            .padding(5)
-                            .background(.black.opacity(0.55), in: Capsule())
-                            .padding(5)
-                    }
+                    XDriveIOSNativePhotoWallMediaBadge(
+                        isVideo: item.isVideo, isLive: item.isLive
+                    )
                 }
             }
             .aspectRatio(1, contentMode: .fit)
