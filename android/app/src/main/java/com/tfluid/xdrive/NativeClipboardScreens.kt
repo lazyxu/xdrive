@@ -112,7 +112,7 @@ internal fun NativeClipboardScreen(
         if (key == null) return@LaunchedEffect
         val snapshot = actionFence.capture()
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (stillSession(snapshot) && key != null) refresh()
+            if (stillOwner() && key != null) refresh()
             while (stillSession(snapshot) && key != null) {
                 delay(15_000)
                 if (!stillSession(snapshot) || key == null) break
@@ -125,7 +125,7 @@ internal fun NativeClipboardScreen(
         val snapshot = actionFence.capture()
         var after = 0L // Only in-memory for the current unlock/Owner epoch.
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (stillSession(snapshot) && key != null) refresh()
+            if (stillOwner() && key != null) refresh()
             while (stillSession(snapshot) && key != null) {
                 try {
                     after = controller.clipboardWatch(after) {
@@ -139,7 +139,7 @@ internal fun NativeClipboardScreen(
                     // Unsupported/failed SSE never disables the 15s fallback.
                 }
                 if (!stillSession(snapshot) || key == null) break
-                refresh() // Full GET after disconnect, cursor eviction or outage.
+                refresh() // Disconnect/cursor eviction: full Owner GET.
                 delay(3_000)
             }
         }
