@@ -4,6 +4,8 @@ import SwiftUI
 /// Native Owner-verified app root. A single controller owns the auto runner;
 /// the account card is shown ONLY while signed out, never behind a push route.
 struct XDriveIOSNativeOwnerLoginScreen: View {
+    var safeStartup = false
+
     @StateObject private var model = XDriveIOSNativeOwnerLoginModel()
     @StateObject private var backup = XDriveIOSNativePhotoBackupController()
     @Environment(\.scenePhase) private var phase
@@ -11,6 +13,10 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     @State private var logoutWarning: String?
     @State private var signingOut = false
     @State private var restoreFinished = false
+    @State private var workspaceVisible = false
+    @State private var startupReady = false
+    @State private var readinessTicket = UUID()
+    @State private var readinessTask: Task<Void, Never>?
     @State private var clearSavedLoginConfirm = false
     @State private var emergencyStopBusy = false
     @State private var emergencyStopNotice: String?
@@ -30,6 +36,8 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                         Task { await signOutSafely(expectedOwner: expected) }
                     }
                 )
+                .onAppear { workspaceAppeared() }
+                .onDisappear { workspaceDisappeared() }
             } else {
                 NavigationStack {
                     ScrollView {
@@ -109,50 +117,126 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                     .navigationTitle("xDrive")
                     .navigationBarTitleDisplayMode(.inline)
                 }
+                .onAppear { workspaceAppeared() }
+                .onDisappear { workspaceDisappeared() }
             }
         }
-        .onAppear {
-            backup.startLibraryChangeMonitoring(login: model)
-        }
         .onDisappear {
+            readinessTicket = UUID()
+            readinessTask?.cancel()
+            readinessTask = nil
             backup.stopLibraryChangeMonitoring()
         }
         .task {
-            // Postpone the retired Keychain cleanup until the first native
-            // view has mounted. Keep the launch stage visible across exits.
-            XDriveIOSNativeLaunchCheckpoint.mark(.retiringCredential)
-            XDriveIOSRetiredNativeLogin.purgeLegacyRefreshToken()
-            XDriveIOSNativeLaunchCheckpoint.mark(.restoringSession)
-            // Restore must verify Server instance, Owner and cloud root first.
-            await model.restore()
-            restoreFinished = true
+            // This task can be cancelled when SwiftUI replaces the transient
+            // login/progress subtree with the Dashboard. Never couple the
+            // durable ready marker to this task's sleep or cancellation.
+            guard !restoreFinished else { return }
+            if !safeStartup {
+                XDriveIOSNativeLaunchCheckpoint.mark(.retiringCredential)
+                XDriveIOSRetiredNativeLogin.purgeLegacyRefreshToken()
+                XDriveIOSNativeLaunchCheckpoint.mark(.restoringSession)
+                // Restore must verify Server instance, Owner and cloud root.
+                await model.restore()
+            }
+            guard !Task.isCancelled else { return }
             XDriveIOSNativeLaunchCheckpoint.mark(.mountingWorkspace)
             backup.refresh(owner: model.owner)
-            if phase == .active { backup.tickIfDue(login: model) }
-            // Do not claim a successful cold launch before the native signed-in
-            // dashboard and its initial PhotoKit/scene callbacks can run.
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled else { return }
-            XDriveIOSNativeLaunchCheckpoint.mark(.ready)
+            restoreFinished = true
         }
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
-            guard phase == .active else { return }
+            guard XDriveIOSNativeLaunchCheckpoint.mayAutoBackup(
+                startupReady: startupReady, safeStartup: safeStartup,
+                foreground: phase == .active
+            ) else { return }
             backup.tickIfDue(login: model)
         }
         .onChange(of: phase) { state in
-            if state == .active { backup.tickIfDue(login: model) }
-            else { backup.cancel() }
+            if state == .active {
+                if startupReady {
+                    if XDriveIOSNativeLaunchCheckpoint.mayAutoBackup(
+                        startupReady: startupReady, safeStartup: safeStartup,
+                        foreground: true
+                    ) {
+                        backup.startLibraryChangeMonitoring(login: model)
+                        backup.tickIfDue(login: model)
+                    }
+                } else {
+                    armReadinessAfterMount()
+                }
+            } else {
+                readinessTicket = UUID()
+                readinessTask?.cancel()
+                readinessTask = nil
+                backup.stopLibraryChangeMonitoring()
+                backup.cancel()
+            }
         }
         .onChange(of: model.owner) { _ in
             backup.cancel()
             backup.refresh(owner: model.owner)
             if model.owner == nil { showPassword = false }
-            if phase == .active { backup.tickIfDue(login: model) }
+            guard XDriveIOSNativeLaunchCheckpoint.mayAutoBackup(
+                startupReady: startupReady, safeStartup: safeStartup,
+                foreground: phase == .active
+            ) else { return }
+            backup.tickIfDue(login: model)
+        }
+    }
+
+    @MainActor
+    private func workspaceAppeared() {
+        workspaceVisible = true
+        armReadinessAfterMount()
+    }
+
+    @MainActor
+    private func workspaceDisappeared() {
+        workspaceVisible = false
+        readinessTicket = UUID()
+        readinessTask?.cancel()
+        readinessTask = nil
+    }
+
+    @MainActor
+    private func armReadinessAfterMount() {
+        guard !startupReady,
+              XDriveIOSNativeLaunchCheckpoint.mayFinishStartup(
+                restoreComplete: restoreFinished, workspaceVisible: workspaceVisible,
+                foreground: phase == .active
+              ) else { return }
+        // Independent of the session-restore .task: SwiftUI can cancel that
+        // task as soon as its progress view becomes the native workspace.
+        readinessTicket = UUID()
+        let ticket = readinessTicket
+        readinessTask?.cancel()
+        readinessTask = Task { @MainActor in
+            do { try await Task.sleep(nanoseconds: 3_000_000_000) }
+            catch { return }
+            guard !Task.isCancelled, readinessTicket == ticket, !startupReady,
+                  XDriveIOSNativeLaunchCheckpoint.mayFinishStartup(
+                    restoreComplete: restoreFinished, workspaceVisible: workspaceVisible,
+                    foreground: phase == .active
+                  ) else { return }
+            XDriveIOSNativeLaunchCheckpoint.mark(.ready)
+            startupReady = true
+            readinessTask = nil
+            // Only observe later changes; an automatic due backup never
+            // starts inside the workspace-mount critical section.
+            if !safeStartup {
+                backup.startLibraryChangeMonitoring(login: model)
+            }
         }
     }
 
     private var loginForm: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if safeStartup {
+                Label("安全启动：本次不自动登录、清理旧凭据或运行前台自动备份。", systemImage: "shield")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-startup-safe-mode")
+            }
             if !model.savedProfiles.isEmpty {
                 Menu("选择已保存的服务器和账号") {
                     ForEach(model.savedProfiles) { profile in
