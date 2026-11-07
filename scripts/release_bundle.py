@@ -238,8 +238,25 @@ def _retain_manifest(cache, manifest):
                 raise ValueError("concurrent manifest mismatch")
 
 
-def sync(manifest, cache, lock_path=None, marker=None, retries=2, allow_local=False):
+def _installed_commit(path):
+    """Read only the Host-owned installed build Commit, never source a .env."""
+    if path is None:
+        return None
+    if not path.is_file() or path.is_symlink() or path.stat().st_size > 131072:
+        return ""
+    commit = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("XD_RELEASE_COMMIT="):
+            commit = line.partition("=")[2].strip().strip("'").strip('"')
+    return commit if SHA.fullmatch(commit) else ""
+
+
+def sync(manifest, cache, lock_path=None, marker=None, retries=2, allow_local=False, installed_env=None):
     manifest = validate(manifest, allow_local=allow_local)
+    # An updater may supersede an older background worker while it is paused.
+    # Never replace the cache for a no-longer-installed release.
+    if installed_env is not None and _installed_commit(installed_env) != manifest["commit"]:
+        return 0
     cache.mkdir(parents=True, exist_ok=True)
     cache.chmod(0o755)
     with (cache / ".worker.lock").open("a+b") as lock:
@@ -294,6 +311,10 @@ def sync(manifest, cache, lock_path=None, marker=None, retries=2, allow_local=Fa
             state["state"] = "retry_needed"
             _atomic_json(cache / "status.json", state)
             return 1
+        if installed_env is not None and _installed_commit(installed_env) != sha:
+            state["state"] = "superseded"
+            _atomic_json(cache / "status.json", state)
+            return 0
         packages = cache / "packages"
         packages.mkdir(exist_ok=True)
         packages.chmod(0o755)
@@ -320,6 +341,7 @@ def main():
     group.add_argument("--manifest", type=Path)
     parser.add_argument("--cache-dir", required=True, type=Path)
     parser.add_argument("--install-lock", type=Path)
+    parser.add_argument("--installed-env", type=Path)
     parser.add_argument("--dependency-busy-file", type=Path)
     parser.add_argument("--retries", type=int, default=2)
     args = parser.parse_args()
@@ -332,7 +354,7 @@ def main():
         cache.mkdir(parents=True, exist_ok=True)
         manifest = (_fetch_manifest(args.commit, args.install_lock) if args.commit else
                     json.loads(args.manifest.read_text(encoding="utf-8")))
-        return sync(manifest, cache, args.install_lock, args.dependency_busy_file, args.retries)
+        return sync(manifest, cache, args.install_lock, args.dependency_busy_file, args.retries, installed_env=args.installed_env)
     except Exception as exc:
         print("Release Bundle cache failed (noncritical): " + str(exc), file=sys.stderr)
         if isinstance(exc, BlockingIOError):

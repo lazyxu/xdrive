@@ -77,7 +77,7 @@ release_bundle_enqueue() {
   (
     exec 8>&- 9>&-
     exec python3 "$worker" --commit "$sha" --cache-dir "$cache" \
-      --install-lock "$STATE_DIR/install.lock"
+      --install-lock "$STATE_DIR/install.lock" --installed-env "$ENV_PATH"
   ) >>"$LOG_DIR/release-bundle.log" 2>&1 </dev/null &
   printf '%s\n' "$!" > "$pid_file"
   chmod 0600 "$pid_file"

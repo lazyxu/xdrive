@@ -110,6 +110,17 @@ class BundleCacheTests(unittest.TestCase):
         self.assertEqual(sha.stat().st_mode & 0o777, 0o755)
         self.assertEqual(package.stat().st_mode & 0o777, 0o644)
 
+    def test_superseded_installed_commit_cannot_publish_stale_packages(self):
+        from release_bundle import sync
+        self.assertEqual(self.sync(), 0)
+        current = self.cache / "current.json"
+        self.manifest["commit"] = "b" * 40
+        self.manifest["artifacts"][0]["build_commit"] = "b" * 40
+        env = self.root / ".env"
+        env.write_text("XD_RELEASE_COMMIT=" + ("c" * 40) + "\n", encoding="utf-8")
+        self.assertEqual(sync(self.manifest, self.cache, retries=1, allow_local=True, installed_env=env), 0)
+        self.assertEqual(json.loads(current.read_text())["commit"], "a" * 40)
+
     def test_external_origins_rejected(self):
         self.manifest["artifacts"][0]["sources"]["github"] = "https://evil.example/pkg.ipa"
         with self.assertRaises(ValueError):
