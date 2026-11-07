@@ -130,6 +130,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		{http.MethodGet, "/api/v1/clipboard/vault"},
 		{http.MethodPut, "/api/v1/clipboard/vault/check"},
 		{http.MethodGet, "/api/v1/clipboard/items"},
+        {http.MethodGet, "/api/v1/clipboard/events"},
 		{http.MethodPost, "/api/v1/clipboard/items"},
 		{http.MethodDelete, "/api/v1/clipboard/items/1"},
 		{http.MethodDelete, "/api/v1/clipboard/items"},
