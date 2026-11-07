@@ -818,6 +818,13 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "desktop_map_native_session_revoked"})
 			return
 		}
+		// Native-linked browser access JWTs are map-only, never general Agent
+		// Owner credentials for Files, Sources, Notes, admin or writes.
+		if claims.DesktopMapNativeRefreshID != 0 &&
+			!desktopMapBrowserHTTPAllowed(c.Request.Method, c.FullPath()) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "desktop_map_route_denied"})
+			return
+		}
 		path := c.Request.URL.Path
 		if user.MustChangePassword && path != "/api/v1/me" && path != "/api/v1/me/change-password" && path != "/api/v1/me/change-password/browser" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
