@@ -345,7 +345,9 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                       selectedForAction={false}
                       onSelect={() => undefined}
                       loadThumbnail={loadThumbnail}
-                      thumbnailScheduler={thumbnailScheduler}
+                      // The full virtual grid retires its viewport requests on
+                      // collapse. Preview tiles own their disposable requests
+                      // so that cleanup cannot cancel a newly mounted strip.
                       onOpen={openTile}
                       onPreview={openTile}
                       onToggleFavorite={() => undefined}
