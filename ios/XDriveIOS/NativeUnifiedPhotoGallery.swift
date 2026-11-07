@@ -87,10 +87,21 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             .onChange(of: sourceFilter) { _ in resetWall() }
             .onChange(of: query) { _ in resetWall() }
             .onChange(of: timeline.indexRevision) { _ in resetWall() }
-            .onChange(of: selected?.id) { _ in indexRequest = UUID() }
+            .onChange(of: selected?.id) { _ in
+                // Leaving the page for Viewer also retires any explicit
+                // audit. A returned Viewer must never restart SHA reads.
+                explicitOriginalAudit = false
+                indexRequest = UUID()
+            }
             .onChange(of: phase) { state in
                 if state == .active { reset() }
-                else { selected = nil; timeline.reset(); wall.reset(); indexRequest = UUID() }
+                else {
+                    explicitOriginalAudit = false
+                    selected = nil
+                    timeline.reset()
+                    wall.reset()
+                    indexRequest = UUID()
+                }
             }
             .sheet(isPresented: $showFilters) { filterEditor }
             .sheet(item: $pairing) { row in
@@ -100,7 +111,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 XDriveIOSNativeUnifiedPhotoViewer(login: login, wall: wall, selection: selection,
                     filter: sourceFilter, query: query,
                     onViewed: { page, id in viewerReturnPage = page; viewerReturnAnchor = id },
-                    pairing: { _ in reset(retryUnavailable: true) })
+                    pairing: { _ in reset() })
             }
     }
 
@@ -214,7 +225,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         }
         if let message = wall.failure ?? timeline.notice {
             Label(message, systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
-            Button("重新读取") { reset(retryUnavailable: true) }
+            Button("重新读取") { reset() }
         }
         if let status = timeline.coverage, !status.finished {
             ProgressView("正在核对本机原件 \(status.checked) / \(status.total)",
@@ -275,12 +286,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         explicitOriginalAudit = true
         indexRequest = UUID()
     }
-    private func reset(retryUnavailable: Bool = false) {
+    private func reset() {
         pairing = nil
         resetWall()
         permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         timeline.reset()
-        self.retryUnavailable = retryUnavailable
+        self.retryUnavailable = false
         explicitOriginalAudit = false
         indexRequest = UUID()
     }
