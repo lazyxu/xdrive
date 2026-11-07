@@ -157,6 +157,33 @@ struct XDriveIOSNativeFilesReader {
         return page
     }
 
+    /// Authoritative ordinal under the target arrangement. A successful
+    /// response is only a hint until children(offset) proves the same Node.
+    func childPosition(
+        parentID: UInt64, node: XDriveIOSNativeFilesNode,
+        sort: String, order: String,
+        grouping: String, foldersFirst: Bool
+    ) async throws -> XDriveIOSNativeFilesChildPosition {
+        guard parentID > 0, node.parent_id == parentID,
+              node.id > 0, node.revision > 0,
+              XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order),
+              XDriveIOSNativeFilesGroupingPolicy.validGrouping(grouping)
+        else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        let url = try endpoint("/api/v1/nodes/\(parentID)/children/position", query: [
+            URLQueryItem(name: "node_id", value: String(node.id)),
+            URLQueryItem(name: "sort", value: sort),
+            URLQueryItem(name: "order", value: order),
+            URLQueryItem(name: "group", value: grouping),
+            URLQueryItem(name: "folders_first", value: foldersFirst ? "true" : "false")
+        ])
+        let result: XDriveIOSNativeFilesChildPosition = try await get(url)
+        guard XDriveIOSNativeFilesReanchorPolicy.pageOffset(
+            result, node: node, parentID: parentID,
+            sort: sort, order: order, grouping: grouping, foldersFirst: foldersFirst
+        ) != nil else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        return result
+    }
+
     /// A middle page carries no group indexes. Ask Go for exactly one
     /// authenticated first-page row, retaining the whole-folder index only.
     func groupIndexProbe(parentID: UInt64, sort: String, order: String,
@@ -318,6 +345,17 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
             sameQuery: verifiedQuery == query, sameFilters: verifiedFilters == filters,
             sameSort: verifiedSort == sort, sameOrder: verifiedOrder == order
         ) && verifiedGrouping == grouping && verifiedFoldersFirst == foldersFirst
+    }
+
+    /// Validate previous displayed rows before staging a new arrangement.
+    /// The current sort/group controls have already changed, so intentionally
+    /// compare only the Owner, directory and search scope here.
+    func canReanchor(owner: XDriveNativeOwnerRoot?, folderID: UInt64,
+                     query: String, filters: XDriveIOSNativeFilesSearchFilterState) -> Bool {
+        guard verifiedPage, !loading, let owner, let verifiedOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedOwner) &&
+            verifiedFolderID == folderID && verifiedQuery == query &&
+            verifiedFilters == filters
     }
 
     /// Removing NavigationLink source rows while a SwiftUI push is in
