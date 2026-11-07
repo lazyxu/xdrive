@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync/atomic"
+	"strings"
 	"testing"
 	"time"
 
@@ -357,5 +358,51 @@ func TestDormantSynologyPullHandlersCannotDispatch(t *testing.T) {
 	}
 	if report.Eligible != 1 || report.Completed != 1 || report.Failed != 0 {
 		t.Fatalf("dormant handlers affected active connector report: %+v", report)
+	}
+}
+
+type failFirstYikeHandler struct {
+	called chan uint64
+}
+
+func (h *failFirstYikeHandler) RunPullSource(_ context.Context, source meta.Source) (client.SyncRun, error) {
+	h.called <- source.ID
+	if source.ID == 101 {
+		return client.SyncRun{}, errors.New("Yike credentials expired for Source 101")
+	}
+	return client.SyncRun{ID: "other-yike-run", SourceID: source.ID, Status: meta.SyncRunStatusCompleted}, nil
+}
+
+// Both Sources use the SAME connector handler, but one Source's account
+// failure must not suppress the independent eligible Source's dispatch.
+func TestYikePullSourceFailureDoesNotBlockIndependentSource(t *testing.T) {
+	handler := &failFirstYikeHandler{called: make(chan uint64, 2)}
+	runner := &Runner{
+		Handlers: map[string]SourceHandler{"yike_photos": handler},
+		MaxConcurrency: 2,
+	}
+	report, err := runner.runSources(context.Background(), []meta.Source{
+		{ID: 101, OwnerID: 1, Kind: "yike_photos", Direction: meta.SourceDirectionPull,
+			SyncMode: meta.SourceSyncModeBackup, Status: meta.SourceStatusActive},
+		{ID: 102, OwnerID: 1, Kind: "yike_photos", Direction: meta.SourceDirectionPull,
+			SyncMode: meta.SourceSyncModeBackup, Status: meta.SourceStatusActive},
+	}, time.Now().UTC())
+	if err == nil || !strings.Contains(err.Error(), "source 101") {
+		t.Fatalf("Source failure was silently masked: %v", err)
+	}
+	if report.Eligible != 2 || report.Completed != 1 || report.Failed != 1 {
+		t.Fatalf("independent Yike Source lost dispatch: %+v", report)
+	}
+	started := map[uint64]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case id := <-handler.called:
+			started[id] = true
+		default:
+			t.Fatal("an independent Yike Source was never dispatched")
+		}
+	}
+	if !started[101] || !started[102] {
+		t.Fatalf("expected both Yike sources to execute, got %v", started)
 	}
 }

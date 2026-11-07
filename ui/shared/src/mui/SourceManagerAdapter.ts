@@ -1,7 +1,8 @@
-import { externalSourceConnectorProfile } from '../external-sources'
+import { externalSourceConnectorProfile, isReadOnlySynologySource, isNativePhotoSource } from '../external-sources'
 import type {
   CreateExternalSourceInput,
   ExternalSource,
+  ExternalSourceCloudCleanupPreview,
   ExternalSourceBrowsePage,
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
@@ -38,6 +39,8 @@ export interface XDriveSourceManagerPort {
   sourceOverview?: (signal?: AbortSignal, includeArchived?: boolean) => Promise<XDriveSourceManagerTransportResult<ExternalSourceOverview[]>>
   sources?: (signal?: AbortSignal, includeArchived?: boolean) => Promise<XDriveSourceManagerTransportResult<ExternalSource[]>>
   restoreSource?: (sourceID: number, revision: number) => Promise<XDriveSourceManagerTransportResult<ExternalSource>>
+  sourceCloudCleanupPreview?: (sourceID: number) => Promise<XDriveSourceManagerTransportResult<ExternalSourceCloudCleanupPreview>>
+  trashSourceCloudCleanup?: (preview: ExternalSourceCloudCleanupPreview, confirmName: string) => Promise<XDriveSourceManagerTransportResult<unknown>>
   sourceCredentialStatus?: (
     sourceID: number,
   ) => Promise<XDriveSourceManagerTransportResult<ExternalSourceCredentialStatus>>
@@ -181,8 +184,16 @@ export function createXDriveSourceManagerAdapter(
     restoreSource: port.restoreSource
       ? (sourceID, revision) => resolveXDriveSourceManagerTransport(port.restoreSource!(sourceID, revision))
       : undefined,
-    canRestoreSource: (row) => Boolean(port.restoreSource) && row.source.kind !== 'local_folder',
-    canDeleteSource: (row) => row.source.kind !== 'local_folder',
+    canRestoreSource: (row) => Boolean(port.restoreSource) && row.source.kind !== 'local_folder' &&
+      !isReadOnlySynologySource(row.source) && !isNativePhotoSource(row.source),
+    canDeleteSource: (row) => row.source.kind !== 'local_folder' &&
+      !isReadOnlySynologySource(row.source) && !isNativePhotoSource(row.source),
+    sourceCloudCleanupPreview: port.sourceCloudCleanupPreview
+      ? (sourceID) => resolveXDriveSourceManagerTransport(port.sourceCloudCleanupPreview!(sourceID))
+      : undefined,
+    trashSourceCloudCleanup: port.trashSourceCloudCleanup
+      ? (preview, confirmName) => resolveXDriveSourceManagerTransport(port.trashSourceCloudCleanup!(preview, confirmName))
+      : undefined,
     createSource: (input) => resolveXDriveSourceManagerTransport(port.createSource(input)),
     authorizeLocalFolder: port.authorizeLocalFolder
       ? (sourceID) => resolveXDriveSourceManagerTransport(port.authorizeLocalFolder!(sourceID))

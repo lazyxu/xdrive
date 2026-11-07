@@ -24,6 +24,7 @@ import type {
   CreatedFileShare,
   OwnerFileSharePage,
   ExternalSource,
+  ExternalSourceCloudCleanupPreview,
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
   ExternalSourceCredentialStatus,
@@ -3414,6 +3415,25 @@ export class XDriveApi {
       headers: { 'If-Match': `"${revision}"` },
       body: JSON.stringify({}),
     })
+  }
+
+  sourceCloudCleanupPreview(sourceID: number) {
+    return this.request<ExternalSourceCloudCleanupPreview>(
+      `/api/v1/sources/${sourceID}/cloud-cleanup/preview`, { cache: 'no-store' })
+  }
+
+  trashSourceCloudCleanup(preview: ExternalSourceCloudCleanupPreview, confirmName: string) {
+    return this.request<{ source_id: number; trash_node_id: number; trash_node_revision: number; node_count: number; status: string }>(
+      `/api/v1/sources/${preview.source_id}/cloud-cleanup/trash`, {
+        method: 'POST',
+        headers: { 'If-Match': `"${preview.source_revision}"` },
+        body: JSON.stringify({
+          preview_digest: preview.preview_digest,
+          confirm_name: confirmName,
+          target_node_id: preview.target_node_id,
+          target_revision: preview.target_revision,
+        }),
+      })
   }
 
   setSourceCredential(sourceID: number, payload: Record<string, unknown>) {
