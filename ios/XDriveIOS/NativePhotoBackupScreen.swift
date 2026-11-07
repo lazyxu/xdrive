@@ -956,7 +956,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         ProgressView(value: window.fractionScanned)
                             .accessibilityLabel("本轮分段已扫描比例")
                             .accessibilityIdentifier("native-ios-photo-window-scanned-progress")
-                        Text("当前分段已检查 \(window.scanned)/\(window.capacity) 项，尚未扫描 \(window.remaining) 项；分段已确认 \(window.confirmed) 项，待核对 \(window.needsReview) 项，不可用 \(window.unavailable) 项（不含增量优先队列）。")
+                        Text("当前分段已检查 \(window.scanned)/\(window.capacity) 项，尚未扫描 \(window.remaining) 项；分段已确认 \(window.confirmed) 项，待核对 \(window.needsReview) 项，不可用 \(window.unavailable) 项，不支持 \(window.unsupported) 项（不含增量优先队列）。")
                             .font(.caption).monospacedDigit()
                             .accessibilityIdentifier("native-ios-photo-window-read-count")
                         Text("仅表示当前分段的读取进度，不代表整库已备份；已扫描不等于已成功备份，仍需逐张核验当前云端原件。")
