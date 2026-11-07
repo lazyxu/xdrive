@@ -1,11 +1,14 @@
 'use strict'
 const assert=require('node:assert/strict')
 const {randomUUID}=require('node:crypto')
+const https=require('node:https')
+const tls=require('node:tls')
 const {app,BrowserWindow,session}=require('electron')
 const {privateLANOrigin,verifiedLANRootPEM}=require('../dist/main/lan_root_auto.cjs')
 const {readTrustedPlacesLANPeerFingerprint,placesGuestIPRequestAllowed,verifyDesktopPlacesLANCertificate}=
   require('../dist/main/places_guest_lan_tls.cjs')
 app.disableHardwareAcceleration()
+let stage='bootstrap'
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 const deadline=(promise,ms,reason)=>Promise.race([
   promise,delay(ms).then(()=>{throw Error('timeout '+reason)}),
@@ -71,11 +74,13 @@ async function check(){
   const opts={method:'POST',credentials:'include',redirect:'error',cache:'no-store',
     headers:{Origin:origin,'Content-Type':'application/json'},
     body:JSON.stringify({ticket:input.ticket})}
+  stage='strict-native-tls-preflight'
   const nativePeer=await readTrustedPlacesLANPeerFingerprint(
     target.ip,target.port,input.ca)
   assert.ok(nativePeer,'strict Node TLS/CA/IP-SAN preflight could not verify synthetic HTTPS server')
   // The real Electron network service must accept the *same* peer that the
   // native pin validation accepts. No TLS bypass or substitute Node POST.
+  stage='electron-one-use-redeem'
   let redeemed
   try{
     redeemed=await deadline(isolated.fetch(endpoint,opts),20000,'one-use native exchange')
@@ -97,17 +102,42 @@ async function check(){
   const before=await isolated.cookies.get({url:origin,name:'__Host-xdrive_refresh'})
   assert.equal(before.length,1)
   assert.ok(before[0].httpOnly&&before[0].secure)
+  stage='electron-ticket-replay'
   const replay=await isolated.fetch(endpoint,opts)
   assert.equal(replay.status,401,'same ticket was redeemed twice')
   const after=await isolated.cookies.get({url:origin,name:'__Host-xdrive_refresh'})
   assert.equal(after.length,1)
   assert.equal(after[0].value,before[0].value,'replay rotated valid browser Cookie')
-  const foreign=await isolated.fetch(origin+'/api/v1/auth/desktop-map/session',{
-    method:'POST',credentials:'include',redirect:'error',cache:'no-store',
-    headers:{Origin:'https://evil.example.invalid',
-      'X-XDrive-Browser-Owner':input.owner}
-  })
-  assert.equal(foreign.status,403,'foreign Origin reused Owner Cookie')
+  // A forged cross-site Origin is not a valid browser session.fetch input:
+  // Chromium may reject it at the network layer before Gin can return 403.
+  // Use an independently CA-verified private-IP HTTPS connection to exercise
+  // the real Gin Origin validator, with the actual HttpOnly Cookie obtained
+  // from the Electron session. No global TLS override or leaked credentials.
+  stage='real-gin-foreign-origin-rejection'
+  const foreign=await deadline(new Promise((resolve,reject)=>{
+    const req=https.request({
+      hostname:target.ip,port:target.port,serverName:'',
+      servername:'',ca:input.ca,rejectUnauthorized:true,
+      minVersion:'TLSv1.2',
+      checkServerIdentity:(_host,cert)=>tls.checkServerIdentity(target.ip,cert),
+      method:'POST',path:'/api/v1/auth/desktop-map/session',
+      headers:{Origin:'https://evil.example.invalid',
+        'X-XDrive-Browser-Owner':input.owner,
+        Cookie:'__Host-xdrive_refresh='+before[0].value},
+    },res=>{res.resume();res.on('end',()=>resolve({
+      status:res.statusCode,setCookie:res.headers['set-cookie']||[]
+    }))})
+    req.on('error',reject)
+    req.setTimeout(5000,()=>req.destroy(Error('strict negative TLS timeout')))
+    req.end()
+  }),10000,'real Gin foreign Origin')
+  assert.equal(foreign.status,403,'real Gin must reject foreign Origin with a valid Cookie')
+  assert.deepEqual(foreign.setCookie,[],'foreign Origin must not rotate the cookie')
+  const unchanged=await isolated.cookies.get({url:origin,name:'__Host-xdrive_refresh'})
+  assert.equal(unchanged.length,1)
+  assert.equal(unchanged[0].value,before[0].value,
+    'foreign Origin attempt changed the authentic Electron Cookie')
+  stage='electron-real-webview-attach'
   const host=new BrowserWindow({show:true,width:900,height:600,webPreferences:{
     webviewTag:true,sandbox:true,nodeIntegration:false,contextIsolation:true,webSecurity:true
   }})
@@ -158,9 +188,11 @@ async function check(){
       'headers:{Authorization:"Bearer "+session.access_token}});'+
       'return {status:result.status,owner:result.status===200?'+
       '(await result.json()).username:null};})()'
+    stage='guest-browser-refresh-and-owner-read'
     const owner=await guest.executeJavaScript(script)
     assert.deepEqual(owner,{status:200,owner:input.owner},
       'actual Chromium Cookie could not authorize exact Gin/PostgreSQL Owner')
+    stage='electron-read-only-cookie-probe'
     const probe=await isolated.fetch(origin+'/api/v1/auth/desktop-map/session',{
       method:'POST',credentials:'include',redirect:'error',cache:'no-store',
       headers:{Origin:origin,'X-XDrive-Browser-Owner':input.owner}
@@ -171,6 +203,7 @@ async function check(){
     assert.equal(checked.browser_session,true)
     assert.equal(checked.refresh_token,undefined)
     assert.ok(verifications>=1,'real Chromium TLS verifier did not run')
+    stage='success'
     console.log('XDRIVE_REAL_AGENT_ELECTRON_MAP '+JSON.stringify({
       passed:true,actualGoAgent:true,actualGinPostgres:true,
       actualElectronWebView:true,nativeTicketOneUse:true,
@@ -188,6 +221,7 @@ async function check(){
 const guard=setTimeout(()=>{console.error('actual Agent/Electron test timed out');app.exit(1)},105000)
 app.whenReady().then(check).then(()=>{clearTimeout(guard);app.exit(0)},error=>{
   clearTimeout(guard)
-  console.error('actual Agent/Electron test failed: '+String(error?.stack||error))
+  console.error('actual Agent/Electron test failed at '+stage+': '+
+    String(error instanceof Error ? error.message : error).slice(0,600))
   app.exit(1)
 })
