@@ -45,6 +45,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var pairing: XDriveIOSNativeUnifiedPhoto?
     @State private var indexRequest = UUID()
     @State private var retryUnavailable = false
+    @State private var explicitOriginalAudit = false
     @State private var viewerReturnAnchor: String?
     @State private var viewerReturnPage = 0
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -55,7 +56,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         galleryContent
             .accessibilityIdentifier("native-ios-unified-photo-gallery")
             .task(id: indexRequest) {
-                guard phase == .active, selected == nil else { return }
+                // Viewing thumbnails must never start a whole-library SHA-256
+                // job. A user explicitly starts the optional read-only audit.
+                guard explicitOriginalAudit, phase == .active, selected == nil else { return }
                 await timeline.scanLocal(login: login, retryUnavailable: retryUnavailable)
             }
             .onAppear {
@@ -83,7 +86,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             .sheet(isPresented: $showFilters) { filterEditor }
             .sheet(item: $pairing) { row in
-                XDriveIOSNativePhotoPairingDetails(row: row, retry: { reset(retryUnavailable: true) }, backup: openBackup)
+                XDriveIOSNativePhotoPairingDetails(row: row, retry: { reset() }, backup: openBackup)
             }
             .fullScreenCover(item: $selected) { selection in
                 XDriveIOSNativeUnifiedPhotoViewer(login: login, wall: wall, selection: selection,
@@ -113,6 +116,15 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 } label: {
                     Image(systemName: "internaldrive")
                 }.accessibilityLabel("管理缩略图缓存")
+                Menu {
+                    Button("手动核对所有本机原件（耗时）") {
+                        requestOriginalAudit(retryUnavailable: false)
+                    }
+                } label: {
+                    Image(systemName: "checkmark.shield")
+                }
+                .accessibilityLabel("手动核对本机原件")
+                .accessibilityIdentifier("native-ios-gallery-explicit-audit")
             }.padding(.horizontal, 12).padding(.vertical, 4)
             filters.padding(.horizontal, 12).padding(.vertical, 4)
             Divider()
@@ -141,7 +153,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     .id(wall.generation)
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 }
-                .refreshable { reset(retryUnavailable: true) }
+                .refreshable { reset() }
                 .simultaneousGesture(
                     MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
                         guard selected == nil, phase == .active, !showFilters else { return }
@@ -201,7 +213,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                          value: Double(status.checked), total: Double(max(1, status.total))).font(.footnote)
         } else if let status = timeline.coverage, status.unavailable > 0 {
             Text("\(status.unavailable) 项本机原件暂不可读；其他已确认的匹配仍可浏览。").font(.footnote).foregroundStyle(.secondary)
-            Button("重新核对暂不可读的原件") { reset(retryUnavailable: true) }
+            Button("重新核对暂不可读的原件") { requestOriginalAudit(retryUnavailable: true) }
+        }
+        if sourceFilter == .cloudOnly {
+            Text("“仅云端”仅显示已确认本机没有相同原件的照片；想浏览全部云端照片，请使用上方“单独浏览 → 云端图库”。")
+                .font(.footnote).foregroundStyle(.secondary)
         }
         if query != .init() {
             Text("\(query.media.title)\(query.term.isEmpty ? "" : " · 文件名包含「\(query.term)」")")
@@ -245,12 +261,19 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
 
     private func applyQuery() { guard draft.isValid else { return }; query = draft; showFilters = false }
     private func resetWall() { selected = nil; viewerReturnAnchor = nil; wall.reset() }
+    private func requestOriginalAudit(retryUnavailable: Bool) {
+        // An explicit diagnostic is independent from upload scheduling.
+        self.retryUnavailable = retryUnavailable
+        explicitOriginalAudit = true
+        indexRequest = UUID()
+    }
     private func reset(retryUnavailable: Bool = false) {
         pairing = nil
         resetWall()
         permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         timeline.reset()
         self.retryUnavailable = retryUnavailable
+        explicitOriginalAudit = false
         indexRequest = UUID()
     }
 }
@@ -279,7 +302,7 @@ struct XDriveIOSNativePhotoPairingDetails: View {
                 if let backup, row.presence == .localOnly {
                     Button("打开相册备份") { dismiss(); backup() }
                 }
-                Button("重新核对") { dismiss(); retry() }
+                Button("重新读取来源状态") { dismiss(); retry() }
             }
             .navigationTitle("照片来源").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
