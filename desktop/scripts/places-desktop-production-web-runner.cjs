@@ -47,6 +47,19 @@ async function until(fn,timeout,label){
 function launch(binary,args,env){
   const child=spawn(binary,args,{cwd:root,env,stdio:['ignore','pipe','pipe']})
   let carry='',errors='',highlighted='',stderrTail=''
+  const goDiagnostics=[]
+  const captureGoDiagnostic=line=>{
+    if(!(/\.go:[0-9]+/.test(line) || /^#\s/.test(line) ||
+         /^--- FAIL:/.test(line) || /^panic:/.test(line) || /^FAIL(?:\s|$)/.test(line)))return
+    // This fixture uses synthetic accounts and images. Return only bounded
+    // failure lines, not process environment, credential-bearing URLs or bodies.
+    const clean=line.replace(/https?:\/\/[^\s]+/gi,'[url]')
+      .replace(/Bearer\s+\S+/gi,'Bearer [redacted]')
+      .replace(/(?:password|refresh_token|ticket)\s*[:=]\s*\S+/gi,'[secret]')
+      .slice(0,260)
+    goDiagnostics.push(clean)
+    if(goDiagnostics.length>12)goDiagnostics.shift()
+  }
   const markers=[]
   child.stdout.on('data',chunk=>{
     const parts=(carry+chunk.toString()).split('\n')
@@ -56,6 +69,7 @@ function launch(binary,args,env){
         markers.push(JSON.parse(line.slice('XDRIVE_PLACES_PRODUCTION_RESTART '.length)))
       }
       if(line.includes('XDRIVE_PLACES_PRODUCTION_FAILED'))errors+=line.slice(0,900)+'\n'
+      captureGoDiagnostic(line)
     }
   })
   child.stderr.on('data',chunk=>{
@@ -69,7 +83,8 @@ function launch(binary,args,env){
     }
   })
   const exited=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})))
-  return {child,exited,markers,getError:()=>highlighted||errors}
+  return {child,exited,markers,getError:()=>highlighted||errors,
+    getGoDiagnostic:()=>goDiagnostics.join(' | ').slice(-1800)}
 }
 async function stop(processInfo){
   if(!processInfo||processInfo.child.exitCode!==null)return
@@ -84,7 +99,7 @@ async function bootElectron(boot,env,bootstrap){
   const proc=launch(electronBinary,['--no-sandbox','--disable-gpu',bootstrap],electronEnv)
   try{
     const result=await Promise.race([
-      proc.exited,delay(135000).then(()=>({code:'timeout'}))
+      proc.exited,delay(360000).then(()=>({code:'timeout'}))
     ])
     assert.equal(result.code,0,'production Desktop map boot '+boot+
       ' failed: '+proc.getError().slice(-1800))
@@ -98,6 +113,22 @@ async function bootElectron(boot,env,bootstrap){
     assert.equal(row.actualWebVite,true)
     assert.equal(row.realGuest,true)
     assert.equal(row.noNestedLogin,true)
+    assert.equal(row.exactOwnerCells,9)
+    assert.equal(row.exactFavorites,3)
+    assert.equal(row.exactFamily,3)
+    assert.equal(row.exactFamilyFavorites,2)
+    assert.equal(row.exactViewerRange,9)
+    assert.equal(row.viewerMetadata,true)
+    assert.equal(row.thumbnailBytesValid,true)
+    assert.equal(row.viewerBytesValid,true)
+    assert.equal(row.noUnrelatedMapBearerAccess,true)
+    if(boot===1)assert.equal(row.realWebModeRoundTrip,true)
+    if(boot===1)assert.equal(row.browserLogoutRecovered,true)
+    if(boot===1)assert.equal(row.legacyServerFailedClosed,true)
+    if(boot===2){
+      assert.equal(row.nativeLogoutBlockedOldMap,true)
+      assert.equal(row.oldMapHiddenAfterLogout,true)
+    }
     return row
   }finally{
     await stop(proc)
@@ -126,8 +157,9 @@ async function main(){
   try{
     const tls=certificate(dir)
     const ready=path.join(dir,'ready.json'),stopFile=path.join(dir,'stop')
+    const legacyMarker=path.join(dir,'old-server-map-grant-missing')
     server=launch('go',['test','-run','^TestDesktopPlacesProductionWebRestartFixture$',
-      '-count=1','-timeout=8m','-v','./internal/api'],{
+      '-count=1','-timeout=20m','-v','./internal/api'],{
       ...process.env,XD_DESKTOP_PLACES_PRODUCTION_E2E:'1',
       XD_DESKTOP_PLACES_IP:ip,
       XD_DESKTOP_PLACES_WEB_DIST:webdist,
@@ -135,9 +167,10 @@ async function main(){
       XD_DESKTOP_PLACES_STOP_FILE:stopFile,
       XD_DESKTOP_PLACES_CERT_FILE:tls.cert,
       XD_DESKTOP_PLACES_KEY_FILE:tls.key,
+      XD_DESKTOP_PLACES_LEGACY_MARKER:legacyMarker,
     })
     const fixture=await until(()=>{
-      if(server.child.exitCode!==null)throw Error('real Gin/PostgreSQL fixture failed')
+      if(server.child.exitCode!==null)throw Error('real Gin/PostgreSQL fixture failed: '+server.getGoDiagnostic())
       return fs.existsSync(ready)?JSON.parse(fs.readFileSync(ready,'utf8')):null
     },240000,'real production Web PostgreSQL fixture')
     assert.ok(fixture.url.startsWith('https://'+ip+':'))
@@ -163,16 +196,35 @@ async function main(){
       "require('./scripts/places-desktop-production-web-electron-main.cjs')\n",
       {mode:0o600})
     const results=[]
+    const logoutReady=path.join(dir,'agent-logout-ready')
+    const logoutDone=path.join(dir,'agent-logout-done')
     for(let boot=1;boot<=2;boot++){
-      results.push(await bootElectron(boot,{
+      const running=bootElectron(boot,{
         ...env,XD_DESKTOP_PLACES_PRODUCTION_ORIGIN:fixture.url,
         XD_DESKTOP_PLACES_PRODUCTION_OWNER:fixture.owner,
-      },bootstrap))
-      const status=await ipc.status()
-      assert.equal(status.configured,true)
-      assert.equal(status.username,fixture.owner)
+        XD_DESKTOP_PLACES_LOGOUT_READY:logoutReady,
+        XD_DESKTOP_PLACES_LOGOUT_DONE:logoutDone,
+        XD_DESKTOP_PLACES_LEGACY_MARKER:legacyMarker,
+      },bootstrap)
+      if(boot===2){
+        // Keep the genuine production Electron Main and WebView running while
+        // its independent, already-authenticated Go Agent logs out.
+        await Promise.race([
+          until(()=>fs.existsSync(logoutReady),100000,
+            'live production WebView waiting for native logout'),
+          running.then(()=>{throw Error('Desktop exited before native logout')},
+            error=>{throw error}),
+        ])
+        await ipc.logout()
+        fs.writeFileSync(logoutDone,'logout',{mode:0o600})
+      }
+      results.push(await running)
+      if(boot===1){
+        const status=await ipc.status()
+        assert.equal(status.configured,true)
+        assert.equal(status.username,fixture.owner)
+      }
     }
-    await ipc.logout()
     console.log('XDRIVE_PLACES_PRODUCTION_MAIN_WEB_COMPLETE '+JSON.stringify({
       passed:true,actualGinPostgres:true,actualAgent:true,
       productionDesktopMain:true,productionDesktopPreload:true,
@@ -180,6 +232,10 @@ async function main(){
       productionMapGuest:true,restarts:results.length,
       AgentSessionRetained:true,savedDesktopPassword:false,
       noSecondLogin:true,OwnerExact:true,syntheticPhotoFixture:true,
+      actualSignedOwnerCells:true,scopedAlbumFavoritesAndDate:true,
+      actualViewerMetadata:true,mapBearerRouteFence:true,
+      actualOwnerJPEGDerivatives:true,
+      actualAgentLogoutDuringWebView:true,retiredOldOwnerGuest:true,
       // No manual test, provider SDK, installed Windows or production server.
       physicalSystemTested:false,
     }))

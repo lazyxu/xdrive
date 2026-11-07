@@ -2270,10 +2270,11 @@ function createMainWindow(showOnReady = true) {
     // Never persist raw console strings, URLs, Owner identifiers or Cookies.
     // F12 exposes the actual complete Console/Network only on local user intent.
     let recordedErrors=0
-    guest.on('console-message',(_event,details)=>{
-      if(details.level!=='error' || recordedErrors>=12)return
+    // WebContents console-message uses numeric log levels: 3 is error.
+    guest.on('console-message',(_event,level,rawMessage)=>{
+      if(level!==3 || recordedErrors>=12)return
       recordedErrors++
-      const message=String(details.message||'')
+      const message=String(rawMessage||'')
       const category=/Content Security Policy|\bCSP\b/i.test(message)?'csp':
         /ERR_CERT_|certificate/i.test(message)?'tls':
         /ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ERR_PROXY/i.test(message)?'network':

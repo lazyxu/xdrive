@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"net"
 	"net/http"
@@ -23,8 +24,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/connectorsecret"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 // Opt-in real production Web App and real Gin Owner/Cells HTTP test fixture.
@@ -106,6 +110,16 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 	if err := db.Where("username = ?", "production-map-foreign").Take(&foreign).Error; err != nil {
 		t.Fatal(err)
 	}
+	// These synthetic test users bypass normal map-session initialization.
+	// The real /cells route MUST still reject a missing/revoked map epoch.
+	// Match the existing PostgreSQL Owner-map fixture by provisioning a
+	// revocable nonzero epoch for each isolated test account, never in prod.
+	for _, person := range []meta.User{owner, foreign} {
+		epoch, initErr := ensureBaiduMapEpochTx(context.Background(), db, person.ID)
+		if initErr != nil || epoch.OwnerID != person.ID || epoch.Epoch == 0 {
+			t.Fatalf("synthetic Owner map epoch initialization failed: %v", initErr)
+		}
+	}
 	original := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	original.Set(0, 0, color.RGBA{R: 11, G: 68, B: 176, A: 255})
 	var encoded bytes.Buffer
@@ -155,15 +169,102 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Seed genuinely decodable, cache-contract-valid synthetic JPEG bytes
+	// for every Owner photo. This makes protected Thumbnail and Viewer
+	// endpoints test actual binary delivery rather than an unbuilt worker.
+	var derivative bytes.Buffer
+	if err := jpeg.Encode(&derivative, original, &jpeg.Options{Quality: 87}); err != nil {
+		t.Fatal(err)
+	}
+	variant, err := mediapkg.ViewerQualityVariantFor(mediapkg.ViewerQualityHigh, "jpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, asset := range assets {
+		var node meta.Node
+		if err := db.Preload("File").First(&node, asset.PrimaryNodeID).Error; err != nil ||
+			node.File == nil {
+			t.Fatal("synthetic Owner media node missing for derivative")
+		}
+		var metadata meta.MediaMetadata
+		if err := db.Where("node_id = ?", node.ID).Take(&metadata).Error; err != nil {
+			t.Fatal("synthetic media metadata missing for derivative")
+		}
+		thumbKey := mediaThumbnailStorageKey(node, metadata)
+		viewerKey, err := mediapkg.ViewerQualityStorageKey(
+			node.ID, node.Revision, metadata.SHA256, variant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, cacheKey := range []string{thumbKey, viewerKey} {
+			if written, putErr := local.Put(context.Background(),
+				cacheKey, bytes.NewReader(derivative.Bytes())); putErr != nil ||
+				written != int64(derivative.Len()) {
+				t.Fatal("synthetic thumbnail/viewer JPEG bytes were not cached")
+			}
+		}
+	}
+	// Reserve the exact test HTTPS origin BEFORE signing the managed map
+	// release. The signed scope binds this host:port and must match the
+	// socket actually served by Gin below, not an unconfigured origin.
+	listener, err := net.Listen("tcp", net.JoinHostPort(ip, "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
 	server := &Server{DB: db, Store: local,
 		Auth:       auth.New("production-map-test-only-no-real-user", 15*time.Minute),
 		RefreshTTL: time.Hour,
 	}
+	server.AllowedOrigin = "https://" + listener.Addr().String()
+	// The real Owner /cells and signed Web map routes require a managed
+	// release. Create only synthetic test keys here; no provider AK, live
+	// Baidu API, production user account or external network is used.
+	keys, err := connectorsecret.NewKeyring(1, map[uint32]string{
+		1: strings.Repeat("de", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.ConnectorSecrets = keys
+	keyVersion, encryptedAK, err := keys.Seal(
+		baiduJSAPISecretAADID, baiduJSAPISecretKind,
+		[]byte("SYNTHETIC_PRODUCTION_MAP_E2E_AK_NO_PROVIDER"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.AdminServiceSecret{
+		Name: baiduJSAPISecretName, Enabled: true, Revision: 1,
+		KeyVersion: keyVersion, Ciphertext: encryptedAK,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := server.EnsureBaiduJSAPI4InternalKeys(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	priorCommit := version.Commit
+	version.Commit = strings.Repeat("d", 40)
+	defer func() { version.Commit = priorCommit }()
+	if err := server.RefreshBaiduJSAPI4ManagedRelease(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer server.ClearBaiduJSAPI4OperatorRelease()
 	gin.SetMode(gin.TestMode)
 	router := server.Router()
 	frontend := http.FileServer(http.Dir(dist))
+	legacyMarker := os.Getenv("XD_DESKTOP_PLACES_LEGACY_MARKER")
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
+			// Test-only old Server capability: no Desktop map grant endpoint,
+			// while ordinary Owner APIs and native Agent login remain real.
+			if legacyMarker != "" && r.Method == http.MethodPost &&
+				r.URL.Path == "/api/v1/auth/desktop-map/issue" {
+				if _, err := os.Stat(legacyMarker); err == nil {
+					http.NotFound(w, r)
+					return
+				}
+			}
 			router.ServeHTTP(w, r)
 			return
 		}
@@ -175,18 +276,15 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 		}
 		frontend.ServeHTTP(w, r)
 	})
-	listener, err := net.Listen("tcp", net.JoinHostPort(ip, "0"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	tlsServer := httptest.NewUnstartedServer(handler)
 	_ = tlsServer.Listener.Close()
 	tlsServer.Listener = listener
 	tlsServer.TLS = &tls.Config{Certificates: []tls.Certificate{leaf}, MinVersion: tls.VersionTLS12}
 	tlsServer.StartTLS()
 	defer tlsServer.Close()
-	if !strings.HasPrefix(tlsServer.URL, "https://"+ip+":") {
-		t.Fatal("real production Web fixture escaped dedicated RFC1918 socket")
+	if !strings.HasPrefix(tlsServer.URL, "https://"+ip+":") ||
+		tlsServer.URL != server.AllowedOrigin {
+		t.Fatal("signed map origin does not match dedicated RFC1918 HTTPS socket")
 	}
 	// Readiness contains NO password, bearer token, Root CA or PhotoAsset ID.
 	payload, err := json.Marshal(map[string]any{
@@ -203,7 +301,9 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(ready)
-	timer := time.NewTimer(7 * time.Minute)
+	// Multiple real WebView mode/Cookie/revocation phases run within one
+	// test fixture; each phase also has its own shorter failure deadline.
+	timer := time.NewTimer(18 * time.Minute)
 	defer timer.Stop()
 	ticker := time.NewTicker(150 * time.Millisecond)
 	defer ticker.Stop()
