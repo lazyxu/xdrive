@@ -70,18 +70,19 @@ func mediaExactTripPromoteTransitDays(
         if !mediaMemoryTripNearHome(day, homeLat, homeLon) { continue }
         away, ok := candidates[day.DateKey]
         if !ok { continue }
-        anchored := false
+        before, after := false, false
         for j, other := range dominant {
             if i == j || mediaMemoryTripNearHome(other, homeLat, homeLon) {
                 continue
             }
             delta := int(day.Date.Sub(other.Date).Hours() / 24)
-            if delta >= -1 && delta <= 1 {
-                anchored = true
-                break
-            }
+            if delta == 1 { before = true }
+            if delta == -1 { after = true }
         }
-        if anchored {
+        // A home-dominant day between two separate away runs may be a real
+        // return-home and second departure. Keep it as a boundary rather
+        // than merging two trips solely because it also has distant photos.
+        if before != after {
             adjusted[i] = away
         }
     }
