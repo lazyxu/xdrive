@@ -52,6 +52,32 @@ import Foundation
                 fatalError("invalid LAN candidate accepted: \(value)")
             } catch AuthFailure.invalidLANIP { }
         }
+        // Pairing must not flatten a valid TLS session followed by a
+        // network/HTTP failure into the misleading "invalidRoot" category.
+        let classify = XDriveIOSNativeLANLoginRoute.pairingProbeFailure
+        if case .ipCertificateInvalid = classify(URLError(.serverCertificateUntrusted)) {}
+        else { preconditionFailure("IP TLS mismatch misclassified") }
+        if case .ipCertificateInvalid = classify(URLError(.secureConnectionFailed)) {}
+        else { preconditionFailure("IP TLS transport mismatch misclassified") }
+        if case .ipConnectionTimedOut = classify(URLError(.timedOut)) {}
+        else { preconditionFailure("IP timeout wrongly blamed on CA") }
+        if case .ipConnectionUnavailable(let code) = classify(URLError(.cannotConnectToHost)) {
+            precondition(code == URLError.cannotConnectToHost.rawValue)
+        } else { preconditionFailure("IP connection refused was misclassified") }
+        if case .ipVersionRedirect = classify(AuthFailure.redirectRefused) {}
+        else { preconditionFailure("IP HTTP redirect was misclassified") }
+        if case .ipVersionInvalid = classify(AuthFailure.invalidLANProbe) {}
+        else { preconditionFailure("IP version payload was misclassified") }
+        if case .ipVersionStatus(let status) = classify(
+            XDriveIOSLANPairingFailure.ipVersionStatus(503)) {
+            precondition(status == 503)
+        } else { preconditionFailure("IP HTTP status was misclassified") }
+        precondition(!XDriveIOSLANPairingFailure.ipVersionInvalid.message.contains(
+            "域名提供的证书无法验证"), "unknown JSON must not blame a valid certificate")
+        precondition(XDriveIOSLANPairingFailure.ipCertificateInvalid.message.contains(
+            "IP SAN"), "real TLS rejection must mention IP identity")
+        precondition(XDriveIOSLANPairingFailure.ipVersionStatus(502).message.contains(
+            "HTTP 502"), "HTTP diagnostic must carry bounded status only")
         let directIP = try ServerAddress.parse("https://192.168.2.4:8443")
         do {
             _ = try XDriveIOSNativeLANLoginRoute.candidate(origin: directIP, ip: "10.0.0.4")

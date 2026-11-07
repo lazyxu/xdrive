@@ -39,6 +39,30 @@ enum NativeLANTrustChecks {
 
         let valid = try trust("ip")
         precondition(XDriveIOSServerTLSDelegate.verify(valid, target: ip, rootDER: root), "correct CA and IP SAN")
+        // Real Caddy 'tls internal' chains include an intermediate CA.
+        // A passed SecTrust evaluation under the PINNED root is sufficient,
+        // even if an iOS release omits the externally added anchor from its
+        // returned diagnostic chain representation.
+        let intermediate = SecCertificateCreateWithData(nil,
+            try Data(contentsOf: fixtures.appendingPathComponent("intermediate.der")) as CFData)!
+        let child = SecCertificateCreateWithData(nil,
+            try Data(contentsOf: fixtures.appendingPathComponent("ip-intermediate.der")) as CFData)!
+        var caddyTrust: SecTrust?
+        precondition(SecTrustCreateWithCertificates([child, intermediate, publicRoot] as CFArray,
+            SecPolicyCreateBasicX509(), &caddyTrust) == errSecSuccess)
+        precondition(XDriveIOSServerTLSDelegate.verify(caddyTrust!, target: ip, rootDER: root),
+            "real Caddy root -> intermediate -> matching IP-SAN leaf")
+        var wrongCaddyRoot: SecTrust?
+        precondition(SecTrustCreateWithCertificates([child, intermediate, publicRoot] as CFArray,
+            SecPolicyCreateBasicX509(), &wrongCaddyRoot) == errSecSuccess)
+        precondition(!XDriveIOSServerTLSDelegate.verify(wrongCaddyRoot!,
+            target: ip, rootDER: otherRoot), "Caddy intermediate cannot bypass wrong pinned root")
+        var wrongCaddyIP: SecTrust?
+        precondition(SecTrustCreateWithCertificates([child, intermediate, publicRoot] as CFArray,
+            SecPolicyCreateBasicX509(), &wrongCaddyIP) == errSecSuccess)
+        precondition(!XDriveIOSServerTLSDelegate.verify(wrongCaddyIP!,
+            target: otherIP, rootDER: root), "Caddy intermediate cannot bypass wrong IP SAN")
+
         let wrongIP = try trust("ip")
         precondition(!XDriveIOSServerTLSDelegate.verify(wrongIP, target: otherIP, rootDER: root), "reject wrong IP")
         let dnsOnly = try trust("dns")
