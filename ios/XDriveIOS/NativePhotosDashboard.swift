@@ -264,6 +264,11 @@ struct XDriveIOSNativePhotosDashboard: View {
                      backup.schedule?.enabled == true ? login.owner : nil)
         .environment(\.xdriveNativePhotoProcessingID,
                      backup.busy ? backup.progress?.activeLocalIdentifier : nil)
+        .environment(\.xdriveNativePhotoQueueBadgeRefresh,
+                     XDriveIOSNativePhotoQueueBadgeRefresh(
+                        busy: backup.busy,
+                        confirmedID: backup.confirmedOriginalUpdate?.id
+                     ))
         .environment(\.xdriveNativePhotoOnlyNewSince,
                      backup.schedule?.enabled == true &&
                      backup.schedule?.backupStartRule == .onlyNew
