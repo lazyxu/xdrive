@@ -3386,22 +3386,27 @@ export default function App({
           }
           : undefined}
         onShowInCloud={(task) => {
-          const locatorID = task.cloud_parent_id || task.cloud_node_id
-          if (typeof locatorID !== 'number' || !Number.isSafeInteger(locatorID) || locatorID <= 0) return
+          const validID = (value: number | undefined) =>
+            typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+          const fileID = validID(task.cloud_node_id) ? task.cloud_node_id : undefined
+          const parentID = validID(task.cloud_parent_id) ? task.cloud_parent_id : undefined
+          // The file's current server location wins over a potentially stale
+          // parent directory recorded when the upload first completed.
+          const locatorID = fileID ?? parentID
+          if (!locatorID) { setError('该传输记录没有可定位的云端文件。'); return }
           void window.xdriveDesktop.agent.getNodeLocation(locatorID).then((result) => {
             if (!result.ok) { setError(result.error.message); return }
             const location = result.data
-            const dir = task.cloud_parent_id || location.parent_id
-            if (typeof dir !== 'number' || !Number.isSafeInteger(dir) || dir <= 0) return
-            const ancestry = (task.cloud_parent_id
-              ? location.breadcrumbs
-              : location.breadcrumbs.filter((crumb) => crumb.id !== location.node_id)
+            const dir = fileID ? location.parent_id : locatorID
+            const ancestry = (fileID
+              ? location.breadcrumbs.filter((crumb) => crumb.id !== location.node_id)
+              : location.breadcrumbs
             ).map((crumb) => ({ id: crumb.id, name: crumb.name }))
-            if (!ancestry.length || ancestry[ancestry.length - 1].id !== dir) return
-            const target = task.cloud_node_id
-            const nodeID = typeof target === 'number' && Number.isSafeInteger(target) &&
-              target > 0 ? target : undefined
-            void revealCloudNodeInDirectory(dir, nodeID, ancestry)
+            if (!validID(dir) || !ancestry.length || ancestry[ancestry.length - 1].id !== dir) {
+              setError('无法定位云端文件：文件已移动、删除或所在目录不可用。')
+              return
+            }
+            void revealCloudNodeInDirectory(dir, fileID ? location.node_id : undefined, ancestry)
           }).catch((error) => setError(error instanceof Error ? error.message : String(error)))
         }}
         retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
