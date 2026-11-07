@@ -2,13 +2,20 @@ import Photos
 import PhotosUI
 import SwiftUI
 
+/// Presentation-only route; never grants upload authority.
+enum XDriveIOSNativePhotoBackupLaunch: Equatable {
+    case overview, queue, focused, settings, audit
+}
+
 /// Native opt-in for bounded still/video/Live originals, not a WebView bridge.
 struct XDriveIOSNativePhotoBackupScreen: View {
     private enum Page: Equatable { case overview, setup, details }
-    private enum Detail: Hashable { case progress, automatic, receipts, result }
+    private enum Detail: Hashable { case progress, automatic, receipts, audit, result }
 
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var controller: XDriveIOSNativePhotoBackupController
+    var launchAction: XDriveIOSNativePhotoBackupLaunch = .overview
+    var launchNonce: UUID = UUID()
     let onShowCloudOriginals: () -> Void
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
@@ -16,6 +23,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var originalProof = XDriveIOSNativeCurrentPhotoReceiptModel()
     @StateObject private var destination = XDriveIOSNativePhotoBackupDestinationModel()
     @State private var page = Page.overview
+    @State private var showTaskList = false
     @State private var detail: Detail?
     @State private var enablingAutomaticBackup = false
     @State private var selectedOriginalToVerify: PhotosPickerItem?
@@ -432,8 +440,24 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         }
     }
 
+    private func applyLaunchAction() {
+        // A shortcut navigates only; Focused still requires separate consent.
+        switch launchAction {
+        case .overview: page = .overview
+        case .queue: showTaskList = true
+        case .focused: openDetails(.progress)
+        case .settings: openDetails(.automatic)
+        case .audit: openDetails(.audit)
+        }
+    }
+
     var body: some View {
         backupLifetimeContent
+        .sheet(isPresented: $showTaskList) {
+            XDriveIOSNativePhotoBackupTaskList(login: login, controller: controller)
+        }
+        .onAppear { applyLaunchAction() }
+        .onChange(of: launchNonce) { _ in applyLaunchAction() }
         .onChange(of: receipts.mode) { mode in
             if mode == .idle {
                 controller.refresh(owner: login.owner)
@@ -569,6 +593,30 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     }
                     Button(destination.confirmed == nil ? "开始设置" : "继续设置") { page = .setup }
                 }
+            }
+            Section("备份进度与任务") {
+                if let focused = controller.focusedSummary, focused.totalWindows > 0 {
+                    Text("集中扫描：\(focused.completedWindows)/\(focused.totalWindows) 段，确认新增 \(focused.confirmedNew) 项")
+                        .monospacedDigit()
+                    ProgressView(
+                        value: Double(min(focused.completedWindows, focused.totalWindows)),
+                        total: Double(focused.totalWindows)
+                    )
+                    .accessibilityLabel("集中备份分段扫描进度，不是远端备份覆盖率")
+                }
+                if let progress = controller.progress {
+                    Text("本轮已扫描 \(progress.scanned) 项 · 新增 \(progress.uploaded) · 已核验 \(progress.verifiedAlready) · 待核对 \(progress.needsReview) · 不可用 \(progress.unavailable)")
+                        .font(.footnote).monospacedDigit()
+                }
+                if let snapshot = coverage.snapshot {
+                    Text("本机授权图库 \(snapshot.currentAuthorizedMedia) 项；服务器原件覆盖率需逐项核验")
+                        .font(.footnote)
+                }
+                Button("查看逐项备份任务队列") { showTaskList = true }
+                    .accessibilityIdentifier("native-ios-photos-task-list")
+                Button("统计本机照片与历史收据") { coverage.refresh(login: login) }
+                    .disabled(coverage.busy || controller.busy || login.owner == nil)
+                Button("逐项核验当前云端原件") { openDetails(.audit) }
             }
             Section {
                 Button {
@@ -1198,6 +1246,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             XDriveIOSNativePhotoWholeLibraryAuditSection(login: login)
+                .id(Detail.audit)
             Section("可选系统后台原件备份") {
                 Text("前台自动备份与系统 BGProcessing 相互独立。必须先保存并核验受管备份目的地，后台再单独授权当前 iPhone、Owner 和对应 Source/Node；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
                     .font(.footnote).foregroundStyle(.secondary)
