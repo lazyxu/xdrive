@@ -14,7 +14,101 @@ struct NativePhotoFingerprintStoreChecks {
         let file = folder.appendingPathComponent("index.sqlite")
         try populate(file)
         try reopen(file)
-        print("Gallery fingerprint index persistence, 100k lookup, ambiguity and coverage checks passed")
+        try incremental(folder.appendingPathComponent("delta.sqlite"))
+        print("Gallery fingerprint persistence, 100k lookup, bounded PhotoKit delta, crash/retry and fail-closed coverage checks passed")
+    }
+
+
+    /// One changed photo, one deleted photo and one new iCloud-only original
+    /// must never require rescanning the other fingerprints or prove a false
+    /// cloud-only/whole-library state.
+    private static func incremental(_ file: URL) throws {
+        do {
+            let store = try XDriveIOSNativePhotoFingerprintStore(fileURL: file)
+            try store.begin(library: Data([10]), invalidate: nil)
+            try store.record([
+                (id: "a", fingerprint: "hash-a", probe: Data([1])),
+                (id: "b", fingerprint: "hash-b", probe: Data([2]))
+            ])
+            try store.startFullInventory()
+            try store.recordInventory([
+                .init(id: "a", kind: "image", readable: true),
+                .init(id: "b", kind: "video", readable: true),
+                .init(id: "c", kind: "live_photo", readable: false)
+            ])
+            let baseline = try store.finishFullInventory(checked: 3)
+            try require(baseline.checked == 3 && baseline.unavailable == 1, "full inventory is exact")
+            try require(try store.hasCompleteInventory(), "completed inventory is durable")
+            try store.advanceWithoutAssetChanges(library: Data([11]))
+            try require(try store.state()?.checked == 3, "album-only token preserves coverage")
+            try store.prepareIncremental(library: Data([12]), changed: [
+                .init(id: "a", kind: "image"),
+                .init(id: "b", kind: nil),
+                .init(id: "d", kind: "video")
+            ], expectedCount: 3)
+            try require(try store.state()?.checked == nil, "pending delta revokes full coverage")
+            try require(try store.probe(id: "a") == nil, "modified original's hash is invalidated")
+            try require(try store.probe(id: "b") == nil, "deleted original's hash is invalidated")
+            let pending = try store.incrementalWork()
+            try require(pending?.total == 2 && pending?.checked == 0, "only changed accessible items are queued")
+            try require(pending?.assets.map(\.id) == ["a", "d"], "old unchanged assets are not requeued")
+            do {
+                _ = try store.finishIncremental()
+                throw NSError(domain: "pending delta falsely completed", code: 1)
+            } catch XDriveIOSNativePhotoFingerprintStore.Failure.invalidRecord {}
+            do {
+                try store.resolvePending([.init(id: "a", kind: "video",
+                                                fingerprint: "wrong", probe: Data([99]))])
+                throw NSError(domain: "wrong-kind proof accepted", code: 1)
+            } catch XDriveIOSNativePhotoFingerprintStore.Failure.invalidRecord {}
+        }
+
+        // Reopen simulates an app termination midway through the delta.
+        do {
+            let store = try XDriveIOSNativePhotoFingerprintStore(fileURL: file)
+            try require(try store.state()?.checked == nil, "relaunch cannot resurrect pending coverage")
+            try require(try store.incrementalWork()?.assets.count == 2, "relaunch resumes changed IDs")
+            try store.resolvePending([
+                .init(id: "a", kind: "image", fingerprint: "hash-a2", probe: Data([10])),
+                .init(id: "d", kind: "video", fingerprint: nil, probe: nil)
+            ])
+            let done = try store.finishIncremental()
+            try require(done.checked == 3 && done.unavailable == 2, "only unreadable originals remain uncertain")
+            try require(done.unavailableByKind?["video"] == 1, "new iCloud-only video is not absence")
+            try require(done.unavailableByKind?["live_photo"] == 1, "unchanged failed Live asset remains uncertain")
+            try require(try store.hasCompleteInventory(), "resolved delta restores exact scope proof")
+            try require(try store.localIDs(fingerprint: "hash-a2") == ["a"], "modified original reindexed")
+            try require(try store.localIDs(fingerprint: "hash-b").isEmpty, "deleted original stays removed")
+            // Explicit retry hashes only two unavailable originals.
+            try require(try store.prepareUnavailableRetry(), "unavailable retry queues")
+            try require(try store.incrementalWork()?.total == 2, "retry is bounded to unavailable IDs")
+            try store.resolvePending([
+                .init(id: "c", kind: "live_photo", fingerprint: nil, probe: nil),
+                .init(id: "d", kind: "video", fingerprint: "hash-d", probe: Data([4]))
+            ])
+            let retried = try store.finishIncremental()
+            try require(retried.unavailable == 1 && retried.unavailableByKind?["video"] == 0,
+                        "retry only promotes proven bytes")
+            do {
+                try store.prepareIncremental(library: Data([13]), changed: [
+                    .init(id: "a", kind: nil)
+                ], expectedCount: 3)
+                throw NSError(domain: "inconsistent PhotoKit generation accepted", code: 1)
+            } catch XDriveIOSNativePhotoFingerprintStore.Failure.invalidRecord {}
+            try require(try store.state()?.library == Data([12]), "invalid delta rolls back epoch atomically")
+            try require(try store.localIDs(fingerprint: "hash-a2") == ["a"], "failed delta preserves proofs")
+            try store.begin(library: Data([14]), invalidate: ["a"])
+            try require(try store.state()?.checked == nil, "large or expired change history fails closed")
+            try require(try store.incrementalWork() == nil, "fallback never inherits stale delta")
+            try require(try store.probe(id: "a") == nil, "fallback invalidates changed hash")
+            try require(try store.probe(id: "d") != nil, "fallback retains proven unchanged originals")
+            try store.startFullInventory()
+            try store.recordInventory([.init(id: "d", kind: "video", readable: true)])
+            try require(try store.state()?.checked == nil, "partial full scan does not prove absence")
+        }
+        let reopened = try XDriveIOSNativePhotoFingerprintStore(fileURL: file)
+        try require(try reopened.state()?.checked == nil, "interrupted full scan is never complete")
+        try require(!(try reopened.hasCompleteInventory()), "partial inventory cannot be treated as complete")
     }
 
     private static func populate(_ file: URL) throws {
