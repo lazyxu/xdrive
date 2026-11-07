@@ -19,6 +19,8 @@ struct XDriveIOSNativeMediaItem: Decodable, Identifiable {
         let has_thumbnail: Bool
         let container_kind: String?
         let captured_at: String?
+        let latitude: Double?
+        let longitude: Double?
         let thumbnail_version: String?
     }
     struct Resource: Decodable, Equatable {
@@ -79,6 +81,8 @@ extension XDriveIOSNativeMediaItem {
         metadata.media_kind == rhs.metadata.media_kind &&
         metadata.has_thumbnail == rhs.metadata.has_thumbnail &&
         metadata.container_kind == rhs.metadata.container_kind &&
+        metadata.latitude == rhs.metadata.latitude &&
+        metadata.longitude == rhs.metadata.longitude &&
         content_key == rhs.content_key &&
         asset_id == rhs.asset_id &&
         metadata.thumbnail_version == rhs.metadata.thumbnail_version &&
@@ -323,23 +327,37 @@ struct XDriveIOSNativeMediaGalleryReader {
     /// Only current v2 trip GPS cells, never the all-Owner map overview.
     /// Both counts and MapKit pin identities must match the trip DTO.
     func exactTripMap(
-        _ trip: XDriveIOSNativeExactTrip, timeZone: String
+        _ trip: XDriveIOSNativeExactTrip, timeZone: String,
+        bounds: XDriveIOSNativeOwnerMapBounds? = nil
     ) async throws -> XDriveIOSNativeOwnerMapOverview {
         guard XDriveIOSNativeExactTripPolicy.validTrip(trip),
-              XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone)
+              XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone),
+              bounds == nil || XDriveIOSNativeOwnerMapOverviewPolicy.validBounds(bounds!)
         else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
-        let url = try endpoint("/api/v1/media/trips/\(trip.id)/map", query: [
-            URLQueryItem(name: "time_zone", value: timeZone)
-        ])
+        var parameters = [URLQueryItem(name: "time_zone", value: timeZone)]
+        if let bounds {
+            parameters += [
+                URLQueryItem(name: "west", value: String(bounds.west)),
+                URLQueryItem(name: "south", value: String(bounds.south)),
+                URLQueryItem(name: "east", value: String(bounds.east)),
+                URLQueryItem(name: "north", value: String(bounds.north))
+            ]
+        }
+        let url = try endpoint("/api/v1/media/trips/\(trip.id)/map",
+                               query: parameters)
         let bytes = try await read(
             url, maximum: XDriveIOSNativeOwnerMapOverviewPolicy.maximumBytes)
         let result = try JSONDecoder().decode(
             XDriveIOSNativeOwnerMapOverview.self, from: bytes)
-        guard !result.aggregated,
-              result.total_photo_count == trip.item_count,
+        guard result.trip_photo_count == trip.item_count,
+              result.total_photo_count <= trip.item_count,
+              (bounds != nil || result.total_photo_count == trip.item_count),
               XDriveIOSNativeOwnerMapOverviewPolicy.valid(result),
-              result.items.allSatisfy({
-                XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange($0)
+              result.items.allSatisfy({ facet in
+                result.aggregated
+                    ? (facet.coordinate_kind == "map_region_sample" &&
+                       !XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(facet))
+                    : XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(facet)
               })
         else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
         return result
