@@ -119,11 +119,23 @@ func TestAndroidPhotoDestinationIsOwnerDeviceBoundAndFlat(t *testing.T) {
 		nil, http.StatusForbidden, map[string]string{"If-Match": `"1"`})
 	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/trigger", token,
 		nil, http.StatusForbidden, nil)
+	// Generic archive/restore must not change a phone-owned Source.
+	// Reject both Owner-only requests and an attempt to pass native Device
+	// credentials to a generic management route.
+	for _, suffix := range []string{"/archive", "/restore"} {
+		requestWithHeaders(t, router, http.MethodPost, sourceURL+suffix, token,
+			nil, http.StatusForbidden, map[string]string{"If-Match": `"1"`})
+	}
+	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/archive", token,
+		nil, http.StatusForbidden, map[string]string{
+			"If-Match": `"1"`, "X-XDrive-Device-ID": device.ID,
+			"X-XDrive-Device-Token": secret,
+		})
 	var source meta.Source
 	if err := db.First(&source, created.SourceID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if source.Name != "Pixel 原件" || source.Revision != 1 {
+	if source.Name != "Pixel 原件" || source.Revision != 1 || source.Status != meta.SourceStatusPaused {
 		t.Fatalf("Owner-only generic mutation changed native Source: %+v", source)
 	}
 	// An Owner may read a phone's run history but cannot cancel its active

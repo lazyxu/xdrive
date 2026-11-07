@@ -114,9 +114,24 @@ func TestIOSPhotoManagedDestinationHTTPAndFiveBRename(t *testing.T) {
 		nil, http.StatusForbidden, map[string]string{"If-Match": `"1"`})
 	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/trigger", ownerToken,
 		nil, http.StatusForbidden, nil)
+	// Generic archive/restore must not change a phone-owned Source.
+	// Reject both Owner-only requests and an attempt to pass native Device
+	// credentials to a generic management route.
+	for _, suffix := range []string{"/archive", "/restore"} {
+		requestWithHeaders(t, router, http.MethodPost, sourceURL+suffix, ownerToken,
+			nil, http.StatusForbidden, map[string]string{"If-Match": `"1"`})
+	}
+	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/archive", ownerToken,
+		nil, http.StatusForbidden, map[string]string{
+			"If-Match": `"1"`, "X-XDrive-Device-ID": device.ID,
+			"X-XDrive-Device-Token": secret,
+		})
 	var stored meta.Source
 	if err := db.First(&stored, result.SourceID).Error; err != nil {
 		t.Fatal(err)
+	}
+	if stored.Status != meta.SourceStatusPaused || stored.Revision != 1 || stored.Name != "我的照片" {
+		t.Fatalf("generic management changed native Source: %+v", stored)
 	}
 	if !stored.TargetManaged || !iosPhotoDestinationSource(stored) ||
 		stored.DeviceID == nil || *stored.DeviceID != device.ID ||

@@ -54,6 +54,12 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 			Where("id = ? AND owner_id = ?", id, userID(c)).Take(&identity).Error; err != nil {
 			return err
 		}
+		// A phone's Source is managed only through its narrow native API.
+		// Generic archive/restore cannot acquire PhotoKit or MediaStore
+		// authority, even when the Owner supplies valid Device headers.
+		if nativePhotoSourceRunKind(identity.Kind) {
+			return errNativePhotoSourceMutationUnauthorized
+		}
 		if isRetiredSynologyPhotosPush(identity) || meta.SynologyPullTemporarilyDisabled(identity.Kind, identity.Direction) {
 			if !archive {
 				if meta.SynologyPullTemporarilyDisabled(identity.Kind, identity.Direction) {
@@ -167,6 +173,8 @@ func (s *Server) setSourceArchiveState(c *gin.Context, archive bool) {
 			fail(c, http.StatusGone, errSynologyPullDisabled.Error())
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
+		case errors.Is(err, errNativePhotoSourceMutationUnauthorized):
+			fail(c, http.StatusForbidden, "native photos Source must use its device-scoped management API")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "source not found")
 		default:
