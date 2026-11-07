@@ -36,6 +36,9 @@ internal fun NativeClipboardScreen(
 ) {
     val state by controller.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val clipboard = remember(context) {
+        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    }
     val scope = rememberCoroutineScope()
     val epoch = state.nativeUiSessionId
     var password by remember(epoch) { mutableStateOf("") }
