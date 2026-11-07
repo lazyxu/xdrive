@@ -286,9 +286,20 @@ struct XDriveIOSNativeExactTripMapScreen: View {
             } catch is CancellationError {
             } catch let failure as XDriveIOSNativeMediaReadFailure {
                 guard epoch == ticket else { return }
-                if case .response(let code) = failure, code == 401 || code == 403 {
-                    invalidate()
-                    self.error = "当前 Owner 已撤权，旅行地图不可访问。"
+                if case .response(let code) = failure {
+                    switch code {
+                    case 401, 403:
+                        invalidate()
+                        self.error = "当前 Owner 已撤权，旅行地图不可访问。"
+                    case 404:
+                        self.error = "此旅行已变化，请返回旅行列表刷新。"
+                    case 409:
+                        // Never masquerade a truncated 65+ place overview
+                        // as a complete map. Keep the trip photo wall usable.
+                        self.error = "当前旅行地点过多或成员正在变化，暂无法完整显示地图（最多 64 个地点）。"
+                    default:
+                        self.error = "无法核对旅行地图，请重试。"
+                    }
                 } else {
                     self.error = "旅行地点或成员已变化，请返回旅行列表刷新。"
                 }
