@@ -53,7 +53,7 @@ test('manual Desktop login passes the verified IP to Agent and persists origin-s
   const route = { mode: 'auto', lan_ip: '192.168.2.4', public_ip: '' }
   const result = await f.login(null, { server: 'https://drive.example:8443/', username: 'owner', password: 'fixture-password', connection_route: route })
   assert.equal(result.ok, true)
-  assert.deepEqual(f.events.map(event => event[0]), ['probe', 'login'])
+  assert.deepEqual(f.events.map(event => event[0]), ['probe', 'login', 'close-map-guests'])
   assert.equal(f.events[1][1].connection_ip, '192.168.2.4')
   assert.equal(f.events[1][1].server, 'https://drive.example:8443/')
   assert.deepEqual(f.stored().connection_route, route)
@@ -76,7 +76,7 @@ test('default connection explicitly clears an older selected IP without adding r
   const f = fixture()
   const result = await f.login(null, { server: 'https://drive.example/', username: 'owner', password: 'fixture-password' })
   assert.equal(result.ok, true)
-  assert.deepEqual(f.events.map(event => event[0]), ['login'])
+  assert.deepEqual(f.events.map(event => event[0]), ['login', 'close-map-guests'])
   assert.equal(f.events[0][1].connection_ip, '')
   assert.equal(f.stored().connection_route, undefined)
 })

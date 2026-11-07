@@ -1,6 +1,7 @@
 'use strict'
 const {app}=require('electron')
 const assert=require('node:assert/strict')
+const {execFileSync}=require('node:child_process')
 const origin=process.env.XD_DESKTOP_PLACES_PRODUCTION_ORIGIN
 const owner=process.env.XD_DESKTOP_PLACES_PRODUCTION_OWNER
 assert.ok(origin&&origin.startsWith('https://10.233.15.19:'))
@@ -417,30 +418,53 @@ async function run(win){
     assert.equal(state.modeConsistent,true,'initial Web SDK mode and navigation differ')
     assert.equal(state.hasModeControls,true,'production Web shared map controls absent')
     stage='production-Desktop-F12-real-WebView-DevTools'
-    if(!win.isVisible())win.show()
-    win.focus()
-    win.webContents.focus()
-    win.webContents.sendInputEvent({type:'keyDown',keyCode:'F12'})
-    let f12Opened=false
-    try{await until(()=>attached.isDevToolsOpened(),2500,'Parent F12 Guest DevTools');f12Opened=true}
-    catch{/* The focused sandboxed guest may own input in Chromium. */}
-    if(!f12Opened){
-      attached.focus()
-      attached.sendInputEvent({type:'keyDown',keyCode:'F12'})
-      try{await until(()=>attached.isDevToolsOpened(),8000,'Guest F12 DevTools');f12Opened=true}
-      catch(error){
-        throw Error('real F12 did not open map DevTools; '+JSON.stringify({
-          windowVisible:win.isVisible(),windowFocused:win.isFocused(),
-          parentFocused:win.webContents.isFocused(),
-          guestFocused:attached.isFocused(),parentTools:win.webContents.isDevToolsOpened(),
-          guestTools:attached.isDevToolsOpened(),guestDestroyed:attached.isDestroyed(),
-        })+'; '+String(error?.message||error))
-      }
+    // Electron sendInputEvent may not behave like a native keyboard shortcut
+    // on Xvfb. Use the real X11 focused window and XTest key delivery, then
+    // require the production before-input-event path to open Guest DevTools.
+    // Test instrumentation observes only key class / Guest vs Parent counts.
+    const f12Events={parent:0,guest:0}
+    const parentInput=(_event,input)=>{
+      if(input?.type==='keyDown' && input.key==='F12') f12Events.parent++
     }
-    assert.equal(f12Opened,true)
-    assert.equal(win.webContents.isDevToolsOpened(),false,
-      'F12 must not open Parent DevTools instead of the map Guest')
-    attached.closeDevTools()
+    const guestInput=(_event,input)=>{
+      if(input?.type==='keyDown' && input.key==='F12') f12Events.guest++
+    }
+    win.webContents.on('before-input-event',parentInput)
+    attached.on('before-input-event',guestInput)
+    try{
+      if(!win.isVisible())win.show()
+      win.focus()
+      attached.focus()
+      await wait(250)
+      const handle=win.getNativeWindowHandle()
+      assert.ok(Buffer.isBuffer(handle)&&handle.length>=4,
+        'real X11 BrowserWindow handle missing')
+      const xid=String(handle.readUInt32LE(0))
+      // No window manager is required: windowfocus uses XSetInputFocus;
+      // key uses XTest rather than a fake JavaScript KeyboardEvent.
+      execFileSync('xdotool',['windowfocus','--sync',xid],
+        {timeout:5000,stdio:'ignore'})
+      execFileSync('xdotool',['key','--clearmodifiers','F12'],
+        {timeout:5000,stdio:'ignore'})
+      await until(()=>attached.isDevToolsOpened(),10000,
+        'real X11 F12 must open authenticated map Guest DevTools')
+      assert.ok(f12Events.parent+f12Events.guest>0,
+        'F12 was not received by the production Parent/Guest handler')
+      assert.equal(win.webContents.isDevToolsOpened(),false,
+        'F12 must not open Parent DevTools instead of map Guest')
+      attached.closeDevTools()
+    }catch(error){
+      throw Error('native F12 map diagnostic failed; '+JSON.stringify({
+        windowVisible:win.isVisible(),windowFocused:win.isFocused(),
+        parentInputCount:f12Events.parent,guestInputCount:f12Events.guest,
+        parentTools:win.webContents.isDevToolsOpened(),
+        guestTools:attached.isDevToolsOpened(),guestDestroyed:attached.isDestroyed(),
+      })+'; '+String(error?.message||error))
+    }finally{
+      win.webContents.removeListener('before-input-event',parentInput)
+      if(!attached.isDestroyed())
+        attached.removeListener('before-input-event',guestInput)
+    }
     stage='production-Web-Owner-scoped-Gin-Cells-Viewer-and-map-route-fence'
     const media=await attached.executeJavaScript(
       '('+inspectRealWebGuestOwnerDataPath.toString()+')('+JSON.stringify(owner)+')')
