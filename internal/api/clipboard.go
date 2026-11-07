@@ -433,10 +433,18 @@ func (s *Server) clearClipboardItems(c *gin.Context) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
-	if err := s.DB.WithContext(c.Request.Context()).Where("owner_id = ?", uid).
-		Delete(&meta.ClipboardItem{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard store unavailable"})
-		return
-	}
-	c.Status(http.StatusNoContent)
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+        var vault meta.ClipboardVault
+        if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+            Where("owner_id = ?", uid).First(&vault).Error; err != nil { return err }
+        result := tx.Where("owner_id = ?", uid).Delete(&meta.ClipboardItem{})
+        if result.Error != nil { return result.Error }
+        if result.RowsAffected == 0 { return nil }
+        return appendClipboardChangeTx(tx, uid, "clear")
+    })
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard store unavailable"})
+        return
+    }
+    c.Status(http.StatusNoContent)
 }
