@@ -158,7 +158,12 @@ test('iOS cloud-first Gallery never starts original-byte scans on view, refresh 
   assert.match(ui, /guard explicitOriginalAudit, phase == \.active, selected == nil else \{ return \}/)
   assert.match(ui, /Button\("手动核对所有本机原件（耗时）"\)/)
   assert.match(ui, /if indexRequest == request \{ explicitOriginalAudit = false \}/)
-  assert.match(ui, /if selected == nil \{[\s\S]*?explicitOriginalAudit = false[\s\S]*?indexRequest = UUID\(\)/)
+  // Child NavigationLink dismissal preserves verified wall checkpoints while
+  // cancelling optional original-byte audits; no source/Owner state is reset.
+  const childLeave = ui.match(/\.onDisappear \{([\s\S]*?)\n            \}/)?.[1] ?? ''
+  assert.match(childLeave, /photoObserver\.stop\(\)/)
+  assert.match(childLeave, /explicitOriginalAudit = false[\s\S]*?indexRequest = UUID\(\)/)
+  assert.doesNotMatch(childLeave, /resetWall\(\)|timeline\.reset\(\)|wall\.reset\(\)/)
   assert.match(ui, /\.onChange\(of: selected\?\.id\) \{ _ in[\s\S]*?explicitOriginalAudit = false/)
   assert.match(ui, /\.refreshable \{ reset\(\) \}/)
   assert.doesNotMatch(ui, /\.refreshable \{ reset\(retryUnavailable: true\) \}/)
