@@ -54,8 +54,8 @@ type ClipboardDeviceKey struct {
 	OwnerID   uint64     `gorm:"primaryKey"`
 	DeviceID  string     `gorm:"size:36;primaryKey"`
 	PublicKey string     `gorm:"size:44;not null"`
-	CreatedAt time.Time 
-	UpdatedAt time.Time 
+	CreatedAt time.Time
+	UpdatedAt time.Time
 	RevokedAt *time.Time `gorm:"index"`
 }
 
