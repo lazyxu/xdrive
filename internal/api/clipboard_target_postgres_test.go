@@ -75,7 +75,7 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	nonce := base64.StdEncoding.EncodeToString(make([]byte, 12))
 	ciphertext := base64.StdEncoding.EncodeToString([]byte("ciphertext is authenticated by receiver"))
 	for _, owner := range []struct {
-		id uint64
+		id     uint64
 		bearer string
 	}{
 		{ownerA.ID, ownerABearer}, {ownerB.ID, ownerBBearer},
