@@ -170,21 +170,22 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
         next = nil
         defer { if epoch == ticket { loading = false } }
         guard query.isValid else { notice = "请检查搜索文字与日期范围。"; return }
-        if let library, !XDriveIOSNativePhotoFingerprintIndex.isCurrent(library) {
-            notice = "本机图库已变化，请刷新后继续。"
-            return
-        }
-
+        // A stale/permission-revoked local PhotoKit window may not be used,
+        // but it must never fence the independent Owner cloud read.
+        let staleLocalWindow = library.map {
+            !XDriveIOSNativePhotoFingerprintIndex.isCurrent($0)
+        } ?? false
         var cursor = start
         let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        if permission != .authorized && permission != .limited { cursor.localEnd = true }
+        if (permission != .authorized && permission != .limited) || staleLocalWindow {
+            cursor.localEnd = true
+        }
         let localEpoch = try? XDriveIOSPhotoKitLibraryEpoch.capture()
         if cursor.local > 0, let libraryArchive,
            !XDriveIOSNativePhotoFingerprintIndex.isCurrent(libraryArchive) {
-            notice = "本机照片已变化，请回到最新重新核对。"
-            return
+            cursor.localEnd = true
         }
-        libraryArchive = localEpoch?.serialized
+        if !cursor.localEnd { libraryArchive = localEpoch?.serialized }
         // Do not open/replay the local SHA index ahead of the Owner cloud
         // page. PhotoKit change replay and SQLite are optional reconciliation,
         // never the primary Gallery navigation or cloud API precondition.
@@ -205,6 +206,29 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
 
         let scanner = XDrivePhotoKitBoundedSnapshotScanner()
         do {
+            // Fetch an Owner-authorized cloud page before touching the local
+            // PhotoKit scanner or its optional fingerprint index. Provisional
+            // cloud tiles are immediately browsable even when PhotoKit is
+            // slow, iCloud-only or unauthorized. The mixed cursor is not
+            // committed until its full bounded window is resolved.
+            var cloud: ArraySlice<Item> = []
+            var cloudReadFailed = false
+            if let reader, !cursor.cloudEnd {
+                do {
+                    cloud = try await cloudWindow(reader, cursor: &cursor)
+                    guard current(ticket, login: login, owner: expected) else { return }
+                    if filter == nil && query == .init() &&
+                        start.cloud == 0 && start.local == 0 {
+                        rows = Array(cloud.prefix(Self.pageSize).map(\.provisional))
+                    }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    cloudReadFailed = true
+                    cursor.cloudEnd = true
+                    notice = "云端照片暂不可访问；仍可浏览本机照片。"
+                }
+            }
             let localTotal: Int
             if cursor.localEnd {
                 localTotal = cursor.local
@@ -222,10 +246,9 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                 }
             }
             var local: ArraySlice<XDrivePhotoKitScanCandidate> = []
-            var cloud: ArraySlice<Item> = []
             var visible: [XDriveIOSNativeUnifiedPhoto] = []
             var visited = 0
-            var canMatch = reader != nil
+            var canMatch = reader != nil && !cloudReadFailed
             while visible.count < Self.pageSize && visited < Self.searchLimit && !cursor.finished {
                 var window: [Item] = []
                 let limit = min(Self.pageSize - visible.count, Self.searchLimit - visited)
@@ -236,7 +259,16 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
                         cursor.localEnd = local.isEmpty
                     }
                     if cloud.isEmpty && !cursor.cloudEnd, let reader {
-                        cloud = try await cloudWindow(reader, cursor: &cursor)
+                        do {
+                            cloud = try await cloudWindow(reader, cursor: &cursor)
+                        } catch is CancellationError {
+                            throw CancellationError()
+                        } catch {
+                            cloudReadFailed = true
+                            canMatch = false
+                            cursor.cloudEnd = true
+                            notice = "云端后续页面暂不可访问；本机照片仍可浏览。"
+                        }
                     }
                     let localHead = local.first
                     let cloudHead = cloud.first
@@ -297,7 +329,7 @@ final class XDriveIOSNativeUnifiedPhotoTimeline: ObservableObject {
             guard current(ticket, login: login, owner: expected) else { return }
             next = cursor.finished ? nil : cursor
             completed = true
-            if reader != nil && !canMatch {
+            if reader != nil && !canMatch && !cloudReadFailed {
                 notice = "暂时无法确认本机与云端的对应关系。请刷新或检查服务器版本。"
             }
         } catch is CancellationError {
