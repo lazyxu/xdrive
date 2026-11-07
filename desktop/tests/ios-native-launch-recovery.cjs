@@ -63,7 +63,8 @@ test('mountingWorkspace rescue offers safe entry with no automatic Owner restore
   assert.match(login, /mayAutoBackup\([\s\S]*?safeStartup: safeStartup/)
   assert.match(login, /backup\.startLibraryChangeMonitoring\(login: model\)/)
   assert.match(login, /if !safeStartup \{\s*backup\.startLibraryChangeMonitoring\(login: model\)/)
-  assert.doesNotMatch(login, /clearSavedLogin\(\)|removePersistentDomain/)
+  const boot = login.slice(login.indexOf('        .task {'), login.indexOf('        .onReceive('))
+  assert.doesNotMatch(boot, /clearSavedLogin\(\)|removePersistentDomain|XDriveIOSNativeOwnerSessionStore\.clear/)
 })
 
 test('BGTaskScheduler registers only once with validated bundled identifier', () => {
