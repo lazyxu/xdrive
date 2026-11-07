@@ -405,6 +405,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     @State private var showingPhotoInfo = false
     @State private var photoInfoDetails: XDriveIOSNativeViewerMediaDetails?
     @Environment(\.xdriveOpenNativeLocalMap) private var openNativeLocalMap
+    @Environment(\.xdriveNativePhotoPriorityAction) private var priorityAction
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSLocalPhotoDetailModel()
@@ -976,6 +977,17 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     Menu {
                         Button("照片信息") { showPhotoInfo() }
                             .accessibilityIdentifier("native-ios-local-viewer-info")
+                        if let priorityAction {
+                            Button("优先核验或备份此原件") {
+                                guard currentPageAuthorized else { return }
+                                // Use the exact visible PhotoKit ID and the
+                                // dashboard's separate Owner-bound consent.
+                                let selectedID = viewed.id
+                                dismiss()
+                                priorityAction(selectedID, false)
+                            }
+                            .accessibilityIdentifier("native-ios-local-viewer-priority-original")
+                        }
                         .accessibilityIdentifier("native-ios-local-viewer-location-info")
                         // Keep xDrive-only controls accessible without a
                         // nonnative bottom row or Live buttons on the canvas.
