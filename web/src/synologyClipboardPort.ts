@@ -7,9 +7,12 @@ import { xDriveBrowserCopyText } from './browserClipboard'
  * passes through the HTTPS same-origin CGI, existing Agent and revocable Owner.
  */
 export function createXDriveDSMClipboardPort(
-  cgi: XDriveSynologyBackupLocalClient,
+  cgi: XDriveSynologyBackupLocalClient, expectedOwnerScope: string,
 ): XDriveClipboardDataPort {
-  let ownerScope = ''
+  if (!/^[0-9a-f]{64}$/.test(expectedOwnerScope)) {
+    throw new Error('DSM Owner 尚未通过身份检查')
+  }
+  let ownerScope = expectedOwnerScope
   let server = ''
   const current = async (signal?: AbortSignal) => {
     signal?.throwIfAborted()
