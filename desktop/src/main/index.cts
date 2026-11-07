@@ -2192,16 +2192,39 @@ function createMainWindow(showOnReady = true) {
     const contents=target==='places' && guest && !guest.isDestroyed()
       ? guest : win.webContents
     const effective=contents===win.webContents?'desktop':'places'
-    // Report actual opened events, not merely successful invocation; a
-    // detached Chromium DevTools window can be denied asynchronously.
-    const opened=()=>lifecycleLog?.record('devtools_opened',{target:effective})
+    // In headless X11, Chromium can silently reject creation of an activated
+    // detached DevTools window even though the exact native F12 is received.
+    // A verified direct Guest open with activate:false succeeds there.
+    // Preserve normal user activation first, but retry ONCE without activation
+    // if the actual DevTools window has not appeared. No remote debugging
+    // port, privilege bridge or unconditional background inspector.
+    let retry:ReturnType<typeof setTimeout>|null=null
+    const opened=()=>{
+      if(retry!==null){clearTimeout(retry);retry=null}
+      lifecycleLog?.record('devtools_opened',{target:effective})
+    }
     contents.once('devtools-opened',opened)
-    try {
-      contents.openDevTools({mode:'detach',activate:true})
-      lifecycleLog?.record('devtools_requested',{target:effective})
-    } catch {
-      contents.removeListener('devtools-opened',opened)
-      lifecycleLog?.record('devtools_open_failed',{target:effective})
+    const invoke=(activate:boolean):boolean=>{
+      try{
+        contents.openDevTools({mode:'detach',activate})
+        return true
+      }catch{return false}
+    }
+    lifecycleLog?.record('devtools_requested',{target:effective})
+    if(!invoke(true)){
+      if(!invoke(false)){
+        contents.removeListener('devtools-opened',opened)
+        lifecycleLog?.record('devtools_open_failed',{target:effective})
+      }
+    }else{
+      retry=setTimeout(()=>{
+        retry=null
+        if(contents.isDestroyed() || contents.isDevToolsOpened())return
+        if(!invoke(false)){
+          contents.removeListener('devtools-opened',opened)
+          lifecycleLog?.record('devtools_open_failed',{target:effective})
+        }else lifecycleLog?.record('devtools_retry_without_activation',{target:effective})
+      },400)
     }
   }
   win.webContents.on('before-input-event', (event, input) => {

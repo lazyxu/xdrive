@@ -47,6 +47,10 @@ async function until(fn,timeout,label){
 function launch(binary,args,env){
   const child=spawn(binary,args,{cwd:root,env,stdio:['ignore','pipe','pipe']})
   let carry='',errors='',highlighted='',stderrTail=''
+  // On a verified test failure, don't wait the full six-minute successful
+  // launch deadline while Chromium/DevTools is still shutting down.
+  let reportFailure
+  const failed=new Promise(resolve=>{reportFailure=resolve})
   const goDiagnostics=[]
   const captureGoDiagnostic=line=>{
     if(!(/\.go:[0-9]+/.test(line) || /^#\s/.test(line) ||
@@ -68,7 +72,10 @@ function launch(binary,args,env){
       if(line.startsWith('XDRIVE_PLACES_PRODUCTION_RESTART ')){
         markers.push(JSON.parse(line.slice('XDRIVE_PLACES_PRODUCTION_RESTART '.length)))
       }
-      if(line.includes('XDRIVE_PLACES_PRODUCTION_FAILED'))errors+=line.slice(0,900)+'\n'
+      if(line.includes('XDRIVE_PLACES_PRODUCTION_FAILED')){
+        errors+=line.slice(0,900)+'\n'
+        reportFailure(true)
+      }
       captureGoDiagnostic(line)
     }
   })
@@ -80,10 +87,11 @@ function launch(binary,args,env){
     for(const line of lines)if(line.includes('XDRIVE_PLACES_PRODUCTION_FAILED ')){
       // Retain the bounded test-only stage, not Chromium's noisy D-Bus tail.
       highlighted=line.slice(line.indexOf('XDRIVE_PLACES_PRODUCTION_FAILED '),1000)
+      reportFailure(true)
     }
   })
   const exited=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})))
-  return {child,exited,markers,getError:()=>highlighted||errors,
+  return {child,exited,failed,markers,getError:()=>highlighted||errors,
     getGoDiagnostic:()=>goDiagnostics.join(' | ').slice(-1800)}
 }
 async function stop(processInfo){
@@ -99,7 +107,9 @@ async function bootElectron(boot,env,bootstrap){
   const proc=launch(electronBinary,['--no-sandbox','--disable-gpu',bootstrap],electronEnv)
   try{
     const result=await Promise.race([
-      proc.exited,delay(360000).then(()=>({code:'timeout'}))
+      proc.exited,
+      proc.failed.then(()=>({code:'reported_failure'})),
+      delay(360000).then(()=>({code:'timeout'}))
     ])
     assert.equal(result.code,0,'production Desktop map boot '+boot+
       ' failed: '+proc.getError().slice(-1800))
