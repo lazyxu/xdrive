@@ -9,6 +9,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8')
 const component = read('ios/XDriveIOS/NativeViewerQualityPanel.swift')
 const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
 const photoAsset = read('ios/XDriveIOS/NativeServerMediaGallery.swift')
+const transport = read('ios/XDriveIOS/NativeServerMediaGalleryTransport.swift')
 const originals = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
 
 function viewerSection(source, startMarker, endMarker) {
