@@ -291,6 +291,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               const tap=photoTouch.current
               if (!tap || tap.pointerId!==event.pointerId) return
               photoTouch.current=null
+              if (event.pointerType !== 'touch') return
               const item=tileItem(event.target)
               touchActivated.current={nodeID:tap.nodeID,at:event.timeStamp}
               if (!item || item.node.id!==tap.nodeID || tap.moved ||
