@@ -40,9 +40,34 @@ actor XDriveIOSNativePhotoFingerprintIndex {
         let saved = try currentStore.state()
         let token = PHPhotoLibrary.shared().currentChangeToken
         if !XDriveIOSPhotoKitLibraryEpoch.matches(saved?.library, as: token) {
-            let invalidated = try saved.flatMap { try Self.changedIDs(since: $0.library, through: token) }
+            let changed = try saved.flatMap { try Self.changedIDs(since: $0.library, through: token) }
             guard Self.isCurrent(library) else { throw XDrivePhotoKitScanFailure.snapshotChanged }
-            try currentStore.begin(library: library, invalidate: invalidated)
+            if let changed, changed.isEmpty {
+                // An album-only PhotoKit change cannot invalidate identical
+                // original bytes or a completed asset inventory.
+                try currentStore.advanceWithoutAssetChanges(library: library)
+            } else if let changed, changed.count <= 128,
+                      try currentStore.hasCompleteInventory() {
+                let entries = Self.changedAssets(changed)
+                // Compare with PhotoKit's typed lazy query, not untrusted
+                // cached counts or a list of filenames.
+                let supported = PHAsset.fetchAssets(with: .image, options: nil).count +
+                    PHAsset.fetchAssets(with: .video, options: nil).count
+                guard Self.isCurrent(library) else { throw XDrivePhotoKitScanFailure.snapshotChanged }
+                do {
+                    try currentStore.prepareIncremental(
+                        library: library, changed: entries, expectedCount: supported
+                    )
+                } catch XDriveIOSNativePhotoFingerprintStore.Failure.invalidRecord {
+                    // A legacy or inconsistent database cannot prove absence
+                    // from a delta. Keep reusable hashes, but rebuild coverage.
+                    try currentStore.begin(library: library, invalidate: changed)
+                }
+            } else {
+                // Expired/incomplete PhotoKit history or a large batch: fail
+                // closed to a full inventory, reusing unchanged fingerprints.
+                try currentStore.begin(library: library, invalidate: changed)
+            }
         }
         guard Self.isCurrent(library) else { throw XDrivePhotoKitScanFailure.snapshotChanged }
         let value = Lease(ticket: UUID(), library: library)
@@ -80,46 +105,127 @@ actor XDriveIOSNativePhotoFingerprintIndex {
                         unavailableByKind: state.unavailableByKind)
     }
 
-    /// Read only one 64-slot PhotoKit page at a time. Interruption leaves
-    /// individual fingerprints durable, but absence is unverified until a
-    /// complete traversal of the current authorized generation.
+    /// Read changed PhotoKit originals only. A bounded delta is a durable,
+    /// incomplete journal until every affected item is hashed or explicitly
+    /// marked unavailable, never a temporary proof of cloud-only absence.
+    private func finishPending(lease expected: Lease,
+                               progress: @Sendable (Coverage) async -> Void) async throws {
+        while true {
+            try Task.checkCancellation()
+            guard let work = try database(expected).incrementalWork() else {
+                throw XDrivePhotoKitScanFailure.snapshotChanged
+            }
+            if work.assets.isEmpty {
+                let saved = try database(expected).finishIncremental()
+                guard let checked = saved.checked, let unavailable = saved.unavailable else {
+                    throw XDriveIOSNativePhotoFingerprintStore.Failure.invalidRecord
+                }
+                await progress(Coverage(checked: checked, total: checked, unavailable: unavailable,
+                                        finished: true, unavailableByKind: saved.unavailableByKind))
+                return
+            }
+            let assets = PHAsset.fetchAssets(withLocalIdentifiers: work.assets.map(\.id), options: nil)
+            var byID: [String: PHAsset] = [:]
+            assets.enumerateObjects { asset, _, _ in byID[asset.localIdentifier] = asset }
+            var completed: [XDriveIOSNativePhotoFingerprintStore.ResolvedAsset] = []
+            for item in work.assets {
+                try Task.checkCancellation()
+                guard let asset = byID[item.id],
+                      Self.kind(of: asset) == item.kind else {
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                }
+                let candidate = XDrivePhotoKitScanCandidate(
+                    id: item.id,
+                    kind: asset.mediaType == .video ? "video" : "image",
+                    isLive: item.kind == "live_photo",
+                    capturedAt: asset.creationDate, modifiedAt: asset.modificationDate
+                )
+                do {
+                    let value = try await XDriveIOSNativeExactPhotoProbe.read(candidate)
+                    guard value.kind == item.kind, let fingerprint = value.fingerprint else {
+                        throw XDrivePhotoKitScanFailure.snapshotChanged
+                    }
+                    completed.append(.init(id: item.id, kind: item.kind,
+                                           fingerprint: fingerprint, probe: try JSONEncoder().encode(value)))
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    // Includes iCloud-only originals when network access is
+                    // disabled. Unreadability never becomes a positive match.
+                    completed.append(.init(id: item.id, kind: item.kind,
+                                           fingerprint: nil, probe: nil))
+                }
+            }
+            try Task.checkCancellation()
+            try database(expected).resolvePending(completed)
+            await progress(Coverage(checked: work.checked + completed.count, total: work.total,
+                                    unavailable: 0, finished: false))
+            await Task.yield()
+        }
+    }
+
+    /// A full 64-slot scan remains the safe fallback for a legacy index,
+    /// expired PhotoKit history, or a batch exceeding the delta budget.
+    /// Unchanged SHA-256 proofs are reused; all source IDs are inventoried.
     func scan(lease expected: Lease, retryUnavailable: Bool,
               progress: @Sendable (Coverage) async -> Void) async throws {
-        if let saved = try coverage(lease: expected), saved.provesAbsence || !retryUnavailable {
+        let saved = try coverage(lease: expected)
+        if let saved, saved.provesAbsence || !retryUnavailable {
             await progress(saved)
             return
         }
         guard scanning == nil else { return }
         scanning = expected.ticket
         defer { if scanning == expected.ticket { scanning = nil } }
+
+        if retryUnavailable, saved != nil {
+            _ = try database(expected).prepareUnavailableRetry()
+        }
+        if try database(expected).incrementalWork() != nil {
+            try await finishPending(lease: expected, progress: progress)
+            return
+        }
+
         let scanner = XDrivePhotoKitBoundedSnapshotScanner()
         _ = try await scanner.start()
+        try database(expected).startFullInventory()
         var checked = 0
         var unavailable = 0
-        var missing = ["image": 0, "video": 0, "live_photo": 0]
         while true {
             try Task.checkCancellation()
             let page = try await scanner.nextPage()
             _ = try database(expected)
             var additions: [(String, XDriveIOSNativeExactPhotoProbe)] = []
+            var inventory: [XDriveIOSNativePhotoFingerprintStore.InventoryEntry] = []
             for candidate in page.items where candidate.kind != "unsupported" {
                 try Task.checkCancellation()
                 checked += 1
-                if try probe(id: candidate.id, lease: expected) != nil { continue }
+                let kind = candidate.isLive ? "live_photo" : candidate.kind
+                if let cached = try probe(id: candidate.id, lease: expected), cached.kind == kind {
+                    inventory.append(.init(id: candidate.id, kind: kind, readable: true))
+                    continue
+                }
                 do {
-                    additions.append((candidate.id, try await XDriveIOSNativeExactPhotoProbe.read(candidate)))
+                    let value = try await XDriveIOSNativeExactPhotoProbe.read(candidate)
+                    guard value.kind == kind else { throw XDrivePhotoKitScanFailure.snapshotChanged }
+                    additions.append((candidate.id, value))
+                    inventory.append(.init(id: candidate.id, kind: kind, readable: true))
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
                     unavailable += 1
-                    missing[candidate.isLive ? "live_photo" : candidate.kind, default: 0] += 1
+                    inventory.append(.init(id: candidate.id, kind: kind, readable: false))
                 }
             }
             try remember(additions, lease: expected)
+            try database(expected).recordInventory(inventory)
             if page.finished {
-                try database(expected).finish(checked: checked, unavailable: unavailable, unavailableByKind: missing)
-                await progress(Coverage(checked: checked, total: checked, unavailable: unavailable, finished: true,
-                                        unavailableByKind: missing))
+                let complete = try database(expected).finishFullInventory(checked: checked)
+                guard let unavailable = complete.unavailable else {
+                    throw XDriveIOSNativePhotoFingerprintStore.Failure.invalidRecord
+                }
+                await progress(Coverage(checked: checked, total: checked, unavailable: unavailable,
+                                        finished: true, unavailableByKind: complete.unavailableByKind))
                 return
             }
             await progress(Coverage(checked: checked, total: page.totalAccessibleAssets,
@@ -140,6 +246,29 @@ actor XDriveIOSNativePhotoFingerprintIndex {
         return permission == .authorized &&
             XDriveIOSPhotoKitLibraryEpoch.matches(library, as: PHPhotoLibrary.shared().currentChangeToken) &&
             PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission
+    }
+
+    private static func kind(of asset: PHAsset) -> String? {
+        switch asset.mediaType {
+        case .image:
+            return asset.mediaSubtypes.contains(.photoLive) ? "live_photo" : "image"
+        case .video:
+            return "video"
+        default:
+            return nil
+        }
+    }
+
+    private static func changedAssets(_ ids: Set<String>) ->
+        [XDriveIOSNativePhotoFingerprintStore.ChangedAsset] {
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: Array(ids), options: nil)
+        var found: [String: String] = [:]
+        result.enumerateObjects { asset, _, _ in
+            if let kind = kind(of: asset) { found[asset.localIdentifier] = kind }
+        }
+        return ids.sorted().map {
+            XDriveIOSNativePhotoFingerprintStore.ChangedAsset(id: $0, kind: found[$0])
+        }
     }
 
     /// Preserve unchanged hashes on ordinary edits, but reject incomplete
