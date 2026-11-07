@@ -330,6 +330,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
     let sortOrder: XDriveIOSNativeAlbumSortOrder
     let selectionMode: Bool
     let selectedIDs: Set<String>
+    let retainWhileCovered: Bool
     // The continuous album wall owns the Viewer return focus state. Pass the
     // binding to virtual tiles so VoiceOver can resume on the verified item.
     let accessibilityFocus: AccessibilityFocusState<String?>.Binding
@@ -338,6 +339,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
     @State private var precedingCapturedAt: Date?
+    @State private var retainedGeneration: UUID?
     @State private var reader: XDriveIOSNativeAlbumPageReader?
 
     private var placeholder: some View {
@@ -393,6 +395,16 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
         }
         .id("album-page:\(offset)")
         .task(id: "\(generation)-\(album.collectionIdentifier)-\(offset)-\(sortOrder.rawValue)") {
+            if let cached = page, retainedGeneration == generation,
+               cached.startOffset == offset,
+               cached.totalAccessibleAssets == expectedTotal,
+               [.authorized, .limited].contains(
+                   PHPhotoLibrary.authorizationStatus(for: .readWrite)
+               ) {
+                onRead(cached)
+                return
+            }
+            retainedGeneration = nil
             page = nil
             precedingCapturedAt = nil
             let next = XDriveIOSNativeAlbumPageReader()
@@ -413,6 +425,7 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
                 }
                 precedingCapturedAt = preceding
                 page = result
+                retainedGeneration = generation
                 onRead(result)
             } catch is CancellationError {
             } catch {
@@ -422,10 +435,13 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
             if !Task.isCancelled { reader = nil }
         }
         .onDisappear {
-            page = nil
+            if !retainWhileCovered {
+                page = nil
+                precedingCapturedAt = nil
+                retainedGeneration = nil
+            }
             if let reader { Task { await reader.reset() } }
             reader = nil
-            precedingCapturedAt = nil
         }
     }
 }
@@ -445,6 +461,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
+    @State private var pageRevision = 0
     @State private var total: Int?
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
     @State private var sortOrder: XDriveIOSNativeAlbumSortOrder = .newest
@@ -578,6 +595,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                                 generation: epoch, density: density,
                                 sortOrder: sortOrder, selectionMode: selectionMode,
                                 selectedIDs: Set(selectedCandidates.keys),
+                                retainWhileCovered: selected != nil || showingAlbumMap,
                                 accessibilityFocus: $accessibilityFocusedTileID,
                                 onSelect: { item, loadedPage in
                                     if page?.startOffset != loadedPage.startOffset {
