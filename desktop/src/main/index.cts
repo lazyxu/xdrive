@@ -2589,11 +2589,18 @@ function notifyUpdateTransition(previous: AgentUpdateState | null, next: AgentUp
 
 function publishAgentState(next: AgentConnectionState) {
   const previous = agentState
+  // The Agent may change its selected HTTPS connection IP while keeping the
+  // same Server Origin and Owner. Old Chromium CONNECT/CA decisions must be
+  // retired before a different route can be admitted; no DNS/direct fallback.
+  const connectionIPChanged =
+    (next.status?.connection_ip?.trim() || '') !==
+    (previous.status?.connection_ip?.trim() || '')
   if ((desktopPlacesGuests.size || desktopPlacesPending ||
        desktopPlacesWebReady || desktopPlacesWebPending) && (
       !next.connected || !next.status?.configured ||
       next.status.server!==previous.status?.server ||
       next.status.username!==previous.status?.username ||
+      connectionIPChanged ||
       next.status.auth_status==='登录已过期' ||
       next.status.auth_status==='账户已禁用'
   )) closeDesktopPlacesGuests()
@@ -2601,6 +2608,7 @@ function publishAgentState(next: AgentConnectionState) {
       !next.connected || !next.status?.configured ||
       next.status.server !== previous.status?.server ||
       next.status.username !== previous.status?.username ||
+      connectionIPChanged ||
       next.status.auth_status === '登录已过期' ||
       next.status.auth_status === '账户已禁用'
   )) closeSecureBaiduMapWindow()
