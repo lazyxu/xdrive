@@ -39,8 +39,12 @@ struct XDriveIOSNativeSquarePhotoTile: View {
     @State private var durationLabel: String?
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            GeometryReader { geometry in
+        XDriveIOSNativePhotoWallTileShell(
+            isVideo: candidate.kind == "video", isLive: candidate.isLive,
+            verifiedDuration: durationLabel
+        ) {
+            ZStack(alignment: .bottomTrailing) {
+                GeometryReader { geometry in
                 Group {
                     if let image = loader.image {
                         if framing == .complete {
@@ -68,13 +72,8 @@ struct XDriveIOSNativeSquarePhotoTile: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipped()
             }
-            XDriveIOSNativePhotoWallMediaBadge(
-                isVideo: candidate.kind == "video",
-                isLive: candidate.isLive,
-                verifiedDuration: durationLabel
-            )
         }
-        .aspectRatio(1, contentMode: .fit)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 3))
         .task(id: "\(candidate.id)-\(framing.rawValue)") {
             durationLabel = nil

@@ -37,6 +37,7 @@ export function XDriveMediaGalleryPlacesMap({
   onOpenSecureDesktopMap, desktopEmbeddedPlacesURL, onPrepareDesktopPlaces, onOpenDesktopReauthentication, diagnosticScope, onOpenDiagnostics, onCloseMap,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
   mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, onMapModeHandoff, mapAlbums = [],
+  photoTileMinWidth = 108,
 }: {
   places: MediaPlaceFacet[]
   totalCount?: number | null
@@ -86,6 +87,8 @@ export function XDriveMediaGalleryPlacesMap({
     camera?: XDriveBaiduNativeCameraSnapshot) => Promise<string>
   mapAlbums?: MediaAlbum[]
   compact?: boolean
+  /** Adopt the owning Gallery's current density instead of a second 108px preference. */
+  photoTileMinWidth?: number
 }) {
   const [embedRetry,setEmbedRetry] = useState(0)
   const [desktopEmbedError,setDesktopEmbedError] = useState('')
@@ -966,6 +969,7 @@ export function XDriveMediaGalleryPlacesMap({
           mintChildTicket={mintBaiduIsolatedChildTicket}
           listOwnerCells={listBaiduNativeCells} listOwnerCellItems={listBaiduNativeCellItems}
           loadThumbnail={loadPhotoCoverThumbnail}
+          photoTileMinWidth={photoTileMinWidth}
           loadPreviewURL={loadPhotoCoverPreviewURL}
           saveVideoPoster={savePhotoCoverVideoPoster}
           edgeToEdge={compact} onOpenCell={onOpenBaiduNativeCell}

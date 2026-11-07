@@ -126,9 +126,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 // verified retained prior Range, never a stale photo ID.
                 if let anchor = autoScrollReturn {
                     if activeOwner,
-                       priorWindow?.items.contains(where: {
-                           $0.sameVisibleRevision(as: anchor)
-                       }) == true {
+                       XDriveIOSNativePhotoWallWindowPolicy.canRestore(
+                           anchor, in: priorWindow?.items ?? [],
+                           scopeActive: activeOwner,
+                           matches: { $0.sameVisibleRevision(as: $1) }
+                       ) {
                         returnScroll.scrollTo(anchor.id, anchor: .bottom)
                     }
                     autoScrollReturn = nil
@@ -137,9 +139,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 // An unavailable, deleted or modified Node is never scrolled
                 // to using a stale visible ID from the old Viewer.
                 guard let anchor = viewerReturn, activeOwner,
-                      page?.items.contains(where: {
-                          $0.sameVisibleRevision(as: anchor)
-                      }) == true else {
+                      XDriveIOSNativePhotoWallWindowPolicy.canRestore(
+                          anchor, in: page?.items ?? [],
+                          scopeActive: activeOwner,
+                          matches: { $0.sameVisibleRevision(as: $1) }
+                      ) else {
                     viewerReturn = nil
                     return
                 }
@@ -426,8 +430,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             viewerReturn = item
             viewing = item
         } label: {
-            GeometryReader { tile in
-                ZStack(alignment: .bottomTrailing) {
+            XDriveIOSNativePhotoWallTileShell(isVideo: item.isVideo, isLive: item.isLive) {
+                GeometryReader { tile in
+                    ZStack(alignment: .bottomTrailing) {
                     Rectangle().fill(Color(uiColor: .tertiarySystemFill))
                     if let image = coverImages[item.id] {
                         Image(uiImage: image)
@@ -441,12 +446,10 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                             .frame(width: tile.size.width,
                                    height: tile.size.height)
                     }
-                    XDriveIOSNativePhotoWallMediaBadge(
-                        isVideo: item.isVideo, isLive: item.isLive
-                    )
                 }
             }
             .aspectRatio(1, contentMode: .fit)
+            }
         }
         .buttonStyle(.plain)
         .id(item.id)
@@ -511,8 +514,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         // A slow or missing cover must never block continuous scrolling:
         // load() cancels the old coverTask, rechecks the departing signed
         // Range, and keeps at most two verified 48-item windows visible.
-        guard scrollFootVisible, activeOwner, !busy,
-              viewing == nil, page != nil, error == nil, let next else { return }
+        guard XDriveIOSNativePhotoWallWindowPolicy.shouldAdvance(
+            footVisible: scrollFootVisible,
+            hasNext: page != nil && next != nil, busy: busy,
+            failed: error != nil, viewerOpen: viewing != nil,
+            scopeActive: activeOwner
+        ), let next else { return }
         scrollFootVisible = false
         load(next, history: earlier + [cursor], autoAdvance: true)
     }

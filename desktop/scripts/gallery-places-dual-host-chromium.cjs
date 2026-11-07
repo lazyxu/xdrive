@@ -3455,6 +3455,26 @@ async function testPhotoCellAlbumDialog28(browser,mode,port){
     await page.goto('https://'+galleryHost+':'+port+
       '/?mode='+mode+'&album_dialog_28=1',{waitUntil:'domcontentloaded'})
     await page.getByText('当前地图可查看 28 张照片',{exact:true}).waitFor()
+    // Record the ACTUAL browser paint frames from the tap onward; loading
+    // is allowed, but a ready signed first range must not paint an empty grid.
+    await page.evaluate(()=>{
+      window.__placesFirstFrameAudit={frames:0,readyFrames:0,emptyReady:0,done:false}
+      const frame=()=>{
+        const state=window.__placesFirstFrameAudit
+        state.frames++
+        const dialog=document.querySelector('[data-xdrive-places-album-dialog]')
+        const ready=dialog?.textContent?.includes('28 张照片和视频')
+        if(ready){
+          state.readyFrames++
+          const virtual=dialog.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+          const shown=dialog.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length
+          if(!virtual || shown===0)state.emptyReady++
+        }
+        if(state.readyFrames>=6 || state.frames>=240)state.done=true
+        else requestAnimationFrame(frame)
+      }
+      requestAnimationFrame(frame)
+    })
     await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
     const dialog=page.getByRole('dialog',{name:'此地点的照片'})
     await dialog.waitFor({state:'visible'})
@@ -3463,6 +3483,19 @@ async function testPhotoCellAlbumDialog28(browser,mode,port){
     await dialog.getByText('28 张照片和视频',{exact:true}).waitFor()
     await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
     await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor({state:'visible'})
+    await page.waitForFunction(()=>window.__placesFirstFrameAudit?.done)
+    const frameAudit=await page.evaluate(()=>window.__placesFirstFrameAudit)
+    record(mode+': signed 28-photo modal paints no ready-but-empty virtual first frame',
+      frameAudit.readyFrames>=6 && frameAudit.emptyReady===0 && errors.length===0)
+    const expandButton=dialog.locator('[data-xdrive-places-photo-drawer-expand]')
+    await expandButton.click()
+    await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor({state:'visible'})
+    const collapsed=await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').count()
+    await expandButton.click()
+    await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
+    await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor({state:'visible'})
+    record(mode+': collapse and expand never loses authenticated thumbnail tiles',
+      collapsed===0 && errors.length===0)
     const state=await page.evaluate(()=>{
       const region=document.querySelector('[data-xdrive-places-photo-drawer]')
       const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')

@@ -113,6 +113,7 @@ test('Viewer return preserves only bounded expansion and scroll state',()=>{
 
 test('Single shared map host previews a fresh Parent-only Range and cancels stale ones',()=>{
   const gallery=read('ui/shared/src/mui/MediaGallery.tsx')
+  const tiles=read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
   const map=read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
   const surface=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   const sheet=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
@@ -139,9 +140,9 @@ test('Single shared map host previews a fresh Parent-only Range and cancels stal
   assert.equal((surface.match(/<XDriveMediaGalleryPlacesPhotoDrawer/g)||[]).length,1)
   assert.match(surface,/xDriveMountBaiduInlineMap/)
   assert.match(surface,/xDriveMountBaiduIsolatedFrame/)
-  assert.match(gallery,/revision=\{item.node.revision\}/)
-  assert.match(gallery,/export function MediaTile\(/)
-  assert.match(gallery,/export function MediaVirtualTileGrid\(/)
+  assert.match(tiles,/revision=\{item.node.revision\}/)
+  assert.match(tiles,/export function MediaTile\(/)
+  assert.match(tiles,/export function MediaVirtualTileGrid\(/)
   assert.match(sheet,/<MediaVirtualTileGrid/)
   assert.match(sheet,/<MediaTile/)
   assert.match(sheet,/onOpenPhoto\(item,position\(\)\)/)
@@ -165,6 +166,7 @@ test('Single shared map host previews a fresh Parent-only Range and cancels stal
 test('390px trusted photo drawer uses safe-area layout and touch-only pointer grip',()=>{
   const sheet=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
   const gallery=read('ui/shared/src/mui/MediaGallery.tsx')
+  const tiles=read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
   const host=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   assert.match(sheet,/data-xdrive-places-photo-drawer-grip/)
   // The map sheet lives in one trusted Parent and is rendered identically
@@ -205,7 +207,7 @@ test('390px trusted photo drawer uses safe-area layout and touch-only pointer gr
   assert.match(sheet,/overscrollBehavior:'contain',touchAction:'auto'/)
   assert.match(sheet,/<Dialog open onClose=\{onClose\} fullWidth maxWidth="md"/)
   assert.match(sheet,/data-xdrive-places-album-dialog/)
-  assert.match(sheet,/minTileWidth=\{108\}/)
+  assert.match(sheet,/minTileWidth=\{photoTileMinWidth\}/)
   assert.match(sheet,/collection=\{collection\}/)
   assert.match(sheet,/onPointerDownCapture=\{event =>/)
   assert.match(sheet,/onClickCapture=\{event =>/)
@@ -213,8 +215,8 @@ test('390px trusted photo drawer uses safe-area layout and touch-only pointer gr
   assert.match(sheet,/new XDriveMediaThumbnailScheduler\(loadThumbnail\)/)
   // The trusted Parent now uses the exact Gallery virtual surface and tile.
   // No parallel tile renderer or all-item DOM grid may be reintroduced.
-  assert.match(gallery,/data-xdrive-places-photo-drawer-item=\{placesDrawer \? item.node.id : undefined\}/)
-  assert.match(gallery,/\.\.\.\(placesDrawer \? \{ component: 'button', type: 'button'/)
+  assert.match(tiles,/data-xdrive-places-photo-drawer-item=\{placesDrawer \? item.node.id : undefined\}/)
+  assert.match(tiles,/\.\.\.\(placesDrawer \? \{ component: 'button', type: 'button'/)
   assert.doesNotMatch(sheet,/items\.map\(item => \(\s*<Box key=\{item.node.id\} component="button"/)
   assert.match(sheet,/items\.slice\(0,8\)\.map/)
   // Real stationary touch/pen activation is routed only by the trusted photo
@@ -272,6 +274,7 @@ test('390px trusted photo drawer uses safe-area layout and touch-only pointer gr
 test('Shared map, Gallery and photo drawer remain syntactically valid TSX',()=>{
   for(const name of [
     'ui/shared/src/mui/MediaGallery.tsx',
+    'ui/shared/src/mui/MediaGallerySharedTiles.tsx',
     'ui/shared/src/mui/MediaGalleryPlacesMap.tsx',
     'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx',
     'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx',
@@ -315,9 +318,9 @@ test('responsive Drawer restore stays in one Parent and always reauthorizes both
   const helperSource=read('ui/shared/src/media-gallery-places-photo-drawer.ts')
   assert.match(parent,/const pendingResizeDrawer = useRef/)
   assert.equal(helper.XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,480)
-  assert.match(parent,/loadedCount:Math.min\(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,\s*state\.items\.length\)/)
+  assert.match(parent,/loadedCount:Math.min\(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,\s*state\.loadedDepth\)/)
   const sharedDrawer=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
-  assert.match(sharedDrawer,/\(initialPresentation\.loadedCount \?\? 0\)<=items\.length/)
+  assert.match(sharedDrawer,/\(initialPresentation\.loadedCount \?\? 0\)<=loadedDepth/)
   assert.match(sharedDrawer,/overflowAnchor:'none'/)
   assert.match(sharedDrawer,/onLoadMore\(\)/)
   const browser=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
