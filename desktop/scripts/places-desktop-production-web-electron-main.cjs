@@ -53,6 +53,7 @@ function inspectRealWebGuest(){
 }
 let launched=false
 async function run(win){
+  let stage='production-desktop-init'
   let guest=null
   let guestLoads=0
   try{
@@ -61,16 +62,19 @@ async function run(win){
       guest=attached
       attached.on('did-finish-load',()=>{guestLoads++})
     })
+    stage='production-Desktop-preload-nav'
     await until(async()=>{
       const state=await win.webContents.executeJavaScript(
         '('+inspectRealDesktop.toString()+')()')
       return state.preload&&state.nav
     },40000,'real Main/preload/Renderer login state')
+    stage='production-Desktop-Gallery-open'
     const nav=await win.webContents.executeJavaScript('('+clickGallery.toString()+')()')
     assert.ok(nav,'real Desktop Gallery navigation missing')
     await until(()=>win.webContents.executeJavaScript(
       'Boolean(document.querySelector(\'[data-xdrive-gallery-section="places"]\'))'
     ),30000,'actual shared Gallery section')
+    stage='production-Desktop-Places-open'
     assert.ok(await win.webContents.executeJavaScript('('+clickPlaces.toString()+')()'),
       'real Gallery Places button missing')
     await until(()=>win.webContents.executeJavaScript(
@@ -79,9 +83,11 @@ async function run(win){
     await until(()=>win.webContents.executeJavaScript(
       'Boolean(document.querySelector("[data-xdrive-desktop-embedded-places]"))'
     ),30000,'native production map WebView host')
+    stage='production-Desktop-HTTPS-WebView-attach'
     const attached=await until(async()=>{
       return guest&&!guest.isDestroyed()?guest:null
     },30000,'actual Main-attached HTTPS WebView')
+    stage='production-Web-Owner-Places-root'
     const state=await until(()=>attached.executeJavaScript(
       '('+inspectRealWebGuest.toString()+')()'),
       70000,'production Web Places Owner-bound root')
@@ -106,7 +112,7 @@ async function run(win){
     }))
     app.exit(0)
   }catch(error){
-    console.error('XDRIVE_PLACES_PRODUCTION_FAILED '+String(error?.message||error).slice(0,750))
+    console.error('XDRIVE_PLACES_PRODUCTION_FAILED '+stage+': '+String(error?.message||error).slice(0,650))
     app.exit(1)
   }
 }
