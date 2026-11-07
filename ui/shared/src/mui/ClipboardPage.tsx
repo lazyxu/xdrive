@@ -196,7 +196,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
         // aad_scope. The successfully verified original-origin v1 vault
         // remains usable; cross-domain support becomes available after
         // the Server is upgraded and the original browser pins its scope.
-        canonicalScope = pinned.aad_scope || port.ownerScopeKey
+        canonicalScope = pinned.aad_scope || claimScope
         await xDriveClipboardVerifyVaultCheck(nextKey, canonicalScope, {
           nonce: pinned.check_nonce, ciphertext: pinned.check_ciphertext,
         })
