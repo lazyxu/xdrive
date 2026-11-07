@@ -305,7 +305,7 @@ test('native map source uses one navigation menu instead of a permanently stacke
 test('cloud Owner map album advances on visible sentinel without waiting for every cover', () => {
   assert.match(clusterAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
   assert.match(clusterAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/)
-  assert.match(clusterAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard scrollFootVisible, activeOwner, !busy,[\s\S]*?viewing == nil, page != nil, error == nil, let next/)
+  assert.match(clusterAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard XDriveIOSNativePhotoWallWindowPolicy\.shouldAdvance\([\s\S]*?footVisible: scrollFootVisible,[\s\S]*?hasNext: page != nil && next != nil,[\s\S]*?busy: busy,[\s\S]*?failed: error != nil, viewerOpen: viewing != nil,[\s\S]*?scopeActive: activeOwner[\s\S]*?\), let next/)
   assert.match(clusterAlbum, /coverLoading = true[\s\S]*?defer \{[\s\S]*?coverLoading = false[\s\S]*?advanceIfVisible\(\)/)
   assert.match(clusterAlbum, /load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
   assert.doesNotMatch(clusterAlbum, /DragGesture\(minimumDistance: 12\)/)
