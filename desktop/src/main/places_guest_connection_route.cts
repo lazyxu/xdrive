@@ -90,7 +90,7 @@ export async function createDesktopPlacesPinnedRoute(
     socket.once('close', () => sockets.delete(socket))
   })
   serverSocket.on('connect', (request, downstream, head) => {
-    if (!active() || !loopback(downstream.remoteAddress) ||
+    if (!active() || !loopback((downstream as Socket).remoteAddress) ||
       request.url !== target.authority || request.headers.cookie ||
       request.headers.authorization || request.headers['proxy-authorization'] ||
       head.length > 16384) {
