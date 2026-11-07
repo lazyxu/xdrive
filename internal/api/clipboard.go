@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/rand"
+    "fmt"
 	"encoding/base64"
 	"errors"
 	"io"
