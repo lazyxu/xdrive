@@ -17,6 +17,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     private var pageAlbumID: String?
     private var pagePlaceID: String?
     private var pageSearch = ""
+    private var pageCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     private var epoch = UUID()
     private var job: Task<Void, Never>?
     private var currentReader: XDriveIOSNativeMediaGalleryReader?
@@ -31,6 +32,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         pageAlbumID = nil
         pagePlaceID = nil
         pageSearch = ""
+        pageCaptureRange = nil
         failedOffset = nil
         busy = false
         error = nil
@@ -57,14 +59,15 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         _ next: XDriveIOSNativeMediaRange,
         after previous: XDriveIOSNativeMediaRange,
         login: XDriveIOSNativeOwnerLoginModel,
-        albumID: String?, placeID: String?, search: String
+        albumID: String?, placeID: String?, search: String,
+        captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     ) -> Bool {
         guard let existing = page, let reader = currentReader,
               let expected = pageScope,
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
               XDriveIOSNativePhotoOwnerScope.matches(reader.owner, expected),
               pageAlbumID == albumID, pagePlaceID == placeID,
-              pageSearch == search, !busy,
+              pageSearch == search, pageCaptureRange == captureRange, !busy,
               existing.sameVisibleSnapshot(as: previous),
               next.total_count == previous.total_count,
               next.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
@@ -87,7 +90,8 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     func adoptVisibleRange(
         from source: XDriveIOSNativeMediaWallModel,
         login: XDriveIOSNativeOwnerLoginModel,
-        albumID: String?, placeID: String?, search: String
+        albumID: String?, placeID: String?, search: String,
+        captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     ) -> Bool {
         guard let owner = login.owner,
               let verified = source.page,
@@ -97,6 +101,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
               source.pageAlbumID == albumID,
               source.pagePlaceID == placeID,
               source.pageSearch == search,
+               source.pageCaptureRange == captureRange,
               XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedOwner),
               XDriveIOSNativePhotoOwnerScope.matches(sourceReader.owner, owner),
               verified.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
@@ -115,6 +120,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         pageAlbumID = albumID
         pagePlaceID = placeID
         pageSearch = search
+        pageCaptureRange = captureRange
         currentReader = sourceReader
         failedOffset = nil
         error = nil
@@ -142,9 +148,11 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
 
     func load(login: XDriveIOSNativeOwnerLoginModel,
               albumID: String?, placeID: String? = nil,
-              offset: Int = 0, search: String = "") {
+              offset: Int = 0, search: String = "",
+              captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil) {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard query.unicodeScalars.count <= 200 else {
+        guard query.unicodeScalars.count <= 200,
+              captureRange == nil || captureRange!.valid else {
             error = "搜索关键词最多 200 个字符。"
             return
         }
@@ -166,7 +174,8 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         let keepOldPage = pageScope.map {
             XDriveIOSNativePhotoOwnerScope.matches(expected, $0)
         } == true && pageAlbumID == albumID &&
-            pagePlaceID == placeID && pageSearch == query
+            pagePlaceID == placeID && pageSearch == query &&
+             pageCaptureRange == captureRange
         epoch = UUID()
         job?.cancel()
         job = nil
@@ -177,6 +186,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
             pageAlbumID = nil
             pagePlaceID = nil
             pageSearch = ""
+            pageCaptureRange = nil
         }
         failedOffset = nil
         error = nil
@@ -213,7 +223,8 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 )
                 let result = try await reader.page(
                     offset: offset, albumID: albumID,
-                    placeID: placeID, search: query
+                    placeID: placeID, search: query,
+                    captureRange: captureRange
                 )
                 try Task.checkCancellation()
                 guard self?.epoch == ticket,
@@ -225,6 +236,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 self?.pageAlbumID = albumID
                 self?.pagePlaceID = placeID
                 self?.pageSearch = query
+                self?.pageCaptureRange = captureRange
                 self?.failedOffset = nil
             } catch is CancellationError {
             } catch {
