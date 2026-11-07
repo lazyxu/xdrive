@@ -26,6 +26,14 @@ struct XDriveIOSPhotoBackupProgress: Equatable {
     var changeQueueUploaded = 0
     var changeQueueVerified = 0
     var changeQueueFailed = 0
+    // Results belonging only to the positional 256-slot scan. Queue work
+    // is already included in the totals above, but must never be counted
+    // against slots that have not been scanned yet.
+    var windowUploaded = 0
+    var windowVerifiedAlready = 0
+    var windowUnavailable = 0
+    var windowNeedsReview = 0
+    var windowUnsupported = 0
     // Bounded in-memory reasons for THIS window, not a persistent retry queue.
     var issues = XDriveIOSPhotoBackupIssueSummary()
     var needsReview = 0
@@ -265,6 +273,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                             continue
                         case .unknownDates:
                             report.unavailable += 1
+                            report.windowUnavailable += 1
                             report.issues.append(
                                 position: startOffset + report.scanned,
                                 mediaKind: candidate.kind, reason: .unavailable
@@ -281,6 +290,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                             kind: candidate.kind, isLive: candidate.isLive
                         ) else {
                         report.videosNotSupported += 1
+                        report.windowUnsupported += 1
                         report.issues.append(
                             position: startOffset + report.scanned,
                             mediaKind: candidate.kind, reason: .unsupported
@@ -302,14 +312,17 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         switch outcome {
                         case .uploaded:
                             report.uploaded += 1
+                            report.windowUploaded += 1
                             if isVideo { report.videoUploaded += 1 }
                             if isLive { report.liveBundleUploaded += 1 }
                         case .alreadyConfirmed:
                             report.verifiedAlready += 1
+                            report.windowVerifiedAlready += 1
                             if isVideo { report.videoVerifiedAlready += 1 }
                             if isLive { report.liveBundleVerifiedAlready += 1 }
                         case .requiresReview:
                             report.needsReview += 1
+                            report.windowNeedsReview += 1
                             report.stoppedForReview = true
                             report.stage = "存在上传结果待核对的文件，已暂停，避免重复上传"
                         }
@@ -330,6 +343,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         // remain local per-item failures, never confirmed.
                         // Unknown Server ACK remains a distinct review pause.
                         report.unavailable += 1
+                            report.windowUnavailable += 1
                         report.issues.append(
                             position: startOffset + report.scanned,
                             mediaKind: isLive ? "live" : candidate.kind,
