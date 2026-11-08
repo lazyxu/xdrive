@@ -224,7 +224,8 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
                                 }
                             }
                             Spacer(minLength: 4)
-                            if item.localAvailable && !controller.busy {
+                            if item.localAvailable &&
+                               !controller.busy && !model.verifyingPage {
                                 Button(item.state == "failed" ? "核对并重试" : "优先处理") {
                                     priorityOwner = login.owner
                                     priorityID = item.id

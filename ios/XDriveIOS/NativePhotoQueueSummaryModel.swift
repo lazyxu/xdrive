@@ -408,6 +408,10 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                     return
                 }
 
+                // One stable PhotoKit generation must span the complete
+                // asynchronous page read. A late edit/import invalidates
+                // previously located 64-item windows before publication.
+                let readEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
                 var page: [Row] = []
                 var more = false
                 var totals: XDriveIOSPhotoBackupChangeQueueStore.Counts?
@@ -486,10 +490,22 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                     readNotice = "这是授权图库的待核验清单，未读取云端原件收据；不能把未核验判为未备份或备份成功。"
                 }
                 try Task.checkCancellation()
-                guard self.ticket == id,
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                guard self.ticket == id else { return }
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
-                      UIApplication.shared.applicationState == .active else { return }
+                      UIApplication.shared.applicationState == .active else {
+                    self.clearPage()
+                    self.notice = "账户或相册权限已变化，旧任务页不再显示。"
+                    return
+                }
+                let publishEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                guard XDriveIOSPhotoKitLibraryEpoch.matches(
+                    readEpoch.serialized, as: publishEpoch.token
+                ) else {
+                    self.clearPage()
+                    self.notice = "读取期间 PhotoKit 图库已变化，旧分页已清除；请刷新。"
+                    return
+                }
                 self.rows = page
                 self.hasNext = more
                 self.offset = requestedOffset
