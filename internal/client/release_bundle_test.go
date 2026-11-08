@@ -119,3 +119,73 @@ func TestCurrentServerBundleRefusesEqualSizeInvalidHashBeforeInstallation(t *tes
 	}
 	_ = listing
 }
+
+type releaseBundleTestTransport func(*http.Request) (*http.Response, error)
+
+func (rt releaseBundleTestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return rt(req)
+}
+
+func TestCurrentServerBundleFallbackOnUnavailableLocalAndCorruptGitLab(t *testing.T) {
+	payload := bytes.Repeat([]byte("signed-exact-commit-archive"), 50)
+	listing, artifact := bundleClientFixture(t, payload)
+	var localCalls, externalCalls int
+	// A login-scoped Server may be temporarily missing the package bytes:
+	// this must not change the selected full-commit package or leak its bearer.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer owner-test" {
+			t.Errorf("authenticated Server request lost its Owner bearer")
+		}
+		switch r.URL.Path {
+		case "/api/v1/release-bundles/current":
+			_ = json.NewEncoder(w).Encode(listing)
+		case "/api/v1/release-bundles/current/artifacts/xDriveSetup-amd64.exe":
+			localCalls++
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	originalDefault := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: releaseBundleTestTransport(
+		func(r *http.Request) (*http.Response, error) {
+			externalCalls++
+			if r.Header.Get("Authorization") != "" || r.Header.Get("X-XDrive-Device-Token") != "" {
+				t.Error("Owner credentials leaked to public package mirror")
+			}
+			var body []byte
+			switch {
+			case r.URL.String() == artifact.Sources.GitLab:
+				body = bytes.Repeat([]byte{'X'}, len(payload)) // equal size, wrong digest
+			case r.URL.String() == artifact.Sources.GitHub:
+				body = payload
+			default:
+				t.Errorf("unexpected update host: %s", r.URL)
+				return nil, context.Canceled
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(bytes.NewReader(body)),
+				Header: make(http.Header),
+				Request: r,
+			}, nil
+		})}
+	t.Cleanup(func() { http.DefaultClient = originalDefault })
+	target := filepath.Join(t.TempDir(), artifact.Filename)
+	c := New(server.URL, "owner-test")
+	if err := c.DownloadCurrentReleaseArtifact(context.Background(), listing.Commit, artifact, target); err != nil {
+		t.Fatal(err)
+	}
+	if localCalls != 1 || externalCalls != 2 {
+		t.Fatalf("expected local then GitLab then GitHub: local=%d external=%d",
+			localCalls, externalCalls)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil || !bytes.Equal(content, payload) {
+		t.Fatalf("fallback output did not retain exact signed bytes: %v", err)
+	}
+	if _, err := os.Stat(target+".part"); !os.IsNotExist(err) {
+		t.Fatalf("corrupt GitLab partial was not discarded: %v", err)
+	}
+}
