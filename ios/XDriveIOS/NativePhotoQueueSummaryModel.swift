@@ -220,13 +220,17 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
         loading = false
     }
 
-    func reset() {
-        cancel()
+    private func clearPage() {
         rows = []
         counts = nil
         libraryTotal = nil
         offset = 0
         hasNext = false
+    }
+
+    func reset() {
+        cancel()
+        clearPage()
         errorMessage = nil
         notice = nil
     }
@@ -248,22 +252,25 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
         load(login: login, mode: mode, filter: filter, at: max(0, offset - size), clearExisting: false)
     }
 
+    /// Refresh the visible page after a single-photo priority writer finishes
+    /// without jumping the user back to the first page.
+    func refreshCurrent(login: XDriveIOSNativeOwnerLoginModel, mode: Mode, filter: Filter) {
+        guard !loading else { return }
+        load(login: login, mode: mode, filter: filter,
+             at: offset, clearExisting: false)
+    }
+
     private func load(login: XDriveIOSNativeOwnerLoginModel, mode: Mode,
                       filter: Filter, at requestedOffset: Int,
                       clearExisting: Bool) {
         cancel()
-        if clearExisting {
-            rows = []
-            counts = nil
-            libraryTotal = nil
-            offset = 0
-            hasNext = false
-        }
+        if clearExisting { clearPage() }
         errorMessage = nil
         notice = nil
         guard let owner = login.owner,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               UIApplication.shared.applicationState == .active else {
+            clearPage() // Never retain a previous page after permission loss.
             notice = "需要已验证账户、App 前台与“所有照片”权限；未读取队列。"
             return
         }
@@ -281,7 +288,10 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                 let auth = try await login.verifiedAuthorization()
                 guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
-                else { return }
+                else {
+                    if self.ticket == id { self.clearPage() }
+                    return
+                }
 
                 var page: [Row] = []
                 var more = false
@@ -329,7 +339,17 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                                 localAvailable: asset != nil && record.state != .missingLocal
                             )
                         }
-                        totals = try await queue.summary(owner: owner)
+                        if let freshTotals = try await queue.summary(owner: owner),
+                           try await queue.isCaughtUp(owner: owner) {
+                            totals = freshTotals
+                        } else {
+                            // PhotoKit changed between SQLite pagination and
+                            // PhotoKit asset lookup. No old rows or counts may
+                            // be published as the current revision.
+                            page = []
+                            more = false
+                            readNotice = "本机变更历史尚未回放到当前 PhotoKit 版本；已隐藏过期任务页，请重新刷新。"
+                        }
                     } else {
                         readNotice = "本机增量历史尚未同步到当前 PhotoKit 版本；此时不能显示旧状态，请先在备份设置中核对或恢复。"
                     }
@@ -363,8 +383,13 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
             } catch is CancellationError {
             } catch {
                 guard self.ticket == id else { return }
-                self.rows = []
-                self.hasNext = false
+                self.clearPage()
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      UIApplication.shared.applicationState == .active else {
+                    self.notice = "账户、图库权限或前台状态已经变化；旧任务页已清除。"
+                    return
+                }
                 self.errorMessage = "读取任务列表失败；没有改变任何照片、队列或上传收据。请恢复权限并重试。"
             }
         }
