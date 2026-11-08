@@ -122,35 +122,51 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 	}
 	original := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	original.Set(0, 0, color.RGBA{R: 11, G: 68, B: 176, A: 255})
-	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, original); err != nil {
-		t.Fatal(err)
-	}
-	hash := fmt.Sprintf("%x", sha256.Sum256(encoded.Bytes()))
-	key, err := storage.ContentAddressedKey(hash)
-	if err != nil {
-		t.Fatal(err)
-	}
 	local, err := storage.NewLocal(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if written, err := local.Put(context.Background(), key, bytes.NewReader(encoded.Bytes())); err != nil ||
-		written != int64(encoded.Len()) {
-		t.Fatal("physical CAS media seed failed")
+	// A real Gallery navigation can reconcile content-addressed copies into
+	// one logical PhotoAsset. Nine byte-for-byte identical PNGs would therefore
+	// incorrectly shrink to one across prototype -> isolated -> prototype.
+	// Seed nine DISTINCT, decodable original photos in the SAME BD09 cell,
+	// maintaining exactly 3 favorites and 3 Family members. This preserves
+	// the actual nine-photo authorization requirement through reconciliation.
+	seedDistinct := func(who uint64, prefix string, total, favorites int, base uint8) {
+		for i := 0; i < total; i++ {
+			photo := image.NewRGBA(image.Rect(0, 0, 2, 2))
+			photo.Set(0, 0, color.RGBA{R: base + uint8(i), G: 68, B: 176, A: 255})
+			var encoded bytes.Buffer
+			if err := png.Encode(&encoded, photo); err != nil {
+				t.Fatal(err)
+			}
+			checksum := fmt.Sprintf("%x", sha256.Sum256(encoded.Bytes()))
+			storageKey, err := storage.ContentAddressedKey(checksum)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if written, err := local.Put(context.Background(), storageKey,
+				bytes.NewReader(encoded.Bytes())); err != nil ||
+				written != int64(encoded.Len()) {
+				t.Fatal("distinct synthetic CAS photo seed failed")
+			}
+			if err := db.Create(&meta.ContentBlob{
+				SHA256: checksum, StorageKey: storageKey, Size: int64(encoded.Len()),
+				RefCount: 1, State: meta.ContentBlobStateReady,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			favorite := 0
+			if i < favorites {
+				favorite = 1
+			}
+			seedP04BrowserOwnerPhotoCells(t, db, who,
+				fmt.Sprintf("%s-%02d", prefix, i+1), 1, favorite,
+				storageKey, checksum, int64(encoded.Len()))
+		}
 	}
-	if err := db.Create(&meta.ContentBlob{
-		SHA256: hash, StorageKey: key, Size: int64(encoded.Len()),
-		RefCount: 10, State: meta.ContentBlobStateReady,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	// Use exactly the established P0-17 production PostgreSQL/BD09 source
-	// shape: 9 Owner GPS photos, 3 favorites, plus 1 foreign Owner neighbor.
-	seedP04BrowserOwnerPhotoCells(t, db, owner.ID, "production", 9, 3,
-		key, hash, int64(encoded.Len()))
-	seedP04BrowserOwnerPhotoCells(t, db, foreign.ID, "foreign", 1, 0,
-		key, hash, int64(encoded.Len()))
+	seedDistinct(owner.ID, "production", 9, 3, 11)
+	seedDistinct(foreign.ID, "foreign", 1, 0, 201)
 	family := meta.PhotoCollection{OwnerID: owner.ID, ExternalKey: "manual:Family",
 		Kind: meta.PhotoCollectionKindManual, Name: "Family",
 		State: meta.PhotoCollectionStateActive, Revision: 7}
