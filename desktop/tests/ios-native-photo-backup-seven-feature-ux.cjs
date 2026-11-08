@@ -111,6 +111,8 @@ test('stale PhotoKit generations hide old queue totals and task rows without ref
   assert.match(taskModel, /if let freshTotals = try await queue\.summary\(owner: owner\)/)
   assert.match(taskModel, /try await queue\.isCaughtUp\(owner: owner\)/)
   assert.match(taskModel, /clearPage\(\) \/\/ Never retain a previous page after permission loss/)
+  assert.match(taskModel, /if \(result == nil\) \{[\s\S]*?PhotoKit 变更尚未回放/)
+  assert.match(taskModel, /self\.clearPage\(\)[\s\S]*?当前未启用“仅备份新照片”/)
   assert.match(taskModel, /self\.clearPage\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
   assert.match(tasks, /\.onChange\(of: controller\.busy\)/)
   assert.match(tasks, /model\.refreshCurrent\(login: login, mode: mode, filter: filter\)/)
