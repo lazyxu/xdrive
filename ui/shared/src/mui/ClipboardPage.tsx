@@ -276,11 +276,17 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     try { xDriveClipboardValidateText(textAtStart) } catch (error) {
       setMessage(errorLabel(error)); return
     }
+    // Exact kind is authenticated AEAD metadata, not a display-only label.
+    // An unknown ACK for an image reference must not be reused as a file
+    // reference to the same Node/recipient (or vice versa).
+    const expectedKind: XDriveClipboardTargetWire['kind'] = isRef
+      ? (referenceKind === 'image' ? 'image/x-xdrive-node-ref' : 'application/x-xdrive-node-ref')
+      : xDriveClipboardKind(textAtStart)
     if (pending.current) {
       // An unknown server ACK is not proof of failure. Editing or pasting a
       // different draft must not silently discard the original retry receipt.
       if (pending.current.text !== textAtStart || pending.current.targetID !== selectedTarget ||
-          pending.current.nodeID !== selectedNodeID) {
+          pending.current.nodeID !== selectedNodeID || pending.current.item.kind !== expectedKind) {
         setRetryExpired(true)
         setMessage('上一条发送回执仍未确认。请先核对历史，或明确放弃旧回执后再发送新内容。')
         return
@@ -298,13 +304,11 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     writeController.current = controller
     try {
       if (pending.current?.text !== textAtStart || pending.current?.targetID !== selectedTarget ||
-          pending.current?.nodeID !== selectedNodeID) {
+          pending.current?.nodeID !== selectedNodeID || pending.current?.item.kind !== expectedKind) {
         const client_event_id = crypto.randomUUID()
         const encrypted = selectedDevice
           ? await xDriveClipboardEncryptForDevice(aadScope, selectedTarget, selectedDevice.public_key,
-              client_event_id, isRef
-                ? (referenceKind === 'image' ? 'image/x-xdrive-node-ref' : 'application/x-xdrive-node-ref')
-                : xDriveClipboardKind(textAtStart), textAtStart, selectedNodeID)
+              client_event_id, expectedKind, textAtStart, selectedNodeID)
           : await xDriveClipboardEncrypt(key, aadScope, client_event_id, textAtStart)
         // AES-GCM is not abortable: Lock can happen while encryption is pending.
         // Do not resurrect the previous Owner/session's retry cache.
@@ -425,7 +429,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
         <Box>
           <Typography variant="h5" fontWeight={700}>剪贴板</Typography>
           <Typography variant="body2" color="text.secondary">
-            当前账号的端到端加密文本收件箱 · 手动复制与发送
+            当前账号的端到端加密收件箱 · 文本与已上传文件引用
           </Typography>
         </Box>
         {key ? <Button color="inherit" onClick={lock}>锁定</Button> : null}
@@ -618,7 +622,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
           ) : null}
           <Divider />
           <Typography variant="caption" color="text.secondary">
-            最多保留 50 条未过期消息，24 小时后自动不可见。当前版本没有设备定向发送或后台自动监控。
+            最多保留 50 条未过期消息，24 小时后自动不可见。
+            {port.listDevices
+              ? ' 此 Host 支持向已登记设备定向发送文本及现有云端文件引用。'
+              : ' 此 Host 仅支持当前 Owner 的手动文本与链接发送。'}
+            {port.watchLocalClipboard
+              ? ' Desktop 系统剪贴板监听默认关闭，只有明确开启后才在解锁且页面可见时运行。'
+              : ' 不会在后台自动读取系统剪贴板。'}
           </Typography>
         </>
       )}
