@@ -115,8 +115,17 @@ def _digest(path):
 
 
 def _install_busy(lock_path, marker=None):
-    if marker is not None and marker.exists():
-        return True
+    # The installer owns install.lock throughout the entire transaction, but
+    # package transfers should resume as soon as dependencies finish. The
+    # Host-only dependency-ready marker is published *after* the final image
+    # pull, before install.lock is released. Before then the lock fails closed
+    # even if the busy marker cannot be published.
+    if marker is not None:
+        if marker.exists():
+            return True
+        ready = marker.with_name("dependency-ready")
+        if ready.is_file() and not ready.is_symlink():
+            return False
     if lock_path is None:
         return False
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -204,8 +213,8 @@ def _download(url, path, size, digest, lock_path, marker=None):
     os.replace(partial, path)
 
 
-def _github_release_json(url, lock_path):
-    _wait_for_dependencies(lock_path)
+def _github_release_json(url, lock_path, marker=None):
+    _wait_for_dependencies(lock_path, marker)
     with OPENER.open(
         Request(url, headers={"User-Agent": "xDrive-ReleaseBundle/1",
                               "Accept": "application/vnd.github+json"}),
@@ -259,13 +268,13 @@ def _verify_published_release(sha, raw, document, ref, release):
             raise ValueError("GitHub published asset size or SHA-256 mismatch: " + name)
 
 
-def _fetch_manifest(sha, lock_path):
+def _fetch_manifest(sha, lock_path, marker=None):
     if not SHA.fullmatch(sha):
         raise ValueError("invalid full source commit")
     prefix = "https://api.github.com/repos/lazyxu/xdrive/"
-    ref = _github_release_json(prefix + "git/ref/tags/bundle-" + sha, lock_path)
-    release = _github_release_json(prefix + "releases/tags/bundle-" + sha, lock_path)
-    _wait_for_dependencies(lock_path)
+    ref = _github_release_json(prefix + "git/ref/tags/bundle-" + sha, lock_path, marker)
+    release = _github_release_json(prefix + "releases/tags/bundle-" + sha, lock_path, marker)
+    _wait_for_dependencies(lock_path, marker)
     url = GITHUB_BASE + "bundle-" + sha + "/release-bundle.json"
     with OPENER.open(Request(url, headers={"User-Agent": "xDrive-ReleaseBundle/1"}), timeout=25) as response:
         if response.status != 200:
@@ -312,10 +321,52 @@ def _installed_commit(path):
     return commit if SHA.fullmatch(commit) else ""
 
 
+def _publish_verified(cache, staging, sha, verified, manifest):
+    """Publish only digest-verified bytes without destroying resumable .part files.
+
+    Existing bytes are immutable per commit, so hardlinks let an interrupted
+    partial Bundle become useful without exposing unverified staging files.
+    """
+    if not verified and manifest["artifacts"]:
+        return False
+    packages = cache / "packages"
+    packages.mkdir(exist_ok=True)
+    packages.chmod(0o755)
+    destination = packages / sha
+    if destination.exists() and (destination.is_symlink() or not destination.is_dir()):
+        raise ValueError("unsafe Bundle destination")
+    destination.mkdir(exist_ok=True)
+    destination.chmod(0o755)
+    for item in manifest["artifacts"]:
+        name = item["filename"]
+        if name not in verified:
+            continue
+        src = staging / name
+        target = destination / name
+        expected = (item["size"], item["sha256"])
+        if target.is_file() and not target.is_symlink() and _digest(target) == expected:
+            continue
+        # The worker owns this directory, but never overwrite a file being
+        # served by net/http. Replace its directory entry atomically instead.
+        temp = destination / ("." + name + ".next")
+        temp.unlink(missing_ok=True)
+        try:
+            os.link(src, temp, follow_symlinks=False)
+            os.chmod(temp, 0o644)
+            os.replace(temp, target)
+        finally:
+            temp.unlink(missing_ok=True)
+    _atomic_json(cache / "current.json", {"commit": sha})
+    # Old package bytes may be removed only *after* the new current pointer
+    # is visible; immutable historical manifests remain retained.
+    for old in packages.iterdir():
+        if old.name != sha and old.is_dir() and not old.is_symlink():
+            shutil.rmtree(old)
+    return True
+
+
 def sync(manifest, cache, lock_path=None, marker=None, retries=2, allow_local=False, installed_env=None):
     manifest = validate(manifest, allow_local=allow_local)
-    # An updater may supersede an older background worker while it is paused.
-    # Never replace the cache for a no-longer-installed release.
     if installed_env is not None and _installed_commit(installed_env) != manifest["commit"]:
         return 0
     cache.mkdir(parents=True, exist_ok=True)
@@ -332,17 +383,37 @@ def sync(manifest, cache, lock_path=None, marker=None, retries=2, allow_local=Fa
         staging = staging_parent / sha
         staging.mkdir(parents=True, exist_ok=True)
         staging.chmod(0o755)
-        state = {"commit": sha, "state": "syncing", "artifacts": {}}
+        published = cache / "packages" / sha
+        state = {
+            "commit": sha, "state": "syncing",
+            "artifacts": {item["filename"]: "pending" for item in manifest["artifacts"]},
+        }
         _atomic_json(cache / "status.json", state)
         failures = []
+        verified = set()
         for item in manifest["artifacts"]:
             name = item["filename"]
+            expected = (item["size"], item["sha256"])
             target = staging / name
-            if target.is_file() and not target.is_symlink() and _digest(target) == (item["size"], item["sha256"]):
+            existing = published / name
+            if target.is_file() and not target.is_symlink() and _digest(target) == expected:
+                verified.add(name)
                 state["artifacts"][name] = "verified"
+                _atomic_json(cache / "status.json", state)
+                continue
+            if existing.is_file() and not existing.is_symlink() and _digest(existing) == expected:
+                # A previous partial publication may have succeeded for this
+                # artifact even when the other platforms are still retrying.
+                target.unlink(missing_ok=True)
+                os.link(existing, target, follow_symlinks=False)
+                verified.add(name)
+                state["artifacts"][name] = "verified"
+                _atomic_json(cache / "status.json", state)
                 continue
             target.unlink(missing_ok=True)
             success = False
+            saw_missing = set()
+            failure = "retry_needed"
             for origin in ("gitlab", "github"):
                 for _ in range(retries):
                     try:
@@ -354,45 +425,45 @@ def sync(manifest, cache, lock_path=None, marker=None, retries=2, allow_local=Fa
                         _atomic_json(cache / "status.json", state)
                         _wait_for_dependencies(lock_path, marker)
                         state["state"] = "syncing"
+                        _atomic_json(cache / "status.json", state)
                     except ValueError:
-                        # An inconsistent stream or digest must never be
-                        # resumed from a different origin.
+                        # Invalid digest or Range must never contaminate a
+                        # partial transfer resumed from a different origin.
+                        failure = "verification_failed"
                         target.with_name(name + ".part").unlink(missing_ok=True)
-                    except (OSError, HTTPError):
-                        # A connection failure may resume using the immutable
-                        # Range path (full SHA-256 still checked at completion).
-                        pass
+                    except HTTPError as error:
+                        if error.code == 404:
+                            saw_missing.add(origin)
+                        else:
+                            failure = "retry_needed"
+                    except OSError:
+                        failure = "retry_needed"
                 if success:
                     break
-            if not success:
+            if success:
+                verified.add(name)
+                state["artifacts"][name] = "verified"
+            else:
+                if len(saw_missing) == 2 and failure == "retry_needed":
+                    failure = "missing_upstream"
                 failures.append(name)
-            state["artifacts"][name] = "verified" if success else "retry_needed"
+                state["artifacts"][name] = failure
             _atomic_json(cache / "status.json", state)
-        if failures:
-            state["state"] = "retry_needed"
-            _atomic_json(cache / "status.json", state)
-            return 1
         if installed_env is not None and _installed_commit(installed_env) != sha:
             state["state"] = "superseded"
             _atomic_json(cache / "status.json", state)
             return 0
-        packages = cache / "packages"
-        packages.mkdir(exist_ok=True)
-        packages.chmod(0o755)
-        destination = packages / sha
-        if destination.exists():
-            shutil.rmtree(destination)
-        os.replace(staging, destination)
-        _atomic_json(cache / "current.json", {"commit": sha})
-        for old in packages.iterdir():
-            if old.name != sha and old.is_dir() and not old.is_symlink():
-                shutil.rmtree(old)
-        for old in (cache / "staging").iterdir():
-            if old.name != sha and old.is_dir() and not old.is_symlink():
-                shutil.rmtree(old)
-        state["state"] = "ready"
+        _publish_verified(cache, staging, sha, verified, manifest)
+        state["state"] = "retry_needed" if failures else "ready"
+        state["message"] = (
+            f"{len(verified)} verified; {len(failures)} installer packages pending retry"
+            if failures else "Current Commit client packages verified"
+        )
         _atomic_json(cache / "status.json", state)
-        return 0
+        if not failures:
+            # There are no partial bytes left to resume after full success.
+            shutil.rmtree(staging)
+        return 1 if failures else 0
 
 
 def main():
@@ -413,7 +484,7 @@ def main():
             raise ValueError("invalid target commit")
         cache = args.cache_dir
         cache.mkdir(parents=True, exist_ok=True)
-        manifest = (_fetch_manifest(args.commit, args.install_lock) if args.commit else
+        manifest = (_fetch_manifest(args.commit, args.install_lock, args.dependency_busy_file) if args.commit else
                     json.loads(args.manifest.read_text(encoding="utf-8")))
         return sync(manifest, cache, args.install_lock, args.dependency_busy_file, args.retries, installed_env=args.installed_env)
     except Exception as exc:
