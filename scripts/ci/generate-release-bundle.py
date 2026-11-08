@@ -14,13 +14,13 @@ from urllib.parse import quote
 
 SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 KNOWN = (
-    ("linux", "xdrive-linux-amd64.deb", True),
-    ("windows", "xDriveSetup-amd64.exe", True),
-    ("cli", "xdrive-backup-linux-amd64.tar.gz", True),
-    ("cli", "xdrive-backup-windows-amd64.zip", True),
-    ("dsm", "xdrivenas-armada38x-*.spk", True),
-    ("ios", "xDrive-unsigned.ipa", False),
-    ("android", "xdrive-android-*.apk", False),
+    ("linux", "xdrive-linux-amd64.deb"),
+    ("windows", "xDriveSetup-amd64.exe"),
+    ("cli", "xdrive-backup-linux-amd64.tar.gz"),
+    ("cli", "xdrive-backup-windows-amd64.zip"),
+    ("dsm", "xdrivenas-armada38x-*.spk"),
+    ("ios", "xDrive-unsigned.ipa"),
+    ("android", "xdrive-android-*.apk"),
 )
 
 
@@ -33,12 +33,12 @@ def build(directory: Path, commit: str, channel: str):
         raise ValueError("release directory missing or symlinked")
     items = []
     seen = set()
-    for platform, pattern, required in KNOWN:
+    for platform, pattern in KNOWN:
         matches = sorted(directory.glob(pattern))
-        if required and len(matches) != 1:
-            raise ValueError(f"required {platform} CI artifact absent or duplicated: {pattern}")
-        if not required and len(matches) > 1:
-            raise ValueError(f"ambiguous optional {platform} artifacts")
+        if len(matches) > 1:
+            raise ValueError(f"ambiguous {platform} artifacts: {pattern}")
+        # A successful Server build is not blocked by an absent client build.
+        # Never invent the missing artifact or reuse a different Commit.
         for path in matches:
             if not path.is_file() or path.is_symlink() or path.name in seen:
                 raise ValueError(f"unsafe or duplicate release file: {path.name}")
