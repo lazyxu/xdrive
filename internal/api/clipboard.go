@@ -331,6 +331,15 @@ func (s *Server) streamClipboardEvents(c *gin.Context) {
 		if err != nil {
 			return
 		}
+		// A revocation can commit after the first batch's device check and
+		// before its SELECT completes. Never emit a directed cursor from
+		// that stale authorization snapshot.
+		if deviceID != "" && len(ids) > 0 {
+			currentDevice, allowed := s.clipboardVerifiedDevice(c, uid)
+			if !allowed || currentDevice != deviceID {
+				return
+			}
+		}
 		for _, id := range ids {
 			if _, err := fmt.Fprintf(c.Writer, "id: %d\nevent: change\ndata: {}\n\n", id); err != nil {
 				return
@@ -501,6 +510,16 @@ func (s *Server) listClipboardItems(c *gin.Context) {
 	if err := db.Order("id DESC").Limit(clipboardPageSize + 1).Find(&items).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard store unavailable"})
 		return
+	}
+	// If a separate device grant/installation was revoked while the query
+	// ran, do not return ciphertext obtained under its stale device filter.
+	// An Owner-only request still sees only the v1 broadcast mailbox.
+	if deviceID != "" {
+		currentDevice, allowed := s.clipboardVerifiedDevice(c, uid)
+		if !allowed || currentDevice != deviceID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Clipboard device grant changed"})
+			return
+		}
 	}
 	hasMore := len(items) > clipboardPageSize
 	if hasMore {
