@@ -265,3 +265,139 @@ func TestLegacyMigrationPreviewDetectsAncestorAndDescendantSourceOverlap(t *test
 		})
 	}
 }
+
+func TestLegacyMigrationPreviewRejectsMalformedTargetAncestry(t *testing.T) {
+	for _, scenario := range []string{
+		"valid", "foreign-owner-parent", "missing-parent",
+		"deleted-parent", "file-parent", "parent-cycle", "owner-root-target",
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			db, server, owner, stranger, root := setupFilePropertiesTestDB(t)
+			if err := db.AutoMigrate(&meta.Share{}, &meta.SyncRun{},
+				&meta.UploadSession{}, &meta.FileOperation{}); err != nil {
+				t.Fatal(err)
+			}
+			gin.SetMode(gin.TestMode)
+			server.Auth = auth.New("source-migration-ancestry-test", time.Hour)
+			router := server.Router()
+			token, err := server.Auth.Issue(owner.ID, owner.SessionVersion)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parent := createFilePropertiesDir(t, db, owner.ID, root.ID, "old-connector")
+			target := createFilePropertiesDir(t, db, owner.ID, parent.ID, "old-source")
+			photo := createFilePropertiesFile(t, db, owner.ID, target.ID, "photo.jpg", 8)
+			targetID := target.ID
+			if scenario == "owner-root-target" {
+				targetID = root.ID
+			}
+			source := meta.Source{
+				OwnerID: owner.ID, Name: "Old Source",
+				Kind: yikeSourceKind, Direction: meta.SourceDirectionPull,
+				SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeScan,
+				Status: meta.SourceStatusPaused, Revision: 1, TargetNodeID: &targetID,
+			}
+			if err := db.Create(&source).Error; err != nil {
+				t.Fatal(err)
+			}
+			if scenario != "owner-root-target" {
+				item := meta.SourceItem{
+					SourceID: source.ID, ExternalID: "old:photo",
+					NodeID: &photo.ID, NodeRevision: photo.Revision,
+					Kind: meta.SourceItemKindFile, Path: photo.Name,
+					State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+				}
+				if err := db.Create(&item).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch scenario {
+			case "foreign-owner-parent":
+				foreignRoot := meta.Node{OwnerID: stranger.ID, Name: "",
+					Type: meta.NodeTypeDir, Revision: 1}
+				if err := db.Create(&foreignRoot).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Model(&meta.Node{}).Where("id = ?", parent.ID).
+					Update("parent_id", foreignRoot.ID).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "missing-parent":
+				if err := db.Model(&meta.Node{}).Where("id = ?", parent.ID).
+					Update("parent_id", root.ID+10000000).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "deleted-parent":
+				if err := db.Model(&meta.Node{}).Where("id = ?", parent.ID).
+					Update("deleted_at", time.Now().UTC()).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "file-parent":
+				if err := db.Model(&meta.Node{}).Where("id = ?", parent.ID).
+					Update("type", meta.NodeTypeFile).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "parent-cycle":
+				// Intentionally old/corrupt parent pointers: the migration
+				// installed FK must not be assumed to validate old rows.
+				if err := db.Model(&meta.Node{}).Where("id = ?", parent.ID).
+					Update("parent_id", target.ID).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			var oldTarget, oldParent meta.Node
+			if err := db.First(&oldTarget, target.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Unscoped().First(&oldParent, parent.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			res := request(t, router, http.MethodGet,
+				fmt.Sprintf("/api/v1/sources/%d/migration-preview", source.ID),
+				token, nil, http.StatusOK)
+			var preview sourceLegacyMigrationPreview
+			if err := json.Unmarshal(res.Body.Bytes(), &preview); err != nil {
+				t.Fatal(err)
+			}
+			invalid := scenario != "valid"
+			hasBlocker := false
+			for _, blocker := range preview.Blockers {
+				if blocker == "target_ancestry_invalid" {
+					hasBlocker = true
+				}
+			}
+			expected := "apparently_exclusive"
+			if invalid {
+				expected = "blocked"
+			}
+			if hasBlocker != invalid || preview.Classification != expected ||
+				!preview.ReadOnly {
+				t.Fatalf("unsafe Source ancestry classified for %s: %+v", scenario, preview)
+			}
+			var afterSource meta.Source
+			var afterTarget, afterParent meta.Node
+			if err := db.First(&afterSource, source.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.First(&afterTarget, target.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Unscoped().First(&afterParent, parent.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			parentIDEqual := func(a, b *uint64) bool {
+				if a == nil || b == nil {
+					return a == nil && b == nil
+				}
+				return *a == *b
+			}
+			if afterSource.Revision != source.Revision ||
+				afterSource.TargetNodeID == nil || *afterSource.TargetNodeID != targetID ||
+				!parentIDEqual(oldTarget.ParentID, afterTarget.ParentID) ||
+				!parentIDEqual(oldParent.ParentID, afterParent.ParentID) ||
+				afterParent.OwnerID != oldParent.OwnerID {
+				t.Fatal("preview modified Source/Node binding in malformed legacy tree")
+			}
+		})
+	}
+}

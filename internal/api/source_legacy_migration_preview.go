@@ -25,6 +25,58 @@ type sourceLegacyMigrationNode struct {
 	Depth        int
 }
 
+// Source migration is read-only and cannot repair malformed historical
+// parent links. Scan across *all* Owners rather than filtering bad ancestors
+// out: the old schema allowed cross-Owner, deleted, missing, cyclic or
+// non-directory parents. A valid target must reach this Owner's real root.
+type sourceLegacyMigrationAncestor struct {
+	ID        uint64
+	ParentID  *uint64
+	OwnerID   uint64
+	Name      string
+	Type      string
+	IsDeleted bool `gorm:"column:is_deleted"`
+	Depth     int
+}
+
+func sourceLegacyTargetAncestryValidTx(tx *gorm.DB, ownerID, targetID uint64) (bool, error) {
+	var chain []sourceLegacyMigrationAncestor
+	err := tx.Raw(`
+WITH RECURSIVE chain AS (
+	SELECT id, parent_id, owner_id, name, type,
+		deleted_at IS NOT NULL AS is_deleted, 0 AS depth,
+		ARRAY[id]::bigint[] AS visited
+	FROM xd_nodes WHERE id = ?
+	UNION ALL
+	SELECT parent.id, parent.parent_id, parent.owner_id, parent.name,
+		parent.type, parent.deleted_at IS NOT NULL AS is_deleted,
+		child.depth + 1, child.visited || parent.id
+	FROM xd_nodes AS parent JOIN chain AS child ON parent.id = child.parent_id
+	WHERE child.depth < 128 AND NOT parent.id = ANY(child.visited)
+)
+SELECT id, parent_id, owner_id, name, type, is_deleted, depth
+FROM chain ORDER BY depth ASC`, targetID).Scan(&chain).Error
+	if err != nil {
+		return false, err
+	}
+	// Root itself is not a relocatable Source target. The last node must
+	// be an Owner's actual root, not a silently truncated or cyclic path.
+	if len(chain) < 2 || chain[0].ID != targetID {
+		return false, nil
+	}
+	for index, node := range chain {
+		if node.OwnerID != ownerID || node.IsDeleted || node.Type != meta.NodeTypeDir {
+			return false, nil
+		}
+		if index > 0 && (chain[index-1].ParentID == nil ||
+			*chain[index-1].ParentID != node.ID) {
+			return false, nil
+		}
+	}
+	root := chain[len(chain)-1]
+	return root.ParentID == nil && root.Name == "", nil
+}
+
 type sourceLegacyMigrationPreview struct {
 	SourceID            uint64    `json:"source_id"`
 	TargetNodeID        *uint64   `json:"target_node_id,omitempty"`
@@ -103,6 +155,13 @@ func (s *Server) previewLegacySourceMigration(c *gin.Context) {
 		if target.Type != meta.NodeTypeDir {
 			preview.Blockers = append(preview.Blockers, "target_not_directory")
 			return nil
+		}
+		ancestryValid, err := sourceLegacyTargetAncestryValidTx(tx, source.OwnerID, target.ID)
+		if err != nil {
+			return err
+		}
+		if !ancestryValid {
+			preview.Blockers = append(preview.Blockers, "target_ancestry_invalid")
 		}
 
 		// Do not filter recursive children by OwnerID: malformed legacy
@@ -262,7 +321,9 @@ WHERE other.owner_id = ? AND other.id <> ?
 		if preview.OtherSourceClaims != 0 {
 			preview.Blockers = append(preview.Blockers, "target_bound_to_other_source")
 		}
-		if source.TargetManaged {
+		if !ancestryValid {
+			preview.Classification = "blocked"
+		} else if source.TargetManaged {
 			preview.Classification = "already_managed"
 		} else if len(preview.Blockers) > 0 {
 			preview.Classification = "blocked"
