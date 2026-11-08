@@ -152,3 +152,61 @@ test('permission denial and missing PNG never issue a Server upload', async () =
     }
   }
 })
+
+test('aborted Owner session prevents Browser file upload and never creates a Clipboard item', async () => {
+  const compiled = ts.transpileModule(portSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  })
+  const module = { exports: {} }
+  new Function('module', 'exports', 'require', compiled.outputText)(
+    module, module.exports, name => {
+      if (name === './browserClipboard') return { xDriveBrowserCopyText: async () => {} }
+      throw Error('unexpected dependency ' + name)
+    },
+  )
+  let rootCalls = 0
+  let uploadCalls = 0
+  const controller = new AbortController()
+  const api = {
+    root: async () => { rootCalls++; controller.abort(); return {id: 8,type:'dir'} },
+    uploadWithConflictPolicy: async () => { uploadCalls++; throw Error('must not upload after revocation') },
+  }
+  const port = module.exports.createXDriveWebClipboardPort(api, 'https://drive.example:owner')
+  await assert.rejects(
+    port.uploadLocalFile(new File([Uint8Array.of(1)], 'cancelled.txt'),controller.signal),
+    error => error.name === 'AbortError',
+  )
+  assert.equal(rootCalls,1)
+  assert.equal(uploadCalls,0)
+})
+
+test('rejected CAS receipts never become device-directed file references', async () => {
+  const compiled=ts.transpileModule(portSource,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+  })
+  const module={exports:{}}
+  new Function('module','exports','require',compiled.outputText)(
+    module,module.exports,name=>{
+      if(name==='./browserClipboard') return {xDriveBrowserCopyText:async()=>{}}
+      throw Error('unexpected dependency '+name)
+    },
+  )
+  const api={
+    root:async()=>({id:23,type:'dir'}),
+    uploadWithConflictPolicy:async()=>({
+      node:{id:77,parent_id:999,type:'file',revision:1},skipped:false,
+    }),
+  }
+  const port=module.exports.createXDriveWebClipboardPort(api,'https://drive.example:owner')
+  await assert.rejects(
+    port.uploadLocalFile(new File([Uint8Array.of(1)], 'foreign.txt'), new AbortController().signal),
+    /没有收到可用于 Clipboard 的有效节点收据/,
+  )
+  api.uploadWithConflictPolicy=async()=>({
+    node:{id:78,parent_id:23,type:'file',revision:1},skipped:true,
+  })
+  await assert.rejects(
+    port.uploadLocalFile(new File([Uint8Array.of(2)], 'conflict.txt'),new AbortController().signal),
+    /没有收到可用于 Clipboard 的有效节点收据/,
+  )
+})
