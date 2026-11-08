@@ -247,6 +247,7 @@ if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-ok/config/.env"; then
 fi
 grep -q "/$MASTER_SHA/deploy/docker-compose.yml$" "$TMP/state/urls"
 test ! -e "$TMP/config-ok/data/release-bundles/dependency-busy"
+test ! -e "$TMP/config-ok/data/release-bundles/dependency-ready"
 # The source-only install path must never leave cached package downloads
 # paused after a successful no-start staging transaction.
 test -x "$TMP/config-ok/bin/xdrive-server"
