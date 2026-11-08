@@ -29,6 +29,7 @@ const dependencies={
   './StatusAlert':{XDriveStatusAlert:'status-alert'},
   './WorkspaceSurface':{XDriveWorkspaceSurface:'workspace-surface'},
   '../external-sources':{
+    isNativePhotoSource:()=>false, // This fixture uses a Synology Pull row.
     isReadOnlySynologySource:()=>true,
     externalSourceCardView:()=>({
       connector:{label:'Synology Photos'},modeLabel:'备份',

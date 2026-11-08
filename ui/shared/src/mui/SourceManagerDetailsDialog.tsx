@@ -35,6 +35,7 @@ import {
   externalSourceMirrorSafetyNotice,
   externalSourceMirrorScanNotice,
   externalSourceRunDetailView,
+  isNativePhotoSource,
   formatExternalSourceTime,
 } from '../external-sources'
 import { formatBytes } from '../format'
@@ -179,9 +180,9 @@ export function XDriveSourceDetailsDialog({
               </XDriveStatusAlert>
             ) : null}
 
-            {row.source.kind === 'ios_photos' ? (
+            {isNativePhotoSource(row.source) ? (
               <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-                这是由已绑定 iPhone 执行的 Push 来源。PhotoKit 扫描、原件读取和上传始终在 iPhone 端进行；此处展示统一 Source 状态与运行历史，不会从 Server 或 Desktop 代替手机扫描，也不会上传照片标识、文件名或位置。每条运行记录只代表该次有界批次，不代表整库已完成备份。
+                这是由已绑定 {row.source.kind === 'ios_photos' ? 'iPhone PhotoKit' : 'Android MediaStore'} 执行的 Push 来源。原件读取与上传始终在绑定手机进行；这里仅展示聚合 Source 状态与有界批次历史，不会从 Server/其他设备发起扫描，也不会展示原始相册标识、文件名或位置。批次完成不代表整库已备份。
               </XDriveStatusAlert>
             ) : null}
 
@@ -189,14 +190,14 @@ export function XDriveSourceDetailsDialog({
               <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
                 <Stack spacing={1}>
                   <MuiTypography variant="body2">
-                    本机文件夹已登记，但同步执行器尚未启用。必须在拥有该目录的 Desktop 上授权；不能从 Web 指定电脑路径。
+                    文件夹 Push 由来源绑定设备上的 xdrive-agent 执行。请在该设备上授权本地目录并开始备份；Server 和其他设备不会远程扫描。来源已登记不等于目录已授权。
                   </MuiTypography>
                   {onAuthorizeLocalFolder ? (
                     <MuiButton size="small" variant="outlined" onClick={() => void onAuthorizeLocalFolder(row)}>
                       选择本机目录并授权
                     </MuiButton>
                   ) : (
-                    <MuiTypography variant="caption">请在对应的 Desktop 客户端完成本机目录授权。</MuiTypography>
+                    <MuiTypography variant="caption">请在该来源绑定设备的文件夹备份入口完成本地目录授权。</MuiTypography>
                   )}
                 </Stack>
               </XDriveStatusAlert>
@@ -210,6 +211,11 @@ export function XDriveSourceDetailsDialog({
                 </Stack>
               </XDriveDescriptionItem>
               <XDriveDescriptionItem label="工作方式">{detail.modeLabel}</XDriveDescriptionItem>
+              {detail.deviceID ? (
+                <XDriveDescriptionItem label="绑定设备">
+                  <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{detail.deviceID}</MuiTypography>
+                </XDriveDescriptionItem>
+              ) : null}
               <XDriveDescriptionItem label="状态">
                 <XDriveStatusBadge tone={detail.state.tone} label={detail.state.label} />
               </XDriveDescriptionItem>
@@ -226,7 +232,7 @@ export function XDriveSourceDetailsDialog({
               ) : null}
             </XDriveDescriptionGrid>
 
-            {row.source.kind !== 'ios_photos' ? (
+            {!isNativePhotoSource(row.source) ? (
               <>
 <XDriveSectionHeader level="h3" title="相册与集合" sx={{ my: 2 }} />
             {collections.length === 0 && collectionsReadState !== 'ready' ? (
@@ -317,7 +323,7 @@ export function XDriveSourceDetailsDialog({
               <Stack spacing={1}>
                 {historyRuns.map((run) => {
                   const runDetail = externalSourceRunDetailView(run, row.source.kind)
-                  const canCancel = row.source.kind !== 'ios_photos' && run.status === 'running' && row.latestRun?.id === run.id
+                  const canCancel = !isNativePhotoSource(row.source) && run.status === 'running' && row.latestRun?.id === run.id
                   const failurePage = runFailurePages[run.id]
                   const skipPage = runSkipPages[run.id]
                   return (
@@ -327,11 +333,11 @@ export function XDriveSourceDetailsDialog({
                       disableGutters
                       elevation={0}
                       onChange={(_, expanded) => {
-                        if (expanded && row.source.kind !== 'ios_photos' &&
+                        if (expanded && !isNativePhotoSource(row.source) &&
                             run.failed_items > 0 && !failurePage?.loaded && !failurePage?.loading) {
                           void onLoadRunFailures(row.source.id, run.id, 1)
                         }
-                        if (expanded && run.skipped_items > 0 && !skipPage?.loaded && !skipPage?.loading) {
+                        if (expanded && !isNativePhotoSource(row.source) && run.skipped_items > 0 && !skipPage?.loaded && !skipPage?.loading) {
                           void onLoadRunSkips(row.source.id, run.id, 1)
                         }
                       }}
@@ -375,7 +381,7 @@ export function XDriveSourceDetailsDialog({
                             <XDriveDescriptionItem label="未扫描范围">未知（取消任务不代表完整扫描）</XDriveDescriptionItem>
                           ) : null}
                           {runDetail.metrics
-                            .filter((metric) => row.source.kind !== 'ios_photos' ||
+                            .filter((metric) => !isNativePhotoSource(row.source) ||
                               ['scanned', 'new', 'unchanged', 'failed'].includes(metric.key))
                             .map((metric) => (
                             <XDriveDescriptionItem key={metric.key} label={metric.label}>
@@ -390,7 +396,7 @@ export function XDriveSourceDetailsDialog({
                         >
                           运行日志：{runDetail.error || '无错误日志'}
                         </XDriveStatusAlert>
-                        {run.skipped_items > 0 ? (
+                        {run.skipped_items > 0 && !isNativePhotoSource(row.source) ? (
                           <MuiBox sx={{ mt: 1.5 }}>
                             <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
                               本次跳过项（含当时路径和原因）
@@ -431,11 +437,11 @@ export function XDriveSourceDetailsDialog({
                         {runDetail.failedItems > 0 ? (
                           <MuiBox sx={{ mt: 1.5 }}>
                             <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
-                              {row.source.kind === 'ios_photos' ? '本次待处理项目' : '本次失败文件'}
+                              {isNativePhotoSource(row.source) ? '本次待处理项目' : '本次失败文件'}
                             </MuiTypography>
-                            {row.source.kind === 'ios_photos' ? (
+                            {isNativePhotoSource(row.source) ? (
                               <XDriveStatusAlert tone="warning">
-                                iPhone 本次有 {runDetail.failedItems.toLocaleString('zh-CN')} 个待处理项目；逐项原因和照片标识仅在手机端显示。
+                                {row.source.kind === 'ios_photos' ? 'iPhone' : 'Android'} 本次有 {runDetail.failedItems.toLocaleString('zh-CN')} 个待处理项目；逐项原因和照片标识仅在手机端显示。
                               </XDriveStatusAlert>
                             ) : !failurePage || (failurePage.loading && !failurePage.loaded) ? (
                               <MuiBox data-xdrive-source-run-failures-first-read
@@ -481,13 +487,13 @@ export function XDriveSourceDetailsDialog({
                             )}
                           </MuiBox>
                         ) : null}
-                        {runDetail.failedItems > 0 && row.source.kind === 'ios_photos' ? (
+                        {runDetail.failedItems > 0 && isNativePhotoSource(row.source) ? (
                           <MuiBox sx={{ mt: 1.5 }}>
                             <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
                               待处理项目
                             </MuiTypography>
                             <XDriveStatusAlert tone="warning">
-                              iPhone 本次记录了 {runDetail.failedItems.toLocaleString('zh-CN')} 个待处理项目；逐项原因仅在手机端显示，不上传照片标识或文件名。
+                              {row.source.kind === 'ios_photos' ? 'iPhone' : 'Android'} 本次记录了 {runDetail.failedItems.toLocaleString('zh-CN')} 个待处理项目；逐项原因仅在手机端显示，不上传照片标识或文件名。
                             </XDriveStatusAlert>
                           </MuiBox>
                         ) : null}
@@ -523,7 +529,7 @@ export function XDriveSourceDetailsDialog({
               </MuiBox>
             )}
 
-            {row.source.kind !== 'ios_photos' ? (
+            {!isNativePhotoSource(row.source) ? (
               <MuiBox data-xdrive-source-failed-items aria-busy={failedItemsLoading || undefined}>
             {!failedItemsLoading && failedItems.length > 0 ? (
               <XDriveStatusAlert

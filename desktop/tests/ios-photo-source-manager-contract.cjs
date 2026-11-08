@@ -43,10 +43,10 @@ test('iOS Photos is a device-executed Push Source, not a server-triggered worker
 
 test('shared Source Manager reads run history without inventing PhotoKit collections or file identities', () => {
   assert.match(details, /title="运行记录"/);
-  assert.match(details, /每条运行记录只代表该次有界批次/);
-  assert.match(details, /row\.source\.kind !== 'ios_photos'/);
+  assert.match(details, /批次完成不代表整库已备份/);
+  assert.match(details, /!isNativePhotoSource\(row\.source\)/);
   assert.match(manager, /aggregate SyncRun history/);
-  assert.match(manager, /row\.source\.kind === 'ios_photos'/);
+  assert.match(manager, /isNativePhotoSource\(row\.source\)/);
   assert.match(manager, /isIOSPhotoSource/);
   assert.match(details, /本次待处理项目/);
   assert.match(details, /逐项原因仅在手机端显示/);

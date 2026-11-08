@@ -326,6 +326,34 @@ func TestIOSPhotoSourceRunUsesSharedHistoryAndRequiresBoundDevice(t *testing.T) 
 		finished.TransferredItems != 2 || finished.FailedItems != 0 {
 		t.Fatalf("shared SourceRun terminal history mismatch: %+v", finished)
 	}
+	// Shared Source Manager must return the SAME phone-owned Source/Target and
+	// last exact bounded SourceRun without photo IDs or a fake full-library
+	// completion. Owner view remains read-only and conveys no phone control.
+	overviewResp := requestWithHeaders(t, router, http.MethodGet,
+		"/api/v1/sources/overview", token, nil, http.StatusOK, nil)
+	var overview []sourceOverviewDTO
+	if err := json.Unmarshal(overviewResp.Body.Bytes(), &overview); err != nil {
+		t.Fatal(err)
+	}
+	seen := false
+	for _, row := range overview {
+		if row.Source.ID != target.SourceID {
+			continue
+		}
+		seen = true
+		if row.Source.DeviceID != device.ID ||
+			row.Source.Status != meta.SourceStatusPaused ||
+			row.Source.Kind != meta.SourceKindIOSPhotos ||
+			row.Source.TargetNodeID == nil || *row.Source.TargetNodeID == 0 ||
+			row.LatestRun == nil || row.LatestRun.ID != runID ||
+			row.LatestRun.Status != meta.SyncRunStatusCompleted ||
+			row.LatestRun.ScannedItems != 4 || row.LatestRun.NewItems != 2 {
+			t.Fatalf("iOS shared Source overview drifted from native run: %+v", row)
+		}
+	}
+	if !seen {
+		t.Fatal("iPhone Source omitted from unified overview")
+	}
 
 	var source meta.Source
 	if err := db.First(&source, target.SourceID).Error; err != nil {

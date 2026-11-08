@@ -47,6 +47,7 @@ const componentDeps={
   './SourceRunProgress':{XDriveSourceRunProgress:'run-progress'},
   './SourceRunSummary':{XDriveSourceRunSummary:'run-summary'},
   '../external-sources':{
+    isNativePhotoSource:()=>false, // This fixture uses a Synology Pull row.
     externalSourceCardView:()=>({trigger:{ready:true}}),
     externalSourceDetailView:()=>({
       kindLabel:'相册来源',modeLabel:'备份',state:{tone:'good',label:'正常'},

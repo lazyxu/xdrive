@@ -589,6 +589,10 @@ func (s *Server) Router() *gin.Engine {
 	// M10: reversible archive/paused restore, distinct from cloud-only cleanup.
 	authed.POST("/sources/:id/archive", s.requireSourceOwnerOrExecutor(), s.archiveSource)
 	authed.POST("/sources/:id/restore", s.requireSourceOwnerOrExecutor(), s.restoreArchivedSource)
+	// Separate Owner-only, reversible cloud cleanup. It never changes Source
+	// identity or shares the generic Sources delete/archive authority.
+	authed.GET("/sources/:id/cloud-cleanup/preview", s.previewSourceCloudCleanup)
+	authed.POST("/sources/:id/cloud-cleanup/trash", s.trashSourceCloudCleanup)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
 	authed.DELETE("/sources/:id/local-draft", s.discardLocalSourceDraft)
 	authed.POST("/sources/:id/trigger", s.requireSourceOwnerOrExecutor(), s.triggerSource)

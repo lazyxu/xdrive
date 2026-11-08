@@ -55,6 +55,10 @@ func TestGlobalContentDedupQuotaAndLastReferenceDeletion(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{}, &meta.AuditEvent{},
+		// Permanent Trash deletion must reject targets still referenced by
+		// a Source. Match the production schema rather than disabling that
+		// safeguard just for this dedup/CAS integration test.
+		&meta.Source{},
 	); err != nil {
 		t.Fatal(err)
 	}
