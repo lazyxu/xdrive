@@ -11,6 +11,10 @@ struct XDriveIOSNativeFilesResumeSnapshot: Codable, Equatable {
     var folderName: String?
     var pageOffset: Int
     var anchorID: UInt64?
+    var sort: String
+    var order: String
+    var grouping: String
+    var foldersFirst: Bool
 }
 
 /// A single fail-closed, Owner+Server+Root scoped recent Files route.
@@ -42,6 +46,9 @@ struct XDriveIOSNativeFilesResumeStore {
             (value.folderName == nil || (
                 !value.folderName!.isEmpty && value.folderName!.utf8.count <= 255
             )) &&
+            ["name", "updated", "size", "type"].contains(value.sort) &&
+            ["asc", "desc"].contains(value.order) &&
+            ["none", "type", "modified", "size"].contains(value.grouping) &&
             value.pageOffset >= 0 && value.pageOffset <= 10_000_000 &&
             value.pageOffset % 64 == 0 &&
             (value.anchorID == nil || (
@@ -81,19 +88,24 @@ struct XDriveIOSNativeFilesResumeStore {
             XDriveIOSNativeFilesResumeSnapshot(
                 version: 1, ownerScope: Self.scope(owner),
                 section: "browse", folderID: nil, folderName: nil,
-                pageOffset: 0, anchorID: nil
+                pageOffset: 0, anchorID: nil,
+                sort: "name", order: "asc", grouping: "none", foldersFirst: true
             )
         snapshot.section = section
         write(snapshot)
     }
 
     func saveFolder(owner: XDriveNativeOwnerRoot, id: UInt64,
-                    name: String, pageOffset: Int, anchorID: UInt64?) {
+                    name: String, pageOffset: Int, anchorID: UInt64?,
+                    sort: String, order: String, grouping: String,
+                    foldersFirst: Bool) {
         guard id > 0, !name.isEmpty, name.utf8.count <= 255 else { return }
         write(XDriveIOSNativeFilesResumeSnapshot(
             version: 1, ownerScope: Self.scope(owner),
             section: "browse", folderID: id, folderName: name,
-            pageOffset: pageOffset, anchorID: anchorID
+            pageOffset: pageOffset, anchorID: anchorID,
+            sort: sort, order: order, grouping: grouping,
+            foldersFirst: foldersFirst
         ))
     }
 
