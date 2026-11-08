@@ -816,6 +816,76 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
     }
 
+    // Compile the long actions menu independently of the immersive Viewer
+    // content. This does not grant upload permission or bypass Owner consent.
+    private var photoActionsMenu: some View {
+                    Menu {
+                        Button("照片信息") { showPhotoInfo() }
+                            .accessibilityIdentifier("native-ios-local-viewer-info")
+                            .accessibilityIdentifier("native-ios-local-viewer-location-info")
+                        if let priorityAction {
+                            Button("优先核验或备份此原件") {
+                                guard currentPageAuthorized else { return }
+                                // Use the exact visible PhotoKit ID and the
+                                // dashboard's separate Owner-bound consent.
+                                let selectedID = viewed.id
+                                dismiss()
+                                priorityAction(selectedID, false)
+                            }
+                            .accessibilityIdentifier("native-ios-local-viewer-priority-original")
+                        }
+                        // Keep xDrive-only controls accessible without a
+                        // nonnative bottom row or Live buttons on the canvas.
+                        if model.live != nil {
+                            Button("播放实况") {
+                                guard currentPageAuthorized, model.live != nil else { return }
+                                showsStaticStill = false
+                                livePlaybackRequest = UUID()
+                            }
+                            .accessibilityIdentifier("native-ios-local-live-play")
+                            if model.still != nil {
+                                Button(showsStaticStill ? "返回实况照片" : "放大静态照片") {
+                                    guard currentPageAuthorized else { return }
+                                    if !showsStaticStill { livePlaybackRequest = nil }
+                                    showsStaticStill.toggle()
+                                }
+                                .accessibilityIdentifier("native-ios-local-live-static-toggle")
+                            }
+                        }
+                        if visibleItems.count > 1 || canCross(-1) || canCross(1) {
+                            Button("上一项") { showNeighbor(-1) }
+                                .disabled(neighbor(-1) == nil && !canCross(-1))
+                                .accessibilityIdentifier("native-ios-local-viewer-previous")
+                            Button("下一项") { showNeighbor(1) }
+                                .disabled(neighbor(1) == nil && !canCross(1))
+                                .accessibilityIdentifier("native-ios-local-viewer-next")
+                        }
+                        Divider()
+                        // Video recovery stays accessible in compact landscape.
+                        if currentPageAuthorized, model.player != nil {
+                            Button("重新加载本机视频") { reloadCurrent() }
+                                .accessibilityIdentifier("native-ios-local-player-reload")
+                        }
+                        Button("分享本机原件") { shareOriginal(allowICloud: false) }
+                        Button("从 iCloud 下载原件并分享") {
+                            shareOriginal(allowICloud: true)
+                        }
+                        Divider()
+                        Button(favoriteStatus == true ? "取消收藏" : "收藏照片") {
+                            editFavorite(favoriteStatus != true)
+                        }
+                        .disabled(favoriteStatus == nil)
+                        Divider()
+                        Button("删除照片", role: .destructive) {
+                            showDeleteConfirm = true
+                        }
+                    } label: {
+                        Label("照片操作", systemImage: "ellipsis.circle")
+                    }
+                    .disabled(!currentPageAuthorized || crossing || photoActionBusy)
+                    .accessibilityIdentifier("native-ios-local-viewer-photo-actions")
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -974,71 +1044,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     .accessibilityIdentifier("native-ios-local-viewer-back")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button("照片信息") { showPhotoInfo() }
-                            .accessibilityIdentifier("native-ios-local-viewer-info")
-                        if let priorityAction {
-                            Button("优先核验或备份此原件") {
-                                guard currentPageAuthorized else { return }
-                                // Use the exact visible PhotoKit ID and the
-                                // dashboard's separate Owner-bound consent.
-                                let selectedID = viewed.id
-                                dismiss()
-                                priorityAction(selectedID, false)
-                            }
-                            .accessibilityIdentifier("native-ios-local-viewer-priority-original")
-                        }
-                        .accessibilityIdentifier("native-ios-local-viewer-location-info")
-                        // Keep xDrive-only controls accessible without a
-                        // nonnative bottom row or Live buttons on the canvas.
-                        if model.live != nil {
-                            Button("播放实况") {
-                                guard currentPageAuthorized, model.live != nil else { return }
-                                showsStaticStill = false
-                                livePlaybackRequest = UUID()
-                            }
-                            .accessibilityIdentifier("native-ios-local-live-play")
-                            if model.still != nil {
-                                Button(showsStaticStill ? "返回实况照片" : "放大静态照片") {
-                                    guard currentPageAuthorized else { return }
-                                    if !showsStaticStill { livePlaybackRequest = nil }
-                                    showsStaticStill.toggle()
-                                }
-                                .accessibilityIdentifier("native-ios-local-live-static-toggle")
-                            }
-                        }
-                        if visibleItems.count > 1 || canCross(-1) || canCross(1) {
-                            Button("上一项") { showNeighbor(-1) }
-                                .disabled(neighbor(-1) == nil && !canCross(-1))
-                                .accessibilityIdentifier("native-ios-local-viewer-previous")
-                            Button("下一项") { showNeighbor(1) }
-                                .disabled(neighbor(1) == nil && !canCross(1))
-                                .accessibilityIdentifier("native-ios-local-viewer-next")
-                        }
-                        Divider()
-                        // Video recovery stays accessible in compact landscape.
-                        if currentPageAuthorized, model.player != nil {
-                            Button("重新加载本机视频") { reloadCurrent() }
-                                .accessibilityIdentifier("native-ios-local-player-reload")
-                        }
-                        Button("分享本机原件") { shareOriginal(allowICloud: false) }
-                        Button("从 iCloud 下载原件并分享") {
-                            shareOriginal(allowICloud: true)
-                        }
-                        Divider()
-                        Button(favoriteStatus == true ? "取消收藏" : "收藏照片") {
-                            editFavorite(favoriteStatus != true)
-                        }
-                        .disabled(favoriteStatus == nil)
-                        Divider()
-                        Button("删除照片", role: .destructive) {
-                            showDeleteConfirm = true
-                        }
-                    } label: {
-                        Label("照片操作", systemImage: "ellipsis.circle")
-                    }
-                    .disabled(!currentPageAuthorized || crossing || photoActionBusy)
-                    .accessibilityIdentifier("native-ios-local-viewer-photo-actions")
+                    photoActionsMenu
                 }
             }
             .toolbar(showChrome ? .visible : .hidden, for: .navigationBar)
