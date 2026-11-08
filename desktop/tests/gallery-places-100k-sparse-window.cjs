@@ -167,3 +167,27 @@ test('Owner Parent provides a retry for failed evicted window even when all page
   assert.match(sheet,/onClick=\{pageErrorKind === 'window' \? onRetryWindow : onLoadMore\}/)
   assert.match(sheet,/data-xdrive-places-photo-drawer-page-retry/)
 })
+
+
+test('100k far-scroll jumps directly to the visible signed Owner page, not 2k sequential requests',()=>{
+  // Reachable after visiting the full album and then rehydrating the first
+  // evicted page: the logical 100k depth is kept, but only page zero resides.
+  const first={start:0,items:page(0).items,depth:total,total}
+  const jumpStart=90721
+  const jumpEnd=90741
+  const targetOffset=Math.floor(jumpStart / limit)*limit
+  assert.equal(missing(first,jumpStart,jumpEnd),targetOffset)
+  assert.notEqual(targetOffset,first.start+first.items.length,
+    'must not sequentially re-read page 48 after a 90k scroll jump')
+  const reauthorized=rehydrate(selection,first,page(targetOffset))
+  assert.ok(reauthorized)
+  assert.equal(reauthorized.depth,total)
+  assert.equal(reauthorized.start,targetOffset)
+  assert.equal(reauthorized.items.length,limit)
+  assert.equal(missing(reauthorized,jumpStart,jumpEnd),null,
+    'one fresh signed Range must cover the actual visible viewport')
+  assert.equal(missing(reauthorized,20,30),0,
+    'jumping back also seeks directly to that signed page')
+  assert.equal(missing(first,total+1,total+2),null,
+    'never issue requests outside the visited Owner logical depth')
+})
