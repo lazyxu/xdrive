@@ -200,14 +200,14 @@ test('rejected CAS receipts never become device-directed file references', async
   const port=module.exports.createXDriveWebClipboardPort(api,'https://drive.example:owner')
   await assert.rejects(
     port.uploadLocalFile(new File([Uint8Array.of(1)], 'foreign.txt'), new AbortController().signal),
-    /没有收到可用于 Clipboard 的有效节点收据/,
+    /未收到可用于 Clipboard 的有效节点收据/,
   )
   api.uploadWithConflictPolicy=async()=>({
     node:{id:78,parent_id:23,type:'file',revision:1},skipped:true,
   })
   await assert.rejects(
     port.uploadLocalFile(new File([Uint8Array.of(2)], 'conflict.txt'),new AbortController().signal),
-    /没有收到可用于 Clipboard 的有效节点收据/,
+    /未收到可用于 Clipboard 的有效节点收据/,
   )
 })
 
