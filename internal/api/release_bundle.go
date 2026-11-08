@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 var releaseBundleCommitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -117,6 +118,13 @@ func validReleaseBundleManifest(m releaseBundleManifest) bool {
 }
 
 func readReleaseBundleListing(root string) releaseBundleListing {
+	return readReleaseBundleListingForServerCommit(root, version.Metadata().Commit)
+}
+
+// The running Server binary, rather than stale Host cache pointers, decides
+// which immutable Bundle may be returned to clients. This never enumerates
+// historical versions and does not force a client update.
+func readReleaseBundleListingForServerCommit(root, serverCommit string) releaseBundleListing {
 	result := releaseBundleListing{State: "unavailable", Artifacts: []releaseBundleItem{}}
 	if root == "" {
 		return result
@@ -139,6 +147,16 @@ func readReleaseBundleListing(root string) releaseBundleListing {
 	target := status.Commit
 	if !releaseBundleCommitPattern.MatchString(target) {
 		target = current.Commit
+	}
+	if releaseBundleCommitPattern.MatchString(serverCommit) {
+		if target != serverCommit {
+			// A just-upgraded Server must never expose the previous Server
+			// Commit's packages while the independent Host cache catches up.
+			result.Commit = serverCommit
+			result.State = "unavailable"
+			result.Message = ""
+			return result
+		}
 	}
 	if !releaseBundleCommitPattern.MatchString(target) {
 		return result
