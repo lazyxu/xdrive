@@ -12,7 +12,12 @@ mkdir -p "$dest"
 [[ -d "$dest" && ! -L "$dest" ]] || exit 2
 
 inventory="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100")"
-mapfile -t names < <(jq -s -r '.[].artifacts[] | select(.expired == false) | .name' <<< "$inventory" | LC_ALL=C sort -u)
+# Validate the entire paginated inventory before deciding something is absent.
+# Process-substitution exit codes are not checked by mapfile under set -e.
+names_json="$(jq -se '[.[] | if (.artifacts | type) == "array"
+  then .artifacts[] | select(.expired == false) | .name | select(type == "string")
+  else error("invalid exact-run artifact inventory") end] | unique' <<< "$inventory")"
+mapfile -t names < <(jq -r '.[]' <<< "$names_json")
 available() {
   local item candidate
   item="$1"
