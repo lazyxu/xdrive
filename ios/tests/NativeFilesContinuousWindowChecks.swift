@@ -112,6 +112,16 @@ struct XDriveIOSNativeFilesContinuousWindowChecks {
             lastAppearedNodeID: 0, startOffset: 0,
             loadedIDs: ids(0, 64), total: 100_000
         ) == nil, "reject zero Node identity")
+        // A corrupt but page-aligned Int cursor previously overflowed before
+        // checking total, crashing on both scroll and Viewer return paths.
+        let hugeAligned = Int.max - 63
+        require(Window.requestedOffset(direction: .next, startOffset: hugeAligned,
+                                       loadedCount: 64, total: 100) == nil,
+                "oversized aligned next-page cursor fails without integer overflow")
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: 1, startOffset: hugeAligned,
+            loadedIDs: ids(0, 64), total: 100
+        ) == nil, "oversized aligned return cursor fails without integer overflow")
         print("iOS Files bounded continuous scrolling policy passed")
     }
 }

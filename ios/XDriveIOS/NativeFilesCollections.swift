@@ -685,7 +685,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
 
             .sheet(item: $managementIntent, onDismiss: {
-                reload()
+                // Closing read-only management must not blank a verified
+                // Recent/Favorites list. Revalidate same-Owner rows in place.
+                if phase == .active && !model.loading {
+                    reload(preserveVerifiedRows: model.matches(login.owner, kind: kind))
+                }
             }) { intent in
                 if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
                    let parentID = intent.item.node.parent_id, parentID > 0,

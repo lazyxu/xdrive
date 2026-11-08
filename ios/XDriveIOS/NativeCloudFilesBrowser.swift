@@ -876,6 +876,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var favoriteFoldersExpanded = true
     @StateObject private var searchOptions = XDriveIOSNativeFilesSearchOptionsModel()
     @State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot?
+    // Failed/offline Home reads must not restart on every tab or child return.
+    @State private var homeReadAttempted = false
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
     @StateObject private var chunked = XDriveIOSNativeFilesChunkedMutationModel()
@@ -2790,12 +2792,14 @@ struct XDriveIOSNativeFilesBrowser: View {
             // SwiftUI NavigationLinks and scroll position. Do not refetch on
             // every stack pop; explicit refresh and Owner change still do.
             if isHome {
-                if !favoriteShortcuts.matches(login.owner, kind: .favorites) ||
-                    !quickAccess.matches(login.owner) {
+                if !homeReadAttempted {
+                    homeReadAttempted = true
                     reload()
-                } else {
-                    // On return, silently revalidate Favorites that may have
-                    // changed in a child without removing source links.
+                } else if favoriteShortcuts.matches(login.owner, kind: .favorites) &&
+                          quickAccess.matches(login.owner) {
+                    // A successful same-Owner return can revalidate favorites
+                    // without clearing the Home navigation links. Offline/error
+                    // states await explicit Retry instead of another full fetch.
                     loadFavoriteShortcuts()
                 }
             } else if let folderID = parentID,
@@ -2903,7 +2907,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             if login.owner != nil { searchOptions.load(login: login) }
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
-            if isHome { loadFavoriteShortcuts() }
+            homeReadAttempted = false
+            if isHome && phase == .active {
+                homeReadAttempted = true
+                reload()
+            }
         }
         .onChange(of: model.verifiedPage) { now in
             if !now {

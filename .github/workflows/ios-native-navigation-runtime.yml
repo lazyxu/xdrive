@@ -4,6 +4,10 @@ on:
     paths:
       - '.github/workflows/ios-native-navigation-runtime.yml'
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
+      - 'ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift'
+      - 'ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift'
+      - 'ios/XDriveIOS/NativePhotoWallDensityPolicy.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
       # Changes in a child Files/Gallery route must also compile and exercise

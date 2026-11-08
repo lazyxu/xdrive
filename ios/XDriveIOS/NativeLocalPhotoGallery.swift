@@ -1404,11 +1404,13 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
 
     private func refresh(at requestedOffset: Int = 0) {
         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        invalidate()
         guard authorization == .authorized || authorization == .limited else {
+            invalidate()
             clearViewerTileAnchor()
             return
         }
+        // load() already retires the old scanner and page. Double invalidation
+        // needlessly publishes two transient empty states during Viewer return.
         load(offset: max(0, requestedOffset))
     }
 
