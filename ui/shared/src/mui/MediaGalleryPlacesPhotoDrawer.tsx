@@ -14,8 +14,8 @@ import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
 export function XDriveMediaGalleryPlacesPhotoDrawer({
   items, total, windowStart = 0, loadedDepth = items.length,
-  phase, expanded, loadingMore, pageError, loadThumbnail, photoTileMinWidth = 108, onExpand,
-  onClose, onRetry, onRefreshMap, onLoadMore, onWindowRange, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
+  phase, expanded, loadingMore, pageError, pageErrorKind, loadThumbnail, photoTileMinWidth = 108, onExpand,
+  onClose, onRetry, onRefreshMap, onLoadMore, onWindowRange, onRetryWindow, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
   total: number
@@ -25,6 +25,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   expanded: boolean
   loadingMore: boolean
   pageError: boolean
+  pageErrorKind?: 'append' | 'window'
   loadThumbnail: MediaThumbnailLoader
   photoTileMinWidth?: number
   onExpand: (expanded: boolean) => void
@@ -33,6 +34,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   onRefreshMap: () => void
   onLoadMore: () => void
   onWindowRange?: (startIndex: number, endIndex: number) => void
+  onRetryWindow?: () => void
   onOpenPhoto: (item: MediaItem, presentation: XDrivePlacesDrawerPresentation) => void
   onOpenAll: () => void
   /** Same signed Owner camera viewport as the map's original camera wall. */
@@ -404,12 +406,24 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               </Button>
             </Stack>
           </Stack>
-          {pageError && loadedDepth < total ? (
-            <Typography variant="caption" role="alert"
-              data-xdrive-places-photo-drawer-page-error
-              sx={{px:1.25,pb:1,color:'error.main'}}>
-              后续照片读取失败，请重试。已验证的照片仍可查看。
-            </Typography>
+          {pageError ? (
+            <Stack direction="row" alignItems="center" spacing={1}
+              sx={{px:1.25,pb:1,flexWrap:'wrap'}}>
+              <Typography variant="caption" role="alert"
+                data-xdrive-places-photo-drawer-page-error
+                sx={{color:'error.main'}}>
+                {pageErrorKind === 'window'
+                  ? '此前浏览的照片重新读取失败。已验证的照片仍可查看。'
+                  : '后续照片读取失败。已验证的照片仍可查看。'}
+              </Typography>
+              <Button size="small" variant="outlined"
+                data-xdrive-places-photo-drawer-page-retry
+                onClick={pageErrorKind === 'window' ? onRetryWindow : onLoadMore}
+                disabled={loadingMore || (pageErrorKind === 'window' && !onRetryWindow)}
+                sx={{minHeight:44,textTransform:'none'}}>
+                重新读取
+              </Button>
+            </Stack>
           ) : null}
         </>
       )}

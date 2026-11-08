@@ -76,6 +76,10 @@ jobs:
         run: |
           node --test desktop/tests/ios-native-clipboard-device-e2ee.cjs
 
+      - name: Verify Clipboard encrypted file ref opens existing authenticated iOS Files Viewer
+        run: |
+          node --test desktop/tests/ios-native-clipboard-viewer-contract.cjs
+
       - name: Verify immutable photo and person selectors
         run: |
           set -euo pipefail

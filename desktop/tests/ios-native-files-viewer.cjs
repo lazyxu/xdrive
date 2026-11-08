@@ -125,11 +125,11 @@ test('Files audio and video expose initial KVO loading failure, scoped retry and
   assert.match(modal, /case \.audio:[\s\S]*?observingPlayer\(/);
   assert.equal((modal.match(/\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/g) || []).length, 2);
   assert.match(modal, /if status == \.failed \{ playbackFailed\(item\) \}/);
-  assert.match(modal, /guard authorized, let current = player\?\.currentItem,\s*failed === current/);
+  assert.match(modal, /guard authorized, !isClosing, let current = player\?\.currentItem,\s*failed === current/);
   assert.match(modal, /ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?Button\("重新加载媒体"\) \{ reloadCurrent\(\) \}/);
   assert.match(modal, /accessibilityIdentifier\("native-ios-files-player-reload"\)/);
   assert.match(modal, /Button\("重试"\) \{ reloadCurrent\(\) \}/);
-  assert.match(modal, /private func reloadCurrent\(\)[\s\S]*?guard authorized else \{ return \}[\s\S]*?retire\(\)[\s\S]*?failure = nil[\s\S]*?loading = true[\s\S]*?attempt = UUID\(\)/);
+  assert.match(modal, /private func reloadCurrent\(\)[\s\S]*?guard authorized, !isClosing else \{ return \}[\s\S]*?retire\(\)[\s\S]*?failure = nil[\s\S]*?loading = true[\s\S]*?attempt = UUID\(\)/);
   assert.match(modal, /private func openCurrent\(\) async[\s\S]*?retire\(\)\s*failure = nil\s*loading = true/);
   assert.match(modal, /\.onChange\(of: phase\)[\s\S]*?retire\(\)/);
 });
@@ -231,7 +231,7 @@ test('Files video uses Gallery native timeline and Owner-gated canvas paging wit
   assert.match(modal, /\.statusBarHidden\(!chromeVisible\)/);
   assert.match(modal, /private func retire\(\) \{[\s\S]*?showImageChrome = true\s*showVideoChrome = true/);
   assert.match(modal, /XDriveIOSNativeFilesViewerPolicy\.neighbor\(/);
-  assert.match(modal, /guard let next = neighbor\(direction\), onNavigate\(next\) else \{ return \}/);
+  assert.match(modal, /guard !isClosing, let next = neighbor\(direction\), onNavigate\(next\) else \{ return \}/);
   assert.match(modal, /if let item = player\.currentItem \{/);
   assert.match(modal, /item\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
   assert.match(modal, /case \.audio:[\s\S]*?XDriveIOSNativeFileAudioSurface/);

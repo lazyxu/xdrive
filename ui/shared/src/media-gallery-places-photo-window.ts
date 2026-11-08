@@ -134,10 +134,18 @@ export function xDrivePlacesPhotoWindowMissingOffset(
   end: number,
 ): number | null {
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
-      start < 0 || end < start || window.items.length < 1 ||
-      window.depth <= 0) return null
+      start < 0 || end < start || end >= window.depth ||
+      window.items.length < 1 || window.depth <= 0) return null
   const residentEnd = window.start + window.items.length
   if (start < window.start) {
+    return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
+      XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
+  }
+  // A fast scroll, calendar jump or Viewer return can land thousands of
+  // already-visited pages ahead of a small rehydrated resident window.
+  // Seek the *visible* signed page directly instead of issuing every
+  // intervening 48-item /cell-items request.
+  if (start >= residentEnd) {
     return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }

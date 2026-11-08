@@ -24,6 +24,8 @@ private struct XDriveIOSNativePDFDocumentSurface: UIViewRepresentable {
 /// Native audio, without hidden autoplay after app suspension or route exit.
 private struct XDriveIOSNativeFileAudioSurface: View {
     let player: AVPlayer
+    let autoplay: Bool
+    @Environment(\.scenePhase) private var phase
     @State private var playing = false
     @State private var position = 0.0
     @State private var duration = 0.0
@@ -40,12 +42,12 @@ private struct XDriveIOSNativeFileAudioSurface: View {
                 value: $position, in: 0...max(duration, 1),
                 onEditingChanged: { editing in
                     seeking = editing
-                    if !editing && duration > 0 {
+                    if !editing && duration > 0 && phase == .active {
                         player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
                     }
                 }
             )
-            .disabled(duration <= 0)
+            .disabled(duration <= 0 || phase != .active)
             HStack {
                 Text(timestamp(position))
                 Spacer()
@@ -53,6 +55,7 @@ private struct XDriveIOSNativeFileAudioSurface: View {
             }
             .font(.caption.monospacedDigit())
             Button {
+                guard phase == .active else { return }
                 if player.rate > 0 {
                     player.pause()
                     playing = false
@@ -66,15 +69,29 @@ private struct XDriveIOSNativeFileAudioSurface: View {
                     .frame(minWidth: 96, minHeight: 48)
             }
             .buttonStyle(.borderedProminent)
+            .disabled(phase != .active)
         }
         .padding(24)
-        .onAppear { player.play(); playing = true }
+        .onAppear {
+            guard phase == .active, autoplay else { return }
+            player.play()
+            playing = true
+        }
+        .onChange(of: phase) { state in
+            if state != .active {
+                player.pause()
+                playing = false
+                seeking = false
+            }
+        }
         .onReceive(ticker) { _ in
+            guard phase == .active else { return }
             let seconds = player.currentTime().seconds
             let total = player.currentItem?.duration.seconds ?? 0
             if total.isFinite && total > 0 { duration = total }
             if !seeking && seconds.isFinite && seconds >= 0 {
-                position = min(seconds, max(duration, seconds))
+                // Slider range is 0...max(duration, 1): never publish an out-of-range value.
+                position = min(seconds, max(duration, 1))
             }
             playing = player.rate > 0
         }
@@ -101,6 +118,8 @@ struct XDriveIOSNativeFilesViewer: View {
     @Environment(\.scenePhase) private var phase
     @State private var active: XDriveIOSNativeFilesNode?
     @State private var attempt = UUID()
+    @State private var isClosing = false
+    @State private var allowAudioAutoplay = true
     @State private var display: XDriveIOSNativeFilesPreviewPayload?
     @State private var player: AVPlayer?
     @State private var failure: String?
@@ -229,7 +248,7 @@ struct XDriveIOSNativeFilesViewer: View {
                     case .audio:
                         if let player {
                             observingPlayer(
-                                XDriveIOSNativeFileAudioSurface(player: player)
+                                XDriveIOSNativeFileAudioSurface(player: player, autoplay: allowAudioAutoplay)
                                     .id(viewed.id),
                                 player: player
                             )
@@ -324,13 +343,17 @@ struct XDriveIOSNativeFilesViewer: View {
                      for: .navigationBar, .bottomBar)
         }
         .statusBarHidden(!chromeVisible)
-        .task(id: attempt) { await openCurrent() }
+        .task(id: attempt) {
+            guard !isClosing else { return }
+            await openCurrent()
+        }
         // AVPlayer may fail AFTER a valid signed ticket and initial render.
         // Only this modal's current item may produce terminal retry feedback.
         .onReceive(NotificationCenter.default.publisher(
             for: .AVPlayerItemFailedToPlayToEndTime
         ).receive(on: RunLoop.main)) { notification in
-            guard authorized, let failed = notification.object as? AVPlayerItem,
+            guard authorized, !isClosing,
+                  let failed = notification.object as? AVPlayerItem,
                   let current = player?.currentItem, failed === current
             else { return }
             retire()
@@ -341,8 +364,10 @@ struct XDriveIOSNativeFilesViewer: View {
         .onChange(of: login.owner) { _ in close() }
         .onChange(of: phase) { next in
             if next != .active {
+                allowAudioAutoplay = false
                 retire()
-            } else if XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner) {
+            } else if !isClosing &&
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner) {
                 attempt = UUID()
             } else {
                 close()
@@ -426,7 +451,7 @@ struct XDriveIOSNativeFilesViewer: View {
 
     @MainActor
     private func reloadCurrent() {
-        guard authorized else { return }
+        guard authorized, !isClosing else { return }
         retire()
         failure = nil
         loading = true
@@ -435,7 +460,7 @@ struct XDriveIOSNativeFilesViewer: View {
 
     @MainActor
     private func playbackFailed(_ failed: AVPlayerItem) {
-        guard authorized, let current = player?.currentItem,
+        guard authorized, !isClosing, let current = player?.currentItem,
               failed === current else { return }
         retire()
         failure = "媒体播放失败，请重试当前文件。"
@@ -444,6 +469,7 @@ struct XDriveIOSNativeFilesViewer: View {
 
     @MainActor
     private func openCurrent() async {
+        guard !isClosing else { return }
         let current = viewed
         let generation = attempt
         retire()
@@ -464,7 +490,8 @@ struct XDriveIOSNativeFilesViewer: View {
             )
             let result = try await reader.preview(current)
             try Task.checkCancellation()
-            guard generation == attempt, viewed == current, authorized else { return }
+            guard generation == attempt, viewed == current, authorized,
+                  !isClosing else { return }
             switch result {
             case .video(let url), .audio(let url):
                 player = AVPlayer(url: url)
@@ -486,7 +513,8 @@ struct XDriveIOSNativeFilesViewer: View {
         } catch is CancellationError {
             // A replacement Viewer owns its own read and progress.
         } catch {
-            guard generation == attempt, viewed == current else { return }
+            guard !Task.isCancelled, generation == attempt,
+                  viewed == current, authorized, !isClosing else { return }
             retire()
             loading = false
             if let reason = error as? XDriveIOSNativeFilesPreviewError {
@@ -516,7 +544,7 @@ struct XDriveIOSNativeFilesViewer: View {
 
     @MainActor
     private func move(_ direction: Int) {
-        guard let next = neighbor(direction), onNavigate(next) else { return }
+        guard !isClosing, let next = neighbor(direction), onNavigate(next) else { return }
         retire()
         active = next
         attempt = UUID()
@@ -541,6 +569,7 @@ struct XDriveIOSNativeFilesViewer: View {
 
     @MainActor
     private func close() {
+        isClosing = true
         retire()
         dismiss()
     }

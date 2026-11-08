@@ -6,6 +6,9 @@ import UIKit
 /// polls the iOS system pasteboard, persists its E2EE key or launches WebKit.
 struct XDriveIOSNativeClipboardScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    // Ownership of Viewer navigation stays in the app's verified root, not
+    // in the Clipboard child, so Lock/Owner changes invalidate its effects.
+    let onOpenReferencedFile: (XDriveNativeOwnerRoot, XDriveIOSNativeFilesNode) -> Void
     @Environment(\.scenePhase) private var scenePhase
     @State private var passphrase = ""
     @State private var key: SymmetricKey?
@@ -108,20 +111,32 @@ struct XDriveIOSNativeClipboardScreen: View {
                     ForEach(items) { entry in
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text(entry.source.kind == "text/uri-list" ? "链接" : "文本")
+                                Text(entry.source.kind == "text/uri-list" ? "链接" :
+                                    entry.source.node_id != nil ? "云端文件引用" : "文本")
                                     .font(.caption).foregroundStyle(.secondary)
                                 Spacer()
                                 Button("删除") { Task { await delete(entry.source.id) } }
                                     .disabled(busy).font(.caption).foregroundStyle(.red)
                             }
                             if let text = entry.text {
-                                Text(text).textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .lineLimit(8)
-                                Button("复制到本机") {
-                                    // Explicit tap only; OS clipboard cannot be revoked.
-                                    UIPasteboard.general.string = text
-                                    message = "已复制到本机剪贴板。"
+                                if let nodeID = entry.source.node_id, nodeID > 0,
+                                   entry.source.kind == "image/x-xdrive-node-ref" ||
+                                   entry.source.kind == "application/x-xdrive-node-ref" {
+                                    Text("已收到加密的云端文件引用 #\(nodeID)。原件仍保存在 Files/CAS。")
+                                        .font(.footnote)
+                                    Button("在文件查看器中打开") {
+                                        Task { await openReferencedFile(entry) }
+                                    }
+                                    .disabled(busy || loading || text != "asset:\(nodeID)")
+                                } else {
+                                    Text(text).textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .lineLimit(8)
+                                    Button("复制到本机") {
+                                        // Explicit tap only; OS clipboard cannot be revoked.
+                                        UIPasteboard.general.string = text
+                                        message = "已复制到本机剪贴板。"
+                                    }
                                 }
                             } else {
                                 Text("该条消息无法解密。")
@@ -311,6 +326,40 @@ struct XDriveIOSNativeClipboardScreen: View {
             items = decoded
         } catch {
             if sessionGeneration == generation { message = error.localizedDescription }
+        }
+    }
+
+    /// Only the explicit, unlocked current Owner may open a reference.
+    /// The Files reader performs a new bearer-authenticated Node lookup and
+    /// the app root presents the original read-only Files Viewer.
+    @MainActor
+    private func openReferencedFile(_ entry: Decrypted) async {
+        guard !busy, key != nil,
+              let nodeID = entry.source.node_id, nodeID > 0,
+              (entry.source.kind == "image/x-xdrive-node-ref" ||
+               entry.source.kind == "application/x-xdrive-node-ref"),
+              entry.text == "asset:\(nodeID)" else {
+            message = "加密文件引用与消息身份不一致。"
+            return
+        }
+        let generation = sessionGeneration
+        busy = true
+        defer { if sessionGeneration == generation { busy = false } }
+        do {
+            let client = try await authorizedClient(for: generation)
+            let reader = XDriveIOSNativeFilesReader(owner: client.owner,
+                                                    accessToken: client.token)
+            let node = try await reader.referencedFile(nodeID: nodeID)
+            try Task.checkCancellation()
+            guard sessionGeneration == generation, key != nil,
+                  ownerAtUnlock == client.owner,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, client.owner)
+            else { return }
+            onOpenReferencedFile(client.owner, node)
+        } catch {
+            if sessionGeneration == generation {
+                message = "无法打开云端文件：\(error.localizedDescription)"
+            }
         }
     }
 

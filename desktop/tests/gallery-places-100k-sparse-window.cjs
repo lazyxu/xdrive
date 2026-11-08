@@ -110,3 +110,87 @@ test('evicted positions never accept wrong offset, same-total duplicate or chang
     {...page(0),total_count:total+1}),null)
   assert.equal(missing(current,-1,8),null)
 })
+
+
+test('fully visited 528-photo Cell recovers an evicted failed page without claiming new depth', () => {
+  const count=528
+  const exactSelection={...selection,photo_count:count}
+  const page528=offset=>({
+    ...page(offset),total_count:count,
+    items:page(offset).items.slice(0,Math.min(limit,count-offset)),
+  })
+  let window={start:0,items:page528(0).items,depth:48,total:count}
+  for(let offset=48;offset<count;offset+=limit){
+    const advanced=append(exactSelection,window,page528(offset))
+    assert.ok(advanced,'next signed page stays valid')
+    window=advanced
+  }
+  assert.equal(window.depth,window.total)
+  assert.equal(window.items.length,bound)
+  assert.equal(window.start,48)
+  assert.equal(missing(window,0,8),0)
+  // A failed or malformed Owner /cell-items re-read has no right to alter
+  // the current album, no matter how deep the user has already scrolled.
+  assert.equal(rehydrate(exactSelection,window,{...page528(0),total_count:count+1}),null)
+  assert.equal(window.start,48)
+  assert.equal(window.depth,count)
+  // A manual retry invokes the SAME signed page verifier and stays bounded.
+  const retried=rehydrate(exactSelection,window,page528(0))
+  assert.ok(retried)
+  assert.equal(retried.start,0)
+  assert.equal(retried.depth,count)
+  // Adjacent rehydration retains up to ten already authenticated pages;
+  // it must not discard 432 valid identities or exceed the resident bound.
+  assert.equal(retried.items.length,bound)
+  assert.equal(retried.items.every((item,index)=>item.node.id===index+1),true)
+})
+
+test('Owner Parent provides a retry for failed evicted window even when all pages were visited', () => {
+  const parent=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  const sheet=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'),'utf8')
+  const start=parent.indexOf('const loadDrawerWindow = (')
+  const end=parent.indexOf('const openDrawerPhoto =',start)
+  assert.ok(start>=0 && end>start)
+  const authenticated=parent.slice(start,end)
+  assert.match(authenticated,/state\.pageError && !manualRetry/,
+    'failed window must not be re-fetched forever from auto layout callbacks')
+  assert.match(authenticated,/drawerFetch\.current \|\| !approved/)
+  assert.match(authenticated,/approved\.key!==filterRef\.current\.key/)
+  assert.match(authenticated,/hasAcceptedCell\(state\.selection\)/)
+  assert.match(authenticated,/xDrivePlacesPhotoWindowMissingOffset/)
+  assert.match(authenticated,/pageErrorKind:'window'/)
+  assert.match(authenticated,/failedWindowRange:\{start:visibleStart,end:visibleEnd\}/)
+  assert.match(authenticated,/loadDrawerWindow\(state\.failedWindowRange\.start,state\.failedWindowRange\.end,true\)/)
+  assert.match(parent,/onRetryWindow=\{retryDrawerWindow\}/)
+  assert.match(sheet,/\{pageError \? \(/,
+    'a complete logical album still needs a visible window retry')
+  assert.doesNotMatch(sheet,/\{pageError && loadedDepth < total \? \(/)
+  assert.match(sheet,/onClick=\{pageErrorKind === 'window' \? onRetryWindow : onLoadMore\}/)
+  assert.match(sheet,/data-xdrive-places-photo-drawer-page-retry/)
+})
+
+
+test('100k far-scroll jumps directly to the visible signed Owner page, not 2k sequential requests',()=>{
+  // Reachable after visiting the full album and then rehydrating the first
+  // evicted page: the logical 100k depth is kept, but only page zero resides.
+  const first={start:0,items:page(0).items,depth:total,total}
+  const jumpStart=90721
+  const jumpEnd=90741
+  const targetOffset=Math.floor(jumpStart / limit)*limit
+  assert.equal(missing(first,jumpStart,jumpEnd),targetOffset)
+  assert.notEqual(targetOffset,first.start+first.items.length,
+    'must not sequentially re-read page 48 after a 90k scroll jump')
+  const reauthorized=rehydrate(selection,first,page(targetOffset))
+  assert.ok(reauthorized)
+  assert.equal(reauthorized.depth,total)
+  assert.equal(reauthorized.start,targetOffset)
+  assert.equal(reauthorized.items.length,limit)
+  assert.equal(missing(reauthorized,jumpStart,jumpEnd),null,
+    'one fresh signed Range must cover the actual visible viewport')
+  assert.equal(missing(reauthorized,20,30),0,
+    'jumping back also seeks directly to that signed page')
+  assert.equal(missing(first,total+1,total+2),null,
+    'never issue requests outside the visited Owner logical depth')
+})

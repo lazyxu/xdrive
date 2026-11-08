@@ -140,3 +140,128 @@ func TestLegacyMigrationPreviewDoesNotExposeLocalPushRootToOwnerJWT(t *testing.T
 		fmt.Sprintf("/api/v1/sources/%d/migration-preview", source.ID),
 		token, nil, http.StatusForbidden)
 }
+
+func TestLegacyMigrationPreviewDetectsAncestorAndDescendantSourceOverlap(t *testing.T) {
+	cases := []struct {
+		name          string
+		claimLocation string
+		otherOwner    bool
+		wantOverlap   bool
+	}{
+		{name: "another Source claims ancestor", claimLocation: "ancestor", wantOverlap: true},
+		{name: "another Source claims exact target", claimLocation: "target", wantOverlap: true},
+		{name: "archived Source claims verified nested directory", claimLocation: "nested", wantOverlap: true},
+		{name: "sibling Source does not overlap", claimLocation: "sibling"},
+		{name: "different Owner cannot block our target", claimLocation: "target", otherOwner: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db, server, owner, stranger, root := setupFilePropertiesTestDB(t)
+			if err := db.AutoMigrate(&meta.Share{}, &meta.SyncRun{},
+				&meta.UploadSession{}, &meta.FileOperation{}); err != nil {
+				t.Fatal(err)
+			}
+			gin.SetMode(gin.TestMode)
+			server.Auth = auth.New("source-migration-overlap-test", time.Hour)
+			router := server.Router()
+			ownerJWT, err := server.Auth.Issue(owner.ID, owner.SessionVersion)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ancestor := createFilePropertiesDir(t, db, owner.ID, root.ID, "legacy-parent")
+			target := createFilePropertiesDir(t, db, owner.ID, ancestor.ID, "legacy-target")
+			nested := createFilePropertiesDir(t, db, owner.ID, target.ID, "fully-verified-folder")
+			photo := createFilePropertiesFile(t, db, owner.ID, nested.ID, "photo.jpg", 8)
+			sibling := createFilePropertiesDir(t, db, owner.ID, ancestor.ID, "unrelated")
+			source := meta.Source{
+				OwnerID: owner.ID, Name: "Legacy backup",
+				Kind: "yike_photos", Direction: meta.SourceDirectionPull,
+				SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeScan,
+				Status: meta.SourceStatusPaused, Revision: 1, TargetNodeID: &target.ID,
+			}
+			if err := db.Create(&source).Error; err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range []meta.SourceItem{
+				{
+					SourceID: source.ID, ExternalID: "remote:folder",
+					NodeID: &nested.ID, NodeRevision: nested.Revision,
+					Kind: meta.SourceItemKindDirectory, Path: nested.Name,
+					State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+				},
+				{
+					SourceID: source.ID, ExternalID: "remote:photo",
+					NodeID: &photo.ID, NodeRevision: photo.Revision,
+					Kind: meta.SourceItemKindFile, Path: nested.Name + "/" + photo.Name,
+					State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+				},
+			} {
+				if err := db.Create(&item).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			claimID := map[string]uint64{
+				"ancestor": ancestor.ID, "target": target.ID,
+				"nested": nested.ID, "sibling": sibling.ID,
+			}[tc.claimLocation]
+			claimOwnerID := owner.ID
+			if tc.otherOwner {
+				claimOwnerID = stranger.ID
+			}
+			// Archived Sources retain their targets and must still prevent
+			// migration or reparenting through an overlapping live subtree.
+			other := meta.Source{
+				OwnerID: claimOwnerID, Name: "Other Source",
+				Kind: "synology_files", Direction: meta.SourceDirectionPull,
+				SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
+				Status: meta.SourceStatusArchived, Revision: 1, TargetNodeID: &claimID,
+			}
+			if err := db.Create(&other).Error; err != nil {
+				t.Fatal(err)
+			}
+			res := request(t, router, http.MethodGet,
+				fmt.Sprintf("/api/v1/sources/%d/migration-preview", source.ID),
+				ownerJWT, nil, http.StatusOK)
+			var preview sourceLegacyMigrationPreview
+			if err := json.Unmarshal(res.Body.Bytes(), &preview); err != nil {
+				t.Fatal(err)
+			}
+			expectedClass := "apparently_exclusive"
+			expectedClaims := int64(0)
+			if tc.wantOverlap {
+				expectedClass = "blocked"
+				expectedClaims = 1
+			}
+			blocked := false
+			for _, code := range preview.Blockers {
+				if code == "target_bound_to_other_source" {
+					blocked = true
+				}
+			}
+			if preview.Classification != expectedClass ||
+				preview.OtherSourceClaims != expectedClaims ||
+				blocked != tc.wantOverlap ||
+				preview.VerifiedNodes != 2 || preview.OrdinaryNodes != 0 ||
+				preview.InventoryTruncated || !preview.ReadOnly {
+				t.Fatalf("wrong exclusive Source preview for %s: %+v", tc.name, preview)
+			}
+			var after meta.Source
+			var afterTarget, afterNested meta.Node
+			if err := db.First(&after, source.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.First(&afterTarget, target.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.First(&afterNested, nested.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if after.Revision != source.Revision ||
+				after.TargetNodeID == nil || *after.TargetNodeID != target.ID ||
+				afterTarget.ParentID == nil || *afterTarget.ParentID != ancestor.ID ||
+				afterNested.ParentID == nil || *afterNested.ParentID != target.ID {
+				t.Fatal("read-only Source migration preflight mutated Source/Node IDs")
+			}
+		})
+	}
+}

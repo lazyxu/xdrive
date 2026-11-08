@@ -229,17 +229,35 @@ FROM tree ORDER BY depth, id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2)
 		if preview.UnfinishedFilesJobs != 0 {
 			preview.Blockers = append(preview.Blockers, "unfinished_files_operation")
 		}
-		var otherSource []meta.Source
-		if err := tx.Where("owner_id = ? AND id <> ? AND target_node_id IS NOT NULL",
-			source.OwnerID, source.ID).Find(&otherSource).Error; err != nil {
-			return err
+		// A second Source may claim our target's *ancestor* or any nested
+		// descendant, not only the exact target NodeID. Moving this subtree
+		// would silently change the other Source's effective storage scope.
+		// Use Node IDs and the snapshot's bounded inventory; path strings
+		// and Source names are never evidence of exclusive ownership.
+		// A truncated/depth-limited inventory is already a hard blocker.
+		descendantIDs := make([]uint64, 0, len(nodes))
+		for _, node := range nodes {
+			descendantIDs = append(descendantIDs, node.ID)
 		}
-		// Exact target conflicts are reportable without guessing an
-		// ancestor/descendant relationship from string paths.
-		for _, other := range otherSource {
-			if other.TargetNodeID != nil && *other.TargetNodeID == target.ID {
-				preview.OtherSourceClaims++
-			}
+		if err := tx.Raw(`
+WITH RECURSIVE ancestors AS (
+	SELECT id, parent_id FROM xd_nodes
+	WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+	UNION
+	SELECT parent.id, parent.parent_id FROM xd_nodes AS parent
+	JOIN ancestors AS child ON parent.id = child.parent_id
+	WHERE parent.owner_id = ? AND parent.deleted_at IS NULL
+)
+SELECT COUNT(*) FROM xd_sources AS other
+WHERE other.owner_id = ? AND other.id <> ?
+	AND other.target_node_id IS NOT NULL
+	AND (
+		other.target_node_id IN (SELECT id FROM ancestors)
+		OR other.target_node_id IN ?
+	)`, target.ID, source.OwnerID, source.OwnerID,
+			source.OwnerID, source.ID, descendantIDs).
+			Scan(&preview.OtherSourceClaims).Error; err != nil {
+			return err
 		}
 		if preview.OtherSourceClaims != 0 {
 			preview.Blockers = append(preview.Blockers, "target_bound_to_other_source")
