@@ -237,20 +237,38 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    // The Files Home is a genuine two-page, lazily rendered CollectionView.
+    // Deep '整理' rows do not exist in AX until the collection is scrolled.
+    // Never guess a tap coordinate or silently treat absence as a pass.
+    private func filesHomeEntry(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 12),
+                      "Native Files Home collection is not mounted")
+        let button = app.buttons.matching(identifier: identifier).firstMatch
+        for _ in 0..<5 {
+            if button.exists && button.isHittable { return button }
+            list.swipeUp()
+        }
+        XCTAssertTrue(button.waitForExistence(timeout: 8),
+                      "Scrolled Files Home but no matching entry: \(identifier)")
+        XCTAssertTrue(button.isHittable, "Files Home entry exists but is not visible")
+        return button
+    }
+
     // Exercise actual native child-route mount/dismiss under an offline Owner.
     // These are Simulator navigation tests, not a frame-time/flicker benchmark.
     func testSyntheticOwnerSavedSearchesRepeatedSheetReturn() {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
         for cycle in 0..<2 {
-            select("native-ios-files-open-saved-searches", in: app)
+            filesHomeEntry("native-ios-files-open-saved-searches", in: app).tap()
             XCTAssertTrue(app.navigationBars["智能文件夹"].waitForExistence(timeout: 20),
                           "Saved Searches sheet missing at return cycle \(cycle)")
             let done = app.buttons["完成"].firstMatch
             XCTAssertTrue(done.waitForExistence(timeout: 10))
             done.tap()
-            XCTAssertTrue(find("native-ios-files-open-saved-searches", in: app)
-                .waitForExistence(timeout: 15), "Files Home lost after Saved Searches")
+            XCTAssertTrue(filesHomeEntry("native-ios-files-open-saved-searches", in: app)
+                .exists, "Files Home lost after Saved Searches")
             XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
             XCTAssertEqual(app.state, .runningForeground)
         }
@@ -260,14 +278,14 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
         for cycle in 0..<2 {
-            select("native-ios-files-open-operations", in: app)
+            filesHomeEntry("native-ios-files-open-operations", in: app).tap()
             XCTAssertTrue(app.navigationBars["操作历史"].waitForExistence(timeout: 20),
                           "Operations sheet missing at return cycle \(cycle)")
             let done = app.buttons["完成"].firstMatch
             XCTAssertTrue(done.waitForExistence(timeout: 10))
             done.tap()
-            XCTAssertTrue(find("native-ios-files-open-operations", in: app)
-                .waitForExistence(timeout: 15), "Files Home lost after Operations History")
+            XCTAssertTrue(filesHomeEntry("native-ios-files-open-operations", in: app)
+                .exists, "Files Home lost after Operations History")
             XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
             XCTAssertEqual(app.state, .runningForeground)
         }
@@ -277,11 +295,14 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
         select("native-ios-files-open-trash", in: app)
-        let trashBar = app.navigationBars["最近删除"]
-        XCTAssertTrue(trashBar.waitForExistence(timeout: 20),
-                      "Recently Deleted native page did not mount")
-        let back = trashBar.buttons.element(boundBy: 0)
-        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        // A navigationBar-by-title snapshot stalled for 125s on real simulator.
+        // The page's own stable toolbar ID proves the native route mounted.
+        let refresh = app.buttons["native-ios-files-trash-refresh"].firstMatch
+        XCTAssertTrue(refresh.waitForExistence(timeout: 15),
+                      "Recently Deleted toolbar did not mount after route push")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 10),
+                      "Recently Deleted back button not available")
         back.tap()
         XCTAssertTrue(find("native-ios-files-open-trash", in: app)
             .waitForExistence(timeout: 15))
