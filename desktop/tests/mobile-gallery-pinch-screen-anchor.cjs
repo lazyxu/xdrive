@@ -24,7 +24,7 @@ function load(file) {
 }
 const anchor = load('ui/shared/src/mui/MediaGalleryScrollAnchor.ts')
 const grid = load('ui/shared/src/mui/MediaGalleryVirtualGrid.ts')
-const source = read('ui/shared/src/mui/MediaGallery.tsx')
+const source = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
 
 test('Pinch preserves row Y inside an independently scrolling Gallery viewport', () => {
   const scrollViewportTop = 52

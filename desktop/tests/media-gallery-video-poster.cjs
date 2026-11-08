@@ -242,7 +242,7 @@ test('Gallery video-poster cache failure keeps usable local still but skips stal
 })
 
 test('Web and Desktop Gallery share persisted-first poster adapter with revision-aware backfill', () => {
-  const gallery = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8')
+  const gallery = (fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8') + '\n' + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallerySharedTiles.tsx'), 'utf8'))
   const web = fs.readFileSync(path.join(repo, 'web', 'src', 'mediaGalleryAdapter.ts'), 'utf8')
   const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'mediaGalleryAdapter.ts'), 'utf8')
   const filmstrip = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx'), 'utf8')
@@ -255,7 +255,7 @@ test('Web and Desktop Gallery share persisted-first poster adapter with revision
 })
 
 test('All three Gallery tile render paths forward persisted poster writes', () => {
-  const source = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8')
+  const source = (fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8') + '\n' + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallerySharedTiles.tsx'), 'utf8'))
   const tiles = [...source.matchAll(/<MediaTile\b([\s\S]*?)\/>/g)]
   assert.equal(tiles.length, 3, 'grid, virtual grid and timeline must all use the shared tile')
   for (const [, content] of tiles) {

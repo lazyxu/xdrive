@@ -135,6 +135,34 @@ func TestAndroidPhotoSourceRunDeviceAuthorizationHistoryAndRenameFence(t *testin
 		terminal.TransferredItems != 2 {
 		t.Fatalf("incorrect durable Android SourceRun history: %+v", terminal)
 	}
+	// An Android Source is visible in shared history, but neither the Owner
+	// overview nor a completed bounded SourceRun grants remote MediaStore
+	// scanning or turns one batch into a whole-library receipt.
+	overviewResp := requestWithHeaders(t, router, http.MethodGet,
+		"/api/v1/sources/overview", token, nil, http.StatusOK, nil)
+	var overview []sourceOverviewDTO
+	if err := json.Unmarshal(overviewResp.Body.Bytes(), &overview); err != nil {
+		t.Fatal(err)
+	}
+	seen := false
+	for _, row := range overview {
+		if row.Source.ID != dest.SourceID {
+			continue
+		}
+		seen = true
+		if row.Source.DeviceID != device.ID ||
+			row.Source.Kind != meta.SourceKindAndroidPhotos ||
+			row.Source.Status != meta.SourceStatusPaused ||
+			row.Source.TargetNodeID == nil || *row.Source.TargetNodeID != dest.TargetNodeID ||
+			row.LatestRun == nil || row.LatestRun.ID != runID ||
+			row.LatestRun.Status != meta.SyncRunStatusCompleted ||
+			row.LatestRun.ScannedItems != 4 || row.LatestRun.NewItems != 2 {
+			t.Fatalf("Android shared Source overview drifted from native run: %+v", row)
+		}
+	}
+	if !seen {
+		t.Fatal("Android Source omitted from unified overview")
+	}
 	var persisted meta.Source
 	if err := db.First(&persisted, dest.SourceID).Error; err != nil {
 		t.Fatal(err)

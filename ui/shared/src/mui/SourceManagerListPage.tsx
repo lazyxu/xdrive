@@ -19,6 +19,7 @@ import {
   externalSourceTriggerActionLabel,
   formatExternalSourceTime,
   isReadOnlySynologySource,
+  isNativePhotoSource,
 } from '../external-sources'
 import { formatBytes } from '../format'
 import type { ExternalSourceRow } from '../external-sources'
@@ -33,6 +34,9 @@ export function XDriveSourceManagerListPage({
   restoringSourceID,
   canRestoreSource,
   onRestoreSource,
+  canCleanupSource,
+  onCloudCleanup,
+  cleanupPreparingSourceID,
   loading,
   hasLoaded,
   loadError,
@@ -56,6 +60,9 @@ export function XDriveSourceManagerListPage({
   restoringSourceID: number | null
   canRestoreSource: (row: ExternalSourceRow) => boolean
   onRestoreSource: (row: ExternalSourceRow) => void
+  canCleanupSource?: (row: ExternalSourceRow) => boolean
+  onCloudCleanup?: (row: ExternalSourceRow) => void | Promise<void>
+  cleanupPreparingSourceID?: number | null
   loading: boolean
   hasLoaded: boolean
   loadError: boolean
@@ -167,7 +174,7 @@ export function XDriveSourceManagerListPage({
                 statusLabel={card.state.label}
                 activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}
                 stats={stats}
-                metaAction={row.source.kind !== 'ios_photos' && row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' ? (
+                metaAction={!isNativePhotoSource(row.source) && card.state.key === 'error' && row.source.last_error && !row.source.run_requested_at ? (
                   <MuiButton
                     size="small"
                     color="error"
@@ -195,9 +202,18 @@ export function XDriveSourceManagerListPage({
                         </XDriveActionButton>
                       ) : (
                         <MuiTypography variant="caption" color="text.secondary">
-                          本机 Push 恢复暂未开放
+                          {isNativePhotoSource(row.source) ? '请在来源绑定手机上管理' : row.source.kind === 'local_folder' ? '请在绑定的 Agent 上恢复' : '此来源不可恢复'}
                         </MuiTypography>
                       )}
+                      {canCleanupSource?.(row) && onCloudCleanup ? (
+                        <XDriveActionButton compact intent="warning"
+                          loading={cleanupPreparingSourceID === row.source.id}
+                          disabled={cleanupPreparingSourceID !== null && cleanupPreparingSourceID !== undefined &&
+                            cleanupPreparingSourceID !== row.source.id}
+                          onClick={() => void onCloudCleanup(row)}>
+                          预览云端清理
+                        </XDriveActionButton>
+                      ) : null}
                     </>
                   ) : (
                     <>
@@ -209,9 +225,9 @@ export function XDriveSourceManagerListPage({
                     >
                       查看
                     </XDriveActionButton>
-                    {row.source.kind === 'ios_photos' ? (
+                    {isNativePhotoSource(row.source) ? (
                       <MuiTypography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
-                        请在已绑定 iPhone 的相册备份页启动
+                        请在已绑定的 {row.source.kind === 'ios_photos' ? 'iPhone' : 'Android'} 设备相册备份页操作
                       </MuiTypography>
                     ) : (
                       <>
@@ -240,7 +256,7 @@ export function XDriveSourceManagerListPage({
                             停止
                           </XDriveActionButton>
                         ) : null}
-                        {!isReadOnlySynologySource(row.source) ? (
+                        {!isReadOnlySynologySource(row.source) && !isNativePhotoSource(row.source) ? (
                           <XDriveActionButton compact onClick={() => onOpenSettings(row)}>
                             设置
                           </XDriveActionButton>

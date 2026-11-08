@@ -6,7 +6,7 @@ const root = path.join(__dirname, '..', '..')
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8')
 
 test('Gallery crop/contain view preference persists with existing density-by-scale', () => {
-  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
   for (const contract of [
     "type MediaGalleryAspectMode = 'crop' | 'contain'",
     'aspectMode: MediaGalleryAspectMode',
@@ -23,7 +23,7 @@ test('Gallery crop/contain view preference persists with existing density-by-sca
 })
 
 test('Uncropped media ratio never changes virtual layout or re-downloads thumbnails', () => {
-  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
   const thumbnail = read('ui/shared/src/mui/MediaGalleryPreviewMedia.tsx')
   const grid = read('ui/shared/src/mui/MediaGalleryVirtualGrid.ts')
   const timeline = read('ui/shared/src/mui/MediaGalleryVirtualTimeline.ts')

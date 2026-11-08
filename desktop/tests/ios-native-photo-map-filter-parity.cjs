@@ -25,7 +25,7 @@ test('local Gallery filter travels through both native map entry paths', () => {
 
 test('filtered maps reuse the Gallery PhotoKit predicate and typed fetch strategy', () => {
   assert.match(policy, /func applyPredicates\(to options: PHFetchOptions\)/)
-  assert.match(scanner, /func startMap\(atOffset requestedOffset: Int = 0,[\s\S]*?mediaFilter: XDriveIOSNativePhotoMediaFilter\) throws -> Int/)
+  assert.match(scanner, /func startMap\(atOffset requestedOffset: Int = 0,[\s\S]*?mediaFilter: XDriveIOSNativePhotoMediaFilter,\s*captureRange: XDriveIOSNativePhotoMapCaptureRange\? = nil\) throws -> Int/)
   assert.match(scanner, /func startMap\([\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
   assert.match(scanner, /func startMap\([\s\S]*?reset\(\)\s*throw XDrivePhotoKitScanFailure\.notAuthorized/)
   assert.match(scanner, /album: album, mediaFilter: mediaFilter,\s*requireFullLibrary: true/)
@@ -39,10 +39,10 @@ test('filtered maps reuse the Gallery PhotoKit predicate and typed fetch strateg
 
 test('map Cells and their location photo wall use the same frozen filtered snapshot', () => {
   assert.match(local, /var mediaFilter: XDriveIOSNativePhotoMediaFilter = \.all/)
-  assert.match(local, /worker\.startMap\(\s*atOffset: 0, album: album, mediaFilter: mediaFilter\s*\)/)
-  assert.match(local, /scanner\.startMap\(\s*atOffset: 0, album: album, mediaFilter: selection\.mediaFilter\s*\)/)
+  assert.match(local, /worker\.startMap\(\s*atOffset: 0, album: album, mediaFilter: mediaFilter,\s*captureRange: activeCaptureRange\s*\)/)
+  assert.match(local, /scanner\.startMap\(\s*atOffset: 0, album: album, mediaFilter: selection\.mediaFilter,\s*captureRange: selection\.captureRange\s*\)/)
   assert.match(local, /let mediaFilter: XDriveIOSNativePhotoMediaFilter/)
-  assert.match(local, /XDriveIOSMapSpatialSelection\(\s*cells: cells, viewport: globalViewport,\s*mediaFilter: mediaFilter\)/)
+  assert.match(local, /XDriveIOSMapSpatialSelection\(\s*cells: cells, viewport: globalViewport,\s*mediaFilter: mediaFilter,\s*captureRange: activeCaptureRange\)/)
   assert.match(local, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: album,/)
   assert.match(local, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true/)
   assert.match(local, /let next = try await scanner\.nextLocatedPage\(\)/)

@@ -271,7 +271,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "if selectedFile == nil && locateIntent == nil && managementIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
+        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
         "flags": ""
       }
     ]
@@ -296,7 +296,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{[\\s\\S]*?reload\\(preserveVerifiedRows: true\\)",
+        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{\\s*selectedOwner = nil\\s*let shouldRefresh = viewerRefreshPending\\s*viewerRefreshPending = false[\\s\\S]*?if shouldRefresh && phase == \\.active && !model\\.loading \\{\\s*reload\\(preserveVerifiedRows: true\\)",
         "flags": ""
       }
     ]
@@ -431,7 +431,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.onAppear \\{\\s*isVisible = true\\s*guard phase == \\.active else \\{ return \\}[\\s\\S]*?reload\\(preserveVerifiedRows: true\\)",
+        "pattern": "\\.onAppear \\{\\s*isVisible = true[\\s\\S]*?guard phase == \\.active, !viewerRefreshPending else \\{ return \\}[\\s\\S]*?reload\\(preserveVerifiedRows: true\\)",
         "flags": ""
       }
     ]
@@ -451,7 +451,12 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "selectedFile == nil && locateIntent == nil &&\\s*managementIntent == nil \\{[\\s\\S]*?reload\\(preserveVerifiedRows: true\\)",
+        "pattern": "\\.onAppear \\{\\s*isVisible = true[\\s\\S]*?guard phase == \\.active, !viewerRefreshPending else \\{ return \\}",
+        "flags": ""
+      },
+      {
+        "file": "c",
+        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{[\\s\\S]*?let shouldRefresh = viewerRefreshPending\\s*viewerRefreshPending = false",
         "flags": ""
       }
     ]
@@ -556,7 +561,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "if selectedFile == nil && locateIntent == nil && managementIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
+        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
         "flags": ""
       }
     ]
@@ -591,7 +596,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.onAppear \\{\\s*isVisible = true\\s*guard phase == \\.active else \\{ return \\}",
+        "pattern": "\\.onAppear \\{\\s*isVisible = true[\\s\\S]*?guard phase == \\.active, !viewerRefreshPending else \\{ return \\}",
         "flags": ""
       }
     ]
@@ -611,12 +616,12 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.onAppear \\{\\s*isVisible = true\\s*guard phase == \\.active else \\{ return \\}",
+        "pattern": "\\.onAppear \\{\\s*isVisible = true[\\s\\S]*?guard phase == \\.active, !viewerRefreshPending else \\{ return \\}",
         "flags": ""
       },
       {
         "file": "c",
-        "pattern": "\\.onChange\\(of: phase\\) \\{ state in[\\s\\S]*?else if isVisible && !model\\.loading",
+        "pattern": "\\.onChange\\(of: phase\\) \\{ state in[\\s\\S]*?else if isVisible && !model\\.loading &&\\s*selectedFile == nil && !viewerRefreshPending",
         "flags": ""
       }
     ]
@@ -661,7 +666,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{[\\s\\S]*?if !model\\.loading \\{ reload\\(preserveVerifiedRows: true\\) \\}",
+        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{[\\s\\S]*?let shouldRefresh = viewerRefreshPending\\s*viewerRefreshPending = false[\\s\\S]*?if shouldRefresh && phase == \\.active && !model\\.loading \\{\\s*reload\\(preserveVerifiedRows: true\\)",
         "flags": ""
       }
     ]

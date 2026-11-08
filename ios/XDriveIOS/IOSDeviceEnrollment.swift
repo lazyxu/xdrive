@@ -145,6 +145,14 @@ actor XDriveIOSDeviceEnrollment {
         )
     }
 
+    /// Clipboard requires a separately revocable capability on the Server,
+    /// but may reuse this already-verified local installation identity proof.
+    /// No Photos SourceRun / background grant is inherited.
+    func clipboardDeviceProof(owner: XDriveNativeOwnerRoot,
+                              accessToken: String) async throws -> XDriveIOSBackgroundDeviceProof? {
+        try await backgroundPhotoDeviceProof(owner: owner, accessToken: accessToken)
+    }
+
     /// Native BGTask-only local lookup. This is NOT an authorization:
     /// the Server must independently verify BOTH this Device proof and the
     /// separately revocable Owner/Root grant on every request. It does not

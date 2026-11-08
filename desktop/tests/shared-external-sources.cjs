@@ -958,12 +958,70 @@ test('local folder Source UI stays Desktop-only and explicitly non-executable', 
   assert.match(manager, /await adapter\.authorizeLocalFolder\(created\.id\)/)
   assert.match(desktopAdapter, /localFolderSupported \? \(sourceID\) => window\.xdriveDesktop\.authorizeLocalFolder\(sourceID\)/)
   assert.match(app, /capabilities\.includes\('local-folder-root-grants'\)/)
-  assert.equal(shared.getExternalSourceTriggerState({
+  assert.deepEqual(shared.getExternalSourceTriggerState({
     source: { kind: 'local_folder', status: 'paused', direction: 'push', run_mode: 'sync', sync_mode: 'backup' },
     latestRun: null, credential: null,
-  }).ready, false)
+  }), {
+    ready: false,
+    label: '请在已绑定设备的「文件夹备份」中运行；Server 不远程扫描本地文件夹',
+  }, 'do not misreport the already implemented owning Agent as disabled')
 })
 
+
+
+test('shared Push Source detail shows only a verified owning DeviceID', () => {
+  const pushSource = source({
+    kind: 'local_folder',
+    direction: 'push',
+    device_id: 'c6925cc7-c11c-447e-91c9-209e14e2d9d0',
+  })
+  assert.equal(shared.externalSourceDetailView({ source: pushSource }).deviceID, pushSource.device_id)
+  assert.equal(shared.externalSourceDetailView({
+    source: source({ kind: 'ios_photos', direction: 'push' }),
+  }).deviceID, undefined, 'legacy Sources without a trusted canonical binding must not invent a device')
+  assert.equal(shared.externalSourceDetailView({
+    source: source({ kind: 'yike_photos', direction: 'pull', device_id: pushSource.device_id }),
+  }).deviceID, undefined, 'Pull must not acquire or display a Push device binding')
+  const detail = fs.readFileSync(path.join(__dirname, '..', '..',
+    'ui/shared/src/mui/SourceManagerDetailsDialog.tsx'), 'utf8')
+  assert.match(detail, /detail\.deviceID/)
+  assert.match(detail, /绑定设备/)
+  assert.match(detail, /绑定设备上的 xdrive-agent/)
+  assert.doesNotMatch(detail, /同步执行器尚未启用/)
+})
+
+test('native Source statuses use the latest bounded run before stale Source errors', () => {
+  for (const kind of ['ios_photos', 'android_photos']) {
+    const previousFailure = source({
+      kind, direction: 'push', status: 'paused',
+      last_error: 'old failure', last_success_at: undefined,
+    })
+    const completed = { source: previousFailure, latestRun: { status: 'completed', scanned_items: 12 } }
+    assert.equal(shared.getExternalSourceState(completed).key, 'ready',
+      'newly completed bounded batch must override a stale failure for ' + kind)
+    assert.match(shared.getExternalSourceState(completed).label, /最近一批/,
+      'never call a partial native inventory a whole-library backup')
+    assert.equal(shared.getExternalSourceState({
+      source: previousFailure, latestRun: { status: 'partial' },
+    }).key, 'partial')
+    assert.equal(shared.getExternalSourceState({
+      source: previousFailure, latestRun: { status: 'running', cancel_requested_at: '2026-11-07T15:00:00Z' },
+    }).key, 'running')
+    assert.match(shared.getExternalSourceState({
+      source: previousFailure, latestRun: { status: 'running', cancel_requested_at: '2026-11-07T15:00:00Z' },
+    }).label, /停止/)
+    assert.equal(shared.isNativePhotoSource(previousFailure), true)
+    assert.equal(shared.isNativePhotoSource({ kind, direction: 'pull' }), false)
+  }
+  const list = fs.readFileSync(path.join(__dirname, '..', '..',
+    'ui/shared/src/mui/SourceManagerListPage.tsx'), 'utf8')
+  const details = fs.readFileSync(path.join(__dirname, '..', '..',
+    'ui/shared/src/mui/SourceManagerDetailsDialog.tsx'), 'utf8')
+  assert.match(list, /isNativePhotoSource\(row.source\)/)
+  assert.match(details, /const canCancel = !isNativePhotoSource\(row.source\)/)
+  assert.match(details, /!isNativePhotoSource\(row.source\) &&/)
+  assert.match(details, /绑定手机/)
+})
 
 test('Android Photos Sources are visible but cannot be executed by the Server', () => {
   const row = { source: source({ kind: 'android_photos', direction: 'push', status: 'paused' }) }
@@ -998,4 +1056,70 @@ test('Android paused native Source preserves real bounded-batch run status', () 
   assert.equal(shared.getExternalSourceTriggerState({
     source: android, latestRun: { status: 'completed' },
   }).ready, false, 'Server must not remotely scan Android MediaStore')
+})
+
+test('Source Manager Host capabilities reject native generic mutations and expose only backed cloud cleanup', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const adapters = loadSharedModule(path.join(repo, 'ui/shared/src/mui/SourceManagerAdapter.ts'))
+  const fakePort = {
+    createSource: async () => ({}),
+    triggerSource: async () => ({}),
+    sourceRuns: async () => [],
+    sourceRunFailures: async () => [],
+    sourceRunSkips: async () => [],
+    cancelSourceRun: async () => ({}),
+    sourceItems: async () => [],
+    sourceCollections: async () => [],
+    sourceCollectionItems: async () => [],
+    revealSourceCredential: async () => ({}),
+    testSourceCredential: async () => ({}),
+    testStoredSourceCredential: async () => ({}),
+    updateSource: async () => ({}),
+    deleteSource: async () => {},
+    restoreSource: async () => ({}),
+    setSourceCredential: async () => ({}),
+    deleteSourceCredential: async () => {},
+    sourceConnectorConfig: async () => ({}),
+    sourceBrowseDirectories: async () => ({}),
+    setSourceConnectorConfig: async () => ({}),
+  }
+  const withoutCleanup = adapters.createXDriveSourceManagerAdapter(fakePort)
+  assert.equal(withoutCleanup.sourceCloudCleanupPreview, undefined)
+  assert.equal(withoutCleanup.trashSourceCloudCleanup, undefined)
+  for (const kind of ['ios_photos', 'android_photos', 'local_folder', 'synology_photos']) {
+    const row = { source: source({ kind, direction: 'push', status: 'paused' }) }
+    assert.equal(withoutCleanup.canDeleteSource(row), false, kind + ' generic delete must be unavailable')
+    assert.equal(withoutCleanup.canRestoreSource({ source: { ...row.source, status: 'archived' } }), false,
+      kind + ' generic restore must be unavailable')
+  }
+  for (const kind of ['synology_photos', 'synology_files']) {
+    const row = { source: source({ kind, direction: 'pull' }) }
+    assert.equal(withoutCleanup.canDeleteSource(row), false, kind + ' dormant Source must be read-only')
+    assert.equal(withoutCleanup.canRestoreSource(row), false)
+  }
+  const yike = { source: source({ kind: 'yike_photos', direction: 'pull', status: 'archived' }) }
+  assert.equal(withoutCleanup.canDeleteSource(yike), true)
+  assert.equal(withoutCleanup.canRestoreSource(yike), true)
+  const withCleanup = adapters.createXDriveSourceManagerAdapter({
+    ...fakePort,
+    sourceCloudCleanupPreview: async () => ({
+      source_id: 1, source_name: 'Yike', source_revision: 2, preview_digest: 'f'.repeat(64),
+      target_node_id: 2, target_revision: 1, node_count: 2, file_count: 1, reversible: true,
+    }),
+    trashSourceCloudCleanup: async () => ({ status: 'trashed' }),
+  })
+  assert.equal(typeof withCleanup.sourceCloudCleanupPreview, 'function')
+  assert.equal(typeof withCleanup.trashSourceCloudCleanup, 'function')
+  const list = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/SourceManagerListPage.tsx'), 'utf8')
+  assert.match(list, /isNativePhotoSource\(row.source\)/)
+  assert.match(list, /canCleanupSource\?\.\(row\)/)
+  assert.match(list, /预览云端清理/)
+  const manager = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/SourceManager.tsx'), 'utf8')
+  assert.match(manager, /row.source.status === 'archived'/)
+  assert.match(manager, /preview.source_revision/)
+  assert.match(manager, /trashSourceCloudCleanup/)
+  assert.doesNotMatch(manager, /实际同步引擎尚未启用/)
+  const dialog = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/SourceCloudCleanupDialog.tsx'), 'utf8')
+  assert.match(dialog, /confirmation === preview.source_name/)
+  assert.match(dialog, /确认移入回收站/)
 })

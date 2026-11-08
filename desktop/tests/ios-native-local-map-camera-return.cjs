@@ -28,7 +28,7 @@ test('manual overview, PhotoKit lease changes, scene background and Owner change
   assert.match(local, /guard phase == \.active, authorization == \.authorized else \{ return \}/)
   assert.match(local, /onChange\(of: phase\) \{ state in[\s\S]*?changes\.stop\(\)\s*onLibraryCameraChange\?\(nil\)/)
   assert.match(dash, /localMapJump = nil\s*localMapCamera = nil\s*return/)
-  assert.match(dash, /localMapJump = nil\s*mapSource = \.local\s*cloudMapCamera = nil\s*localMapCamera = nil/)
+  assert.match(dash, /localMapJump = nil\s*galleryMapCaptureRange = nil\s*mapSource = \.local\s*cloudMapCamera = nil\s*localMapCamera = nil/)
   assert.match(dash, /localMapJump = jump\s*localMapCamera = jump\.camera\s*localMapScope = \.library/)
   assert.doesNotMatch(dash, /UserDefaults\.set\(localMapCamera|navigationRouteStore\.save\([^)]*localMapCamera/)
   assert.doesNotMatch(owner, /@State private var localMapCamera/)

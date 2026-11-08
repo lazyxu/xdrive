@@ -85,7 +85,7 @@ test('Owner locate transparently discloses its existing signed viewport query', 
   assert.match(settings, /NSLocationWhenInUseUsageDescription:.*云端地图会向当前 xDrive 服务器查询该位置周围的地图视窗/)
   const reload = owner.slice(owner.indexOf('private func reload()'))
   assert.match(reload, /let bounds = XDriveIOSNativeOwnerMapSelectionPolicy\.viewportBounds\([\s\S]*?latitude: camera\.center\.latitude,[\s\S]*?longitude: camera\.center\.longitude/)
-  assert.match(reload, /reader\.mapOverview\(bounds: bounds, detail: true\)/)
+  assert.match(reload, /reader\.mapOverview\(\s*bounds: bounds, detail: true, captureRange: activeCaptureRange\)/)
   // The client does not add a separate raw-location upload or durable store.
   assert.doesNotMatch(controller, /UserDefaults|URLSession|UploadSession|print\(|Keychain/)
 })

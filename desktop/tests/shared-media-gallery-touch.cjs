@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
-const gallery = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8')
+const gallery = (fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8') + '\n' + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallerySharedTiles.tsx'), 'utf8'))
 
 test('Gallery touch and desktop pointer use identical immediate Viewer opening', () => {
   for (const token of [

@@ -202,7 +202,10 @@ private final class XDriveIOSNativeFilesVersionHistoryModel: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var verified = false
     @Published private(set) var status: String?
+    @Published private(set) var writing = false
 
+    private var loadedNode: XDriveIOSNativeFilesNode?
+    private var loadedOwner: XDriveNativeOwnerRoot?
     private var epoch = UUID()
     private var job: Task<Void, Never>?
 
@@ -211,13 +214,24 @@ private final class XDriveIOSNativeFilesVersionHistoryModel: ObservableObject {
         job?.cancel()
         job = nil
         items = []
+        loadedNode = nil
+        loadedOwner = nil
         verified = false
         busy = false
+        writing = false
         status = nil
+    }
+
+    func matches(node: XDriveIOSNativeFilesNode, owner: XDriveNativeOwnerRoot) -> Bool {
+        guard verified, loadedNode == node, let loadedOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(loadedOwner, owner)
     }
 
     func load(node: XDriveIOSNativeFilesNode, login: XDriveIOSNativeOwnerLoginModel,
               openedOwner: XDriveNativeOwnerRoot) {
+        // Reused sheets must not expose a different file or revision. A
+        // same-scope explicit refresh retains verified rows until readback.
+        if !matches(node: node, owner: openedOwner) && !busy { invalidate() }
         run(node: node, version: nil, login: login, openedOwner: openedOwner,
             onConfirmed: nil)
     }
@@ -227,7 +241,8 @@ private final class XDriveIOSNativeFilesVersionHistoryModel: ObservableObject {
                  login: XDriveIOSNativeOwnerLoginModel,
                  openedOwner: XDriveNativeOwnerRoot,
                  onConfirmed: @MainActor @escaping () -> Void) {
-        guard verified && items.contains(version) else { return }
+        guard verified && items.contains(version),
+              matches(node: node, owner: openedOwner) else { return }
         run(node: node, version: version, login: login,
             openedOwner: openedOwner, onConfirmed: onConfirmed)
     }
@@ -246,12 +261,14 @@ private final class XDriveIOSNativeFilesVersionHistoryModel: ObservableObject {
         let ticket = UUID()
         epoch = ticket
         busy = true
+        writing = version != nil
         status = version == nil ? "正在核对当前文件与历史记录…" : "正在核对当前文件版本…"
         job = Task { @MainActor in
             defer {
                 if epoch == ticket {
                     job = nil
                     busy = false
+                    writing = false
                 }
             }
             do {
@@ -286,6 +303,9 @@ private final class XDriveIOSNativeFilesVersionHistoryModel: ObservableObject {
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner) else {
                         return
                     }
+                    // Publish the verified source identity before visible rows.
+                    loadedNode = node
+                    loadedOwner = openedOwner
                     items = listed
                     verified = true
                     status = listed.isEmpty ? "当前文件没有可恢复的历史版本。" : nil
@@ -339,6 +359,11 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner)
     }
 
+    private var historyVisible: Bool {
+        phase == .active && ownerValid &&
+            model.matches(node: node, owner: openedOwner)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -356,9 +381,10 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
                     Section("以前的版本") {
                         if model.busy {
                             ProgressView("正在等待服务器确认…")
-                        } else if model.verified && model.items.isEmpty {
+                        } else if historyVisible && model.items.isEmpty {
                             Text("暂无历史版本").foregroundStyle(.secondary)
                         }
+                        if historyVisible {
                         ForEach(model.items) { version in
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("修订 \(version.revision)")
@@ -381,6 +407,7 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
                                               systemImage: "square.and.arrow.up")
                                     }
                                     .accessibilityIdentifier("native-ios-files-version-share-\(version.id)")
+                                    .disabled(model.busy || historicalExport.busy || !historyVisible)
                                 } else {
                                     Button("下载这个旧版本") {
                                         historicalExport.prepare(
@@ -397,6 +424,7 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
                             }
                             .padding(.vertical, 4)
                         }
+                        }
                         if historicalExport.busy {
                             ProgressView("正在下载历史原件…")
                             Button("取消旧版本下载", role: .cancel) {
@@ -412,7 +440,8 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
                             historicalExport.invalidate()
                             model.load(node: node, login: login, openedOwner: openedOwner)
                         }
-                        .disabled(model.busy || historicalExport.busy)
+                        .disabled(model.busy || historicalExport.busy ||
+                                  phase != .active || !ownerValid)
                         .accessibilityIdentifier("native-ios-files-versions-refresh")
                     }
                     if let status = model.status {
@@ -427,7 +456,7 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
-                        .disabled(model.busy || historicalExport.busy)
+                        .disabled(model.writing || historicalExport.busy)
                 }
             }
             .confirmationDialog("恢复到选中的历史版本？",
@@ -435,7 +464,8 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
                 Button("确认恢复", role: .destructive) {
                     guard let version = pendingVersion,
                           model.verified, model.items.contains(version),
-                          ownerValid, !historicalExport.busy else { return }
+                          ownerValid, !historicalExport.busy,
+                           phase == .active, historyVisible, !model.busy else { return }
                     historicalExport.invalidate()
                     model.restore(version, node: node, login: login,
                                   openedOwner: openedOwner) {
@@ -450,7 +480,9 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
             }
         }
         .onAppear {
-            if ownerValid {
+            guard phase == .active, ownerValid else { return }
+            // Return from a child does not start another GET for valid rows.
+            if !model.matches(node: node, owner: openedOwner) && !model.busy {
                 model.load(node: node, login: login, openedOwner: openedOwner)
             }
         }
@@ -458,6 +490,16 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
             pendingVersion = nil
             historicalExport.invalidate()
             model.invalidate()
+        }
+        .onChange(of: node) { _ in
+            // A reused presenter must retire a different file's versions.
+            pendingVersion = nil
+            confirming = false
+            historicalExport.invalidate()
+            model.invalidate()
+            if phase == .active && ownerValid {
+                model.load(node: node, login: login, openedOwner: openedOwner)
+            }
         }
         .onChange(of: login.owner) { _ in
             if !ownerValid {
@@ -472,7 +514,8 @@ struct XDriveIOSNativeFilesVersionHistoryScreen: View {
                 pendingVersion = nil
                 historicalExport.invalidate()
                 model.invalidate()
-            } else if ownerValid {
+            } else if ownerValid && !model.busy &&
+                      !model.matches(node: node, owner: openedOwner) {
                 model.load(node: node, login: login, openedOwner: openedOwner)
             }
         }

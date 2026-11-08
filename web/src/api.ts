@@ -24,6 +24,7 @@ import type {
   CreatedFileShare,
   OwnerFileSharePage,
   ExternalSource,
+  ExternalSourceCloudCleanupPreview,
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
   ExternalSourceCredentialStatus,
@@ -3416,6 +3417,25 @@ export class XDriveApi {
     })
   }
 
+  sourceCloudCleanupPreview(sourceID: number) {
+    return this.request<ExternalSourceCloudCleanupPreview>(
+      `/api/v1/sources/${sourceID}/cloud-cleanup/preview`, { cache: 'no-store' })
+  }
+
+  trashSourceCloudCleanup(preview: ExternalSourceCloudCleanupPreview, confirmName: string) {
+    return this.request<{ source_id: number; trash_node_id: number; trash_node_revision: number; node_count: number; status: string }>(
+      `/api/v1/sources/${preview.source_id}/cloud-cleanup/trash`, {
+        method: 'POST',
+        headers: { 'If-Match': `"${preview.source_revision}"` },
+        body: JSON.stringify({
+          preview_digest: preview.preview_digest,
+          confirm_name: confirmName,
+          target_node_id: preview.target_node_id,
+          target_revision: preview.target_revision,
+        }),
+      })
+  }
+
   setSourceCredential(sourceID: number, payload: Record<string, unknown>) {
     return this.request<ExternalSourceCredentialStatus>(`/api/v1/sources/${sourceID}/credential`, {
       method: 'PUT',
@@ -5207,6 +5227,20 @@ export class XDriveApi {
     )
   }
 
+  clipboardDevices(signal?: AbortSignal) {
+    return this.request<{ devices: import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardTargetDevice[] }>(
+      '/api/v1/clipboard/devices', { cache: 'no-store', signal })
+  }
+
+  clipboardRevokeDevice(deviceID: string, signal?: AbortSignal) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deviceID)) {
+      throw new Error('Clipboard 设备标识无效')
+    }
+    return this.request<void>('/api/v1/clipboard/devices/' + encodeURIComponent(deviceID) + '/revoke', {
+      method: 'POST', cache: 'no-store', signal,
+    })
+  }
+
   clipboardItems(before?: number, signal?: AbortSignal) {
     const query = before ? '?before=' + encodeURIComponent(String(before)) : ''
     return this.request<{
@@ -5217,9 +5251,13 @@ export class XDriveApi {
 
   clipboardCreate(item: {
     client_event_id: string
-    kind: import('../../ui/shared/src/clipboard-crypto').XDriveClipboardKind
+    kind: import('../../ui/shared/src/clipboard-target-crypto').XDriveClipboardTargetKind
     nonce: string
     ciphertext: string
+    target_device_id?: string
+    ephemeral_key?: string
+    wrapped_key?: string
+    node_id?: number
   }, signal?: AbortSignal) {
     return this.request<import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardItem>(
       '/api/v1/clipboard/items', {

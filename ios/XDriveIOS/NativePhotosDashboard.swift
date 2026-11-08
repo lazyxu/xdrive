@@ -141,6 +141,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     // Session-only local WGS84 camera; never stored with navigation snapshot.
     @State private var localMapCamera: MKCoordinateRegion?
     @State private var localMapJump: XDriveIOSNativeLocalMapJump?
+    // Calendar dates are transient inherited photo membership filters, not
+    // persisted map coordinates or independently authorized photo IDs.
+    @State private var galleryMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
     // Keep the active local Photos filter when a Viewer opens the map route.
@@ -409,6 +412,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             // Revoke old-Owner map return before any delayed Done callback.
             mapReturnGallerySource = nil
             mapReturnOwnerScopeKey = nil
+            galleryMapCaptureRange = nil
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             // No push-route account card: parent root owns signed-out state.
             showSignOutConsent = false
@@ -428,6 +432,11 @@ struct XDriveIOSNativePhotosDashboard: View {
             if next == .dynamic && emptyDynamicMapFallback {
                 openGallery(.map)
             }
+        }
+        .onChange(of: localGalleryMediaFilter) { _ in
+            // A changed PhotoKit predicate invalidates the old calendar GPS
+            // selection, including when switching between map sources.
+            galleryMapCaptureRange = nil
         }
         .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
         .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
@@ -488,6 +497,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         .frame(height: verticalSizeClass == .compact ? 48 : 56)
         .background(.regularMaterial)
         .overlay(alignment: .top) { Divider() }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("native-ios-five-slot-bar")
     }
 
@@ -619,6 +629,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                                 )
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("native-ios-gallery-source-\(source.rawValue)")
                     }
                     Menu {
                         Button("本机照片") { gallerySource = .local }
@@ -709,7 +720,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .local:
                     XDriveIOSNativeLocalPhotoTimelineContainer(
                         savedOffset: $localGalleryPageOffset,
-                        mediaFilter: $localGalleryMediaFilter
+                        mediaFilter: $localGalleryMediaFilter,
+                        onMapDateScope: { galleryMapCaptureRange = $0 }
                     )
                     .environment(
                         \.xdriveNativePhotoQueueBadgeOwner,
@@ -756,7 +768,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                             )
                         },
                         onClose: { closeGalleryMap() },
-                        mediaFilter: localGalleryMediaFilter
+                        mediaFilter: localGalleryMediaFilter,
+                        inheritedCaptureRange: galleryMapCaptureRange
                     )
                 }
             }
@@ -1082,6 +1095,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         localMapScope = .library
         localMapPageOffset = 0
         localMapJump = nil
+        galleryMapCaptureRange = nil
         mapSource = .local
         cloudMapCamera = nil
         localMapCamera = nil

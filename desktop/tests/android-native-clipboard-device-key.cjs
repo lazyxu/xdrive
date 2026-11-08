@@ -1,0 +1,24 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = file => fs.readFileSync(path.resolve(__dirname,'../..',file),'utf8')
+const store = read('android/app/src/main/java/com/tfluid/xdrive/AndroidClipboardDeviceKeyStore.kt')
+const crypto = read('android/core/src/main/kotlin/com/tfluid/xdrive/core/XDriveClipboardTargetCrypto.kt')
+test('Android targeted Clipboard receiver uses independent Keystore-encrypted key, never a source credential', () => {
+  assert.match(store, /AndroidKeyStore/)
+  assert.match(store, /KeyProperties\.PURPOSE_ENCRYPT or KeyProperties\.PURPOSE_DECRYPT/)
+  assert.match(store, /Cipher\.getInstance\("AES\/GCM\/NoPadding"\)/)
+  assert.match(store, /MessageDigest\.isEqual\(fingerprint, scopeFingerprint\)/)
+  assert.match(store, /loadOrCreate\(scope: NativePhotoBackupScope, deviceID: String\)/)
+  assert.match(crypto, /X25519PrivateKeyParameters/)
+  assert.match(crypto, /X25519PublicKeyParameters/)
+  assert.doesNotMatch(crypto, /KeyAgreement\.getInstance\("X25519"\)/)
+  assert.match(crypto, /Mac\.getInstance\("HmacSHA256"\)/)
+  assert.match(crypto, /item\.kind|message\.kind/)
+  // Comments intentionally document forbidden SourceRun privileges. Assert
+  // that executable storage code never consumes an external Source/device token.
+  const executable = store.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')
+  assert.doesNotMatch(executable, /SourceRun|UploadSession|accessToken|deviceToken/)
+})

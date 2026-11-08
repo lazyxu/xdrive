@@ -8,7 +8,7 @@ export function xDriveDesktopPlacesEmbedIntent(search: string): boolean {
 }
 
 export type XDriveDesktopPlacesGuestProbeState =
-  'ready' | 'login' | 'denied' | 'pending'
+  'ready' | 'login' | 'denied' | 'unavailable' | 'pending'
 
 /**
  * Read-only, presentation-only health check executed in the sandboxed HTTPS
@@ -22,15 +22,22 @@ export const XDRIVE_DESKTOP_PLACES_GUEST_PROBE = `(() => {
   const has = (selector) => document.querySelector(selector) !== null
   if (has('#web-login-username') || has('#web-login-password')) return 'login'
   if (has('[data-xdrive-desktop-places-auth-denied]')) return 'denied'
-  if (has('[data-xdrive-desktop-places-web-page]')) return 'ready'
-  return 'pending'
+  const root = document.querySelector('[data-xdrive-desktop-places-web-page]')
+  if (!root) return 'pending'
+  // The authenticated React page can mount long before Baidu's actual map.
+  // Never reveal an empty/black guest merely because the page root exists.
+  const sdk = root.querySelector('[data-xdrive-baidu-isolated-photo-map]')
+  const phase = sdk?.getAttribute('data-xdrive-places-sdk-phase')
+  if (root.querySelector('[data-xdrive-baidu-map-unavailable]') ||
+      phase === 'unavailable') return 'unavailable'
+  return phase === 'ready' ? 'ready' : 'pending'
 })()`
 
 export function xDriveDesktopPlacesGuestProbeState(
   raw: unknown,
 ): XDriveDesktopPlacesGuestProbeState {
-  return raw === 'ready' || raw === 'login' || raw === 'denied'
-    ? raw : 'pending'
+  return raw === 'ready' || raw === 'login' || raw === 'denied' ||
+    raw === 'unavailable' ? raw : 'pending'
 }
 
 // Electron <webview>.executeJavaScript may throw SYNCHRONOUSLY until the

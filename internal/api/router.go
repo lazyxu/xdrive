@@ -245,6 +245,9 @@ func (s *Server) Router() *gin.Engine {
 	// native Photo grant can use these authenticated routes.
 	authed.GET("/clipboard/vault", s.clipboardVault)
 	authed.PUT("/clipboard/vault/check", s.putClipboardVaultCheck)
+	authed.GET("/clipboard/devices", s.listClipboardDevices)
+	authed.PUT("/clipboard/devices/self", s.enrollClipboardDeviceKey)
+	authed.POST("/clipboard/devices/:id/revoke", s.revokeClipboardDeviceKey)
 	authed.GET("/clipboard/items", s.listClipboardItems)
 	authed.GET("/clipboard/events", s.streamClipboardEvents)
 	authed.POST("/clipboard/items", s.createClipboardItem)
@@ -417,7 +420,7 @@ func (s *Server) Router() *gin.Engine {
 	// B2: Owner GPS calendar-cell trips, separate from legacy date-only Memories.
 	authed.GET("/media/trips", s.listMediaExactTrips)
 	authed.GET("/media/trips/:tripID/items", s.listMediaExactTripItems)
-	// Trip-only GPS cells; never the whole-Owner places overview.
+	// Preserve the already registered exact Owner trip map route.
 	authed.GET("/media/trips/:tripID/map", s.listMediaExactTripMap)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)
 	authed.POST("/media/duplicate-organize/apply", s.applyMediaDuplicateOrganize)
@@ -589,6 +592,10 @@ func (s *Server) Router() *gin.Engine {
 	// M10: reversible archive/paused restore, distinct from cloud-only cleanup.
 	authed.POST("/sources/:id/archive", s.requireSourceOwnerOrExecutor(), s.archiveSource)
 	authed.POST("/sources/:id/restore", s.requireSourceOwnerOrExecutor(), s.restoreArchivedSource)
+	// Separate Owner-only, reversible cloud cleanup. It never changes Source
+	// identity or shares the generic Sources delete/archive authority.
+	authed.GET("/sources/:id/cloud-cleanup/preview", s.previewSourceCloudCleanup)
+	authed.POST("/sources/:id/cloud-cleanup/trash", s.trashSourceCloudCleanup)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
 	authed.DELETE("/sources/:id/local-draft", s.discardLocalSourceDraft)
 	authed.POST("/sources/:id/trigger", s.requireSourceOwnerOrExecutor(), s.triggerSource)
@@ -827,6 +834,13 @@ func (s *Server) requireAuth() gin.HandlerFunc {
 			!desktopMapNativeSessionActive(s.DB.WithContext(c.Request.Context()),
 				uid, claims.DesktopMapNativeRefreshID, time.Now().UTC(), false) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "desktop_map_native_session_revoked"})
+			return
+		}
+		// A native-linked browser JWT is a map-only credential. Never grant
+		// it Files, Sources, Notes, admin, uploads or Gallery mutations.
+		if claims.DesktopMapNativeRefreshID != 0 &&
+			!desktopMapBrowserHTTPAllowed(c.Request.Method, c.FullPath()) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "desktop_map_route_denied"})
 			return
 		}
 		path := c.Request.URL.Path

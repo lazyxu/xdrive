@@ -122,7 +122,7 @@ test('P0-L5 rejected poster resolution stops spinner instead of appearing pendin
 })
 
 test('P0-L5 common Web/Mobile Gallery virtualization and 52px App Frame remain identical', () => {
-  const page = read('ui/shared/src/mui/MediaGallery.tsx')
+  const page = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
   assert.match(page, /<XDriveMediaAsyncVideoPoster/)
   assert.match(page, /useXDriveVirtualCollection<MediaItem>/)
   assert.match(page, /<MediaVirtualTileGrid/)

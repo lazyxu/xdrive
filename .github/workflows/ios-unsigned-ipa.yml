@@ -52,6 +52,30 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Verify native Clipboard SSE framing and Owner lifecycle contracts
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeClipboardSSECursor.swift \
+            ios/tests/ClipboardSSECursorChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-clipboard-sse"
+          "$RUNNER_TEMP/xdrive-ios-clipboard-sse"
+          node --test desktop/tests/native-clipboard-sse-contract.cjs
+
+      - name: Verify iOS explicit Clipboard Share Extension input and privacy boundary
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/ClipboardShareExtension/ClipboardSharePolicy.swift \
+            ios/tests/ClipboardSharePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-clipboard-share"
+          "$RUNNER_TEMP/xdrive-ios-clipboard-share"
+          node --test desktop/tests/ios-native-clipboard-share-extension.cjs
+
+      - name: Verify native Clipboard device-bound key and Owner proof contracts
+        run: |
+          node --test desktop/tests/ios-native-clipboard-device-e2ee.cjs
+
       - name: Verify immutable photo and person selectors
         run: |
           set -euo pipefail
@@ -663,6 +687,7 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-exact-trip-map-camera"
           "$RUNNER_TEMP/xdrive-ios-exact-trip-map-camera"
           node --test desktop/tests/ios-native-exact-trip-map.cjs
+          node --test desktop/tests/ios-native-photo-map-capture-parity.cjs
 
       - name: Verify native Files Owner Range, search and fixed-tab wiring
         run: |
@@ -774,6 +799,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-quick-access"
           "$RUNNER_TEMP/xdrive-ios-files-quick-access"
           node --test desktop/tests/ios-native-files-quick-access.cjs
+
+      - name: Verify native Files verified sort/group reanchor and five-scope UI parity
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/tests/NativeFilesReanchorChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-reanchor"
+          "$RUNNER_TEMP/xdrive-ios-files-reanchor"
+          node --test desktop/tests/ios-native-files-five-scope-parity.cjs
 
       - name: Verify native Files final UI/gesture parity contracts
         run: |

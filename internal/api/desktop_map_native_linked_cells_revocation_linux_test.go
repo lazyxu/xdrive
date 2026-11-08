@@ -174,6 +174,20 @@ func TestDesktopMapNativeLinkedOwnerCellsRevokedWithAgentLogout(t *testing.T) {
 		claims.DesktopMapNativeRefreshID == 0 {
 		t.Fatal("map browser token lost native session lineage")
 	}
+	// A JWT minted from the Agent's map grant must never become a generic
+	// Owner bearer for Files, Notes, uploads, or Gallery mutations.
+	for _, denied := range []struct{ method, route string }{
+		{http.MethodGet, "/api/v1/nodes/root"},
+		{http.MethodGet, "/api/v1/notes"},
+		{http.MethodPost, "/api/v1/media/albums"},
+		{http.MethodPost, "/api/v1/uploads"},
+	} {
+		got := request(denied.method, denied.route, browser.AccessToken, "", "")
+		if got.Code != http.StatusForbidden {
+			t.Fatalf("map-only browser JWT escaped %s %s: HTTP %d",
+				denied.method, denied.route, got.Code)
+		}
+	}
 	const bounds = "west=100&south=20&east=125&north=40&sort_by=captured&sort_dir=desc"
 	cellsRoute := "/api/v1/media/places/baidu-jsapi/cells?" + bounds
 	readCells := func(bearer, suffix string) (baiduNativeMapCellsDTO, int) {

@@ -60,6 +60,7 @@ struct XDriveIOSNativeExactTripMapScreen: View {
     @State private var epoch = UUID()
     @State private var task: Task<Void, Never>?
     @State private var coverTask: Task<Void, Never>?
+    @State private var viewportTask: Task<Void, Never>?
     @State private var overview: XDriveIOSNativeOwnerMapOverview?
     @State private var coverImages: [String: UIImage] = [:]
     @State private var busy = false
@@ -98,19 +99,21 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                 focusRequestID: fitRequestID,
                 focusCamera: fittedCamera,
                 onCameraWillChange: {
-                    // Disable all hit-testing at gesture START. The same
-                    // trip-only selection covers every camera viewport.
+                    // Revoke stale taps before the new Owner viewport reply.
                     moving = true
+                    viewportTask?.cancel()
+                    coverTask?.cancel()
                 },
                 onCamera: { next in
                     camera = next
-                    moving = false
+                    moving = true
+                    scheduleViewportReload(next)
                 },
                 onPlace: { facet in
                     guard activeOwner, !busy, !moving,
                           selectedPlace == nil, selectedCluster == nil,
                           let overview,
-                          overview.total_photo_count == trip.item_count,
+                          overview.trip_photo_count == trip.item_count,
                           XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedFacet(
                               facet, currentlyVisible: overview.items)
                     else { return }
@@ -120,20 +123,21 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                     guard activeOwner, !busy, !moving,
                           selectedPlace == nil, selectedCluster == nil,
                           let overview,
-                          overview.total_photo_count == trip.item_count,
+                          overview.trip_photo_count == trip.item_count,
                           XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedCluster(
                               facets, currentlyVisible: overview.items)
                     else { return }
                     selectedCluster = XDriveIOSExactTripMapCluster(facets: facets)
                 },
                 onAggregate: {
-                    self.error = "当前位置不是可直接打开的旅行地点，请调整地图。"
+                    // Presentation-only aggregate zooms; it never opens a Range.
+                    self.error = nil
                 }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("native-ios-exact-trip-map")
             if let overview {
-                Text("仅此旅行已核对 GPS 照片：\(overview.total_photo_count) 张 · \(overview.items.count) 个真实地点")
+                Text("当前地图 \(overview.total_photo_count) / 旅行共 \(overview.trip_photo_count ?? 0) 张 · \(overview.aggregated ? "缩放展开聚合位置" : "\(overview.items.count) 个真实地点")")
                     .font(.caption).monospacedDigit()
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-exact-trip-map-count")
@@ -214,6 +218,7 @@ struct XDriveIOSNativeExactTripMapScreen: View {
             // The next presentation will reverify its v2 scope if needed.
             task?.cancel()
             coverTask?.cancel()
+            viewportTask?.cancel()
             if selectedPlace == nil && selectedCluster == nil {
                 invalidate()
             }
@@ -224,8 +229,10 @@ struct XDriveIOSNativeExactTripMapScreen: View {
         epoch = UUID()
         task?.cancel()
         coverTask?.cancel()
+        viewportTask?.cancel()
         task = nil
         coverTask = nil
+        viewportTask = nil
         overview = nil
         coverImages = [:]
         selectedPlace = nil
@@ -238,9 +245,17 @@ struct XDriveIOSNativeExactTripMapScreen: View {
         error = nil
     }
 
-    private func reload(preservingCamera: Bool = false) {
-        // Keep the user's camera after a photo sheet or manual refresh.
-        // Revoke every old pin/cover while the current trip scope revalidates.
+    private func reload(
+        preservingCamera: Bool = false,
+        bounds: XDriveIOSNativeOwnerMapBounds? = nil
+    ) {
+        let queryBounds = bounds ?? (preservingCamera
+            ? XDriveIOSNativeOwnerMapSelectionPolicy.viewportBounds(
+                latitude: camera.center.latitude,
+                longitude: camera.center.longitude,
+                latitudeSpan: camera.span.latitudeDelta,
+                longitudeSpan: camera.span.longitudeDelta) : nil)
+        // Keep the camera, not the stale Member/Cell permission lease.
         invalidate()
         guard activeOwner, XDriveIOSNativeExactTripPolicy.validTrip(trip),
               XDriveIOSNativeExactTripPolicy.validTimeZone(timeZone)
@@ -261,22 +276,22 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken)
                 let result = try await reader.exactTripMap(
-                    trip, timeZone: timeZone)
+                    trip, timeZone: timeZone, bounds: queryBounds)
                 try Task.checkCancellation()
                 guard epoch == ticket, activeOwner,
                       XDriveIOSNativePhotoOwnerScope.matches(
                           login.owner, expectedOwner),
-                      result.total_photo_count == trip.item_count
+                      result.trip_photo_count == trip.item_count
                 else { return }
                 overview = result
                 revision = UUID()
-                let positions = result.items.map {
-                    XDriveIOSNativeExactTripMapPoint(
-                        latitude: $0.latitude, longitude: $0.longitude)
-                }
-                guard let frame = XDriveIOSNativeExactTripMapCameraPolicy.fit(positions)
-                else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
                 if !preservingCamera {
+                    let positions = result.items.map {
+                        XDriveIOSNativeExactTripMapPoint(
+                            latitude: $0.latitude, longitude: $0.longitude)
+                    }
+                    guard let frame = XDriveIOSNativeExactTripMapCameraPolicy.fit(positions)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
                     fittedCamera = MKCoordinateRegion(
                         center: CLLocationCoordinate2D(
                             latitude: frame.latitude, longitude: frame.longitude),
@@ -285,6 +300,7 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                             longitudeDelta: frame.longitudeSpan))
                     fitRequestID = UUID()
                 }
+                moving = false
                 busy = false
                 loadCovers(result, reader: reader, ticket: ticket)
             } catch is CancellationError {
@@ -298,9 +314,8 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                     case 404:
                         self.error = "此旅行已变化，请返回旅行列表刷新。"
                     case 409:
-                        // Never masquerade a truncated 65+ place overview
-                        // as a complete map. Keep the trip photo wall usable.
-                        self.error = "当前旅行地点过多或成员正在变化，暂无法完整显示地图（最多 64 个地点）。"
+                        // A changed trip invalidates all aggregates and pins.
+                        self.error = "旅行成员正在变化，请返回旅行列表刷新。"
                     default:
                         self.error = "无法核对旅行地图，请重试。"
                     }
@@ -312,6 +327,29 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                     self.error = "无法读取当前旅行地图，请稍后重试。"
                 }
             }
+        }
+    }
+
+    // A settled WGS84 camera is a new bounded trip display query.
+    // Never use a synthetic aggregate ID as a photo Range credential.
+    private func scheduleViewportReload(_ next: MKCoordinateRegion) {
+        viewportTask?.cancel()
+        guard activeOwner, selectedPlace == nil, selectedCluster == nil,
+              let bounds = XDriveIOSNativeOwnerMapSelectionPolicy.viewportBounds(
+                latitude: next.center.latitude,
+                longitude: next.center.longitude,
+                latitudeSpan: next.span.latitudeDelta,
+                longitudeSpan: next.span.longitudeDelta)
+        else { return }
+        let ticket = epoch
+        viewportTask = Task { @MainActor in
+            do { try await Task.sleep(nanoseconds: 650_000_000) }
+            catch { return }
+            guard !Task.isCancelled, epoch == ticket, activeOwner,
+                  selectedPlace == nil, selectedCluster == nil
+            else { return }
+            viewportTask = nil
+            reload(preservingCamera: true, bounds: bounds)
         }
     }
 
@@ -341,7 +379,7 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                     for await completed in group {
                         guard !Task.isCancelled, epoch == ticket, activeOwner,
                               selectedPlace == nil, selectedCluster == nil,
-                              overview?.total_photo_count == trip.item_count
+                              overview?.trip_photo_count == trip.item_count
                         else { group.cancelAll(); return }
                         switch completed {
                         case .ready(let placeID, let image):

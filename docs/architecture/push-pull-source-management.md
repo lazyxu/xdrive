@@ -55,7 +55,7 @@ Rules:
 7. TargetManaged is set only after successful Server provisioning. Existing managed-subtree write guards remain mandatory.
 8. Occupied leaves, unverified ancestors, duplicate bindings and overlapping Source subtrees fail closed. Never adopt an ordinary same-name folder.
 
-Current master contains older layouts such as 同步文件夹/设备备份, 同步文件夹/远程拉取 and Yike-specific 同步文件夹/一刻相册. These are as-built gaps, not the target contract. New-source provisioning must use Push/Pull. No old-directory migration is requested.
+Historical Sources can still reference 同步文件夹/设备备份, 同步文件夹/远程拉取, or Yike-specific 同步文件夹/一刻相册. These are **retained historical paths**, not current new-source provisioning gaps. After #4082, new Sources use the canonical Push/Pull namespace. No old-directory migration is requested.
 
 ## 3. Source types and entry points
 
@@ -65,13 +65,14 @@ Current master contains older layouts such as 同步文件夹/设备备份, 同�
 | Desktop Push | local_folder | push | same owning xdrive-agent |
 | xd Push / xd backup | local_folder | push | same owning xdrive-agent |
 | iOS Photos Push | ios_photos | push | native PhotoKit runner |
-| Android Photos Push | android_photos (to add) | push | native MediaStore / WorkManager runner |
-| DSM Photos Push | synology_photos | push | DSM xdrive-source-agent |
+| Android Photos Push | android_photos | push | native MediaStore / WorkManager runner |
+| DSM Folder Push | local_folder | push | owning DSM xdrive-agent |
+| Retired DSM Photos Push (history only) | synology_photos | push | none; legacy records are read-only |
 | Yike Photos Pull | yike_photos | pull | Server Pull Worker |
-| Synology Photos Pull | synology_photos | pull | Server Pull Worker |
-| Synology Files Pull | synology_files | pull | Server Pull Worker |
+| Synology Photos Pull (temporarily dormant) | synology_photos | pull | Server Pull Worker disabled for new runs |
+| Synology Files Pull (temporarily dormant) | synology_files | pull | Server Pull Worker disabled for new runs |
 
-Kind and direction together identify the connector. Synology Photos legitimately uses the same kind for Push and Pull; never infer direction from kind alone. Desktop Push and xd Push are not separate Source kinds or upload implementations.
+Kind and direction together identify the connector. Historical Synology Photos Push and currently dormant Synology Photos Pull share the kind but differ by direction; never infer direction from kind alone. Desktop Push and xd Push are not separate Source kinds or upload implementations.
 
 ## 4. Unified Push device identity and binding
 
@@ -87,7 +88,7 @@ Every Push executor has an Owner-scoped ClientDevice:
 |---|---|---|
 | Windows / Linux / macOS Desktop | registered Device + protected Agent token | owning Agent + verified local Root |
 | xd CLI | reuses Desktop's Device and Agent | no separate credential or Runner |
-| Synology DSM | registered Synology Device + protected source-agent token | source-agent + verified Personal/Shared roots |
+| Synology DSM | registered Device + owning Agent credential | owning xdrive-agent + verified local folder Root |
 | iOS | registered identity-only Device | dedicated PhotoKit managed-upload / BG grant routes only |
 | Android | registered identity-only Device | dedicated MediaStore managed-upload / BG routes only |
 
@@ -104,18 +105,20 @@ iOS/Android identity-only credentials must never become Desktop Agent credential
 7. Platform binds/proves that capability to the exact Source. Missing or stale permission never falls back to Owner root.
 8. Each upload admission and finalize rechecks Owner, Device, Source, TargetNodeID, provenance, platform-specific permission proof, revision and receipt constraints.
 
-`Source.DeviceID` is the canonical Push ownership authority. New Local Folder, iOS and DSM Sources populate it; `LocalCreatorDeviceID` is historical metadata, not a write-authorization fallback. A narrowly scoped startup backfill resolves only existing same-Owner, platform-matched device registrations; unverified claims remain unbound. No file or target is moved. Root and Photo Library permissions remain separate from device identity, and iOS/Android/Synology credentials never grant Desktop Agent access.
+`Source.DeviceID` is the canonical Push ownership authority. New Local Folder, iOS, Android and DSM Sources populate it; `LocalCreatorDeviceID` is historical metadata, not a write-authorization fallback. A narrowly scoped startup backfill resolves only existing same-Owner, platform-matched device registrations; unverified claims remain unbound. No file or target is moved. Root and Photo Library permissions remain separate from device identity, and iOS/Android/Synology credentials never grant Desktop Agent access.
 
 ### One writer per device/source
 
 - Desktop and xd share one owning xdrive-agent and durable per-file Operation journal.
-- DSM has a separate source-agent because it reads DSM filesystem roots, but uses the same Server Source, Device, target, run and CAS receipt contracts.
+- DSM folder Push uses the owning xdrive-agent and its device/Root-bound local-folder pipeline. The standalone xdrive-source-agent and its Synology Photos Push writer are retired; there is no second DSM uploader.
 - iOS and Android keep native encrypted intent ledgers and OS permission checks, but reuse the Go UploadSession/chunks/finalize/CAS writer through narrow authorization routes.
 - No second CAS writer, blind retry after uncertain ACK, or whole-Source completion claim from one batch.
 
 ## 5. Unified Pull Server Worker
 
-Pull is always Server-executed. Desktop, browser, phones and DSM do not execute remote Pull and need not stay online.
+Synology Photos/Files Pull implementation remains in the repository but its new execution, scheduling and trigger paths are temporarily disabled for the DSM Folder Push MVP. This does not remove historical Source/SourceRun/CAS data.
+
+Pull is always Server-executed when the connector is enabled. Desktop, browser, phones and DSM do not execute remote Pull and need not stay online.
 
 - One long-lived Server Pull Worker service hosts the connector dispatcher.
 - Each eligible Source receives an isolated worker execution context, cancellation context, run lease, checkpoint, retry state and progress. This is logical per-Source isolation, not one OS process/container per Source.
@@ -183,7 +186,19 @@ iOS Photos 使用统一的 `Source(kind=ios_photos, direction=push, sync_mode=ba
 - Source Manager 展示统一目标目录、最近运行状态和分页运行历史；不提供 Server 端 Run Now、通用来源设置、虚构的相册集合或逐文件错误快照。继续备份、权限和自动计划仍在绑定的 iPhone 上管理。
 
 
-## S10–S18 accepted destination policy (2026-11-06)
+## Optional Source cloud-only cleanup — #4093 candidate
+
+Cloud-only cleanup is a **separate explicit Owner action**, not Source archive/delete and not a replacement for ordinary Files operations. A retired or archived Source does not silently remove its cloud files.
+
+1. `GET /api/v1/sources/:id/cloud-cleanup/preview` reads the exact archived, Server-managed Source and active Node subtree (bounded), returning its Source and Target revisions, item/file counts, and a digest of Node IDs/revisions/types. The preview is **not** a deletion capability.
+2. The shared Web Source Manager only displays “预览云端清理” for a previously archived, managed Yike Pull Source with a readable cloud target, when its authenticated Host actually exposes both endpoints. DSM/Desktop/native adapters without this capability do not advertise it.
+3. The Owner must type the full Source name. `POST /api/v1/sources/:id/cloud-cleanup/trash` carries the exact preview digest, Source `If-Match` revision, Target ID/revision and typed name. Server recomputes the entire preview within a Source/Node-locked transaction. No blind retry is allowed after a conflict.
+4. Unsettled UploadSessions, running SourceRuns, queued Files operations, foreign Source/SourceItem dependencies, active direct Shares, malformed ancestry and stale revisions **fail closed**. Data remains intact on refusal.
+5. The target subtree is only soft-deleted using the existing bounded, atomic Trash operation. Source/SourceItems/SyncRuns, file versions and CAS stay unchanged. The Owner uses the existing Trash Restore API for rollback; Source stays archived. Ordinary permanent Trash delete is denied while any Source remains bound to the target.
+
+This is a new API + UI candidate in #4093. It is not implemented in merged master until its exact HEAD CI, PostgreSQL tests and Final Gate succeed. Physical device/production validation remains separate.
+
+## S10–S18 destination policy (merged in #4082, 2026-11-07)
 
 - Push: `同步文件夹/Push/<name>`, without a DeviceID/device-name group. Pull: `同步文件夹/Pull/<connector>/<name>`, with only the leaf editable.
 - The one Server-managed provisioner creates Source and Node together, refuses occupied ordinary leaves and overlapping Source subtrees, and returns an immutable TargetNodeID.

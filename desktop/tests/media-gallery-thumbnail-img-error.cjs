@@ -309,7 +309,7 @@ test('P0-L2 missing support/loader failure still fall back and never introduce n
 })
 
 test('P0-L2 Web/Mobile/desktop share unchanged thin transport and Gallery virtual collection', () => {
-  const page = read('ui/shared/src/mui/MediaGallery.tsx')
+  const page = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
   const web = read('web/src/App.tsx')
   const adapter = read('web/src/mediaGalleryAdapter.ts')
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
@@ -358,7 +358,7 @@ test('P0-L4c1 real thumbnail image onError reports its exact failed URL without 
   assert.equal(requests, 1, 'an image decoder failure must never launch a retry in the same mount')
   await act(async () => { tree.unmount() })
 
-  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
   const scheduler = read('ui/shared/src/mui/MediaGalleryThumbnailScheduler.ts')
   assert.match(gallery, /onImageDecodeError=\{thumbnailScheduler \? onThumbnailDecodeError : undefined\}/)
   assert.match(gallery, /thumbnailScheduler\?\.invalidateDecodedURL\(item\.node\.id, item\.node\.revision, failedURL\)/)

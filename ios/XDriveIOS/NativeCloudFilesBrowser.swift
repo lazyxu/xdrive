@@ -157,6 +157,33 @@ struct XDriveIOSNativeFilesReader {
         return page
     }
 
+    /// Authoritative ordinal under the target arrangement. A successful
+    /// response is only a hint until children(offset) proves the same Node.
+    func childPosition(
+        parentID: UInt64, node: XDriveIOSNativeFilesNode,
+        sort: String, order: String,
+        grouping: String, foldersFirst: Bool
+    ) async throws -> XDriveIOSNativeFilesChildPosition {
+        guard parentID > 0, node.parent_id == parentID,
+              node.id > 0, node.revision > 0,
+              XDriveIOSNativeFilesPagePolicy.validOrder(sort: sort, order: order),
+              XDriveIOSNativeFilesGroupingPolicy.validGrouping(grouping)
+        else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        let url = try endpoint("/api/v1/nodes/\(parentID)/children/position", query: [
+            URLQueryItem(name: "node_id", value: String(node.id)),
+            URLQueryItem(name: "sort", value: sort),
+            URLQueryItem(name: "order", value: order),
+            URLQueryItem(name: "group", value: grouping),
+            URLQueryItem(name: "folders_first", value: foldersFirst ? "true" : "false")
+        ])
+        let result: XDriveIOSNativeFilesChildPosition = try await get(url)
+        guard XDriveIOSNativeFilesReanchorPolicy.pageOffset(
+            result, node: node, parentID: parentID,
+            sort: sort, order: order, grouping: grouping, foldersFirst: foldersFirst
+        ) != nil else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        return result
+    }
+
     /// A middle page carries no group indexes. Ask Go for exactly one
     /// authenticated first-page row, retaining the whole-folder index only.
     func groupIndexProbe(parentID: UInt64, sort: String, order: String,
@@ -318,6 +345,17 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
             sameQuery: verifiedQuery == query, sameFilters: verifiedFilters == filters,
             sameSort: verifiedSort == sort, sameOrder: verifiedOrder == order
         ) && verifiedGrouping == grouping && verifiedFoldersFirst == foldersFirst
+    }
+
+    /// Validate previous displayed rows before staging a new arrangement.
+    /// The current sort/group controls have already changed, so intentionally
+    /// compare only the Owner, directory and search scope here.
+    func canReanchor(owner: XDriveNativeOwnerRoot?, folderID: UInt64,
+                     query: String, filters: XDriveIOSNativeFilesSearchFilterState) -> Bool {
+        guard verifiedPage, !loading, let owner, let verifiedOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedOwner) &&
+            verifiedFolderID == folderID && verifiedQuery == query &&
+            verifiedFilters == filters
     }
 
     /// Removing NavigationLink source rows while a SwiftUI push is in
@@ -857,6 +895,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var pathTicket = UUID()
     @State private var pathTask: Task<Void, Never>?
     @State private var batchTagsIntent: XDriveIOSNativeFilesBatchTagsIntent?
+    @State private var showingTagManager = false
+    @State private var tagManagerOwner: XDriveNativeOwnerRoot?
     @State private var showingBatchShare = false
     @State private var batchDestinationIntent: XDriveIOSNativeFilesBatchDestinationIntent?
     @State private var selecting = false
@@ -881,6 +921,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var searchReturnNodeID: UInt64?
     @State private var lastAppearedNodeID: UInt64?
     @State private var pendingNavigationReturnNodeID: UInt64?
+    @State private var arrangementTicket = UUID()
+    @State private var arrangementTask: Task<Void, Never>?
     @State private var sort = "name"
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
     @State private var order = "asc"
@@ -1166,6 +1208,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             .accessibilityIdentifier("native-ios-files-open-recent")
         }
         Section("标签") {
+            Button { openTagManager() } label: {
+                Label("管理标签", systemImage: "tag.circle")
+            }
+            .disabled(login.owner == nil)
+            .accessibilityIdentifier("native-ios-files-home-manage-tags")
             Button {
                 searchOptions.load(login: login)
             } label: {
@@ -1726,41 +1773,107 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     /// Native Files-style edit bar, positioned above the five-module tab
     /// chrome by SwiftUI safe-area layout rather than a fixed global overlay.
+    /// Keep all four common selection actions visible, not hidden in More.
+    /// A short caption row avoids squeezing five touch targets on iPhone.
+    private func selectionDockAction(
+        _ title: String, symbol: String, enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: symbol).font(.body)
+                Text(title).font(.caption2)
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
+    }
+
+    private var canDirectDownloadSelection: Bool {
+        guard canSelectPage, let folderID = parentID,
+              selectedIDs == Set(chosenItems.map(\.id)) else { return false }
+        if chosenItems.count == 1 {
+            return chosenItems[0].type == "file" &&
+                containsVerifiedNode(chosenItems[0])
+        }
+        return XDriveIOSNativeFilesBatchExportPolicy.validSelection(
+            chosenItems, parentID: folderID
+        )
+    }
+
+    private func directDownloadSelected() {
+        guard canDirectDownloadSelection else { return }
+        if let file = chosenItems.first, chosenItems.count == 1 {
+            // The existing native single-file exporter owns its own verified
+            // URL/receipt/ShareLink lifecycle, not the batch exporter.
+            selecting = false
+            selectedIDs.removeAll()
+            selectedSnapshots.removeAll()
+            openManagement(for: file, quickAction: .download)
+        } else {
+            prepareSelectedExport()
+        }
+    }
+
+    /// The same Safe Area inset is owned by the native Files screen. No
+    /// additional overlay is inserted between the app-wide five tabs.
     private var filesSelectionToolbar: some View {
-        HStack(spacing: 12) {
-            Text("已选 \(selectedIDs.count)")
-                .font(.footnote.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("native-ios-files-selection-count")
-            Spacer(minLength: 4)
+        VStack(spacing: 0) {
+            HStack {
+                Text("已选 \(selectedIDs.count)")
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-files-selection-count")
+                Spacer(minLength: 4)
+                if selectedIDs.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected {
+                    Text("每批最多处理 200 项")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(minHeight: 22)
             if !batchExport.prepared.isEmpty {
-                Button {
-                    showingBatchShare = true
-                } label: {
-                    Label("导出", systemImage: "square.and.arrow.up")
+                HStack(spacing: 16) {
+                    Button {
+                        showingBatchShare = true
+                    } label: {
+                        Label("导出", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-share-toolbar")
+                    Button {
+                        batchExport.invalidate()
+                    } label: {
+                        Label("清理暂存", systemImage: "xmark.circle")
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-discard-toolbar")
                 }
-                .accessibilityIdentifier("native-ios-files-batch-share-toolbar")
-                Button {
-                    batchExport.invalidate()
-                } label: {
-                    Label("清理暂存", systemImage: "xmark.circle")
-                }
-                .accessibilityIdentifier("native-ios-files-batch-discard-toolbar")
+                .frame(maxWidth: .infinity, minHeight: 48)
             } else {
-                Button {
-                    openBatchDestination(.copy)
-                } label: {
-                    Label("复制", systemImage: "doc.on.doc")
-                }
-                .disabled(!canSelectPage || selectedIDs.isEmpty)
-                .accessibilityIdentifier("native-ios-files-batch-copy")
-                Button {
-                    openBatchDestination(.move)
-                } label: {
-                    Label("移动", systemImage: "folder")
-                }
-                .disabled(!canSelectPage || selectedIDs.isEmpty)
-                .accessibilityIdentifier("native-ios-files-batch-move")
+                HStack(spacing: 2) {
+                    selectionDockAction("复制", symbol: "doc.on.doc",
+                                        enabled: canSelectPage && !selectedIDs.isEmpty) {
+                        openBatchDestination(.copy)
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-copy")
+                    selectionDockAction("移动", symbol: "folder",
+                                        enabled: canSelectPage && !selectedIDs.isEmpty) {
+                        openBatchDestination(.move)
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-move")
+                    selectionDockAction("下载", symbol: "arrow.down.circle",
+                                        enabled: canDirectDownloadSelection) {
+                        directDownloadSelected()
+                    }
+                    .accessibilityIdentifier("native-ios-files-batch-direct-download")
+                    selectionDockAction("删除", symbol: "trash",
+                                        enabled: canSelectPage && !selectedIDs.isEmpty) {
+                        showingBatchTrashConfirmation = true
+                    }
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("native-ios-files-batch-direct-trash")
                 Menu {
                     Button("全选当前目录（最多 2048 项）") {
                         selectAllCurrentFolder()
@@ -1810,15 +1923,22 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .disabled(!canSelectPage || selectedIDs.isEmpty)
                     .accessibilityIdentifier("native-ios-files-batch-trash")
                 } label: {
-                    Label("更多", systemImage: "ellipsis.circle")
+                    VStack(spacing: 2) {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.body)
+                        Text("更多").font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .contentShape(Rectangle())
                 }
                 .disabled(!canSelectPage)
                 .accessibilityIdentifier("native-ios-files-batch-more")
+                }
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 12)
-        .frame(minHeight: 52)
+        .padding(.horizontal, 10)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
         .background(.bar)
         .accessibilityIdentifier("native-ios-files-batch-toolbar")
     }
@@ -1933,6 +2053,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         .padding(.vertical, 8)
         .listRowInsets(EdgeInsets())
         .listRowSeparator(.hidden)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("native-ios-files-grid")
     }
 
@@ -2175,7 +2296,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Button {
                         openManagement(for: nil, quickAction: .uploadMultiple)
                     } label: {
-                        Label("上传多个文件（最多 8 项）", systemImage: "square.stack.3d.up")
+                        Label("上传多个文件（最多 64 项）", systemImage: "square.stack.3d.up")
                     }
                     .disabled(model.loading || !model.verifiedPage || selecting ||
                               batchTrash.busy || batchTarget.busy ||
@@ -2196,6 +2317,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .disabled(login.owner == nil || pathBusy)
                     .accessibilityIdentifier("native-ios-files-go-to-path")
+                    Button { openTagManager() } label: {
+                        Label("管理标签", systemImage: "tag.circle")
+                    }
+                    .disabled(login.owner == nil || selecting)
+                    .accessibilityIdentifier("native-ios-files-toolbar-manage-tags")
                     Button { presentFileOperations() } label: {
                         Label("文件操作历史／撤销／重做",
                               systemImage: "arrow.uturn.backward.circle")
@@ -2265,6 +2391,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(.bar)
+                    // Keep each local section button visible to UI accessibility.
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("native-ios-files-quick-rail")
                 }
             }
@@ -2398,6 +2526,22 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
             } else {
                 Text("账户已经变化，请关闭智能文件夹。")
+            }
+        }
+        .sheet(isPresented: $showingTagManager, onDismiss: {
+            tagManagerOwner = nil
+            if login.owner != nil { searchOptions.load(login: login) }
+        }) {
+            if let owner = tagManagerOwner,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) {
+                NavigationStack {
+                    XDriveIOSNativeFilesTagPanel(
+                        login: login, expectedOwner: owner,
+                        nodeIDs: [], selectionLabel: "管理所有标签"
+                    )
+                }
+            } else {
+                Text("账户已变化，请关闭后重新打开标签管理。")
             }
         }
         .sheet(item: $batchTagsIntent, onDismiss: { reload() }) { intent in
@@ -2611,6 +2755,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         cancelPathLookup()
         cancelSelectAllRead()
         clearInternalDrag()
+        cancelArrangementReanchor()
         pendingDrop = nil
         inlineFolders.suspendForNavigation()
         guard selectedFile == nil else { return }
@@ -2725,6 +2870,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             locateIntent = nil
             selectedFile = nil
             selectedOwner = nil
+            cancelArrangementReanchor()
+            showingTagManager = false
+            tagManagerOwner = nil
             returnOwner = nil
             lastViewedFile = nil
             offset = 0
@@ -2763,24 +2911,41 @@ struct XDriveIOSNativeFilesBrowser: View {
                 selectedSnapshots.removeValue(forKey: id)
             }
         }
-        .onChange(of: sort) { _ in reload(resetOffset: true) }
-        .onChange(of: order) { _ in reload(resetOffset: true) }
+        .onChange(of: sort) { _ in reloadKeepingArrangementAnchor() }
+        .onChange(of: order) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: viewMode) { next in
             if next == "grid" { inlineFolders.invalidate() }
+            // Layout-only change keeps the same verified identities. Do not
+            // reset the Owner Range or jump to the first row when toggling grid.
+            guard !isHome, !isGlobalSearch, !selecting,
+                  let folderID = parentID, let owner = login.owner,
+                  model.canReanchor(
+                    owner: owner, folderID: folderID,
+                    query: activeQuery, filters: searchFilters
+                  ), let anchor = lastAppearedNodeID,
+                  model.entries.contains(where: { $0.id == anchor }) else { return }
+            Task { @MainActor in
+                await Task.yield()
+                guard viewMode == next,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      model.entries.contains(where: { $0.id == anchor }) else { return }
+                returnScroll.scrollTo(anchor, anchor: .center)
+            }
         }
-        .onChange(of: grouping) { _ in
-            if !isHome && !isGlobalSearch { reload(resetOffset: true) }
-        }
-        .onChange(of: foldersFirst) { _ in
-            if !isHome && !isGlobalSearch { reload(resetOffset: true) }
-        }
+        .onChange(of: grouping) { _ in reloadKeepingArrangementAnchor() }
+        .onChange(of: foldersFirst) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: model.loading) { loading in
             guard !loading, selectedFile == nil else { return }
-            if let returnID = pendingNavigationReturnNodeID {
+            if let returnID = pendingNavigationReturnNodeID,
+               let folderID = parentID,
+               model.canResume(
+                 owner: login.owner, folderID: folderID,
+                 query: activeQuery, filters: searchFilters,
+                 sort: sort, order: order,
+                 grouping: grouping, foldersFirst: foldersFirst
+               ), model.entries.contains(where: { $0.id == returnID }) {
                 pendingNavigationReturnNodeID = nil
-                if focusedNode == nil, lastViewedFile == nil,
-                   model.verifiedPage,
-                   model.entries.contains(where: { $0.id == returnID }) {
+                if focusedNode == nil, lastViewedFile == nil {
                     returnScroll.scrollTo(returnID, anchor: .center)
                 }
             }
@@ -3029,6 +3194,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         _ = clipboard.capture(
             kind, items: [entry.node], sourceParentID: sourceParentID, owner: owner
         )
+    }
+
+    private func openTagManager() {
+        guard let owner = login.owner, !selecting,
+              !batchTarget.busy, !batchTrash.busy,
+              !chunked.busy else { return }
+        tagManagerOwner = owner
+        showingTagManager = true
     }
 
     private func openBatchTags() {
@@ -3552,6 +3725,90 @@ struct XDriveIOSNativeFilesBrowser: View {
         )
     }
 
+    private func cancelArrangementReanchor() {
+        arrangementTicket = UUID()
+        arrangementTask?.cancel()
+        arrangementTask = nil
+    }
+
+    /// Preserve one currently verified visible identity across Server sort
+    /// and grouping changes. The child-position endpoint yields an ordinal;
+    /// a separate authenticated 64-row Range must prove the exact revision
+    /// before that ordinal can replace the old window.
+    private func reloadKeepingArrangementAnchor() {
+        cancelArrangementReanchor()
+        guard !isHome, !isGlobalSearch, !selecting,
+              let owner = login.owner, let folderID = parentID,
+              model.canReanchor(
+                owner: owner, folderID: folderID,
+                query: activeQuery, filters: searchFilters
+              ),
+              let anchored = model.entries.first(where: {
+                $0.id == lastAppearedNodeID
+              })?.node ?? model.entries.first?.node
+        else {
+            reload(resetOffset: true)
+            return
+        }
+        let token = arrangementTicket
+        let expectedSort = sort, expectedOrder = order
+        let expectedGrouping = grouping, expectedFoldersFirst = foldersFirst
+        arrangementTask = Task { @MainActor in
+            defer {
+                if arrangementTicket == token { arrangementTask = nil }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
+                else { throw XDriveIOSNativeFilesReadError.invalidScope }
+                let reader = XDriveIOSNativeFilesReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                let position = try await reader.childPosition(
+                    parentID: folderID, node: anchored,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                )
+                guard let nextOffset = XDriveIOSNativeFilesReanchorPolicy.pageOffset(
+                    position, node: anchored, parentID: folderID,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                let next = try await reader.children(
+                    parentID: folderID, offset: nextOffset,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                )
+                try Task.checkCancellation()
+                guard XDriveIOSNativeFilesReanchorPolicy.verifiedDestination(
+                    next, position: position, node: anchored,
+                    parentID: folderID, sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                guard arrangementTicket == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      parentID == folderID, sort == expectedSort,
+                      order == expectedOrder, grouping == expectedGrouping,
+                      foldersFirst == expectedFoldersFirst else { return }
+                offset = nextOffset
+                pendingNavigationReturnNodeID = anchored.id
+                reload()
+            } catch is CancellationError {
+                // A newer navigation/sort or Owner wins.
+            } catch {
+                guard arrangementTicket == token,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      parentID == folderID, sort == expectedSort,
+                      order == expectedOrder, grouping == expectedGrouping,
+                      foldersFirst == expectedFoldersFirst else { return }
+                // Never approximate the ordinal or silently reuse stale rows.
+                quickActionNotice = "无法确认原位置，已从目录开头安全重新读取。"
+                reload(resetOffset: true)
+            }
+        }
+    }
+
     private func reload(resetOffset: Bool = false) {
         cancelSelectAllRead()
         selectAllNotice = nil
@@ -3563,6 +3820,9 @@ struct XDriveIOSNativeFilesBrowser: View {
         selectedSnapshots.removeAll()
         batchExport.invalidate()
         batchTarget.invalidate()
+        // Keep pre-existing selection/transfer retirement atomic before
+        // cancelling the new asynchronous arrangement-position read.
+        cancelArrangementReanchor()
         batchDestinationIntent = nil
         if resetOffset {
             offset = 0

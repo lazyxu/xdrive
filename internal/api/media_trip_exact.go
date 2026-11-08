@@ -40,6 +40,10 @@ func mediaExactTripID(segment mediaMemoryTripSegment, zone string) string {
 	// the same ID with different source photos.
 	h := sha256.New()
 	fmt.Fprintf(h, "xdrive-trip-v2\x00%s\x00", zone)
+	if segment.ExactVerified {
+		fmt.Fprintf(h, "home:%d:%d:%s;", segment.HomeLatitudeCell,
+			segment.HomeLongitudeCell, segment.MemberFingerprint)
+	}
 	previous := ""
 	for _, day := range segment.Days {
 		parsed, err := time.Parse("2006-01-02", day.DateKey)
@@ -64,7 +68,24 @@ func queryMediaExactTripSegments(
 	if err != nil {
 		return nil, err
 	}
-	segments := mediaMemoryTripSegments(days)
+	// Start from conservative home evidence, then add genuine
+	// off-home travel transitions that share a neighboring away day.
+	// Never add all photos from a calendar date without real GPS proof.
+	recognitionDays := days
+	if homeLat, homeLon, ok := mediaExactTripHome(days); ok {
+		away, lookupErr := queryMediaExactTripAwayDays(
+			ctx, db, ownerID, zone, homeLat, homeLon)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		recognitionDays = mediaExactTripPromoteTransitDays(
+			days, away, homeLat, homeLon)
+	}
+	segments := mediaMemoryTripSegments(recognitionDays)
+	segments, err = verifyMediaExactTripMembership(ctx, db, ownerID, zone, days, segments)
+	if err != nil {
+		return nil, err
+	}
 	bounded := make([]mediaMemoryTripSegment, 0, len(segments))
 	for _, segment := range segments {
 		if mediaExactTripID(segment, zone) != "" {
@@ -79,7 +100,8 @@ func (s *Server) mediaExactTripQuery(
 	segment mediaMemoryTripSegment, zone string,
 ) (*gorm.DB, error) {
 	if len(segment.Days) == 0 ||
-		len(segment.Days) > mediaExactTripMaximumDays {
+		len(segment.Days) > mediaExactTripMaximumDays ||
+		!segment.ExactVerified || segment.MemberFingerprint == "" {
 		return nil, gorm.ErrRecordNotFound
 	}
 	location, _, err := mediaIANAZone(zone)
@@ -91,11 +113,11 @@ func (s *Server) mediaExactTripQuery(
 		return nil, err
 	}
 
-	// A bounded disjunction of date AND actual GPS-cell predicates: this is
-	// intentionally NOT one broad date range. It uses UTC instants computed
-	// separately at each local midnight, preserving DST/day-boundary behavior.
+	// The exact scope is each proven travel day AND a real GPS outside
+	// the trusted home vicinity. A second away city on that day is included;
+	// same-day home and no-GPS photos never become trip members.
 	pieces := make([]string, 0, len(segment.Days))
-	params := make([]any, 0, len(segment.Days)*4)
+	params := make([]any, 0, len(segment.Days)*2)
 	for _, day := range segment.Days {
 		value, err := time.Parse("2006-01-02", day.DateKey)
 		if err != nil || !mediaMemoryDate(day.Date).Equal(value) ||
@@ -104,22 +126,21 @@ func (s *Server) mediaExactTripQuery(
 			return nil, gorm.ErrRecordNotFound
 		}
 		pieces = append(pieces,
-			"(xd_media_metadata.captured_at >= ? AND "+
-				"xd_media_metadata.captured_at < ? AND "+
-				"FLOOR(xd_media_metadata.latitude * 5)::bigint = ? AND "+
-				"FLOOR((CASE WHEN xd_media_metadata.longitude = 180 THEN -180 ELSE xd_media_metadata.longitude END) * 5)::bigint = ?)")
+			"(xd_media_metadata.captured_at >= ? AND xd_media_metadata.captured_at < ?)")
 		params = append(params,
 			mediaMemoryLocalMidnight(value, location),
-			mediaMemoryLocalMidnight(value.AddDate(0, 0, 1), location),
-			day.LatitudeCell, day.LongitudeCell)
+			mediaMemoryLocalMidnight(value.AddDate(0, 0, 1), location))
 	}
+	awaySQL, awayArgs := mediaExactTripAwayPredicate(
+		segment.HomeLatitudeCell, segment.HomeLongitudeCell)
 	return base.Where(
 		"xd_media_metadata.index_state = ? AND "+
 			"xd_media_metadata.captured_at IS NOT NULL AND "+
 			"xd_media_metadata.latitude BETWEEN -90 AND 90 AND "+
 			"xd_media_metadata.longitude BETWEEN -180 AND 180",
 		meta.MediaIndexStateReady,
-	).Where("("+strings.Join(pieces, " OR ")+")", params...), nil
+	).Where("("+strings.Join(pieces, " OR ")+")", params...).
+		Where(awaySQL, awayArgs...), nil
 }
 
 func (s *Server) listMediaExactTrips(c *gin.Context) {

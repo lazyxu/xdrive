@@ -87,6 +87,7 @@ function fixture(adapter) {
     settingsRevealRequestRef: { current: 0 },
     externalSourceConnectorProfile: profile,
     isReadOnlySynologySource: () => false,
+    isNativePhotoSource: () => false, // Fixture Source rows are generic Pull.
     externalSourceDefaults: defaults,
     // Isolated controller handlers close over the app's UI noun and imported
     // display helper; supply both without copying business mutation logic.
@@ -178,6 +179,8 @@ test('native form submission cannot save an unloaded or failed connector scope',
       savingSettings: false,
       settingsValues: { name: 'Changed name', spaces: ['personal', 'shared'] },
       externalSourceConnectorProfile: profile,
+      isNativePhotoSource: () => false,
+      isReadOnlySynologySource: () => false,
       adapter: { updateSource: async () => { updates += 1 } },
       ...condition,
     })

@@ -78,7 +78,7 @@ test('SH-P019 Owner and public Share suppress only pointer-focus viewport outlin
 })
 
 test('SH-P019 unrelated gallery, mobile row and task focus indicators stay intact', () => {
-  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
   const mobile = read('web/src/MobileFiles.tsx')
   const task = read('ui/shared/src/mui/TaskPresentation.tsx')
   assert.ok(gallery.includes("outline: selectedForAction ? '2px solid' : 'none'"))

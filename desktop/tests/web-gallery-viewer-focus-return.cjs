@@ -82,7 +82,7 @@ test('unrelated focus, wrong index, detached host and click-origin without focus
 
 test('focus return is integrated only into the existing authenticated Gallery scroll-return path', () => {
   const app = fs.readFileSync(path.join(repo, 'web/src/App.tsx'), 'utf8')
-  const tile = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
+  const tile = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/MediaGallerySharedTiles.tsx'), 'utf8')
   assert.match(tile, /data-xdrive-media-node-id=\{item\.node\.id\}/)
   assert.match(app, /focus: xDriveCaptureGalleryViewerFocus\(/)
   assert.match(app, /focusRestored = xDriveRestoreGalleryViewerFocus\(/)

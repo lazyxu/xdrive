@@ -64,19 +64,36 @@ test('reserved Desktop Places URL never falls through to ordinary Web credential
 
 test('actual guest DOM must be a map-only page, never HTTP 200 login or Owner-denied page', () => {
   const probe = admission.XDRIVE_DESKTOP_PLACES_GUEST_PROBE
-  const run = selectors => {
+  const pageSelector = '[data-xdrive-desktop-places-web-page]'
+  const sdkSelector = '[data-xdrive-baidu-isolated-photo-map]'
+  const unavailableSelector = '[data-xdrive-baidu-map-unavailable]'
+  const run = (selectors, sdkPhase = null) => {
     const set = new Set(selectors)
-    const document = { querySelector: selector => set.has(selector) ? {} : null }
+    const page = {querySelector: selector => {
+      if (selector === sdkSelector && sdkPhase !== null)
+        return {getAttribute: key =>
+          key === 'data-xdrive-places-sdk-phase' ? sdkPhase : null}
+      if (selector === unavailableSelector && set.has(unavailableSelector)) return {}
+      return null
+    }}
+    const document = {querySelector: selector =>
+      selector === pageSelector && set.has(pageSelector) ? page :
+        set.has(selector) ? {} : null}
     return new Function('document', 'return ' + probe)(document)
   }
   assert.equal(run([]), 'pending')
-  assert.equal(run(['[data-xdrive-desktop-places-web-page]']), 'ready')
+  assert.equal(run([pageSelector]), 'pending',
+    'React map root alone must not expose black/empty guest')
+  assert.equal(run([pageSelector], 'loading'), 'pending')
+  assert.equal(run([pageSelector], 'ready'), 'ready')
+  assert.equal(run([pageSelector], 'unavailable'), 'unavailable')
+  assert.equal(run([pageSelector, unavailableSelector], 'ready'), 'unavailable')
   assert.equal(run(['#web-login-username']), 'login')
   assert.equal(run(['#web-login-password']), 'login')
   assert.equal(run(['[data-xdrive-desktop-places-auth-denied]']), 'denied')
   assert.equal(run(['#web-login-username', '[data-xdrive-desktop-places-web-page]']), 'login')
   assert.equal(run(['[data-xdrive-desktop-places-auth-denied]', '[data-xdrive-desktop-places-web-page]']), 'denied')
-  for (const state of ['pending', 'ready', 'login', 'denied']) {
+  for (const state of ['pending', 'ready', 'login', 'denied', 'unavailable']) {
     assert.equal(admission.xDriveDesktopPlacesGuestProbeState(state), state)
   }
   for (const state of [true, {}, undefined, 'untrusted', 'map']) {

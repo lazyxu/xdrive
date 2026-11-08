@@ -187,6 +187,8 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
     @Published private(set) var continuationError: String?
 
     private var loadedIDs = Set<UInt64>()
+    // SwiftUI can render before the Owner-change callback invalidates old state.
+    private var loadedOwner: XDriveNativeOwnerRoot?
     private var loadedSort: String?
     private var loadedOrder: String?
     private var epoch = UUID()
@@ -202,6 +204,11 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
         verified && loadedSort == sort && loadedOrder == order
     }
 
+    func canDisplay(owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard verified, let owner, let loadedOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, loadedOwner)
+    }
+
     func pageOffset(for item: XDriveIOSNativeFilesTrashNode) -> Int? {
         guard verified, let index = items.firstIndex(of: item) else { return nil }
         return index / XDriveIOSNativeFilesTrashPolicy.pageSize *
@@ -214,6 +221,7 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
         running = nil
         items = []
         loadedIDs.removeAll()
+        loadedOwner = nil
         loadedSort = nil
         loadedOrder = nil
         total = 0
@@ -224,26 +232,38 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel, offset: Int,
-              sort: String, order: String) {
-        invalidate()
+              sort: String, order: String, preserveVisibleRows: Bool = false) {
+        if preserveVisibleRows && canDisplay(owner: login.owner) {
+            // Keep same-Owner verified geometry while fetching a fresh sort.
+            // Actions stay disabled until the new Range has been confirmed.
+            epoch = UUID()
+            running?.cancel()
+            running = nil
+            loading = false
+            error = nil
+            continuationError = nil
+        } else {
+            invalidate()
+        }
         guard offset == 0,
               XDriveIOSNativeFilesTrashPolicy.validSortOrder(sort: sort, order: order) else {
+            invalidate()
             error = "回收站仅从当前云端列表顶部开始读取。"
             return
         }
-        loadedSort = sort
-        loadedOrder = order
         read(login: login, offset: 0, appending: false, sort: sort, order: order)
     }
 
     func loadMore(login: XDriveIOSNativeOwnerLoginModel, sort: String, order: String) {
-        guard canLoadMore, loadedSort == sort, loadedOrder == order else { return }
+        guard canLoadMore, loadedSort == sort, loadedOrder == order,
+              canDisplay(owner: login.owner) else { return }
         read(login: login, offset: items.count, appending: true, sort: sort, order: order)
     }
 
     func retryMore(login: XDriveIOSNativeOwnerLoginModel, sort: String, order: String) {
         guard verified, !loading, continuationError != nil,
-              loadedSort == sort, loadedOrder == order else { return }
+              loadedSort == sort, loadedOrder == order,
+              canDisplay(owner: login.owner) else { return }
         continuationError = nil
         loadMore(login: login, sort: sort, order: order)
     }
@@ -287,6 +307,9 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
                     self.items.append(contentsOf: page.items)
                     self.loadedIDs.formUnion(page.items.map(\.id))
                 } else {
+                    self.loadedOwner = expected
+                    self.loadedSort = sort
+                    self.loadedOrder = order
                     self.items = page.items
                     self.loadedIDs = Set(page.items.map(\.id))
                     self.total = page.total_count
@@ -328,6 +351,9 @@ private final class XDriveIOSNativeFilesTrashPageModel: ObservableObject {
                 if !appending || fatal {
                     self.items = []
                     self.loadedIDs.removeAll()
+                    self.loadedOwner = nil
+                    self.loadedSort = nil
+                    self.loadedOrder = nil
                     self.total = 0
                     self.verified = false
                     self.error = message
@@ -435,18 +461,26 @@ struct XDriveIOSNativeFilesTrashScreen: View {
     @State private var showingDeleteConfirmation = false
     @State private var sort = XDriveIOSNativeFilesTrashPolicy.defaultSort
     @State private var order = XDriveIOSNativeFilesTrashPolicy.defaultOrder
+    @State private var isVisible = false
+    @State private var sortRefreshEpoch = UUID()
+    @State private var sortRefreshTask: Task<Void, Never>?
 
     var body: some View {
         List {
-            if model.loading && model.items.isEmpty {
+            if model.loading && !model.canDisplay(owner: login.owner) {
                 HStack { ProgressView(); Text("正在读取回收站…") }
             } else if let error = model.error {
                 Text(error).foregroundStyle(.orange)
                 Button("重试") { reload() }
                     .accessibilityIdentifier("native-ios-files-trash-retry")
+            } else if !model.canDisplay(owner: login.owner) {
+                Text(login.owner == nil ? "请先登录 xDrive 服务器" :
+                     "正在核验当前账户的回收站…")
+                    .foregroundStyle(.secondary)
             } else if model.items.isEmpty {
                 Text("回收站为空。").foregroundStyle(.secondary)
             }
+            if model.canDisplay(owner: login.owner) {
             ForEach(model.items) { item in
                 HStack(spacing: 12) {
                     Image(systemName: item.isDirectory ? "folder.fill" : "doc")
@@ -498,10 +532,14 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                 .onAppear {
                     guard !mutation.busy, model.canLoadMore,
                           model.items.last?.id == item.id else { return }
+                    guard model.matches(sort: sort, order: order),
+                          model.canDisplay(owner: login.owner) else { return }
                     model.loadMore(login: login, sort: sort, order: order)
                 }
             }
-            if model.loading && !model.items.isEmpty {
+            }
+            if model.loading && !model.items.isEmpty &&
+               model.canDisplay(owner: login.owner) {
                 HStack {
                     ProgressView()
                     Text("正在加载更多已删除项目…")
@@ -509,7 +547,8 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                 }
                 .accessibilityIdentifier("native-ios-files-trash-loading-more")
             }
-            if let continuationError = model.continuationError {
+            if let continuationError = model.continuationError,
+               model.canDisplay(owner: login.owner) {
                 Text(continuationError).foregroundStyle(.orange)
                 Button("重试加载更多") {
                     model.retryMore(login: login, sort: sort, order: order)
@@ -546,7 +585,7 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                 .accessibilityIdentifier("native-ios-files-trash-sort")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { reload() } label: {
+                Button { reload(preserveVisibleRows: true) } label: {
                     Label("刷新回收站", systemImage: "arrow.clockwise")
                 }
                 .disabled(mutation.busy || model.loading)
@@ -567,29 +606,38 @@ struct XDriveIOSNativeFilesTrashScreen: View {
         } message: {
             Text("永久删除后无法从回收站恢复；请求状态不明确时只能先刷新核对。")
         }
-        .onAppear { reload() }
-        .onChange(of: sort) { _ in reload() }
-        .onChange(of: order) { _ in reload() }
+        .onAppear {
+            isVisible = true
+            if phase == .active && !model.loading {
+                reload(preserveVisibleRows: true)
+            }
+        }
+        .onChange(of: sort) { _ in scheduleSortRefresh() }
+        .onChange(of: order) { _ in scheduleSortRefresh() }
         .onDisappear {
+            isVisible = false
+            cancelSortRefresh()
             model.invalidate()
             mutation.invalidate()
             pendingDelete = nil
             showingDeleteConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            cancelSortRefresh()
             model.invalidate()
             mutation.invalidate()
             pendingDelete = nil
             showingDeleteConfirmation = false
-            reload()
+            if isVisible && phase == .active { reload() }
         }
         .onChange(of: phase) { current in
             if current != .active {
+                cancelSortRefresh()
                 model.invalidate()
                 mutation.invalidate()
                 pendingDelete = nil
                 showingDeleteConfirmation = false
-            } else {
+            } else if isVisible {
                 reload()
             }
         }
@@ -598,7 +646,8 @@ struct XDriveIOSNativeFilesTrashScreen: View {
     /// The same verified Server range guards both long-press and swipe
     /// actions. Permanent deletion still requires the existing confirmation.
     private func canActOn(_ item: XDriveIOSNativeFilesTrashNode) -> Bool {
-        phase == .active && model.matches(sort: sort, order: order) &&
+        phase == .active && model.canDisplay(owner: login.owner) &&
+            model.matches(sort: sort, order: order) &&
             !model.loading && !mutation.busy &&
             model.items.contains(item) && model.pageOffset(for: item) != nil
     }
@@ -609,14 +658,42 @@ struct XDriveIOSNativeFilesTrashScreen: View {
         showingDeleteConfirmation = true
     }
 
-    private func reload() {
+    private func cancelSortRefresh() {
+        sortRefreshEpoch = UUID()
+        sortRefreshTask?.cancel()
+        sortRefreshTask = nil
+    }
+
+    private func scheduleSortRefresh() {
+        cancelSortRefresh()
+        pendingDelete = nil
+        showingDeleteConfirmation = false
+        guard isVisible, phase == .active else { return }
+        let ticket = sortRefreshEpoch
+        sortRefreshTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 120_000_000)
+                try Task.checkCancellation()
+            } catch {
+                return
+            }
+            guard ticket == sortRefreshEpoch, isVisible, phase == .active else { return }
+            reload(preserveVisibleRows: true)
+            sortRefreshTask = nil
+        }
+    }
+
+    private func reload(preserveVisibleRows: Bool = false) {
         guard !mutation.busy else { return }
-        model.load(login: login, offset: 0, sort: sort, order: order)
+        guard isVisible, phase == .active else { return }
+        model.load(login: login, offset: 0, sort: sort, order: order,
+                   preserveVisibleRows: preserveVisibleRows)
     }
 
     private func run(_ action: XDriveIOSNativeFilesTrashTransport.Action,
                      _ item: XDriveIOSNativeFilesTrashNode) {
-        guard model.matches(sort: sort, order: order),
+        guard model.canDisplay(owner: login.owner),
+              model.matches(sort: sort, order: order),
               !model.loading, !mutation.busy, model.items.contains(item),
               let pageOffset = model.pageOffset(for: item) else { return }
         mutation.perform(

@@ -174,7 +174,7 @@ test('compact shell has no floating trigger or per-item action chrome', () => {
   const nav = source('ui/shared/src/mui/WorkspaceCompactNavigation.tsx')
   const frame = source('ui/shared/src/mui/MobileAppHeader.tsx')
   const files = source('ui/shared/src/mui/FileExplorer.tsx')
-  const gallery = source('ui/shared/src/mui/MediaGallery.tsx')
+  const gallery = (source('ui/shared/src/mui/MediaGallery.tsx') + '\n' + source('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
   assert.match(nav, /fullscreen \? \{ display: 'contents' \}/)
   assert.doesNotMatch(nav, /position: 'fixed'/)
   assert.match(frame, /data-xdrive-mobile-app-header/)

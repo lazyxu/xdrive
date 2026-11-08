@@ -124,6 +124,10 @@ struct XDriveIOSClipboardItem: Codable, Identifiable {
     let ciphertext: String
     let created_at: String
     let expires_at: String
+    let target_device_id: String?
+    let ephemeral_key: String?
+    let wrapped_key: String?
+    let node_id: UInt64?
     var encrypted: XDriveIOSClipboardCrypto.Encrypted {
         .init(client_event_id: client_event_id, kind: kind, nonce: nonce, ciphertext: ciphertext)
     }
@@ -148,11 +152,14 @@ private final class XDriveIOSClipboardRejectRedirects:
 struct XDriveIOSNativeClipboardClient {
     let owner: XDriveNativeOwnerRoot
     let token: String
-    init(owner: XDriveNativeOwnerRoot, accessToken: String) throws {
+    let deviceProof: XDriveIOSBackgroundDeviceProof?
+    init(owner: XDriveNativeOwnerRoot, accessToken: String,
+         deviceProof: XDriveIOSBackgroundDeviceProof? = nil) throws {
         guard owner.ownerID > 0, owner.origin.scheme == "https",
               !accessToken.isEmpty else { throw XDriveIOSClipboardCrypto.Failure.invalidOwner }
         self.owner = owner
         token = accessToken
+        self.deviceProof = deviceProof
     }
 
     var newVaultScope: String { 
@@ -181,6 +188,10 @@ struct XDriveIOSNativeClipboardClient {
         req.httpShouldHandleCookies = false
         req.timeoutInterval = 30
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let deviceProof {
+            req.setValue(deviceProof.deviceID, forHTTPHeaderField: "X-XDrive-Device-ID")
+            req.setValue(deviceProof.secret, forHTTPHeaderField: "X-XDrive-Device-Token")
+        }
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         if let body {
@@ -205,6 +216,87 @@ struct XDriveIOSNativeClipboardClient {
         }
         return try JSONDecoder().decode(response, from: data)
     }
+    /// Foreground Owner invalidation stream. Never transports Clipboard
+    /// content: each complete sync/change frame only triggers GET /items.
+    /// A stream is bounded server-side to 20s; callers reverify the Owner
+    /// bearer and run an authoritative GET on every reconnect.
+    func watchChanges(after: UInt64, onChange: () async -> Void) async throws -> UInt64 {
+        guard var url = URLComponents(url: owner.origin, resolvingAgainstBaseURL: false) else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+        }
+        url.path = "/api/v1/clipboard/events"
+        url.queryItems = [URLQueryItem(name: "after", value: String(after))]
+        guard let endpoint = url.url, endpoint.host == owner.origin.host,
+              endpoint.scheme == "https" else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+        }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+        request.httpShouldHandleCookies = false
+        request.timeoutInterval = 25
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let deviceProof {
+            request.setValue(deviceProof.deviceID, forHTTPHeaderField: "X-XDrive-Device-ID")
+            request.setValue(deviceProof.secret, forHTTPHeaderField: "X-XDrive-Device-Token")
+        }
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        let config = URLSessionConfiguration.ephemeral
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let session = URLSession(configuration: config,
+            delegate: XDriveIOSClipboardRejectRedirects(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let (bytes, response) = try await session.bytes(for: request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              http.value(forHTTPHeaderField: "Content-Type")?
+                .lowercased().hasPrefix("text/event-stream") == true else {
+            throw XDriveIOSClipboardCrypto.Failure.http(
+                (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+        var decoder = XDriveIOSClipboardSSECursor(after: after)
+        var line = [UInt8]()
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            if byte == 10 { // UTF-8 LF ends one bounded SSE line.
+                if line.last == 13 { line.removeLast() }
+                guard let text = String(bytes: line, encoding: .utf8) else {
+                    throw XDriveIOSClipboardSSECursor.FrameError.invalidFrame
+                }
+                line.removeAll(keepingCapacity: true)
+                if try decoder.acceptLine(text) {
+                    try Task.checkCancellation()
+                    await onChange()
+                }
+            } else {
+                guard line.count < 4096 else {
+                    throw XDriveIOSClipboardSSECursor.FrameError.invalidFrame
+                }
+                line.append(byte)
+            }
+        }
+        // Incomplete trailing frames are never trusted; reconnect full GET
+        // recovers any missed invalidation or pruned change cursor.
+        return decoder.cursor
+    }
+
+    func enrollClipboardDevice(publicKey: String) async throws {
+        guard deviceProof != nil, Data(base64Encoded: publicKey)?.count == 32 else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+        }
+        struct Body: Encodable { let public_key: String }
+        struct Receipt: Decodable { let device_id: String; let public_key: String }
+        let result = try await request("/api/v1/clipboard/devices/self",
+            method: "PUT", body: JSONEncoder().encode(Body(public_key: publicKey)),
+            response: Receipt.self)
+        guard result.device_id == deviceProof?.deviceID, result.public_key == publicKey else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+        }
+    }
+
     func vault() async throws -> XDriveIOSClipboardVault {
         let v = try await request("/api/v1/clipboard/vault", response: XDriveIOSClipboardVault.self)
         guard v.owner_id == owner.ownerID, v.kdf == "PBKDF2-SHA256",
@@ -252,6 +344,10 @@ struct XDriveIOSNativeClipboardClient {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let deviceProof {
+            request.setValue(deviceProof.deviceID, forHTTPHeaderField: "X-XDrive-Device-ID")
+            request.setValue(deviceProof.secret, forHTTPHeaderField: "X-XDrive-Device-Token")
+        }
         request.httpShouldHandleCookies = false
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false

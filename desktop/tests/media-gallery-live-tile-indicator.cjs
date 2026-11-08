@@ -9,11 +9,11 @@ const { act } = renderer
 
 const root = path.resolve(__dirname, '../..')
 const read = name => fs.readFileSync(path.join(root, name), 'utf8')
-const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
 const labelStart = gallery.indexOf('function mediaAssetChipLabel(')
-const labelEnd = gallery.indexOf('\ntype MediaGalleryTimeScale', labelStart)
+const labelEnd = gallery.indexOf('\nexport type XDriveMediaGalleryVirtualCollection', labelStart)
 const tileStart = gallery.indexOf('type MediaTileProps = {')
-const tileEnd = gallery.indexOf('\nfunction MediaTileGrid(', tileStart)
+const tileEnd = gallery.indexOf('\nexport function MediaTileGrid(', tileStart)
 assert.ok(labelStart >= 0 && labelEnd > labelStart)
 assert.ok(tileStart >= 0 && tileEnd > tileStart, 'test must render the real shared MediaTile')
 
