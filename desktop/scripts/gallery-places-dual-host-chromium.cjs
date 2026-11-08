@@ -3580,11 +3580,12 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
             '[data-xdrive-places-photo-drawer-page-error]').length,
           height:list.scrollHeight,scroll:list.scrollTop}
       })
-      samples.push({...sample,delta:sample.requests-before,elapsedMs:Date.now()-started})
+      const delta=sample.requests-before
+      samples.push({...sample,delta,elapsedMs:Date.now()-started})
       record(mode+': 100k first-visit direct signed seek '+ratio+
-        ' (reads='+String(sample.requests-before)+
+        ' (reads='+String(delta)+
         ',DOM='+String(sample.tiles)+')',
-        sample.delta>=1 && sample.delta<=8 &&
+        delta>=1 && delta<=8 &&
         sample.tiles>0 && sample.tiles<160 &&
         sample.lastOffset>20_000 && sample.lastOffset<100_000 &&
         sample.errors===0 && errors.length===0)
