@@ -108,9 +108,12 @@ enum XDriveIOSNativeLANLoginRoute {
             switch url.code {
             case .timedOut:
                 return .ipConnectionTimedOut
-            case .secureConnectionFailed, .serverCertificateUntrusted,
-                 .serverCertificateHasBadDate, .serverCertificateNotYetValid,
-                 .serverCertificateHasUnknownRoot:
+            case .secureConnectionFailed:
+                // A TLS handshake can fail BEFORE any server-trust challenge.
+                // Do not invent an IP SAN/CA failure without explicit evidence.
+                return .ipTLSHandshakeFailed(url.errorCode)
+            case .serverCertificateUntrusted, .serverCertificateHasBadDate,
+                 .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot:
                 return .ipCertificateInvalid
             default:
                 return .ipConnectionUnavailable(url.errorCode)
@@ -205,7 +208,16 @@ enum XDriveIOSNativeLANLoginRoute {
             // as NSURLErrorCancelled (-999), rather than a certificate code.
             // Only a recorded trust rejection is diagnosed as IP TLS failure.
             if verifier.rejectedServerTrust {
-                if pairing { throw XDriveIOSLANPairingFailure.ipCertificateInvalid }
+                if pairing {
+                    switch verifier.trustRejection {
+                    case .ipIdentityOrServerUsageMismatch:
+                        throw XDriveIOSLANPairingFailure.ipCertificateIdentityInvalid
+                    case .chainOrValidityMismatch:
+                        throw XDriveIOSLANPairingFailure.ipCertificateChainInvalid
+                    default:
+                        throw XDriveIOSLANPairingFailure.ipCertificateInvalid
+                    }
+                }
                 throw URLError(.serverCertificateUntrusted)
             }
             throw error
@@ -218,11 +230,24 @@ private struct XDriveIOSLANVersion: Decodable { let version: String }
 private final class XDriveIOSLANProbeRejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     private let stateLock = NSLock()
     private var trustWasRejected = false
+    private var lastTrustRejection: XDriveIOSLANTrustVerdict?
 
     var rejectedServerTrust: Bool {
         stateLock.lock()
         defer { stateLock.unlock() }
         return trustWasRejected
+    }
+
+    var trustRejection: XDriveIOSLANTrustVerdict? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return lastTrustRejection
+    }
+
+    override func observedTrustRejection(_ verdict: XDriveIOSLANTrustVerdict) {
+        stateLock.lock()
+        lastTrustRejection = verdict
+        stateLock.unlock()
     }
 
     override func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,

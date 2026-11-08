@@ -39,6 +39,17 @@ enum NativeLANTrustChecks {
 
         let valid = try trust("ip")
         precondition(XDriveIOSServerTLSDelegate.verify(valid, target: ip, rootDER: root), "correct CA and IP SAN")
+        precondition(XDriveIOSServerTLSDelegate.inspect(try trust("ip"),
+            target: ip, rootDER: root) == .trusted, "strict CA + literal IP SAN succeeds")
+        precondition(XDriveIOSServerTLSDelegate.inspect(try trust("ip"),
+            target: otherIP, rootDER: root) == .ipIdentityOrServerUsageMismatch,
+            "basic X.509 chain passes but strict IP identity fails")
+        precondition(XDriveIOSServerTLSDelegate.inspect(try trust("ip"),
+            target: ip, rootDER: otherRoot) == .chainOrValidityMismatch,
+            "wrong pinned CA cannot be reported as a mere IP SAN mismatch")
+        precondition(XDriveIOSServerTLSDelegate.inspect(try trust("dns"),
+            target: ip, rootDER: root) == .ipIdentityOrServerUsageMismatch,
+            "DNS SAN must not authenticate a private-IP literal")
         // Real Caddy 'tls internal' chains include an intermediate CA.
         // A passed SecTrust evaluation under the PINNED root is sufficient,
         // even if an iOS release omits the externally added anchor from its
@@ -72,6 +83,12 @@ enum NativeLANTrustChecks {
         let expired = try trust("ip")
         precondition(SecTrustSetVerifyDate(expired, Date(timeIntervalSinceNow: 14 * 86_400) as CFDate) == errSecSuccess)
         precondition(!XDriveIOSServerTLSDelegate.verify(expired, target: ip, rootDER: root), "reject expired leaf")
+        let expiredDiagnostic = try trust("ip")
+        precondition(SecTrustSetVerifyDate(expiredDiagnostic,
+            Date(timeIntervalSinceNow: 14 * 86_400) as CFDate) == errSecSuccess)
+        precondition(XDriveIOSServerTLSDelegate.inspect(expiredDiagnostic,
+            target: ip, rootDER: root) == .chainOrValidityMismatch,
+            "expired leaf must not be described as an IP SAN mismatch")
         let leafPEM = try Data(contentsOf: fixtures.appendingPathComponent("ip.pem"))
         precondition(XDriveIOSLANPairing.rootDER(from: leafPEM) == nil, "reject leaf as the root")
         print("Native LAN certificate policy checks passed")

@@ -133,3 +133,20 @@ test('iOS pairing identifies the real failure stage while preserving strict root
   assert.doesNotMatch(route+trust+bootstrap,
     /InsecureSkipVerify|tlsInsecure|allowUntrusted|trustAllHosts/)
 })
+
+
+// A transport-level TLS failure is not a pinned-CA/IP-SAN verdict unless
+// Apple Security's actual server-trust challenge has rejected the chain.
+test('LAN pairing distinguishes handshake errors from strict pinned trust evidence', () => {
+  assert.match(route, /case \.secureConnectionFailed:\s*\/\/ A TLS handshake/)
+  assert.match(route, /return \.ipTLSHandshakeFailed\(url\.errorCode\)/)
+  assert.match(route, /switch verifier\.trustRejection/)
+  assert.match(route, /\.ipIdentityOrServerUsageMismatch:/)
+  assert.match(route, /\.chainOrValidityMismatch:/)
+  assert.match(trust, /SecPolicyCreateSSL\(true, target\.ip as CFString\)/)
+  assert.match(trust, /SecPolicyCreateBasicX509\(\)/)
+  assert.match(trust, /Negative-result diagnosis only/)
+  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{ return \.trusted \}/)
+  assert.match(trust, /SecTrustGetVerifyTime\(trust\)/)
+  assert.doesNotMatch(route + trust, /InsecureSkipVerify|trustAllHosts|allowUntrusted/)
+})

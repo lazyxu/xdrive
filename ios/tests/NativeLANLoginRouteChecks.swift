@@ -57,8 +57,15 @@ import Foundation
         let classify = XDriveIOSNativeLANLoginRoute.pairingProbeFailure
         if case .ipCertificateInvalid = classify(URLError(.serverCertificateUntrusted)) {}
         else { preconditionFailure("IP TLS mismatch misclassified") }
-        if case .ipCertificateInvalid = classify(URLError(.secureConnectionFailed)) {}
-        else { preconditionFailure("IP TLS transport mismatch misclassified") }
+        if case .ipTLSHandshakeFailed(let code) = classify(URLError(.secureConnectionFailed)) {
+            precondition(code == URLError.secureConnectionFailed.rawValue)
+        } else { preconditionFailure("TLS handshake failure falsely blamed on IP SAN") }
+        precondition(XDriveIOSLANPairingFailure.ipTLSHandshakeFailed(-1200).message.contains(
+            "尚不能确定"), "a handshake failure must never claim an invalid root CA")
+        precondition(XDriveIOSLANPairingFailure.ipCertificateIdentityInvalid.message.contains(
+            "IP"), "confirmed IP identity failure must be actionable")
+        precondition(XDriveIOSLANPairingFailure.ipCertificateChainInvalid.message.contains(
+            "根 CA"), "confirmed pinned CA/chain failure must be actionable")
         if case .ipConnectionTimedOut = classify(URLError(.timedOut)) {}
         else { preconditionFailure("IP timeout wrongly blamed on CA") }
         if case .ipConnectionUnavailable(let code) = classify(URLError(.cannotConnectToHost)) {
