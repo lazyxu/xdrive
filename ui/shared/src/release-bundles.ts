@@ -6,6 +6,8 @@ export interface XDriveReleaseBundleArtifact {
   size: number
   install_mode: 'manual' | 'manual_test_only'
   cached: boolean
+  /** Host-owned per-artifact cache result, not an installation guarantee. */
+  cache_status: 'pending' | 'verified' | 'missing_upstream' | 'verification_failed' | 'retry_needed' | 'unavailable'
   download_urls: string[]
 }
 
