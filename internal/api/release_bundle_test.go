@@ -253,3 +253,36 @@ func TestReleaseBundleAuthenticatedDownloadRejectsSameSizeCorruption(t *testing.
 		}
 	}
 }
+
+func TestReleaseBundleCurrentServerCommitFencesHistoricalCache(t *testing.T) {
+	root, _, manifest := bundleTestFixture(t)
+	currentServer := strings.Repeat("e", 40)
+	old := readReleaseBundleListingForServerCommit(root, manifest.Commit)
+	if old.State != "ready" || len(old.Artifacts) != 1 || !old.Artifacts[0].Cached {
+		t.Fatalf("fixture should have valid current cache: %+v", old)
+	}
+	// A new binary is active but its independent Host worker has not yet
+	// fetched the new manifest. Never advertise the previous Commit.
+	afterUpgrade := readReleaseBundleListingForServerCommit(root, currentServer)
+	if afterUpgrade.Commit != currentServer || afterUpgrade.State != "unavailable" ||
+		afterUpgrade.CachedCommit != manifest.Commit || len(afterUpgrade.Artifacts) != 0 {
+		t.Fatalf("previous Server installer leaked into current release: %+v", afterUpgrade)
+	}
+	// A failed attempt for this exact Server commit still surfaces its
+	// independent retry warning without linking to old downloaded bytes.
+	status, err := json.Marshal(releaseBundleState{
+		Commit: currentServer, State: "retry_needed",
+		Message: "Bundle fetch failed; Server is available",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "status.json"), status, 0644); err != nil {
+		t.Fatal(err)
+	}
+	retry := readReleaseBundleListingForServerCommit(root, currentServer)
+	if retry.State != "retry_needed" || retry.Commit != currentServer ||
+		len(retry.Artifacts) != 0 {
+		t.Fatalf("current-commit retry warning was lost or unsafe: %+v", retry)
+	}
+}
