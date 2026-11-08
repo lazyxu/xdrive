@@ -54,6 +54,13 @@ android {
         signingConfig = signingConfigs.findByName("privateRelease")
     } }
     lint { abortOnError = true }
+    // bcprov and jspecify both contain an optional Java 9 OSGi manifest.
+    // Exclude only this duplicate resource, never executable crypto classes.
+    packaging {
+        resources {
+            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        }
+    }
     sourceSets.getByName("main").res.srcDir(layout.buildDirectory.dir("generated/xdriveBrand/res"))
     // Exactly one native map provider is compiled per APK, never two hosts.
     // The default Android CI remains fully offline from Baidu SDK artifacts.

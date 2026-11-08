@@ -15,6 +15,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
+/** Recipient private material is per-unlocked-UI memory, never in Controller state. */
+class NativeClipboardRecipient(
+    val enrolled: NativeAndroidDeviceEnrollment,
+    val privatePKCS8: ByteArray,
+) {
+    fun erase() { privatePKCS8.fill(0) }
+    override fun toString(): String = "NativeClipboardRecipient([redacted])"
+}
+
 enum class Screen { CONNECT, LOGIN, PASSWORD, FILES, GALLERY, TRASH }
 enum class FilesSection { RECENT, BROWSE, FAVORITES, SEARCH }
 enum class FilesTransferKind { COPY, MOVE }
@@ -4761,8 +4770,51 @@ class DriveController(
         withNotesOwner { service, token -> service.clipboardVault(token) }
     suspend fun clipboardCheck(nonce: String,ciphertext: String,scope: String): OwnerClipboardVault =
         withNotesOwner { service, token -> service.clipboardCheck(token,nonce,ciphertext,scope) }
-    suspend fun clipboardList(before: Long? = null): OwnerClipboardPage =
-        withNotesOwner { service, token -> service.clipboardList(token,before) }
+    suspend fun clipboardList(
+        before: Long? = null, recipient: NativeClipboardRecipient? = null,
+    ): OwnerClipboardPage = withNotesOwner { service, token ->
+        if (recipient == null) service.clipboardList(token, before)
+        else service.clipboardListForDevice(token, recipient.enrolled, before)
+    }
+
+    /**
+     * Explicit foreground user gesture only. Installation identity comes from
+     * the existing verified Owner/device store; no Photo background Source
+     * grant is inherited. The Curve25519 private key stays in AndroidKeystore-
+     * sealed local storage and is never sent with the Owner bearer.
+     */
+    suspend fun clipboardEnableRecipient(context: Context): NativeClipboardRecipient {
+        var candidate: NativeClipboardRecipient? = null
+        try {
+            return withNotesOwner { service, token ->
+                val initial = state.value
+                val sameOwner = {
+                    state.value.nativeUiSessionId == initial.nativeUiSessionId &&
+                        state.value.server == initial.server &&
+                        state.value.username == initial.username &&
+                        state.value.screen in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH) &&
+                        service === api && session != null
+                }
+                val existing = AndroidPhotoDeviceCredentialStore(context).verifyExisting(
+                    service, initial.server, token, initial.username, sameOwner)
+                    ?: throw IllegalStateException(
+                        "请先在设备管理中明确注册此 Android 设备，再启用剪贴板定向接收。")
+                check(sameOwner())
+                val key = withContext(Dispatchers.IO) {
+                    AndroidClipboardDeviceKeyStore(context).loadOrCreate(
+                        existing.first, existing.second.deviceId)
+                }
+                val enrolled = NativeClipboardRecipient(existing.second, key.pkcs8Private)
+                candidate = enrolled
+                service.clipboardEnrollRecipient(token, existing.second, key.publicKeyBase64)
+                check(sameOwner())
+                enrolled
+            }
+        } catch (failure: Exception) {
+            candidate?.erase()
+            throw failure
+        }
+    }
     suspend fun clipboardCreate(item: XDriveClipboardCrypto.Wire): OwnerClipboardItem =
         withNotesOwner { service, token -> service.clipboardCreate(token,item) }
     suspend fun clipboardDelete(id: Long) {
@@ -4770,6 +4822,17 @@ class DriveController(
     }
     suspend fun clipboardClear() {
         withNotesOwner { service, token -> service.clipboardClear(token) }
+    }
+    /** Foreground-only Owner SSE. A new verified bearer is requested on each
+     * bounded stream connection, and the Owner is rechecked after it closes.
+     */
+    suspend fun clipboardWatch(after: Long, onChange: suspend () -> Unit): Long =
+        withNotesOwner { service, token -> service.clipboardWatch(token, after, onChange) }
+
+    suspend fun clipboardWatchForRecipient(
+        after: Long, recipient: NativeClipboardRecipient, onChange: suspend () -> Unit,
+    ): Long = withNotesOwner { service, token ->
+        service.clipboardWatchForDevice(token, recipient.enrolled, after, onChange)
     }
 
     suspend fun notesInitialize() {

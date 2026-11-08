@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Box, Button, Card, Divider, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, Divider, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
 import {
   xDriveClipboardDeriveKey, xDriveClipboardEncrypt, xDriveClipboardDecrypt,
   xDriveClipboardValidateText, xDriveClipboardMakeVaultCheck,
-  xDriveClipboardVerifyVaultCheck, type XDriveClipboardKind,
+  xDriveClipboardVerifyVaultCheck, xDriveClipboardKind, type XDriveClipboardKind,
 } from '../clipboard-crypto'
 import { XDriveClipboardActionFence } from '../clipboard-action-fence'
+import { xDriveClipboardEncryptForDevice, type XDriveClipboardTargetWire } from '../clipboard-target-crypto'
+import { ClipboardFileNodePicker, type ClipboardFileBrowsePort } from './ClipboardFileNodePicker'
 
 export type XDriveClipboardItem = {
   id: number
@@ -15,6 +17,17 @@ export type XDriveClipboardItem = {
   ciphertext: string
   created_at: string
   expires_at: string
+  target_device_id?: string
+  ephemeral_key?: string
+  wrapped_key?: string
+  node_id?: number
+}
+
+export type XDriveClipboardTargetDevice = {
+  device_id: string
+  name: string
+  platform: string
+  public_key: string
 }
 
 export type XDriveClipboardDataPort = {
@@ -26,8 +39,10 @@ export type XDriveClipboardDataPort = {
     salt: string; iterations: number; kdf: string; check_nonce: string; check_ciphertext: string; aad_scope: string }>
   list(before?: number, signal?: AbortSignal): Promise<{ items: XDriveClipboardItem[]; next_before: number | null }>
   create(item: {
-    client_event_id: string; kind: XDriveClipboardKind
+    client_event_id: string; kind: XDriveClipboardTargetWire['kind']
     nonce: string; ciphertext: string
+    target_device_id?: string; ephemeral_key?: string; wrapped_key?: string
+    node_id?: number
   }, signal?: AbortSignal): Promise<XDriveClipboardItem>
   remove(id: number, signal?: AbortSignal): Promise<void>
   clear(signal?: AbortSignal): Promise<void>
@@ -38,6 +53,12 @@ export type XDriveClipboardDataPort = {
   claimScope?(vault: { owner_id?: number }): string
   /** Optional authenticated SSE. The existing foreground refresh remains a fallback. */
   watchChanges?(onChange: () => void, signal: AbortSignal): Promise<void>
+  /** Desktop-only, opt-in, unlocked and visible monitoring; callback does not read Web clipboard. */
+  watchLocalClipboard?(onChange: (text: string) => Promise<void>, signal: AbortSignal): Promise<void>
+  /** Owner session only; public X25519 keys, no source/backup grants. */
+  listDevices?(signal?: AbortSignal): Promise<{ devices: XDriveClipboardTargetDevice[] }>
+  revokeDevice?(deviceID: string, signal?: AbortSignal): Promise<void>
+  browseFiles?: ClipboardFileBrowsePort
 }
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
@@ -68,6 +89,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const [message, setMessage] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
   const [retryExpired, setRetryExpired] = useState(false)
+  const [monitorEnabled, setMonitorEnabled] = useState(false)
+  const [targetDevices, setTargetDevices] = useState<XDriveClipboardTargetDevice[]>([])
+  const [targetID, setTargetID] = useState('')
+  const [confirmRevoke, setConfirmRevoke] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [referenceKind, setReferenceKind] = useState<'text' | 'image' | 'file'>('text')
+  const [nodeID, setNodeID] = useState('')
   const active = useRef(true)
   const actionFence = useRef(new XDriveClipboardActionFence())
   const generation = useRef(0)
@@ -77,7 +105,10 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const pending = useRef<{
     text: string
     createdAt: number
-    item: { client_event_id: string; kind: XDriveClipboardKind; nonce: string; ciphertext: string }
+    targetID: string
+    nodeID: number
+    item: { client_event_id: string; kind: XDriveClipboardKind | XDriveClipboardTargetWire['kind']; nonce: string; ciphertext: string;
+      target_device_id?: string; ephemeral_key?: string; wrapped_key?: string; node_id?: number }
   } | null>(null)
 
   useEffect(() => {
@@ -161,6 +192,22 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     }
   }, [key, port, load])
 
+  useEffect(() => {
+    if (!key || !port.listDevices) { setTargetDevices([]); setTargetID(''); return }
+    const controller = new AbortController()
+    void port.listDevices(controller.signal).then(result => {
+      if (!controller.signal.aborted && active.current)
+        setTargetDevices(result.devices.filter(d =>
+          !!d.device_id && /^[A-Za-z0-9+/]{43}=$/.test(d.public_key)))
+    }).catch(() => {
+      if (!controller.signal.aborted && active.current) {
+        setTargetDevices([])
+        setTargetID('')
+      }
+    })
+    return () => controller.abort()
+  }, [key, port])
+
   const unlock = async () => {
     if (busy || key) return
     const actionToken = actionFence.current.capture()
@@ -212,17 +259,28 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     }
   }
 
-  const send = async () => {
-    if (!key || !aadScope || busy) return
+  const send = async (observedText?: string) => {
+    if (!key || !aadScope || busy || (observedText !== undefined && pending.current)) return
+    const isRef = observedText === undefined && referenceKind !== 'text'
+    const selectedNodeID = isRef ? Number(nodeID) : 0
+    const selectedTarget = observedText === undefined ? targetID : ''
+    const selectedDevice = targetDevices.find(device => device.device_id === selectedTarget)
+    if (isRef && (!Number.isSafeInteger(selectedNodeID) || selectedNodeID <= 0 || !selectedDevice)) {
+      setMessage('发送云端图片或文件引用，需要有效的现有文件 ID 与已登记的目标设备。')
+      return
+    }
+    if (selectedTarget && !selectedDevice) { setMessage('所选设备已失效，请刷新并重新选择。'); return }
+    const textAtStart = isRef ? 'asset:' + selectedNodeID : observedText ?? draft
     const actionToken = actionFence.current.capture()
     setMessage('')
-    try { xDriveClipboardValidateText(draft) } catch (error) {
+    try { xDriveClipboardValidateText(textAtStart) } catch (error) {
       setMessage(errorLabel(error)); return
     }
     if (pending.current) {
       // An unknown server ACK is not proof of failure. Editing or pasting a
       // different draft must not silently discard the original retry receipt.
-      if (pending.current.text !== draft) {
+      if (pending.current.text !== textAtStart || pending.current.targetID !== selectedTarget ||
+          pending.current.nodeID !== selectedNodeID) {
         setRetryExpired(true)
         setMessage('上一条发送回执仍未确认。请先核对历史，或明确放弃旧回执后再发送新内容。')
         return
@@ -239,14 +297,21 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     const controller = new AbortController()
     writeController.current = controller
     try {
-      if (pending.current?.text !== draft) {
+      if (pending.current?.text !== textAtStart || pending.current?.targetID !== selectedTarget ||
+          pending.current?.nodeID !== selectedNodeID) {
         const client_event_id = crypto.randomUUID()
-        const encrypted = await xDriveClipboardEncrypt(key, aadScope, client_event_id, draft)
+        const encrypted = selectedDevice
+          ? await xDriveClipboardEncryptForDevice(aadScope, selectedTarget, selectedDevice.public_key,
+              client_event_id, isRef
+                ? (referenceKind === 'image' ? 'image/x-xdrive-node-ref' : 'application/x-xdrive-node-ref')
+                : xDriveClipboardKind(textAtStart), textAtStart, selectedNodeID)
+          : await xDriveClipboardEncrypt(key, aadScope, client_event_id, textAtStart)
         // AES-GCM is not abortable: Lock can happen while encryption is pending.
         // Do not resurrect the previous Owner/session's retry cache.
         if (!active.current || controller.signal.aborted ||
             !actionFence.current.isCurrent(actionToken)) return
-        pending.current = { text: draft, createdAt: Date.now(), item: { client_event_id, ...encrypted } }
+        pending.current = { text: textAtStart, targetID: selectedTarget, nodeID: selectedNodeID,
+          createdAt: Date.now(), item: { client_event_id, ...encrypted } }
       }
       if (!active.current || controller.signal.aborted ||
           !actionFence.current.isCurrent(actionToken)) return
@@ -254,8 +319,11 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (!active.current || controller.signal.aborted ||
           !actionFence.current.isCurrent(actionToken)) return
       pending.current = null
-      setDraft(current => current === draft ? '' : current)
-      setMessage('已加密发送至当前账号的剪贴板历史。')
+      setDraft(current => observedText === undefined && !isRef && current === textAtStart ? '' : current)
+      setMessage(observedText !== undefined
+        ? '已自动加密发送剪贴板变化。'
+        : selectedTarget ? '已加密投递至所选设备；只有目标设备可解密。'
+          : '已加密发送至当前账号的剪贴板历史。')
       void load()
     } catch (error) {
       if (active.current && !controller.signal.aborted &&
@@ -265,6 +333,26 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (active.current && actionFence.current.isCurrent(actionToken)) setBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (!monitorEnabled || !key || !aadScope || !port.watchLocalClipboard) return
+    const controller = new AbortController()
+    let alive = true
+    void port.watchLocalClipboard(async text => {
+      // Do not overwrite a manually edited draft, an uncertain receipt, or
+      // another in-flight action. The watcher never retries unknown ACKs.
+      if (!alive || controller.signal.aborted || !active.current ||
+          busy || draft.length > 0 || pending.current || document.visibilityState !== 'visible') return
+      await send(text)
+    }, controller.signal).catch(error => {
+      if (alive && active.current && !controller.signal.aborted) {
+        setMonitorEnabled(false)
+        setMessage('系统剪贴板监控已停止：' + errorLabel(error))
+      }
+    })
+    return () => { alive = false; controller.abort() }
+  // React state changes re-arm the observer with a new local baseline.
+  }, [monitorEnabled, key, aadScope, port, busy, draft])
 
   const runAction = async (action: (signal: AbortSignal) => Promise<void>, success: string) => {
     if (busy) return
@@ -321,6 +409,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     setBusy(false)
     setConfirmClear(false)
     setRetryExpired(false)
+    setTargetDevices([])
+    setTargetID('')
+    setConfirmRevoke(false)
+    setPickerOpen(false)
+    setReferenceKind('text')
+    setNodeID('')
+    setMonitorEnabled(false)
     setMessage('剪贴板已锁定，本地明文和密钥已从页面状态清除。')
   }
 
@@ -336,7 +431,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
         {key ? <Button color="inherit" onClick={lock}>锁定</Button> : null}
       </Stack>
       <Alert severity="info">
-        此 Web MVP 不会监听系统剪贴板，也不会自动同步密码或验证码。
+        Web/PWA 不会监听系统剪贴板。Desktop 监听默认关闭；仅在解锁且此页面可见时，可明确开启自动加密发送。
         使用 HTTPS/localhost；不同浏览器需输入相同的独立剪贴板口令。
         忘记口令后旧消息无法解密。
       </Alert>
@@ -364,8 +459,84 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               <TextField label="输入内容" multiline minRows={3} maxRows={10} fullWidth
                 value={draft} onChange={event => { setDraft(event.target.value); setRetryExpired(false) }}
                 helperText="最多 64 KiB；不会在浏览器本地持久保存。" />
+              {port.listDevices ? (
+                <Stack spacing={1}>
+                  <TextField select label="发送范围" value={targetID}
+                    onChange={e => { setTargetID(e.target.value); setConfirmRevoke(false); setPickerOpen(false) }} size="small">
+                    <MenuItem value="">当前 Owner 所有已解锁客户端（广播）</MenuItem>
+                    {targetDevices.map(device => (
+                      <MenuItem key={device.device_id} value={device.device_id}>
+                        {device.name} · {device.platform}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  {targetID ? (
+                    <>
+                      <TextField select label="内容类型" value={referenceKind} size="small"
+                        onChange={e => setReferenceKind(e.target.value as 'text' | 'image' | 'file')}>
+                        <MenuItem value="text">文本或链接</MenuItem>
+                        <MenuItem value="image">现有云端图片引用</MenuItem>
+                        <MenuItem value="file">现有云端文件引用</MenuItem>
+                      </TextField>
+                      {referenceKind !== 'text' ? (
+                        <>
+                          <TextField label="已上传的云端文件 ID"
+                            size="small" inputProps={{ inputMode: 'numeric', readOnly: !!port.browseFiles }}
+                            value={nodeID} onChange={e => setNodeID(e.target.value)}
+                            helperText="引用现有 CAS/UploadSession 完成的文件；不会重新上传或复制原件。" />
+                          {port.browseFiles ? (
+                            <>
+                              <Button size="small" variant="outlined" disabled={busy}
+                                onClick={() => setPickerOpen(true)}>从云端文件选择</Button>
+                              <ClipboardFileNodePicker
+                                open={pickerOpen && !!key && !!targetID}
+                                port={port.browseFiles} kind={referenceKind}
+                                onClose={() => setPickerOpen(false)}
+                                onSelect={item => {
+                                  setNodeID(String(item.id))
+                                  setPickerOpen(false)
+                                }}
+                              />
+                            </>
+                          ) : null}
+                        </>
+                      ) : null}
+                      {port.revokeDevice ? (
+                        confirmRevoke ? (
+                          <Alert severity="warning" action={
+                            <Stack direction="row" spacing={1}>
+                              <Button size="small" onClick={() => setConfirmRevoke(false)}>取消</Button>
+                              <Button size="small" color="error" disabled={busy} onClick={() => {
+                                const selected = targetID
+                                setConfirmRevoke(false)
+                                void runAction(async signal => {
+                                  await port.revokeDevice!(selected, signal)
+                                  if (active.current && !signal.aborted) {
+                                    setTargetDevices(rows => rows.filter(row => row.device_id !== selected))
+                                    setTargetID('')
+                                  }
+                                }, '已撤销所选设备的 Clipboard 接收授权。')
+                              }}>确认撤权</Button>
+                            </Stack>
+                          }>撤权后该设备不能接收新的定向消息；已被复制的本机内容无法追回。</Alert>
+                        ) : (
+                          <Button variant="outlined" color="error" size="small" disabled={busy}
+                            onClick={() => setConfirmRevoke(true)}>
+                            撤销此设备的 Clipboard 授权
+                          </Button>
+                        )
+                      ) : null}
+                    </>
+                  ) : null}
+                </Stack>
+              ) : null}
+              {port.watchLocalClipboard ? (
+                <FormControlLabel control={<Switch checked={monitorEnabled}
+                    onChange={(_, checked) => setMonitorEnabled(checked)} />}
+                  label="Desktop 自动同步系统剪贴板（默认关闭；可能包含密码、验证码或其他敏感文本）" />
+              ) : null}
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Button variant="contained" disabled={busy || !draft.length} onClick={() => { void send() }}>
+                <Button variant="contained" disabled={busy || (referenceKind === 'text' ? !draft.length : !nodeID || !targetID)} onClick={() => { void send() }}>
                   {busy ? '处理中…' : '加密发送'}
                 </Button>
                 <Button variant="outlined" disabled={busy || reading || !port.readText}
