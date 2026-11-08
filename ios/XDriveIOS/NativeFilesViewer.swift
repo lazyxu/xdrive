@@ -113,6 +113,8 @@ struct XDriveIOSNativeFilesViewer: View {
     let openedOwner: XDriveNativeOwnerRoot
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let onNavigate: (XDriveIOSNativeFilesNode) -> Bool
+    // Extend a bounded, verified directory window without guessing search/collection ranges.
+    var onLoadNeighbor: ((XDriveIOSNativeFilesNode, Int) async throws -> [XDriveIOSNativeFilesNode])? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
@@ -131,6 +133,12 @@ struct XDriveIOSNativeFilesViewer: View {
     @State private var exportFallbackEligible = false
     @State private var showImageChrome = true
     @State private var showVideoChrome = true
+    @State private var streamedWindow: [XDriveIOSNativeFilesNode] = []
+    @State private var neighborBusy = false
+    @State private var neighborError: String?
+    @State private var reachedEnd = Set<Int>()
+    @State private var neighborEpoch = UUID()
+    @State private var neighborJob: Task<Void, Never>?
 
     private var viewed: XDriveIOSNativeFilesNode { active ?? initial }
 
@@ -168,11 +176,20 @@ struct XDriveIOSNativeFilesViewer: View {
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner)
     }
 
+    private var visibleWindow: [XDriveIOSNativeFilesNode] {
+        streamedWindow.isEmpty ? loadedItems : streamedWindow
+    }
+
     private func neighbor(_ direction: Int) -> XDriveIOSNativeFilesNode? {
         XDriveIOSNativeFilesViewerPolicy.neighbor(
-            current: viewed, in: loadedItems,
+            current: viewed, in: visibleWindow,
             direction: direction, authorized: authorized
         )
+    }
+
+    private func mayNavigate(_ direction: Int) -> Bool {
+        neighbor(direction) != nil ||
+            (onLoadNeighbor != nil && !reachedEnd.contains(direction))
     }
 
     var body: some View {
@@ -300,6 +317,22 @@ struct XDriveIOSNativeFilesViewer: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(isStillImage || isNativeVideo ? Color.black : Color(uiColor: .systemBackground))
+            .overlay(alignment: .bottom) {
+                if neighborBusy {
+                    ProgressView("正在核验相邻文件…")
+                        .padding(12)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        .padding(.bottom, 16)
+                        .accessibilityIdentifier("native-ios-files-viewer-neighbor-loading")
+                } else if let neighborError {
+                    Text(neighborError)
+                        .font(.footnote)
+                        .padding(12)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        .padding(.bottom, 16)
+                        .accessibilityIdentifier("native-ios-files-viewer-neighbor-error")
+                }
+            }
             .navigationTitle(viewed.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -321,13 +354,13 @@ struct XDriveIOSNativeFilesViewer: View {
                     } label: {
                         Label("上一项", systemImage: "chevron.left")
                     }
-                    .disabled(neighbor(-1) == nil)
+                    .disabled(neighborBusy || !mayNavigate(-1))
                     Spacer()
                     if authorized,
                        let index = XDriveIOSNativeFilesViewerPolicy.loadedIndex(
-                           current: viewed, in: loadedItems, authorized: true
+                           current: viewed, in: visibleWindow, authorized: true
                        ) {
-                        Text("\(index + 1)/\(loadedItems.count)（已加载）")
+                        Text("\(index + 1)/\(visibleWindow.count)（窗口）")
                             .font(.caption.monospacedDigit())
                     }
                     Spacer()
@@ -336,7 +369,7 @@ struct XDriveIOSNativeFilesViewer: View {
                     } label: {
                         Label("下一项", systemImage: "chevron.right")
                     }
-                    .disabled(neighbor(1) == nil)
+                    .disabled(neighborBusy || !mayNavigate(1))
                 }
             }
             .toolbar(chromeVisible ? .visible : .hidden,
@@ -543,15 +576,77 @@ struct XDriveIOSNativeFilesViewer: View {
     }
 
     @MainActor
-    private func move(_ direction: Int) {
-        guard !isClosing, let next = neighbor(direction), onNavigate(next) else { return }
+    private func commitNeighbor(_ next: XDriveIOSNativeFilesNode) {
+        guard !isClosing, authorized, onNavigate(next) else { return }
         retire()
         active = next
         attempt = UUID()
     }
 
+    /// Only one user-initiated, cancellable boundary read at a time. The Server
+    /// proves the exact Owner, file revision and arrangement before admission.
+    @MainActor
+    private func move(_ direction: Int) {
+        guard !isClosing, authorized, !neighborBusy else { return }
+        neighborError = nil
+        if let next = neighbor(direction) {
+            commitNeighbor(next)
+            return
+        }
+        guard let read = onLoadNeighbor, !reachedEnd.contains(direction) else { return }
+        let source = viewed
+        let ticket = UUID()
+        neighborEpoch = ticket
+        neighborBusy = true
+        neighborJob = Task { @MainActor in
+            defer {
+                if neighborEpoch == ticket {
+                    neighborBusy = false
+                    neighborJob = nil
+                }
+            }
+            do {
+                let batch = try await read(source, direction)
+                try Task.checkCancellation()
+                guard neighborEpoch == ticket, !isClosing, authorized,
+                      viewed == source else { return }
+                if batch.isEmpty {
+                    reachedEnd.insert(direction)
+                    neighborError = direction > 0 ? "已经到达此文件夹最后一个文件。" :
+                        "已经到达此文件夹第一个文件。"
+                    return
+                }
+                let concatenated = direction > 0 ?
+                    visibleWindow + batch : batch + visibleWindow
+                var seen = Set<UInt64>()
+                let unique = concatenated.filter { item in
+                    item.type == "file" && seen.insert(item.id).inserted
+                }
+                let limit = XDriveIOSNativeFilesViewerPolicy.maximumLoadedRows
+                streamedWindow = direction > 0 ?
+                    Array(unique.suffix(limit)) : Array(unique.prefix(limit))
+                guard let next = neighbor(direction) else {
+                    neighborError = "相邻文件已发生变化，请返回目录刷新。"
+                    return
+                }
+                reachedEnd.removeAll()
+                commitNeighbor(next)
+            } catch is CancellationError {
+                // Dismissal, logout and later gestures retire the old read.
+            } catch {
+                guard neighborEpoch == ticket, !isClosing, authorized else { return }
+                neighborError = "无法核验下一页文件；请重试或返回目录刷新。"
+            }
+        }
+    }
+
     @MainActor
     private func retire() {
+        neighborEpoch = UUID()
+        neighborJob?.cancel()
+        neighborJob = nil
+        neighborBusy = false
+        neighborError = nil
         // A failed load, Owner change, scene retirement, dismissal or next
         // image must always restore visible escape and retry controls.
         showImageChrome = true
