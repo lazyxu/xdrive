@@ -305,10 +305,11 @@ jobs:
           cd release
           shopt -s nullglob
           optional=()
-          for file in xdrive-linux-amd64.deb xDriveSetup-amd64.exe
+          candidates=(xdrive-linux-amd64.deb xDriveSetup-amd64.exe
             xdrive-backup-linux-amd64.tar.gz xdrive-backup-windows-amd64.zip
             xdrivenas-armada38x-*.spk xdrivenas-armada38x-*.spk.sha256
-            xDrive-unsigned.ipa xdrive-android-*.apk; do
+            xDrive-unsigned.ipa xdrive-android-*.apk)
+          for file in "${candidates[@]}"; do
             [[ -e "$file" || -L "$file" ]] || continue
             [[ -s "$file" && ! -L "$file" ]] || { echo "invalid client package: $file" >&2; exit 1; }
             optional+=("$file")
