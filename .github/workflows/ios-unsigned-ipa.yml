@@ -814,6 +814,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-reanchor"
           node --test desktop/tests/ios-native-files-five-scope-parity.cjs
 
+      - name: Verify native Files five-scope UI route and large export parity
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesResumeStore.swift \
+            ios/tests/NativeFilesResumeChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-resume"
+          "$RUNNER_TEMP/xdrive-ios-files-resume"
+          node --test desktop/tests/ios-native-files-five-ux-parity.cjs
+
       - name: Verify native Files final UI/gesture parity contracts
         run: |
           set -euo pipefail
@@ -865,7 +875,7 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-folder-check"
           node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs
 
-      - name: Verify native Files 1 GiB single-export capacity and signed ticket
+      - name: Verify native Files disk-streamed single-export capacity and signed ticket
         run: |
           set -euo pipefail
           swiftc -swift-version 5 \
