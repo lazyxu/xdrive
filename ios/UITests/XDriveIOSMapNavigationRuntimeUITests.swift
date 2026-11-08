@@ -30,13 +30,22 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
         XCTAssertTrue(tab.waitForExistence(timeout: 15), "Map tab unavailable")
         tab.tap()
-        let open = app.buttons["打开地图"].firstMatch
-        XCTAssertTrue(open.waitForExistence(timeout: 15), "Default map shortcut missing")
-        open.tap()
+        let map = element("native-ios-full-library-gps-map", in: app)
+        let request = app.buttons["允许查看本机照片"].firstMatch
+        // The real Dashboard's .onChange(of: tab) can immediately route the
+        // empty Dynamic slot to the Gallery map. The older optional CTA is
+        // visible only before that redirect. Both paths MUST end at MapKit;
+        // never require the CTA after the automatic route has consumed it.
+        if !map.waitForExistence(timeout: 4) &&
+           !request.waitForExistence(timeout: 4) {
+            let open = app.buttons["打开地图"].firstMatch
+            XCTAssertTrue(open.waitForExistence(timeout: 15),
+                          "Neither automatic map nor its shortcut appeared")
+            open.tap()
+        }
 
         // Fresh Simulator PhotoKit permissions may start undetermined. Never
         // quietly skip a real map run because the permission dialog appeared.
-        let request = app.buttons["允许查看本机照片"].firstMatch
         if request.waitForExistence(timeout: 3) {
             request.tap()
             let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
@@ -52,7 +61,6 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
                 allowed?.tap()
             }
         }
-        let map = element("native-ios-full-library-gps-map", in: app)
         XCTAssertTrue(map.waitForExistence(timeout: 65),
                       "Real MKMapView must mount after Photos Full Access")
         return app
