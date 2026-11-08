@@ -150,6 +150,12 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var localGalleryMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     // Restore only the coarse 32-slot album directory, never album IDs.
     @State private var localAlbumDirectoryOffset = 0
+    private struct ClipboardViewerIntent: Identifiable {
+        let node: XDriveIOSNativeFilesNode
+        let owner: XDriveNativeOwnerRoot
+        var id: UInt64 { node.id }
+    }
+    @State private var clipboardViewerIntent: ClipboardViewerIntent?
     @State private var dynamicFeature: XDriveIOSNativeDynamicFeature?
     @State private var recentDynamic: [XDriveIOSNativeDynamicFeature] = []
     @State private var launcherQuery = ""
@@ -271,6 +277,17 @@ struct XDriveIOSNativePhotosDashboard: View {
             mapSource = .local
         })
         .navigationBarBackButtonHidden(true)
+        .fullScreenCover(item: $clipboardViewerIntent) { selected in
+            if XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected.owner) {
+                XDriveIOSNativeFilesViewer(
+                    initial: selected.node, loadedItems: [selected.node],
+                    openedOwner: selected.owner, login: login,
+                    onNavigate: { _ in false }
+                )
+            } else {
+                Text("账号或服务器已变化，不能打开之前的文件引用。")
+            }
+        }
         .sheet(isPresented: $showingLocalPhotoSearch) {
             XDriveIOSNativePhotoSearchScreen()
         }
@@ -346,6 +363,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             // TabView .id does not reset this parent's @State. Revoke the old
             // Owner's saved UI route even if switching A -> B -> A in one scene.
             routeRestoreScopeKey = nil
+            clipboardViewerIntent = nil
             navigationRouteStore.clear()
             if login.owner != nil { routeRestoreScopeKey = ownerScopeKey }
             // The app-root durable original/receipt runner is never touched.
@@ -782,7 +800,14 @@ struct XDriveIOSNativePhotosDashboard: View {
             case .notes:
                 XDriveIOSNativeNotesScreen(login: login)
             case .clipboard:
-                XDriveIOSNativeClipboardScreen(login: login)
+                XDriveIOSNativeClipboardScreen(login: login) { openedOwner, node in
+                    guard tab == .dynamic, dynamicFeature == .clipboard,
+                          phase == .active,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner),
+                          node.type == "file", node.id > 0, node.revision > 0
+                    else { return }
+                    clipboardViewerIntent = ClipboardViewerIntent(node: node, owner: openedOwner)
+                }
             case .backup:
                 XDriveIOSNativePhotoBackupScreen(login: login, controller: backup) {
                     // Navigation only: never infer that a pending receipt is backed up.

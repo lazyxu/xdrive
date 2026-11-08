@@ -36,6 +36,7 @@ internal fun NativeClipboardScreen(
     controller: DriveController,
     incomingText: String? = null,
     onIncomingConsumed: () -> Unit = {},
+    onOpenReferencedFile: (Long) -> Unit = {},
 ) {
     val state by controller.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -353,10 +354,18 @@ internal fun NativeClipboardScreen(
                             if (plain==null) Text("此条消息无法解密。",
                                 color=MaterialTheme.colorScheme.error)
                             else {
-                                Text(if (item.nodeID > 0L)
-                                    "已接收云端文件 #${item.nodeID} 的加密引用，原件仍由 Files/CAS 管理。"
-                                    else plain, maxLines = 7)
-                                if (item.nodeID == 0L) {
+                                if (item.nodeID > 0L) {
+                                    Text("云端文件 #${item.nodeID} · 原件仍在 Files/CAS",
+                                        maxLines = 2)
+                                    TextButton(onClick = {
+                                        if (busy || key == null || plain != "asset:${item.nodeID}")
+                                            return@TextButton
+                                        onOpenReferencedFile(item.nodeID)
+                                    }, enabled = !busy && plain == "asset:${item.nodeID}") {
+                                        Text("在文件查看器中打开")
+                                    }
+                                } else {
+                                    Text(plain, maxLines = 7)
                                     TextButton(onClick = {
                                         clipboard.setPrimaryClip(ClipData.newPlainText("xDrive", plain))
                                         message = "已复制到本机剪贴板"

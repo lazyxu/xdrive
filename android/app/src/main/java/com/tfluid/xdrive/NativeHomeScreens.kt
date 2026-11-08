@@ -293,10 +293,11 @@ internal fun NativeHomeDynamic(
     notesController: DriveController? = null,
     incomingClipboardText: String? = null,
     onIncomingClipboardConsumed: () -> Unit = {},
+    onOpenClipboardFile: (Long) -> Unit = {},
 ) {
     if (navigation.dynamicFeature == NativeDynamicFeature.CLIPBOARD) {
         if (notesController != null) NativeClipboardScreen(notesController,
-            incomingClipboardText, onIncomingClipboardConsumed)
+            incomingClipboardText, onIncomingClipboardConsumed, onOpenClipboardFile)
         else Text("当前 Owner 尚未接通原生剪贴板")
         return
     }

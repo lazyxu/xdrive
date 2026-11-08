@@ -795,7 +795,16 @@ internal fun DriveApp(controller: DriveController, updates: UpdateController? = 
                             it.epoch == state.nativeUiSessionId &&
                                 it.server == state.server && it.username == state.username
                         }?.text,
-                        onIncomingClipboardConsumed = onIncomingClipboardConsumed)
+                        onIncomingClipboardConsumed = onIncomingClipboardConsumed,
+                        onOpenClipboardFile = { nodeID ->
+                            // Navigation is completed only AFTER a fresh
+                            // authenticated Files location/page confirms the
+                            // exact current Owner's Node and revision.
+                            controller.revealClipboardFileReference(nodeID) { verified ->
+                                selectNativeTab(NativeHomeTab.FILES)
+                                controller.open(verified)
+                            }
+                        })
                     else -> Unit
                 }
             } else when (state.screen) {
