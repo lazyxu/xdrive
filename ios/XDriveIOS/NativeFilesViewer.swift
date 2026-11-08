@@ -383,7 +383,7 @@ struct XDriveIOSNativeFilesViewer: View {
     private var originalExportFallback: some View {
         if authorized && exportFallbackEligible {
             if viewed.size > XDriveIOSNativeFilesExportCapacityPolicy.maximumSingleFileBytes {
-                Text("原件超过 1 GiB，本机 Viewer 无法直接导出。")
+                Text("原件超过当前平台可表示的文件大小，无法导出。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -520,13 +520,13 @@ struct XDriveIOSNativeFilesViewer: View {
             if let reason = error as? XDriveIOSNativeFilesPreviewError {
                 switch reason {
                 case .unsupported:
-                    failure = "当前格式不支持原生预览。可以在此下载原件并使用其他 App（导出上限 1 GiB）。"
+                    failure = "当前格式不支持原生预览。可以在本机空间足够时下载原件，再通过系统分享使用其他 App。"
                     exportFallbackEligible = true
                 case .tooLarge:
                     failure = "文件超过本机预览上限。可以在此下载原件并使用其他 App（导出上限 1 GiB）。"
                     exportFallbackEligible = true
                 case .malformed:
-                    failure = "原生预览无法解码当前文件。可以尝试导出原件至其他 App（导出上限 1 GiB）。"
+                    failure = "原生预览无法解码当前文件。可以在本机空间足够时导出原件至其他 App。"
                     exportFallbackEligible = true
                 case .noThumbnail:
                     failure = "原图过大或格式无法解码，且没有可用的云端缩略图。可以在此下载原件并使用其他 App（导出上限 1 GiB）。"
