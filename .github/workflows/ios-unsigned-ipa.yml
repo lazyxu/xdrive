@@ -631,6 +631,13 @@ jobs:
             ios/tests/NativeLocalPhotoMapSpatialPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
           "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
+          # Execute a repeatable bounded 100k metadata aggregator benchmark,
+          # distinctly labelled synthetic (not real PhotoKit or iCloud).
+          swiftc -swift-version 5 -O \
+            ios/XDriveIOS/NativeLocalPhotoMapSpatialPolicy.swift \
+            ios/tests/NativeLocalMap100kBenchmark.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-map-100k-benchmark"
+          "$RUNNER_TEMP/xdrive-ios-map-100k-benchmark"
           node --test desktop/tests/ios-native-photo-map-mvp.cjs
           node --test desktop/tests/ios-native-map-unified-parity.cjs
 

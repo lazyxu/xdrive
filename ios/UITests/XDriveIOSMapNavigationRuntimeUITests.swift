@@ -64,6 +64,16 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(map.exists)
         XCTAssertTrue(element("native-ios-local-map-basemap", in: app).exists)
         XCTAssertTrue(element("native-ios-local-map-capture-menu", in: app).exists)
+        // UI date → month selection exists on the real MapKit route, and
+        // cancelling it does not destroy the previously verified photo scope.
+        element("native-ios-local-map-capture-menu", in: app).tap()
+        let chooseDate = app.buttons["按指定日期"].firstMatch
+        XCTAssertTrue(chooseDate.waitForExistence(timeout: 10))
+        chooseDate.tap()
+        XCTAssertTrue(element("native-ios-map-selected-month", in: app)
+            .waitForExistence(timeout: 10))
+        app.buttons["取消"].firstMatch.tap()
+        XCTAssertTrue(map.exists)
 
         // Actual MapKit pan and pinch; pin authority is re-evaluated on every
         // camera movement. Changing orientation must not recreate the route.

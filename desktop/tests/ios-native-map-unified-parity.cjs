@@ -13,6 +13,7 @@ const trip = read('ios/XDriveIOS/NativeExactTripMap.swift')
 const localFilter = read('ios/XDriveIOS/NativePhotoMapPolicy.swift')
 const simulator = read('ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift')
 const runtimeWorkflow = read('.github/workflows/ios-native-navigation-runtime.yml')
+const benchmark = read('ios/tests/NativeLocalMap100kBenchmark.swift')
 
 test('100k local PhotoKit refinement reuses at most two exact checked camera windows', () => {
   assert.match(spatial, /static let maximumCachedWindows = 2/)
@@ -49,6 +50,9 @@ test('measured scan P50/P95, memory limits and page counts are not synthetic est
   assert.match(local, /IOS_MAP_PERF cache_hit=1 metadata_pages=0/)
   assert.match(checks, /Auto\.scanPercentiles\(\[10, 40, 20, 30, 50\]\)/)
   assert.match(checks, /Auto\.scanPercentiles\(\[\.nan\]\) == nil/)
+  assert.match(benchmark, /for offset in 0\.\.\.100_000/)
+  assert.match(benchmark, /IOS_MAP_SYNTHETIC_100K trials=/)
+  assert.match(benchmark, /peak_rss_bytes=/)
 })
 
 test('iCloud/HEIC/Live/video MapKit cover never discards the usable degraded poster', () => {
@@ -89,6 +93,8 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(local, /native-ios-map-verified-count/)
   assert.match(local, /navigationBarTitleDisplayMode\(\.inline\)/)
   assert.match(local, /native-ios-map-retry-covers/)
+  assert.match(local, /native-ios-map-selected-month/)
+  assert.match(cloud, /native-ios-owner-map-selected-month/)
   assert.match(local, /native-ios-map-photo-wall-tile/)
   assert.match(local, /native-ios-map-place-dismiss/)
   assert.match(local, /\.presentationDetents\(\[\.medium, \.large\]\)/)
