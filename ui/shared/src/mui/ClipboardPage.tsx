@@ -59,6 +59,10 @@ export type XDriveClipboardDataPort = {
   listDevices?(signal?: AbortSignal): Promise<{ devices: XDriveClipboardTargetDevice[] }>
   revokeDevice?(deviceID: string, signal?: AbortSignal): Promise<void>
   browseFiles?: ClipboardFileBrowsePort
+  /** Explicit Owner user gesture, canonical Files UploadSession/CAS only. */
+  uploadLocalFile?(file: File, signal: AbortSignal): Promise<{ node_id: number }>
+  /** Foreground browser Clipboard.read image/png with user consent only. */
+  importImageFromClipboard?(signal: AbortSignal): Promise<{ node_id: number }>
 }
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
@@ -96,6 +100,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [referenceKind, setReferenceKind] = useState<'text' | 'image' | 'file'>('text')
   const [nodeID, setNodeID] = useState('')
+  const localUploadInput = useRef<HTMLInputElement | null>(null)
   const active = useRef(true)
   const actionFence = useRef(new XDriveClipboardActionFence())
   const generation = useRef(0)
@@ -377,6 +382,27 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     }
   }
 
+  const importToOwnerFiles = async (
+    upload: (signal: AbortSignal) => Promise<{ node_id: number }>,
+  ) => {
+    if (busy || !key || !targetID || referenceKind === 'text') return
+    if (pending.current) {
+      setRetryExpired(true)
+      setMessage('上一条发送回执尚未确认，请先核对并明确放弃旧回执，不会自动再次上传。')
+      return
+    }
+    const actionToken = actionFence.current.capture()
+    setNodeID('') // A failed upload must never send a previously selected Node.
+    await runAction(async signal => {
+      const receipt = await upload(signal)
+      if (!Number.isSafeInteger(receipt.node_id) || receipt.node_id <= 0)
+        throw new Error('没有收到有效的 CAS 文件节点 ID。')
+      if (active.current && !signal.aborted && actionFence.current.isCurrent(actionToken)) {
+        setNodeID(String(receipt.node_id))
+      }
+    }, '已上传到当前 Owner 的云端根目录。请检查文件，然后明确点击“加密发送”；不发送也不会自动删除原件。')
+  }
+
   const pasteFromBrowser = async () => {
     if (!port.readText || reading) return
     const actionToken = actionFence.current.capture()
@@ -465,7 +491,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                 helperText="最多 64 KiB；不会在浏览器本地持久保存。" />
               {port.listDevices ? (
                 <Stack spacing={1}>
-                  <TextField select label="发送范围" value={targetID}
+                  <TextField select label="发送范围" value={targetID} disabled={busy}
                     onChange={e => { setTargetID(e.target.value); setConfirmRevoke(false); setPickerOpen(false) }} size="small">
                     <MenuItem value="">当前 Owner 所有已解锁客户端（广播）</MenuItem>
                     {targetDevices.map(device => (
@@ -476,7 +502,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                   </TextField>
                   {targetID ? (
                     <>
-                      <TextField select label="内容类型" value={referenceKind} size="small"
+                      <TextField select label="内容类型" value={referenceKind} size="small" disabled={busy}
                         onChange={e => setReferenceKind(e.target.value as 'text' | 'image' | 'file')}>
                         <MenuItem value="text">文本或链接</MenuItem>
                         <MenuItem value="image">现有云端图片引用</MenuItem>
@@ -501,6 +527,30 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                                   setPickerOpen(false)
                                 }}
                               />
+                            </>
+                          ) : null}
+                          {port.uploadLocalFile ? (
+                            <>
+                              <input ref={localUploadInput} type="file" hidden
+                                accept={referenceKind === 'image' ? 'image/*' : undefined}
+                                onChange={event => {
+                                  const file = event.currentTarget.files?.[0]
+                                  event.currentTarget.value = ''
+                                  if (file) void importToOwnerFiles(signal => port.uploadLocalFile!(file, signal))
+                                }} />
+                              <Button variant="outlined" size="small" disabled={busy}
+                                onClick={() => localUploadInput.current?.click()}>
+                                选择本机文件并上传到云端
+                              </Button>
+                              {referenceKind === 'image' && port.importImageFromClipboard ? (
+                                <Button variant="outlined" size="small" disabled={busy}
+                                  onClick={() => {
+                                    void importToOwnerFiles(signal => port.importImageFromClipboard!(signal))
+                                  }}>读取本机剪贴板图片并上传</Button>
+                              ) : null}
+                              <Typography variant="caption" color="text.secondary">
+                                上传通过现有 Files/CAS 写入当前 Owner 根目录；上传本身不会自动发送引用或删除原件。
+                              </Typography>
                             </>
                           ) : null}
                         </>
