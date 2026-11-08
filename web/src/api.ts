@@ -3796,6 +3796,7 @@ export class XDriveApi {
     transferID = '',
     groupID = '',
     expectedResumeManifestSHA256 = '',
+    externalSignal?: AbortSignal,
   ): Promise<XDriveUploadResult> {
     const session = this.transferContext()
     const managedExternally = Boolean(transferID)
@@ -3820,7 +3821,17 @@ export class XDriveApi {
       onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
     }
 
+    // Clipboard imports must abort the *actual* CAS writer if this Owner
+    // session or mounted view is cancelled, not just drop its final receipt.
+    const abortFromCaller = () => {
+      if (!managedExternally) webTransferStore.cancel(activeTransferID)
+    }
     try {
+      if (externalSignal) {
+        if (managedExternally) throw new Error('Externally managed uploads cannot have another cancellation owner')
+        if (externalSignal.aborted) abortFromCaller()
+        else externalSignal.addEventListener('abort', abortFromCaller, { once: true })
+      }
       tracking.check()
       // The shared folder controller owns the child's terminal state, but
       // only this Web transport knows its trustworthy cloud destination and
@@ -3951,6 +3962,7 @@ export class XDriveApi {
       }
       throw error
     } finally {
+      externalSignal?.removeEventListener('abort', abortFromCaller)
       owned?.release()
     }
   }
