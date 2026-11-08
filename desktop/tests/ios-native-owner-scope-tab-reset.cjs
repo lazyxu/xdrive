@@ -31,6 +31,6 @@ test('signed-out direct root invalidates old Owner routes without a push-card di
   assert.doesNotMatch(source, /dismiss\(\)|返回服务器与账号管理/);
   assert.match(source, /showSignOutConsent = false/);
   assert.match(source, /signOutConsentOwner = nil/);
-  assert.match(source, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/);
+  assert.match(source, /XDriveIOSNativePhotoBackupScreen\(\s*login: login, controller: backup,\s*launchAction: backupLaunchAction, launchNonce: backupLaunchNonce\s*\)/);
   assert.doesNotMatch(source, /WKWebView|document\.cookie/);
 });

@@ -25,7 +25,7 @@ test('one authenticated native root owns the foreground schedule across Photos n
   assert.match(login, /if model\.owner != nil \{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
   assert.doesNotMatch(login, /showingNativeWorkspace|verifiedAccount\(/)
   assert.match(dash, /@ObservedObject var backup: XDriveIOSNativePhotoBackupController/)
-  assert.match(dash, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/)
+  assert.match(dash, /XDriveIOSNativePhotoBackupScreen\(\s*login: login, controller: backup,\s*launchAction: backupLaunchAction, launchNonce: backupLaunchNonce\s*\)/)
   assert.doesNotMatch(dash, /Timer\.publish|@StateObject private var backup|backup\.cancel\(\)/)
 })
 
