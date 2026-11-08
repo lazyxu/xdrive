@@ -29,6 +29,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"github.com/lazyxu/xdrive/internal/version"
+	"gorm.io/gorm"
 )
 
 // Opt-in real production Web App and real Gin Owner/Cells HTTP test fixture.
