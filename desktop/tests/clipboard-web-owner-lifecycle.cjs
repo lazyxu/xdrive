@@ -42,9 +42,14 @@ function loadTS(filename, sourceText, injected = {}, jsx = false) {
   return module.exports
 }
 const fence = loadTS(fenceFile, fs.readFileSync(fenceFile, 'utf8'))
-function makeUI(encrypt = async (_key, _scope, _id, value) => ({
-  kind: 'text/plain', nonce: 'nonce', ciphertext: 'cipher:' + value,
-})) {
+function makeUI(
+  encrypt = async (_key, _scope, _id, value) => ({
+    kind: 'text/plain', nonce: 'nonce', ciphertext: 'cipher:' + value,
+  }),
+  encryptForDevice = async () => {
+    throw Error('Device-targeted envelope not configured in v1-only test')
+  },
+) {
   // Only MUI's presentational tree is mocked. This executes the real
   // ClipboardPage component, its hooks, effects and click/change handlers.
   const mui = Object.fromEntries(
@@ -69,9 +74,7 @@ function makeUI(encrypt = async (_key, _scope, _id, value) => ({
     '../clipboard-crypto': crypt,
     '../clipboard-action-fence': fence,
     '../clipboard-target-crypto': {
-      xDriveClipboardEncryptForDevice: async () => {
-        throw Error('Device-targeted envelope not configured in v1-only test')
-      },
+      xDriveClipboardEncryptForDevice: encryptForDevice,
     },
     './ClipboardFileNodePicker': { ClipboardFileNodePicker: () => null },
   }, true).XDriveClipboardPage
@@ -405,5 +408,61 @@ test('Browser Clipboard port rejects insecure and missing readText contexts', as
     globalThis.window.isSecureContext = true
     if (savedNavigator) Object.defineProperty(globalThis, 'navigator', savedNavigator)
     else delete globalThis.navigator
+  }
+})
+
+test('Clipboard directed Node retry cannot reuse an unknown ACK with a changed MIME kind', async () => {
+  const deviceID = 'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2'
+  const publicKey = Buffer.alloc(32, 7).toString('base64')
+  const records = []
+  const encryptedKinds = []
+  const Page = makeUI(undefined, async (_scope, target, _pub, _event, kind, text, nodeID) => {
+    encryptedKinds.push(kind)
+    assert.equal(target, deviceID)
+    assert.equal(nodeID, 118)
+    assert.equal(text, 'asset:118')
+    return {
+      kind, target_device_id: target,
+      ephemeral_key: Buffer.alloc(32, 8).toString('base64'),
+      wrapped_key: Buffer.alloc(60, 9).toString('base64'),
+      node_id: nodeID, nonce: 'target-nonce', ciphertext: 'sealed:' + kind,
+    }
+  })
+  const app = await mount(Page, port('https://drive.example:directed-owner', {
+    listDevices: async () => ({ devices: [
+      { device_id: deviceID, name: 'Verified iPhone', platform: 'ios', public_key: publicKey },
+    ] }),
+    create: async item => {
+      records.push({ ...item })
+      if (records.length === 1) throw Error('lost ACK after directed commit')
+      return { id: 118, ...item }
+    },
+  }))
+  try {
+    await unlock(app)
+    await act(() => {})
+    await type(app, '发送范围', deviceID)
+    await type(app, '内容类型', 'image')
+    await type(app, '已上传的云端文件 ID', '118')
+    await click(app, '加密发送')
+    assert.equal(records.length, 1)
+    assert.equal(records[0].kind, 'image/x-xdrive-node-ref')
+    assert.match(app.snapshot(), /发送未确认/)
+
+    // Only the requested MIME kind changed. The Node and target stayed fixed.
+    await type(app, '内容类型', 'file')
+    await click(app, '加密发送')
+    assert.equal(records.length, 1, 'must not send old image ciphertext under new file intent')
+    assert.equal(encryptedKinds.length, 1, 'must not silently create a new EventID after unknown ACK')
+    assert.match(app.snapshot(), /上一条发送回执仍未确认/)
+
+    // Restore the exact original intent; only then retry identical bytes/ID.
+    await type(app, '内容类型', 'image')
+    await click(app, '加密发送')
+    assert.equal(records.length, 2)
+    assert.deepEqual(records[1], records[0], 'safe retry preserves exact authenticated kind and EventID')
+    assert.deepEqual(encryptedKinds, ['image/x-xdrive-node-ref'])
+  } finally {
+    await app.unmount()
   }
 })
