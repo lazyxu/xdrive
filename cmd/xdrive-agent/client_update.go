@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lazyxu/xdrive/internal/client"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
@@ -92,7 +93,16 @@ func (defaultClientUpdateBackend) Check(ctx context.Context, current, channel, s
 	if err != nil || listing.Commit != result.Commit {
 		return result, nil
 	}
-	platform := runtime.GOOS
+	return matchCurrentServerBundle(result, listing, runtime.GOOS), nil
+}
+
+// matchCurrentServerBundle only changes transport metadata for the package
+// already selected by the client's independent release channel. A different
+// Server Commit, platform, filename or channel digest is never substituted.
+func matchCurrentServerBundle(result xupdate.Result, listing client.ReleaseBundleListing, platform string) xupdate.Result {
+	if result.Commit != listing.Commit || len(result.Commit) != 40 {
+		return result
+	}
 	for _, artifact := range listing.Artifacts {
 		if artifact.Platform != platform || artifact.Filename != result.Asset.Name ||
 			artifact.BuildCommit != result.Commit {
@@ -113,7 +123,7 @@ func (defaultClientUpdateBackend) Check(ctx context.Context, current, channel, s
 		}
 		break
 	}
-	return result, nil
+	return result
 }
 
 func (defaultClientUpdateBackend) Download(ctx context.Context, result xupdate.Result, progress xupdate.ProgressFunc) (string, error) {
