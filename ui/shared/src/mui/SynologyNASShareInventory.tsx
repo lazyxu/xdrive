@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { xDriveDSMAuthenticationFailureMessage } from '../synology-dsm-auth-diagnostics'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import type { XDriveSynologyNASShare } from '../synology-nas-share-inventory'
@@ -43,14 +44,13 @@ export function XDriveSynologyNASShareInventory({ client, onVerifiedShare }: {
     }).catch((failure: unknown) => {
       if (!current || controller.signal.aborted) return
       const detail = failure instanceof Error ? failure.message : ''
-      if (detail.includes('HTTP 503) [agent-unavailable]')) {
+      const authFailure = xDriveDSMAuthenticationFailureMessage(failure)
+      if (authFailure) {
+        setError(authFailure)
+      } else if (detail.includes('HTTP 503) [agent-unavailable]')) {
         setError('无法检查 NAS 共享目录：DSM CGI 未连接到 xdrive-agent。请先检查套件服务和 Agent 日志；当前尚不能判定目录权限。')
       } else if (detail.includes('HTTP 503) [nas-inventory-unavailable]')) {
         setError('Agent 已连接，但 NAS 共享目录枚举失败。请检查 xdrivenas 套件用户对 /volumeN 的读取/遍历权限后重新检查。')
-      } else if (detail.includes('HTTP 401)')) {
-        setError('DSM 登录会话已失效，请重新登录 DSM 后再检查共享目录。')
-      } else if (detail.includes('HTTP 403)')) {
-        setError('当前 DSM 用户未获得 xdrivenas 套件界面授权，请先按设备备份页面的首次授权说明处理。')
       } else {
         setError('NAS 共享目录检查请求失败，尚无法确认目录读取权限。请检查 Agent/CGI 和套件版本后重试。')
       }

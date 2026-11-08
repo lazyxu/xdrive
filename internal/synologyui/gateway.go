@@ -223,25 +223,83 @@ func loadAuthority(configDir string) (authority, []byte, error) {
 	return a, key, nil
 }
 
-// AuthenticateDSM executes the documented DSM 7 per-CGI-request session
-// validator, inheriting the web server's actual HTTP_COOKIE and REMOTE_ADDR.
-// A supplied username, HTTP header or query string is never authentication.
-func AuthenticateDSM(ctx context.Context) (string, error) {
-	if runtime.GOOS != "linux" || os.Getenv("GATEWAY_INTERFACE") == "" || os.Getenv("HTTP_COOKIE") == "" || os.Getenv("REMOTE_ADDR") == "" {
-		return "", errors.New("DSM CGI request required")
+// Synology documents an empty stdout on a successfully executed helper
+// as "not logged in". Execution errors, missing CGI inputs, timeouts and
+// malformed identity are NOT proof that a DSM browser session expired.
+var (
+	errDSMSessionRejected   = errors.New("DSM session rejected")
+	errDSMAuthEnvironment   = errors.New("DSM authentication environment unavailable")
+	errDSMAuthHelper        = errors.New("DSM authentication helper failed")
+	errDSMAuthTimeout       = errors.New("DSM authentication helper timed out")
+	errDSMAuthInvalidOutput = errors.New("DSM authentication output invalid")
+)
+
+// The helper returns a username, optionally with a single final LF or CRLF.
+// Internal newline/control bytes or an unsupported principal are never
+// authenticated. Do not propagate raw stdout, stderr, usernames or paths.
+func classifyDSMAuthenticateCGIResult(output []byte, runErr, ctxErr error) (string, error) {
+	if errors.Is(ctxErr, context.DeadlineExceeded) || errors.Is(runErr, context.DeadlineExceeded) {
+		return "", errDSMAuthTimeout
 	}
-	check, cancel := context.WithTimeout(ctx, 3*time.Second)
+	if runErr != nil {
+		return "", errDSMAuthHelper
+	}
+	if len(output) > 128 {
+		return "", errDSMAuthInvalidOutput
+	}
+	username := string(output)
+	if strings.HasSuffix(username, "\r\n") {
+		username = strings.TrimSuffix(username, "\r\n")
+	} else {
+		username = strings.TrimSuffix(username, "\n")
+	}
+	if username == "" {
+		return "", errDSMSessionRejected
+	}
+	if !validUser(username) {
+		return "", errDSMAuthInvalidOutput
+	}
+	return username, nil
+}
+
+// AuthenticateDSM executes only the native DSM session checker with the CGI
+// request's real HTTP_COOKIE, REMOTE_ADDR and inherited web-server environment.
+// Never accept a browser-supplied username, fallback credential or WebAPI bypass.
+func AuthenticateDSM(ctx context.Context) (string, error) {
+	if runtime.GOOS != "linux" || os.Getenv("GATEWAY_INTERFACE") == "" ||
+		os.Getenv("HTTP_COOKIE") == "" || os.Getenv("REMOTE_ADDR") == "" {
+		return "", errDSMAuthEnvironment
+	}
+	// Low-end ARMv7 NAS hardware can be busy. Keep this bounded below the
+	// outer Gateway request deadline without mistaking a timeout for logout.
+	check, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(check, "/usr/syno/synoman/webman/modules/authenticate.cgi")
 	output, err := cmd.Output()
-	if err != nil || len(output) > 128 {
-		return "", errors.New("DSM session rejected")
+	return classifyDSMAuthenticateCGIResult(output, err, check.Err())
+}
+
+// Only fixed status/reason pairs reach the browser. An ambiguous authenticator
+// error fails closed as 503; a real empty native result remains HTTP 401.
+func dsmAuthFailureStatus(username string, err error) (int, string) {
+	if err == nil && validUser(username) {
+		return http.StatusOK, ""
 	}
-	username := strings.TrimSpace(string(output))
-	if !validUser(username) || strings.ContainsAny(string(output), "\x00\r") {
-		return "", errors.New("DSM session rejected")
+	if errors.Is(err, errDSMSessionRejected) || (err == nil && username == "") {
+		return http.StatusUnauthorized, "dsm-session-rejected"
 	}
-	return username, nil
+	switch {
+	case errors.Is(err, errDSMAuthEnvironment):
+		return http.StatusServiceUnavailable, "dsm-auth-environment"
+	case errors.Is(err, errDSMAuthTimeout):
+		return http.StatusServiceUnavailable, "dsm-auth-timeout"
+	case errors.Is(err, errDSMAuthHelper):
+		return http.StatusServiceUnavailable, "dsm-auth-helper-failed"
+	case errors.Is(err, errDSMAuthInvalidOutput), err == nil:
+		return http.StatusServiceUnavailable, "dsm-auth-response-invalid"
+	default:
+		return http.StatusServiceUnavailable, "dsm-auth-unavailable"
+	}
 }
 
 func (g *Gateway) now() time.Time {
@@ -396,12 +454,21 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	username, err := g.Authenticate(ctx)
-	if err != nil || !validUser(username) {
-		http.Error(w, "DSM session required", http.StatusUnauthorized)
+	if status, reason := dsmAuthFailureStatus(username, err); status != http.StatusOK {
+		w.Header().Set("X-XDrive-DSM-Failure", reason)
+		http.Error(w, "DSM authentication not available or not accepted", status)
 		return
 	}
 	a, key, err := loadAuthority(g.ConfigDir)
-	if err != nil || subtle.ConstantTimeCompare([]byte(username), []byte(a.DSMUser)) != 1 {
+	if err != nil {
+		// Missing/corrupt authorization configuration does not prove that
+		// the authenticated DSM principal is unapproved.
+		w.Header().Set("X-XDrive-DSM-Failure", "dsm-authority-unavailable")
+		http.Error(w, "DSM package authority unavailable", http.StatusForbidden)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(username), []byte(a.DSMUser)) != 1 {
+		w.Header().Set("X-XDrive-DSM-Failure", "dsm-principal-unapproved")
 		http.Error(w, "DSM user not permitted", http.StatusForbidden)
 		return
 	}
@@ -411,8 +478,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		current := csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)
 		previous := csrf(key, username, r.Header.Get("Cookie"), r.Host, interval-1)
 		if !validOrigin(r) || len(token) != len(current) ||
-			(subtle.ConstantTimeCompare([]byte(token), []byte(current)) != 1 && subtle.ConstantTimeCompare([]byte(token), []byte(previous)) != 1) ||
-			(r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/cloud-create-folder" && r.URL.Path != "/v1/cloud-rename-node" && r.URL.Path != "/v1/cloud-delete-node" && r.URL.Path != "/v1/cloud-move-node" && r.URL.Path != "/v1/cloud-copy-node" && r.URL.Path != "/v1/cloud-upload-file" && !isDSMOwnerNotesWrite(r.URL.Path) && !isDSMClipboardWrite(r.URL.Path) && !isDSMOwnerNotesImageWrite(r.URL.Path) && !isLocalBackupManagementMutation(r.URL.Path) && r.ContentLength != 0) ||
+			(subtle.ConstantTimeCompare([]byte(token), []byte(current)) != 1 && subtle.ConstantTimeCompare([]byte(token), []byte(previous)) != 1) {
+			w.Header().Set("X-XDrive-DSM-Failure", "dsm-csrf-rejected")
+			http.Error(w, "CSRF validation failed", http.StatusForbidden)
+			return
+		}
+		// A malformed POST body or forbidden payload is not evidence that
+		// the browser's valid Origin/CSRF proof was rejected.
+		if (r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/cloud-create-folder" && r.URL.Path != "/v1/cloud-rename-node" && r.URL.Path != "/v1/cloud-delete-node" && r.URL.Path != "/v1/cloud-move-node" && r.URL.Path != "/v1/cloud-copy-node" && r.URL.Path != "/v1/cloud-upload-file" && !isDSMOwnerNotesWrite(r.URL.Path) && !isDSMClipboardWrite(r.URL.Path) && !isDSMOwnerNotesImageWrite(r.URL.Path) && !isLocalBackupManagementMutation(r.URL.Path) && r.ContentLength != 0) ||
 			((r.URL.Path == "/v1/schedule" || r.URL.Path == "/v1/nas-share-preflight") && (r.ContentLength < 2 || r.ContentLength > 1024)) ||
 			(r.URL.Path == "/v1/server-login" && (r.ContentLength < 2 || r.ContentLength > 8192)) ||
 			((r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" || r.URL.Path == "/v1/cloud-create-folder" || r.URL.Path == "/v1/cloud-rename-node" || r.URL.Path == "/v1/cloud-delete-node" || r.URL.Path == "/v1/cloud-move-node" || r.URL.Path == "/v1/cloud-copy-node") && (r.ContentLength < 2 || r.ContentLength > 1024)) ||
@@ -421,7 +494,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			(isDSMClipboardWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmClipboardBodyMax)) ||
 			(isDSMOwnerNotesImageWrite(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > dsmNotesImageUploadJSONMax)) ||
 			(isLocalBackupManagementMutation(r.URL.Path) && (r.ContentLength < 2 || r.ContentLength > localBackupManagementBodyLimit(r.URL.Path))) {
-			http.Error(w, "CSRF validation failed", http.StatusForbidden)
+			w.Header().Set("X-XDrive-DSM-Failure", "dsm-request-invalid")
+			http.Error(w, "DSM request validation failed", http.StatusForbidden)
 			return
 		}
 	}

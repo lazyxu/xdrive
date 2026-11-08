@@ -11,6 +11,22 @@ const React = require('react')
 const Renderer = require('react-test-renderer')
 const { act } = Renderer
 
+// The UI imports the actual zero-dependency diagnostics presenter. Mount its
+// real compiled module instead of hiding unexpected imports behind a generic
+// require stub; Owner/session error messages remain under test.
+const dsmAuthFile = path.resolve(__dirname,
+  '../../ui/shared/src/synology-dsm-auth-diagnostics.ts')
+const dsmAuthCompiled = ts.transpileModule(fs.readFileSync(dsmAuthFile, 'utf8'), {
+  fileName: dsmAuthFile,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+})
+const dsmAuthModule = { exports: {} }
+new Function('module', 'exports', 'require', dsmAuthCompiled.outputText)(
+  dsmAuthModule, dsmAuthModule.exports, id => {
+    throw Error('unexpected runtime dependency in DSM diagnostics: ' + id)
+  },
+)
+
 const renders = { folders: [], dialogs: [], notices: [] }
 function stub(name) {
   return function Stub({ children, ...props }) {
@@ -30,6 +46,7 @@ const imports = {
   'react/jsx-runtime': require('react/jsx-runtime'),
   '@mui/material': MUI,
   '@mui/icons-material/RefreshRounded': { default: stub('refresh-icon') },
+  '../synology-dsm-auth-diagnostics': dsmAuthModule.exports,
   './DeviceBackupFolderAccordion': { XDriveDeviceBackupFolderAccordion: stub('folder-accordion') },
   './DeviceBackupLocalPrimaryActions': { XDriveDeviceBackupLocalPrimaryActions: stub('local-actions') },
   './DeviceBackupDeviceCard': { XDriveDeviceBackupDeviceCard: stub('device-card') },
@@ -282,9 +299,20 @@ function renderedDSMText(node) {
   return (node.children || []).map(renderedDSMText).join('')
 }
 
-test('DSM first-use 403 gives NAS-only principal setup steps without contaminating another Host', async () => {
+test('only explicit DSM principal rejection shows NAS-only authorization; generic 403 and CSRF remain safe', async () => {
   const denied = {
+    list: async () => { throw new Error('DSM backup request rejected (HTTP 403) [dsm-principal-unapproved]') },
+    history: async id => emptyHistory(id),
+  }
+  // Neither an unclassified 403 nor an explicit CSRF failure grants any
+  // evidence that the DSM principal is unauthorized. Do not suggest a NAS
+  // shell command on these errors.
+  const unclassified403 = {
     list: async () => { throw new Error('DSM backup request rejected (HTTP 403)') },
+    history: async id => emptyHistory(id),
+  }
+  const csrf403 = {
+    list: async () => { throw new Error('DSM backup request rejected (HTTP 403) [dsm-csrf-rejected]') },
     history: async id => emptyHistory(id),
   }
   const offline = {
@@ -310,6 +338,25 @@ test('DSM first-use 403 gives NAS-only principal setup steps without contaminati
   // Count only the actual host to require exactly one visible NAS hint.
   assert.equal(tree.root.findAllByType('Box').filter(node =>
     node.props['data-xdrive-dsm-first-use-authorization'] === true).length, 1)
+
+  await act(async () => {
+    tree.update(React.createElement(Panel, { client: unclassified403 }))
+    await Promise.resolve()
+  })
+  const unclassifiedView = renderedDSMText(tree.toJSON())
+  assert.match(unclassifiedView, /HTTP 403/)
+  assert.match(unclassifiedView, /可能是 Origin 或 CSRF 拒绝/)
+  assert.doesNotMatch(unclassifiedView, /sudo -u xdrivenas|xd backup synology-ui authorize/)
+  assert.equal(tree.root.findAllByProps({ 'data-xdrive-dsm-first-use-authorization': true }).length, 0)
+
+  await act(async () => {
+    tree.update(React.createElement(Panel, { client: csrf403 }))
+    await Promise.resolve()
+  })
+  const csrfView = renderedDSMText(tree.toJSON())
+  assert.match(csrfView, /dsm-csrf-rejected/)
+  assert.doesNotMatch(csrfView, /sudo -u xdrivenas|xd backup synology-ui authorize/)
+  assert.equal(tree.root.findAllByProps({ 'data-xdrive-dsm-first-use-authorization': true }).length, 0)
 
   await act(async () => {
     tree.update(React.createElement(Panel, { client: offline }))

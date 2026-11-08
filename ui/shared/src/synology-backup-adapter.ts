@@ -767,6 +767,25 @@ export class XDriveDSMLoginNoCommitError extends Error {
   constructor() { super('DSM Server credentials rejected without Owner commit') }
 }
 
+// Transport-only allowlist lives in this zero-runtime-import adapter: many
+// existing DSM source/Owner tests load it with TypeScript+vm, intentionally
+// without a CommonJS require or any Node privileges.
+const dsmReasonByStatus: Readonly<Record<number, readonly string[]>> = {
+  401: ['dsm-session-rejected'],
+  403: ['dsm-principal-unapproved', 'dsm-authority-unavailable',
+    'dsm-csrf-rejected', 'dsm-request-invalid'],
+  503: [
+    'agent-unavailable', 'server-connection-unavailable', 'nas-inventory-unavailable',
+    'dsm-auth-environment', 'dsm-auth-timeout', 'dsm-auth-helper-failed',
+    'dsm-auth-response-invalid', 'dsm-auth-unavailable',
+  ],
+}
+
+export function xDriveDSMSafeFailureCode(status: number, header: string | null): string {
+  if (!header || !dsmReasonByStatus[status]?.includes(header)) return ''
+  return header
+}
+
 // Transport only. A DSM CGI backend authenticates every request and delegates
 // owner-verified operations to the original xdrive-agent. Nothing is persisted.
 export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSynologyBackupLocalClient {
@@ -834,13 +853,11 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
           response.status === 422 && response.headers.get('X-XDrive-Login-No-Commit') === '1') {
         throw new XDriveDSMLoginNoCommitError()
       }
-      // Only these fixed, non-sensitive DSM CGI diagnostics are accepted.
-      // Never render arbitrary Agent or CGI response bodies in a browser.
-      const diagnostic = response.status === 503
-        ? response.headers.get('X-XDrive-DSM-Failure') : null
-      const reason = diagnostic && [
-        'agent-unavailable', 'server-connection-unavailable', 'nas-inventory-unavailable',
-      ].includes(diagnostic) ? ` [${diagnostic}]` : ''
+      // Fail-closed status-specific allowlist: never print untrusted headers,
+      // response bodies, identity, Agent details or URLs to the DSM browser.
+      const diagnostic = xDriveDSMSafeFailureCode(
+        response.status, response.headers.get('X-XDrive-DSM-Failure'))
+      const reason = diagnostic ? ` [${diagnostic}]` : ''
       throw new Error(`DSM backup request rejected (HTTP ${response.status})${reason}`)
     }
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/json')) {
