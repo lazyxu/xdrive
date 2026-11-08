@@ -33,8 +33,8 @@ test('bounded trip map count and each location count use the same exact v2 SQL p
   assert.match(mapAPI, /COUNT\(DISTINCT xd_media_metadata\.node_id\) AS item_count/)
   assert.match(mapAPI, /Group\(latCell \+ ", " \+ lonCell\)/)
   assert.match(mapAPI, /Limit\(mediaExactTripMapMaxPlaces \+ 1\)/)
-  assert.match(mapAPI, /len\(rows\) > mediaExactTripMapMaxPlaces/)
-  assert.match(mapAPI, /expected != overview\.TotalPhotoCount \|\| expected == 0/)
+  assert.match(mapAPI, /len\(rows\) <= mediaExactTripMapMaxPlaces/)
+  assert.match(mapAPI, /out\.TotalPhotoCount != expected/)
   assert.match(mapAPI, /ARRAY_AGG\(xd_media_metadata\.latitude ORDER BY xd_media_metadata\.node_id/)
   assert.match(mapAPI, /ARRAY_AGG\(xd_media_metadata\.longitude ORDER BY xd_media_metadata\.node_id/)
   assert.match(mapAPI, /CoordinateKind:\s+"grid_cell_center"/)
@@ -61,7 +61,7 @@ test('existing TLS Owner Reader requests trip-only map and trip AND location pag
   const snippet = reader.slice(start, end)
   assert.ok(start >= 0 && end > start)
   assert.match(snippet, /endpoint\("\/api\/v1\/media\/trips\/\\\(trip\.id\)\/map"/)
-  assert.match(snippet, /result\.total_photo_count == trip\.item_count/)
+  assert.match(snippet, /result\.trip_photo_count == trip\.item_count/)
   assert.match(snippet, /XDriveIOSNativeOwnerMapOverviewPolicy\.valid\(result\)/)
   assert.match(snippet, /XDriveIOSNativeOwnerMapSelectionPolicy\.canOpenPhotoRange/)
   assert.match(snippet, /func exactTripPage\(/)
@@ -77,15 +77,20 @@ test('native trip MapKit uses only that Owner map and never the whole Owner over
   assert.match(map, /XDriveIOSOwnerMapSurface\(/)
   assert.match(map, /let result = try await reader\.exactTripMap\(/)
   assert.match(map, /overview = result/)
-  assert.match(map, /result\.total_photo_count == trip\.item_count/)
+  assert.match(map, /scheduleViewportReload\(next\)/)
+  assert.match(mapAPI, /mediaMapOverviewBuckets\(fitted\)/)
+  assert.match(mapAPI, /TripPhotoCount:\s*tripCount/)
+  assert.match(mapAPI, /mediaExactTripMapRequestBounds\(/)
+  assert.match(map, /result\.trip_photo_count == trip\.item_count/)
   assert.match(map, /XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsSelectedFacet\(/)
   assert.match(map, /XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsSelectedCluster\(/)
   assert.match(map, /XDriveIOSNativePhotoOwnerScope\.matches\(\s*auth\.owner, expectedOwner\)/)
   assert.match(map, /onCameraWillChange: \{[\s\S]*?moving = true/)
-  assert.match(map, /onCamera: \{ next in[\s\S]*?moving = false/)
+  assert.match(map, /onCamera: \{ next in[\s\S]*?moving = true/)
   assert.match(map, /\.onChange\(of: login\.owner\)/)
   assert.match(map, /\.onChange\(of: phase\)/)
   assert.match(map, /native-ios-exact-trip-map-count/)
+  assert.match(map, /overview\.trip_photo_count == trip\.item_count/)
   assert.doesNotMatch(map, /reader\.mapOverview\(|endpoint\("\/api\/v1\/media\/places\/overview"|WKWebView|UserDefaults|UploadSession/)
 })
 
@@ -128,17 +133,19 @@ test('bounded dateline camera has executable Foundation policy in IPA workflow',
   assert.match(workflow, /node --test desktop\/tests\/ios-native-exact-trip-map\.cjs/)
 })
 
-test('trip map fails closed on 64-place overflow and distinguishes stale trip from Owner revocation', () => {
+test('trip map aggregates 65+ places but fails closed on stale member or Owner revocation', () => {
   const response = map.slice(map.indexOf('catch let failure as XDriveIOSNativeMediaReadFailure'));
   assert.match(response, /case 401, 403:[\s\S]*?invalidate\(\)/);
   assert.match(response, /case 404:[\s\S]*?旅行已变化/);
-  assert.match(response, /case 409:[\s\S]*?最多 64 个地点/);
-  assert.match(response, /self\.error = "当前旅行地点过多或成员正在变化/);
-  assert.doesNotMatch(response, /reader\.mapOverview\(|reader\.page\(offset:|allPhotos\(/);
+  assert.match(response, /case 409:[\s\S]*?旅行成员正在变化/);
+  assert.match(mapAPI, /len\(rows\) <= mediaExactTripMapMaxPlaces/);
+  assert.match(mapAPI, /out\.Aggregated = true/);
+  assert.match(mapAPI, /mediaMapOverviewBucketBounds\(fitted, r\.BucketRow, r\.BucketCol\)/);
+  assert.doesNotMatch(response, /最多 64 个地点|reader\.mapOverview\(|reader\.page\(offset:|allPhotos\(/);
 });
 
 test('trip map keeps camera on sheet dismissal and refresh while revoking stale pins', () => {
-  assert.match(map, /private func reload\(preservingCamera: Bool = false\)/)
+  assert.match(map, /private func reload\([\s\S]*?preservingCamera: Bool = false,[\s\S]*?bounds: XDriveIOSNativeOwnerMapBounds\? = nil/)
   const closures = [...map.matchAll(/\.sheet\(item: \$selected(?:Place|Cluster), onDismiss: \{/g)]
   assert.equal(closures.length, 2)
   assert.match(map, /if activeOwner \{ reload\(preservingCamera: true\) \} else \{ invalidate\(\) \}/)

@@ -6,6 +6,7 @@ struct XDriveIOSOwnerMapChosenCluster: Identifiable {
     let id = UUID()
     let places: [XDriveIOSNativeOwnerMapFacet]
     let owner: XDriveNativeOwnerRoot
+    let captureRange: XDriveIOSNativePhotoMapCaptureRange?
 }
 
 private struct XDriveIOSOwnerClusterCursor: Equatable {
@@ -268,7 +269,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     // Even if a new page has a valid offset, the old snapshot
                     // must still be EXACTLY the one the Viewer left.
                     let reread = try await reader.page(
-                        offset: currentCursor.offset, placeID: facet.id)
+                        offset: currentCursor.offset, placeID: facet.id, captureRange: selection.captureRange)
                     guard previous.sameVisibleSnapshot(as: reread),
                           reread.total_count == facet.item_count
                     else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
@@ -277,7 +278,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         // Preserve the original same-place adjacent 48-item path.
                         let targetOffset = targetCursor.offset
                         following = try await reader.page(
-                            offset: targetOffset, placeID: facet.id)
+                            offset: targetOffset, placeID: facet.id, captureRange: selection.captureRange)
                         guard following.total_count == facet.item_count else {
                             throw XDriveIOSNativeMediaReadFailure.invalidPage
                         }
@@ -285,7 +286,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         // Never use a MapKit region as a PhotoAsset credential.
                         // The destination must be an exact, verified placeID.
                         following = try await reader.page(
-                            offset: targetCursor.offset, placeID: targetFacet.id)
+                            offset: targetCursor.offset, placeID: targetFacet.id, captureRange: selection.captureRange)
                     }
                     try Task.checkCancellation()
                     guard activeOwner,
@@ -613,7 +614,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     guard XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(priorFacet)
                     else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
                     let currentOldPage = try await reader.page(
-                        offset: departingCursor.offset, placeID: priorFacet.id)
+                        offset: departingCursor.offset, placeID: priorFacet.id, captureRange: selection.captureRange)
                     try Task.checkCancellation()
                     guard generation == ticket, activeOwner,
                           XDriveIOSNativePhotoOwnerScope.matches(
@@ -624,7 +625,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
                 }
                 let fetched = try await reader.page(
-                    offset: target.offset, placeID: facet.id)
+                    offset: target.offset, placeID: facet.id, captureRange: selection.captureRange)
                 try Task.checkCancellation()
                 guard generation == ticket, activeOwner,
                       XDriveIOSNativePhotoOwnerScope.matches(

@@ -663,6 +663,7 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-exact-trip-map-camera"
           "$RUNNER_TEMP/xdrive-ios-exact-trip-map-camera"
           node --test desktop/tests/ios-native-exact-trip-map.cjs
+          node --test desktop/tests/ios-native-photo-map-capture-parity.cjs
 
       - name: Verify native Files Owner Range, search and fixed-tab wiring
         run: |

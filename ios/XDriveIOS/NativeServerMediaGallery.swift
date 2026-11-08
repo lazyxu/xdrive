@@ -1,4 +1,5 @@
 import AVKit
+import MapKit
 import Combine
 import Photos
 import SwiftUI
@@ -16,6 +17,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     private var pageAlbumID: String?
     private var pagePlaceID: String?
     private var pageSearch = ""
+    private var pageCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     private var epoch = UUID()
     private var job: Task<Void, Never>?
     private var currentReader: XDriveIOSNativeMediaGalleryReader?
@@ -30,6 +32,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         pageAlbumID = nil
         pagePlaceID = nil
         pageSearch = ""
+        pageCaptureRange = nil
         failedOffset = nil
         busy = false
         error = nil
@@ -56,14 +59,15 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         _ next: XDriveIOSNativeMediaRange,
         after previous: XDriveIOSNativeMediaRange,
         login: XDriveIOSNativeOwnerLoginModel,
-        albumID: String?, placeID: String?, search: String
+        albumID: String?, placeID: String?, search: String,
+        captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     ) -> Bool {
         guard let existing = page, let reader = currentReader,
               let expected = pageScope,
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
               XDriveIOSNativePhotoOwnerScope.matches(reader.owner, expected),
               pageAlbumID == albumID, pagePlaceID == placeID,
-              pageSearch == search, !busy,
+              pageSearch == search, pageCaptureRange == captureRange, !busy,
               existing.sameVisibleSnapshot(as: previous),
               next.total_count == previous.total_count,
               next.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
@@ -86,7 +90,8 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     func adoptVisibleRange(
         from source: XDriveIOSNativeMediaWallModel,
         login: XDriveIOSNativeOwnerLoginModel,
-        albumID: String?, placeID: String?, search: String
+        albumID: String?, placeID: String?, search: String,
+        captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     ) -> Bool {
         guard let owner = login.owner,
               let verified = source.page,
@@ -96,6 +101,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
               source.pageAlbumID == albumID,
               source.pagePlaceID == placeID,
               source.pageSearch == search,
+               source.pageCaptureRange == captureRange,
               XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedOwner),
               XDriveIOSNativePhotoOwnerScope.matches(sourceReader.owner, owner),
               verified.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
@@ -114,6 +120,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         pageAlbumID = albumID
         pagePlaceID = placeID
         pageSearch = search
+        pageCaptureRange = captureRange
         currentReader = sourceReader
         failedOffset = nil
         error = nil
@@ -141,9 +148,11 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
 
     func load(login: XDriveIOSNativeOwnerLoginModel,
               albumID: String?, placeID: String? = nil,
-              offset: Int = 0, search: String = "") {
+              offset: Int = 0, search: String = "",
+              captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil) {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard query.unicodeScalars.count <= 200 else {
+        guard query.unicodeScalars.count <= 200,
+              captureRange == nil || captureRange!.valid else {
             error = "搜索关键词最多 200 个字符。"
             return
         }
@@ -165,7 +174,8 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         let keepOldPage = pageScope.map {
             XDriveIOSNativePhotoOwnerScope.matches(expected, $0)
         } == true && pageAlbumID == albumID &&
-            pagePlaceID == placeID && pageSearch == query
+            pagePlaceID == placeID && pageSearch == query &&
+             pageCaptureRange == captureRange
         epoch = UUID()
         job?.cancel()
         job = nil
@@ -176,6 +186,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
             pageAlbumID = nil
             pagePlaceID = nil
             pageSearch = ""
+            pageCaptureRange = nil
         }
         failedOffset = nil
         error = nil
@@ -212,7 +223,8 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 )
                 let result = try await reader.page(
                     offset: offset, albumID: albumID,
-                    placeID: placeID, search: query
+                    placeID: placeID, search: query,
+                    captureRange: captureRange
                 )
                 try Task.checkCancellation()
                 guard self?.epoch == ticket,
@@ -224,6 +236,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 self?.pageAlbumID = albumID
                 self?.pagePlaceID = placeID
                 self?.pageSearch = query
+                self?.pageCaptureRange = captureRange
                 self?.failedOffset = nil
             } catch is CancellationError {
             } catch {
@@ -385,6 +398,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @State private var showsStaticStill = false
     @State private var showChrome = true
     @State private var showingMediaInfo = false
+    @State private var showingPhotoLocation = false
 
     // Explicit native Photos restore belongs to this one L3 Viewer and its
     // presenting Owner. It never runs from Gallery thumbnails or background.
@@ -446,10 +460,23 @@ struct XDriveIOSNativeServerMediaPreview: View {
             pixelWidth: width,
             pixelHeight: height,
             duration: validDuration,
-            locationStatus: "云端 PhotoAsset 当前未提供拍摄位置元数据。",
+            locationStatus: verifiedPhotoCoordinate.map {
+                "GPS：\(String(format: "%.6f", $0.latitude)), \(String(format: "%.6f", $0.longitude))"
+            } ?? "此云端照片没有有效 GPS 位置。",
             resources: mediaInfoResources,
             liveFiles: liveResources
         )
+    }
+
+    // GPS is already part of the authenticated Owner media DTO. It may
+    // be absent; never invent a location from a bucket/grid centroid.
+    private var verifiedPhotoCoordinate: CLLocationCoordinate2D? {
+        guard ownerAuthorized, let latitude = viewed.metadata.latitude,
+              let longitude = viewed.metadata.longitude,
+              XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                latitude: latitude, longitude: longitude)
+        else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 
     private var ownerAuthorized: Bool {
@@ -842,6 +869,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         Menu {
                             Button("照片信息") { showingMediaInfo = true }
                                 .accessibilityIdentifier("native-ios-photoasset-viewer-info")
+                            if verifiedPhotoCoordinate != nil {
+                                Button("在地图查看附近照片") {
+                                    showingPhotoLocation = true
+                                }
+                                .accessibilityIdentifier("native-ios-photoasset-viewer-location-map")
+                            }
                             Divider()
                             // Keep a secondary save command for short landscape
                             // layouts without duplicating a top-level toolbar button.
@@ -950,6 +983,25 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 name: viewed.node.name, size: viewed.node.size)))
                 }
             }
+            .sheet(isPresented: $showingPhotoLocation) {
+                if ownerAuthorized, let location = verifiedPhotoCoordinate {
+                    NavigationStack {
+                        // Reuse the Owner MapKit Reader, signed place Ranges,
+                        // nearby viewer and current Owner cancellation rules.
+                        XDriveIOSNativeOwnerPhotoMapScreen(
+                            login: login,
+                            cameraReturn: MKCoordinateRegion(
+                                center: location,
+                                span: MKCoordinateSpan(
+                                    latitudeDelta: 0.12, longitudeDelta: 0.12)))
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button("关闭") { showingPhotoLocation = false }
+                            }
+                        }
+                    }
+                }
+            }
             .alert("保存到 iOS 照片", isPresented: $photosRestoreNoticePresented) {
                 Button("完成", role: .cancel) {}
             } message: {
@@ -961,6 +1013,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
         .onChange(of: viewed.id) { _ in
             showChrome = true
             showingMediaInfo = false
+            showingPhotoLocation = false
         }
         .onChange(of: failure) { message in
             if message != nil { showChrome = true }
@@ -1276,6 +1329,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     let albumID: String?
     let placeID: String?
     let search: String
+    let captureRange: XDriveIOSNativePhotoMapCaptureRange?
     let offset: Int
     let expectedTotal: Int
     let density: XDriveIOSNativePhotoWallDensity
@@ -1330,15 +1384,17 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                     textFont: .caption
                 ) {
                     model.load(login: login, albumID: albumID, placeID: placeID,
-                               offset: offset, search: search)
+                               offset: offset, search: search,
+                                captureRange: captureRange)
                 }
             }
         }
         .id("cloud-range:\(offset)")
-        .task(id: "\(offset)-\(search)-\(albumID ?? "")-\(placeID ?? "")-\(login.owner?.ownerID ?? 0)-\(viewerActive)") {
+        .task(id: "\(offset)-\(search)-\(captureRange?.fromRFC3339 ?? "")-\(captureRange?.toRFC3339 ?? "")-\(albumID ?? "")-\(placeID ?? "")-\(login.owner?.ownerID ?? 0)-\(viewerActive)") {
             guard !viewerActive else { return }
             model.load(login: login, albumID: albumID, placeID: placeID,
-                       offset: offset, search: search)
+                       offset: offset, search: search,
+                        captureRange: captureRange)
         }
         .onChange(of: model.busy) { pending in
             guard !pending, let page = model.page else { return }
@@ -1384,6 +1440,7 @@ struct XDriveIOSNativeServerMediaWall: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let album: XDriveIOSNativeMediaAlbum?
     var placeID: String? = nil
+    var captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     // Focus visibility belongs to the owning native five-tab shell.
     var onFocusChange: ((Bool) -> Void)? = nil
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
@@ -1442,7 +1499,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                         Button("清除") {
                             searchDraft = ""
                             appliedSearch = ""
-                            model.load(login: login, albumID: album?.id, placeID: placeID, search: "")
+                            model.load(login: login, albumID: album?.id, placeID: placeID, search: "", captureRange: captureRange)
                         }
                         .disabled(model.busy)
                     }
@@ -1472,7 +1529,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                             let offset = number * 48
                             XDriveIOSNativeServerVirtualRange(
                                 login: login, albumID: album?.id, placeID: placeID,
-                                search: appliedSearch,
+                                search: appliedSearch, captureRange: captureRange,
                                 offset: offset, expectedTotal: page.total_count,
                                 density: wallDensity, viewerActive: selected != nil,
                                 returnFocusID: pendingReturnID,
@@ -1497,7 +1554,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                         self.continuousFailure = nil
                         recentRangeIDs.removeAll()
                         model.load(login: login, albumID: album?.id, placeID: placeID,
-                                   offset: 0, search: appliedSearch)
+                                   offset: 0, search: appliedSearch, captureRange: captureRange)
                     }
                 }
                 if model.busy {
@@ -1510,7 +1567,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                     ) {
                         model.load(login: login, albumID: album?.id, placeID: placeID,
                                    offset: model.failedOffset ?? model.page?.offset ?? 0,
-                                   search: appliedSearch)
+                                   search: appliedSearch, captureRange: captureRange)
                     }
                 }
                 if !compactGallery && placeID == nil {
@@ -1688,14 +1745,14 @@ struct XDriveIOSNativeServerMediaWall: View {
                     // the same members before an adjacent Range is accepted.
                     let reread = try await reader.page(
                         offset: previous.offset, albumID: album?.id,
-                        placeID: placeID, search: appliedSearch
+                        placeID: placeID, search: appliedSearch, captureRange: captureRange
                     )
                     guard previous.sameVisibleSnapshot(as: reread) else {
                         throw XDriveIOSNativeMediaReadFailure.invalidPage
                     }
                     let next = try await reader.page(
                         offset: targetOffset, albumID: album?.id,
-                        placeID: placeID, search: appliedSearch
+                        placeID: placeID, search: appliedSearch, captureRange: captureRange
                     )
                     try Task.checkCancellation()
                     guard next.total_count == previous.total_count,
@@ -1723,7 +1780,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                           model.acceptVerifiedViewerRange(
                             verifiedRange, after: previous, login: login,
                             albumID: album?.id, placeID: placeID,
-                            search: appliedSearch
+                            search: appliedSearch, captureRange: captureRange
                           ) else { return false }
                     viewerLoadedItems = verifiedRange.items
                     viewerLoadedRange = verifiedRange
@@ -1735,9 +1792,20 @@ struct XDriveIOSNativeServerMediaWall: View {
                 }
             )
         }
+        .onChange(of: captureRange) { _ in
+            recentRangeIDs.removeAll()
+            viewerLoadedItems = []
+            viewerLoadedRange = nil
+            selected = nil
+            model.invalidate()
+            if phase == .active {
+                model.load(login: login, albumID: album?.id, placeID: placeID,
+                           offset: 0, search: appliedSearch, captureRange: captureRange)
+            }
+        }
         .onAppear {
             if model.page == nil, !model.busy {
-                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch)
+                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch, captureRange: captureRange)
             }
         }
         .onChange(of: login.owner) { _ in
@@ -1758,7 +1826,7 @@ struct XDriveIOSNativeServerMediaWall: View {
             selected = nil
             model.invalidate()
             if login.owner != nil && phase == .active {
-                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch)
+                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch, captureRange: captureRange)
             }
         }
         .onChange(of: phase) { state in
@@ -1780,7 +1848,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 selected = nil
                 model.invalidate()
             } else if model.page == nil {
-                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch)
+                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch, captureRange: captureRange)
             }
         }
         .onDisappear {
@@ -1819,7 +1887,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         guard phase == .active, selected == nil,
               model.adoptVisibleRange(
                 from: source, login: login, albumID: album?.id,
-                placeID: placeID, search: appliedSearch
+                placeID: placeID, search: appliedSearch, captureRange: captureRange
               ), let verified = model.page,
               verified.items.contains(where: {
                 $0.sameVisibleRevision(as: item)
@@ -1892,7 +1960,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         lastOpenedRevision = nil
         lastOpenedOwner = nil
         accessibilityFocusedMediaID = nil
-        model.load(login: login, albumID: album?.id, placeID: placeID, offset: 0, search: query)
+        model.load(login: login, albumID: album?.id, placeID: placeID, offset: 0, search: query, captureRange: captureRange)
     }
 }
 

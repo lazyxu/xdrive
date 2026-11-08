@@ -35,7 +35,7 @@ test('PhotoKit viewer returns to same 64-item page after fresh permission check'
   assert.doesNotMatch(wall, /@State private var savedOffset = 0/)
   // The enclosing Gallery owns only a bounded numeric cursor, not a PhotoKit ID.
   assert.match(dashboard, /@State private var localGalleryPageOffset = 0/)
-  assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset,\s*mediaFilter: \$localGalleryMediaFilter\s*\)/)
+  assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset,\s*mediaFilter: \$localGalleryMediaFilter,\s*onMapDateScope: \{ galleryMapCaptureRange = \$0 \}\s*\)/)
   assert.doesNotMatch(dashboard, /XDriveIOSNativeLocalGalleryScreen\(/)
   assert.match(dashboard, /localGalleryPageOffset = 0\s*dynamicFeature = nil/)
   assert.match(wall, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/)

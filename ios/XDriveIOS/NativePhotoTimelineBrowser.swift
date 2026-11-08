@@ -315,8 +315,10 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
     @State private var jumpDate = Date()
     @State private var jumpDateMessage: String?
     @State private var exactDateTarget: XDriveIOSNativePhotoExactDateTarget?
+    @State private var mapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var wallRevision: UInt64 = 0
     @Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter
+    var onMapDateScope: ((XDriveIOSNativePhotoMapCaptureRange?) -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -340,7 +342,8 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             .frame(minHeight: 46)
             XDriveIOSNativeLocalContinuousGalleryScreen(
                 savedOffset: $savedOffset, mediaFilter: $mediaFilter,
-                exactDateTarget: $exactDateTarget
+                exactDateTarget: $exactDateTarget,
+                calendarMapRange: $mapCaptureRange
             )
             .id(wallRevision)
         }
@@ -385,6 +388,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                             Section {
                                 Button(mediaFilter.allItemsTitle) {
                                     exactDateTarget = nil
+                                    setMapDateScope(nil)
                                     jump(to: 0)
                                 }
                                 .accessibilityIdentifier("native-ios-local-timeline-all")
@@ -493,11 +497,13 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
         }
         .onChange(of: changes.revision) { _ in
             exactDateTarget = nil
+            setMapDateScope(nil)
             model.invalidate()
         }
         .onChange(of: mediaFilter) { _ in
             model.invalidate()
             exactDateTarget = nil
+            setMapDateScope(nil)
             jumpDateMessage = nil
             showingDates = false
         }
@@ -523,6 +529,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             if state != .active {
                 model.invalidate()
                 exactDateTarget = nil
+                setMapDateScope(nil)
                 showingDates = false
             }
         }
@@ -542,16 +549,30 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
         index.groups(for: scale).filter { shows($0) }.count
     }
 
+    private func setMapDateScope(_ range: XDriveIOSNativePhotoMapCaptureRange?) {
+        mapCaptureRange = range
+        onMapDateScope?(range)
+    }
+
     private func openCalendarGroup(_ group: XDriveIOSNativePhotoTimelineGroup) {
         let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard permission == .authorized || permission == .limited,
               model.index != nil, model.indexFilter == mediaFilter else { return }
         switch group.scale {
         case .year where group.key != "unknown":
+            if let year = Int(group.key) {
+                setMapDateScope(XDriveIOSNativePhotoMapCaptureRange.year(year))
+            }
             selectedYearKey = group.key
             selectedMonthKey = nil
             scale = .month
         case .month where group.key != "unknown":
+            let fields = group.key.split(separator: "-")
+            if fields.count == 2, let year = Int(fields[0]),
+               let month = Int(fields[1]) {
+                setMapDateScope(XDriveIOSNativePhotoMapCaptureRange.month(
+                    year, month))
+            }
             selectedYearKey = group.key.split(separator: "-").first.map(String.init)
             selectedMonthKey = group.key
             scale = .day
@@ -594,11 +615,16 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
     private func prepareExactDateTarget(for group: XDriveIOSNativePhotoTimelineGroup) {
         guard let index = model.index, model.indexFilter == mediaFilter else {
             exactDateTarget = nil
+            setMapDateScope(nil)
             return
         }
         exactDateTarget = XDriveIOSNativePhotoExactDateTarget(
             group: group, total: index.totalSlots, filterValue: mediaFilter.rawValue
         )
+        // Calendar selection and map are two views of the same authorized
+        // capture-time collection, not two independently inferred date sets.
+        setMapDateScope(XDriveIOSNativePhotoMapCaptureRange.dayKey(
+            group.key))
     }
 
     private func jump(to requestedOffset: Int) {
@@ -609,6 +635,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
               requestedOffset <= max(0, ((max(1, index.totalSlots) - 1) / 64) * 64),
               requestedOffset % 64 == 0 else {
             exactDateTarget = nil
+            setMapDateScope(nil)
             model.invalidate()
             return
         }

@@ -41,7 +41,7 @@ test('P0-01: map sheets retain the camera and use the native medium/large photo 
   assert.match(owner, /\.sheet\(item: \$selected, onDismiss: \{[\s\S]*?reload\(\)/)
   assert.match(owner, /\.sheet\(item: \$selectedCluster, onDismiss: \{[\s\S]*?reload\(\)/)
   assert.match(owner, /cameraReturn/)
-  assert.match(owner, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id\)/)
+  assert.match(owner, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id,\s*captureRange: activeCaptureRange\)/)
 })
 
 test('P0-02: revoked, deleted, edited and wrong-kind local assets never inherit Viewer authority', () => {

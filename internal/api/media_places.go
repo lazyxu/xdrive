@@ -36,18 +36,19 @@ type mediaPlaceCell struct {
 type mediaPlaceDTO struct {
 	// latitude/longitude remain the historic grid CENTER for old clients.
 	// sample_* is an ACTUAL point from one asset, never a synthetic center.
-	SampleLatitude  float64    `json:"sample_latitude"`
-	SampleLongitude float64    `json:"sample_longitude"`
-	CoordinateKind  string     `json:"coordinate_kind"`
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	Latitude        float64    `json:"latitude"`
-	Longitude       float64    `json:"longitude"`
-	ItemCount       int64      `json:"item_count"`
-	CoverNodeID     *uint64    `json:"cover_node_id,omitempty"`
-	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
-	Attribution     string     `json:"attribution,omitempty"`
-	AttributionURL  string     `json:"attribution_url,omitempty"`
+	SampleLatitude  float64                   `json:"sample_latitude"`
+	SampleLongitude float64                   `json:"sample_longitude"`
+	CoordinateKind  string                    `json:"coordinate_kind"`
+	DisplayBounds   *mediaPlaceViewportBounds `json:"display_bounds,omitempty"`
+	ID              string                    `json:"id"`
+	Name            string                    `json:"name"`
+	Latitude        float64                   `json:"latitude"`
+	Longitude       float64                   `json:"longitude"`
+	ItemCount       int64                     `json:"item_count"`
+	CoverNodeID     *uint64                   `json:"cover_node_id,omitempty"`
+	UpdatedAt       *time.Time                `json:"updated_at,omitempty"`
+	Attribution     string                    `json:"attribution,omitempty"`
+	AttributionURL  string                    `json:"attribution_url,omitempty"`
 }
 
 type mediaPlacesPageDTO struct {
@@ -240,8 +241,15 @@ func queryMediaPlacesWindow(ctx context.Context, db *gorm.DB, ownerID uint64, li
 // ordinary Places paging and an A3 bounded Owner viewport.
 func queryMediaPlacesWindowScoped(
 	ctx context.Context, db *gorm.DB, ownerID uint64, limit, offset int,
-	bounds *mediaPlaceViewportBounds,
+	bounds *mediaPlaceViewportBounds, optional ...*mediaCaptureBounds,
 ) ([]mediaPlaceDTO, error) {
+	var scope *mediaCaptureBounds
+	if len(optional) > 0 {
+		scope = optional[0]
+	}
+	if len(optional) > 1 || (scope != nil && !scope.valid()) {
+		return nil, fmt.Errorf("invalid map capture scope")
+	}
 	if db == nil || ownerID == 0 {
 		return nil, fmt.Errorf("media place query is not configured")
 	}
@@ -270,7 +278,7 @@ func queryMediaPlacesWindowScoped(
 		Resolver        string
 	}
 	var rows []row
-	query := mediaPlacesBaseQuery(ctx, db, ownerID)
+	query := mediaMapCaptureFilter(mediaPlacesBaseQuery(ctx, db, ownerID), scope)
 	if bounds != nil {
 		query = mediaPlacesWithinViewport(query, *bounds)
 	}
