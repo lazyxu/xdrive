@@ -19,7 +19,7 @@ import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cel
 import { xDriveBaiduCellReturnMatchesFreshSelection } from '../media-gallery-baidu-cell-return-session'
 import {
   XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
-  xDrivePlacesDrawerValidRange,
+  xDrivePlacesDrawerValidRange, xDrivePlacesDrawerReturnLogicalDepth,
   xDrivePlacesDrawerMatchesFresh, xDrivePlacesDrawerMatchesResizedCell,
   xDriveTakePlacesDrawerViewerReturn,
 } from '../media-gallery-places-photo-drawer'
@@ -263,7 +263,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         xDriveBaiduCellReturnMatchesFreshSelection(current.selection,cell)
         ? { ...current,phase:valid?'ready':'error',
             items:valid?[...range.items]:[], windowStart:0,
-            loadedDepth:valid?range.items.length:0,
+            // Restoring a deep virtual extent is visual-only and is gated by
+            // this fresh signed Owner Cell Range. Unloaded rows stay inert.
+            loadedDepth:valid
+              ? xDrivePlacesDrawerReturnLogicalDepth(cell,range,presentation) : 0,
             total:valid?range.total_count:cell.photo_count }
         : current)
     }).catch(() => {

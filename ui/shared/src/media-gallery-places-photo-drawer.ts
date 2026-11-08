@@ -8,9 +8,14 @@ import type { XDriveBaiduMapPhotoScope } from './media-gallery-baidu-map-photo-s
 
 /** An Owner-authenticated Cell Range, NOT the anonymous SDK labels, owns the drawer. */
 export const XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT = 48
-// A Viewer return may restore at most ten already-viewed pages. The browser
-// re-fetches each signed page; no stale media is retained across navigation.
+// Up to ten original pages are re-fetched eagerly on short returns. A deeper
+// previously visited position is restored only as bounded numeric geometry;
+// all visible signed pages remain demand-fetched after fresh Owner validation.
 export const XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT = 480
+// Only bounded numeric visual intent is retained. Neither visited depth nor
+// pixel offset authorizes a private photo; every visible page is rechecked.
+export const XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT = 10_000_000
+export const XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT = 10_000_000
 export const XDRIVE_PLACES_DRAWER_RETURN_TTL_MS = 10 * 60 * 1000
 const maxOwners = 8
 
@@ -20,6 +25,9 @@ export type XDrivePlacesDrawerPresentation = Readonly<{
   scrollLeft: number
   /** Bounded visual page count, not an authorization receipt. */
   loadedCount?: number
+  /** Prior logical depth, for on-demand signed range rehydration after Viewer Back.
+   * Values above the 480-row return snapshot are never photo authorizations. */
+  visitedDepth?: number
 }>
 
 export type XDrivePlacesDrawerReturn = Readonly<{
@@ -35,16 +43,24 @@ function safePresentation(value?: XDrivePlacesDrawerPresentation):
   XDrivePlacesDrawerPresentation | null {
   if (value === undefined) return { ...defaultPresentation }
   if (!value || typeof value.expanded !== 'boolean' ||
-      ![value.scrollTop, value.scrollLeft].every(n =>
-        Number.isSafeInteger(n) && n >= 0 && n <= 10_000)) return null
+      !Number.isSafeInteger(value.scrollTop) || value.scrollTop < 0 ||
+      value.scrollTop > XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT ||
+      !Number.isSafeInteger(value.scrollLeft) || value.scrollLeft < 0 ||
+      value.scrollLeft > 10_000) return null
   const loadedCount=value.loadedCount
   if (loadedCount !== undefined &&
       (typeof loadedCount !== 'number' || !Number.isSafeInteger(loadedCount) ||
         loadedCount < 1 || loadedCount > XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT))
     return null
+  const visitedDepth=value.visitedDepth
+  if (visitedDepth !== undefined &&
+      (!Number.isSafeInteger(visitedDepth) || visitedDepth < 1 ||
+       visitedDepth > XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT ||
+       (loadedCount !== undefined && visitedDepth < loadedCount))) return null
   return { expanded: value.expanded, scrollTop: value.scrollTop,
     scrollLeft: value.scrollLeft,
-    ...(loadedCount===undefined?{}:{loadedCount}) }
+    ...(loadedCount===undefined?{}:{loadedCount}),
+    ...(visitedDepth===undefined?{}:{visitedDepth}) }
 }
 
 const sessions = new Map<string, { snapshot: XDrivePlacesDrawerReturn; seen: number }>()
@@ -95,6 +111,26 @@ export function xDrivePlacesDrawerValidRange(
     seen.add(item.node.id)
     return true
   })
+}
+
+/** A Viewer return above 480 rows may restore the former *virtual extent*
+ * only after the first NEW signed Owner Cell page is validated. Old photos
+ * are NOT restored: every missing tile stays inert until the trusted Parent
+ * rehydrates its specific signed 48-item range on scroll. The stored number
+ * is a visual hint, never a proof of current Owner membership or Node revision.
+ */
+export function xDrivePlacesDrawerReturnLogicalDepth(
+  selection: MediaBaiduNativeCellSelection,
+  firstPage: MediaItemRange,
+  presentation?: XDrivePlacesDrawerPresentation,
+): number {
+  if (!xDrivePlacesDrawerValidRange(selection, firstPage)) return 0
+  const visited = presentation?.visitedDepth
+  if (!Number.isSafeInteger(visited) ||
+      (visited ?? 0) <= XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT ||
+      (visited ?? 0) > XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT ||
+      (visited ?? 0) > firstPage.total_count) return firstPage.items.length
+  return visited as number
 }
 
 const cloneSelection = (s: MediaBaiduNativeCellSelection): MediaBaiduNativeCellSelection =>

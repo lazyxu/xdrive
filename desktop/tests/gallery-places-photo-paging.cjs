@@ -91,6 +91,52 @@ test('shared Owner Parent alone paginates, fences cancellations and retains the 
   assert.doesNotMatch(surface,/fetch\s*\(\s*['"]https?:/)
 })
 
+test('100k Viewer return trusts no stale media even after restoring logical depth',()=>{
+  const helper=esbuild.buildSync({
+    entryPoints:[path.join(root,'ui/shared/src/media-gallery-places-photo-drawer.ts')],
+    bundle:true,format:'cjs',platform:'node',target:'node20',
+    write:false,logLevel:'silent',
+  })
+  const moduleRef={exports:{}}
+  new Function('module','exports','require',helper.outputFiles[0].text)(
+    moduleRef,moduleRef.exports,require)
+  const h=moduleRef.exports
+  const chosen=selection(100000)
+  const current={
+    total_count:100000,limit:48,offset:0,items:photos(1,48),
+  }
+  const view={expanded:true,scrollTop:2588800,scrollLeft:0,
+    loadedCount:480,visitedDepth:99000}
+  assert.equal(h.xDriveRememberPlacesDrawerViewerReturn(
+    'long-wall',chosen,{filters:{sort_by:'captured',sort_dir:'desc'},albumKey:''},1000,view),true)
+  const returned=h.xDriveTakePlacesDrawerViewerReturn('long-wall',1001)
+  assert.equal(h.xDrivePlacesDrawerReturnLogicalDepth(chosen,current,
+    returned?.presentation),99000)
+  // Only the first 48 new signed Nodes exist at this point. The rest is
+  // virtual geometry, and can be exposed only by another Owner /cell-items.
+  const window={start:0,items:current.items,depth:99000,total:100000}
+  const windows=esbuild.buildSync({
+    entryPoints:[path.join(root,'ui/shared/src/media-gallery-places-photo-window.ts')],
+    bundle:true,format:'cjs',platform:'node',target:'node20',
+    write:false,logLevel:'silent',
+  })
+  const windowModule={exports:{}}
+  new Function('module','exports','require',windows.outputFiles[0].text)(
+    windowModule,windowModule.exports,require)
+  const offset=windowModule.exports.xDrivePlacesPhotoWindowMissingOffset(
+    window,90000,90015)
+  assert.equal(offset,90000,'one aligned signed page follows the deep Viewer return')
+  const fresh=page(offset,photos(offset+1,offset+48),100000)
+  const loaded=windowModule.exports.xDrivePlacesPhotoWindowRehydrate(
+    chosen,window,fresh)
+  assert.equal(loaded?.start,offset)
+  assert.equal(loaded?.depth,99000)
+  assert.equal(loaded?.items.length,48)
+  assert.equal(loaded?.items[0].node.id,90001)
+  assert.match(read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),
+    /preview\(selection,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,offset,/)
+})
+
 test('Viewer return saves only a bounded page count and reauthorizes after return', () => {
   const details=esbuild.buildSync({
     entryPoints: [path.join(root,'ui/shared/src/media-gallery-places-photo-drawer.ts')],

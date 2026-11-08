@@ -103,12 +103,70 @@ test('Viewer return preserves only bounded expansion and scroll state',()=>{
   for (const presentation of [
     {expanded:true,scrollTop:-1,scrollLeft:0},
     {expanded:true,scrollTop:Infinity,scrollLeft:0},
-    {expanded:true,scrollTop:10001,scrollLeft:0},
+    {expanded:true,scrollTop:10_000_001,scrollLeft:0},
+    {expanded:true,scrollTop:0,scrollLeft:10001},
     {expanded:'yes',scrollTop:0,scrollLeft:0},
     {expanded:false,scrollTop:0,scrollLeft:1.5},
   ]) assert.equal(helper.xDriveRememberPlacesDrawerViewerReturn(
     'scroll-owner',selection(),scope,1003,presentation),false)
   assert.equal(helper.xDriveTakePlacesDrawerViewerReturn('scroll-owner',1004),undefined)
+})
+
+test('Viewer Back beyond 480 photos rehydrates a deep virtual extent without old Node grants',()=>{
+  const count=100000
+  const first={total_count:count,offset:0,limit:48,
+    items:Array.from({length:48},(_,i)=>item(20000+i))}
+  const original={expanded:true,scrollTop:3_200_321,scrollLeft:0,
+    loadedCount:480,visitedDepth:90800}
+  assert.equal(helper.xDriveRememberPlacesDrawerViewerReturn(
+    'deep-owner',selection(count),scope,1000,original),true)
+  original.visitedDepth=1
+  const restored=helper.xDriveTakePlacesDrawerViewerReturn('deep-owner',1001)
+  assert.equal(restored?.presentation.scrollTop,3200321)
+  assert.equal(restored?.presentation.visitedDepth,90800)
+  assert.equal(helper.xDrivePlacesDrawerReturnLogicalDepth(
+    selection(count),first,restored?.presentation),90800)
+  // The hint never authorizes the selected Node or a newer/different Cell.
+  assert.equal(helper.xDrivePlacesDrawerReturnLogicalDepth(
+    selection(count),{...first,total_count:count+1},restored?.presentation),0)
+  assert.equal(helper.xDrivePlacesDrawerReturnLogicalDepth(
+    selection(500),{...first,total_count:500},restored?.presentation),48)
+  assert.equal(helper.xDrivePlacesDrawerReturnLogicalDepth(
+    selection(count),first,{expanded:true,scrollTop:0,scrollLeft:0,
+      loadedCount:480}),48)
+  assert.equal(helper.xDrivePlacesDrawerReturnLogicalDepth(
+    selection(count),first,{expanded:true,scrollTop:0,scrollLeft:0,
+      loadedCount:480,visitedDepth:480}),48)
+  assert.equal(helper.xDrivePlacesDrawerReturnLogicalDepth(
+    selection(count),first,{expanded:true,scrollTop:0,scrollLeft:0,
+      loadedCount:480,visitedDepth:100001}),48)
+  assert.equal(helper.xDriveTakePlacesDrawerViewerReturn('deep-owner',1002),undefined)
+  for (const bad of [
+    {expanded:true,scrollTop:10_000_001,scrollLeft:0,visitedDepth:90800,loadedCount:480},
+    {expanded:true,scrollTop:0,scrollLeft:0,visitedDepth:0,loadedCount:480},
+    {expanded:true,scrollTop:0,scrollLeft:0,visitedDepth:479,loadedCount:480},
+    {expanded:true,scrollTop:0,scrollLeft:0,visitedDepth:10000001,loadedCount:480},
+    {expanded:true,scrollTop:0,scrollLeft:0,visitedDepth:NaN,loadedCount:480},
+  ]) assert.equal(helper.xDriveRememberPlacesDrawerViewerReturn(
+    'deep-owner',selection(count),scope,1003,bad),false)
+  assert.equal(helper.xDriveTakePlacesDrawerViewerReturn('deep-owner',1004),undefined)
+})
+
+test('large Viewer return has a signed first-page gate and lazy Owner-only range reads',()=>{
+  const parent=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
+  const drawer=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+  assert.match(parent,/const valid=xDrivePlacesDrawerValidRange\(cell,range\)/)
+  assert.match(parent,/loadedDepth:valid[\s\S]*?xDrivePlacesDrawerReturnLogicalDepth\(cell,range,presentation\)/)
+  assert.match(parent,/xDrivePlacesPhotoWindowMissingOffset\(/)
+  assert.match(parent,/xDrivePlacesPhotoWindowRehydrate\(selection,/)
+  assert.match(parent,/acceptedScope\.current\?\.key!==key/)
+  assert.match(parent,/hasAcceptedCell\(selection\)/)
+  assert.match(drawer,/itemCount: loadedDepth/)
+  assert.match(drawer,/itemAt: index => items\[index - windowStart\]/)
+  assert.match(drawer,/onWindowRange\?\.\(start,end\)/)
+  assert.match(drawer,/visitedDepth:Math.min\(XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT,loadedDepth\)/)
+  assert.match(drawer,/scrollTop:bounded\(listRef\.current\?\.scrollTop \?\? 0,\s*XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT\)/)
+  assert.doesNotMatch(parent,/localStorage|sessionStorage/)
 })
 
 test('Single shared map host previews a fresh Parent-only Range and cancels stale ones',()=>{
