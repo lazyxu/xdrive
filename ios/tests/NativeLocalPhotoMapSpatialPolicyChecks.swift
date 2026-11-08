@@ -264,6 +264,31 @@ struct NativeLocalMapSpatialPolicyChecks {
             latitudeSpan: .nan, longitudeSpan: 4
         ) == nil)
 
+        // A 100k library must never be re-enumerated merely because the user
+        // returns to a previously verified viewport in the same PhotoKit
+        // observer generation. A deeper zoom or a different geographic
+        // region is NOT valid for reusing a coarser Cell count.
+        precondition(Auto.maximumCachedWindows == 2)
+        precondition(Auto.canReuse(cached: expandedSF, camera: sanFrancisco))
+        precondition(Auto.canReuse(cached: expandedSF, camera: nearby))
+        precondition(!Auto.canReuse(cached: sanFrancisco, camera: expandedSF))
+        precondition(!Auto.canReuse(cached: expandedSF, camera: zoomed))
+        precondition(!Auto.canReuse(cached: expandedSF, camera: farAway))
+        precondition(!Auto.canReuse(cached: dateLine!, camera: sanFrancisco))
+
+        // Real scan-duration instrumentation uses empirical nearest-rank
+        // percentiles, not guessed elapsed times inferred from 100k rows.
+        precondition(Auto.maximumLatencySamples == 32)
+        let percentiles = Auto.scanPercentiles([10, 40, 20, 30, 50])
+        precondition(percentiles?.p50 == 30 && percentiles?.p95 == 50)
+        let twoDurations = Auto.scanPercentiles([1, 2])
+        precondition(twoDurations?.p50 == 1 && twoDurations?.p95 == 2)
+        precondition(Auto.scanPercentiles([]) == nil)
+        precondition(Auto.scanPercentiles([.nan]) == nil)
+        precondition(Auto.scanPercentiles([-.infinity]) == nil)
+        precondition(Auto.scanPercentiles([-1]) == nil)
+        precondition(Auto.scanPercentiles(Array(repeating: 1, count: 33)) == nil)
+
         print("native PhotoKit global GPS spatial policy: PASS")
     }
 }
