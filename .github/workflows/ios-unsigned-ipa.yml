@@ -632,6 +632,7 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
           "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
           node --test desktop/tests/ios-native-photo-map-mvp.cjs
+          node --test desktop/tests/ios-native-map-unified-parity.cjs
 
       - name: Verify shared Map and Gallery P0/P1 photo wall regressions
         run: |
