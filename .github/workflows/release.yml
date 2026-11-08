@@ -238,6 +238,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      actions: read
       packages: write
       id-token: write
       attestations: write
