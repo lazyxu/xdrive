@@ -35,4 +35,19 @@ class XDriveClipboardSessionFenceTest {
         fence.invalidate()
         assertFalse(fence.accepts(active))
     }
+
+    @Test fun returnToSameOwnerAfterDifferentOwnerNeverRestoresOldAReceipts() {
+        val fence = XDriveClipboardSessionFence()
+        val firstOwnerA = fence.capture()
+        fence.invalidate() // A -> B
+        val ownerB = fence.capture()
+        fence.invalidate() // B -> A
+        val currentOwnerA = fence.capture()
+        assertFalse(fence.accepts(firstOwnerA))
+        assertFalse(fence.accepts(ownerB))
+        assertTrue(fence.accepts(currentOwnerA))
+        fence.invalidate() // Lock/revocation while a request is still pending.
+        assertFalse(fence.accepts(currentOwnerA))
+    }
+
 }
