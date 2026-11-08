@@ -63,6 +63,15 @@ enum NativeLANTrustChecks {
             SecPolicyCreateBasicX509(), &caddyTrust) == errSecSuccess)
         precondition(XDriveIOSServerTLSDelegate.verify(caddyTrust!, target: ip, rootDER: root),
             "real Caddy root -> intermediate -> matching IP-SAN leaf")
+        // A normal TLS server presents its leaf and intermediate; the root
+        // is NOT generally sent in the peer chain. Only the downloaded,
+        // explicitly anchored Caddy root may finish verification.
+        var withoutTransmittedRoot: SecTrust?
+        precondition(SecTrustCreateWithCertificates([child, intermediate] as CFArray,
+            SecPolicyCreateBasicX509(), &withoutTransmittedRoot) == errSecSuccess)
+        precondition(XDriveIOSServerTLSDelegate.verify(withoutTransmittedRoot!,
+            target: ip, rootDER: root),
+            "Caddy leaf + intermediate must verify against separately pinned root")
         var wrongCaddyRoot: SecTrust?
         precondition(SecTrustCreateWithCertificates([child, intermediate, publicRoot] as CFArray,
             SecPolicyCreateBasicX509(), &wrongCaddyRoot) == errSecSuccess)
