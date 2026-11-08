@@ -115,9 +115,24 @@ test('100k Viewer return trusts no stale media even after restoring logical dept
   // Only the first 48 new signed Nodes exist at this point. The rest is
   // virtual geometry, and can be exposed only by another Owner /cell-items.
   const window={start:0,items:current.items,depth:99000,total:100000}
-  const missingPage=Math.floor(90000/48)*48
-  const range=require('esbuild').buildSync // Don't introduce a new transport.
-  assert.ok(window.items.length===48 && missingPage>window.items.length)
+  const windows=esbuild.buildSync({
+    entryPoints:[path.join(root,'ui/shared/src/media-gallery-places-photo-window.ts')],
+    bundle:true,format:'cjs',platform:'node',target:'node20',
+    write:false,logLevel:'silent',
+  })
+  const windowModule={exports:{}}
+  new Function('module','exports','require',windows.outputFiles[0].text)(
+    windowModule,windowModule.exports,require)
+  const offset=windowModule.exports.xDrivePlacesPhotoWindowMissingOffset(
+    window,90000,90015)
+  assert.equal(offset,90000,'one aligned signed page follows the deep Viewer return')
+  const fresh=page(offset,photos(offset+1,offset+48),100000)
+  const loaded=windowModule.exports.xDrivePlacesPhotoWindowRehydrate(
+    chosen,window,fresh)
+  assert.equal(loaded?.start,offset)
+  assert.equal(loaded?.depth,99000)
+  assert.equal(loaded?.items.length,48)
+  assert.equal(loaded?.items[0].node.id,90001)
   assert.match(read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),
     /preview\(selection,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,offset,/)
 })
