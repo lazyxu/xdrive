@@ -114,6 +114,8 @@ SELECT EXISTS (
 	// certify an old root and allow unsafe in-place reparenting.
 	// Every descendant must belong to the Source Owner, with a matching
 	// SourceItem NodeID, relative path, type, sync state and Node revision.
+	// Other Sources' SourceItems cannot claim this target or any descendant,
+	// even when those Sources have no live TargetNodeID binding.
 	// Stop at 128 ancestors and refuse deeper paths, rather than silently
 	// treating an unvisited descendant as proven.
 	var unproven bool
@@ -140,12 +142,16 @@ SELECT EXISTS (
 		AND item.state = ?
 		AND item.node_revision = n.revision
 	WHERE (n.depth > 0 AND (n.owner_id <> ? OR item.id IS NULL))
+		OR EXISTS (
+			SELECT 1 FROM xd_source_items AS other_item
+			WHERE other_item.node_id = n.id AND other_item.source_id <> ?
+		)
 		OR (n.depth = 128 AND EXISTS (
 			SELECT 1 FROM xd_nodes AS deeper
 			WHERE deeper.parent_id = n.id AND deeper.deleted_at IS NULL
 		))
 )`, target.ID, source.OwnerID,
-		source.ID, meta.SourceItemStateSynced, source.OwnerID).
+		source.ID, meta.SourceItemStateSynced, source.OwnerID, source.ID).
 		Scan(&unproven).Error; err != nil {
 		return err
 	}

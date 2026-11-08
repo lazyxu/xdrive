@@ -410,3 +410,81 @@ func TestLegacyYikeCleanTargetRejectsForeignOwnerDescendant(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyYikeCleanTargetRejectsOtherSourceItemClaim(t *testing.T) {
+	for _, claimed := range []string{"root", "verified-file"} {
+		t.Run(claimed, func(t *testing.T) {
+			db := openYikeMigrationTestDB(t)
+			user, _, connector, target, source := createLegacyYikeMigrationFixture(t, db)
+			photo := meta.Node{OwnerID: user.ID, ParentID: &target.ID,
+				Name: "photo.jpg", Type: meta.NodeTypeFile, Revision: 1}
+			if err := db.Create(&photo).Error; err != nil {
+				t.Fatal(err)
+			}
+			verified := meta.SourceItem{
+				SourceID: source.ID, ExternalID: "current:photo", NodeID: &photo.ID,
+				NodeRevision: photo.Revision, Kind: meta.SourceItemKindFile,
+				Path: photo.Name, State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+			}
+			if err := db.Create(&verified).Error; err != nil {
+				t.Fatal(err)
+			}
+			other := meta.Source{
+				OwnerID: user.ID, Name: "Retained other provenance",
+				Kind: "synology_files", Direction: meta.SourceDirectionPull,
+				SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeScan,
+				Status: meta.SourceStatusArchived, Revision: 1,
+			}
+			if err := db.Create(&other).Error; err != nil {
+				t.Fatal(err)
+			}
+			claimedID := photo.ID
+			claimKind := meta.SourceItemKindFile
+			if claimed == "root" {
+				claimedID = target.ID
+				claimKind = meta.SourceItemKindDirectory
+			}
+			claim := meta.SourceItem{
+				SourceID: other.ID, ExternalID: "other:" + claimed,
+				NodeID: &claimedID, NodeRevision: 1,
+				Kind: claimKind, Path: "older-provenance",
+				State: meta.SourceItemStatePending, LastSeenAt: time.Now().UTC(),
+			}
+			if err := db.Create(&claim).Error; err != nil {
+				t.Fatal(err)
+			}
+			// An archived/pending record remains a conflicting claim until
+			// explicitly reconciled. Do not reparent a clean-looking root
+			// merely because the other Source has no TargetNodeID binding.
+			if err := migrateLegacyYikeTargets(db); err != nil {
+				t.Fatalf("ambiguous SourceItem provenance must pause only this Source: %v", err)
+			}
+			var afterSource meta.Source
+			var afterTarget, afterPhoto meta.Node
+			var afterVerified, afterClaim meta.SourceItem
+			for _, err := range []error{
+				db.First(&afterSource, source.ID).Error,
+				db.First(&afterTarget, target.ID).Error,
+				db.First(&afterPhoto, photo.ID).Error,
+				db.First(&afterVerified, verified.ID).Error,
+				db.First(&afterClaim, claim.ID).Error,
+			} {
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if afterSource.Status != meta.SourceStatusPaused ||
+				afterSource.LastError == "" ||
+				afterSource.TargetNodeID == nil ||
+				*afterSource.TargetNodeID != target.ID ||
+				afterTarget.ParentID == nil || *afterTarget.ParentID != connector.ID ||
+				afterPhoto.ParentID == nil || *afterPhoto.ParentID != target.ID ||
+				afterPhoto.Revision != photo.Revision ||
+				afterVerified.NodeRevision != verified.NodeRevision ||
+				afterClaim.NodeID == nil || *afterClaim.NodeID != claimedID {
+				t.Fatalf("competing SourceItem ignored or original identities changed: source=%+v root=%+v photo=%+v originalItem=%+v otherItem=%+v",
+					afterSource, afterTarget, afterPhoto, afterVerified, afterClaim)
+			}
+		})
+	}
+}
