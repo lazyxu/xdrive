@@ -8,7 +8,9 @@ BIN_DIR="$XDRIVE_HOME/bin"
 DATA_DIR="$XDRIVE_HOME/data"
 # Advisory, noncritical Host marker shared read-only with the Server container.
 DEPENDENCY_BUSY_MARKER="$DATA_DIR/release-bundles/dependency-busy"
+DEPENDENCY_READY_MARKER="$DATA_DIR/release-bundles/dependency-ready"
 dependency_busy_active=0
+dependency_ready_active=0
 BACKUP_ROOT="$XDRIVE_HOME/backups"
 SNAPSHOT_BACKUP_DIR="$BACKUP_ROOT/snapshots"
 PRE_UPGRADE_BACKUP_DIR="$BACKUP_ROOT/pre-upgrade"
@@ -131,6 +133,12 @@ on_exit() {
   local final_status="$status"
   local rollback_status=0
   stop_pull_monitor
+  # A completed dependency phase may allow background downloads while the
+  # transaction finishes. Revoke that exception before releasing install.lock.
+  if [[ "$dependency_ready_active" == "1" ]]; then
+    rm -f -- "$DEPENDENCY_READY_MARKER" || true
+    dependency_ready_active=0
+  fi
 
   if [[ "$ROLLBACK_ARMED" == "1" && "$ROLLBACK_RUNNING" != "1" ]]; then
     trap - EXIT ERR INT TERM
@@ -401,6 +409,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 acquire_install_lock
+
+# A new transaction revokes the previous install's download permission before
+# dependencies are staged, including after an interrupted/crashed installer.
+if [[ ! -L "$DATA_DIR/release-bundles" && ! -L "$DEPENDENCY_READY_MARKER" ]]; then
+  rm -f -- "$DEPENDENCY_READY_MARKER" || true
+fi
 
 # Server dependencies preempt all client-package transfers. This marker is
 # intentionally advisory: failure to publish it cannot fail/rollback a Server
@@ -3043,8 +3057,19 @@ done
 
 echo "[xDrive] container image pull complete in $(( $(date +%s) - pull_started ))s."
 rm -f "$PULL_LOG"
-# All container image dependency transfers are complete. Resume package
-# downloads immediately and without any bandwidth throttle.
+# All container image dependency transfers are complete. The Host-owned
+# dependency-ready marker deliberately permits package transfers while this
+# installer still owns its transaction lock. A marker creation failure is
+# noncritical; the worker will conservatively wait for install.lock to exit.
+if [[ ! -L "$DATA_DIR/release-bundles" && ! -L "$DEPENDENCY_READY_MARKER" ]]; then
+  if printf '%s\n' "$" > "$DEPENDENCY_READY_MARKER"; then
+    dependency_ready_active=1
+    chmod 0644 "$DEPENDENCY_READY_MARKER" || true
+  else
+    echo "[xDrive] WARNING: Release Bundle worker will wait for install completion." >&2
+  fi
+fi
+# Resume authenticated HTTP downloads immediately. No post-install throttle.
 if [[ "$dependency_busy_active" == "1" ]]; then
   if rm -f -- "$DEPENDENCY_BUSY_MARKER"; then
     dependency_busy_active=0
