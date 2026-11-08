@@ -4,6 +4,8 @@ package api
 // verifies and atomically publishes the current package set; Server exposes
 // bounded, authenticated metadata and byte ranges from a read-only mount.
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -230,6 +232,19 @@ func (s *Server) releaseBundleArtifactDownload(c *gin.Context) {
 	stat, err := file.Stat()
 	if err != nil || !stat.Mode().IsRegular() || stat.Size() != match.Size {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release_artifact_unavailable"})
+		return
+	}
+	// The Host validates packages before publishing the immutable cache, but
+	// downloaded bytes are a separate trust boundary: a corrupted on-disk
+	// installer of the same size must not be sent to any client.
+	digest := sha256.New()
+	n, err := io.Copy(digest, file)
+	if err != nil || n != match.Size || hex.EncodeToString(digest.Sum(nil)) != match.SHA256 {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "release_artifact_integrity_failed"})
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "release_artifact_unavailable"})
 		return
 	}
 	c.Header("Content-Disposition", "attachment; filename=\""+name+"\"")
