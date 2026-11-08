@@ -107,11 +107,16 @@ test('local Photos fullscreen reserves its canvas for content and keeps extra ac
   const insetStart = viewer.indexOf('.safeAreaInset(edge: .bottom)')
   const toolbarStart = viewer.indexOf('            .toolbar {', insetStart)
   const bottom = viewer.slice(insetStart, toolbarStart)
-  const menuStart = viewer.indexOf('                    Menu {', toolbarStart)
-  const menuEnd = viewer.indexOf('                    } label: {', menuStart)
+  // Menu is independently type-checked but must stay in the Viewer toolbar.
+  const menuStart = viewer.indexOf('    private var photoActionsMenu: some View {')
+  const menuEnd = viewer.indexOf('    var body: some View {', menuStart)
   const more = viewer.slice(menuStart, menuEnd)
+  const toolbar = viewer.slice(toolbarStart)
   assert.ok(liveStart >= 0 && liveEnd > liveStart && insetStart > liveEnd &&
-    toolbarStart > insetStart && menuStart >= toolbarStart && menuEnd > menuStart)
+    toolbarStart > insetStart && menuStart >= 0 && menuEnd > menuStart)
+  assert.match(toolbar,
+    /ToolbarItem\(placement: \.navigationBarTrailing\) \{\s*photoActionsMenu\s*\}/)
+  assert.match(more, /Menu \{/)
   assert.match(canvas, /XDriveIOSNativeLivePhotoView\(/)
   assert.match(canvas, /XDriveIOSNativeZoomablePhotoView\(/)
   assert.match(canvas, /\.xdriveNativeViewerPaging \{ showNeighbor\(\$0\) \}/)

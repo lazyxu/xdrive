@@ -40,6 +40,9 @@ struct XDriveIOSPhotoBackupProgress: Equatable {
     var isLimited = false
     var stoppedForReview = false
     var stage = "尚未开始"
+    // UI-only transient identity: checking/staging is not proof of upload.
+    // Never persisted, transmitted in SourceRun summaries or counted as ACK.
+    var activeLocalIdentifier: String? = nil
 
     var verifiedTotal: Int { uploaded + verifiedAlready }
 }
@@ -155,6 +158,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                     if report.uploaded >= maximumNewOriginals { break }
                     report.changeQueueProcessed += 1
                     report.stage = "优先处理新增/修改的原件（队列 \(report.changeQueueProcessed)）…"
+                    report.activeLocalIdentifier = candidate.pending.localIdentifier
                     await publish(report)
 
                     guard candidate.kind == "image" || candidate.kind == "video",
@@ -168,6 +172,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                             reasonCode: XDriveIOSPhotoBackupIssueReason.unsupported.rawValue,
                             owner: owner
                         )
+                        report.activeLocalIdentifier = nil
                         await publish(report)
                         continue
                     }
@@ -236,6 +241,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                             owner: owner
                         )
                     }
+                    report.activeLocalIdentifier = nil
                     await publish(report)
                     if report.stoppedForReview { break }
                 }
@@ -302,6 +308,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                     let isVideo = candidate.kind == "video"
                     let isLive = candidate.isLive
                     report.stage = "正在核对并备份已授权的照片/视频/Live 原件（\(report.scanned)/\(windowCapacity)）…"
+                    report.activeLocalIdentifier = candidate.id
                     await publish(report)
                     do {
                         let outcome = try await uploadOrVerifyOriginal(
@@ -351,6 +358,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         )
                         report.stage = "有照片原件无法确认，请查看备份汇总"
                     }
+                    report.activeLocalIdentifier = nil
                     await publish(report)
                     if report.stoppedForReview { break scanning }
                 }
@@ -433,6 +441,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         let isLive = kind == "image" &&
             asset.mediaSubtypes.contains(.photoLive)
         report.stage = "正在优先备份所选\(isLive ? "Live Photo" : kind == "video" ? "视频" : "照片")原件…"
+        report.activeLocalIdentifier = localIdentifier
         await publish(report)
         do {
             let outcome = try await uploadOrVerifyOriginal(
@@ -469,6 +478,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             report.stage = "所选原件暂不可用或不支持，未将其计作备份成功"
         }
         try Task.checkCancellation()
+        report.activeLocalIdentifier = nil
         await publish(report)
         return report
     }

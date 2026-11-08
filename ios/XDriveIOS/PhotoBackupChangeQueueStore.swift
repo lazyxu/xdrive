@@ -55,6 +55,15 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         var failureReasonCode: String? = nil
     }
 
+    /// One bounded, read-only row of the local change history. It is NOT a
+    /// current remote-Node proof, and IDs never leave the device.
+    struct QueueRow: Equatable {
+        let localIdentifier: String
+        let revision: Int64
+        let state: ItemState
+        let failureReasonCode: String?
+    }
+
     /// Counts only locally captured PhotoKit *changes*, not all visible media
     /// and never verified remote coverage. No asset IDs leave this database.
     struct Counts: Equatable {
@@ -100,6 +109,10 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             // schema. Reasons are valid only for an exact failed revision.
             try execute("CREATE TABLE IF NOT EXISTS failure_reasons (asset_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), reason TEXT NOT NULL)")
             try execute("CREATE INDEX IF NOT EXISTS entries_pending_order ON entries (state, priority DESC, queue_order DESC)")
+            // UI-only task paging follows an index rather than sorting every
+            // row in large 10k/100k PhotoKit change histories.
+            try execute("CREATE INDEX IF NOT EXISTS entries_display_order ON entries (queue_order DESC, asset_id ASC)")
+            try execute("CREATE INDEX IF NOT EXISTS entries_state_display_order ON entries (state, queue_order DESC, asset_id ASC)")
             // Ignore a newly created database until iOS protection permits
             // reading its baseline and backing PhotoKit bytes again.
             try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete],
@@ -269,6 +282,53 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             case .confirmed: totals.confirmed = count
             case .missingLocal: totals.missingLocal = count
             }
+        }
+    }
+
+    /// Paginate the exact local PhotoKit change history without materializing
+    /// its complete asset-ID index. The state filter is an enum, never SQL text;
+    /// the bounded offset is local UI navigation, not a persistent cursor.
+    func page(state: ItemState? = nil, offset: Int = 0, limit: Int = 32) throws -> [QueueRow] {
+        guard (1...64).contains(limit), (0...1_000_000).contains(offset)
+        else { throw Failure.invalidInput }
+        let filter = state == nil ? "" : " WHERE e.state=?"
+        let sql = """
+            SELECT e.asset_id,e.revision,e.state,r.reason FROM entries e
+            LEFT JOIN failure_reasons r ON r.asset_id=e.asset_id AND r.revision=e.revision
+            \(filter) ORDER BY e.queue_order DESC,e.asset_id ASC LIMIT ? OFFSET ?
+            """
+        let statement = try prepare(sql)
+        defer { sqlite3_finalize(statement) }
+        var index: Int32 = 1
+        if let state {
+            try bind(state.rawValue, into: statement, position: index)
+            index += 1
+        }
+        guard sqlite3_bind_int64(statement, index, Int64(limit)) == SQLITE_OK,
+              sqlite3_bind_int64(statement, index + 1, Int64(offset)) == SQLITE_OK
+        else { throw Failure.database(sqlite3_errcode(database)) }
+        var rows: [QueueRow] = []
+        rows.reserveCapacity(limit)
+        while true {
+            let code = sqlite3_step(statement)
+            if code == SQLITE_DONE { return rows }
+            guard code == SQLITE_ROW,
+                  let rawID = sqlite3_column_text(statement, 0),
+                  let rawState = sqlite3_column_text(statement, 2),
+                  let parsed = ItemState(rawValue: String(cString: rawState))
+            else { throw Failure.database(code == SQLITE_ROW ? SQLITE_MISMATCH : code) }
+            let id = String(cString: rawID)
+            try validateIdentifier(id)
+            let revision = sqlite3_column_int64(statement, 1)
+            guard revision > 0 else { throw Failure.invalidInput }
+            let rawReason = parsed == .failed
+                ? sqlite3_column_text(statement, 3).map { String(cString: $0) } : nil
+            rows.append(QueueRow(
+                localIdentifier: id, revision: revision, state: parsed,
+                failureReasonCode: rawReason.flatMap {
+                    Self.allowedFailureCodes.contains($0) ? $0 : nil
+                }
+            ))
         }
     }
 

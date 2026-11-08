@@ -162,6 +162,13 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var showRecentPicker = false
     @State private var showingLocalPhotoSearch = false
     @State private var galleryFocused = false
+    @State private var backupLaunchAction = XDriveIOSNativePhotoBackupLaunch.overview
+    @State private var backupLaunchNonce = UUID()
+    @State private var showThumbnailCacheFromBackup = false
+    @State private var priorityItemID: String?
+    @State private var priorityItemOwner: XDriveNativeOwnerRoot?
+    @State private var priorityIsRetry = false
+    @State private var showPriorityConsent = false
     // A source/tab/scene navigation creates a new focus owner even when
     // the user returns to the same source later (cloud -> map -> cloud).
     @State private var galleryFocusGeneration = UUID()
@@ -261,6 +268,23 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .id(ownerScopeKey)
         .environment(\.xdriveNativeTransfers, transfers)
+        // Visible local/paired Gallery tiles only; no background writes.
+        .environment(\.xdriveNativePhotoQueueBadgeOwner,
+                     backup.schedule?.enabled == true ? login.owner : nil)
+        .environment(\.xdriveNativePhotoProcessingID,
+                     backup.busy ? backup.progress?.activeLocalIdentifier : nil)
+        .environment(\.xdriveNativePhotoQueueBadgeRefresh,
+                     XDriveIOSNativePhotoQueueBadgeRefresh(
+                        busy: backup.busy,
+                        confirmedID: backup.confirmedOriginalUpdate?.id
+                     ))
+        .environment(\.xdriveNativePhotoOnlyNewSince,
+                     backup.schedule?.enabled == true &&
+                     backup.schedule?.backupStartRule == .onlyNew
+                        ? backup.schedule?.newOnlySince : nil)
+        .environment(\.xdriveNativePhotoPriorityAction, { id, failed in
+            requestPriorityBackup(id: id, failed: failed)
+        })
         .environment(\.xdriveNativeLocalMapJump, localMapJump)
         .environment(\.xdriveOpenNativeLocalMap, { jump in
             guard ownerScopeKey == expectedRouteOwnerKey, login.owner != nil,
@@ -286,6 +310,17 @@ struct XDriveIOSNativePhotosDashboard: View {
                 )
             } else {
                 Text("账号或服务器已变化，不能打开之前的文件引用。")
+            }
+        }
+        .sheet(isPresented: $showThumbnailCacheFromBackup) {
+            NavigationStack {
+                XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("完成") { showThumbnailCacheFromBackup = false }
+                                .accessibilityIdentifier("native-ios-backup-cache-sheet-close")
+                        }
+                    }
             }
         }
         .sheet(isPresented: $showingLocalPhotoSearch) {
@@ -319,6 +354,28 @@ struct XDriveIOSNativePhotosDashboard: View {
                     }
                 }
             }
+        }
+        .confirmationDialog(
+            priorityIsRetry ? "安全重试失败原件？" : "优先备份所选照片原件？",
+            isPresented: $showPriorityConsent, titleVisibility: .visible
+        ) {
+            Button("确认核验并处理原件") {
+                guard let expected = priorityItemOwner, let id = priorityItemID,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                      phase == .active,
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                else { return }
+                priorityItemID = nil
+                priorityItemOwner = nil
+                backup.startSingle(
+                    login: login, expectedOwner: expected,
+                    localIdentifier: id, allowICloud: false
+                )
+                openBackup(.overview)
+            }
+            .accessibilityIdentifier("native-ios-gallery-single-backup-confirm")
+        } message: {
+            Text("仅处理当前 Owner 所选原件；保留受管目标、收据核验与未知 ACK 阻断。不自动下载 iCloud 原件。")
         }
         .confirmationDialog(
             "确认退出当前服务器和账户？",
@@ -379,6 +436,10 @@ struct XDriveIOSNativePhotosDashboard: View {
             showSignOutConsent = false
             signOutConsentOwner = nil
             showingLocalPhotoSearch = false
+            priorityItemID = nil
+            priorityItemOwner = nil
+            showPriorityConsent = false
+            showThumbnailCacheFromBackup = false
             if owner == nil {
                 navigationRouteStore.clear()
                 resetNavigation()
@@ -525,12 +586,40 @@ struct XDriveIOSNativePhotosDashboard: View {
                     if gallerySource == .local || gallerySource == .albums {
                         gallerySearchAction
                     }
-                    Button("备份设置") { openDynamic(.backup) }
+                    Menu { backupMenuItems } label: {
+                        Label("备份", systemImage: "icloud.and.arrow.up")
+                    }
                         .accessibilityIdentifier("native-ios-gallery-backup-settings")
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)
                 .frame(minHeight: 44)
+    }
+
+    @ViewBuilder
+    private var backupMenuItems: some View {
+        Button("查看备份任务队列") { openBackup(.queue) }
+        Button("集中备份（需确认）") { openBackup(.focused) }
+        Button("备份设置") { openBackup(.settings) }
+        Button("逐项核验当前云端原件") { openBackup(.audit) }
+        Button("释放本机缓存空间（不删除照片原件）") { showThumbnailCacheFromBackup = true }
+    }
+
+    private func openBackup(_ action: XDriveIOSNativePhotoBackupLaunch) {
+        backupLaunchAction = action
+        backupLaunchNonce = UUID()
+        openDynamic(.backup)
+    }
+
+    private func requestPriorityBackup(id: String, failed: Bool) {
+        guard let owner = login.owner, phase == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+              !backup.busy, !id.isEmpty, id.utf8.count <= 1024,
+              !id.contains("\u{0}") else { return }
+        priorityItemID = id
+        priorityItemOwner = owner
+        priorityIsRetry = failed
+        showPriorityConsent = true
     }
 
     private var gallerySourceRow: some View {
@@ -591,9 +680,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var galleryCompactBackupAction: some View {
-        Button {
-            openDynamic(.backup)
-        } label: {
+        Menu { backupMenuItems } label: {
             Image(systemName: backup.busy ? "arrow.triangle.2.circlepath" :
                   backup.schedule?.pausedForReview == true ? "exclamationmark.shield" :
                   (photoAuthorization != .authorized && photoAuthorization != .limited) ?
@@ -644,7 +731,10 @@ struct XDriveIOSNativePhotosDashboard: View {
             Group {
                 switch gallerySource {
                 case .unified:
-                    XDriveIOSNativeUnifiedPhotoGallery(login: login) { openDynamic(.backup) }
+                    XDriveIOSNativeUnifiedPhotoGallery(
+                        login: login, openBackup: { openBackup(.overview) },
+                        priorityBackup: { id in requestPriorityBackup(id: id, failed: false) }
+                    )
                 case .local:
                     XDriveIOSNativeLocalPhotoTimelineContainer(
                         savedOffset: $localGalleryPageOffset,
@@ -653,9 +743,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                     )
                     .environment(
                         \.xdriveNativePhotoQueueBadgeOwner,
-                        backup.schedule?.enabled == true &&
-                        backup.schedule?.backupStartRule == .onlyNew
-                            ? login.owner : nil
+                        backup.schedule?.enabled == true ? login.owner : nil
                     )
                     .environment(
                         \.xdriveNativePhotoQueueBadgeRefresh,
@@ -809,7 +897,10 @@ struct XDriveIOSNativePhotosDashboard: View {
                     clipboardViewerIntent = ClipboardViewerIntent(node: node, owner: openedOwner)
                 }
             case .backup:
-                XDriveIOSNativePhotoBackupScreen(login: login, controller: backup) {
+                XDriveIOSNativePhotoBackupScreen(
+                    login: login, controller: backup,
+                    launchAction: backupLaunchAction, launchNonce: backupLaunchNonce
+                ) {
                     // Navigation only: never infer that a pending receipt is backed up.
                     guard login.owner != nil else { return }
                     openGallery(.originals)

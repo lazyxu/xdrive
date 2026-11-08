@@ -55,7 +55,7 @@ test('Owner scope and unsupported native routes never claim production parity', 
   assert.match(ui, /func openGallery/);
   assert.match(ui, /该功能在其他平台存在，但 iOS 原生数据与权限接口尚未实现/);
   assert.match(ui, /服务器管理员入口只在真实验证 Server 管理员角色后开放/);
-  assert.match(ui, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/);
+  assert.match(ui, /XDriveIOSNativePhotoBackupScreen\(\s*login: login, controller: backup,[\s\S]*?launchAction: backupLaunchAction/);
 });
 
 test('empty recent Dynamic slot opens the existing Gallery map instead of a blank page', () => {

@@ -15,6 +15,18 @@ enum XDriveIOSNativeVisiblePhotoQueueBadgePolicy {
                       failureReasonCode: String? = nil)
         -> XDriveIOSNativeVisiblePhotoQueueBadge? {
         switch state {
+        case "processing":
+            return .init(title: "处理中", symbol: "arrow.triangle.2.circlepath",
+                         explanation: "正在读取、核验或上传原件；云端写入尚未确认")
+        case "matched":
+            return .init(title: "来源匹配", symbol: "checkmark.seal",
+                         explanation: "图库本次核对找到本机与云端相同原件；不代表未来无需复验服务器 Node")
+        case "unverified":
+            return .init(title: "待核验", symbol: "questionmark.circle",
+                         explanation: "尚未核验当前原件与服务器 Node；不能推断成功或失败")
+        case "excluded":
+            return .init(title: "范围外", symbol: "minus.circle",
+                         explanation: "此次备份范围未包含这项原件；不等于已备份")
         case "pending":
             return .init(title: "待传", symbol: "clock",
                          explanation: "增量变更待处理，未确认备份")
@@ -73,5 +85,33 @@ extension EnvironmentValues {
     var xdriveNativePhotoQueueBadgeRefresh: XDriveIOSNativePhotoQueueBadgeRefresh {
         get { self[XDriveIOSNativePhotoQueueBadgeRefreshKey.self] }
         set { self[XDriveIOSNativePhotoQueueBadgeRefreshKey.self] = newValue }
+    }
+}
+
+
+/// Galleries share navigation-only priority actions. The caller must still
+/// show native confirmation and use the existing Owner/Device/Target uploader.
+/// No key, token or UploadSession authority is carried through Environment.
+private struct XDriveIOSNativePhotoPriorityActionKey: EnvironmentKey {
+    static let defaultValue: ((String, Bool) -> Void)? = nil
+}
+private struct XDriveIOSNativePhotoProcessingIDKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+private struct XDriveIOSNativePhotoOnlyNewSinceKey: EnvironmentKey {
+    static let defaultValue: Date? = nil
+}
+extension EnvironmentValues {
+    var xdriveNativePhotoPriorityAction: ((String, Bool) -> Void)? {
+        get { self[XDriveIOSNativePhotoPriorityActionKey.self] }
+        set { self[XDriveIOSNativePhotoPriorityActionKey.self] = newValue }
+    }
+    var xdriveNativePhotoProcessingID: String? {
+        get { self[XDriveIOSNativePhotoProcessingIDKey.self] }
+        set { self[XDriveIOSNativePhotoProcessingIDKey.self] = newValue }
+    }
+    var xdriveNativePhotoOnlyNewSince: Date? {
+        get { self[XDriveIOSNativePhotoOnlyNewSinceKey.self] }
+        set { self[XDriveIOSNativePhotoOnlyNewSinceKey.self] = newValue }
     }
 }

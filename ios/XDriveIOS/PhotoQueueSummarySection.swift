@@ -1,4 +1,6 @@
 import SwiftUI
+import Photos
+import UIKit
 
 /// Owner-scoped local PhotoKit queue status. Lifecycle and refresh ownership
 /// live here so the large backup settings form does not inherit extra state
@@ -90,6 +92,221 @@ struct XDriveIOSPhotoQueueSummarySection: View {
             .onChange(of: enabled) { active in
                 if active { refreshIfEnabled() }
                 else { queueSummary.cancel() }
+            }
+        }
+    }
+}
+
+
+/// A visible-only 56px thumbnail, never a full-resolution PhotoKit export.
+/// An iCloud-only item stays a neutral placeholder until explicitly reviewed.
+private struct XDriveIOSNativePhotoTaskThumbnail: View {
+    let localIdentifier: String
+    @StateObject private var loader = XDriveIOSPhotoImageLoader()
+
+    var body: some View {
+        Group {
+            if let image = loader.image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Rectangle()
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    .overlay {
+                        Image(systemName: loader.isLoading ? "clock" : "photo")
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+        .frame(width: 56, height: 56)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .task(id: localIdentifier) {
+            loader.load(localIdentifier, size: CGSize(width: 128, height: 128),
+                        allowICloud: false)
+        }
+        .onDisappear { loader.cancel() }
+    }
+}
+
+/// Shared native task-sheet for the Gallery and Backup screen. Change-queue
+/// pages are exact-revision SQLite metadata; Library pages are read-only
+/// PhotoKit windows. Neither mode can label an unverified Node as backed up.
+struct XDriveIOSNativePhotoBackupTaskList: View {
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @ObservedObject var controller: XDriveIOSNativePhotoBackupController
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
+    @StateObject private var model = XDriveIOSNativePhotoTaskListModel()
+    @State private var mode = XDriveIOSNativePhotoTaskListModel.Mode.changes
+    @State private var filter = XDriveIOSNativePhotoTaskListModel.Filter.all
+    @State private var allowICloud = false
+    @State private var showPriorityConsent = false
+    @State private var priorityOwner: XDriveNativeOwnerRoot?
+    @State private var priorityID: String?
+    @State private var priorityWasFailure = false
+
+    private func refresh() {
+        guard phase == .active else { return }
+        model.reload(login: login, mode: mode, filter: filter)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 8) {
+                Picker("任务来源", selection: $mode) {
+                    ForEach(XDriveIOSNativePhotoTaskListModel.Mode.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 12)
+                if mode == .changes {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(XDriveIOSNativePhotoTaskListModel.Filter.allCases) { option in
+                                Button(option.title) { filter = option }
+                                    .buttonStyle(.bordered)
+                                    .tint(filter == option ? Color.accentColor : Color.gray)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                    }
+                }
+                if let totals = model.counts, mode == .changes {
+                    Text("待处理 \(totals.pending) · iCloud \(totals.waitingICloud) · 失败 \(totals.failed) · 曾确认 \(totals.confirmed) · 已删除 \(totals.missingLocal)")
+                        .font(.caption).monospacedDigit()
+                        .padding(.horizontal, 12)
+                } else if let total = model.libraryTotal, mode == .library {
+                    Text("当前授权图库 \(total) 项 · 以下均为只读待核验状态")
+                        .font(.caption).monospacedDigit()
+                        .padding(.horizontal, 12)
+                }
+                if let notice = model.notice {
+                    Text(notice).font(.footnote).foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                }
+                if let error = model.errorMessage {
+                    Text(error).font(.footnote).foregroundStyle(.orange)
+                        .padding(.horizontal, 12)
+                }
+                if model.loading {
+                    ProgressView("正在读取当前账户的任务页…")
+                }
+                List {
+                    ForEach(model.rows) { item in
+                        HStack(alignment: .center, spacing: 10) {
+                            if item.localAvailable {
+                                XDriveIOSNativePhotoTaskThumbnail(localIdentifier: item.id)
+                            } else {
+                                Image(systemName: "photo.badge.exclamationmark")
+                                    .frame(width: 56, height: 56)
+                                    .foregroundStyle(.secondary)
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.typeLabel)
+                                if let date = item.date {
+                                    Text(date.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                } else {
+                                    Text("拍摄时间未知").font(.caption).foregroundStyle(.secondary)
+                                }
+                                if let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy.badge(
+                                    for: item.state, failureReasonCode: item.failureReasonCode
+                                ) {
+                                    Label(badge.title, systemImage: badge.symbol)
+                                        .font(.caption)
+                                        .accessibilityHint(Text(badge.explanation))
+                                } else if item.state == "missingLocal" {
+                                    Label("本机已删除", systemImage: "trash")
+                                        .font(.caption)
+                                }
+                            }
+                            Spacer(minLength: 4)
+                            if item.localAvailable && !controller.busy {
+                                Button(item.state == "failed" ? "核对并重试" : "优先处理") {
+                                    priorityOwner = login.owner
+                                    priorityID = item.id
+                                    priorityWasFailure = item.state == "failed"
+                                    showPriorityConsent = priorityOwner != nil
+                                }
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifier("native-ios-photo-task-item-priority")
+                            }
+                        }
+                        .accessibilityElement(children: .contain)
+                    }
+                }
+                .listStyle(.plain)
+                HStack {
+                    Button("上一页") { model.previous(login: login, mode: mode, filter: filter) }
+                        .disabled(model.offset == 0 || model.loading)
+                    Spacer()
+                    Text("第 \(model.offset + 1) 项起")
+                        .font(.caption).monospacedDigit()
+                    Spacer()
+                    Button("下一页") { model.next(login: login, mode: mode, filter: filter) }
+                        .disabled(!model.hasNext || model.loading)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                Toggle("单张优先备份允许下载 iCloud 原件", isOn: $allowICloud)
+                    .font(.caption)
+                    .padding(.horizontal, 16)
+                Text("优先操作沿用唯一原件上传与收据链；未知 ACK 必须先核对。显示的队列“曾确认”不证明现在仍有云端原件。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 16)
+            }
+            .navigationTitle("相册备份任务")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("完成") { dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("刷新") { refresh() }.disabled(model.loading)
+                }
+            }
+            .confirmationDialog(
+                priorityWasFailure ? "核对并安全重试该失败原件？" : "优先核验或备份此原件？",
+                isPresented: $showPriorityConsent, titleVisibility: .visible
+            ) {
+                Button("确认处理所选原件") {
+                    guard let owner = priorityOwner, let id = priorityID,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                          PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                          phase == .active else { return }
+                    controller.startSingle(
+                        login: login, expectedOwner: owner,
+                        localIdentifier: id, allowICloud: allowICloud
+                    )
+                    priorityOwner = nil
+                    priorityID = nil
+                }
+            } message: {
+                Text("仅当前 Owner 的这一项；重新验证照片身份、受管目标、上传账本及服务器原件收据，绝不绕过待核对 ACK。")
+            }
+            .onAppear {
+                mode = controller.schedule?.backupStartRule == .onlyNew ? .changes : .library
+                refresh()
+            }
+            .onChange(of: mode) { _ in refresh() }
+            .onChange(of: filter) { _ in refresh() }
+            .onChange(of: login.owner) { _ in
+                priorityOwner = nil
+                priorityID = nil
+                showPriorityConsent = false
+                refresh()
+            }
+            .onChange(of: phase) { state in
+                if state == .active { refresh() }
+                else { model.reset(); showPriorityConsent = false }
+            }
+            .onDisappear {
+                model.reset()
+                showPriorityConsent = false
+                priorityOwner = nil
+                priorityID = nil
             }
         }
     }

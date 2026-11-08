@@ -144,7 +144,23 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     @Environment(\.scenePhase) private var photoQueueScenePhase
     @Environment(\.xdriveNativePhotoQueueBadgeOwner) private var backupBadgeOwner
     @Environment(\.xdriveNativePhotoQueueBadgeRefresh) private var badgeRefresh
+    @Environment(\.xdriveNativePhotoProcessingID) private var processingID
+    @Environment(\.xdriveNativePhotoOnlyNewSince) private var onlyNewSince
+    @Environment(\.xdriveNativePhotoPriorityAction) private var priorityAction
     @State private var visibleBackupQueueStates: [String: XDriveIOSPhotoKitPersistentBackupQueue.VisibleItemStatus] = [:]
+    @State private var queueHistoryCurrent = false
+
+    private func displayedBackupState(for item: XDrivePhotoKitScanCandidate) -> String {
+        if processingID == item.id { return "processing" }
+        if let persisted = visibleBackupQueueStates[item.id]?.state { return persisted }
+        guard queueHistoryCurrent, let since = onlyNewSince else { return "unverified" }
+        switch XDriveIOSPhotoAutoSchedulePolicy.newOnlyCandidate(
+            capturedAt: item.capturedAt, modifiedAt: item.modifiedAt, since: since
+        ) {
+        case .olderThanStart: return "excluded"
+        default: return "unverified"
+        }
+    }
     @State private var badgeReadEpoch = UUID()
 
     /// Refresh ONLY the currently mounted 64-cell page on writer completion,
@@ -155,6 +171,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         let token = UUID()
         badgeReadEpoch = token
         visibleBackupQueueStates = [:]
+        queueHistoryCurrent = false
         guard let current = page, let owner = backupBadgeOwner,
               current.items.count <= 64,
               photoQueueScenePhase == .active,
@@ -166,6 +183,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             let states = try await queue.visibleStatusDetails(
                 owner: owner, localIdentifiers: identifiers
             )
+            let isCurrent = try await queue.isCaughtUp(owner: owner)
             try Task.checkCancellation()
             guard badgeReadEpoch == token,
                   photoQueueScenePhase == .active,
@@ -175,6 +193,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                   page?.items.map(\.id) == identifiers
             else { return }
             visibleBackupQueueStates = states
+            queueHistoryCurrent = isCurrent
         } catch {
             // Unreadable or outdated local queue is UNKNOWN, never success.
             if badgeReadEpoch == token { visibleBackupQueueStates = [:] }
@@ -208,9 +227,10 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                         candidate: candidate, framing: framing
                                     )
                                     .overlay(alignment: .topLeading) {
-                                        if let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy
+                                        if backupBadgeOwner != nil,
+                                           let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy
                                             .badge(
-                                                for: visibleBackupQueueStates[candidate.id]?.state,
+                                                for: displayedBackupState(for: candidate),
                                                 failureReasonCode: visibleBackupQueueStates[candidate.id]?.failureReasonCode
                                             ) {
                                             Label(badge.title, systemImage: badge.symbol)
@@ -242,7 +262,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                             .accessibilityValue(
                                 XDriveIOSNativeVisiblePhotoQueueBadgePolicy
                                     .badge(
-                                                for: visibleBackupQueueStates[candidate.id]?.state,
+                                                for: backupBadgeOwner == nil ? nil : displayedBackupState(for: candidate),
                                                 failureReasonCode: visibleBackupQueueStates[candidate.id]?.failureReasonCode
                                             )?
                                     .explanation ?? "当前云端备份状态未核验"
@@ -251,6 +271,15 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                 Button("分享本机原件") { onShare(candidate, false) }
                                 Button("从 iCloud 下载原件并分享") {
                                     onShare(candidate, true)
+                                }
+                                if let priorityAction {
+                                    Button(visibleBackupQueueStates[candidate.id]?.state == "failed"
+                                        ? "核对并重试失败原件" : "优先备份此原件") {
+                                        priorityAction(
+                                            candidate.id,
+                                            visibleBackupQueueStates[candidate.id]?.state == "failed"
+                                        )
+                                    }
                                 }
                             }
                             .id("photo:\(candidate.id)")
@@ -304,6 +333,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             page = nil
             precedingCapturedAt = nil
             visibleBackupQueueStates = [:]
+            queueHistoryCurrent = false
             let reader = XDriveIOSNativeGalleryMediaScanner()
             scanner = reader
             do {
@@ -338,6 +368,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                         let states = try await queue.visibleStatusDetails(
                             owner: owner, localIdentifiers: loaded.items.map(\.id)
                         )
+                        let isCurrent = try await queue.isCaughtUp(owner: owner)
                         try Task.checkCancellation()
                         if badgeReadEpoch == initialBadgeEpoch,
                            photoQueueScenePhase == .active,
@@ -346,6 +377,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                            page?.startOffset == loaded.startOffset,
                            page?.items.map(\.id) == loaded.items.map(\.id) {
                             visibleBackupQueueStates = states
+                            queueHistoryCurrent = isCurrent
                         }
                     } catch {
                         // Missing/corrupt/behind local history never implies
@@ -364,7 +396,12 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         }
         .onChange(of: backupBadgeOwner) { _ in
             badgeReadEpoch = UUID()
+            queueHistoryCurrent = false
             visibleBackupQueueStates = [:]
+            Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
+        }
+        .onChange(of: onlyNewSince) { _ in
+            queueHistoryCurrent = false
             Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
         }
         .onChange(of: badgeRefresh) { _ in
@@ -377,6 +414,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 Task { @MainActor in await refreshVisibleBackupQueueStatuses() }
             } else {
                 badgeReadEpoch = UUID()
+                queueHistoryCurrent = false
                 visibleBackupQueueStates = [:]
             }
         }
@@ -386,6 +424,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 precedingCapturedAt = nil
                 retainedGeneration = nil
             }
+            queueHistoryCurrent = false
             visibleBackupQueueStates = [:]
             badgeReadEpoch = UUID()
             if let scanner { Task { await scanner.reset() } }
