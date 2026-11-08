@@ -68,12 +68,13 @@ release_bundle_enqueue() {
   # A SIGKILL or power cut can leave the shared marker behind. Remove it
   # only if the authoritative installer flock is available, never by age.
   # The probe is isolated so the daemon never retains the lock itself.
-  if [[ -e "$cache/dependency-busy" || -L "$cache/dependency-busy" ]]; then
+  if [[ -e "$cache/dependency-busy" || -L "$cache/dependency-busy" ||
+        -e "$cache/dependency-ready" || -L "$cache/dependency-ready" ]]; then
     (
       command -v flock >/dev/null 2>&1 || exit 0
       exec 7<>"$STATE_DIR/install.lock" || exit 0
       if flock -n 7; then
-        rm -f -- "$cache/dependency-busy" || true
+        rm -f -- "$cache/dependency-busy" "$cache/dependency-ready" || true
       fi
       flock -u 7 || true
     )
