@@ -63,7 +63,7 @@ test('clear confirmation must still be on the exact same Owner in active scene',
 })
 test('delete uses one mutation ticket and does not automatically replay a failure', () => {
   const r=region('private func remove(owner:', 'private func size(')
-  assert.match(r, /guard !deleting, phase == \.active, isVisible,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.match(r, /guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\) else \{ return \}\s*guard !deleting, phase == \.active, isVisible else \{ return \}/)
   assert.match(r, /let ticket = UUID\(\)\s*deletionEpoch = ticket\s*deleting = true/)
   assert.match(r, /try await XDriveIOSNativePhotoThumbnailCache\.shared\.remove\(scope: scope, keys: keys\)/)
   assert.doesNotMatch(r, /retry.*remove|Task\.sleep/)
