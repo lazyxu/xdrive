@@ -20,7 +20,7 @@ assets = [
     "scripts/xdrive-server-host.sh",
     "scripts/xdrive-share-update.py",
 ]
-assert len(assets) == len(set(assets)) == 12
+assert len(assets) == len(set(assets)) == 13
 for asset in assets:
     assert asset in installer, f"installer missing {asset}"
     assert asset in release, f"release manifest missing {asset}"
