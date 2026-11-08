@@ -52,6 +52,7 @@ type releaseBundleState struct {
 type releaseBundleItem struct {
 	releaseBundleArtifact
 	Cached       bool     `json:"cached"`
+	CacheStatus  string   `json:"cache_status"`
 	DownloadURLs []string `json:"download_urls"`
 }
 
@@ -162,13 +163,26 @@ func readReleaseBundleListing(root string) releaseBundleListing {
 			info, err := os.Lstat(path)
 			cached = err == nil && info.Mode().IsRegular() && info.Size() == artifact.Size
 		}
+		cacheStatus := "unavailable"
+		if status.Commit == target {
+			cacheStatus = status.Artifacts[artifact.Filename]
+		}
+		if cached {
+			// Publication owns a verified immutable package; no old worker
+			// result can downgrade it to a missing package.
+			cacheStatus = "verified"
+		} else if cacheStatus == "" || cacheStatus == "verified" {
+			// A deleted or missing cache file is never advertised as verified.
+			cacheStatus = "retry_needed"
+		}
 		urls := []string{}
 		if cached {
 			urls = append(urls, "/api/v1/release-bundles/current/artifacts/"+artifact.Filename)
 		}
 		urls = append(urls, artifact.Sources.GitLab, artifact.Sources.GitHub)
 		result.Artifacts = append(result.Artifacts, releaseBundleItem{
-			releaseBundleArtifact: artifact, Cached: cached, DownloadURLs: urls,
+			releaseBundleArtifact: artifact, Cached: cached,
+			CacheStatus: cacheStatus, DownloadURLs: urls,
 		})
 	}
 	if result.State == "unavailable" && current.Commit == target {
