@@ -166,5 +166,109 @@ class BundleCacheTests(unittest.TestCase):
             validate(self.manifest, allow_local=True)
 
 
+    def test_partial_current_commit_publish_and_retry(self):
+        other_data = b"second-platform-installer" * 40
+        second = {
+            "platform": "windows", "filename": "missing.exe",
+            "build_commit": self.manifest["commit"], "size": len(other_data),
+            "sha256": hashlib.sha256(other_data).hexdigest(),
+            "sources": {
+                "gitlab": f"http://127.0.0.1:{self.http.server_port}/missing.exe",
+                "github": f"http://127.0.0.1:{self.http.server_port}/missing.exe",
+            },
+        }
+        self.manifest["artifacts"].append(second)
+        self.assertEqual(self.sync(), 1)
+        sha = self.manifest["commit"]
+        self.assertEqual(json.loads((self.cache / "current.json").read_text())["commit"], sha)
+        self.assertEqual((self.cache / "packages" / sha / "pkg.ipa").read_bytes(), self.data)
+        self.assertFalse((self.cache / "packages" / sha / "missing.exe").exists())
+        status = json.loads((self.cache / "status.json").read_text())
+        self.assertEqual(status["state"], "retry_needed")
+        self.assertEqual(status["artifacts"]["pkg.ipa"], "verified")
+        self.assertEqual(status["artifacts"]["missing.exe"], "missing_upstream")
+        # A later upstream publication must not mutate immutable metadata;
+        # only the missing package's verified bytes are added to the cache.
+        (self.root / "missing.exe").write_bytes(other_data)
+        self.assertEqual(self.sync(), 0)
+        self.assertEqual((self.cache / "packages" / sha / "missing.exe").read_bytes(), other_data)
+        status = json.loads((self.cache / "status.json").read_text())
+        self.assertEqual(status["state"], "ready")
+        self.assertTrue(all(value == "verified" for value in status["artifacts"].values()))
+
+    def test_dependency_phase_finishes_before_install_lock_is_released(self):
+        from release_bundle import _install_busy
+        lock = self.root / "install.lock"
+        marker = self.root / "dependency-busy"
+        ready = self.root / "dependency-ready"
+        with lock.open("a+b") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Missing busy marker cannot let packages compete during startup.
+            self.assertTrue(_install_busy(lock, marker))
+            marker.write_text("installing", encoding="utf-8")
+            self.assertTrue(_install_busy(lock, marker))
+            ready.write_text("dependencies ready", encoding="utf-8")
+            self.assertTrue(_install_busy(lock, marker))
+            marker.unlink()
+            self.assertFalse(_install_busy(lock, marker))
+            # A new dependency phase revokes the permission immediately.
+            marker.touch()
+            self.assertTrue(_install_busy(lock, marker))
+            ready.unlink()
+            marker.unlink()
+            self.assertTrue(_install_busy(lock, marker))
+            fcntl.flock(held, fcntl.LOCK_UN)
+        self.assertFalse(_install_busy(lock, marker))
+
+    def test_active_transfer_pauses_and_resumes_from_partial(self):
+        from unittest.mock import patch
+        from release_bundle import _download
+        payload = b"xdrive-resume-verification" * 80
+        checksum = hashlib.sha256(payload).hexdigest()
+        target = self.root / "resume.ipa"
+        marker = self.root / "dependency-busy"
+
+        class FakeResponse:
+            def __init__(self, status, body, headers=None, busy_after_first_read=False):
+                self.status = status
+                self.headers = headers or {}
+                self.body = body
+                self.cursor = 0
+                self.busy_after_first_read = busy_after_first_read
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, count):
+                if self.cursor >= len(self.body):
+                    return b""
+                n = min(count, 125, len(self.body) - self.cursor)
+                data = self.body[self.cursor:self.cursor+n]
+                self.cursor += n
+                if self.busy_after_first_read:
+                    self.busy_after_first_read = False
+                    marker.touch()
+                return data
+
+        with patch("release_bundle.OPENER.open", return_value=FakeResponse(
+            200, payload, busy_after_first_read=True
+        )):
+            with self.assertRaises(InterruptedError):
+                _download("http://127.0.0.1/test", target, len(payload), checksum, None, marker)
+        partial = target.with_name(target.name + ".part")
+        self.assertEqual(partial.read_bytes(), payload[:125])
+        self.assertFalse(target.exists())
+        marker.unlink()
+        with patch("release_bundle.OPENER.open", return_value=FakeResponse(
+            206, payload[125:], {"Content-Range": f"bytes 125-{len(payload)-1}/{len(payload)}"}
+        )):
+            _download("http://127.0.0.1/test", target, len(payload), checksum, None, marker)
+        self.assertEqual(target.read_bytes(), payload)
+        self.assertFalse(partial.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
