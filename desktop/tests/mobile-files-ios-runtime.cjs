@@ -3085,7 +3085,7 @@ test('F-iOS27-10D: folder title opens ancestors without a second heading or path
     assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none')
     const rail = h.view.root.findAll(node => node.props?.['data-mobile-files-section'])
       .map(node => node.props['data-mobile-files-section'])
-    assert.deepEqual(rail, ['recent', 'favorites', 'browse'])
+    assert.deepEqual(rail, ['recent', 'browse', 'favorites'])
 
     const trigger = find(h.view, 'data-mobile-files-location-trigger', true)
     assert.equal(trigger.props.sx.minHeight, 44)

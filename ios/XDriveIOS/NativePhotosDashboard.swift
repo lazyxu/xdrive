@@ -427,6 +427,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         .frame(height: verticalSizeClass == .compact ? 48 : 56)
         .background(.regularMaterial)
         .overlay(alignment: .top) { Divider() }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("native-ios-five-slot-bar")
     }
 
@@ -530,6 +531,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                                 )
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("native-ios-gallery-source-\(source.rawValue)")
                     }
                     Menu {
                         Button("本机照片") { gallerySource = .local }

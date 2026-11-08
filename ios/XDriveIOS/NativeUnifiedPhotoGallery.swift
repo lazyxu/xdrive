@@ -57,6 +57,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
 
     var body: some View {
         galleryContent
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("native-ios-unified-photo-gallery")
             .task(id: indexRequest) {
                 // Viewing thumbnails must never start a whole-library SHA-256
@@ -123,6 +124,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 Button { draft = query; showFilters = true } label: {
                     Label(query == .init() ? "搜索与筛选" : "已筛选", systemImage: "line.3.horizontal.decrease.circle")
                 }
+                .accessibilityIdentifier("native-ios-gallery-open-filters")
                 Spacer()
                 if query != .init() { Button("清除") { query = .init() } }
                 Menu {
@@ -203,7 +205,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 filterButton(nil, title: "全部")
                 ForEach(XDriveIOSNativeGalleryPresence.allCases) { presence in filterButton(presence, title: presence.title) }
             }
-        }.accessibilityIdentifier("native-ios-unified-gallery-filters")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("native-ios-unified-gallery-filters")
     }
 
     private func filterButton(_ value: XDriveIOSNativeGalleryPresence?, title: String) -> some View {
