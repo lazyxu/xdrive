@@ -40,10 +40,20 @@ class GenerateBundleTests(unittest.TestCase):
         self.assertEqual(android["install_mode"], "manual")
         self.assertEqual(android["sha256"], hashlib.sha256(b"apk").hexdigest())
 
-    def test_reject_incomplete_release(self):
+    def test_omit_missing_client_platform_but_keep_other_verified_artifacts(self):
         (self.directory / "xDriveSetup-amd64.exe").unlink()
-        with self.assertRaises(ValueError):
-            module.build(self.directory, SHA, "master")
+        result = module.build(self.directory, SHA, "master")
+        self.assertEqual(len(result["artifacts"]), 4)
+        self.assertNotIn("windows", {a["platform"] for a in result["artifacts"]})
+        self.assertTrue(all(a["build_commit"] == SHA for a in result["artifacts"]))
+
+    def test_server_only_release_is_valid_without_any_client_packages(self):
+        for item in self.directory.iterdir():
+            item.unlink()
+        result = module.build(self.directory, SHA, "master")
+        self.assertEqual(result["artifacts"], [])
+        self.assertEqual(result["commit"], SHA)
+        self.assertEqual(result["schema_version"], 1)
 
     def test_reject_short_sha(self):
         with self.assertRaises(ValueError):
