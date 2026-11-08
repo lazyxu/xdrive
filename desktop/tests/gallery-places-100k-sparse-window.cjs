@@ -194,3 +194,37 @@ test('100k far-scroll jumps directly to the visible signed Owner page, not 2k se
   assert.equal(missing(first,total+1,total+2),null,
     'never issue requests outside the visited Owner logical depth')
 })
+
+test('a signed rehydrate response cannot materialize unvisited logical rows', () => {
+  // A Viewer return can preserve a 96-item visited depth while only the
+  // first 48 Owner-authorized identities are resident. The Server range
+  // endpoint accepts arbitrary positive offsets, so a stale/malformed
+  // rehydration response at 80 includes IDs beyond the visited boundary.
+  // Its valid Owner JWT and matching total are NOT permission to advance
+  // the virtual depth.
+  const current={start:0,items:page(0).items,depth:96,total}
+  const overflow=page(80)
+  assert.equal(overflow.offset,80)
+  assert.equal(overflow.items.length,48)
+  assert.ok(overflow.offset < current.depth)
+  assert.ok(overflow.offset + overflow.items.length > current.depth)
+  assert.equal(rehydrate(selection,current,overflow),null)
+  assert.equal(current.depth,96)
+  assert.equal(current.items.length,48)
+
+  // The actual visible page is still allowed to be reauthorized, with
+  // unchanged Owner logical depth and no artificial scrolling restriction.
+  assert.equal(missing(current,80,95),48)
+  const valid=rehydrate(selection,current,page(48))
+  assert.ok(valid)
+  assert.equal(valid.depth,96)
+  assert.equal(valid.start,0)
+  assert.equal(valid.items.length,96)
+
+  // A fully visited 528-item logical window can seek back to a signed
+  // earlier page, but may not accept a page that straddles depth=528.
+  const back={start:0,items:page(0).items,depth:528,total}
+  assert.ok(rehydrate(selection,back,page(480)))
+  assert.equal(rehydrate(selection,back,page(512)),null)
+  assert.equal(back.depth,528)
+})
