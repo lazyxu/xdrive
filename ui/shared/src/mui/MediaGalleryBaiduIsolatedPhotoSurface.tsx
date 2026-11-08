@@ -209,6 +209,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     expanded: boolean
     loadingMore: boolean
     pageError: boolean
+    pageErrorKind?: 'append' | 'window'
+    /** Viewport indices of the last failed signed re-read, never retained photo IDs. */
+    failedWindowRange?: { start: number; end: number }
     returnPresentation?: XDrivePlacesDrawerPresentation
   }
   const [drawer,setDrawer] = useState<DrawerView | null>(null)
@@ -313,7 +316,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     drawerFetch.current=controller
     setDrawer(current => current && current.key===key &&
       xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection)
-      ? {...current,loadingMore:true,pageError:false} : current)
+      ? {...current,loadingMore:true,pageError:false,
+          pageErrorKind:undefined,failedWindowRange:undefined} : current)
     void preview(selection,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,offset,{
       by:pageScope.filters.sort_by ?? 'captured',
       dir:pageScope.filters.sort_dir ?? 'desc',
@@ -341,6 +345,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               depth:current.loadedDepth, total:current.total,
             }, range)
         return {...current,loadingMore:false,pageError:!window,
+          pageErrorKind:window?undefined:'append',failedWindowRange:undefined,
           windowStart:window?.start ?? current.windowStart,
           loadedDepth:window?.depth ?? current.loadedDepth,
           items:window ? [...window.items] : current.items}
@@ -351,7 +356,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           !hasAcceptedCell(selection)) return
       setDrawer(current => current && current.key===key &&
         xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection)
-        ? {...current,loadingMore:false,pageError:true} : current)
+        ? {...current,loadingMore:false,pageError:true,
+            pageErrorKind:'append',failedWindowRange:undefined} : current)
     }).finally(() => {
       if(drawerFetch.current===controller)drawerFetch.current=null
     })
@@ -359,9 +365,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // Gallery's virtual viewport can revisit any evicted position without
   // retaining old photo IDs. The trusted Parent re-reads the requested signed
   // Owner Cell page; SDK map data never authorizes media or thumbnails.
-  const loadDrawerWindow = (visibleStart:number,visibleEnd:number) => {
+  const loadDrawerWindow = (visibleStart:number,visibleEnd:number,manualRetry=false) => {
     const state=activeDrawer,approved=acceptedScope.current
-    if (!state || state.phase!=='ready' || state.loadingMore || state.pageError ||
+    if (!state || state.phase!=='ready' || state.loadingMore || (state.pageError && !manualRetry) ||
         drawerFetch.current || !approved ||
         approved.key!==filterRef.current.key ||
         !hasAcceptedCell(state.selection)) return
@@ -379,7 +385,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     drawerFetch.current=controller
     setDrawer(current=>current && current.key===key &&
       xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection)
-      ? {...current,loadingMore:true,pageError:false} : current)
+      ? {...current,loadingMore:true,pageError:false,
+          pageErrorKind:undefined,failedWindowRange:undefined} : current)
     void preview(selection,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,offset,{
       by:pageScope.filters.sort_by ?? 'captured',
       dir:pageScope.filters.sort_dir ?? 'desc',
@@ -399,6 +406,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           depth:current.loadedDepth,total:current.total,
         },range)
         return {...current,loadingMore:false,pageError:!window,
+          pageErrorKind:window?undefined:'window',
+          failedWindowRange:window?undefined:{start:visibleStart,end:visibleEnd},
           windowStart:window?.start ?? current.windowStart,
           items:window ? [...window.items] : current.items}
       })
@@ -408,10 +417,21 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
          !hasAcceptedCell(selection))return
       setDrawer(current=>current && current.key===key &&
         xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection)
-        ? {...current,loadingMore:false,pageError:true}:current)
+        ? {...current,loadingMore:false,pageError:true,
+          pageErrorKind:'window',
+          failedWindowRange:{start:visibleStart,end:visibleEnd}}:current)
     }).finally(()=>{
       if(drawerFetch.current===controller)drawerFetch.current=null
     })
+  }
+  // No automatic retry loop: user action reissues only the failed viewport.
+  // The original Owner, Cell, filter, abort, and revision checks above still
+  // apply, even if the visited depth already equals the entire album count.
+  const retryDrawerWindow = () => {
+    const state=activeDrawer
+    if (!state || state.pageErrorKind!=='window' ||
+        !state.failedWindowRange) return
+    loadDrawerWindow(state.failedWindowRange.start,state.failedWindowRange.end,true)
   }
   const openDrawerPhoto = (item: MediaItem,
     presentation: XDrivePlacesDrawerPresentation) => {
@@ -1292,6 +1312,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             windowStart={activeDrawer.windowStart} loadedDepth={activeDrawer.loadedDepth}
             phase={activeDrawer.phase} expanded={activeDrawer.expanded}
             loadingMore={activeDrawer.loadingMore} pageError={activeDrawer.pageError}
+            pageErrorKind={activeDrawer.pageErrorKind}
             initialPresentation={activeDrawer.returnPresentation}
             loadThumbnail={loadThumbnail}
             photoTileMinWidth={photoTileMinWidth}
@@ -1303,6 +1324,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             onOpenAll={openDrawerAll} onOpenPhoto={openDrawerPhoto}
             onLoadMore={loadDrawerMore}
             onWindowRange={loadDrawerWindow}
+            onRetryWindow={retryDrawerWindow}
             onOpenNearby={acceptedViewport && activeDrawer.phase==='ready' &&
               openViewport.current && trustedSummary && trustedSummary.total_count>0
               ? openVerifiedCameraNearby : undefined}
