@@ -63,5 +63,5 @@ test('Files browse exposes genuine operation history without refreshing idle nav
   assert.match(files, /if operationWasAccepted \{[\s\S]*?reload\(\)/)
   assert.match(files, /showingFileOperations = false[\s\S]*?fileOperationsOwner = nil/)
   assert.match(files, /private func presentFileOperations\(\)/)
-  assert.match(source, /\.onDisappear \{ model\.invalidate\(\) \}/)
+  assert.match(source, /\.onDisappear \{\s*isVisible = false\s*pending = nil\s*model\.invalidate\(\)/)
 })
