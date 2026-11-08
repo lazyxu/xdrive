@@ -1126,6 +1126,17 @@ private struct XDriveIOSMapSpatialAlbum: View {
     }
 }
 
+/// One successful, session-local PhotoKit viewport and at most 64 verified
+/// representative Cells. It cannot outlive the currently observed library,
+/// authorization, media filter or capture range, and is never persisted.
+private struct XDriveIOSNativeLocalMapCachedWindow {
+    let viewport: XDriveIOSNativeLocalMapViewport
+    let cells: [XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>]
+    let scanned: Int
+    let total: Int
+    let located: Int
+}
+
 /// One native map route for both the original bounded 64-slot page and an
 /// explicit, transient full-authorized-library GPS overview. No WebView or
 /// second backup/upload worker; never persists or sends GPS/local IDs.
@@ -1188,6 +1199,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var nearbySelection: XDriveIOSMapSpatialSelection?
     @State private var globalCamera: MKCoordinateRegion?
     @State private var globalViewport: XDriveIOSNativeLocalMapViewport?
+    // Two fully scanned viewports; <=128 Cell representatives, no 100k ID
+    // table, original bytes, disk cache, cross-Owner or background reuse.
+    @State private var recentVerifiedWindows: [XDriveIOSNativeLocalMapCachedWindow] = []
+    // Bounded, non-sensitive in-session performance samples for debugging.
+    @State private var recentScanMilliseconds: [Double] = []
     @State private var globalCameraMoving = false
     @State private var autoRefineTask: Task<Void, Never>?
     @State private var handledMapJumpID: UUID?
@@ -1858,6 +1874,35 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                   )
             else { return }
             autoRefineTask = nil
+            // Navigating back to a previously verified same-session viewport
+            // must not re-enumerate 100k PhotoKit rows. Scope-changing events
+            // always call invalidate(), which discards these snapshots.
+            if let cached = recentVerifiedWindows.first(where: { item in
+                XDriveIOSNativeLocalMapSpatialPolicy.containsViewport(
+                    item.viewport, current: finalViewport
+                ) && !XDriveIOSNativeLocalMapAutoRefinePolicy.shouldRefine(
+                    finalViewport, scanned: item.viewport
+                )
+            }) {
+                suspendForSheet()
+                guard phase == .active, mapScope == .library,
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                else { return }
+                globalCells = cached.cells
+                provisionalCells = []
+                globalViewport = cached.viewport
+                globalTotal = cached.total
+                globalScanned = cached.scanned
+                globalLocated = cached.located
+                globalComplete = true
+                globalCameraMoving = false
+                error = nil
+                mapRevision = UUID()
+                #if DEBUG
+                print("IOS_MAP_PERF cache_hit=1 metadata_pages=0")
+                #endif
+                return
+            }
             scanFullLibrary(viewport: padded, preserveCurrentMap: true)
         }
     }
@@ -1907,6 +1952,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         let ticket = generation
         busy = true
         task = Task { @MainActor in
+            let scanStartUptime = ProcessInfo.processInfo.systemUptime
             do {
                 let total = try await worker.startMap(
                     atOffset: 0, album: album, mediaFilter: mediaFilter,
@@ -1974,6 +2020,37 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 globalViewport = viewport
                 globalComplete = true
                 globalCameraMoving = false
+                if let viewport {
+                    // Keep only two exact, completed windows in the current
+                    // active PhotoKit generation. Never cache a provisional
+                    // page or a failed/partially authorized scan.
+                    recentVerifiedWindows.removeAll(where: {
+                        $0.viewport == viewport
+                    })
+                    recentVerifiedWindows.insert(
+                        XDriveIOSNativeLocalMapCachedWindow(
+                            viewport: viewport, cells: index.cells,
+                            scanned: scanned, total: total,
+                            located: index.locatedCount
+                        ), at: 0)
+                    if recentVerifiedWindows.count > 2 {
+                        recentVerifiedWindows.removeLast(
+                            recentVerifiedWindows.count - 2)
+                    }
+                }
+                let elapsedMilliseconds = max(0,
+                    (ProcessInfo.processInfo.systemUptime - scanStartUptime) * 1000)
+                recentScanMilliseconds.append(elapsedMilliseconds)
+                if recentScanMilliseconds.count > 32 {
+                    recentScanMilliseconds.removeFirst(
+                        recentScanMilliseconds.count - 32)
+                }
+                #if DEBUG
+                let sorted = recentScanMilliseconds.sorted()
+                let median = sorted[(sorted.count - 1) / 2]
+                let p95 = sorted[Int(Double(sorted.count - 1) * 0.95)]
+                print("IOS_MAP_PERF cache_hit=0 elapsed_ms=\(Int(elapsedMilliseconds)) metadata_pages=\(pages) metadata_items=\(scanned) p50_ms=\(Int(median)) p95_ms=\(Int(p95))")
+                #endif
                 mapRevision = UUID()
             } catch is CancellationError {
             } catch {
@@ -2094,6 +2171,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         globalLocated = 0
         globalCamera = nil
         globalViewport = nil
+        recentVerifiedWindows = []
+        recentScanMilliseconds = []
         globalCameraMoving = false
         error = nil
         mapRevision = UUID()
