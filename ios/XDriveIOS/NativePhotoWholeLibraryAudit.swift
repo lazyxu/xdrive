@@ -311,6 +311,20 @@ final class XDriveIOSNativePhotoWholeLibraryAuditModel: ObservableObject {
                 try self.verifyGeneration(
                     requestedOwner: requestedOwner, login: login
                 )
+                // Persist only an AS-OF audit result after every item has
+                // been checked in this one verified PhotoKit/Source/Target
+                // generation. Never promote a partial 8-item batch or an
+                // old local receipt tally into current cloud coverage.
+                if self.checked == count,
+                   let sourceID = self.managedSourceID,
+                   let targetNodeID = self.managedTargetNodeID {
+                    XDriveIOSNativePhotoAuditHistory.save(
+                        owner: requestedOwner,
+                        sourceID: sourceID, targetNodeID: targetNodeID,
+                        total: count, matched: self.currentVerified,
+                        unmatched: self.unverified
+                    )
+                }
                 if XDriveIOSNativePhotoWholeLibraryAuditPolicy.complete(
                     checked: self.checked, total: count,
                     currentlyVerified: self.currentVerified,
@@ -436,6 +450,14 @@ struct XDriveIOSNativePhotoWholeLibraryAuditSection: View {
     var body: some View {
         Section("当前图库逐项原件核验") {
             Text("从本机读取原件 SHA-256，并逐项查询当前受管目标的历史收据与服务器 Node。每次最多核验 8 项；只读取，不上传、不删除。")
+            if let owner = login.owner,
+               let history = XDriveIOSNativePhotoAuditHistory.last(owner: owner) {
+                Text("上次完整检查（\(history.at.formatted(date: .abbreviated, time: .shortened))）：共 \(history.total) 项，当时 Node 核验通过 \(history.matched) 项、未通过 \(history.unmatched) 项。")
+                    .font(.footnote).monospacedDigit()
+                    .accessibilityIdentifier("native-ios-photo-historical-whole-audit")
+                Text("这是绑定保存时受管 Source/Node 的历史快照；没有重新读取现在的云端或 PhotoKit，不代表当前覆盖率。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
                 .font(.footnote).foregroundStyle(.secondary)
             Toggle("核验时允许下载 iCloud 原件", isOn: $allowICloudOriginals)
                 .disabled(audit.busy || audit.verifyingContinuously)

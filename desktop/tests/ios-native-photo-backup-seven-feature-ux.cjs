@@ -136,3 +136,16 @@ test('full-library task-page proofs are bounded, read-only and invalidated by Ph
   assert.match(verifier, /verifyNodeReceipt\(/)
   assert.doesNotMatch(taskModel, /createUploadSession|finalizeUploadSession|deleteAssets\(/)
 })
+
+
+test('a completed whole-library audit persists only an as-of authenticated Node coverage snapshot', () => {
+  const audit = read('ios/XDriveIOS/NativePhotoWholeLibraryAudit.swift')
+  const history = read('ios/XDriveIOS/NativePhotoAuditHistory.swift')
+  assert.match(audit, /if self\.checked == count,[\s\S]*?XDriveIOSNativePhotoAuditHistory\.save\(/)
+  assert.match(audit, /native-ios-photo-historical-whole-audit/)
+  assert.match(audit, /不代表当前覆盖率/)
+  assert.match(history, /matched \+ unmatched == total/)
+  assert.match(history, /sourceID > 0, targetNodeID > 0/)
+  assert.match(history, /UserDefaults\.standard\.set\(encoded/)
+  assert.doesNotMatch(history, /localIdentifier|accessToken|grantSecret|originalFilename/)
+})
