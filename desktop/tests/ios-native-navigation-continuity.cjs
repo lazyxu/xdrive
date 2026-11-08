@@ -13,7 +13,15 @@ const sources = {
   "a": "ios/XDriveIOS/NativePhotoAlbumBrowser.swift",
   "f": "ios/XDriveIOS/NativeCloudFilesBrowser.swift",
   "c": "ios/XDriveIOS/NativeFilesCollections.swift",
-  "n": "ios/XDriveIOS/NativeFilesNavigationPolicy.swift"
+  "n": "ios/XDriveIOS/NativeFilesNavigationPolicy.swift",
+  "q": "ios/XDriveIOS/NativeFilesQuickAccess.swift",
+  "v": "ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift",
+  "r": "ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift",
+  "g": "ios/XDriveIOS/NativePhotoWallDensityPolicy.swift",
+  "s": "ios/XDriveIOS/NativeLocalPhotoGallery.swift",
+  "t": "ios/XDriveIOS/NativeFilesTrash.swift",
+  "e": "ios/XDriveIOS/NativeFilesSavedSearches.swift",
+  "o": "ios/XDriveIOS/NativeFilesOperationHistory.swift"
 }
 const scenarios = [
   {
@@ -242,11 +250,11 @@ const scenarios = [
     ]
   },
   {
-    "name": "18 Files Home child pop retains links and only refreshes changed projection",
+    "name": "18 Files Home initial mount loads once; offline child pop cannot trigger a fetch loop",
     "checks": [
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)",
+        "pattern": "if !homeReadAttempted \\{\\s*homeReadAttempted = true\\s*reload\\(\\)",
         "flags": ""
       }
     ]
@@ -392,11 +400,11 @@ const scenarios = [
     ]
   },
   {
-    "name": "29 Home's verified Favorites refresh silently on child return",
+    "name": "29 Home verified Favorites silently revalidates after child return",
     "checks": [
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)\\s*\\} else \\{[\\s\\S]*?loadFavoriteShortcuts\\(\\)",
+        "pattern": "else if favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) &&\\s*quickAccess\\.matches\\(login\\.owner\\) \\{[\\s\\S]*?loadFavoriteShortcuts\\(\\)",
         "flags": ""
       }
     ]
@@ -412,7 +420,7 @@ const scenarios = [
     ]
   },
   {
-    "name": "31 Home Quick Access shared model still skips duplicate Owner requests",
+    "name": "31 Shared Quick Access still suppresses duplicate Owner reads",
     "checks": [
       {
         "file": "f",
@@ -420,8 +428,8 @@ const scenarios = [
         "flags": ""
       },
       {
-        "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\)",
+        "file": "q",
+        "pattern": "if matches\\(expected\\) && !force \\{ return \\}",
         "flags": ""
       }
     ]
@@ -707,6 +715,106 @@ const scenarios = [
       {
         "file": "c",
         "pattern": "func matches\\(_ owner: XDriveNativeOwnerRoot\\?,\\s*kind: XDriveIOSNativeFilesCollectionKind\\) -> Bool",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "57 Files page bounds check before cursor arithmetic",
+    "checks": [
+      {
+        "file": "v",
+        "pattern": "startOffset <= total,\\s*loadedIDs.count <= total - startOffset",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "58 Files next range bounds check before cursor arithmetic",
+    "checks": [
+      {
+        "file": "v",
+        "pattern": "startOffset <= total,\\s*loadedCount <= total - startOffset",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "59 PhotoKit Viewer return requires a well-formed unique page",
+    "checks": [
+      {
+        "file": "r",
+        "pattern": "Set\\(currentPageIDs\\)\\.count == currentPageIDs\\.count",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "60 Gallery shared wall refuses duplicate return anchors",
+    "checks": [
+      {
+        "file": "g",
+        "pattern": "for item in verifiedIDs where item == anchor \\{\\s*if found \\{ return false \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "61 Files Recent Favorites management return retains verified projection",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.sheet\\(item: \\$managementIntent, onDismiss: \\{[\\s\\S]*?reload\\(preserveVerifiedRows: model\\.matches\\(login\\.owner, kind: kind\\)\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "62 Local Gallery foreground refresh only invalidates once",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "private func refresh\\(at requestedOffset: Int = 0\\)[\\s\\S]*?load\\(offset: max\\(0, requestedOffset\\)\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "63 Cloud Files unauthorised error has explicit native escape",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "accessibilityIdentifier\\(\"native-ios-files-error-return\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "64 Trash unauthorised error has explicit native escape",
+    "checks": [
+      {
+        "file": "t",
+        "pattern": "accessibilityIdentifier\\(\"native-ios-files-trash-error-return\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "65 Saved Searches modal exposes stable content accessibility",
+    "checks": [
+      {
+        "file": "e",
+        "pattern": "accessibilityIdentifier\\(\"native-ios-files-saved-searches-page\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "66 Operation History modal exposes stable content accessibility",
+    "checks": [
+      {
+        "file": "o",
+        "pattern": "accessibilityIdentifier\\(\"native-ios-files-operation-history-page\"\\)",
         "flags": ""
       }
     ]

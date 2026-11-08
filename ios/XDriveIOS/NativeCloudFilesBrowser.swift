@@ -866,6 +866,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private static let internalDragType = "com.lazyxu.xdrive.files.internal-node"
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
     @StateObject private var inlineFolders = XDriveIOSNativeFilesInlineFolderStore()
     @StateObject private var favoriteShortcuts = XDriveIOSNativeFilesCollectionPageModel()
@@ -1468,6 +1469,15 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Text(error).foregroundStyle(.orange)
                 Button("重试当前页") { reload() }
                     .accessibilityIdentifier("native-ios-files-retry")
+                // Cloud-folder readers can fail before a protected Node is
+                // readable. Provide a stable native escape route instead of
+                // relying solely on a potentially inaccessible back toolbar.
+                if folder != nil {
+                    Button { dismiss() } label: {
+                        Label("返回文件", systemImage: "chevron.left")
+                    }
+                    .accessibilityIdentifier("native-ios-files-error-return")
+                }
             } else if model.entries.isEmpty {
                 Label("当前目录或搜索结果为空。", systemImage: "folder")
                     .foregroundStyle(.secondary)

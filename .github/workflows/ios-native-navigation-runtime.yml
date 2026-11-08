@@ -5,6 +5,9 @@ on:
       - '.github/workflows/ios-native-navigation-runtime.yml'
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
+      - 'ios/XDriveIOS/NativeFilesTrash.swift'
+      - 'ios/XDriveIOS/NativeFilesSavedSearches.swift'
+      - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
       - 'ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift'
       - 'ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift'
       - 'ios/XDriveIOS/NativePhotoWallDensityPolicy.swift'
@@ -101,6 +104,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/native-navigation-results"
+          # Legacy release is only an informational baseline: it does not
+          # contain new child content IDs, so run the compatible tab smoke.
+          # The candidate always runs the COMPLETE native UI-test target.
+          native_test_target="xDriveIOSNavigationUITests"
+          if [[ "${{ matrix.source }}" == "release-c83" ]]; then
+            native_test_target="xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesFirstOpenAndSixGalleryReturnsDoNotExit"
+          fi
           xcodebuild test \
             -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
             -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
@@ -109,7 +119,7 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
-            -only-testing:xDriveIOSNavigationUITests test \
+            "-only-testing:$native_test_target" test \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
       - name: Capture crash diagnostics and XCTest summary
         if: always()
@@ -123,6 +133,11 @@ jobs:
             xcrun xcresulttool get test-results summary \
               --path "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
               > "$RUNNER_TEMP/native-navigation-results/diagnostics/summary.json" 2>&1 || true
+            mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics/failure-attachments"
+            xcrun xcresulttool export attachments \
+              --path "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
+              --output-path "$RUNNER_TEMP/native-navigation-results/diagnostics/failure-attachments" \
+              --only-failures > /dev/null 2>&1 || true
           fi
       - name: Upload runtime logs and crash evidence
         if: always()

@@ -455,6 +455,7 @@ private final class XDriveIOSNativeFilesTrashMutationModel: ObservableObject {
 struct XDriveIOSNativeFilesTrashScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var model = XDriveIOSNativeFilesTrashPageModel()
     @StateObject private var mutation = XDriveIOSNativeFilesTrashMutationModel()
     @State private var pendingDelete: XDriveIOSNativeFilesTrashNode?
@@ -473,6 +474,10 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                 Text(error).foregroundStyle(.orange)
                 Button("重试") { reload() }
                     .accessibilityIdentifier("native-ios-files-trash-retry")
+                Button { dismiss() } label: {
+                    Label("返回文件", systemImage: "chevron.left")
+                }
+                .accessibilityIdentifier("native-ios-files-trash-error-return")
             } else if !model.canDisplay(owner: login.owner) {
                 Text(login.owner == nil ? "请先登录 xDrive 服务器" :
                      "正在核验当前账户的回收站…")

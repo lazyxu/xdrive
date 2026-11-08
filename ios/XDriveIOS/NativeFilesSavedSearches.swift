@@ -469,6 +469,8 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
         }
         .navigationTitle("智能文件夹")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("native-ios-files-saved-searches-page")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("刷新") {
