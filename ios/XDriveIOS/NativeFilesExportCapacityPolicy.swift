@@ -1,9 +1,14 @@
 import Foundation
 
-/// Single-file, foreground original export admission. Batch export keeps its
-/// independent 512 MiB aggregate cap; no browser or background path uses this.
+/// Single-file, foreground streaming download admission. There is no arbitrary
+/// 1 GiB file cap: actual free disk and a protected temporary destination govern
+/// whether a file can be prepared for the explicit iOS Share Sheet. Batch limits
+/// remain independent; this does not claim background download support.
 enum XDriveIOSNativeFilesExportCapacityPolicy {
-    static let maximumSingleFileBytes: Int64 = 1_073_741_824
+    // URLSession.download writes directly to disk, and the later staging move
+    // stays on the same filesystem. Guard Int64 arithmetic without imposing a
+    // product-level byte limit on large original files.
+    static let maximumSingleFileBytes: Int64 = Int64.max - freeSpaceReserveBytes
     static let freeSpaceReserveBytes: Int64 = 128 * 1_048_576
 
     /// Samples come directly from URLSessionDownloadDelegate. A Node's actual
