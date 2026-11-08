@@ -40,7 +40,18 @@ type Asset struct {
 	Digest     string
 }
 
+type BundlePreference struct {
+	Commit string
+	Filename string
+	Platform string
+	SHA256 string
+	Size int64
+}
+
 type Result struct {
+	// An optional matching current-Server cache never changes update target
+	// selection. Absent/outdated bundles preserve the channel's updater.
+	Bundle *BundlePreference
 	Current         string
 	Latest          string
 	Channel         string
@@ -494,6 +505,26 @@ func parseVersion(v string) ([3]int64, bool) {
 		out[i] = n
 	}
 	return out, true
+}
+
+// InstallPreviouslyVerified preserves each platform's normal installer and
+// post-install health checks after a byte- and digest-verified Bundle download.
+func InstallPreviouslyVerified(ctx context.Context, pathname string, result Result) (string, error) {
+	expected, ok := assetSHA256(result.Asset)
+	if !ok {
+		return "", errors.New("verified installer requires a trusted SHA-256")
+	}
+	if result.Asset.Size > 0 {
+		info, err := os.Stat(pathname)
+		if err != nil || !info.Mode().IsRegular() || info.Size() != result.Asset.Size {
+			return "", errors.New("installer size changed after download")
+		}
+	}
+	ok, err := verifyFileSHA256(pathname, expected)
+	if err != nil || !ok {
+		return "", errors.New("installer SHA-256 changed after download")
+	}
+	return installDownloaded(ctx, pathname, result)
 }
 
 func DownloadVerified(ctx context.Context, checker Checker, result Result, dir string) (string, error) {
