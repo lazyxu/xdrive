@@ -1052,7 +1052,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func closeGalleryMap() {
-        guard gallerySource == .map, login.owner != nil else { return }
+        // Local PhotoKit map is available even without a Server Owner. Its
+        // Done action must never be trapped by the cloud-session guard.
+        // The captured previous source is still Owner-scoped below.
+        guard gallerySource == .map else { return }
         // New unified Photos is the default when present; legacy builds
         // safely return to the local Gallery without a captured entry.
         let fallback = XDriveIOSNativeGallerySource(rawValue: "unified") ?? .local
