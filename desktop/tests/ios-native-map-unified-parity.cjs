@@ -50,7 +50,7 @@ test('measured scan P50/P95, memory limits and page counts are not synthetic est
   assert.match(local, /IOS_MAP_PERF cache_hit=1 metadata_pages=0/)
   assert.match(checks, /Auto\.scanPercentiles\(\[10, 40, 20, 30, 50\]\)/)
   assert.match(checks, /Auto\.scanPercentiles\(\[\.nan\]\) == nil/)
-  assert.match(benchmark, /for offset in 0\.\.\.100_000/)
+  assert.match(benchmark, /for offset in 0\.\.<100_000/)
   assert.match(benchmark, /IOS_MAP_SYNTHETIC_100K trials=/)
   assert.match(benchmark, /peak_rss_bytes=/)
 })
