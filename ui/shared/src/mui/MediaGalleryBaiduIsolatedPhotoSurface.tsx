@@ -31,6 +31,7 @@ import { xDriveAppendPlacesDrawerPage } from '../media-gallery-places-photo-pagi
 import {
   xDrivePlacesPhotoWindowBound, xDrivePlacesPhotoWindowAppend,
   xDrivePlacesPhotoWindowMissingOffset, xDrivePlacesPhotoWindowRehydrate,
+  xDrivePlacesPhotoWindowSeek,
 } from '../media-gallery-places-photo-window'
 import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDrawer'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
@@ -405,10 +406,15 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
            current.windowStart!==state.windowStart ||
            !xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection))
           return current
-        const window=xDrivePlacesPhotoWindowRehydrate(selection,{
+        const priorWindow={
           start:current.windowStart,items:current.items,
           depth:current.loadedDepth,total:current.total,
-        },range)
+        }
+        // Preserve #4127's visited-only rehydration fence. A new first-time
+        // deep seek follows a separate aligned signed Range admission path.
+        const window=offset >= current.loadedDepth
+          ? xDrivePlacesPhotoWindowSeek(selection,priorWindow,range)
+          : xDrivePlacesPhotoWindowRehydrate(selection,priorWindow,range)
         return {...current,loadingMore:false,pageError:!window,
           pageErrorKind:window?undefined:'window',
           failedWindowRange:window?undefined:{start:visibleStart,end:visibleEnd},

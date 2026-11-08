@@ -82,11 +82,9 @@ export function xDrivePlacesPhotoWindowAppend(
   })
 }
 
-/** Rehydrate any logical page requested by Gallery's real virtual viewport.
- * The first signed /cell-items Range establishes the exact authorized total.
- * A direct seek never pretends that intervening pages were visited: depth
- * remains the length of the contiguous prefix starting at zero. All newly
- * returned identities still pass the signed Owner/Node/revision verifier.
+/** Rehydrate an evicted page requested by Gallery's real virtual viewport.
+ * Signed Owner/Node/revision validation happens on every request, and this
+ * helper never changes the maximum visited depth or admits SDK-provided data.
  */
 export function xDrivePlacesPhotoWindowRehydrate(
   selection: MediaBaiduNativeCellSelection,
@@ -95,8 +93,13 @@ export function xDrivePlacesPhotoWindowRehydrate(
 ): XDrivePlacesPhotoWindow | null {
   const offset = page?.offset
   if (!Number.isSafeInteger(offset) || offset < 0 ||
-      offset >= window.total ||
+      offset >= window.depth ||
       !acceptsPage(selection, window, page, offset)) return null
+  // A rehydrated range may ONLY materialize previously visited rows.
+  // A valid Owner-signed page at an unusual offset can otherwise straddle
+  // depth and turn inert future placeholders into clickable identities.
+  // Append (not rehydrate) is the only operation that advances depth.
+  if (offset + page.items.length > window.depth) return null
   const currentEnd = window.start + window.items.length
   if (offset >= window.start && offset + page.items.length <= currentEnd) {
     const existing = window.items.slice(offset - window.start,
@@ -106,11 +109,6 @@ export function xDrivePlacesPhotoWindowRehydrate(
           x.node.id !== page.items[i].node.id ||
           x.node.revision !== page.items[i].node.revision)) return null
     return window
-  }
-  // A newly visited adjacent prefix page may advance the sequential cursor,
-  // while a deep random seek must NOT mark thousands of skipped rows visited.
-  if (offset === window.depth) {
-    return xDrivePlacesPhotoWindowAppend(selection, window, page)
   }
   // Adjacent windows keep continuity and permit normal reversible scrolling.
   if (offset + page.items.length === window.start) {
@@ -135,6 +133,43 @@ export function xDrivePlacesPhotoWindowRehydrate(
     depth: window.depth, total: window.total }
 }
 
+
+/** Explicit first-time seek beyond the visited prefix. Preserve #4127:
+ * rehydration must never materialize unvisited rows; a separate seek can
+ * use a newly verified 48-item aligned signed Owner page. */
+export function xDrivePlacesPhotoWindowSeek(
+  selection: MediaBaiduNativeCellSelection,
+  window: XDrivePlacesPhotoWindow,
+  page: MediaItemRange,
+): XDrivePlacesPhotoWindow | null {
+  const offset = page?.offset
+  if (!Number.isSafeInteger(offset) || offset < window.depth ||
+      offset >= window.total ||
+      offset % XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT !== 0 ||
+      !acceptsPage(selection, window, page, offset)) return null
+  if (offset === window.depth)
+    return xDrivePlacesPhotoWindowAppend(selection, window, page)
+  const residentEnd = window.start + window.items.length
+  const duplicate = page.items.some(item => window.items.some(old =>
+    old.node.id === item.node.id))
+  if ((offset === residentEnd ||
+       offset + page.items.length === window.start) && duplicate) return null
+  if (offset === residentEnd) {
+    return xDrivePlacesPhotoWindowBound({
+      start: window.start, items: [...window.items, ...page.items],
+      depth: window.depth, total: window.total,
+    })
+  }
+  if (offset + page.items.length === window.start) {
+    const combined = [...page.items, ...window.items]
+    return { start: offset,
+      items: combined.slice(0, XDRIVE_PLACES_DRAWER_WINDOW_ITEM_LIMIT),
+      depth: window.depth, total: window.total }
+  }
+  return { start: offset, items: [...page.items],
+    depth: window.depth, total: window.total }
+}
+
 export function xDrivePlacesPhotoWindowMissingOffset(
   window: XDrivePlacesPhotoWindow,
   start: number,
@@ -148,10 +183,10 @@ export function xDrivePlacesPhotoWindowMissingOffset(
     return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }
-  // A first-time far scroll, Viewer return or resize can land thousands of
-  // pages ahead of the contiguous prefix. Use the FIRST signed total for the
-  // full virtual range and seek the visible page directly; do not fabricate
-  // cached identities or issue thousands of intervening requests.
+  // A fast scroll, calendar jump or Viewer return can land thousands of
+  // already-visited pages ahead of a small rehydrated resident window.
+  // Seek the *visible* signed page directly instead of issuing every
+  // intervening 48-item /cell-items request.
   if (start >= residentEnd) {
     return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
