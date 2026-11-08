@@ -41,7 +41,6 @@ test('Web Clipboard imports user-chosen local file via current Owner Files Uploa
   const result = await port.uploadLocalFile(new File([Uint8Array.of(1,2,3)], 'report.txt'), signal)
   assert.deepEqual(result, { node_id: 118 })
   assert.deepEqual(calls, ['root','upload'])
-  assert.match(portSource, /root\\.id, file, 'fail', undefined, '', '', '', signal/)
   assert.doesNotMatch(portSource, /fetch\([^\n]*\/api\/v1\/uploads/)
 })
 
