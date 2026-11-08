@@ -226,3 +226,30 @@ func TestReleaseBundleMissingVerifiedFileDowngradesCacheStatus(t *testing.T) {
 		t.Fatalf("missing package advertised as verified: %+v", listing)
 	}
 }
+
+func TestReleaseBundleAuthenticatedDownloadRejectsSameSizeCorruption(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	root, body, manifest := bundleTestFixture(t)
+	name := manifest.Artifacts[0].Filename
+	path := filepath.Join(root, "packages", manifest.Commit, name)
+	mutated := bytes.Repeat([]byte{0x55}, len(body))
+	if err := os.WriteFile(path, mutated, 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XD_RELEASE_BUNDLE_DIR", root)
+	server := &Server{}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		req := httptest.NewRequest(method, "/api/v1/release-bundles/current/artifacts/"+name, nil)
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = req
+		ctx.Params = gin.Params{{Key: "name", Value: name}}
+		server.releaseBundleArtifactDownload(ctx)
+		if recorder.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s served corrupted same-length package: HTTP %d", method, recorder.Code)
+		}
+		if bytes.Equal(recorder.Body.Bytes(), mutated) {
+			t.Fatalf("%s exposed corrupt installer bytes", method)
+		}
+	}
+}
