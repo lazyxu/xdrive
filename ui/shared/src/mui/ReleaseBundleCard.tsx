@@ -9,6 +9,14 @@ const labels: Record<string, string> = {
   ios: 'iOS IPA', android: 'Android APK（已签名）',
   windows: 'Windows EXE', linux: 'Linux', dsm: 'Synology SPK', cli: 'CLI',
 }
+const cacheStates: Record<string, string> = {
+  pending: '等待缓存',
+  verified: '已校验并缓存',
+  missing_upstream: '上游未发布，可稍后重试',
+  verification_failed: '校验失败，未缓存',
+  retry_needed: '下载失败，可重试',
+  unavailable: '本机暂不可用',
+}
 const states: Record<string, string> = {
   unavailable: '不可用', syncing: '正在后台同步',
   paused_for_server: '服务端依赖下载优先，安装包同步已暂停',
@@ -72,13 +80,20 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
         {state?.state === 'retry_needed' ?
           <XDriveStatusAlert tone="warning">客户端安装包缓存失败，可继续使用服务端并重试同步。</XDriveStatusAlert> : null}
         {error ? <XDriveStatusAlert tone="warning">{error}</XDriveStatusAlert> : null}
+        {state?.artifacts?.length ? (
+          <Typography variant="body2" color="text.secondary">
+            {state.artifacts.filter((entry) => entry.cached).length} / {state.artifacts.length} 个安装包已校验缓存；
+            其余安装包可独立重试或使用上游来源，不影响服务端状态。
+          </Typography>
+        ) : null}
         {(state?.artifacts ?? []).map((artifact) => {
           const sources = xDriveReleaseBundleDownloadSources(artifact)
           return <Box key={artifact.filename} sx={{ borderTop: 1, borderColor: 'divider', pt: 1 }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1}>
               <Typography variant="body2">{labels[artifact.platform] || artifact.platform} · {artifact.filename}</Typography>
               <Typography variant="caption" color="text.secondary">
-                {artifact.cached ? '本机服务器已缓存' : '本机未缓存'} · {(artifact.size / 1024 / 1024).toFixed(1)} MB
+                {cacheStates[artifact.cache_status] || (artifact.cached ? '已缓存' : '本机未缓存')} ·
+                {(artifact.size / 1024 / 1024).toFixed(1)} MB
               </Typography>
             </Stack>
             <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere', display: 'block' }}>
