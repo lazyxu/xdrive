@@ -139,7 +139,10 @@ test('fully visited 528-photo Cell recovers an evicted failed page without claim
   assert.ok(retried)
   assert.equal(retried.start,0)
   assert.equal(retried.depth,count)
-  assert.equal(retried.items.length,48)
+  // Adjacent rehydration retains up to ten already authenticated pages;
+  // it must not discard 432 valid identities or exceed the resident bound.
+  assert.equal(retried.items.length,bound)
+  assert.equal(retried.items.every((item,index)=>item.node.id===index+1),true)
 })
 
 test('Owner Parent provides a retry for failed evicted window even when all pages were visited', () => {
