@@ -92,10 +92,25 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         select("native-ios-tab-files", in: app)
         checkFilesHome(app)
         select("native-ios-files-open-root-location", in: app)
-        // The synthetic Owner has no token; its cloud read must fail closed.
-        let back = app.navigationBars.buttons.element(boundBy: 0)
-        XCTAssertTrue(back.waitForExistence(timeout: 15),
-                      "Cloud Files back button missing after failed authorization")
+        // A generic navigationBars.buttons[0] across the entire app
+        // caused XCTest's accessibility snapshot query to stall ~120s.
+        // Target the actual pushed native child NavigationStack by its
+        // folder title instead of waiting on an ambiguous global index.
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Native process exited while opening offline Files child")
+        let child = app.navigationBars["xDrive 云端"].firstMatch
+        if !child.waitForExistence(timeout: 12) {
+            print("OFFLINE_OWNER_FILES child missing; app state=\(app.state.rawValue)")
+            print("OFFLINE_OWNER_FILES hierarchy:\n\(app.debugDescription)")
+            let capture = XCTAttachment(screenshot: app.screenshot())
+            capture.name = "offline-owner-files-child"
+            capture.lifetime = .keepAlways
+            add(capture)
+        }
+        XCTAssertTrue(child.exists, "Cloud child NavigationStack did not mount")
+        let back = child.buttons.firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 8),
+                      "Cloud Files scoped back button missing after denied auth")
         back.tap()
         checkFilesHome(app)
         XCTAssertTrue(target("native-ios-files-open-root-location", in: app)
