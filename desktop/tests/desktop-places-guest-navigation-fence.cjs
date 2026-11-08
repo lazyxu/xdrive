@@ -33,10 +33,12 @@ function fixture() {
   const state = {connected:true,status:{
     configured:true, username:owner, server:origin, auth_status:'已登录',
   }}
-  const run = new Function('agentState', 'xDriveResolveSecureBaiduMapTarget',
+  // TS CommonJS output writes to exports even when functions are invoked
+  // directly from this source-executed harness; supply a local module target.
+  const run = new Function('exports', 'agentState', 'xDriveResolveSecureBaiduMapTarget',
     transpiled.outputText + '\nreturn {frame:desktopPlacesGuestFrameAllowed,' +
     'navigate:desktopPlacesGuestNavigationAllowed}')
-  const f = run(state, server => server === origin ? {origin} : null)
+  const f = run({}, state, server => server === origin ? {origin} : null)
   return {state, ...f}
 }
 
