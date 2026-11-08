@@ -82,7 +82,11 @@ import Foundation
         precondition(!XDriveIOSLANPairingFailure.ipVersionInvalid.message.contains(
             "域名提供的证书无法验证"), "unknown JSON must not blame a valid certificate")
         precondition(XDriveIOSLANPairingFailure.ipCertificateInvalid.message.contains(
-            "IP SAN"), "real TLS rejection must mention IP identity")
+            "指定 CA"), "generic certificate denial must describe the configured trust check")
+        precondition(!XDriveIOSLANPairingFailure.ipCertificateInvalid.message.contains(
+            "IP SAN"), "generic certificate denial must not invent a confirmed SAN mismatch")
+        precondition(XDriveIOSLANPairingFailure.ipCertificateIdentityInvalid.message.contains(
+            "SAN"), "confirmed IP identity rejection must mention SAN")
         precondition(XDriveIOSLANPairingFailure.ipVersionStatus(502).message.contains(
             "HTTP 502"), "HTTP diagnostic must carry bounded status only")
         let directIP = try ServerAddress.parse("https://192.168.2.4:8443")
