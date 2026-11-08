@@ -20,46 +20,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download exact Linux installer produced by CI
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrive-linux-amd64
-          path: exact
-      - name: Download exact Windows installer produced by CI
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrive-windows-amd64
-          path: exact
-      - name: Download exact CLI-only backup archives produced by CI
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrive-backup-cli
-          path: backup-cli
-      - name: Download exact ARMv7 Synology SPK built by CI
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrivenas-spk
-          path: synology
-      - name: Verify exact client artifact contract
+      - name: Collect only present same-run client packages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/download-optional-client-artifacts.sh exact
+      - name: Verify every present client artifact without requiring missing platforms
         shell: bash
         run: |
           set -euo pipefail
-          test -f exact/xdrive-linux-amd64.deb
-          test -f exact/xDriveSetup-amd64.exe
-          count="$(find exact -maxdepth 1 -type f | wc -l)"
-          [[ "$count" == "2" ]] || {
-            echo "expected exactly two user-facing client installers; found $count" >&2
-            find exact -maxdepth 1 -type f -print >&2
-            exit 1
-          }
-          test -s backup-cli/xdrive-backup-linux-amd64.tar.gz
-          test -s backup-cli/xdrive-backup-windows-amd64.zip
-          bash scripts/ci/verify-synology-spk-release.sh synology --require-mui
-          cli_count="$(find backup-cli -maxdepth 1 -type f | wc -l)"
-          [[ "$cli_count" == "2" ]] || {
-            echo "expected exactly two standalone Backup CLI archives; found $cli_count" >&2
-            exit 1
-          }
+          shopt -s nullglob
+          # Never silently accept unexpected CI package names or partial
+          # platform assets. A missing whole platform is not a Server failure.
+          for file in exact/*; do
+            [[ -f "$file" && -s "$file" && ! -L "$file" ]] || exit 1
+            case "${file##*/}" in
+              xdrive-linux-amd64.deb|xDriveSetup-amd64.exe|\
+              xdrive-backup-linux-amd64.tar.gz|xdrive-backup-windows-amd64.zip|\
+              xdrivenas-armada38x-*.spk|xdrivenas-armada38x-*.spk.sha256) ;;
+              *) echo "unexpected source-run client package: $file" >&2; exit 1 ;;
+            esac
+          done
+          spk=(exact/xdrivenas-armada38x-*.spk)
+          sha=(exact/xdrivenas-armada38x-*.spk.sha256)
+          if (( ${#spk[@]} != 0 || ${#sha[@]} != 0 )); then
+            bash scripts/ci/verify-synology-spk-release.sh exact --require-mui
+          fi
+          echo "All actually present exact-run client artifacts verified."
 
   server-images:
     if: inputs.publish
@@ -256,26 +243,11 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v4
-      - name: Download exact Linux installer produced by CI
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrive-linux-amd64
-          path: release
-      - name: Download exact Windows installer produced by CI
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrive-windows-amd64
-          path: release
-      - name: Download exact CLI-only backup archives
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrive-backup-cli
-          path: release
-      - name: Download exact ARMv7 Synology SPK
-        uses: actions/download-artifact@v4
-        with:
-          name: xdrivenas-spk
-          path: release
+      - name: Collect successfully built exact-run client installers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/download-optional-client-artifacts.sh release
       - name: Download server deployment assets
         uses: actions/download-artifact@v4
         with:
@@ -301,12 +273,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f release/xdrive-linux-amd64.deb
-          test -f release/xDriveSetup-amd64.exe
-          test -s release/xdrive-backup-linux-amd64.tar.gz
-          test -s release/xdrive-backup-windows-amd64.zip
-          bash scripts/ci/verify-synology-spk-release.sh release --require-mui
+          shopt -s nullglob
+          spk=(release/xdrivenas-armada38x-*.spk)
+          spk_sha=(release/xdrivenas-armada38x-*.spk.sha256)
+          if (( ${#spk[@]} != 0 || ${#spk_sha[@]} != 0 )); then
+            bash scripts/ci/verify-synology-spk-release.sh release --require-mui
+          fi
           bash scripts/ci/verify-release-archive-allowlist.sh release
+          # Any available package must remain a verified exact-run package;
+          # absences never create an invented manifest entry.
           if find release -maxdepth 1 -type f \( -name '*DesktopSetup*' -o -name 'xdrive-desktop-*' \) | grep -q .; then
             echo "standalone Desktop installer must not be published" >&2
             exit 1
@@ -328,30 +303,21 @@ jobs:
         run: |
           set -euo pipefail
           cd release
-          sha256sum \
-            xdrive-linux-amd64.deb \
-            xDriveSetup-amd64.exe \
-            xdrive-backup-linux-amd64.tar.gz \
-            xdrive-backup-windows-amd64.zip \
-            xdrivenas-armada38x-*.spk \
-            xdrivenas-armada38x-*.spk.sha256 \
-            xdrive-server-install.sh \
-            release-bundle.json \
-            release_bundle.py \
-            xdrive-caddy-image.tar.gz \
-            xdrive-caddy-image.id \
-            server-backup.sh \
-            server-backup-scheduled.sh \
-            server-restore.sh \
-            server-verify.sh \
-            server-doctor.sh \
-            server-migrate-user.sh \
-            xdrive-share-update.py \
-            server-control.sh \
-            caddy-env-config.py \
-            caddy-admission.py \
-            xdrive-server \
-            docker-compose.yml \
+          shopt -s nullglob
+          optional=(xdrive-linux-amd64.deb xDriveSetup-amd64.exe
+            xdrive-backup-linux-amd64.tar.gz xdrive-backup-windows-amd64.zip
+            xdrivenas-armada38x-*.spk xdrivenas-armada38x-*.spk.sha256
+            xDrive-unsigned.ipa xdrive-android-*.apk)
+          for file in "${optional[@]}"; do
+            [[ -s "$file" && ! -L "$file" ]] || { echo "invalid client package: $file" >&2; exit 1; }
+          done
+          sha256sum "${optional[@]}" \
+            xdrive-server-install.sh release-bundle.json release_bundle.py \
+            xdrive-caddy-image.tar.gz xdrive-caddy-image.id \
+            server-backup.sh server-backup-scheduled.sh server-restore.sh \
+            server-verify.sh server-doctor.sh server-migrate-user.sh \
+            xdrive-share-update.py server-control.sh caddy-env-config.py \
+            caddy-admission.py xdrive-server docker-compose.yml \
             xdrive.env.example > SHA256SUMS.txt
       # Sigstore signs both file digests and the immutable OIDC workflow identity.
       - name: Attest release installer and checksum manifest
