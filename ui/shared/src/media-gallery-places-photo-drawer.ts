@@ -28,6 +28,10 @@ export type XDrivePlacesDrawerPresentation = Readonly<{
   /** Prior logical depth, for on-demand signed range rehydration after Viewer Back.
    * Values above the 480-row return snapshot are never photo authorizations. */
   visitedDepth?: number
+  /** Exact logical row of a selected photo; never serves as authorization. */
+  anchorIndex?: number
+  /** Position of that photo within the scroll viewport in CSS pixels. */
+  anchorViewportOffset?: number
 }>
 
 export type XDrivePlacesDrawerReturn = Readonly<{
@@ -57,10 +61,18 @@ function safePresentation(value?: XDrivePlacesDrawerPresentation):
       (!Number.isSafeInteger(visitedDepth) || visitedDepth < 1 ||
        visitedDepth > XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT ||
        (loadedCount !== undefined && visitedDepth < loadedCount))) return null
+  const anchorIndex=value.anchorIndex
+  const anchorViewportOffset=value.anchorViewportOffset
+  if ((anchorIndex===undefined)!==(anchorViewportOffset===undefined) ||
+      (anchorIndex!==undefined && (!Number.isSafeInteger(anchorIndex) ||
+        anchorIndex < 0 || anchorIndex >= XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT ||
+        !Number.isSafeInteger(anchorViewportOffset) ||
+        Math.abs(anchorViewportOffset!) > 10_000))) return null
   return { expanded: value.expanded, scrollTop: value.scrollTop,
     scrollLeft: value.scrollLeft,
     ...(loadedCount===undefined?{}:{loadedCount}),
-    ...(visitedDepth===undefined?{}:{visitedDepth}) }
+    ...(visitedDepth===undefined?{}:{visitedDepth}),
+    ...(anchorIndex===undefined?{}:{anchorIndex,anchorViewportOffset}) }
 }
 
 const sessions = new Map<string, { snapshot: XDrivePlacesDrawerReturn; seen: number }>()
