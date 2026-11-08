@@ -194,3 +194,52 @@ test('100k far-scroll jumps directly to the visible signed Owner page, not 2k se
   assert.equal(missing(first,total+1,total+2),null,
     'never issue requests outside the visited Owner logical depth')
 })
+
+test('first-visit 100k logical wall directly seeks signed page 90k without visiting earlier pages', () => {
+  // A newly opened place knows the exact, signed total but has only page zero.
+  const cold={start:0,items:page(0).items,depth:48,total}
+  const visibleStart=90253, visibleEnd=90269
+  const offset=Math.floor(visibleStart/limit)*limit
+  assert.equal(missing(cold,visibleStart,visibleEnd),offset)
+  assert.ok(offset>480)
+  const signed=rehydrate(selection,cold,page(offset))
+  assert.ok(signed)
+  assert.equal(signed.start,offset)
+  assert.equal(signed.depth,48,'a far visit does not invent a contiguous prefix')
+  assert.equal(signed.items.length,48)
+  assert.equal(missing(signed,visibleStart,visibleEnd),null)
+  assert.equal(missing(signed,0,7),0)
+  // Restoring the start and subsequently reading its next page is still safe.
+  const first=rehydrate(selection,signed,page(0))
+  assert.ok(first)
+  assert.equal(first.depth,48)
+  assert.equal(first.start,0)
+  const next=rehydrate(selection,first,page(48))
+  assert.ok(next)
+  assert.equal(next.depth,96)
+  assert.equal(next.items.length,96)
+  // No guessed range, altered revision, or beyond-total seek is accepted.
+  assert.equal(rehydrate(selection,cold,{...page(offset),total_count:total-1}),null)
+  assert.equal(rehydrate(selection,cold,{...page(offset),offset:total}),null)
+  assert.equal(missing(cold,total,total),null)
+})
+
+test('trusted sparse Gallery wiring restores logical index, not 480 pages or old private IDs', () => {
+  const read = p => fs.readFileSync(path.join(root,p),'utf8')
+  const sheet=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+  const parent=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
+  const shared=read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
+  const returns=read('ui/shared/src/media-gallery-places-photo-drawer.ts')
+  assert.match(sheet,/itemCount: sparse && phase==='ready' \? total : loadedDepth/)
+  assert.match(sheet,/onRangeChange: notifyRange/)
+  assert.match(sheet,/onVisibleAnchorChange=\{captureVisibleAnchor\}/)
+  assert.match(sheet,/restoreAnchorIndex=/)
+  assert.match(sheet,/anchorIndex:index,anchorViewportOffset:/)
+  assert.match(shared,/visibleWindow\.startRow \* metrics\.rowStep - visibleTop/)
+  assert.match(shared,/collection\.loadedItems, collection\.onRangeChange/)
+  assert.match(parent,/loadedDepth:window\?\.depth \?\? current\.loadedDepth/)
+  assert.match(parent,/anchorIndex:rawIndex/)
+  assert.match(returns,/anchorIndex\?: number/)
+  assert.match(returns,/anchorViewportOffset\?: number/)
+  assert.doesNotMatch(returns,/\.items.*anchorIndex/,'return hints cannot retain media')
+})
