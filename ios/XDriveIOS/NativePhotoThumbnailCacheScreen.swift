@@ -157,8 +157,8 @@ struct XDriveIOSNativePhotoThumbnailCacheScreen: View {
     }
 
     private func remove(owner: XDriveNativeOwnerRoot, scope: String, keys: Set<String>?) {
-        guard !deleting, phase == .active, isVisible,
-              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+        guard !deleting, phase == .active, isVisible else { return }
         let ticket = UUID()
         deletionEpoch = ticket
         deleting = true
