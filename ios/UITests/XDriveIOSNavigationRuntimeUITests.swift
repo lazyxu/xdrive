@@ -236,4 +236,77 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
         XCTAssertEqual(app.state, .runningForeground)
     }
+
+    // Exercise actual native child-route mount/dismiss under an offline Owner.
+    // These are Simulator navigation tests, not a frame-time/flicker benchmark.
+    func testSyntheticOwnerSavedSearchesRepeatedSheetReturn() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        for cycle in 0..<2 {
+            select("native-ios-files-open-saved-searches", in: app)
+            XCTAssertTrue(app.navigationBars["智能文件夹"].waitForExistence(timeout: 20),
+                          "Saved Searches sheet missing at return cycle \(cycle)")
+            let done = app.buttons["完成"].firstMatch
+            XCTAssertTrue(done.waitForExistence(timeout: 10))
+            done.tap()
+            XCTAssertTrue(find("native-ios-files-open-saved-searches", in: app)
+                .waitForExistence(timeout: 15), "Files Home lost after Saved Searches")
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+    }
+
+    func testSyntheticOwnerOperationsHistoryRepeatedSheetReturn() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        for cycle in 0..<2 {
+            select("native-ios-files-open-operations", in: app)
+            XCTAssertTrue(app.navigationBars["操作历史"].waitForExistence(timeout: 20),
+                          "Operations sheet missing at return cycle \(cycle)")
+            let done = app.buttons["完成"].firstMatch
+            XCTAssertTrue(done.waitForExistence(timeout: 10))
+            done.tap()
+            XCTAssertTrue(find("native-ios-files-open-operations", in: app)
+                .waitForExistence(timeout: 15), "Files Home lost after Operations History")
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+    }
+
+    func testSyntheticOwnerRecentlyDeletedReturnKeepsFilesHomeMounted() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-trash", in: app)
+        let trashBar = app.navigationBars["最近删除"]
+        XCTAssertTrue(trashBar.waitForExistence(timeout: 20),
+                      "Recently Deleted native page did not mount")
+        let back = trashBar.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        back.tap()
+        XCTAssertTrue(find("native-ios-files-open-trash", in: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testSyntheticOwnerGalleryCacheReturnKeepsMineMounted() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-mine", in: app)
+        let cacheLink = app.buttons["缩略图缓存"].firstMatch
+        if cacheLink.waitForExistence(timeout: 8) {
+            cacheLink.tap()
+        } else {
+            let cacheLabel = app.staticTexts["缩略图缓存"].firstMatch
+            XCTAssertTrue(cacheLabel.waitForExistence(timeout: 10),
+                          "Native cache navigation link missing")
+            cacheLabel.tap()
+        }
+        XCTAssertTrue(find("native-ios-gallery-thumbnail-cache", in: app)
+            .waitForExistence(timeout: 20), "Gallery cache child page did not mount")
+        let back = app.navigationBars["缩略图缓存"].buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        back.tap()
+        XCTAssertTrue(find("native-ios-tab-mine", in: app).exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
 }
