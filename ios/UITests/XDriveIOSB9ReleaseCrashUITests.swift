@@ -69,15 +69,21 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         return button
     }
 
-    private func mountedSheet(_ name: String, section: String,
-                              in app: XCUIApplication, stage: String) {
-        let navigation = app.navigationBars[name].firstMatch
-        let heading = app.staticTexts[section].firstMatch
-        let visible = navigation.waitForExistence(timeout: 5) ||
-                      heading.waitForExistence(timeout: 5)
-        if !visible { record(app, "sheet-absent-\(stage)") }
-        alive(app, stage)
-        XCTAssertTrue(visible, "Navigation failure; NOT proof of process crash")
+    private func assertNoSessionSheetDenial(
+        _ id: String, message: String, in app: XCUIApplication, cycle: Int
+    ) {
+        // The smoke harness has a synthetic Owner identity but no actual
+        // authenticated Session. At source b9 its native sheets show an
+        // explicit "account changed" denial instead of an operation history.
+        // This is NOT a logged-in Owner success or a crash reproduction.
+        let denied = app.staticTexts[message].firstMatch
+        if !denied.waitForExistence(timeout: 8) {
+            record(app, "unexpected-\(id)-\(cycle)")
+        }
+        alive(app, "synthetic-owner-\(id)-\(cycle)")
+        XCTAssertTrue(denied.exists,
+            "Missing expected fail-closed no-Session screen for \(id). " +
+            "Do not fake a successful authenticated Owner in Simulator.")
     }
 
     func testPublishedB9RealColdStartAndRestart() {
@@ -117,44 +123,38 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         tap("native-ios-tab-files", in: app)
         tap("native-ios-files-open-root-location", in: app)
         alive(app, "offline-owner-open")
-        // The b9 release does not promise a Files-local quick rail inside
-        // pushed folders. Check process survival after the denied async read,
-        // not a later UX feature that has its own pending PR.
+        // An offline synthetic Owner cannot load private Server contents,
+        // but entering a child route must not kill the native process.
+        // Do not query a Files-local rail in a pushed directory: that is a
+        // separate UX feature and can stall XCUI accessibility snapshots.
         Thread.sleep(forTimeInterval: 2)
         alive(app, "offline-owner-after-denied-read")
-        // No Session/token is provided: this does not assert a successful
-        // authenticated file read or create an unsafe test credential.
+        // No Session/token is provided; never invent a successful file read.
     }
 
-    func testPublishedB9OperationHistorySheetRepeatAndDismiss() {
-        let app = launch(owner: true)
-        tap("native-ios-tab-files", in: app)
+    func testPublishedB9OperationHistorySyntheticOwnerFailsClosed() {
         for cycle in 0..<2 {
+            let app = launch(owner: true)
+            tap("native-ios-tab-files", in: app)
             homeButton("native-ios-files-open-operations", in: app).tap()
             alive(app, "history-open-\(cycle)")
-            mountedSheet("操作历史", section: "服务器文件操作（最近 50 项）",
-                         in: app, stage: "history-mount-\(cycle)")
-            let done = app.buttons["完成"].firstMatch
-            XCTAssertTrue(done.waitForExistence(timeout: 10))
-            done.tap()
-            alive(app, "history-dismiss-\(cycle)")
-            XCTAssertTrue(entry("native-ios-files-section-browse", in: app).exists)
+            assertNoSessionSheetDenial(
+                "history", message: "账户已经变化，请关闭操作历史。",
+                in: app, cycle: cycle)
+            app.terminate()
         }
     }
 
-    func testPublishedB9SavedSearchSheetRepeatAndDismiss() {
-        let app = launch(owner: true)
-        tap("native-ios-tab-files", in: app)
+    func testPublishedB9SavedSearchSyntheticOwnerFailsClosed() {
         for cycle in 0..<2 {
+            let app = launch(owner: true)
+            tap("native-ios-tab-files", in: app)
             homeButton("native-ios-files-open-saved-searches", in: app).tap()
             alive(app, "saved-search-open-\(cycle)")
-            mountedSheet("智能文件夹", section: "新建智能文件夹",
-                         in: app, stage: "saved-search-mount-\(cycle)")
-            let done = app.buttons["完成"].firstMatch
-            XCTAssertTrue(done.waitForExistence(timeout: 10))
-            done.tap()
-            alive(app, "saved-search-dismiss-\(cycle)")
-            XCTAssertTrue(entry("native-ios-files-section-browse", in: app).exists)
+            assertNoSessionSheetDenial(
+                "saved-search", message: "账户已经变化，请关闭智能文件夹。",
+                in: app, cycle: cycle)
+            app.terminate()
         }
     }
 
