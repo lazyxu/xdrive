@@ -186,6 +186,11 @@ func readReleaseBundleListing(root string) releaseBundleListing {
 			releaseBundleArtifact: artifact, Cached: cached,
 			CacheStatus: cacheStatus, DownloadURLs: urls,
 		})
+		// A deleted package cannot leave the global cache claiming "ready"
+		// just because the Host wrote that status before disk corruption.
+		if result.State == "ready" && cacheStatus != "verified" {
+			result.State = "retry_needed"
+		}
 	}
 	if result.State == "unavailable" && current.Commit == target {
 		result.State = "ready"
