@@ -213,9 +213,9 @@ test('rejected CAS receipts never become device-directed file references', async
 
 test('Clipboard import passes its retired Owner signal into the real CAS writer', () => {
   const source=read('web/src/api.ts')
-  assert.match(source, /externalSignal\\?: AbortSignal/)
-  assert.match(source, /externalSignal\\.addEventListener\\('abort', abortFromCaller/)
-  assert.match(source, /webTransferStore\\.cancel\\(activeTransferID\\)/)
-  assert.match(source, /externalSignal\\?\\.removeEventListener\\('abort', abortFromCaller/)
-  assert.match(portSource, /root\\.id, file, 'fail', undefined, '', '', '', signal/)
+  assert.ok(source.includes('externalSignal?: AbortSignal'))
+  assert.ok(source.includes("externalSignal.addEventListener('abort', abortFromCaller"))
+  assert.ok(source.includes('webTransferStore.cancel(activeTransferID)'))
+  assert.ok(source.includes("externalSignal?.removeEventListener('abort', abortFromCaller"))
+  assert.ok(portSource.includes("root.id, file, 'fail', undefined, '', '', '', signal"))
 })

@@ -1203,6 +1203,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 cursor.cursor
             }
         } catch (failure: IOException) {
+            // An HTTP authorization denial is not a transport failure: keep
+            // the Server's exact 401/403 so revoked Device sessions fail closed.
+            if (failure is ApiException) throw failure
             throw transportFailure(failure)
         } finally {
             dispose?.dispose()
