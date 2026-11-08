@@ -149,3 +149,35 @@ test('a completed whole-library audit persists only an as-of authenticated Node 
   assert.match(history, /UserDefaults\.standard\.set\(encoded/)
   assert.doesNotMatch(history, /localIdentifier|accessToken|grantSecret|originalFilename/)
 })
+
+
+test('system background repair re-arms only after protected data and exact Owner receipt preflight', () => {
+  const bg = read('ios/XDriveIOS/BackgroundPhotoTask.swift')
+  const diag = read('ios/XDriveIOS/PhotoBackgroundAttemptStatus.swift')
+  assert.match(bg, /protectedDataDidBecomeAvailableNotification/)
+  assert.match(bg, /rearmAfterProtectedDataUnlock\(\)/)
+  assert.match(bg, /UIApplication\.shared\.isProtectedDataAvailable/)
+  assert.match(bg, /XDriveIOSOriginalPendingReceiptPreflight[\s\S]*?pendingCount\(owner: owner\) == 0/)
+  assert.match(bg, /XDriveIOSBGOriginalWindowStore\.shared\.pausedForReview/)
+  assert.match(bg, /localStopVersion == stop/)
+  assert.match(bg, /scheduleApprovedProbe\(afterMinutes: grant\.intervalMinutes\)/)
+  assert.match(bg, /XDriveIOSBGAttemptStatus\.record\(\.protectedDataUnavailable/)
+  assert.match(bg, /XDriveIOSBGAttemptStatus\.record\(\.pendingReceiptReview/)
+  assert.match(bg, /beganOriginalWrite \? \.interruptedAfterWrite/)
+  assert.match(diag, /case protectedDataUnavailable/)
+  assert.match(diag, /case authorizationFailure/)
+  assert.match(diag, /case networkRetry/)
+  assert.doesNotMatch(bg, /kSecAttrAccessibleAfterFirstUnlock|URLSessionConfiguration\.background/)
+})
+
+test('real incremental PhotoKit recovery scenarios are covered by durable Swift fixture', () => {
+  const fixture = read('ios/tests/PhotoBackupChangeQueueStoreChecks.swift')
+  const policy = read('ios/tests/PhotoAutoSchedulePolicyChecks.swift')
+  for (const term of ['restart-old-import-edit-delete.sqlite3',
+    'import-with-old-capture-date', 'previous-confirmed', 'will-delete',
+    'stale reboot token was accepted', 'hasCompletedFullReconciliation']) {
+    assert.ok(fixture.includes(term), term)
+  }
+  assert.match(fixture, /try !restarted\.settle\(/)
+  assert.match(policy, /An old photo newly imported through PhotoKit history/)
+})
