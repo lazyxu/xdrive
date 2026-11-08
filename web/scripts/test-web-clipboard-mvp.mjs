@@ -171,11 +171,14 @@ assert.match(ui, /actionFence\.current\.invalidate\(\)/)
 assert.match(ui, /actionFence\.current\.isCurrent\(actionToken\)/)
 assert.match(ui, /setReading\(false\)/)
 assert.match(ui, /setConfirmClear\(false\)/)
-assert.match(ui, /pending\.current\?\.text !== draft/)
-assert.match(ui, /await xDriveClipboardEncrypt\(key, aadScope, client_event_id, draft\)[\s\S]*?actionFence\.current\.isCurrent\(actionToken\)\) return\s+pending\.current =/,
-  'Sender must check the action fence after encryption, before writing retry cache')
-assert.match(ui, /setDraft\(current => current === draft \? '' : current\)/,
-  'successful old send must preserve draft text entered during that send')
+assert.match(ui, /if \(pending\.current\) \{[\s\S]*?pending\.current\.text !== textAtStart \|\| pending\.current\.targetID !== selectedTarget \|\|[\s\S]*?pending\.current\.nodeID !== selectedNodeID/,
+  'unknown-ACK retry must retain original text, selected Device and Node reference')
+assert.match(ui, /: await xDriveClipboardEncrypt\(key, aadScope, client_event_id, textAtStart\)[\s\S]*?!actionFence\.current\.isCurrent\(actionToken\)\) return\s+pending\.current = \{ text: textAtStart, targetID: selectedTarget, nodeID: selectedNodeID,/,
+  'Sender must check the action fence after encryption and before caching exact retry identity')
+assert.match(ui, /await xDriveClipboardEncryptForDevice\(aadScope, selectedTarget, selectedDevice\.public_key,/,
+  'Targeted Clipboard encryption must bind the verified selected Device public key')
+assert.match(ui, /setDraft\(current => observedText === undefined && !isRef && current === textAtStart \? '' : current\)/,
+  'successful send must retain newer drafts and never clear watcher or Node-reference state')
 assert.match(ui, /xDriveClipboardDecrypt\(/)
 assert.match(ui, /canonicalScope = verified\.aad_scope \|\| claimScope/)
 assert.match(ui, /setAADScope\(canonicalScope\)/)
