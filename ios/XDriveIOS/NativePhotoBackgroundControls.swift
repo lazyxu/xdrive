@@ -168,6 +168,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                 }
                 status = remote
                 serverVerified = true
+                XDriveIOSBGAttemptStatus.record(.scheduled, owner: expectedOwner)
                 notice = "服务器已确认授权。iOS 决定后台执行时机，单次最多尝试 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件；锁定状态可能无法读取原件。"
             } catch {
                 // A lost ACK may still have issued a real remote grant.

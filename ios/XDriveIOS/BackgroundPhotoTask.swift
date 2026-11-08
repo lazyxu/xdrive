@@ -51,6 +51,17 @@ enum XDriveIOSBackgroundPhotoTask {
             }
             Task { @MainActor in handle(work) }
         }
+        if registeredAtLaunch {
+            // iOS may admit a BGTask while protected photo bytes are locked.
+            // Re-arm an approved later OS window after data becomes readable;
+            // never run an original writer in this notification callback.
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+                object: nil, queue: .main
+            ) { _ in
+                Task { @MainActor in await rearmAfterProtectedDataUnlock() }
+            }
+        }
     }
 
     @MainActor
@@ -88,8 +99,12 @@ enum XDriveIOSBackgroundPhotoTask {
                 guard approved.hasManagedDestination else {
                     throw XDriveIOSPhotoBGVaultFailure.invalidProof
                 }
+                let owner = try approved.ownerScope()
+                attemptedOwner = owner
+                XDriveIOSBGAttemptStatus.record(.started, owner: owner)
                 try Task.checkCancellation()
                 guard UIApplication.shared.isProtectedDataAvailable else {
+                    XDriveIOSBGAttemptStatus.record(.protectedDataUnavailable, owner: owner)
                     // Existing encrypted ledger and exported originals remain
                     // FileProtection.complete / WhenUnlockedThisDeviceOnly.
                     // Try a future OS-admitted window, not an immediate hot
@@ -100,10 +115,13 @@ enum XDriveIOSBackgroundPhotoTask {
                     return
                 }
                 let access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                guard access == .authorized else { return }
-                let owner = try approved.ownerScope()
+                guard access == .authorized else {
+                    XDriveIOSBGAttemptStatus.record(.photosPermissionUnavailable, owner: owner)
+                    return
+                }
                 _ = try network.requireWiFiIfNeeded(for: owner)
                 guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+                    XDriveIOSBGAttemptStatus.record(.otherWriterActive, owner: owner)
                     // A foreground upload consumed this one OS request.
                     // Keep an explicitly approved future OS window, without
                     // running a second writer or reserving a BG scan cursor.
@@ -123,6 +141,7 @@ enum XDriveIOSBackgroundPhotoTask {
                     throw XDriveIOSPhotoBGVaultFailure.corrupt
                 }
                 if olderPending > 0 {
+                    XDriveIOSBGAttemptStatus.record(.pendingReceiptReview, owner: owner)
                     try XDriveIOSBGOriginalWindowStore.shared.pause(owner: owner)
                     // No new upload or automatic resubmit until the user
                     // finishes trusted Owner receipt review and consents.
@@ -141,10 +160,12 @@ enum XDriveIOSBackgroundPhotoTask {
                     // receipt-review pause, even when the last journal read
                     // currently reports zero outstanding entries.
                     if plan.pausedForReview {
+                        XDriveIOSBGAttemptStatus.record(.pendingReceiptReview, owner: owner)
                         try XDriveIOSBGOriginalWindowStore.shared.pause(owner: owner)
                         return
                     }
                     if plan.historyRecoveryRequired == true {
+                        XDriveIOSBGAttemptStatus.record(.historyRecoveryRequired, owner: owner)
                         // Only the foreground Owner flow may obtain explicit
                         // full-scope consent and reconcile the expired history.
                         // BG must not bypass that consent or race the full pass.
@@ -222,6 +243,11 @@ enum XDriveIOSBackgroundPhotoTask {
                       let offset = XDrivePhotoBackupScanWindow.offset(
                         for: window
                       ) else {
+                    XDriveIOSBGAttemptStatus.record(
+                        (try XDriveIOSBGOriginalWindowStore.shared.pausedForReview(owner: owner))
+                            ? .pendingReceiptReview : .noDueWindow,
+                        owner: owner
+                    )
                     successful = true // no work due, no Server write
                     try? scheduleApprovedProbe(
                         afterMinutes: approved.intervalMinutes
@@ -269,12 +295,23 @@ enum XDriveIOSBackgroundPhotoTask {
                 await reporter.finish(status: progress.stoppedForReview ? "partial" : "completed")
                 successful = !progress.stoppedForReview &&
                     progress.needsReview == 0
+                XDriveIOSBGAttemptStatus.record(
+                    successful ? .completedBoundedWindow : .pendingReceiptReview,
+                    owner: owner
+                )
                 if successful {
                     try? scheduleApprovedProbe(
                         afterMinutes: approved.intervalMinutes
                     )
                 }
             } catch is CancellationError {
+                if let attemptedOwner {
+                    XDriveIOSBGAttemptStatus.record(
+                        beganOriginalWrite ? .interruptedAfterWrite :
+                            expiration.systemExpired ? .systemExpired : .cancelled,
+                        owner: attemptedOwner
+                    )
+                }
                 if let reporter = sourceRunReporter {
                     await reporter.finishAfterCancellation(status: "cancelled")
                 }
@@ -296,6 +333,20 @@ enum XDriveIOSBackgroundPhotoTask {
                     )
                 }
             } catch {
+                if let attemptedOwner {
+                    let classification: XDriveIOSBGAttemptReason
+                    if beganOriginalWrite {
+                        classification = .interruptedAfterWrite
+                    } else if retryablePreflightNetworkFailure(error) {
+                        classification = .networkRetry
+                    } else if error is XDriveIOSPhotoBGVaultFailure ||
+                              error is XDriveIOSPhotoBackgroundGrantError {
+                        classification = .authorizationFailure
+                    } else {
+                        classification = .otherFailure
+                    }
+                    XDriveIOSBGAttemptStatus.record(classification, owner: attemptedOwner)
+                }
                 if let reporter = sourceRunReporter {
                     await reporter.finish(status: "failed")
                 }
@@ -402,6 +453,35 @@ enum XDriveIOSBackgroundPhotoTask {
         } catch {
             // No guaranteed OS scheduling, and no upload-success receipt.
             // Unreadable, expired or revoked grant fails closed.
+        }
+    }
+
+    /// An unlock is a recovery hint, not permission to start an upload.
+    /// Require the SAME valid, unrevoked managed grant, Full PhotoKit scope,
+    /// no active writer and no pending/uncertain receipts before an OS re-arm.
+    /// The original Apple scheduler delay still applies; force-quit cannot be bypassed.
+    @MainActor
+    private static func rearmAfterProtectedDataUnlock() async {
+        guard registeredAtLaunch, active == nil,
+              UIApplication.shared.isProtectedDataAvailable,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+        else { return }
+        let stop = localStopVersion
+        do {
+            guard let grant = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
+                  let owner = try? grant.ownerScope(),
+                  grant.matches(owner), grant.hasManagedDestination,
+                  localStopVersion == stop,
+                  try !XDriveIOSBGOriginalWindowStore.shared.pausedForReview(owner: owner)
+            else { return }
+            guard try await XDriveIOSOriginalPendingReceiptPreflight
+                .pendingCount(owner: owner) == 0,
+                localStopVersion == stop, active == nil else { return }
+            try scheduleApprovedProbe(afterMinutes: grant.intervalMinutes)
+            XDriveIOSBGAttemptStatus.record(.scheduledAfterUnlock, owner: owner)
+        } catch {
+            // A missing/expired/revoked grant or unreadable ledger never
+            // authorizes a scan or an unbounded automatic retry.
         }
     }
 
