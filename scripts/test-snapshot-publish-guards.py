@@ -25,11 +25,11 @@ promote = body.index('gh api --method PATCH "repos/$repo/git/refs/tags/snapshot"
 assert upload < verified < promote, "tag must only change after remote digest proof"
 assert '[[' + ' "$current_tag" == "$previous_snapshot" ]]' in body
 assert "python3 scripts/test-snapshot-publish-guards.py" in ci
-# Regression: standalone Source Agent was retired from the release contract.
-# Preserve the exact installer/SPK/Backup CLI and checksum admission gates,
-# while rejecting stale expectations for the deleted Source Agent binaries.
+# Regression: no deleted Source Agent may be redistributed. Current-Commit
+# Server publication is independent of optional client builds, but every
+# present package must match the exact CI run and retain admission checks.
 client_verification = release.split(
-    "      - name: Verify exact client artifact contract\n", 1
+    "      - name: Verify every present client artifact without requiring missing platforms\n", 1
 )[1].split("\n  server-images:\n", 1)[0]
 bundle_verification = release.split(
     "      - name: Verify single-installer distribution contract\n", 1
@@ -37,26 +37,23 @@ bundle_verification = release.split(
 checksum_step = release.split(
     "      - name: Generate checksums\n", 1
 )[1].split("\n      # Sigstore", 1)[0]
-
-for contract in (
-    'test -f exact/xdrive-linux-amd64.deb',
-    'test -f exact/xDriveSetup-amd64.exe',
-    '[[' + ' "$count" == "2" ]]',
-    'test -s backup-cli/xdrive-backup-linux-amd64.tar.gz',
-    'test -s backup-cli/xdrive-backup-windows-amd64.zip',
-    '[[' + ' "$cli_count" == "2" ]]',
-    'bash scripts/ci/verify-synology-spk-release.sh synology --require-mui',
+assert release.count("bash scripts/ci/download-optional-client-artifacts.sh exact") == 1
+assert release.count("bash scripts/ci/download-optional-client-artifacts.sh release") == 1
+for required in (
+    '[[ -f "$file" && -s "$file" && ! -L "$file" ]]',
+    'unexpected source-run client package',
+    'bash scripts/ci/verify-synology-spk-release.sh exact --require-mui',
+    'xdrive-linux-amd64.deb', 'xDriveSetup-amd64.exe',
+    'xdrive-backup-linux-amd64.tar.gz', 'xdrive-backup-windows-amd64.zip',
+    'xdrivenas-armada38x-*.spk',
 ):
-    assert contract in client_verification, contract
-for contract in (
-    'test -f release/xdrive-linux-amd64.deb',
-    'test -f release/xDriveSetup-amd64.exe',
-    'test -s release/xdrive-backup-linux-amd64.tar.gz',
-    'test -s release/xdrive-backup-windows-amd64.zip',
+    assert required in client_verification, required
+for required in (
     'bash scripts/ci/verify-synology-spk-release.sh release --require-mui',
     'bash scripts/ci/verify-release-archive-allowlist.sh release',
+    'standalone Desktop installer must not be published',
 ):
-    assert contract in bundle_verification, contract
+    assert required in bundle_verification, required
 for retired in ('source-agent/', 'xdrive-source-agent-linux-'):
     assert retired not in client_verification
     assert retired not in bundle_verification
@@ -73,6 +70,8 @@ for artifact in (
     'xdrive-caddy-image.id',
 ):
     assert artifact in checksum_step, artifact
+assert '[[ -s "$file" && ! -L "$file" ]]' in checksum_step
+assert 'sha256sum "${optional[@]}"' in checksum_step
 assert '> SHA256SUMS.txt' in checksum_step
 notify_marker = "      - name: Notify bounded queued-CI prune after verified Snapshot publication\n"
 assert release.count(notify_marker) == 1
