@@ -170,3 +170,59 @@ func TestReleaseBundleMissingManifestMustNotClaimReady(t *testing.T) {
 		t.Fatalf("missing verified manifest was incorrectly marked ready: %+v", listing)
 	}
 }
+
+func TestReleaseBundlePartialCurrentCommitCacheStatusAndFallback(t *testing.T) {
+	root, body, manifest := bundleTestFixture(t)
+	sha := manifest.Commit
+	second := manifest.Artifacts[0]
+	second.Filename = "unpublished.ipa"
+	second.Size = int64(len(body) + 20)
+	second.Sources.GitLab = strings.Replace(second.Sources.GitLab,
+		"xDrive-unsigned.ipa", second.Filename, 1)
+	second.Sources.GitHub = strings.Replace(second.Sources.GitHub,
+		"xDrive-unsigned.ipa", second.Filename, 1)
+	manifest.Artifacts = append(manifest.Artifacts, second)
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifests", sha+".json"), raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = json.Marshal(releaseBundleState{
+		Commit: sha, State: "retry_needed",
+		Artifacts: map[string]string{
+			"xDrive-unsigned.ipa": "verified",
+			"unpublished.ipa":    "missing_upstream",
+		},
+		Message: "1 verified; 1 installer package pending retry",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "status.json"), raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	listing := readReleaseBundleListing(root)
+	if listing.State != "retry_needed" || len(listing.Artifacts) != 2 ||
+		!listing.Artifacts[0].Cached || listing.Artifacts[0].CacheStatus != "verified" ||
+		len(listing.Artifacts[0].DownloadURLs) != 3 ||
+		listing.Artifacts[1].Cached || listing.Artifacts[1].CacheStatus != "missing_upstream" ||
+		len(listing.Artifacts[1].DownloadURLs) != 2 {
+		t.Fatalf("partial cache incorrectly listed: %+v", listing)
+	}
+}
+
+func TestReleaseBundleMissingVerifiedFileDowngradesCacheStatus(t *testing.T) {
+	root, _, _ := bundleTestFixture(t)
+	sha := strings.Repeat("a", 40)
+	path := filepath.Join(root, "packages", sha, "xDrive-unsigned.ipa")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	listing := readReleaseBundleListing(root)
+	if len(listing.Artifacts) != 1 || listing.Artifacts[0].Cached ||
+		listing.Artifacts[0].CacheStatus != "retry_needed" {
+		t.Fatalf("missing package advertised as verified: %+v", listing)
+	}
+}
