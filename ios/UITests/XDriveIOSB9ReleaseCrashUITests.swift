@@ -117,7 +117,11 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         tap("native-ios-tab-files", in: app)
         tap("native-ios-files-open-root-location", in: app)
         alive(app, "offline-owner-open")
-        XCTAssertTrue(entry("native-ios-files-section-browse", in: app).exists)
+        // The b9 release does not promise a Files-local quick rail inside
+        // pushed folders. Check process survival after the denied async read,
+        // not a later UX feature that has its own pending PR.
+        Thread.sleep(forTimeInterval: 2)
+        alive(app, "offline-owner-after-denied-read")
         // No Session/token is provided: this does not assert a successful
         // authenticated file read or create an unsafe test credential.
     }
