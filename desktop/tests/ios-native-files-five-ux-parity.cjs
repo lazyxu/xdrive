@@ -39,10 +39,10 @@ test('P0 Files-local Recent Browse Favorites stays accessible in pushed folders'
   assert.match(main, /case \.browse:\s*filesChrome/)
   assert.match(main, /native-ios-files-quick-rail/)
   assert.match(main, /resumeStore\.saveSection\(option\.rawValue, owner: owner\)/)
-  assert.doesNotMatch(main, /if isHome \\{\\s*VStack/)
+  assert.doesNotMatch(main, /if isHome \{\s*VStack/)
   assert.match(main, /browseReturnAnchor = lastAppearedNodeID/)
-  assert.match(browser, /\\.onChange\\(of: quickSection\\) \\{ next in[\\s\\S]*?returnScroll\\.scrollTo\\(anchor, anchor: \\.center\\)/)
-  assert.match(browser, /if let saved = pendingNavigationReturnNodeID,[\\s\\S]*?returnScroll\\.scrollTo\\(saved, anchor: \\.center\\)/)
+  assert.match(browser, /\.onChange\(of: quickSection\) \{ next in[\s\S]*?returnScroll\.scrollTo\(anchor, anchor: \.center\)/)
+  assert.match(browser, /if let saved = pendingNavigationReturnNodeID,[\s\S]*?returnScroll\.scrollTo\(saved, anchor: \.center\)/)
 })
 
 test('P1 one Browse organizer reuses real QuickAccess SavedSearch and Tags', () => {
