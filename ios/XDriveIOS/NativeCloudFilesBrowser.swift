@@ -912,6 +912,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var showingOrganizeHome = false
     @State private var organizeHomeOwner: XDriveNativeOwnerRoot?
     @State private var viewerAdmitted = [UInt64: XDriveIOSNativeFilesNode]()
+    @State private var viewerAdmissionOrder: [UInt64] = []
     @StateObject private var batchExport = XDriveIOSNativeFilesBatchExportModel()
     // Row actions reuse the existing verified Server writers, not a second API.
     @StateObject private var quickMutation = XDriveIOSNativeFilesMutationModel()
@@ -3021,24 +3022,27 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .fullScreenCover(item: $selectedFile, onDismiss: {
             selectedOwner = nil
-            // Viewer is read-only. Returning to a still-valid Owner/scope
-            // must not clear all rows and thumbnails or flash an empty List.
+            viewerAdmitted.removeAll()
+            viewerAdmissionOrder.removeAll()
             if let folderID = parentID,
                model.canResume(
                 owner: login.owner, folderID: folderID,
                 query: activeQuery, filters: searchFilters,
                 sort: sort, order: order,
                 grouping: grouping, foldersFirst: foldersFirst
-               ) {
+               ),
+               (lastViewedFile == nil ||
+                model.entries.contains(where: { $0.node == lastViewedFile })) {
+                // Read-only Viewer preserved a live, verified source row.
                 lastViewedFile = nil
                 returnOwner = nil
+            } else if let target = lastViewedFile,
+                      !isHome && !isGlobalSearch,
+                      target.parent_id == parentID {
+                reanchorReturnedViewer(target)
             } else {
-                if let viewed = lastViewedFile,
-                   let index = model.entries.firstIndex(where: { $0.id == viewed.id }) {
-                    offset = model.startOffset +
-                        (index / XDriveIOSNativeFilesPagePolicy.pageSize) *
-                        XDriveIOSNativeFilesPagePolicy.pageSize
-                }
+                lastViewedFile = nil
+                returnOwner = nil
                 reload()
             }
         }) { initial in
@@ -3054,11 +3058,20 @@ struct XDriveIOSNativeFilesBrowser: View {
                               XDriveIOSNativePhotoOwnerScope.matches(
                                   login.owner, openedOwner
                               ),
-                              containsVerifiedNode(next)
+                              (containsVerifiedNode(next) ||
+                               viewerAdmitted[next.id] == next)
                         else { return false }
                         lastViewedFile = next
                         return true
-                    }
+                    },
+                    onLoadNeighbor: (!isHome && !isGlobalSearch &&
+                                     initial.node.parent_id == parentID) ?
+                        { current, direction in
+                            try await verifiedViewerAdjacent(
+                                from: current, direction: direction,
+                                openedOwner: openedOwner, initialID: initial.id
+                            )
+                        } : nil
                 )
             } else {
                 Text("当前账户已变化，请返回文件列表。")
@@ -3182,6 +3195,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingOrganizeHome = false
             organizeHomeOwner = nil
             viewerAdmitted.removeAll()
+            viewerAdmissionOrder.removeAll()
             chunked.invalidate()
             quickMutation.invalidate()
             quickDestinationWriter.invalidate()
@@ -3613,6 +3627,182 @@ struct XDriveIOSNativeFilesBrowser: View {
         return Array(siblings[start..<min(start + maximum, siblings.count)])
     }
 
+    /// A Server ordinal is only a hint. Prove the selected Node in the exact
+    /// current 64-row page, then read at most one page at a time in the given
+    /// direction. Only signed same-Owner/revision files enter the Viewer.
+    @MainActor
+    private func verifiedViewerAdjacent(
+        from selected: XDriveIOSNativeFilesNode,
+        direction: Int, openedOwner: XDriveNativeOwnerRoot,
+        initialID: UUID
+    ) async throws -> [XDriveIOSNativeFilesNode] {
+        guard direction == -1 || direction == 1,
+              phase == .active, !isHome, !isGlobalSearch,
+              selectedFile?.id == initialID,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner),
+              let folderID = parentID, selected.parent_id == folderID
+        else { throw XDriveIOSNativeFilesReadError.invalidScope }
+        let expectedSort = sort, expectedOrder = order
+        let expectedGrouping = grouping, expectedFoldersFirst = foldersFirst
+        let auth = try await login.verifiedAuthorization()
+        try Task.checkCancellation()
+        guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, openedOwner)
+        else { throw XDriveIOSNativeFilesReadError.invalidScope }
+        let reader = XDriveIOSNativeFilesReader(
+            owner: auth.owner, accessToken: auth.accessToken
+        )
+        let position = try await reader.childPosition(
+            parentID: folderID, node: selected,
+            sort: expectedSort, order: expectedOrder,
+            grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+        )
+        guard let pivotOffset = XDriveIOSNativeFilesReanchorPolicy.pageOffset(
+            position, node: selected, parentID: folderID,
+            sort: expectedSort, order: expectedOrder,
+            grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+        ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        let pivot = try await reader.children(
+            parentID: folderID, offset: pivotOffset,
+            sort: expectedSort, order: expectedOrder,
+            grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+        )
+        guard XDriveIOSNativeFilesReanchorPolicy.verifiedDestination(
+            pivot, position: position, node: selected, parentID: folderID,
+            sort: expectedSort, order: expectedOrder,
+            grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+        ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        let count = pivot.total_count
+        var cursor = position.index + direction
+        var pagesChecked = 0
+        while cursor >= 0 && cursor < count && pagesChecked < 16 {
+            try Task.checkCancellation()
+            let targetOffset = (cursor / XDriveIOSNativeFilesPagePolicy.pageSize) *
+                XDriveIOSNativeFilesPagePolicy.pageSize
+            let page: XDriveIOSNativeFilesRange
+            if targetOffset == pivotOffset {
+                page = pivot
+            } else {
+                page = try await reader.children(
+                    parentID: folderID, offset: targetOffset,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                )
+            }
+            guard page.total_count == count else {
+                throw XDriveIOSNativeFilesReadError.invalidPage
+            }
+            pagesChecked += 1
+            let local = cursor - targetOffset
+            let candidates: [XDriveIOSNativeFilesNode]
+            if direction > 0 {
+                candidates = Array(page.items.dropFirst(local))
+            } else {
+                candidates = Array(page.items.prefix(local + 1))
+            }
+            let files = candidates.filter { $0.type == "file" }
+            if !files.isEmpty {
+                try Task.checkCancellation()
+                guard phase == .active, selectedFile?.id == initialID,
+                      parentID == folderID, sort == expectedSort,
+                      order == expectedOrder, grouping == expectedGrouping,
+                      foldersFirst == expectedFoldersFirst,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner)
+                else { throw XDriveIOSNativeFilesReadError.invalidScope }
+                for item in files {
+                    viewerAdmitted[item.id] = item
+                    viewerAdmissionOrder.removeAll(where: { $0 == item.id })
+                    viewerAdmissionOrder.append(item.id)
+                }
+                // Never retain all of a 100k-directory as Viewer access hints.
+                while viewerAdmissionOrder.count > 512 {
+                    viewerAdmitted.removeValue(forKey: viewerAdmissionOrder.removeFirst())
+                }
+                return files
+            }
+            cursor = direction > 0 ?
+                targetOffset + XDriveIOSNativeFilesPagePolicy.pageSize :
+                targetOffset - 1
+        }
+        // An all-directory gap must not be called the true end of a folder.
+        if cursor >= 0 && cursor < count {
+            throw XDriveIOSNativeFilesReadError.invalidPage
+        }
+        return []
+    }
+
+    /// Restore the last *viewed* file after a cross-window swipe. It may no
+    /// longer be in the original mounted directory window. Do not reuse an
+    /// unverified offset or silently snap the user back to its old first row.
+    @MainActor
+    private func reanchorReturnedViewer(_ target: XDriveIOSNativeFilesNode) {
+        cancelArrangementReanchor()
+        guard !isHome, !isGlobalSearch, let folderID = parentID,
+              target.parent_id == folderID,
+              let owner = returnOwner,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+        else {
+            quickActionNotice = "查看的文件不在当前目录，请刷新后定位。"
+            lastViewedFile = nil
+            returnOwner = nil
+            reload()
+            return
+        }
+        let ticket = arrangementTicket
+        let expectedSort = sort, expectedOrder = order
+        let expectedGrouping = grouping, expectedFoldersFirst = foldersFirst
+        arrangementTask = Task { @MainActor in
+            defer { if arrangementTicket == ticket { arrangementTask = nil } }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
+                else { throw XDriveIOSNativeFilesReadError.invalidScope }
+                let reader = XDriveIOSNativeFilesReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                let position = try await reader.childPosition(
+                    parentID: folderID, node: target,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                )
+                guard let pageOffset = XDriveIOSNativeFilesReanchorPolicy.pageOffset(
+                    position, node: target, parentID: folderID,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                let page = try await reader.children(
+                    parentID: folderID, offset: pageOffset,
+                    sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                )
+                try Task.checkCancellation()
+                guard XDriveIOSNativeFilesReanchorPolicy.verifiedDestination(
+                    page, position: position, node: target,
+                    parentID: folderID, sort: expectedSort, order: expectedOrder,
+                    grouping: expectedGrouping, foldersFirst: expectedFoldersFirst
+                ) else { throw XDriveIOSNativeFilesReadError.invalidPage }
+                guard arrangementTicket == ticket, lastViewedFile == target,
+                      parentID == folderID, sort == expectedSort,
+                      order == expectedOrder, grouping == expectedGrouping,
+                      foldersFirst == expectedFoldersFirst,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+                else { return }
+                offset = pageOffset
+                pendingNavigationReturnNodeID = target.id
+                reload()
+            } catch is CancellationError {
+            } catch {
+                guard arrangementTicket == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+                else { return }
+                lastViewedFile = nil
+                returnOwner = nil
+                quickActionNotice = "返回位置无法核验，请从当前目录重新选择文件。"
+                reload(resetOffset: true)
+            }
+        }
+    }
+
     private func openViewer(_ entry: XDriveIOSNativeFilesEntry) {
         guard let owner = login.owner,
               containsVerifiedNode(entry.node) else { return }
@@ -3620,6 +3810,8 @@ struct XDriveIOSNativeFilesBrowser: View {
         inlineFolders.suspendForNavigation()
         selectedOwner = owner
         returnOwner = owner
+        viewerAdmitted.removeAll()
+        viewerAdmissionOrder.removeAll()
         lastViewedFile = entry.node
         selectedFile = entry
     }
