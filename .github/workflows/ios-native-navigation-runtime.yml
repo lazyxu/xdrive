@@ -6,6 +6,17 @@ on:
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
+      # Changes in a child Files/Gallery route must also compile and exercise
+      # the real five-tab return smoke; Browser.swift is not always modified.
+      - 'ios/XDriveIOS/NativeFilesViewer.swift'
+      - 'ios/XDriveIOS/NativeFilesSearchLocation.swift'
+      - 'ios/XDriveIOS/NativeFilesVersionHistory.swift'
+      - 'ios/XDriveIOS/NativeFilesCollections.swift'
+      - 'ios/XDriveIOS/NativeFilesManagementPanel.swift'
+      - 'ios/XDriveIOS/NativePhotosDashboard.swift'
+      - 'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift'
+      - 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'
+      - 'ios/XDriveIOS/NativeLocalPhotoGallery.swift'
   workflow_dispatch:
 permissions:
   contents: read

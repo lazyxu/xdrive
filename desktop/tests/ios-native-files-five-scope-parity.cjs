@@ -73,3 +73,33 @@ test('release-c83 runtime fallback taps observed AX labels, never guessed screen
   assert.match(testSource, /app\.state, \.runningForeground/)
   assert.doesNotMatch(testSource, /normalizedCoordinate|coordinate\(withNormalizedOffset:/)
 })
+
+test('real Simulator smoke is triggered by Files/Gallery subroute edits, not only Browser', () => {
+  const workflow = src('.github/workflows/ios-native-navigation-runtime.yml')
+  const watched = workflow.split('  workflow_dispatch:')[0]
+  assert.match(watched, /^on:\s*pull_request:\s*paths:/m)
+  const routes = [
+    'ios/XDriveIOS/NativeCloudFilesBrowser.swift',
+    'ios/XDriveIOS/NativeFilesViewer.swift',
+    'ios/XDriveIOS/NativeFilesSearchLocation.swift',
+    'ios/XDriveIOS/NativeFilesVersionHistory.swift',
+    'ios/XDriveIOS/NativeFilesCollections.swift',
+    'ios/XDriveIOS/NativeFilesManagementPanel.swift',
+    'ios/XDriveIOS/NativePhotosDashboard.swift',
+    'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift',
+    'ios/XDriveIOS/NativePhotoAlbumBrowser.swift',
+    'ios/XDriveIOS/NativeLocalPhotoGallery.swift',
+  ]
+  for (const route of routes) {
+    assert.ok(watched.includes("      - '" + route + "'"),
+      'Native subroute changes must trigger the real Simulator smoke: ' + route)
+  }
+  assert.doesNotMatch(watched, /-\s*'ios\/\*\*'/,
+    'Do not make unrelated iOS modules consume two expensive Simulator jobs')
+  assert.match(workflow, /xcodebuild test/)
+  assert.match(workflow, /matrix:\s*source:\s*\[release-c83, candidate\]/)
+  // A no-token smoke only validates mounting/return and process survival;
+  // it is not proof of logged-in Owner data or real audio/video playback.
+  const fixture = src('ios/scripts/prepare-navigation-runtime-smoke.py')
+  assert.match(fixture, /Deliberately no active Session\/token/)
+})
