@@ -101,7 +101,7 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(simulator, /map\.pinch\(withScale: 1\.4, velocity: 1\.0\)/)
   assert.match(simulator, /XCUIDevice\.shared\.orientation = \.landscapeLeft/)
   assert.match(simulator, /native-ios-local-viewer-back/)
-  assert.match(runtimeWorkflow, /simctl addmedia "\\$SMOKE_SIM"/)
+  assert.match(runtimeWorkflow, /simctl addmedia "\$SMOKE_SIM"/)
   assert.match(runtimeWorkflow, /synthetic-gps-map\.jpg/)
   assert.match(runtimeWorkflow, /synthetic-gps-map-second\.jpg/)
   assert.match(runtimeWorkflow, /xcodebuild test/)
