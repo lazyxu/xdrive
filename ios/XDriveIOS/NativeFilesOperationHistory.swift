@@ -154,11 +154,17 @@ final class XDriveIOSNativeFilesOperationsModel: ObservableObject {
     @Published private(set) var verified = false
     @Published private(set) var status: String?
 
-    private let expected: XDriveNativeOwnerRoot
+    private var expected: XDriveNativeOwnerRoot
     private var epoch = UUID()
     private var job: Task<Void, Never>?
 
     init(owner: XDriveNativeOwnerRoot) { expected = owner }
+
+    func updateExpectedOwner(_ owner: XDriveNativeOwnerRoot) {
+        guard !XDriveIOSNativePhotoOwnerScope.matches(expected, owner) else { return }
+        invalidate()
+        expected = owner
+    }
 
     func matches(_ current: XDriveNativeOwnerRoot?) -> Bool {
         guard let current else { return false }
@@ -209,7 +215,9 @@ final class XDriveIOSNativeFilesOperationsModel: ObservableObject {
                 self.status = nil
             } catch is CancellationError {
             } catch {
-                guard let self, self.epoch == ticket else { return }
+                guard let self, self.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 self.verified = false
                 self.items = []
                 self.status = "无法验证文件操作历史，请检查网络后重试。"
@@ -254,7 +262,9 @@ final class XDriveIOSNativeFilesOperationsModel: ObservableObject {
                 onAccepted()
             } catch is CancellationError {
             } catch {
-                guard let self, self.epoch == ticket else { return }
+                guard let self, self.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 // POST may already have committed but the response was lost.
                 // Do not offer another write until a real Server list refresh.
                 self.verified = false
@@ -273,6 +283,8 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
 
     @StateObject private var model: XDriveIOSNativeFilesOperationsModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
+    @State private var isVisible = false
     @State private var pending: Pending?
 
     private struct Pending {
@@ -291,17 +303,24 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
         )
     }
 
+    private var canInteract: Bool {
+        isVisible && phase == .active && model.matches(login.owner) &&
+            !model.loading && !model.busy
+    }
+
     var body: some View {
         Form {
             Section("服务器文件操作（最近 50 项）") {
                 if model.loading {
                     ProgressView("正在验证操作历史…")
                 }
-                if model.matches(login.owner) && model.items.isEmpty {
+                if isVisible && phase == .active &&
+                   model.matches(login.owner) && model.items.isEmpty {
                     Text("暂无可显示的操作历史。")
                         .foregroundStyle(.secondary)
                 }
-                if model.matches(login.owner) {
+                if isVisible && phase == .active &&
+                   model.matches(login.owner) {
                     ForEach(model.items) { item in
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
@@ -319,6 +338,7 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
                                         .undo, for: item
                                     ) {
                                         Button("撤销") {
+                                            guard canInteract, model.items.contains(item) else { return }
                                             pending = Pending(action: .undo, operation: item)
                                         }
                                         .accessibilityIdentifier(
@@ -329,6 +349,7 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
                                         .redo, for: item
                                     ) {
                                         Button("重做") {
+                                            guard canInteract, model.items.contains(item) else { return }
                                             pending = Pending(action: .redo, operation: item)
                                         }
                                         .accessibilityIdentifier(
@@ -337,7 +358,7 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
                                     }
                                 }
                                 .buttonStyle(.bordered)
-                                .disabled(model.busy || model.loading)
+                                .disabled(!canInteract)
                             }
                         }
                     }
@@ -346,12 +367,19 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
             if model.busy {
                 Section { ProgressView("正在向服务器提交…") }
             }
-            if let status = model.status {
+            if phase == .active,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+               let status = model.status {
                 Section("状态") {
                     Text(status).foregroundStyle(.secondary)
                     if !model.verified {
-                        Button("刷新核对") { model.load(login: login) }
-                            .disabled(model.busy || model.loading)
+                        Button("刷新核对") {
+                            guard isVisible, phase == .active,
+                                  !model.busy, !model.loading else { return }
+                            pending = nil
+                            model.load(login: login)
+                        }
+                        .disabled(!isVisible || phase != .active || model.busy || model.loading)
                     }
                 }
             }
@@ -360,21 +388,52 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("刷新") { model.load(login: login) }
-                    .disabled(model.busy || model.loading)
+                Button("刷新") {
+                    guard isVisible, phase == .active,
+                          !model.busy, !model.loading else { return }
+                    pending = nil
+                    model.load(login: login)
+                }
+                .disabled(!isVisible || phase != .active || model.busy || model.loading ||
+                          !XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner))
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("完成") { dismiss() }
+                    .disabled(model.busy)
             }
         }
-        .task { model.load(login: login) }
+        // A pending POST may have committed even if its receipt is delayed.
+        .interactiveDismissDisabled(model.busy)
+        .onAppear {
+            isVisible = true
+            loadIfNeeded()
+        }
+        .onDisappear {
+            isVisible = false
+            pending = nil
+            model.invalidate()
+        }
+        .onChange(of: phase) { state in
+            if state != .active {
+                pending = nil
+                model.invalidate()
+            } else {
+                loadIfNeeded()
+            }
+        }
+        .onChange(of: expectedOwner) { owner in
+            pending = nil
+            model.updateExpectedOwner(owner)
+            loadIfNeeded()
+        }
         .onChange(of: login.owner) { owner in
+            pending = nil
             if !XDriveIOSNativePhotoOwnerScope.matches(owner, expectedOwner) {
                 model.invalidate()
-                pending = nil
+            } else {
+                loadIfNeeded()
             }
         }
-        .onDisappear { model.invalidate() }
         .confirmationDialog(
             pending.map { $0.action.label + "这个文件操作？" } ?? "文件操作",
             isPresented: Binding(
@@ -384,7 +443,11 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
             titleVisibility: .visible
         ) {
             Button("确认" + (pending?.action.label ?? "")) {
-                if let snapshot = pending {
+                if let snapshot = pending, canInteract,
+                   model.items.contains(snapshot.operation),
+                   XDriveIOSNativeFilesOperationPolicy.canPerform(
+                       snapshot.action, for: snapshot.operation
+                   ) {
                     model.submit(
                         snapshot.action, operation: snapshot.operation,
                         login: login, onAccepted: onAccepted
@@ -396,5 +459,12 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
         } message: {
             Text("服务器会重新检查文件版本、权限和冲突；任务接受后不代表已经执行完成。")
         }
+    }
+
+    private func loadIfNeeded() {
+        guard isVisible, phase == .active, !model.loading, !model.busy,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+              !model.matches(login.owner) else { return }
+        model.load(login: login)
     }
 }
