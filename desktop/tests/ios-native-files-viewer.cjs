@@ -233,7 +233,10 @@ test('Files video uses Gallery native timeline and Owner-gated canvas paging wit
   assert.match(modal, /\.statusBarHidden\(!chromeVisible\)/);
   assert.match(modal, /private func retire\(\) \{[\s\S]*?showImageChrome = true\s*showVideoChrome = true/);
   assert.match(modal, /XDriveIOSNativeFilesViewerPolicy\.neighbor\(/);
-  assert.match(modal, /guard !isClosing, let next = neighbor\(direction\), onNavigate\(next\) else \{ return \}/);
+  assert.match(modal, /private func move\(_ direction: Int\) \{\s*guard !isClosing, authorized, !neighborBusy else \{ return \}/)
+  assert.match(modal, /private func commitNeighbor\(_ next: XDriveIOSNativeFilesNode\) \{\s*guard !isClosing, authorized, onNavigate\(next\) else \{ return \}/)
+  assert.match(modal, /let batch = try await read\(source, direction\)/)
+  assert.match(modal, /guard neighborEpoch == ticket, !isClosing, authorized/);
   assert.match(modal, /if let item = player\.currentItem \{/);
   assert.match(modal, /item\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
   assert.match(modal, /case \.audio:[\s\S]*?XDriveIOSNativeFileAudioSurface/);

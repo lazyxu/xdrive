@@ -3179,6 +3179,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            // Files-local section belongs to a verified Owner; a new Owner
+            // must not inherit the previous account's Recent/Favorites route.
+            quickSection = .browse
             let nextScope = login.owner.map { XDriveIOSNativeFilesResumeStore.scope($0) }
             if let existingScope = resumeScope, existingScope != nextScope {
                 resumeStore.clear()
