@@ -141,6 +141,9 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
                 }
                 self.counts = result
                 self.failedReasonCounts = reasons
+                if result == nil {
+                    self.notice = "PhotoKit 变更尚未回放到当前图库版本，已隐藏旧的任务统计；请等下次前台增量检查后刷新。"
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -305,6 +308,7 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                     guard let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
                           plan.enabled, plan.backupStartRule == .onlyNew else {
                         if self.ticket == id {
+                            self.clearPage()
                             self.notice = "当前未启用“仅备份新照片”。请选择“当前图库”查看分页核验清单；这些条目不等于未备份。"
                         }
                         return
