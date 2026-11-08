@@ -102,3 +102,17 @@ test('7: overall progress separates scan, current Node proof and local change-qu
   assert.match(writer, /var windowUploaded = 0/)
   assert.match(writer, /var changeQueueUploaded = 0/)
 })
+
+
+test('stale PhotoKit generations hide old queue totals and task rows without refreshing the wrong Owner', () => {
+  const epoch = read('ios/XDriveIOS/PhotoCursorEpochPolicy.swift')
+  assert.match(epoch, /func canShowChangeQueueSnapshot\(/)
+  assert.match(queue, /func summary\(owner: XDriveNativeOwnerRoot\)[\s\S]*?canShowChangeQueueSnapshot\([\s\S]*?baseline\.token, as: epoch\.token/)
+  assert.match(taskModel, /if let freshTotals = try await queue\.summary\(owner: owner\)/)
+  assert.match(taskModel, /try await queue\.isCaughtUp\(owner: owner\)/)
+  assert.match(taskModel, /clearPage\(\) \/\/ Never retain a previous page after permission loss/)
+  assert.match(taskModel, /self\.clearPage\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.match(tasks, /\.onChange\(of: controller\.busy\)/)
+  assert.match(tasks, /model\.refreshCurrent\(login: login, mode: mode, filter: filter\)/)
+  assert.match(tasks, /\.disabled\(model\.loading\)/)
+})
