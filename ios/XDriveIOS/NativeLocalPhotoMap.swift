@@ -829,6 +829,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
+                        .accessibilityIdentifier("native-ios-map-place-dismiss")
                 }
             }
             .simultaneousGesture(
