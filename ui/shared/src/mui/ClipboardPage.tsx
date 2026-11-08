@@ -425,7 +425,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
         <Box>
           <Typography variant="h5" fontWeight={700}>剪贴板</Typography>
           <Typography variant="body2" color="text.secondary">
-            当前账号的端到端加密文本收件箱 · 手动复制与发送
+            当前账号的端到端加密收件箱 · 文本与已上传文件引用
           </Typography>
         </Box>
         {key ? <Button color="inherit" onClick={lock}>锁定</Button> : null}
@@ -618,7 +618,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
           ) : null}
           <Divider />
           <Typography variant="caption" color="text.secondary">
-            最多保留 50 条未过期消息，24 小时后自动不可见。当前版本没有设备定向发送或后台自动监控。
+            最多保留 50 条未过期消息，24 小时后自动不可见。
+            {port.listDevices
+              ? ' 此 Host 支持向已登记设备定向发送文本及现有云端文件引用。'
+              : ' 此 Host 仅支持当前 Owner 的手动文本与链接发送。'}
+            {port.watchLocalClipboard
+              ? ' Desktop 系统剪贴板监听默认关闭，只有明确开启后才在解锁且页面可见时运行。'
+              : ' 不会在后台自动读取系统剪贴板。'}
           </Typography>
         </>
       )}
