@@ -54,7 +54,7 @@ prepare_dir() {
 # An upgrade always owns install.lock and therefore preempts every package
 # transfer; a failed mirror job is never a server transaction error.
 release_bundle_enqueue() {
-  local sha worker cache pid_file pid
+  local force="${1:-false}" sha worker cache pid_file pid
   sha="$(env_value XD_RELEASE_COMMIT)"
   [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 0
   worker="$BIN_DIR/release_bundle.py"
@@ -79,7 +79,11 @@ release_bundle_enqueue() {
       flock -u 7 || true
     )
   fi
-  if [[ -f "$cache/current.json" ]] &&
+  # An explicit admin retry must rescan a previously-ready cache: a missing
+  # or tampered installer may need repair even when status.json still says
+  # ready. Periodic polling keeps the cheap ready fast-path.
+  if [[ "$force" != "true" ]] &&
+     [[ -f "$cache/current.json" ]] &&
      grep -Fq "\"commit\":\"$sha\"" "$cache/current.json" &&
      [[ -f "$cache/status.json" ]] &&
      grep -Fq '"state":"ready"' "$cache/status.json"; then
@@ -4330,7 +4334,7 @@ serve_cmd() {
     now="$(date +%s)"
     if [[ -f "$dir/release-bundle-retry" ]]; then
       rm -f -- "$dir/release-bundle-retry"
-      release_bundle_enqueue || true
+      release_bundle_enqueue true || true
     elif (( now - last_bundle_enqueue_at >= 300 )); then
       release_bundle_enqueue || true
       last_bundle_enqueue_at="$now"
