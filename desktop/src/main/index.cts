@@ -63,6 +63,8 @@ import { editContextMenuTemplate } from './edit_context_menu.cjs'
 import {
   desktopShortcutActionFromArgs,
   desktopShortcutActionFromInput,
+  desktopDevToolsTargetFromInput,
+  desktopDevToolsMapGuestChoice,
   desktopShortcutShowsWindow,
   windowsUserTasks,
   type DesktopShortcutAction,
@@ -2173,7 +2175,65 @@ function createMainWindow(showOnReady = true) {
     if (win.isVisible()) void showRendererRecoveryDialog()
   })
   win.on('unresponsive', () => lifecycleLog?.record('window_unresponsive'))
+  // The map is an isolated HTTPS WebView, not the file:// Desktop renderer.
+  // F12 must inspect the guest to expose its Console and Network failures.
+  const openDesktopDevTools = (target:'places'|'desktop', sourceGuestID?:number) => {
+    const currentOrigin=xDriveResolveSecureBaiduMapTarget(
+      agentState.status?.server)?.origin
+    const eligible=target==='places'
+      ? [...desktopPlacesGuests.entries()].flatMap(([id,guest])=>{
+          const contents=electronWebContents.fromId(id)
+          return contents && !contents.isDestroyed()
+            ? [{id,owner:guest.owner,origin:guest.origin}] : []
+        }) : []
+    const selected=desktopDevToolsMapGuestChoice(eligible,
+      agentState.status?.username,currentOrigin,sourceGuestID)
+    const guest=selected===null ? null : electronWebContents.fromId(selected)
+    const contents=target==='places' && guest && !guest.isDestroyed()
+      ? guest : win.webContents
+    const effective=contents===win.webContents?'desktop':'places'
+    // In headless X11, Chromium can silently reject creation of an activated
+    // detached DevTools window even though the exact native F12 is received.
+    // A verified direct Guest open with activate:false succeeds there.
+    // Preserve normal user activation first, but retry ONCE without activation
+    // if the actual DevTools window has not appeared. No remote debugging
+    // port, privilege bridge or unconditional background inspector.
+    let retry:ReturnType<typeof setTimeout>|null=null
+    const opened=()=>{
+      if(retry!==null){clearTimeout(retry);retry=null}
+      lifecycleLog?.record('devtools_opened',{target:effective})
+    }
+    contents.once('devtools-opened',opened)
+    const invoke=(activate:boolean):boolean=>{
+      try{
+        contents.openDevTools({mode:'detach',activate})
+        return true
+      }catch{return false}
+    }
+    lifecycleLog?.record('devtools_requested',{target:effective})
+    if(!invoke(true)){
+      if(!invoke(false)){
+        contents.removeListener('devtools-opened',opened)
+        lifecycleLog?.record('devtools_open_failed',{target:effective})
+      }
+    }else{
+      retry=setTimeout(()=>{
+        retry=null
+        if(contents.isDestroyed() || contents.isDevToolsOpened())return
+        if(!invoke(false)){
+          contents.removeListener('devtools-opened',opened)
+          lifecycleLog?.record('devtools_open_failed',{target:effective})
+        }else lifecycleLog?.record('devtools_retry_without_activation',{target:effective})
+      },400)
+    }
+  }
   win.webContents.on('before-input-event', (event, input) => {
+    const devtools=desktopDevToolsTargetFromInput(input)
+    if (devtools) {
+      event.preventDefault()
+      openDesktopDevTools(devtools)
+      return
+    }
     const action = desktopShortcutActionFromInput(input)
     if (!action) return
     event.preventDefault()
@@ -2224,6 +2284,38 @@ function createMainWindow(showOnReady = true) {
     const identity={owner,origin:target.origin,scope:pending.scope}
     desktopPlacesGuests.set(guest.id,identity)
     guest.setWindowOpenHandler(()=>({action:'deny'}))
+    // Keyboard events inside the guest do not reliably reach the Parent.
+    guest.on('before-input-event',(event,input)=>{
+      const target=desktopDevToolsTargetFromInput(input)
+      if(!target)return
+      event.preventDefault()
+      openDesktopDevTools(target,guest.id)
+    })
+    guest.on('did-fail-load',(_event,errorCode,_description,_url,isMainFrame)=>{
+      if(isMainFrame && errorCode!==-3)
+        lifecycleLog?.record('places_guest_load_failed',{error_code:errorCode})
+    })
+    guest.on('render-process-gone',(_event,details)=>{
+      lifecycleLog?.record('places_guest_renderer_gone',{
+        reason:details.reason,exit_code:details.exitCode,
+      })
+    })
+    guest.on('preload-error',()=>lifecycleLog?.record('places_guest_preload_failed'))
+    // Never persist raw console strings, URLs, Owner identifiers or Cookies.
+    // F12 exposes the actual complete Console/Network only on local user intent.
+    let recordedErrors=0
+    // WebContents console-message uses numeric log levels: 3 is error.
+    guest.on('console-message',(_event,level,rawMessage)=>{
+      if(level!==3 || recordedErrors>=12)return
+      recordedErrors++
+      const message=String(rawMessage||'')
+      const category=/Content Security Policy|\bCSP\b/i.test(message)?'csp':
+        /ERR_CERT_|certificate/i.test(message)?'tls':
+        /ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ERR_PROXY/i.test(message)?'network':
+        /Failed to fetch|NetworkError/i.test(message)?'fetch':
+        /Uncaught|TypeError|ReferenceError/i.test(message)?'javascript':'other'
+      lifecycleLog?.record('places_guest_console_error',{category})
+    })
     const authorized=(rawURL:string)=>{
       try {
         const url=new URL(rawURL)
@@ -2531,11 +2623,18 @@ function notifyUpdateTransition(previous: AgentUpdateState | null, next: AgentUp
 
 function publishAgentState(next: AgentConnectionState) {
   const previous = agentState
+  // The Agent may change its selected HTTPS connection IP while keeping the
+  // same Server Origin and Owner. Old Chromium CONNECT/CA decisions must be
+  // retired before a different route can be admitted; no DNS/direct fallback.
+  const connectionIPChanged =
+    (next.status?.connection_ip?.trim() || '') !==
+    (previous.status?.connection_ip?.trim() || '')
   if ((desktopPlacesGuests.size || desktopPlacesPending ||
        desktopPlacesWebReady || desktopPlacesWebPending) && (
       !next.connected || !next.status?.configured ||
       next.status.server!==previous.status?.server ||
       next.status.username!==previous.status?.username ||
+      connectionIPChanged ||
       next.status.auth_status==='登录已过期' ||
       next.status.auth_status==='账户已禁用'
   )) closeDesktopPlacesGuests()
@@ -2543,6 +2642,7 @@ function publishAgentState(next: AgentConnectionState) {
       !next.connected || !next.status?.configured ||
       next.status.server !== previous.status?.server ||
       next.status.username !== previous.status?.username ||
+      connectionIPChanged ||
       next.status.auth_status === '登录已过期' ||
       next.status.auth_status === '账户已禁用'
   )) closeSecureBaiduMapWindow()
@@ -9240,6 +9340,12 @@ function registerIPCHandlers() {
     })))
     if (!attempt.current()) return { ok: false, error: { code: 'server_canceled', message: '登录操作已取消。' } }
     if (result.ok) {
+      // Explicit native re-login may update the Agent's trusted HTTPS CA or
+      // RefreshToken without changing the same Owner/Server status fields.
+      // Retire the old Chromium TLS verdict, Cookie and map Guest before
+      // seeding the newly verified Owner. Never keep an old trust generation.
+      closeDesktopPlacesGuests()
+      closeSecureBaiduMapWindow()
       loginHistory = recordSuccessfulLogin(loginHistory, {
         server,
         username,

@@ -40,6 +40,37 @@ export function desktopShortcutActionFromInput(input: DesktopKeyboardInput): Des
   return null
 }
 
+/** F12 inspects the authenticated map guest (or Desktop if no guest).
+ * Ctrl/Cmd+Shift+I always inspects the local Desktop shell.
+ * No remote debugging port, privileged IPC or automatic diagnostics upload.
+ */
+export function desktopDevToolsTargetFromInput(
+  input: DesktopKeyboardInput,
+): 'places' | 'desktop' | null {
+  if ((input.type && input.type !== 'keyDown') || input.isAutoRepeat || input.alt) return null
+  if (!input.control && !input.meta && !input.shift && input.key === 'F12') return 'places'
+  if ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i')
+    return 'desktop'
+  return null
+}
+
+/** A shortcut targets the live, current-Owner HTTPS map, not the first
+ * ever-attached (possibly stale) Electron guest. Source Guest events take
+ * priority; Parent events select the most recently attached eligible Guest.
+ * This is a target selector only, NEVER a media authorization grant.
+ */
+export function desktopDevToolsMapGuestChoice(
+  guests: readonly {id:number;owner:string;origin:string}[],
+  currentOwner:string|undefined, currentOrigin:string|undefined,
+  preferredID?:number,
+): number | null {
+  if (!currentOwner || !currentOrigin) return null
+  const allowed = guests.filter(g=>Number.isSafeInteger(g.id) && g.id>0 &&
+    g.owner===currentOwner && g.origin===currentOrigin)
+  if (preferredID && allowed.some(g=>g.id===preferredID)) return preferredID
+  return allowed.length ? allowed[allowed.length-1].id : null
+}
+
 export function desktopShortcutShowsWindow(action: DesktopShortcutAction | null) {
   return action === 'transfers' || action === 'settings'
 }

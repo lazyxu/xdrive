@@ -241,6 +241,14 @@ export function XDriveMediaGalleryPlacesMap({
       setDesktopEmbedError(message)
       setEmbedPrepared({key:embedIdentity,state:'denied'})
     }
+    const failGuest=(message:string)=>{
+      if(!active || denied)return
+      denied=true
+      setEmbedGuestReady(null)
+      setDesktopEmbedError(message)
+      // Retain the hidden, sandboxed HTTPS guest so F12 can inspect its real
+      // Console/Network. Only auth denial removes the untrusted guest.
+    }
     const probe=()=>{
       if(!active || denied || probing || !guest.executeJavaScript)return
       probing=true
@@ -259,6 +267,8 @@ export function XDriveMediaGalleryPlacesMap({
             deny('Server Web 返回了完整登录页面，而不是地图。请更新 Server Web snapshot 与 Desktop 客户端后重试。')
           } else if(state==='denied') {
             deny('Web 地图身份桥接或临时会话验证失败，请检查 Server Web 版本后重试。')
+          } else if(state==='unavailable') {
+            failGuest('百度地图 SDK 加载失败，已停止显示空白画布。请重试；按 F12 查看地图 Console 和 Network。')
           } else if(state==='ready' && !mapMounted) {
             mapMounted=true
             setEmbedGuestReady({key:embedIdentity})
@@ -270,9 +280,9 @@ export function XDriveMediaGalleryPlacesMap({
     const fail=(event:Event)=>{
       const load=event as Event & {errorCode?:number;isMainFrame?:boolean}
       if(load.errorCode===-3 || load.isMainFrame===false)return
-      deny('HTTPS Web 地图页面加载失败，请检查 Server 连接。')
+      failGuest('HTTPS Web 地图页面加载失败，请检查 Server 连接；按 F12 查看地图 Console 和 Network。')
     }
-    const crashed=()=>deny('HTTPS Web 地图页面已退出。')
+    const crashed=()=>failGuest('HTTPS Web 地图页面已退出，请重试；按 F12 查看地图诊断。')
     const navigating=(event:Event)=>{
       const nav=event as Event & {isMainFrame?:boolean}
       if(nav.isMainFrame===false)return
@@ -300,7 +310,7 @@ export function XDriveMediaGalleryPlacesMap({
     const poll=window.setInterval(()=>{
       if(document.visibilityState==='hidden')return
       if(!mapMounted && Date.now()-navigationStartedAt>20_000) {
-        deny('Web 地图没有进入就绪状态。请确认 Server Web snapshot 已更新、Desktop 专用 preload 已加载，然后重试。')
+        failGuest('Web 地图未在 20 秒内完成 SDK 初始化，已停止显示空白画布。请重试；按 F12 查看地图 Console 和 Network。')
       } else probe()
     },900)
     probe()
@@ -561,7 +571,8 @@ export function XDriveMediaGalleryPlacesMap({
   if (desktopOnly && desktopEmbeddedPlacesURL && onPrepareDesktopPlaces) {
     const ready=embedPrepared?.key===embedIdentity && embedPrepared.state==='ready'
     const denied=embedPrepared?.key===embedIdentity && embedPrepared.state==='denied'
-    const guestReady=ready && embedGuestReady?.key===embedIdentity
+    const failed=ready && Boolean(desktopEmbedError)
+    const guestReady=ready && !failed && embedGuestReady?.key===embedIdentity
     return (
       <Paper variant="outlined" data-xdrive-gallery-places-map
         data-xdrive-desktop-places-shared-web sx={{overflow:'hidden',borderRadius:2}}>
@@ -592,13 +603,20 @@ export function XDriveMediaGalleryPlacesMap({
                 maxHeight:1300,border:0,
                 visibility:guestReady?'visible':'hidden'}}/>
             {!guestReady ? (
-              <Box role="status" data-xdrive-desktop-places-awaiting-guest
+              <Box role={failed?'alert':'status'} data-xdrive-desktop-places-awaiting-guest
                 sx={{position:'absolute',inset:0,display:'flex',
                   alignItems:'center',justifyContent:'center',
                   bgcolor:'background.default',p:3}}>
-                <Typography variant="body2" color="text.secondary">
-                  正在确认 HTTPS Web 地图已完成身份验证并挂载地图…
-                </Typography>
+                <Stack spacing={1.5} alignItems="center">
+                  <Typography variant="body2" color={failed?'error.main':'text.secondary'}>
+                    {failed ? desktopEmbedError :
+                      '正在确认 HTTPS Web 地图已完成身份验证并挂载地图…'}
+                  </Typography>
+                  {failed ? <Button variant="outlined" size="small"
+                    onClick={() => setEmbedRetry(n=>n+1)}>
+                    重试 Web 地图
+                  </Button> : null}
+                </Stack>
               </Box>
             ) : null}
           </Box>
