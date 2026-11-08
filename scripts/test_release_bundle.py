@@ -288,14 +288,14 @@ class BundleCacheTests(unittest.TestCase):
             encoding="utf-8",
         )
         (home / "config" / ".env").write_text(
-            f"XD_RELEASE_COMMIT={commit}\\n"
-            f"XD_RELEASE_BUNDLE_HOST_DIR={cache}\\n", encoding="utf-8",
+            f"XD_RELEASE_COMMIT={commit}\n"
+            f"XD_RELEASE_BUNDLE_HOST_DIR={cache}\n", encoding="utf-8",
         )
         # The runner uses a tiny inert worker, rather than contacting GitHub.
         # It records only invocation, so this test cannot publish packages.
         (home / "bin" / "release_bundle.py").write_text(
-            "import os\\nfrom pathlib import Path\\n"
-            "Path(os.environ['XD_RELEASE_TEST_MARKER']).write_text('called')\\n",
+            "import os\nfrom pathlib import Path\n"
+            "Path(os.environ['XD_RELEASE_TEST_MARKER']).write_text('called')\n",
             encoding="utf-8",
         )
         launched = self.root / "worker-invoked"
