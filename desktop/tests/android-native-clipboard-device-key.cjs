@@ -17,5 +17,8 @@ test('Android targeted Clipboard receiver uses independent Keystore-encrypted ke
   assert.doesNotMatch(crypto, /KeyAgreement\.getInstance\("X25519"\)/)
   assert.match(crypto, /Mac\.getInstance\("HmacSHA256"\)/)
   assert.match(crypto, /item\.kind|message\.kind/)
-  assert.doesNotMatch(store, /SourceRun|UploadSession|accessToken|deviceToken/)
+  // Comments intentionally document forbidden SourceRun privileges. Assert
+  // that executable storage code never consumes an external Source/device token.
+  const executable = store.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')
+  assert.doesNotMatch(executable, /SourceRun|UploadSession|accessToken|deviceToken/)
 })
