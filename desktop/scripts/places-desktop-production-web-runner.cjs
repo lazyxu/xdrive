@@ -13,6 +13,15 @@ const webdist=path.join(root,'web','dist')
 const agentBinary=path.resolve(process.env.XD_DESKTOP_PLACES_AGENT_BINARY||'')
 const ip='10.233.15.19'
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))
+// Clear the deadline when an Electron/Agent process exits or reports failure.
+// An unresolved Promise.race timeout otherwise pins Node for 360 seconds.
+async function raceWithDeadline(candidates,ms,timeoutValue){
+  let timer
+  try{
+    return await Promise.race([...candidates,
+      new Promise(resolve=>{timer=setTimeout(()=>resolve(timeoutValue),ms)})])
+  }finally{clearTimeout(timer)}
+}
 function openssl(dir,args){
   const result=spawnSync('openssl',args,{cwd:dir,encoding:'utf8'})
   assert.equal(result.status,0,'synthetic certificate fixture failed')
@@ -97,7 +106,7 @@ function launch(binary,args,env){
 async function stop(processInfo){
   if(!processInfo||processInfo.child.exitCode!==null)return
   processInfo.child.kill('SIGTERM')
-  if(await Promise.race([processInfo.exited,delay(5000).then(()=>null)]))return
+  if(await raceWithDeadline([processInfo.exited],5000,null))return
   processInfo.child.kill('SIGKILL')
   await processInfo.exited
 }
@@ -106,11 +115,10 @@ async function bootElectron(boot,env,bootstrap){
   delete electronEnv.ELECTRON_RUN_AS_NODE
   const proc=launch(electronBinary,['--no-sandbox','--disable-gpu',bootstrap],electronEnv)
   try{
-    const result=await Promise.race([
+    const result=await raceWithDeadline([
       proc.exited,
       proc.failed.then(()=>({code:'reported_failure'})),
-      delay(360000).then(()=>({code:'timeout'}))
-    ])
+    ],360000,{code:'timeout'})
     assert.equal(result.code,0,'production Desktop map boot '+boot+
       ' failed: '+proc.getError().slice(-1800))
     assert.equal(proc.markers.length,1,'real production Web map result absent')
@@ -264,7 +272,7 @@ async function main(){
     await stop(agent)
     if(server){
       fs.writeFileSync(path.join(dir,'stop'),'stop')
-      const exit=await Promise.race([server.exited,delay(12000).then(()=>null)])
+      const exit=await raceWithDeadline([server.exited],12000,null)
       if(!exit)await stop(server)
     }
     fs.rmSync(bootstrap,{force:true})
