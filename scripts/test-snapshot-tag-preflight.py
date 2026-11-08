@@ -50,7 +50,9 @@ assert 'permissions:{contents:"write",workflows:"write"}' in issuer
 assert 'select([.repositories[]?.full_name] == [$repo])' in issuer
 token = "GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}"
 assert release.count(token) == 4, "preflight, ref probe, publish and post-publish dispatch must share the scoped token"
-assert release.count("GH_TOKEN: ${{ github.token }}") == 2, "attestation check and stable publish keep original token"
+assert release.count("GH_TOKEN: ${{ github.token }}") == 4, (
+    "attestation, stable publish and both exact-run client inventory steps must use read-only caller token"
+)
 assert release.index(token) < release.index(marker)
 assert token in release.split(marker, 1)[1].split("      - name: Log in to GHCR for channel promotion", 1)[0]
 assert token in release.split("      - name: Publish rolling snapshot prerelease", 1)[1].split("      - name: Assert distribution assets", 1)[0]
