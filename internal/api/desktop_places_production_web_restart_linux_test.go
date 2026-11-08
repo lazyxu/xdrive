@@ -216,6 +216,42 @@ func TestDesktopPlacesProductionWebRestartFixture(t *testing.T) {
 		Auth:       auth.New("production-map-test-only-no-real-user", 15*time.Minute),
 		RefreshTTL: time.Hour,
 	}
+	// Pin the current 9-photo contract at each real Server query layer,
+	// before Electron and the browser JWT path run. A valid 8x8 response
+	// contains one bin for these synthetic colocated photos but its
+	// TotalCount must be NINE, not a count of grid cells.
+	ctxCheck, cancelCheck := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancelCheck()
+	boundsCheck := baiduPhotoMapBounds{
+		West: 100, South: 20, East: 125, North: 40,
+		CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
+	}
+	rawCheck, rawErr := queryBaiduPhotoMapCells(ctxCheck, db, owner.ID, boundsCheck)
+	if rawErr != nil {
+		t.Fatalf("production map fixture raw owner positions unavailable: %v", rawErr)
+	}
+	galleryOptions := mediaQueryOptions{SortBy: "captured", SortDir: "desc"}
+	galleryCheck, galleryErr := server.mediaItemsBaseQuery(
+		ctxCheck, owner.ID, galleryOptions, "")
+	if galleryErr != nil {
+		t.Fatalf("production map fixture Gallery membership unavailable: %v", galleryErr)
+	}
+	var memberCount int64
+	if err := galleryCheck.Session(&gorm.Session{}).
+		Distinct("xd_media_metadata.node_id").Count(&memberCount).Error; err != nil {
+		t.Fatalf("production map fixture Gallery member count unavailable: %v", err)
+	}
+	scopedCheck, scopedErr := queryBaiduPhotoMapCellsScoped(
+		ctxCheck, db, owner.ID, boundsCheck,
+		galleryCheck.Session(&gorm.Session{}).Select("n.id"), galleryOptions)
+	if scopedErr != nil {
+		t.Fatalf("production map fixture scoped Owner cells unavailable: %v", scopedErr)
+	}
+	if rawCheck.TotalCount != 9 || memberCount != 9 ||
+		scopedCheck.TotalCount != 9 {
+		t.Fatalf("production map fixture lost synthetic members: raw=%d Gallery=%d scoped=%d expected=9",
+			rawCheck.TotalCount, memberCount, scopedCheck.TotalCount)
+	}
 	server.AllowedOrigin = "https://" + listener.Addr().String()
 	// The real Owner /cells and signed Web map routes require a managed
 	// release. Create only synthetic test keys here; no provider AK, live
