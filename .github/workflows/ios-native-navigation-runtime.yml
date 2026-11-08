@@ -4,6 +4,11 @@ on:
     paths:
       - '.github/workflows/ios-native-navigation-runtime.yml'
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
+      - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
+      - 'ios/UITests/Fixtures/**'
+      - 'ios/XDriveIOS/NativeLocalPhotoMap.swift'
+      - 'ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'
+      - 'ios/XDriveIOS/NativeExactTripMap.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
       # Changes in a child Files/Gallery route must also compile and exercise
@@ -92,7 +97,16 @@ jobs:
           subprocess.run(["xcrun","simctl","bootstatus",os.environ["SMOKE_SIM"],"-b"],
                          timeout=240,check=True)
           PY
-      - name: Run real XCUITest Gallery-Files transitions
+      - name: Seed two independent real GPS PhotoKit samples
+        # The candidate's MapKit suite operates on actual Simulator Photos,
+        # never private user data or an invented map endpoint.
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl io "$SMOKE_SIM" addmedia \
+            "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map.jpg" \
+            "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map-second.jpg"
+      - name: Run real XCUITest Gallery-Files and native MapKit round trips
         shell: bash
         run: |
           set -euo pipefail
