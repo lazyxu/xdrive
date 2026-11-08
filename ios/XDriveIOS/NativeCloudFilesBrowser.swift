@@ -78,6 +78,20 @@ struct XDriveIOSNativeFilesReader {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    /// Clipboard carries an encrypted Node reference, never a file grant.
+    /// Resolve the current Owner's exact file again before presenting the
+    /// existing Files Viewer; a deleted, foreign, or stale Node fails closed.
+    func referencedFile(nodeID: UInt64) async throws -> XDriveIOSNativeFilesNode {
+        guard nodeID > 0 else { throw XDriveIOSNativeFilesReadError.invalidPage }
+        let url = try endpoint("/api/v1/nodes/\(nodeID)", query: [])
+        let node: XDriveIOSNativeFilesNode = try await get(url)
+        guard node.id == nodeID, node.type == "file", node.parent_id != nil,
+              node.revision > 0, node.size >= 0 else {
+            throw XDriveIOSNativeFilesReadError.invalidPage
+        }
+        return node
+    }
+
     /// A single exact-name lookup for each path component. Server filtering
     /// avoids scanning 100k-directory pages or using unverified local names.
     func namedDirectory(parentID: UInt64, name: String) async throws

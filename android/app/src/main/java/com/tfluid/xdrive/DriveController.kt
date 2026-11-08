@@ -4766,6 +4766,94 @@ class DriveController(
 
     // Clipboard uses the existing verified native Owner root and coordinated
     // bearer refresh. The API and Crypto never receive Device/Source tokens.
+    /**
+     * An encrypted Clipboard Node ID is only a hint. Re-resolve the exact
+     * current Owner/Node/revision/parent against existing Files APIs, then
+     * switch to the verified Files window and allow its real native Viewer.
+     * Never bypass Files permissions or trust stale Clipboard metadata.
+     */
+    fun revealClipboardFileReference(nodeID: Long, onLocated: (DriveNode) -> Unit) {
+        val initial = state.value
+        val currentService = api ?: return
+        if (nodeID <= 0 || initial.nativeUiSessionId <= 0 ||
+            initial.screen !in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH) ||
+            session == null || initial.hasActiveNativeTransfer()) return
+        val initialEpoch = initial.nativeUiSessionId
+        val arrangement = FileBrowseArrangement() // exact, ordinary name order
+        request(discardableRead = true) { ticket ->
+            val location = authenticated(currentService, ticket) {
+                currentService.nodeLocation(it, nodeID)
+            }
+            checkCurrent(ticket)
+            if (location.nodeId != nodeID || location.revision <= 0 ||
+                location.parentId <= 0 || location.parentDirectories.isEmpty() ||
+                location.parentDirectories.last().id != location.parentId) {
+                throw ApiException(0, "Clipboard file location invalid", ApiFailureReason.INVALID_RESPONSE)
+            }
+            val root = authenticated(currentService, ticket) {
+                currentService.root(it)
+            }
+            checkCurrent(ticket)
+            if (!root.isDirectory || root.parentId != null ||
+                root.id != location.parentDirectories.first().id) {
+                throw ApiException(0, "Clipboard file root changed", ApiFailureReason.INVALID_RESPONSE)
+            }
+            val position = authenticated(currentService, ticket) {
+                currentService.childPositionArranged(
+                    it, location.parentId, nodeID, arrangement)
+            }
+            checkCurrent(ticket)
+            if (position.nodeId != nodeID || position.revision != location.revision ||
+                position.index < 0) {
+                throw ApiException(0, "Clipboard file position changed", ApiFailureReason.INVALID_RESPONSE)
+            }
+            val start = (position.index / 100) * 100
+            val page = authenticated(currentService, ticket) {
+                currentService.childrenArranged(
+                    it, location.parentId, start, arrangement)
+            }
+            checkCurrent(ticket)
+            val index = position.index - start
+            if (page.offset != start || index !in page.items.indices ||
+                page.totalCount <= position.index.toLong()) {
+                throw ApiException(0, "Clipboard file page changed", ApiFailureReason.INVALID_RESPONSE)
+            }
+            val exact = page.items[index]
+            if (exact.id != nodeID || exact.type != "file" || exact.revision <= 0 ||
+                exact.revision != position.revision || exact.parentId != location.parentId) {
+                throw ApiException(0, "Clipboard referenced file changed", ApiFailureReason.INVALID_RESPONSE)
+            }
+            val path = location.parentDirectories.mapIndexed { offset, crumb ->
+                if (offset == 0) root else DriveNode(
+                    id = crumb.id, parentId = location.parentDirectories[offset - 1].id,
+                    name = crumb.name, type = "dir",
+                )
+            }
+            val latest = state.value
+            if (latest.nativeUiSessionId != initialEpoch ||
+                latest.server != initial.server ||
+                latest.username != initial.username ||
+                currentService !== api) throw CancellationException()
+            retryPath = path
+            retryOffset = start
+            retryAppend = false
+            retryPrepend = false
+            mutableState.value = latest.withoutGallerySelection().copy(
+                screen = Screen.FILES, filesSection = FilesSection.BROWSE,
+                path = path, items = page.items, offset = start,
+                browseWindowStart = start, totalCount = page.totalCount,
+                filesArrangement = arrangement, filesGroups = emptyList(),
+                loaded = true, loading = false, discardableReadInFlight = false,
+                focusedBrowseNodeId = exact.id, focusedBrowseIndex = index,
+                focusedBrowseEpoch = latest.focusedBrowseEpoch + 1,
+                selected = null, collectionItems = emptyList(),
+                collectionLoaded = false, browseSelectionMode = false,
+                browseSelectedIds = emptySet(), error = null,
+            )
+            onLocated(exact)
+        }
+    }
+
     suspend fun clipboardVault(): OwnerClipboardVault =
         withNotesOwner { service, token -> service.clipboardVault(token) }
     suspend fun clipboardCheck(nonce: String,ciphertext: String,scope: String): OwnerClipboardVault =
