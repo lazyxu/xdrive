@@ -206,11 +206,17 @@ final class XDriveIOSNativeFilesSavedSearchModel: ObservableObject {
     @Published private(set) var verified = false
     @Published private(set) var status: String?
 
-    private let expected: XDriveNativeOwnerRoot
+    private var expected: XDriveNativeOwnerRoot
     private var epoch = UUID()
     private var job: Task<Void, Never>?
 
     init(owner: XDriveNativeOwnerRoot) { expected = owner }
+
+    func updateExpectedOwner(_ owner: XDriveNativeOwnerRoot) {
+        guard !XDriveIOSNativePhotoOwnerScope.matches(expected, owner) else { return }
+        invalidate()
+        expected = owner
+    }
 
     func matches(_ current: XDriveNativeOwnerRoot?) -> Bool {
         guard let current else { return false }
@@ -259,7 +265,9 @@ final class XDriveIOSNativeFilesSavedSearchModel: ObservableObject {
                 self.status = nil
             } catch is CancellationError {
             } catch {
-                guard let self, self.epoch == ticket else { return }
+                guard let self, self.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 self.verified = false
                 self.items = []
                 self.status = "无法验证当前账户的智能文件夹，请检查网络后重试。"
@@ -298,7 +306,9 @@ final class XDriveIOSNativeFilesSavedSearchModel: ObservableObject {
                 self.status = "已按服务器回执更新智能文件夹。"
             } catch is CancellationError {
             } catch {
-                guard let self, self.epoch == ticket else { return }
+                guard let self, self.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 // A mutation may have committed but its ACK/readback was lost:
                 // keep last verified UI as provisional; never auto replay.
                 self.verified = false
@@ -316,6 +326,8 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
     let onOpen: (XDriveIOSNativeFilesSavedSearch) -> Void
     @StateObject private var model: XDriveIOSNativeFilesSavedSearchModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
+    @State private var isVisible = false
     @State private var draftName = ""
     @State private var draftQuery: String
     @State private var draftFilters: XDriveIOSNativeFilesSavedSearchFilters
@@ -344,6 +356,11 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
         ) && model.items.count < XDriveIOSNativeFilesSavedSearchPolicy.maximumItems
     }
 
+    private var canInteract: Bool {
+        isVisible && phase == .active && model.matches(login.owner) &&
+            !model.loading && !model.busy
+    }
+
     var body: some View {
         Form {
             if !XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) {
@@ -353,7 +370,7 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
                     if model.loading && !model.verified {
                         ProgressView("正在验证智能文件夹…")
                     }
-                    if model.verified && model.items.isEmpty {
+                    if model.matches(login.owner) && model.items.isEmpty {
                         Text("尚无智能文件夹。可在下面按关键词或筛选条件新建。")
                             .foregroundStyle(.secondary)
                     }
@@ -362,7 +379,7 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
                             let index = model.items.firstIndex(where: { $0.id == item.id }) ?? 0
                             HStack {
                                 Button {
-                                    guard model.matches(login.owner) else { return }
+                                    guard canInteract, model.items.contains(item) else { return }
                                     dismiss()
                                     onOpen(item)
                                 } label: {
@@ -373,6 +390,7 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                                .disabled(!canInteract)
                                 Spacer(minLength: 4)
                                 Menu {
                                     Button("重命名") {
@@ -403,7 +421,7 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
                                     Image(systemName: "ellipsis.circle")
                                         .frame(minWidth: 44, minHeight: 44)
                                 }
-                                .disabled(model.busy || model.loading)
+                                .disabled(!canInteract)
                             }
                         }
                     }
@@ -417,29 +435,30 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
                          : "输入至少两个字符的搜索词，或先从 Files 搜索结果打开此页。")
                         .font(.footnote).foregroundStyle(.secondary)
                     Button("保存为智能文件夹") {
-                        guard validCreate, model.matches(login.owner) else { return }
+                        guard validCreate, canInteract else { return }
                         let name = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
                         let query = draftQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                         model.perform(.create(.init(name: name, query: query,
                                                     filters: draftFilters)), login: login)
                         draftName = ""
                     }
-                    .disabled(!validCreate || !model.matches(login.owner) || model.busy)
+                    .disabled(!validCreate || !canInteract)
                 }
                 if let item = editing {
                     Section("重命名智能文件夹") {
                         TextField("名称", text: $editedName)
                         Button("保存名称") {
                             let name = editedName.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard XDriveIOSNativeFilesSavedSearchPolicy.validInput(
-                                name: name, query: item.query, filters: item.filters
-                            ) else { return }
+                            guard canInteract, model.items.contains(item),
+                                  XDriveIOSNativeFilesSavedSearchPolicy.validInput(
+                                      name: name, query: item.query, filters: item.filters
+                                  ) else { return }
                             model.perform(.update(item.id, .init(
                                 name: name, query: item.query, filters: item.filters
                             )), login: login)
                             editing = nil
                         }
-                        .disabled(model.busy || !model.matches(login.owner))
+                        .disabled(!canInteract)
                         Button("取消", role: .cancel) { editing = nil }
                     }
                 }
@@ -452,20 +471,54 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("刷新") { model.load(login: login) }
-                    .disabled(model.loading || model.busy)
+                Button("刷新") {
+                    guard isVisible, phase == .active,
+                          !model.loading, !model.busy else { return }
+                    clearPresentationIntents()
+                    model.load(login: login)
+                }
+                .disabled(!isVisible || phase != .active ||
+                          !XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) ||
+                          model.loading || model.busy)
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("完成") { dismiss() }
+                    .disabled(model.busy)
             }
         }
-        .task { model.load(login: login) }
+        // A submitted write may be committed even if a modal closes mid-flight.
+        // Do not discard that uncertain acknowledgement via a swipe dismissal.
+        .interactiveDismissDisabled(model.busy)
+        .onAppear {
+            isVisible = true
+            loadIfNeeded()
+        }
+        .onDisappear {
+            isVisible = false
+            clearPresentationIntents()
+            model.invalidate()
+        }
+        .onChange(of: phase) { state in
+            if state != .active {
+                clearPresentationIntents()
+                model.invalidate()
+            } else {
+                loadIfNeeded()
+            }
+        }
+        .onChange(of: expectedOwner) { owner in
+            clearPresentationIntents()
+            model.updateExpectedOwner(owner)
+            loadIfNeeded()
+        }
         .onChange(of: login.owner) { owner in
+            clearPresentationIntents()
             if !XDriveIOSNativePhotoOwnerScope.matches(owner, expectedOwner) {
                 model.invalidate()
+            } else {
+                loadIfNeeded()
             }
         }
-        .onDisappear { model.invalidate() }
         .confirmationDialog(
             "删除这个智能文件夹？", isPresented: Binding(
                 get: { deleteTarget != nil },
@@ -474,7 +527,8 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
             titleVisibility: .visible
         ) {
             Button("确认删除", role: .destructive) {
-                if let item = deleteTarget {
+                if let item = deleteTarget, canInteract,
+                   model.items.contains(item) {
                     model.perform(.delete(item.id), login: login)
                 }
                 deleteTarget = nil
@@ -485,8 +539,21 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
         }
     }
 
+    private func clearPresentationIntents() {
+        editing = nil
+        editedName = ""
+        deleteTarget = nil
+    }
+
+    private func loadIfNeeded() {
+        guard isVisible, phase == .active, !model.loading, !model.busy,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+              !model.matches(login.owner) else { return }
+        model.load(login: login)
+    }
+
     private func reorder(_ index: Int, by direction: Int) {
-        guard model.matches(login.owner), !model.busy,
+        guard canInteract,
               index >= 0, index < model.items.count,
               index + direction >= 0,
               index + direction < model.items.count else { return }
