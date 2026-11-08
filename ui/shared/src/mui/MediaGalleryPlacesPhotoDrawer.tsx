@@ -446,12 +446,14 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
           <Stack direction="row" alignItems="center" justifyContent="space-between"
             spacing={1} sx={{px:1.25,pb:1,pt:0.25,flexShrink:0,flexWrap:'wrap',rowGap:0.25}}>
             <Typography variant="caption" color="text.secondary">
-              {loadedDepth < total
-                ? `已显示 ${loadedDepth.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 张`
-                : '此地点全部照片'}
+              {sparse
+                ? `共 ${total.toLocaleString('zh-CN')} 张 · 当前缓存 ${items.length.toLocaleString('zh-CN')} 张`
+                : loadedDepth < total
+                  ? `已显示 ${loadedDepth.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 张`
+                  : '此地点全部照片'}
             </Typography>
             <Stack direction="row" alignItems="center" spacing={0.25}>
-              {loadedDepth < total ? (
+              {!sparse && loadedDepth < total ? (
                 <Button data-xdrive-places-photo-drawer-load-more
                   variant="outlined" onClick={onLoadMore} disabled={loadingMore}
                   aria-label="继续加载此地点的照片"
