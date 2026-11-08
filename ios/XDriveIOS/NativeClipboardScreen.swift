@@ -11,6 +11,8 @@ struct XDriveIOSNativeClipboardScreen: View {
     @State private var key: SymmetricKey?
     @State private var aadScope = ""
     @State private var ownerAtUnlock: XDriveNativeOwnerRoot?
+    @State private var recipientPrivateKey: Curve25519.KeyAgreement.PrivateKey?
+    @State private var recipientProof: XDriveIOSBackgroundDeviceProof?
     @State private var draft = ""
     @State private var items: [Decrypted] = []
     @State private var loading = false
@@ -75,6 +77,16 @@ struct XDriveIOSNativeClipboardScreen: View {
                         }.disabled(busy)
                         Spacer()
                     }
+                    if recipientProof == nil {
+                        Button("启用本机设备定向加密接收") {
+                            Task { await enableDeviceReceipt() }
+                        }.disabled(busy)
+                        Text("需先在此账号注册本机设备。单独授权 Clipboard，不启用相册备份。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Label("设备定向接收已启用", systemImage: "checkmark.shield")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                     if retryNeedsAbandon && pending != nil {
                         Button("放弃待确认回执") {
                             pending = nil
@@ -132,18 +144,51 @@ struct XDriveIOSNativeClipboardScreen: View {
         } message: {
             Text("只删除当前 Owner 的 Server 密文历史，不能撤销。")
         }
-        // Never poll while the app is inactive or backgrounded. After
-        // returning to foreground, reconcile current Owner state immediately.
+        // The polling task and SSE stream are both strictly foreground.
+        // Returning to an active scene triggers an immediate current-Owner GET.
         .task(id: unlocked && scenePhase == .active) {
             guard unlocked, scenePhase == .active else { return }
             await refresh()
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(nanoseconds: 15_000_000_000)
-                } catch { break }
+            while !Task.isCancelled && scenePhase == .active {
+                do { try await Task.sleep(nanoseconds: 15_000_000_000) }
+                catch { break }
                 guard !Task.isCancelled, scenePhase == .active else { break }
                 await refresh()
             }
+        }
+        // Include device enrollment in the subscription identity. Before
+        // enrollment this stream has broadcast-only scope; after opt-in it
+        // must close and reopen with a freshly verified device proof.
+        .task(id: "\(unlocked && scenePhase == .active):\(recipientProof?.deviceID ?? "")") {
+            guard unlocked, scenePhase == .active else { return }
+            let generation = sessionGeneration
+            var after: UInt64 = 0 // Never persist or reuse across Owners.
+            while !Task.isCancelled && scenePhase == .active &&
+                  sessionGeneration == generation && key != nil {
+                do {
+                    let client = try await authorizedClient(for: generation)
+                    after = try await client.watchChanges(after: after) {
+                        guard !Task.isCancelled, scenePhase == .active,
+                              sessionGeneration == generation,
+                              ownerAtUnlock == client.owner, key != nil else { return }
+                        await refresh() // Stream contains only invalidations.
+                    }
+                } catch {
+                    if Task.isCancelled || scenePhase != .active ||
+                        sessionGeneration != generation { break }
+                    // Older Server/no SSE: 15-second foreground GET remains.
+                }
+                guard !Task.isCancelled, scenePhase == .active,
+                      sessionGeneration == generation, key != nil else { break }
+                await refresh() // Full GET after disconnect/cursor eviction.
+                do { try await Task.sleep(nanoseconds: 3_000_000_000) }
+                catch { break }
+            }
+        }
+        .onChange(of: recipientProof?.deviceID) { _ in
+            // The 15-second GET fallback never waits for the next tick after
+            // a new Owner-scoped device capability is enrolled or revoked.
+            Task { await refresh() }
         }
         .onChange(of: login.owner) { _ in lock() }
         .onDisappear { lock() }
@@ -159,7 +204,8 @@ struct XDriveIOSNativeClipboardScreen: View {
             lock()
             throw XDriveIOSClipboardCrypto.Failure.invalidOwner
         }
-        return try XDriveIOSNativeClipboardClient(owner: proof.owner, accessToken: proof.accessToken)
+        return try XDriveIOSNativeClipboardClient(owner: proof.owner,
+            accessToken: proof.accessToken, deviceProof: recipientProof)
     }
 
     @MainActor
@@ -205,6 +251,35 @@ struct XDriveIOSNativeClipboardScreen: View {
     }
 
     @MainActor
+    private func enableDeviceReceipt() async {
+        guard !busy, key != nil else { return }
+        let generation = sessionGeneration
+        busy = true
+        defer { if sessionGeneration == generation { busy = false } }
+        do {
+            let current = try await authorizedClient(for: generation)
+            guard let proof = try await XDriveIOSDeviceEnrollment.shared.clipboardDeviceProof(
+                owner: current.owner, accessToken: current.token) else {
+                message = "请先在当前账号注册并核验此 iPhone 的设备身份。"
+                return
+            }
+            let privateKey = try XDriveIOSClipboardDeviceCrypto.privateKey(owner: current.owner)
+            let deviceClient = try XDriveIOSNativeClipboardClient(
+                owner: current.owner, accessToken: current.token, deviceProof: proof)
+            try await deviceClient.enrollClipboardDevice(
+                publicKey: privateKey.publicKey.rawRepresentation.base64EncodedString())
+            guard sessionGeneration == generation, ownerAtUnlock == current.owner,
+                  key != nil else { return }
+            recipientPrivateKey = privateKey
+            recipientProof = proof
+            message = "此 iPhone 已获 Clipboard 设备定向接收授权。"
+            await refresh()
+        } catch {
+            if sessionGeneration == generation { message = error.localizedDescription }
+        }
+    }
+
+    @MainActor
     private func refresh() async {
         guard let localKey = key, !currentScope.isEmpty, !loading else { return }
         let generation = sessionGeneration
@@ -214,8 +289,20 @@ struct XDriveIOSNativeClipboardScreen: View {
         do {
             let client = try await authorizedClient(for: generation)
             let result = try await client.list()
+            let deviceKey = recipientPrivateKey
+            let deviceID = recipientProof?.deviceID
             let decoded = result.items.map { item in
-                Decrypted(source: item, text: try? XDriveIOSClipboardCrypto.decrypt(
+                if let target = item.target_device_id, !target.isEmpty {
+                    let clear: String?
+                    if let deviceKey, let deviceID, target == deviceID {
+                        clear = try? XDriveIOSClipboardDeviceCrypto.decrypt(
+                            item, ownerScope: scope, deviceID: deviceID, privateKey: deviceKey)
+                    } else {
+                        clear = nil
+                    }
+                    return Decrypted(source: item, text: clear)
+                }
+                return Decrypted(source: item, text: try? XDriveIOSClipboardCrypto.decrypt(
                     item.encrypted, key: localKey, scope: scope))
             }
             try Task.checkCancellation()
@@ -319,6 +406,8 @@ struct XDriveIOSNativeClipboardScreen: View {
         pending = nil
         retryNeedsAbandon = false
         ownerAtUnlock = nil
+        recipientPrivateKey = nil
+        recipientProof = nil
         loading = false
         busy = false
         confirmClear = false

@@ -47,3 +47,28 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: NO
+    dependencies:
+      - target: xDriveClipboardShare
+        embed: true
+  xDriveClipboardShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ClipboardShareExtension
+    info:
+      path: ClipboardShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: xDrive Clipboard
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lazyxu.xdrive.ios.ClipboardShare
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        GENERATE_INFOPLIST_FILE: NO

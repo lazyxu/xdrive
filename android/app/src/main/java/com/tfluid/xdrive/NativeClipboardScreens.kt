@@ -49,6 +49,9 @@ internal fun NativeClipboardScreen(
     var password by remember(epoch) { mutableStateOf("") }
     var draft by remember(epoch) { mutableStateOf("") }
     var key by remember(epoch) { mutableStateOf<SecretKeySpec?>(null) }
+    // The Keychain/Keystore never enters Compose. This transient recipient
+    // is wiped on Lock, Owner switch or route disposal.
+    var recipient by remember(epoch) { mutableStateOf<NativeClipboardRecipient?>(null) }
     var aadScope by remember(epoch) { mutableStateOf("") }
     var list by remember(epoch) { mutableStateOf(emptyList<Pair<OwnerClipboardItem, String?>>()) }
     var pending by remember(epoch) { mutableStateOf<Triple<String, Long, XDriveClipboardCrypto.Wire>?>(null) }
@@ -65,6 +68,8 @@ internal fun NativeClipboardScreen(
     fun stillSession(snapshot: Long) = stillOwner() && actionFence.accepts(snapshot)
     fun lock() {
         actionFence.invalidate()
+        recipient?.erase()
+        recipient = null
         key = null
         aadScope = ""
         password = ""
@@ -90,12 +95,23 @@ internal fun NativeClipboardScreen(
         if (!stillSession(snapshot)) return
         refreshing = true
         try {
-            val page = controller.clipboardList()
+            val currentRecipient = recipient
+            val page = controller.clipboardList(recipient = currentRecipient)
             val decoded = withContext(Dispatchers.Default) {
                 page.items.map { item ->
-                    item to runCatching {
-                        XDriveClipboardCrypto.decrypt(item.wire, localKey, scopeAtStart)
+                    val plain = runCatching {
+                        if (item.targetDeviceID == null) {
+                            XDriveClipboardCrypto.decrypt(item.wire, localKey, scopeAtStart)
+                        } else {
+                            require(currentRecipient != null &&
+                                item.targetDeviceID == currentRecipient.enrolled.deviceId)
+                            XDriveClipboardTargetCrypto.decrypt(scopeAtStart,
+                                currentRecipient.enrolled.deviceId,
+                                currentRecipient.privatePKCS8,
+                                requireNotNull(item.targetedWire()))
+                        }
                     }.getOrNull()
+                    item to plain
                 }
             }
             if (stillSession(snapshot) && key === localKey) list = decoded
@@ -106,16 +122,47 @@ internal fun NativeClipboardScreen(
             if (stillSession(snapshot)) refreshing = false
         }
     }
-    // A mounted Compose screen remains alive when Android backgrounds the
-    // app; STOPPED cancels its polling job, STARTED resumes with a fresh GET.
-    LaunchedEffect(epoch, key, lifecycleOwner) {
+    // Inactive/background activities must not keep either a polling job or
+    // the Owner SSE socket alive. Resume always reconciles full GET first.
+    LaunchedEffect(epoch, key, recipient?.enrolled?.deviceId, lifecycleOwner) {
         if (key == null) return@LaunchedEffect
+        val snapshot = actionFence.capture()
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             if (stillOwner() && key != null) refresh()
-            while (stillOwner() && key != null) {
+            while (stillSession(snapshot) && key != null) {
                 delay(15_000)
-                if (!stillOwner() || key == null) break
+                if (!stillSession(snapshot) || key == null) break
                 refresh()
+            }
+        }
+    }
+    LaunchedEffect(epoch, key, recipient?.enrolled?.deviceId, lifecycleOwner) {
+        if (key == null) return@LaunchedEffect
+        val snapshot = actionFence.capture()
+        var after = 0L // Only in-memory for the current unlock/Owner epoch.
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (stillOwner() && key != null) refresh()
+            while (stillSession(snapshot) && key != null) {
+                try {
+                    val currentRecipient = recipient
+                    val invalidation: suspend () -> Unit = {
+                        withContext(Dispatchers.Main.immediate) {
+                            if (stillSession(snapshot) && key != null) refresh()
+                        }
+                    }
+                    after = if (currentRecipient == null) {
+                        controller.clipboardWatch(after) { invalidation() }
+                    } else {
+                        controller.clipboardWatchForRecipient(after, currentRecipient) { invalidation() }
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Unsupported/failed SSE never disables the 15s fallback.
+                }
+                if (!stillSession(snapshot) || key == null) break
+                refresh() // Disconnect/cursor eviction: full Owner GET.
+                delay(3_000)
             }
         }
     }
@@ -192,6 +239,36 @@ internal fun NativeClipboardScreen(
                     Text("刷新")
                 }
             }
+            if (recipient == null) {
+                OutlinedButton(onClick = {
+                    if (busy || key == null) return@OutlinedButton
+                    val snapshot = actionFence.capture()
+                    val localKey = key
+                    busy = true
+                    scope.launch {
+                        var received: NativeClipboardRecipient? = null
+                        try {
+                            if (!stillSession(snapshot)) return@launch
+                            received = controller.clipboardEnableRecipient(context)
+                            if (stillSession(snapshot) && key === localKey) {
+                                recipient = received
+                                received = null
+                                message = "此设备已启用单独授权的 Clipboard 定向接收"
+                                refresh()
+                            }
+                        } catch (e: CancellationException) { throw e }
+                        catch (e: Exception) {
+                            if (stillSession(snapshot)) message = e.message ?: "设备接收授权失败"
+                        } finally {
+                            received?.erase()
+                            if (stillSession(snapshot)) busy = false
+                        }
+                    }
+                }, enabled = !busy) { Text("启用设备定向接收（需已注册设备）") }
+            } else {
+                Text("此 Android 设备已启用单独授权的定向解密",
+                    style = MaterialTheme.typography.bodySmall)
+            }
             OutlinedTextField(value=draft,onValueChange={ draft=it; requireAbandon=false },
                 modifier=Modifier.fillMaxWidth().heightIn(min=100.dp),
                 label={Text("文字或链接")},maxLines=7)
@@ -267,16 +344,24 @@ internal fun NativeClipboardScreen(
                 items(list,key={it.first.id}) { (item,plain) ->
                     ElevatedCard(modifier=Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                            Text(if(item.kind=="text/uri-list")"链接" else "文本",
-                                style=MaterialTheme.typography.labelSmall)
+                            Text(when (item.kind) {
+                                "text/uri-list" -> "链接"
+                                "image/x-xdrive-node-ref" -> "云端图片引用"
+                                "application/x-xdrive-node-ref" -> "云端文件引用"
+                                else -> "文本"
+                            }, style=MaterialTheme.typography.labelSmall)
                             if (plain==null) Text("此条消息无法解密。",
                                 color=MaterialTheme.colorScheme.error)
                             else {
-                                Text(plain,maxLines=7)
-                                TextButton(onClick={
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("xDrive",plain))
-                                    message="已复制到本机剪贴板"
-                                }){Text("复制到本机")}
+                                Text(if (item.nodeID > 0L)
+                                    "已接收云端文件 #${item.nodeID} 的加密引用，原件仍由 Files/CAS 管理。"
+                                    else plain, maxLines = 7)
+                                if (item.nodeID == 0L) {
+                                    TextButton(onClick = {
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("xDrive", plain))
+                                        message = "已复制到本机剪贴板"
+                                    }) { Text("复制到本机") }
+                                }
                             }
                             TextButton(onClick={
                                 if (busy || key == null) return@TextButton

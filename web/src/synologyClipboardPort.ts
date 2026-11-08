@@ -48,8 +48,17 @@ export function createXDriveDSMClipboardPort(
     initializeCheck: (value, signal) => checked(
       scope => cgi.clipboardCheck(scope, value, signal), signal),
     list: (before, signal) => checked(() => cgi.clipboardList(before, signal), signal),
-    create: (item, signal) => checked(
-      scope => cgi.clipboardCreate(scope, item, signal), signal),
+    create: (item, signal) => {
+      // DSM's authenticated CGI remains v1 text-only. Reject rather than
+      // down-convert a device-targeted message to Owner broadcast.
+      if ((item.kind !== 'text/plain' && item.kind !== 'text/uri-list') ||
+          item.target_device_id || item.ephemeral_key || item.wrapped_key || item.node_id) {
+        throw new Error('DSM Clipboard 暂不支持定向消息或文件引用')
+      }
+      const legacy = { client_event_id: item.client_event_id, kind: item.kind,
+        nonce: item.nonce, ciphertext: item.ciphertext }
+      return checked(scope => cgi.clipboardCreate(scope, legacy, signal), signal)
+    },
     remove: (id, signal) => checked(
       scope => cgi.clipboardDelete(scope, id, signal), signal),
     clear: signal => checked(scope => cgi.clipboardClear(scope, signal), signal),

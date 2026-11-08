@@ -1,0 +1,23 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = p => fs.readFileSync(path.resolve(__dirname, '../..',p),'utf8')
+const project = read('ios/project.yml')
+const source = read('ios/ClipboardShareExtension/ShareViewController.swift')
+test('iOS real extension target is embedded in unsigned IPA scheme',()=>{
+  assert.match(project,/type: app-extension/)
+  assert.match(project,/target: xDriveClipboardShare[\s\S]*?embed: true/)
+  assert.match(project,/NSExtensionPointIdentifier: com\.apple\.share-services/)
+  assert.match(project,/NSExtensionActivationSupportsText: true/)
+  assert.match(project,/NSExtensionActivationSupportsWebURLWithMaxCount: 1/)
+})
+test('share extension accepts only an explicit local and time-limited paste, never uses Owner secrets',()=>{
+  assert.match(source,/provider\.loadItem\(forTypeIdentifier:/)
+  assert.match(source,/@objc private func copySelectedText/)
+  assert.match(source,/\.localOnly: true/)
+  assert.match(source,/\.expirationDate: Date\(\)\.addingTimeInterval\(120\)/)
+  assert.match(source,/XDriveIOSClipboardSharePolicy\.acceptable/)
+  assert.doesNotMatch(source,/UserDefaults|Keychain|accessToken|Authorization|clipboard\/items|URLSession|Data\(contentsOf|write\(to:/)
+})

@@ -5207,6 +5207,20 @@ export class XDriveApi {
     )
   }
 
+  clipboardDevices(signal?: AbortSignal) {
+    return this.request<{ devices: import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardTargetDevice[] }>(
+      '/api/v1/clipboard/devices', { cache: 'no-store', signal })
+  }
+
+  clipboardRevokeDevice(deviceID: string, signal?: AbortSignal) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deviceID)) {
+      throw new Error('Clipboard 设备标识无效')
+    }
+    return this.request<void>('/api/v1/clipboard/devices/' + encodeURIComponent(deviceID) + '/revoke', {
+      method: 'POST', cache: 'no-store', signal,
+    })
+  }
+
   clipboardItems(before?: number, signal?: AbortSignal) {
     const query = before ? '?before=' + encodeURIComponent(String(before)) : ''
     return this.request<{
@@ -5217,9 +5231,13 @@ export class XDriveApi {
 
   clipboardCreate(item: {
     client_event_id: string
-    kind: import('../../ui/shared/src/clipboard-crypto').XDriveClipboardKind
+    kind: import('../../ui/shared/src/clipboard-target-crypto').XDriveClipboardTargetKind
     nonce: string
     ciphertext: string
+    target_device_id?: string
+    ephemeral_key?: string
+    wrapped_key?: string
+    node_id?: number
   }, signal?: AbortSignal) {
     return this.request<import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardItem>(
       '/api/v1/clipboard/items', {

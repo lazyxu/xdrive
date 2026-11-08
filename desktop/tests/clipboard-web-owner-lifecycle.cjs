@@ -48,7 +48,8 @@ function makeUI(encrypt = async (_key, _scope, _id, value) => ({
   // Only MUI's presentational tree is mocked. This executes the real
   // ClipboardPage component, its hooks, effects and click/change handlers.
   const mui = Object.fromEntries(
-    ['Alert', 'Box', 'Button', 'Card', 'Divider', 'Stack', 'TextField', 'Typography']
+    ['Alert', 'Box', 'Button', 'Card', 'Divider', 'Stack', 'TextField', 'Typography',
+      'MenuItem', 'FormControlLabel', 'Switch']
       .map(name => [name, ({ children, ...props }) => React.createElement(name, props, children)]),
   )
   const crypt = {
@@ -56,6 +57,8 @@ function makeUI(encrypt = async (_key, _scope, _id, value) => ({
     xDriveClipboardMakeVaultCheck: async () => ({ nonce: 'check-nonce', ciphertext: 'check-cipher' }),
     xDriveClipboardVerifyVaultCheck: async () => {},
     xDriveClipboardEncrypt: encrypt,
+    xDriveClipboardKind: value => /^https?:\/\/\S+$/i.test(value.trim())
+      ? 'text/uri-list' : 'text/plain',
     xDriveClipboardDecrypt: async (_key, _scope, item) => 'decrypted:' + item.ciphertext,
     xDriveClipboardValidateText: text => {
       if (!text || Buffer.byteLength(text, 'utf8') > 65536) throw new Error('invalid text')
@@ -65,6 +68,12 @@ function makeUI(encrypt = async (_key, _scope, _id, value) => ({
     '@mui/material': mui,
     '../clipboard-crypto': crypt,
     '../clipboard-action-fence': fence,
+    '../clipboard-target-crypto': {
+      xDriveClipboardEncryptForDevice: async () => {
+        throw Error('Device-targeted envelope not configured in v1-only test')
+      },
+    },
+    './ClipboardFileNodePicker': { ClipboardFileNodePicker: () => null },
   }, true).XDriveClipboardPage
 }
 function deferred() {
