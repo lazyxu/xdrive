@@ -913,6 +913,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var organizeHomeOwner: XDriveNativeOwnerRoot?
     @State private var viewerAdmitted = [UInt64: XDriveIOSNativeFilesNode]()
     @State private var viewerAdmissionOrder: [UInt64] = []
+    @State private var browseReturnAnchor: UInt64?
     @StateObject private var batchExport = XDriveIOSNativeFilesBatchExportModel()
     // Row actions reuse the existing verified Server writers, not a second API.
     @StateObject private var quickMutation = XDriveIOSNativeFilesMutationModel()
@@ -2621,6 +2622,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                         Button {
                             guard !batchTrash.busy, !batchTarget.busy,
                                   !chunked.busy, !selectAllBusy else { return }
+                            if quickSection == .browse && option != .browse &&
+                               !isHome && !isGlobalSearch {
+                                // Capture before SwiftUI unmounts the Browse List.
+                                browseReturnAnchor = lastAppearedNodeID
+                            }
                             quickSection = option
                             if let owner = login.owner {
                                 resumeStore.saveSection(option.rawValue, owner: owner)
@@ -3141,6 +3147,17 @@ struct XDriveIOSNativeFilesBrowser: View {
                         sort: sort, order: order,
                         grouping: grouping, foldersFirst: foldersFirst
                       ) {
+                if let saved = pendingNavigationReturnNodeID,
+                   quickSection == .browse,
+                   model.entries.contains(where: { $0.id == saved }) {
+                    Task { @MainActor in
+                        await Task.yield()
+                        guard quickSection == .browse, !model.loading,
+                              model.entries.contains(where: { $0.id == saved })
+                        else { return }
+                        returnScroll.scrollTo(saved, anchor: .center)
+                    }
+                }
                 pendingNavigationReturnNodeID = nil
             } else {
                 reload()
@@ -3179,6 +3196,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            browseReturnAnchor = nil
             // Files-local section belongs to a verified Owner; a new Owner
             // must not inherit the previous account's Recent/Favorites route.
             quickSection = .browse
@@ -3261,6 +3279,33 @@ struct XDriveIOSNativeFilesBrowser: View {
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
             if isHome { loadFavoriteShortcuts() }
+        }
+        .onChange(of: quickSection) { next in
+            guard next == .browse, !isHome, !isGlobalSearch,
+                  let folderID = parentID, let owner = login.owner,
+                  let anchor = browseReturnAnchor,
+                  model.canResume(
+                    owner: owner, folderID: folderID,
+                    query: activeQuery, filters: searchFilters,
+                    sort: sort, order: order,
+                    grouping: grouping, foldersFirst: foldersFirst
+                  ), model.entries.contains(where: { $0.id == anchor })
+            else { return }
+            Task { @MainActor in
+                await Task.yield()
+                guard quickSection == .browse, parentID == folderID,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      model.canResume(
+                        owner: owner, folderID: folderID,
+                        query: activeQuery, filters: searchFilters,
+                        sort: sort, order: order,
+                        grouping: grouping, foldersFirst: foldersFirst
+                      ), model.entries.contains(where: { $0.id == anchor })
+                else { return }
+                returnScroll.scrollTo(anchor, anchor: .center)
+                lastAppearedNodeID = anchor
+                browseReturnAnchor = nil
+            }
         }
         .onChange(of: model.verifiedPage) { now in
             if now { persistVerifiedFolder() }
