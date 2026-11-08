@@ -59,7 +59,7 @@ test('real Native Files browse and Search UI launch Server Save Search, not fake
   assert.match(browser, /let restored = saved\.filters\.native/)
   assert.match(browser, /searchFilters = restored[\s\S]*?else \{\s*reload\(resetOffset: true\)/)
   assert.match(browser, /private func applySavedSearch\(/)
-  assert.match(native, /\.onDisappear \{ model\.invalidate\(\) \}/)
+  assert.match(native, /\.onDisappear \{\s*isVisible = false\s*clearPresentationIntents\(\)\s*model\.invalidate\(\)/)
 })
 
 test('Native Saved Search management uses authorized reorder and bounded UTF-8 names', () => {
