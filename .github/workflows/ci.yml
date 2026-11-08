@@ -2658,10 +2658,10 @@ jobs:
           echo "Scoped $CI_SCOPE PR validation passed; master and v* remain full."
 
   publish-master:
-    # Snapshot is intentionally artifact-first: exact CI-built images, installers
-    # and Source Agent must exist, then the release workflow verifies integrity.
+    # Server publication is independent of optional client artifact failures.
+    # The Server/Caddy/face/media images remain mandatory and exact-source.
     # Full Final Gate keeps running independently; stable v* still waits for it.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.server-image.result == 'success' && needs.caddy-image.result == 'success' && needs.photo-face-image.result == 'success' && needs.media-worker-image.result == 'success' }}
     needs:
       - build-client-core
       - package-linux-client
