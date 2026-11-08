@@ -33,28 +33,34 @@ checks remain authoritative.
 - Host cache: `~/.xd/data/release-bundles/` by default. This is mounted
   read-only in the Server container at `/release-bundles`. The Host owns all
   writes. No Docker socket or privileged Host paths are served over HTTP.
-- `manifests/<full-sha>.json`: immutable historical metadata retained;
-  `current.json`: atomically published current cache identity;
-  `packages/<current-sha>/`: only currently verified package bytes.
-  On a failed new sync the previous verified cache remains available.
-  `status.json` is separate from Server update status.
-- During a Server install/update `install.lock` is authoritative for
-  the Host package mirror worker. In addition, the installer writes a
-  noncritical `dependency-busy` marker in the read-only package mount during
-  deployment/dependency fetch. Already-authenticated HTTP package delivery
-  checks that marker on each body read, pausing even in-flight byte-range
-  transfers until the marker clears. Cancellation terminates the paused read;
-  the next request can resume from a verified HTTP Range.
-- Installer success, failure and rollback clear the marker. Host Control
-  also clears an orphan marker after a hard crash **only** while holding a
-  successful nonblocking probe of `install.lock`, avoiding premature resume
-  during a real upgrade. A missing marker is nonfatal to Server upgrade.
-- After dependency pulls finish, transfers resume at the normal, unrestricted
-  rate. An interrupted connection may require the client to retry its HTTP
-  Range; Server upgrades never wait for or depend on that client retry.
+- `manifests/<full-sha>.json`: immutable historical audit/provenance records
+  only; there is **no historical version selector**. `current.json` points
+  to the verified installer subset of the current Server Git Commit.
+  `packages/<current-sha>/` contains only validated package bytes.
+  When some package downloads fail, other verified packages are usable.
+  Until any new package is verified the previous cache may remain on disk,
+  but is never offered as the current Commit. `status.json` is completely
+  separate from Server update/rollback status.
+- During Server image/dependency transfers, the Host installer writes
+  `dependency-busy` and keeps `install.lock`. Both Host cache mirroring
+  and authenticated in-flight HTTP package bytes pause. After the final
+  Server dependency pull succeeds, the installer publishes the Host-only
+  `dependency-ready` marker and removes `dependency-busy`, so package
+  transfers resume **immediately without a speed cap**, even while the
+  remaining health/update transaction owns `install.lock`.
+- Before `dependency-ready` is created, `install.lock` fails closed if
+  the busy marker is absent. Busy always outranks ready. Both markers are
+  cleaned on exit/rollback; Host Control removes stale markers only after a
+  successful nonblocking install-lock probe. Marker errors are warnings,
+  never Server update failures. Paused HTTP range downloads remain
+  cancellation-aware and can retry with Range.
 - The worker tries same-commit GitLab package bytes first, GitHub exact
-  Bundle asset second, validates size and SHA-256, uses bounded retries, and
-  never influences Server upgrade exit status or rollback decisions.
+  Bundle asset second, verifies size and SHA-256 and uses bounded retries.
+  Each verified installer may be exposed independently for the current Commit,
+  while failed ones retain resumable partial data. Per-item states include
+  `verified`, `pending`, `missing_upstream`, `verification_failed` and
+  `retry_needed`. Every failure is noncritical and never influences Server
+  upgrade exit status or rollback decisions.
 - Before mirroring bytes, the worker verifies the exact GitHub `bundle-<sha>`
   ref targets a **commit** with the requested full SHA and compares the
   manifest and every artifact against the immutable GitHub Release asset
@@ -65,8 +71,9 @@ checks remain authoritative.
 
 ## Authenticated distribution
 
-- `GET /api/v1/release-bundles/current` returns cache state, complete
-  commit, and exact package digests with fallback URLs. Entries list the
+- `GET /api/v1/release-bundles/current` returns only the current Server
+  Commit, its per-package cache state and exact digests with fallback URLs.
+  No historical Bundle selection endpoint or version selector exists. Entries list the Entries list the
   local authenticated download first **only when a verified cache exists**,
   followed by GitLab and then GitHub. Clients MUST check SHA-256/size before
   installing from any origin; if a source fails, try the next. They MUST
