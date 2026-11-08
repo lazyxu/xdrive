@@ -190,8 +190,15 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                       ) else { return }
                 self.loading.stopAnimating()
-                self.photo.image = value
-                self.placeholder.isHidden = value != nil
+                // PhotoKit/iCloud can return a degraded preview followed by
+                // a nil/error callback. Keep the last usable bounded poster
+                // instead of flashing the map thumbnail to an empty tile.
+                if let value {
+                    self.photo.image = value
+                    self.placeholder.isHidden = true
+                } else if self.photo.image == nil {
+                    self.placeholder.isHidden = false
+                }
             }
         }
     }
@@ -1528,6 +1535,17 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if mapScope == .library && globalComplete {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        // Refresh a failed iCloud/HEIC/Live poster on exactly
+                        // the currently authorized GPS Cells. No second 100k
+                        // metadata scan and no change to membership authority.
+                        Button("重新加载位置封面") {
+                            guard phase == .active, !busy, globalComplete,
+                                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                            else { return }
+                            mapRevision = UUID()
+                        }
+                        .disabled(busy || !refinedViewportIsCurrent)
+                        .accessibilityIdentifier("native-ios-map-retry-covers")
                         Button(album == nil ? "重新扫描已授权图库位置" : "重新扫描此相册位置") {
                             scanFullLibrary()
                         }
@@ -1897,10 +1915,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // must not re-enumerate 100k PhotoKit rows. Scope-changing events
             // always call invalidate(), which discards these snapshots.
             if let cached = recentVerifiedWindows.first(where: { item in
-                XDriveIOSNativeLocalMapSpatialPolicy.containsViewport(
-                    item.viewport, current: finalViewport
-                ) && !XDriveIOSNativeLocalMapAutoRefinePolicy.shouldRefine(
-                    finalViewport, scanned: item.viewport
+                XDriveIOSNativeLocalMapAutoRefinePolicy.canReuse(
+                    cached: item.viewport, camera: finalViewport
                 )
             }) {
                 suspendForSheet()
@@ -2052,23 +2068,25 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                             scanned: scanned, total: total,
                             located: index.locatedCount
                         ), at: 0)
-                    if recentVerifiedWindows.count > 2 {
+                    let limit = XDriveIOSNativeLocalMapAutoRefinePolicy.maximumCachedWindows
+                    if recentVerifiedWindows.count > limit {
                         recentVerifiedWindows.removeLast(
-                            recentVerifiedWindows.count - 2)
+                            recentVerifiedWindows.count - limit)
                     }
                 }
                 let elapsedMilliseconds = max(0,
                     (ProcessInfo.processInfo.systemUptime - scanStartUptime) * 1000)
                 recentScanMilliseconds.append(elapsedMilliseconds)
-                if recentScanMilliseconds.count > 32 {
+                let sampleLimit = XDriveIOSNativeLocalMapAutoRefinePolicy.maximumLatencySamples
+                if recentScanMilliseconds.count > sampleLimit {
                     recentScanMilliseconds.removeFirst(
-                        recentScanMilliseconds.count - 32)
+                        recentScanMilliseconds.count - sampleLimit)
                 }
                 #if DEBUG
-                let sorted = recentScanMilliseconds.sorted()
-                let median = sorted[(sorted.count - 1) / 2]
-                let p95 = sorted[Int(Double(sorted.count - 1) * 0.95)]
-                print("IOS_MAP_PERF cache_hit=0 elapsed_ms=\(Int(elapsedMilliseconds)) metadata_pages=\(pages) metadata_items=\(scanned) p50_ms=\(Int(median)) p95_ms=\(Int(p95))")
+                if let percentiles = XDriveIOSNativeLocalMapAutoRefinePolicy
+                    .scanPercentiles(recentScanMilliseconds) {
+                    print("IOS_MAP_PERF cache_hit=0 elapsed_ms=\(Int(elapsedMilliseconds)) metadata_pages=\(pages) metadata_items=\(scanned) p50_ms=\(Int(percentiles.p50)) p95_ms=\(Int(percentiles.p95))")
+                }
                 #endif
                 mapRevision = UUID()
             } catch is CancellationError {
