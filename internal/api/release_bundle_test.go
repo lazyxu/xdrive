@@ -112,3 +112,61 @@ func TestReleaseBundleUncachedDoesNotExposeStalePackages(t *testing.T) {
 		t.Fatalf("bad uncached fallback: %+v", listing)
 	}
 }
+
+func TestReleaseBundleManifestFetchFailureKeepsIndependentWarning(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	root := t.TempDir()
+	commit := strings.Repeat("c", 40)
+	message := "Release Bundle download or verification failed; server remains usable"
+	data, err := json.Marshal(releaseBundleState{
+		Commit: commit, State: "retry_needed", Message: message,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "status.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	// The remote manifest could not be fetched, so no manifest or packages
+	// exist yet. This is a retryable warning, not an unavailable feature.
+	listing := readReleaseBundleListing(root)
+	if listing.State != "retry_needed" || listing.Commit != commit ||
+		listing.Message != message || len(listing.Artifacts) != 0 {
+		t.Fatalf("manifest fetch failure warning was lost: %+v", listing)
+	}
+
+	t.Setenv("XD_RELEASE_BUNDLE_DIR", root)
+	server := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/release-bundles/current", nil)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = req
+	server.releaseBundleStatus(ctx)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("release warning API returned HTTP %d", recorder.Code)
+	}
+	var actual releaseBundleListing
+	if err := json.Unmarshal(recorder.Body.Bytes(), &actual); err != nil {
+		t.Fatal(err)
+	}
+	if actual.State != "retry_needed" || actual.Commit != commit ||
+		actual.Message != message || len(actual.Artifacts) != 0 {
+		t.Fatalf("release warning API hid the retryable failure: %+v", actual)
+	}
+}
+
+func TestReleaseBundleMissingManifestMustNotClaimReady(t *testing.T) {
+	root := t.TempDir()
+	commit := strings.Repeat("d", 40)
+	data, err := json.Marshal(releaseBundleState{Commit: commit, State: "ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "status.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	listing := readReleaseBundleListing(root)
+	if listing.State != "unavailable" || len(listing.Artifacts) != 0 {
+		t.Fatalf("missing verified manifest was incorrectly marked ready: %+v", listing)
+	}
+}
