@@ -3700,7 +3700,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             } else {
                 candidates = Array(page.items.prefix(local + 1))
             }
-            let files = candidates.filter { $0.type == "file" }
+            // An unknown/unsupported file is not a neighboring preview target.
+            // Continue bounded range reads until a real previewable sibling is proven.
+            let files = candidates.filter { XDriveIOSNativeFilesViewerPolicy.canPreview($0) }
             if !files.isEmpty {
                 try Task.checkCancellation()
                 guard phase == .active, selectedFile?.id == initialID,

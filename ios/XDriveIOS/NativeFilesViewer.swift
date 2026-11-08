@@ -556,13 +556,13 @@ struct XDriveIOSNativeFilesViewer: View {
                     failure = "当前格式不支持原生预览。可以在本机空间足够时下载原件，再通过系统分享使用其他 App。"
                     exportFallbackEligible = true
                 case .tooLarge:
-                    failure = "文件超过本机预览上限。可以在此下载原件并使用其他 App（导出上限 1 GiB）。"
+                    failure = "文件超过本机预览上限。可在本机空间足够时下载原件，再通过系统分享使用其他 App。"
                     exportFallbackEligible = true
                 case .malformed:
                     failure = "原生预览无法解码当前文件。可以在本机空间足够时导出原件至其他 App。"
                     exportFallbackEligible = true
                 case .noThumbnail:
-                    failure = "原图过大或格式无法解码，且没有可用的云端缩略图。可以在此下载原件并使用其他 App（导出上限 1 GiB）。"
+                    failure = "原图过大或格式无法解码，且没有可用的云端缩略图。可在本机空间足够时下载原件，再通过系统分享使用其他 App。"
                     exportFallbackEligible = true
                 case .changed, .invalidOwner, .response(401), .response(403), .response(404):
                     failure = "文件版本或当前账户已变化，请返回目录重新读取。"

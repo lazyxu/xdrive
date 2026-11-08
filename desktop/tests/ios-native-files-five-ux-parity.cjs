@@ -60,6 +60,7 @@ test('P1 Viewer pages beyond 256 without losing revision or unbounded materializ
   assert.match(browser, /XDriveIOSNativeFilesReanchorPolicy\.verifiedDestination\(/)
   assert.match(browser, /pagesChecked < 16/)
   assert.match(browser, /page\.total_count == count/)
+  assert.match(browser, /candidates\.filter \{ XDriveIOSNativeFilesViewerPolicy\.canPreview\(\$0\) \}/)
   assert.match(browser, /viewerAdmitted\[item\.id\] = item/)
   assert.match(browser, /viewerAdmissionOrder\.count > 512/)
   assert.match(viewer, /onLoadNeighbor: \(\(XDriveIOSNativeFilesNode, Int\) async throws/)
