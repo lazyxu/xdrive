@@ -165,6 +165,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
             "正在核对位置照片，封面暂不可打开" :
             wholeLibrary ? "已扫描图库区域有\(count)张带定位照片" :
             XDriveIOSNativePhotoMapPolicy.markerLabel(count)
+        accessibilityHint = provisional ? nil : "双击打开当前照片位置"
         guard [.authorized].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ), let asset = PHAsset.fetchAssets(
@@ -1387,6 +1388,21 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier(album == nil ? "native-ios-full-library-gps-map" : "native-ios-album-gps-map")
+                if globalComplete && !globalCells.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .accessibilityHidden(true)
+                        Text(refinedViewportIsCurrent ?
+                             "\(globalLocated) 张有位置照片 · \(globalCells.count) 个地图位置" :
+                             "地图已移动，位置照片数量正在重新核对")
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("native-ios-map-verified-count")
+                }
                 if busy {
                     ProgressView(album == nil ? "正在读取照片位置…" : "正在读取相册位置…")
                         .accessibilityIdentifier(album == nil ? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress")
@@ -1494,6 +1510,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         .padding(.horizontal, 8)
         .navigationTitle(album.map { "\($0.name) · 地图" } ??
             (mediaFilter.isAll ? "地图" : "地图 · \(mediaFilter.title)"))
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if album != nil || onClose != nil {
                 ToolbarItem(placement: .navigationBarLeading) {
