@@ -150,6 +150,8 @@ private final class XDriveIOSNativeFilesLocateModel: ObservableObject {
     @Published private(set) var target: XDriveIOSNativeFilesLocatedPage?
     @Published private(set) var loading = false
     @Published private(set) var error: String?
+    private var locatedSelected: XDriveIOSNativeFilesNode?
+    private var locatedOwner: XDriveNativeOwnerRoot?
     private var generation = UUID()
     private var job: Task<Void, Never>?
 
@@ -157,9 +159,18 @@ private final class XDriveIOSNativeFilesLocateModel: ObservableObject {
         generation = UUID()
         job?.cancel()
         job = nil
+        locatedSelected = nil
+        locatedOwner = nil
         target = nil
         loading = false
         error = nil
+    }
+
+    func matches(selected: XDriveIOSNativeFilesNode,
+                 owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard target != nil, locatedSelected == selected,
+              let owner, let locatedOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, locatedOwner)
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel,
@@ -192,11 +203,16 @@ private final class XDriveIOSNativeFilesLocateModel: ObservableObject {
                 guard generation == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
                 else { return }
+                // Set the verified source identity before publishing a route.
+                locatedSelected = selected
+                locatedOwner = expectedOwner
                 target = folder
                 error = nil
             } catch is CancellationError {
             } catch {
-                guard generation == ticket else { return }
+                guard generation == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
+                else { return }
                 target = nil
                 if let failure = error as? XDriveIOSNativeFilesLocateFailure {
                     switch failure {
@@ -223,13 +239,16 @@ struct XDriveIOSNativeFilesLocateScreen: View {
     let openedOwner: XDriveNativeOwnerRoot
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesLocateModel()
-    @State private var started = false
+    @State private var isVisible = false
 
     var body: some View {
         Group {
             if let target = model.target,
-               XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner) {
+               phase == .active,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner),
+               model.matches(selected: selected, owner: login.owner) {
                 if target.folder.id == openedOwner.rootNodeID {
                     // The default Files tab now shows Locations. A located
                     // root child must open the cloud location itself, never
@@ -246,16 +265,19 @@ struct XDriveIOSNativeFilesLocateScreen: View {
                         initialOffset: target.offset, focus: selected
                     )
                 }
-            } else if model.loading {
+            } else if model.loading && phase == .active &&
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner) {
                 ProgressView("正在验证文件的真实位置…")
             } else {
                 VStack(spacing: 16) {
                     Text(model.error ?? "尚未验证文件位置。")
                         .multilineTextAlignment(.center)
                     Button("重试定位") {
+                        guard isVisible, phase == .active else { return }
                         model.load(login: login, selected: selected, expectedOwner: openedOwner)
                     }
-                    .disabled(!XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner))
+                    .disabled(model.loading || phase != .active ||
+                              !XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner))
                     .accessibilityIdentifier("native-ios-files-locate-retry")
                 }
                 .padding(24)
@@ -269,13 +291,36 @@ struct XDriveIOSNativeFilesLocateScreen: View {
             }
         }
         .onAppear {
-            guard !started else { return }
-            started = true
-            model.load(login: login, selected: selected, expectedOwner: openedOwner)
+            isVisible = true
+            loadIfNeeded()
         }
-        .onDisappear { model.invalidate() }
-        .onChange(of: login.owner) { _ in
+        .onDisappear {
+            isVisible = false
             model.invalidate()
         }
+        .onChange(of: selected) { _ in
+            model.invalidate()
+            loadIfNeeded()
+        }
+        .onChange(of: openedOwner) { _ in
+            model.invalidate()
+            loadIfNeeded()
+        }
+        .onChange(of: login.owner) { _ in
+            model.invalidate()
+            loadIfNeeded()
+        }
+        .onChange(of: phase) { state in
+            if state != .active { model.invalidate() }
+            else { loadIfNeeded() }
+        }
+    }
+
+    private func loadIfNeeded() {
+        guard isVisible, phase == .active, !model.loading,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner),
+              !model.matches(selected: selected, owner: login.owner) else { return }
+        model.load(login: login, selected: selected, expectedOwner: openedOwner)
+    }
     }
 }
