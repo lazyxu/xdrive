@@ -130,7 +130,7 @@ jobs:
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Unit tests, lint and exact debug APK
         working-directory: android
-        run: bash gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+        run: node ../scripts/ci/retry-transient-download.mjs bash gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -308,7 +308,7 @@ jobs:
           fi
           node -e "require('@rollup/rollup-linux-x64-gnu')"
           node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
-          npm run runtime:linux
+          node ../scripts/ci/retry-transient-download.mjs npm run runtime:linux
           test -x release/linux-unpacked/xdrive-desktop
       - name: Pack Linux desktop runtime
         shell: bash
@@ -381,7 +381,8 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           node scripts/set-version.mjs $env:XDRIVE_DESKTOP_VERSION
-          npm run runtime:win
+          node --test ../scripts/ci/retry-transient-download.test.mjs
+          node ../scripts/ci/retry-transient-download.mjs npm run runtime:win
           if (-not (Test-Path ./release/win-unpacked/xdrive-desktop.exe)) { throw "desktop runtime missing" }
       - name: Verify Windows desktop runtime signature
         shell: pwsh
@@ -1163,6 +1164,7 @@ jobs:
           python3 scripts/test-snapshot-tag-preflight.py
           python3 scripts/test-snapshot-publish-runtime.py
           python3 scripts/test-github-release-archive-contract.py
+          node --test scripts/ci/retry-transient-download.test.mjs
           go test ./cmd/backuprepo -count=1
           bash -n scripts/server-backup.sh
           bash -n scripts/test-server-backup-data-source-preflight.sh
