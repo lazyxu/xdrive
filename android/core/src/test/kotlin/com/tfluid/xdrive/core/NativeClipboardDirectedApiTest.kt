@@ -83,4 +83,52 @@ class NativeClipboardDirectedApiTest {
             }
         }
     }
+
+    @Test fun revokedDeviceStopsDirectedSSEWithoutAStaleCallback() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(403).setBody(
+                "{\"error\":\"Clipboard device revoked\"}"
+            ))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                var delivered = 0
+                try {
+                    api.clipboardWatchForDevice("current-owner-bearer", device, 9) {
+                        delivered++
+                    }
+                    fail("revoked device SSE must be rejected before callback")
+                } catch (expected: ApiException) {
+                    assertEquals(403, expected.statusCode)
+                }
+                assertEquals(0, delivered)
+                val request = server.takeRequest()
+                assertEquals("/api/v1/clipboard/events?after=9", request.path)
+                assertEquals("Bearer current-owner-bearer", request.getHeader("Authorization"))
+                assertEquals(device.deviceId, request.getHeader("X-XDrive-Device-ID"))
+                assertEquals(device.deviceToken, request.getHeader("X-XDrive-Device-Token"))
+                assertNull(request.getHeader("Cookie"))
+            }
+        }
+    }
+
+    @Test fun ownerSwitchCannotReuseAnOldDeviceProofForDirectedReads() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(403).setBody(
+                "{\"error\":\"cross Owner device denied\"}"
+            ))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                try {
+                    api.clipboardListForDevice("second-owner-bearer", device)
+                    fail("cross-Owner device proof must not produce a readable inbox")
+                } catch (expected: ApiException) {
+                    assertEquals(403, expected.statusCode)
+                }
+                val request = server.takeRequest()
+                assertEquals("/api/v1/clipboard/items", request.path)
+                assertEquals("Bearer second-owner-bearer", request.getHeader("Authorization"))
+                assertEquals(device.deviceId, request.getHeader("X-XDrive-Device-ID"))
+                assertEquals(device.deviceToken, request.getHeader("X-XDrive-Device-Token"))
+            }
+        }
+    }
+
 }
