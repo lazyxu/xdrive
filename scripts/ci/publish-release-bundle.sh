@@ -24,7 +24,8 @@ with open(sys.argv[1], encoding="utf8") as f:
     data=json.load(f)
 names=[item["filename"] for item in data["artifacts"]]
 assert len(names) == len(set(names)) and all("/" not in n and "\\" not in n for n in names)
-print("\n".join(sorted(names)))
+for name in sorted(names):
+    print(name)
 PY
 )
 assets=("$root/release-bundle.json")
