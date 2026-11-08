@@ -3304,6 +3304,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: grouping) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: foldersFirst) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: model.loading) { loading in
+            if !loading && model.verifiedPage { persistVerifiedFolder() }
             guard !loading, selectedFile == nil else { return }
             if let returnID = pendingNavigationReturnNodeID,
                let folderID = parentID,
@@ -3634,7 +3635,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func verifiedViewerAdjacent(
         from selected: XDriveIOSNativeFilesNode,
         direction: Int, openedOwner: XDriveNativeOwnerRoot,
-        initialID: UUID
+        initialID: UInt64
     ) async throws -> [XDriveIOSNativeFilesNode] {
         guard direction == -1 || direction == 1,
               phase == .active, !isHome, !isGlobalSearch,
