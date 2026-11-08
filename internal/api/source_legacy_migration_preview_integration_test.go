@@ -401,3 +401,132 @@ func TestLegacyMigrationPreviewRejectsMalformedTargetAncestry(t *testing.T) {
 		})
 	}
 }
+
+// A second Source can have SourceItem provenance pointing into a legacy
+// target even without a Source.TargetNodeID binding. Preview cannot bless
+// such Nodes as exclusive based only on the current SourceItem rows.
+func TestLegacyMigrationPreviewRejectsOtherSourceItemClaims(t *testing.T) {
+	for _, tc := range []struct {
+		name, claimed            string
+		otherOwner, wantConflict bool
+		state                    string
+	}{
+		{name: "archived foreign Source claims file", claimed: "photo", wantConflict: true, state: meta.SourceItemStateSynced},
+		{name: "foreign Source claims nested directory", claimed: "nested", wantConflict: true, state: meta.SourceItemStateSynced},
+		{name: "pending foreign Source claims target root", claimed: "target", wantConflict: true, state: meta.SourceItemStatePending},
+		{name: "unrelated sibling SourceItem is safe", claimed: "sibling", state: meta.SourceItemStateSynced},
+		{name: "different Owner does not claim current Source", claimed: "photo", otherOwner: true, state: meta.SourceItemStateSynced},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, srv, owner, stranger, root := setupFilePropertiesTestDB(t)
+			if err := db.AutoMigrate(&meta.Share{}, &meta.SyncRun{},
+				&meta.UploadSession{}, &meta.FileOperation{}); err != nil {
+				t.Fatal(err)
+			}
+			gin.SetMode(gin.TestMode)
+			srv.Auth = auth.New("cross-source-items-preview", time.Hour)
+			router := srv.Router()
+			token, err := srv.Auth.Issue(owner.ID, owner.SessionVersion)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := createFilePropertiesDir(t, db, owner.ID, root.ID, "legacy-backup")
+			nested := createFilePropertiesDir(t, db, owner.ID, target.ID, "album")
+			photo := createFilePropertiesFile(t, db, owner.ID, nested.ID, "photo.jpg", 8)
+			sibling := createFilePropertiesFile(t, db, owner.ID, root.ID, "other.jpg", 8)
+			source := meta.Source{
+				OwnerID: owner.ID, Name: "Existing Pull",
+				Kind: yikeSourceKind, Direction: meta.SourceDirectionPull,
+				SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeScan,
+				Status: meta.SourceStatusPaused, Revision: 1, TargetNodeID: &target.ID,
+			}
+			if err := db.Create(&source).Error; err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range []meta.SourceItem{
+				{
+					SourceID: source.ID, ExternalID: "album",
+					NodeID: &nested.ID, NodeRevision: nested.Revision,
+					Kind: meta.SourceItemKindDirectory, Path: nested.Name,
+					State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+				},
+				{
+					SourceID: source.ID, ExternalID: "photo",
+					NodeID: &photo.ID, NodeRevision: photo.Revision,
+					Kind: meta.SourceItemKindFile, Path: nested.Name + "/" + photo.Name,
+					State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+				},
+			} {
+				if err := db.Create(&item).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			otherOwnerID := owner.ID
+			if tc.otherOwner {
+				otherOwnerID = stranger.ID
+			}
+			other := meta.Source{
+				OwnerID: otherOwnerID, Name: "Other Pull",
+				Kind: "synology_files", Direction: meta.SourceDirectionPull,
+				SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
+				Status: meta.SourceStatusArchived, Revision: 1,
+			}
+			if err := db.Create(&other).Error; err != nil {
+				t.Fatal(err)
+			}
+			nodeID := map[string]uint64{
+				"target": target.ID, "nested": nested.ID, "photo": photo.ID, "sibling": sibling.ID,
+			}[tc.claimed]
+			claim := meta.SourceItem{
+				SourceID: other.ID, ExternalID: "other:" + tc.claimed,
+				NodeID: &nodeID, NodeRevision: 1, Kind: meta.SourceItemKindFile,
+				Path: "old/source/item", State: tc.state, LastSeenAt: time.Now().UTC(),
+			}
+			if err := db.Create(&claim).Error; err != nil {
+				t.Fatal(err)
+			}
+			result := request(t, router, http.MethodGet,
+				fmt.Sprintf("/api/v1/sources/%d/migration-preview", source.ID),
+				token, nil, http.StatusOK)
+			var preview sourceLegacyMigrationPreview
+			if err := json.Unmarshal(result.Body.Bytes(), &preview); err != nil {
+				t.Fatal(err)
+			}
+			expectedClass, expectedClaims := "apparently_exclusive", 0
+			if tc.wantConflict {
+				expectedClass, expectedClaims = "blocked", 1
+			}
+			hasProvenanceBlocker := false
+			for _, code := range preview.Blockers {
+				if code == "source_item_provenance_mismatch" {
+					hasProvenanceBlocker = true
+				}
+			}
+			if !preview.ReadOnly || preview.Classification != expectedClass ||
+				preview.UnverifiedClaims != expectedClaims ||
+				preview.OtherSourceClaims != 0 ||
+				preview.VerifiedNodes != 2 || preview.OrdinaryNodes != 0 ||
+				hasProvenanceBlocker != tc.wantConflict {
+				t.Fatalf("unsafe shared SourceItem provenance: %+v, case=%s", preview, tc.name)
+			}
+			var persisted meta.Source
+			var targetAfter meta.Node
+			var claimAfter meta.SourceItem
+			if err := db.First(&persisted, source.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.First(&targetAfter, target.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.First(&claimAfter, claim.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if persisted.Revision != source.Revision ||
+				persisted.TargetNodeID == nil || *persisted.TargetNodeID != target.ID ||
+				targetAfter.ParentID == nil || *targetAfter.ParentID != root.ID ||
+				claimAfter.NodeID == nil || *claimAfter.NodeID != nodeID {
+				t.Fatal("preview mutated Source binding, Node or foreign SourceItem provenance")
+			}
+		})
+	}
+}
