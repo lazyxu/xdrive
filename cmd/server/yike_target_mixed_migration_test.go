@@ -295,3 +295,118 @@ func TestLegacyYikeFlatMixedSplitRejectsForeignOwnerDirectChild(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyYikeCleanTargetRejectsForeignOwnerDescendant(t *testing.T) {
+	for _, tc := range []struct {
+		name, foreignType string
+		nested            bool
+	}{
+		{name: "direct foreign file", foreignType: meta.NodeTypeFile},
+		{name: "nested foreign directory", foreignType: meta.NodeTypeDir, nested: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openYikeMigrationTestDB(t)
+			owner, _, connector, target, source := createLegacyYikeMigrationFixture(t, db)
+			photoParentID := target.ID
+			photoPath := "photo.jpg"
+			if tc.nested {
+				album := meta.Node{
+					OwnerID: owner.ID, ParentID: &target.ID,
+					Name: "Album", Type: meta.NodeTypeDir, Revision: 1,
+				}
+				if err := db.Create(&album).Error; err != nil {
+					t.Fatal(err)
+				}
+				photoParentID = album.ID
+				photoPath = "Album/photo.jpg"
+				albumClaim := meta.SourceItem{
+					SourceID: source.ID, ExternalID: "legacy:album",
+					NodeID: &album.ID, NodeRevision: album.Revision,
+					Kind: meta.SourceItemKindDirectory, Path: album.Name,
+					State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+				}
+				if err := db.Create(&albumClaim).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			photo := meta.Node{
+				OwnerID: owner.ID, ParentID: &photoParentID,
+				Name: "photo.jpg", Type: meta.NodeTypeFile, Revision: 1,
+			}
+			if err := db.Create(&photo).Error; err != nil {
+				t.Fatal(err)
+			}
+			claim := meta.SourceItem{
+				SourceID: source.ID, ExternalID: "legacy:photo",
+				NodeID: &photo.ID, NodeRevision: photo.Revision,
+				Kind: meta.SourceItemKindFile, Path: photoPath,
+				State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+			}
+			if err := db.Create(&claim).Error; err != nil {
+				t.Fatal(err)
+			}
+			foreignOwner := meta.User{
+				Username: "legacy-other-owner-" + uuid.NewString(),
+				PasswordHash: "x", Role: meta.UserRoleUser,
+			}
+			if err := db.Create(&foreignOwner).Error; err != nil {
+				t.Fatal(err)
+			}
+			// Old databases can contain this edge because parent/Owner FK
+			// adoption is NOT VALID. Neither clean nor mixed migration may
+			// move a root whose descendants belong to another Owner.
+			alien := meta.Node{
+				OwnerID: foreignOwner.ID, ParentID: &photoParentID,
+				Name: "foreign-legacy", Type: tc.foreignType, Revision: 1,
+			}
+			if err := db.Create(&alien).Error; err != nil {
+				t.Fatal(err)
+			}
+			share := meta.Share{
+				OwnerID: owner.ID, NodeID: target.ID,
+				TokenHash: strings.Repeat("b", 64), Access: "read_only",
+			}
+			if err := db.Create(&share).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := migrateLegacyYikeTargets(db); err != nil {
+				t.Fatalf("invalid legacy Source must pause without aborting startup: %v", err)
+			}
+			var afterSource meta.Source
+			var afterTarget, afterPhoto, afterAlien meta.Node
+			var afterClaim meta.SourceItem
+			var afterShare meta.Share
+			for _, err := range []error{
+				db.First(&afterSource, source.ID).Error,
+				db.First(&afterTarget, target.ID).Error,
+				db.First(&afterPhoto, photo.ID).Error,
+				db.First(&afterAlien, alien.ID).Error,
+				db.First(&afterClaim, claim.ID).Error,
+				db.First(&afterShare, share.ID).Error,
+			} {
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if afterSource.Status != meta.SourceStatusPaused ||
+				afterSource.LastError == "" ||
+				afterSource.TargetNodeID == nil ||
+				*afterSource.TargetNodeID != target.ID ||
+				afterTarget.ParentID == nil ||
+				*afterTarget.ParentID != connector.ID ||
+				afterPhoto.ParentID == nil ||
+				*afterPhoto.ParentID != photoParentID ||
+				afterPhoto.Revision != photo.Revision ||
+				afterAlien.ParentID == nil ||
+				*afterAlien.ParentID != photoParentID ||
+				afterAlien.OwnerID != foreignOwner.ID ||
+				afterClaim.NodeID == nil || *afterClaim.NodeID != photo.ID ||
+				afterClaim.NodeRevision != claim.NodeRevision ||
+				afterShare.NodeID != target.ID ||
+				afterShare.TokenHash != share.TokenHash {
+				t.Fatalf("foreign descendants were ignored: source=%+v target=%+v photo=%+v alien=%+v item=%+v share=%+v",
+					afterSource, afterTarget, afterPhoto, afterAlien, afterClaim, afterShare)
+			}
+		})
+	}
+}

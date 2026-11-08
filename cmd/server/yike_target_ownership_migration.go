@@ -108,26 +108,28 @@ SELECT EXISTS (
 		return fmt.Errorf("%w: an active sync run still owns this target", errLegacyYikeTargetMigrationBlocked)
 	}
 
-	// Check every active descendant, including nested directories. A file is
-	// proved to belong to this Source only when its stable NodeID, relative
-	// path, type, successful sync state and recorded Node revision all match.
-	// A name-based guess or path-only match must never be sufficient.
+	// Check every active descendant, including nested directories, WITHOUT
+	// filtering by OwnerID. Historical cross-Owner edges can remain after
+	// installing the NOT VALID parent/Owner FK; hiding them could falsely
+	// certify an old root and allow unsafe in-place reparenting.
+	// Every descendant must belong to the Source Owner, with a matching
+	// SourceItem NodeID, relative path, type, sync state and Node revision.
 	// Stop at 128 ancestors and refuse deeper paths, rather than silently
 	// treating an unvisited descendant as proven.
 	var unproven bool
 	if err := tx.Raw(`
 WITH RECURSIVE tree AS (
-	SELECT id, parent_id, name, type, revision,
+	SELECT id, parent_id, owner_id, name, type, revision,
 		''::text AS relative_path, 0 AS depth
 	FROM xd_nodes
 	WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
 	UNION ALL
-	SELECT child.id, child.parent_id, child.name, child.type, child.revision,
+	SELECT child.id, child.parent_id, child.owner_id, child.name, child.type, child.revision,
 		CASE WHEN parent.depth = 0 THEN child.name
 			ELSE parent.relative_path || '/' || child.name END,
 		parent.depth + 1
 	FROM xd_nodes AS child JOIN tree AS parent ON child.parent_id = parent.id
-	WHERE child.owner_id = ? AND child.deleted_at IS NULL AND parent.depth < 128
+	WHERE child.deleted_at IS NULL AND parent.depth < 128
 )
 SELECT EXISTS (
 	SELECT 1 FROM tree AS n
@@ -137,12 +139,12 @@ SELECT EXISTS (
 		AND item.kind = CASE WHEN n.type = 'dir' THEN 'directory' ELSE 'file' END
 		AND item.state = ?
 		AND item.node_revision = n.revision
-	WHERE (n.depth > 0 AND item.id IS NULL)
+	WHERE (n.depth > 0 AND (n.owner_id <> ? OR item.id IS NULL))
 		OR (n.depth = 128 AND EXISTS (
 			SELECT 1 FROM xd_nodes AS deeper
-			WHERE deeper.owner_id = ? AND deeper.parent_id = n.id AND deeper.deleted_at IS NULL
+			WHERE deeper.parent_id = n.id AND deeper.deleted_at IS NULL
 		))
-)`, target.ID, source.OwnerID, source.OwnerID,
+)`, target.ID, source.OwnerID,
 		source.ID, meta.SourceItemStateSynced, source.OwnerID).
 		Scan(&unproven).Error; err != nil {
 		return err
