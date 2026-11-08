@@ -118,3 +118,21 @@ test('stale PhotoKit generations hide old queue totals and task rows without ref
   assert.match(tasks, /model\.refreshCurrent\(login: login, mode: mode, filter: filter\)/)
   assert.match(tasks, /\.disabled\(model\.loading\)/)
 })
+
+
+test('full-library task-page proofs are bounded, read-only and invalidated by PhotoKit and Owner changes', () => {
+  const verifier = read('ios/XDriveIOS/NativeCurrentPhotoReceiptModel.swift')
+  assert.match(taskModel, /func verifyNextPageBatch\(/)
+  assert.match(taskModel, /Array\(rows\.dropFirst\(pageChecked\)\.prefix\(8\)\)/)
+  assert.match(taskModel, /XDriveIOSNativeCurrentPhotoReceiptModel\(\)/)
+  assert.match(taskModel, /await verifier\.verifyAndWait\(/)
+  assert.match(taskModel, /XDriveIOSPhotoKitLibraryEpoch\.matches\(/)
+  assert.match(taskModel, /self\.verifiedPageIDs\.formUnion\(found\)/)
+  assert.match(taskModel, /photoLibraryDidChange\(/)
+  assert.match(taskModel, /PHPhotoLibrary\.shared\(\)\.unregisterChangeObserver\(pagePhotoObserver\)/)
+  assert.match(tasks, /for: model\.verifiedPageIDs\.contains\(item\.id\) \? "matched" : item\.state/)
+  assert.match(tasks, /native-ios-photo-library-page-proof-next/)
+  assert.match(verifier, /existingReceiptForCurrentOriginal\(/)
+  assert.match(verifier, /verifyNodeReceipt\(/)
+  assert.doesNotMatch(taskModel, /createUploadSession|finalizeUploadSession|deleteAssets\(/)
+})

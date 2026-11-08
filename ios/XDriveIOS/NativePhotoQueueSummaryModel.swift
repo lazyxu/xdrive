@@ -158,6 +158,16 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
 }
 
 
+/// A read-only verified row must become unknown immediately when PhotoKit
+/// changes; an old SHA/Node result never survives a new image revision.
+private final class XDriveIOSNativeTaskListPhotoObserver: NSObject, PHPhotoLibraryChangeObserver {
+    let invalidated: () -> Void
+    init(invalidated: @escaping () -> Void) { self.invalidated = invalidated }
+    func photoLibraryDidChange(_ change: PHChange) {
+        DispatchQueue.main.async { [invalidated] in invalidated() }
+    }
+}
+
 /// Reuses PhotoKit's existing bounded readers. Nothing here initiates a
 /// transfer or infers complete cloud coverage from local queue ACKs.
 @MainActor
@@ -210,7 +220,15 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
     @Published private(set) var libraryTotal: Int?
     @Published private(set) var offset = 0
     @Published private(set) var hasNext = false
+    // Only read-only current original/SHA + authenticated managed Node proof
+    // can place a row here. Discard after any new page or PhotoKit change.
+    @Published private(set) var verifiedPageIDs: Set<String> = []
+    @Published private(set) var pageChecked = 0
+    @Published private(set) var verifyingPage = false
 
+    private var pageProofJob: Task<Void, Never>?
+    private var activePageProof: XDriveIOSNativeCurrentPhotoReceiptModel?
+    private var pagePhotoObserver: XDriveIOSNativeTaskListPhotoObserver?
     private var ticket = UUID()
     private var job: Task<Void, Never>?
     private static let changePageSize = 32
@@ -221,6 +239,98 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
         job?.cancel()
         job = nil
         loading = false
+        pageProofJob?.cancel()
+        pageProofJob = nil
+        activePageProof?.cancel()
+        activePageProof = nil
+        verifyingPage = false
+        verifiedPageIDs = []
+        pageChecked = 0
+        if let pagePhotoObserver {
+            PHPhotoLibrary.shared().unregisterChangeObserver(pagePhotoObserver)
+        }
+        pagePhotoObserver = nil
+    }
+
+    /// Bounded, explicit, read-only verification of up to eight items on the
+    /// current library page. Neither a local queue ACK nor a partial scan
+    /// creates the green "current managed Node verified" proof.
+    func verifyNextPageBatch(login: XDriveIOSNativeOwnerLoginModel,
+                             allowICloudOriginals: Bool) {
+        guard !loading, !verifyingPage, pageChecked < rows.count,
+              let expectedOwner = login.owner,
+              UIApplication.shared.applicationState == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+        else { return }
+        let chosen = Array(rows.dropFirst(pageChecked).prefix(8))
+        let ticketAtStart = ticket
+        verifyingPage = true
+        errorMessage = nil
+        notice = "只读核验本页原始字节和当前受管云端 Node；未经核验仍显示待核验。"
+        if pagePhotoObserver == nil {
+            let observer = XDriveIOSNativeTaskListPhotoObserver { [weak self] in
+                guard let self else { return }
+                self.cancel()
+                self.clearPage()
+                self.notice = "系统图库已变化，旧页和本次云端核验结果均已失效；请刷新。"
+            }
+            PHPhotoLibrary.shared().register(observer)
+            pagePhotoObserver = observer
+        }
+        pageProofJob = Task { @MainActor [weak self, weak login] in
+            guard let self, let login else { return }
+            defer {
+                if self.ticket == ticketAtStart {
+                    self.verifyingPage = false
+                    self.pageProofJob = nil
+                    self.activePageProof?.cancel()
+                    self.activePageProof = nil
+                }
+            }
+            do {
+                let startEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                let verifier = XDriveIOSNativeCurrentPhotoReceiptModel()
+                self.activePageProof = verifier
+                var found: Set<String> = []
+                for item in chosen {
+                    try Task.checkCancellation()
+                    guard self.ticket == ticketAtStart,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+                          UIApplication.shared.applicationState == .active,
+                          PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                    else { throw CancellationError() }
+                    let latest = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                    guard XDriveIOSPhotoKitLibraryEpoch.matches(
+                        startEpoch.serialized, as: latest.token
+                    ) else { throw CancellationError() }
+                    if item.localAvailable,
+                       await verifier.verifyAndWait(
+                        localIdentifier: item.id, login: login,
+                        allowICloudOriginals: allowICloudOriginals
+                       ) {
+                        found.insert(item.id)
+                    }
+                    verifier.cancel()
+                }
+                try Task.checkCancellation()
+                let finalEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                guard self.ticket == ticketAtStart,
+                      XDriveIOSPhotoKitLibraryEpoch.matches(
+                        startEpoch.serialized, as: finalEpoch.token
+                      ),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+                      UIApplication.shared.applicationState == .active
+                else { throw CancellationError() }
+                self.verifiedPageIDs.formUnion(found)
+                self.pageChecked += chosen.count
+                self.notice = "本页已逐项核验 \(self.pageChecked)/\(self.rows.count) 项；\(self.verifiedPageIDs.count) 项刚通过受管 Node 核验。未核验和失败项不可视为备份成功。"
+            } catch {
+                guard self.ticket == ticketAtStart else { return }
+                self.verifiedPageIDs = []
+                self.pageChecked = 0
+                self.notice = "原件、照片权限或账户在核验期间变化；已撤销本页通过结果，请重新核验。"
+            }
+        }
     }
 
     private func clearPage() {
@@ -229,6 +339,8 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
         libraryTotal = nil
         offset = 0
         hasNext = false
+        verifiedPageIDs = []
+        pageChecked = 0
     }
 
     func reset() {

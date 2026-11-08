@@ -212,7 +212,8 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
                                     Text("拍摄时间未知").font(.caption).foregroundStyle(.secondary)
                                 }
                                 if let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy.badge(
-                                    for: item.state, failureReasonCode: item.failureReasonCode
+                                    for: model.verifiedPageIDs.contains(item.id) ? "matched" : item.state,
+                                    failureReasonCode: item.failureReasonCode
                                 ) {
                                     Label(badge.title, systemImage: badge.symbol)
                                         .font(.caption)
@@ -251,6 +252,26 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
+                if mode == .library {
+                    HStack {
+                        Button("只读核验本页接下来的 8 项") {
+                            model.verifyNextPageBatch(
+                                login: login, allowICloudOriginals: allowICloud
+                            )
+                        }
+                        .disabled(model.loading || model.verifyingPage ||
+                                  model.pageChecked >= model.rows.count || login.owner == nil)
+                        .accessibilityIdentifier("native-ios-photo-library-page-proof-next")
+                        if model.verifyingPage { ProgressView("正在核验…") }
+                    }
+                    .padding(.horizontal, 16)
+                    Text("本页当前已核验 \(model.pageChecked)/\(model.rows.count) 项 · 云端 Node 通过 \(model.verifiedPageIDs.count) 项；结果仅在当前页面与 PhotoKit 版本有效。")
+                        .font(.caption)
+                        .padding(.horizontal, 16)
+                    Text("核验会读取原件、SHA-256 和当前服务器 Node，不会上传或删除；失败／未核验项不能推断云端覆盖。")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .padding(.horizontal, 16)
+                }
                 Toggle("单张优先备份允许下载 iCloud 原件", isOn: $allowICloud)
                     .font(.caption)
                     .padding(.horizontal, 16)
