@@ -103,7 +103,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          xcrun simctl io "$SMOKE_SIM" addmedia \
+          xcrun simctl addmedia "$SMOKE_SIM" \
             "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map.jpg" \
             "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map-second.jpg"
       - name: Run real XCUITest Gallery-Files and native MapKit round trips
