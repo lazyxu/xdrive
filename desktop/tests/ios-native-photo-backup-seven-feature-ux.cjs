@@ -76,6 +76,8 @@ test('5 and 6: direct one-photo priority and failed retry only call existing one
   assert.match(unified, /\.contextMenu \{[\s\S]*?优先备份此原件/)
   assert.match(gallery, /priorityBackup\(local\.id\)/)
   assert.match(viewer, /native-ios-local-viewer-priority-original/)
+  assert.match(viewer, /private var photoActionsMenu: some View/)
+  assert.match(viewer, /ToolbarItem\(placement: \.navigationBarTrailing\) \{\s*photoActionsMenu\s*\}/)
   assert.match(viewer, /priorityAction\(selectedID, false\)/)
   assert.match(tasks, /\.confirmationDialog\([\s\S]*?controller\.startSingle\(/)
   assert.match(dashboard, /showPriorityConsent = true/)
