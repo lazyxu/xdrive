@@ -143,7 +143,15 @@ func readReleaseBundleListing(root string) releaseBundleListing {
 	var manifest releaseBundleManifest
 	if readBundleJSON(filepath.Join(root, "manifests", target+".json"), 2*1024*1024, &manifest) != nil ||
 		manifest.Commit != target || !validReleaseBundleManifest(manifest) {
-		result.State = "unavailable"
+		// A failed manifest fetch has no manifest to list yet. Preserve the
+		// independent worker warning instead of turning it into "unavailable".
+		// Never expose download URLs or claim cached bytes without a valid
+		// immutable manifest.
+		if result.State == "retry_needed" && status.Commit == target {
+			result.Commit = target
+		} else {
+			result.State = "unavailable"
+		}
 		return result
 	}
 	result.Commit, result.Channel = manifest.Commit, manifest.Channel
