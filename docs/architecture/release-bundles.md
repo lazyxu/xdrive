@@ -38,10 +38,20 @@ checks remain authoritative.
   `packages/<current-sha>/`: only currently verified package bytes.
   On a failed new sync the previous verified cache remains available.
   `status.json` is separate from Server update status.
-- During a Server install/update `install.lock` is authoritative: the
-  package worker waits before requests and interrupts active streams when
-  that lock is held, retaining partial bytes for HTTP Range resume. After
-  Server dependencies finish, transfers resume **without bandwidth limits**.
+- During a Server install/update `install.lock` is authoritative for
+  the Host package mirror worker. In addition, the installer writes a
+  noncritical `dependency-busy` marker in the read-only package mount during
+  deployment/dependency fetch. Already-authenticated HTTP package delivery
+  checks that marker on each body read, pausing even in-flight byte-range
+  transfers until the marker clears. Cancellation terminates the paused read;
+  the next request can resume from a verified HTTP Range.
+- Installer success, failure and rollback clear the marker. Host Control
+  also clears an orphan marker after a hard crash **only** while holding a
+  successful nonblocking probe of `install.lock`, avoiding premature resume
+  during a real upgrade. A missing marker is nonfatal to Server upgrade.
+- After dependency pulls finish, transfers resume at the normal, unrestricted
+  rate. An interrupted connection may require the client to retry its HTTP
+  Range; Server upgrades never wait for or depend on that client retry.
 - The worker tries same-commit GitLab package bytes first, GitHub exact
   Bundle asset second, validates size and SHA-256, uses bounded retries, and
   never influences Server upgrade exit status or rollback decisions.

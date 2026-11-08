@@ -6,6 +6,9 @@ XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
 CONFIG_DIR="$XDRIVE_HOME/config"
 BIN_DIR="$XDRIVE_HOME/bin"
 DATA_DIR="$XDRIVE_HOME/data"
+# Advisory, noncritical Host marker shared read-only with the Server container.
+DEPENDENCY_BUSY_MARKER="$DATA_DIR/release-bundles/dependency-busy"
+dependency_busy_active=0
 BACKUP_ROOT="$XDRIVE_HOME/backups"
 SNAPSHOT_BACKUP_DIR="$BACKUP_ROOT/snapshots"
 PRE_UPGRADE_BACKUP_DIR="$BACKUP_ROOT/pre-upgrade"
@@ -151,7 +154,17 @@ on_exit() {
       echo "[xDrive] rollback state preserved at: $UPGRADE_STATE_DIR" >&2
       final_status=71
     fi
+    if [[ "$dependency_busy_active" == "1" ]]; then
+      rm -f -- "$DEPENDENCY_BUSY_MARKER" || true
+      dependency_busy_active=0
+    fi
     exit "$final_status"
+  fi
+
+  # Even a failed upgrade must never leave the client download lane blocked.
+  if [[ "$dependency_busy_active" == "1" ]]; then
+    rm -f -- "$DEPENDENCY_BUSY_MARKER" || true
+    dependency_busy_active=0
   fi
 
   if [[ "$status" -ne 0 ]]; then
@@ -388,6 +401,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 acquire_install_lock
+
+# Server dependencies preempt all client-package transfers. This marker is
+# intentionally advisory: failure to publish it cannot fail/rollback a Server
+# upgrade. Host Control will remove an orphan marker after a hard-killed
+# installer only when it independently proves install.lock is free.
+if [[ ! -L "$DATA_DIR/release-bundles" && ! -L "$DEPENDENCY_BUSY_MARKER" ]]; then
+  if printf '%s\n' "$$" > "$DEPENDENCY_BUSY_MARKER"; then
+    dependency_busy_active=1
+    chmod 0644 "$DEPENDENCY_BUSY_MARKER" || true
+  else
+    echo "[xDrive] WARNING: Release Bundle dependency pause marker unavailable; Server upgrade continues." >&2
+  fi
+fi
 
 existing_env_value() {
   local key="$1"
@@ -3017,6 +3043,15 @@ done
 
 echo "[xDrive] container image pull complete in $(( $(date +%s) - pull_started ))s."
 rm -f "$PULL_LOG"
+# All container image dependency transfers are complete. Resume package
+# downloads immediately and without any bandwidth throttle.
+if [[ "$dependency_busy_active" == "1" ]]; then
+  if rm -f -- "$DEPENDENCY_BUSY_MARKER"; then
+    dependency_busy_active=0
+  else
+    echo "[xDrive] WARNING: Release Bundle pause marker could not be cleared; Host Control will retry." >&2
+  fi
+fi
 
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   DATABASE_ROLLBACK_REQUIRED=1

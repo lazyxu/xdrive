@@ -166,6 +166,11 @@ func readReleaseBundleListing(root string) releaseBundleListing {
 	if result.State == "unavailable" && current.Commit == target {
 		result.State = "ready"
 	}
+	// The Host-owned marker is read through a read-only container mount.
+	// Expose truthful "paused" status even for already verified local files.
+	if _, err := os.Lstat(filepath.Join(root, "dependency-busy")); err == nil {
+		result.State = "paused_for_server"
+	}
 	return result
 }
 
@@ -208,7 +213,12 @@ func (s *Server) releaseBundleArtifactDownload(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename=\""+name+"\"")
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("X-Content-Type-Options", "nosniff")
-	http.ServeContent(c.Writer, c.Request, name, time.Time{}, file)
+	http.ServeContent(c.Writer, c.Request, name, time.Time{},
+		releaseBundlePausedReader{
+			src: file, ctx: c.Request.Context(),
+			marker: filepath.Join(root, "dependency-busy"),
+		},
+	)
 }
 
 func (s *Server) adminRetryReleaseBundle(c *gin.Context) {

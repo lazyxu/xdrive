@@ -65,6 +65,19 @@ release_bundle_enqueue() {
   [[ "$cache" == /* && ! -L "$cache" ]] || return 0
   mkdir -p "$cache"
   chmod 0755 "$cache"
+  # A SIGKILL or power cut can leave the shared marker behind. Remove it
+  # only if the authoritative installer flock is available, never by age.
+  # The probe is isolated so the daemon never retains the lock itself.
+  if [[ -e "$cache/dependency-busy" || -L "$cache/dependency-busy" ]]; then
+    (
+      command -v flock >/dev/null 2>&1 || exit 0
+      exec 7<>"$STATE_DIR/install.lock" || exit 0
+      if flock -n 7; then
+        rm -f -- "$cache/dependency-busy" || true
+      fi
+      flock -u 7 || true
+    )
+  fi
   if [[ -f "$cache/current.json" ]] &&
      grep -Fq "\"commit\":\"$sha\"" "$cache/current.json" &&
      [[ -f "$cache/status.json" ]] &&
@@ -77,7 +90,8 @@ release_bundle_enqueue() {
   (
     exec 8>&- 9>&-
     exec python3 "$worker" --commit "$sha" --cache-dir "$cache" \
-      --install-lock "$STATE_DIR/install.lock" --installed-env "$ENV_PATH"
+      --install-lock "$STATE_DIR/install.lock" --installed-env "$ENV_PATH" \
+      --dependency-busy-file "$cache/dependency-busy"
   ) >>"$LOG_DIR/release-bundle.log" 2>&1 </dev/null &
   printf '%s\n' "$!" > "$pid_file"
   chmod 0600 "$pid_file"
