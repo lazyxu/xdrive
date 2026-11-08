@@ -3094,6 +3094,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func suspendVisibleRange() {
+        cancelPathLookup()
+        cancelSelectAllRead()
+        clearInternalDrag()
         scrollResumeTask?.cancel()
         scrollResumeTask = nil
         if let owner = login.owner, let folderID = folder?.id,
@@ -3101,9 +3104,6 @@ struct XDriveIOSNativeFilesBrowser: View {
             resumeStore.saveAnchor(owner: owner, folderID: folderID,
                                    pageOffset: saved.pageOffset, anchorID: saved.nodeID)
         }
-        cancelPathLookup()
-        cancelSelectAllRead()
-        clearInternalDrag()
         cancelArrangementReanchor()
         pendingDrop = nil
         inlineFolders.suspendForNavigation()
