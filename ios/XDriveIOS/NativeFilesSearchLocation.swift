@@ -322,5 +322,4 @@ struct XDriveIOSNativeFilesLocateScreen: View {
               !model.matches(selected: selected, owner: login.owner) else { return }
         model.load(login: login, selected: selected, expectedOwner: openedOwner)
     }
-    }
 }
