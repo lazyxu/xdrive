@@ -45,6 +45,13 @@ checks remain authoritative.
 - The worker tries same-commit GitLab package bytes first, GitHub exact
   Bundle asset second, validates size and SHA-256, uses bounded retries, and
   never influences Server upgrade exit status or rollback decisions.
+- Before mirroring bytes, the worker verifies the exact GitHub `bundle-<sha>`
+  ref targets a **commit** with the requested full SHA and compares the
+  manifest and every artifact against the immutable GitHub Release asset
+  digest/size inventory. Missing, duplicated, altered, or mismatched assets
+  fail closed without affecting Server health. This uses GitHub HTTPS
+  provenance; it is **not** independent Sigstore verification.
+
 
 ## Authenticated distribution
 

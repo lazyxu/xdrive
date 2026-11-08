@@ -65,8 +65,7 @@ emit() {
   fi
 }
 
-if [[ "${TEST_TAMPER_STAGE_SCRIPT:-0}" == 1 &&
-      "$url" == */scripts/server-control.sh || "$url" == */scripts/release_bundle.py ]]; then
+if [[ "${TEST_TAMPER_STAGE_SCRIPT:-0}" == 1 && "$url" == */scripts/server-control.sh ]]; then
   emit '#!/usr/bin/env bash
 exit 99
 '
@@ -169,8 +168,8 @@ bash "$INSTALLER" >"$TMP/ok.out" 2>"$TMP/ok.err"
 grep -q '\[xDrive\] \[1/9\] resolve release channel' "$TMP/ok.out"
 grep -q 'Resolved latest fully published master snapshot: 0123456789ab' "$TMP/ok.out"
 grep -q '\[xDrive\] \[9/9\] complete' "$TMP/ok.out"
-grep -q '\[xDrive\] download: 1/12 docker-compose.yml' "$TMP/ok.out"
-grep -q '\[xDrive\] download: 12/12 xdrive-server' "$TMP/ok.out"
+grep -q '\[xDrive\] download: 1/13 docker-compose.yml' "$TMP/ok.out"
+grep -q '\[xDrive\] download: 13/13 xdrive-server' "$TMP/ok.out"
 if grep -Eq '\[xDrive\] download: [0-9]+/9 ' "$TMP/ok.out"; then
   echo "deployment asset count confused with install stages" >&2
   exit 1
@@ -259,7 +258,7 @@ test "$(cat "$TMP/config-ok/state/layout-version")" = "2"
 test ! -e "$TMP/config-ok/.env"
 test ! -e "$TMP/config-ok/docker-compose.yml"
 
-# The release-generated installer binds all 12 raw deployment assets to
+# The release-generated installer binds all 13 raw deployment assets to
 # digests calculated from its authenticated checkout. Recreate that set from
 # the already-fetched happy-path fixture and test the generated trust boundary.
 signed_manifest="$TMP/staged-source.sha256"
@@ -280,7 +279,7 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin-ok:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config-signed" XD_SHELL_RC_PATH="$TMP/config-signed.bashrc" \
 XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 XD_LAN_HTTPS_IP=192.168.2.4 \
 bash "$TMP/signed-installer.sh" >"$TMP/signed.out" 2>"$TMP/signed.err"
-grep -q 'all 12 signed release deployment asset SHA-256 checks passed' "$TMP/signed.out"
+grep -q 'all 13 signed release deployment asset SHA-256 checks passed' "$TMP/signed.out"
 if grep -q 'raw bootstrap template' "$TMP/signed.err"; then
   echo "rendered signed installer must never skip embedded asset verification" >&2
   exit 1

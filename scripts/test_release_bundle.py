@@ -121,6 +121,40 @@ class BundleCacheTests(unittest.TestCase):
         self.assertEqual(sync(self.manifest, self.cache, retries=1, allow_local=True, installed_env=env), 0)
         self.assertEqual(json.loads(current.read_text())["commit"], "a" * 40)
 
+    def test_github_commit_tag_and_all_asset_digests_anchor_manifest(self):
+        from release_bundle import _verify_published_release
+        commit = self.manifest["commit"]
+        raw = json.dumps(self.manifest, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+        ref = {"ref": "refs/tags/bundle-" + commit,
+               "object": {"type": "commit", "sha": commit}}
+        release = {
+            "tag_name": "bundle-" + commit,
+            "draft": False, "prerelease": True,
+            "assets": [
+                {"name": "release-bundle.json", "size": len(raw),
+                 "digest": "sha256:" + hashlib.sha256(raw).hexdigest()},
+                {"name": "pkg.ipa", "size": len(self.data),
+                 "digest": "sha256:" + hashlib.sha256(self.data).hexdigest()},
+            ],
+        }
+        _verify_published_release(commit, raw, self.manifest, ref, release)
+        changed = json.loads(json.dumps(release))
+        changed["assets"][1]["digest"] = "sha256:" + "0" * 64
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            _verify_published_release(commit, raw, self.manifest, ref, changed)
+        changed = json.loads(json.dumps(ref))
+        changed["object"]["sha"] = "b" * 40
+        with self.assertRaisesRegex(ValueError, "source commit"):
+            _verify_published_release(commit, raw, self.manifest, changed, release)
+        changed = json.loads(json.dumps(release))
+        changed["assets"].pop()
+        with self.assertRaisesRegex(ValueError, "asset"):
+            _verify_published_release(commit, raw, self.manifest, ref, changed)
+        changed = json.loads(json.dumps(release))
+        changed["draft"] = True
+        with self.assertRaisesRegex(ValueError, "identity"):
+            _verify_published_release(commit, raw, self.manifest, ref, changed)
+
     def test_external_origins_rejected(self):
         self.manifest["artifacts"][0]["sources"]["github"] = "https://evil.example/pkg.ipa"
         with self.assertRaises(ValueError):

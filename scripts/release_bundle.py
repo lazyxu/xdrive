@@ -204,17 +204,78 @@ def _download(url, path, size, digest, lock_path, marker=None):
     os.replace(partial, path)
 
 
-def _fetch_manifest(sha, lock_path):
-    url = GITHUB_BASE + "bundle-" + sha + "/release-bundle.json"
+def _github_release_json(url, lock_path):
     _wait_for_dependencies(lock_path)
+    with OPENER.open(
+        Request(url, headers={"User-Agent": "xDrive-ReleaseBundle/1",
+                              "Accept": "application/vnd.github+json"}),
+        timeout=25,
+    ) as response:
+        if response.status != 200:
+            raise ValueError("GitHub release provenance unavailable")
+        raw = response.read(MAX_MANIFEST + 1)
+    if len(raw) > MAX_MANIFEST:
+        raise ValueError("GitHub release provenance exceeds size limit")
+    parsed = json.loads(raw.decode("utf-8"))
+    if not isinstance(parsed, dict):
+        raise ValueError("invalid GitHub release provenance response")
+    return parsed
+
+
+def _verify_published_release(sha, raw, document, ref, release):
+    """Bind remote manifest bytes AND every package to the exact Git commit.
+
+    GitHub tag/ref and asset digests are authenticated by the GitHub HTTPS API.
+    This is not a replacement for independent Sigstore verification.
+    """
+    if not isinstance(ref.get("object"), dict) or (
+        ref.get("ref") != "refs/tags/bundle-" + sha
+        or ref["object"].get("type") != "commit"
+        or ref["object"].get("sha") != sha
+    ):
+        raise ValueError("immutable Bundle tag is not an exact source commit")
+    if release.get("tag_name") != "bundle-" + sha or (
+        release.get("draft") is not False or release.get("prerelease") is not True
+    ):
+        raise ValueError("GitHub Bundle Release identity is invalid")
+    assets = release.get("assets")
+    if not isinstance(assets, list) or len(assets) > 31:
+        raise ValueError("invalid published asset inventory")
+    published = {}
+    for item in assets:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            raise ValueError("malformed published asset")
+        if item["name"] in published:
+            raise ValueError("duplicate published asset name")
+        published[item["name"]] = item
+    expected = {"release-bundle.json": (len(raw), hashlib.sha256(raw).hexdigest())}
+    for artifact in document["artifacts"]:
+        expected[artifact["filename"]] = (artifact["size"], artifact["sha256"])
+    if set(published) != set(expected):
+        raise ValueError("GitHub published assets differ from immutable Bundle manifest")
+    for name, (size, digest) in expected.items():
+        asset = published[name]
+        if asset.get("digest") != "sha256:" + digest or asset.get("size") != size:
+            raise ValueError("GitHub published asset size or SHA-256 mismatch: " + name)
+
+
+def _fetch_manifest(sha, lock_path):
+    if not SHA.fullmatch(sha):
+        raise ValueError("invalid full source commit")
+    prefix = "https://api.github.com/repos/lazyxu/xdrive/"
+    ref = _github_release_json(prefix + "git/ref/tags/bundle-" + sha, lock_path)
+    release = _github_release_json(prefix + "releases/tags/bundle-" + sha, lock_path)
+    _wait_for_dependencies(lock_path)
+    url = GITHUB_BASE + "bundle-" + sha + "/release-bundle.json"
     with OPENER.open(Request(url, headers={"User-Agent": "xDrive-ReleaseBundle/1"}), timeout=25) as response:
         if response.status != 200:
             raise ValueError("manifest not available")
         raw = response.read(MAX_MANIFEST + 1)
     if len(raw) > MAX_MANIFEST:
         raise ValueError("oversized manifest")
-    document = json.loads(raw.decode("utf-8"))
-    return validate(document, sha)
+    document = validate(json.loads(raw.decode("utf-8")), sha)
+    _verify_published_release(sha, raw, document, ref, release)
+    return document
 
 
 def _retain_manifest(cache, manifest):
