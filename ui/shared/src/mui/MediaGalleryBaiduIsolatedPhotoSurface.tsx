@@ -19,6 +19,7 @@ import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cel
 import { xDriveBaiduCellReturnMatchesFreshSelection } from '../media-gallery-baidu-cell-return-session'
 import {
   XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
+  XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT, XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT,
   xDrivePlacesDrawerValidRange, xDrivePlacesDrawerReturnLogicalDepth,
   xDrivePlacesDrawerMatchesFresh, xDrivePlacesDrawerMatchesResizedCell,
   xDriveTakePlacesDrawerViewerReturn,
@@ -412,6 +413,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           pageErrorKind:window?undefined:'window',
           failedWindowRange:window?undefined:{start:visibleStart,end:visibleEnd},
           windowStart:window?.start ?? current.windowStart,
+          // Only a newly contiguous signed page may advance the prefix.
+          // A direct far seek never claims the intervening rows were visited.
+          loadedDepth:window?.depth ?? current.loadedDepth,
           items:window ? [...window.items] : current.items}
       })
     }).catch(()=>{
@@ -610,19 +614,44 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
              state.key===approved.key && latestAcceptedViewport.current) {
             const list=node.ownerDocument.querySelector<HTMLElement>(
               '[data-xdrive-places-album-dialog] [data-xdrive-places-photo-drawer-items]')
-            const bounded=(value:number)=>Number.isFinite(value)
-              ? Math.max(0,Math.min(10_000,Math.floor(value))) : 0
+            const bounded=(value:number,max=10_000)=>Number.isFinite(value)
+              ? Math.max(0,Math.min(max,Math.floor(value))) : 0
+            // The current visible tile belongs to the trusted Parent's
+            // authenticated sparse Grid, never to the third-party SDK Child.
+            // A stable logical photo row survives a width/column count change.
+            const bounds=list?.getBoundingClientRect()
+            const visibleTile=list && bounds ? Array.from(
+              list.querySelectorAll<HTMLElement>(
+                '[data-xdrive-media-gallery-virtual-grid] [data-xdrive-media-index]'),
+            ).find(tile=>{
+              const rect=tile.getBoundingClientRect()
+              return rect.bottom>bounds.top && rect.top<bounds.bottom &&
+                rect.right>bounds.left && rect.left<bounds.right
+            }) : undefined
+            const rawIndex=visibleTile
+              ? Number(visibleTile.getAttribute('data-xdrive-media-index')) : -1
+            const anchor=state.total>XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT &&
+              Number.isSafeInteger(rawIndex) && rawIndex>=0 &&
+              rawIndex<state.total && bounds && visibleTile
+              ? {anchorIndex:rawIndex,
+                  anchorViewportOffset:Math.max(-10_000,Math.min(10_000,
+                    Math.round(visibleTile.getBoundingClientRect().top-bounds.top)))}
+              : {}
             pendingResizeDrawer.current={owner:scope??'',key:approved.key,
               hint:{selection:{...state.selection,
                 bounds:{...state.selection.bounds}},photoScope,
                 presentation:{expanded:state.expanded,
-                  scrollTop:bounded(list?.scrollTop??0),
+                  scrollTop:bounded(list?.scrollTop??0,
+                    XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT),
                   scrollLeft:bounded(list?.scrollLeft??0),
-                  // Keep the already-viewed signed page depth on rotation.
-                  // The new camera must still reauthorize every page, capped
-                  // at the same 10-page limit as Viewer Back.
+                  // Retain only numeric visual intent; fresh Owner Cells and
+                  // signed /cell-items pages still authorize all rehydration.
                   loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
-                    state.loadedDepth)}}}
+                    state.loadedDepth),
+                  ...(state.loadedDepth>XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT
+                    ? {visitedDepth:Math.min(
+                        XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT,state.loadedDepth)} : {}),
+                  ...anchor}}}
           }
           // When several CSS resize frames precede one /cells response,
           // preserve only the first valid intent. Native Hosts coalesce the
