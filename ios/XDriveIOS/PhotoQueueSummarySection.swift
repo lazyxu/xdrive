@@ -231,6 +231,7 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
                                     showPriorityConsent = priorityOwner != nil
                                 }
                                 .buttonStyle(.bordered)
+                                .disabled(model.loading)
                                 .accessibilityIdentifier("native-ios-photo-task-item-priority")
                             }
                         }
@@ -292,6 +293,11 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
             }
             .onChange(of: mode) { _ in refresh() }
             .onChange(of: filter) { _ in refresh() }
+            .onChange(of: controller.busy) { busy in
+                if !busy && phase == .active {
+                    model.refreshCurrent(login: login, mode: mode, filter: filter)
+                }
+            }
             .onChange(of: login.owner) { _ in
                 priorityOwner = nil
                 priorityID = nil
