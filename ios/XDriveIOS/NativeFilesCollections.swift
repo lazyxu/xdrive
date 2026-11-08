@@ -509,6 +509,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var selectedFile: XDriveIOSNativeFilesCollectionItem?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnFile: XDriveIOSNativeFilesNode?
+    // Viewer may re-appear before dismissal finishes; refresh at most once.
+    @State private var viewerRefreshPending = false
     @State private var locateIntent: XDriveIOSNativeFilesCollectionItem?
     @State private var locateOwner: XDriveNativeOwnerRoot?
     @State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent?
@@ -572,6 +574,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     .padding(.vertical, 8)
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
+                    // Keep grid entry AX identifiers independent of the container.
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("native-ios-files-collection-grid")
                 } else {
                     ForEach(filteredItems) { item in
@@ -720,9 +724,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .fullScreenCover(item: $selectedFile, onDismiss: {
                 selectedOwner = nil
-                // If onAppear already started a quiet read, avoid a duplicate
-                // GET on the same Viewer dismissal.
-                if !model.loading { reload(preserveVerifiedRows: true) }
+                let shouldRefresh = viewerRefreshPending
+                viewerRefreshPending = false
+                // The presenter can reappear before onDismiss. Only this
+                // callback may refresh after a Viewer, and not in background.
+                if shouldRefresh && phase == .active && !model.loading {
+                    reload(preserveVerifiedRows: true)
+                }
             }) { initial in
                 if let openedOwner = selectedOwner {
                     XDriveIOSNativeFilesViewer(
@@ -748,7 +756,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .onAppear {
                 isVisible = true
-                guard phase == .active else { return }
+                // A Viewer owns the return until its onDismiss callback.
+                guard phase == .active, !viewerRefreshPending else { return }
                 if !model.matches(login.owner, kind: kind) {
                     if !model.loading { reload() }
                 } else if !model.loading &&
@@ -761,7 +770,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .onDisappear {
                 isVisible = false
-                if selectedFile == nil && locateIntent == nil && managementIntent == nil {
+                if !viewerRefreshPending && selectedFile == nil &&
+                    locateIntent == nil && managementIntent == nil {
                     // NavigationLink child must not lose its source identity.
                     model.suspendForNavigation()
                     favorites.invalidate()
@@ -774,7 +784,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     // Cancel in-flight metadata reads during scene suspension,
                     // but do not drop a child NavigationLink's verified source.
                     model.suspendForNavigation()
-                } else if isVisible && !model.loading {
+                } else if isVisible && !model.loading &&
+                          selectedFile == nil && !viewerRefreshPending {
                     // A screen that appeared while inactive must still load
                     // when foregrounded. Revalidate an old same-scope page
                     // silently, never revive a previous Owner or collection.
@@ -782,6 +793,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
             .onChange(of: kind) { _ in
+                viewerRefreshPending = false
                 // SwiftUI may reuse a StateObject when switching collection
                 // subroutes. Neither the old items nor async reads may cross.
                 selectedFile = nil
@@ -798,6 +810,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if phase == .active { reload() }
             }
             .onChange(of: login.owner) { _ in
+                viewerRefreshPending = false
                 selectedFile = nil
                 selectedOwner = nil
                 returnFile = nil
@@ -909,6 +922,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
               model.items.contains(item) else { return }
         selectedOwner = owner
         returnFile = item.node
+        viewerRefreshPending = true
         selectedFile = item
     }
 

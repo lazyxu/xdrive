@@ -25,14 +25,14 @@ for (const [name, view, tile] of [['PhotoKit full wall', local, 'candidate'], ['
       // The authenticated album Viewer must freeze the current bounded page
       // before opening, so its later 64-slot boundary crossing cannot reuse
       // the initial wall's stale list or focus anchor.
-      assert.match(view, /viewerReturnID = item\.id\s+accessibilityFocusedTileID = nil\s+viewerPage = loadedPage\s+selected = item/);
+      assert.match(view, /viewerReturnID = item\.id\s+accessibilityFocusedTileID = nil\s+viewerPageInvalidated = false\s+viewerPage = loadedPage\s+selected = item/);
       assert.match(view, /accessibilityFocus: \$accessibilityFocusedTileID/);
       assert.match(albumVirtual, /let accessibilityFocus: AccessibilityFocusState<String\?>\.Binding/);
     } else {
       assert.match(view, /viewerReturnID = (?:candidate|item)\.id\s+accessibilityFocusedTileID = nil\s+selected = (?:candidate|item)/);
     }
     assert.match(view, /pageRenderRevision &\+= 1/);
-    assert.match(view, /shouldRestoreViewerTile = viewerReturnID != nil && phase == \.active/);
+    assert.match(view, /shouldRestoreViewerTile = (?:!wasInvalidated &&\s*)?viewerReturnID != nil && phase == \.active/);
     assert.match(view, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/);
     assert.match(view, /scroll\.scrollTo\(target, anchor: \.center\)/);
     assert.match(view, /@AccessibilityFocusState private var accessibilityFocusedTileID: String\?/);
@@ -147,14 +147,14 @@ test('PhotoKit album L3 Viewer navigates only a verified 64-item page at a time 
   assert.match(contents, /loadedPage: viewerPage \?\? page/)
   assert.match(contents, /onCrossPage: \{ oldPage, anchor, direction in/)
   assert.match(contents, /onCrossedPage: \{ next, verifiedPage in/)
-  assert.match(contents, /onViewed: \{ next in[\s\S]*?phase == \.active, selected\?\.id == initial\.id/)
+  assert.match(contents, /onViewed: \{ next in[\s\S]*?guard !viewerPageInvalidated, phase == \.active,\s*selected\?\.id == initial\.id/)
   assert.match(contents, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
   assert.match(contents, /viewerPage\?\.items\.contains\(where: \{[\s\S]*?\$0\.id == next\.id[\s\S]*?\$0\.kind == next\.kind[\s\S]*?\$0\.isLive == next\.isLive[\s\S]*?\$0\.capturedAt == next\.capturedAt[\s\S]*?\$0\.modifiedAt == next\.modifiedAt/)
   assert.match(contents, /viewerReturnID = next\.id\s+accessibilityFocusedTileID = nil/)
   assert.match(contents, /private func restoreAfterViewer\(\)[\s\S]*?if phase == \.active \{\s*if sameVerifiedPage \{\s*pageRenderRevision &\+= 1\s*\} else \{\s*reload\(\)\s*\}\s*if let jump = pendingAlbumMapJump \{[\s\S]*?pendingAlbumMapJump = nil[\s\S]*?albumMapJump = jump[\s\S]*?showingAlbumMap = true/)
   assert.match(contents, /\} else \{\s*pendingAlbumMapJump = nil[\s\S]*?clearViewerTileAnchor\(\)\s*invalidate\(\)/)
   assert.match(contents, /private func restoreViewerTile\(using scroll: ScrollViewProxy\)[\s\S]*?XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
-  assert.match(contents, /onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?clearViewerTileAnchor\(\)[\s\S]*?invalidate\(\)/)
+  assert.match(contents, /onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?clearViewerTileAnchor\(\)[\s\S]*?else if selected != nil \|\| showingAlbumMap \{[\s\S]*?viewerPageInvalidated = true[\s\S]*?suspendForViewer\(\)[\s\S]*?else \{\s*invalidate\(\)/)
   assert.match(contents, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
   assert.match(contents, /else \{ libraryMonitor\.stop\(\); invalidate\(\) \}/)
   assert.doesNotMatch(contents, /UserDefaults|@AppStorage|CloudKit|UploadSession|isNetworkAccessAllowed = true/)

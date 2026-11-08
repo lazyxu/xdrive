@@ -485,6 +485,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     // Only the one currently viewed verified page is retained in memory.
     // It may change when L3 crosses a 64-slot album boundary.
     @State private var viewerPage: XDrivePhotoKitScanPage?
+    // Keep a presented Viewer, but revoke navigation into stale PhotoKit pages.
+    @State private var viewerPageInvalidated = false
     @State private var loading = false
     @State private var task: Task<Void, Never>?
     @State private var epoch = UUID()
@@ -609,6 +611,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                                     } else {
                                         viewerReturnID = item.id
                                         accessibilityFocusedTileID = nil
+                                        viewerPageInvalidated = false
                                         viewerPage = loadedPage
                                         selected = item
                                     }
@@ -673,12 +676,14 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             restoreViewerTile(using: returnScroll)
         }
         .onChange(of: total) { count in
-            guard let count, count > 0, phase == .active else { return }
+            guard let count, count > 0, phase == .active,
+                  selected == nil, !showingAlbumMap else { return }
             let anchor = XDriveIOSNativePhotoVirtualPagePolicy.normalizedAnchor(
                 requested: savedOffset, total: count
             )
             DispatchQueue.main.async {
-                guard phase == .active else { return }
+                guard phase == .active, selected == nil,
+                      !showingAlbumMap else { return }
                 returnScroll.scrollTo("album-page:\(anchor)", anchor: .top)
             }
         }
@@ -784,7 +789,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                 onViewed: { next in
                     // Use the currently verified Viewer page, not the original
                     // wall page after a cross-page move.
-                    guard phase == .active, selected?.id == initial.id,
+                    guard !viewerPageInvalidated, phase == .active,
+                          selected?.id == initial.id,
                           [.authorized, .limited].contains(
                             PHPhotoLibrary.authorizationStatus(for: .readWrite)
                           ),
@@ -800,7 +806,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                 },
                 loadedPage: viewerPage ?? page,
                 onCrossPage: { oldPage, anchor, direction in
-                    guard phase == .active, selected?.id == initial.id,
+                    guard !viewerPageInvalidated, phase == .active,
+                          selected?.id == initial.id,
                           [.authorized, .limited].contains(
                             PHPhotoLibrary.authorizationStatus(for: .readWrite)
                           ) else { throw XDriveIOSAlbumReadFailure.changed }
@@ -814,7 +821,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                             from: oldPage, anchoredAt: anchor, direction: direction
                         )
                         await adjacentReader.reset()
-                        guard phase == .active, selected?.id == initial.id,
+                        guard !viewerPageInvalidated, phase == .active,
+                              selected?.id == initial.id,
                               [.authorized, .limited].contains(
                                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
                               ) else { throw XDriveIOSAlbumReadFailure.changed }
@@ -825,7 +833,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     }
                 },
                 onCrossedPage: { next, verifiedPage in
-                    guard phase == .active, selected?.id == initial.id else { return }
+                    guard !viewerPageInvalidated, phase == .active,
+                          selected?.id == initial.id else { return }
                     viewerPage = verifiedPage
                     savedOffset = verifiedPage.startOffset
                     viewerReturnID = next.id
@@ -844,8 +853,23 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .onChange(of: libraryMonitor.revision) { _ in
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             clearViewerTileAnchor()
-            invalidate()
-            error = "系统相册发生变化，请重新读取当前页面。"
+            if permission != .authorized && permission != .limited {
+                // Permission revocation must still retire the presented media.
+                showingAlbumMap = false
+                invalidate()
+                error = "本机相册访问权限已失效，请返回重新授权。"
+            } else if selected != nil || showingAlbumMap {
+                // Do not dismiss a modal because the hidden album changed.
+                // Revoke its old wall/page; Viewer validates its own media.
+                viewerPageInvalidated = true
+                suspendForViewer()
+                page = nil
+                total = nil
+                error = "系统相册发生变化，请返回后重新读取当前页面。"
+            } else {
+                invalidate()
+                error = "系统相册发生变化，请重新读取当前页面。"
+            }
         }
         .onChange(of: phase) { state in
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -1070,8 +1094,13 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     }
 
     private func restoreAfterViewer() {
+        let wasInvalidated = viewerPageInvalidated
+        viewerPageInvalidated = false
         viewerPage = nil
-        shouldRestoreViewerTile = viewerReturnID != nil && phase == .active
+        // Never restore a reused/deleted localIdentifier after a PhotoKit change.
+        if wasInvalidated { clearViewerTileAnchor() }
+        shouldRestoreViewerTile = !wasInvalidated &&
+            viewerReturnID != nil && phase == .active
         // Keep a same-page Viewer return stable after a fresh authorization and
         // live PhotoKit change-epoch check. Cross-page jumps still reload.
         let freshPermission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
