@@ -82,9 +82,11 @@ export function xDrivePlacesPhotoWindowAppend(
   })
 }
 
-/** Rehydrate an evicted page requested by Gallery's real virtual viewport.
- * Signed Owner/Node/revision validation happens on every request, and this
- * helper never changes the maximum visited depth or admits SDK-provided data.
+/** Rehydrate any logical page requested by Gallery's real virtual viewport.
+ * The first signed /cell-items Range establishes the exact authorized total.
+ * A direct seek never pretends that intervening pages were visited: depth
+ * remains the length of the contiguous prefix starting at zero. All newly
+ * returned identities still pass the signed Owner/Node/revision verifier.
  */
 export function xDrivePlacesPhotoWindowRehydrate(
   selection: MediaBaiduNativeCellSelection,
@@ -93,7 +95,7 @@ export function xDrivePlacesPhotoWindowRehydrate(
 ): XDrivePlacesPhotoWindow | null {
   const offset = page?.offset
   if (!Number.isSafeInteger(offset) || offset < 0 ||
-      offset >= window.depth ||
+      offset >= window.total ||
       !acceptsPage(selection, window, page, offset)) return null
   const currentEnd = window.start + window.items.length
   if (offset >= window.start && offset + page.items.length <= currentEnd) {
@@ -104,6 +106,11 @@ export function xDrivePlacesPhotoWindowRehydrate(
           x.node.id !== page.items[i].node.id ||
           x.node.revision !== page.items[i].node.revision)) return null
     return window
+  }
+  // A newly visited adjacent prefix page may advance the sequential cursor,
+  // while a deep random seek must NOT mark thousands of skipped rows visited.
+  if (offset === window.depth) {
+    return xDrivePlacesPhotoWindowAppend(selection, window, page)
   }
   // Adjacent windows keep continuity and permit normal reversible scrolling.
   if (offset + page.items.length === window.start) {
@@ -134,22 +141,22 @@ export function xDrivePlacesPhotoWindowMissingOffset(
   end: number,
 ): number | null {
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
-      start < 0 || end < start || end >= window.depth ||
-      window.items.length < 1 || window.depth <= 0) return null
+      start < 0 || end < start || end >= window.total ||
+      window.items.length < 1 || window.total <= 0) return null
   const residentEnd = window.start + window.items.length
   if (start < window.start) {
     return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }
-  // A fast scroll, calendar jump or Viewer return can land thousands of
-  // already-visited pages ahead of a small rehydrated resident window.
-  // Seek the *visible* signed page directly instead of issuing every
-  // intervening 48-item /cell-items request.
+  // A first-time far scroll, Viewer return or resize can land thousands of
+  // pages ahead of the contiguous prefix. Use the FIRST signed total for the
+  // full virtual range and seek the visible page directly; do not fabricate
+  // cached identities or issue thousands of intervening requests.
   if (start >= residentEnd) {
     return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }
-  if (end >= residentEnd && residentEnd < window.depth) {
+  if (end >= residentEnd && residentEnd < window.total) {
     return Math.floor(residentEnd / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }
