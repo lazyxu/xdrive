@@ -4,7 +4,10 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import fcntl
 import json
+import os
 from pathlib import Path
+import subprocess
+import time
 import tempfile
 import threading
 import unittest
@@ -268,6 +271,53 @@ class BundleCacheTests(unittest.TestCase):
             _download("http://127.0.0.1/test", target, len(payload), checksum, None, marker)
         self.assertEqual(target.read_bytes(), payload)
         self.assertFalse(partial.exists())
+
+
+    def test_host_control_explicit_retry_rechecks_ready_cache(self):
+        """The admin retry must not be swallowed by the ready-status fast path."""
+        home = self.root / "host-home"
+        for name in ("bin", "config", "logs", "state", "data/release-bundles"):
+            (home / name).mkdir(parents=True, exist_ok=True)
+        commit = "a" * 40
+        cache = home / "data" / "release-bundles"
+        (cache / "current.json").write_text(
+            json.dumps({"commit": commit}, separators=(",", ":")), encoding="utf-8",
+        )
+        (cache / "status.json").write_text(
+            json.dumps({"commit": commit, "state": "ready"}, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        (home / "config" / ".env").write_text(
+            f"XD_RELEASE_COMMIT={commit}\\n"
+            f"XD_RELEASE_BUNDLE_HOST_DIR={cache}\\n", encoding="utf-8",
+        )
+        # The runner uses a tiny inert worker, rather than contacting GitHub.
+        # It records only invocation, so this test cannot publish packages.
+        (home / "bin" / "release_bundle.py").write_text(
+            "import os\\nfrom pathlib import Path\\n"
+            "Path(os.environ['XD_RELEASE_TEST_MARKER']).write_text('called')\\n",
+            encoding="utf-8",
+        )
+        launched = self.root / "worker-invoked"
+        env = {**os.environ, "XD_CONFIG_DIR": str(home),
+               "XD_HOST_CONTROL_SOURCE_ONLY": "1",
+               "XD_RELEASE_TEST_MARKER": str(launched)}
+        script = Path(__file__).resolve().parents[1] / "scripts" / "server-control.sh"
+        for mode in ("", "true"):
+            run = subprocess.run(
+                ["bash", "-c", 'source "$1"; release_bundle_enqueue "$2"', "test",
+                 str(script), mode],
+                cwd=self.root, env=env, capture_output=True, text=True, timeout=8,
+            )
+            self.assertEqual(run.returncode, 0, run.stderr)
+            if not mode:
+                self.assertFalse(launched.exists(), "normal ready-cache poll spawned worker")
+            else:
+                deadline = time.monotonic() + 3
+                while not launched.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue(launched.exists(),
+                    "admin retry was silently ignored for a ready cache")
 
 
 if __name__ == "__main__":
