@@ -6,7 +6,7 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
-const sharedGalleryMain = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
+const sharedGalleryMain = (read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx') + '\n' + read('ui', 'shared', 'src', 'mui', 'MediaGallerySharedTiles.tsx'))
 const sharedWorkspaceSurface = read('ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx')
 const sharedGalleryDetails = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDetails.tsx')
 const sharedGalleryInspector = read('ui', 'shared', 'src', 'mui', 'MediaGalleryInspector.tsx')

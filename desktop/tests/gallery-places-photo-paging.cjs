@@ -70,13 +70,15 @@ test('shared Owner Parent alone paginates, fences cancellations and retains the 
   const dialog=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
   for(const needle of [
     'const loadDrawerMore = () => {',
-    'const offset=state.items.length',
+    'const offset=state.loadedDepth',
     'preview(selection,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,offset,',
     'xDriveAppendPlacesDrawerPage(selection,current.items,current.total,range)',
     'acceptedScope.current?.key !== key',
     'hasAcceptedCell(selection)',
     'drawerFetch.current?.abort()',
     'onLoadMore={loadDrawerMore}',
+    'onWindowRange={loadDrawerWindow}',
+    'windowStart={activeDrawer.windowStart} loadedDepth={activeDrawer.loadedDepth}',
   ])assert.ok(surface.includes(needle),needle)
   for(const needle of [
     'data-xdrive-places-photo-drawer-load-more',
@@ -117,8 +119,8 @@ test('Viewer return saves only a bounded page count and reauthorizes after retur
   assert.equal(h.xDriveTakePlacesDrawerViewerReturn('paging-owner',1004),undefined)
   const sheet=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
   assert.ok(sheet.includes('const target=Math.min(initialPresentation?.loadedCount ?? 0,total)'))
-  assert.ok(sheet.includes('(initialPresentation.loadedCount ?? 0)<=items.length'))
-  assert.ok(sheet.includes('loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,items.length)'))
+  assert.ok(sheet.includes('(initialPresentation.loadedCount ?? 0)<=loadedDepth'))
+  assert.ok(sheet.includes('loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,loadedDepth)'))
 })
 
 test('Gallery reauthorizes late-page Viewer from Server anchor, never first 48 alone', () => {

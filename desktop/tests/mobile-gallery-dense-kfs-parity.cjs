@@ -9,10 +9,10 @@ const { act } = renderer
 
 const root = path.resolve(__dirname, '../..')
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8')
-const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
 const gridSource = read('ui/shared/src/mui/MediaGalleryVirtualGrid.ts')
 const denseStart = gallery.indexOf('function MediaTileGrid({')
-const denseEnd = gallery.indexOf('function mediaGalleryScrollParent(', denseStart)
+const denseEnd = gallery.indexOf('export function mediaGalleryScrollParent(', denseStart)
 assert.ok(denseStart >= 0 && denseEnd > denseStart, 'isolated dense Gallery renderer missing')
 
 const gridJs = ts.transpileModule(gridSource, {

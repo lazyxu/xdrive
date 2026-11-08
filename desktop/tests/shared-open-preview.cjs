@@ -8,7 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const openPreview = read('ui', 'shared', 'src', 'mui', 'FileOpenPreviewDialog.tsx')
 const quickLook = read('ui', 'shared', 'src', 'mui', 'FileQuickLookDialog.tsx')
-const gallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
+const gallery = (read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx') + '\n' + read('ui', 'shared', 'src', 'mui', 'MediaGallerySharedTiles.tsx'))
 const galleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
 const mediaViewerContent = read('ui', 'shared', 'src', 'mui', 'MediaViewerContent.tsx')
 const galleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')

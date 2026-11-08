@@ -9,7 +9,7 @@ const read = name => fs.readFileSync(path.join(root, name), 'utf8')
 test('known Node revision reaches Web and Desktop authenticated thumbnail API', () => {
   const shared = read('ui/shared/src/mui/MediaGalleryAdapter.ts')
   const scheduler = read('ui/shared/src/mui/MediaGalleryThumbnailScheduler.ts')
-  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
   const thumbnail = read('ui/shared/src/mui/MediaGalleryPreviewMedia.tsx')
   const filmstrip = read('ui/shared/src/mui/MediaGalleryFilmstrip.tsx')
   const poster = read('ui/shared/src/mui/MediaGalleryVideoPoster.ts')

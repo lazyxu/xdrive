@@ -61,7 +61,7 @@ const entry = (index, name, media_kind, duration_ms) => ({
 })
 test('Filmstrip reuses the Gallery/Inspector duration formatter, no second formatter', () => {
   assert.match(source, /import \{ xDriveMediaFormatDuration \} from '\.\/MediaGalleryUtils'/)
-  assert.match(read('ui/shared/src/mui/MediaGallery.tsx'), /xDriveMediaFormatDuration\(item\.metadata\.duration_ms\)/)
+  assert.match(read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'), /xDriveMediaFormatDuration\(item\.metadata\.duration_ms\)/)
 })
 test('mounted Viewer Filmstrip shows video time, safe fallback and accessible labels', async () => {
   const entries = [

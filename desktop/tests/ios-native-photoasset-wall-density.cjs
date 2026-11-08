@@ -24,9 +24,9 @@ const wall = source.slice(
 test('native cloud tile has truly square aspect fill without extra filename labels', () => {
   assert.match(tile, /GeometryReader \{ square in/)
   assert.match(tile, /\.frame\(width: square\.size\.width, height: square\.size\.height\)/)
-  assert.match(tile, /\.aspectRatio\(1, contentMode: \.fit\)/)
+  assert.match(shared, /\.aspectRatio\(1, contentMode: \.fit\)/)
   assert.match(tile, /\.resizable\(\)\.scaledToFill\(\)/)
-  assert.match(tile, /XDriveIOSNativePhotoWallMediaBadge\(\s*isVideo: item\.isVideo, isLive: item\.isLive/)
+  assert.match(tile, /XDriveIOSNativePhotoWallTileShell\(isVideo: item\.isVideo, isLive: item\.isLive/)
   assert.match(shared, /if isVideo \{[\s\S]*?Image\(systemName: "play.fill"\)/)
   assert.match(shared, /else if isLive \{\s*Image\(systemName: "livephoto"\)/)
   assert.match(tile, /model\.thumbnail\(item, login: login\)/)

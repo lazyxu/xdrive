@@ -80,6 +80,6 @@ test('forward and backward place transitions preserve a bounded wall cursor and 
   assert.match(album, /priorWindow = nil\s*priorWindowCursor = nil/)
   assert.match(album, /coverTask\?\.cancel\(\)\s*coverImages = \[:\]/)
   assert.match(album, /load\(cursor, history: earlier\)/)
-  assert.match(album, /page\?\.items\.contains\(where: \{[\s\S]*?sameVisibleRevision\(as: anchor\)/)
+  assert.match(album, /XDriveIOSNativePhotoWallWindowPolicy\.canRestore\(\s*anchor, in: page\?\.items \?\? \[\],[\s\S]*?matches: \{ \$0\.sameVisibleRevision\(as: \$1\) \}/)
   assert.match(album, /returnScroll\.scrollTo\(anchor\.id, anchor: \.center\)/)
 })

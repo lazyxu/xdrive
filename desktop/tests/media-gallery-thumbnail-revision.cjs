@@ -104,7 +104,7 @@ test('Gallery new revision must cancel obsolete in-flight source and prevent lat
 
 test('Gallery media tile passes revision and re-acquires same Node after revision change', () => {
   const source = fs.readFileSync(path.join(
-    root, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
+    root, 'ui/shared/src/mui/MediaGallerySharedTiles.tsx'), 'utf8')
   const start = source.indexOf('function MediaTile(')
   assert.ok(start >= 0, 'shared Gallery tile must exist')
   const tile = source.slice(start, start + 11000)

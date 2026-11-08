@@ -43,7 +43,7 @@ test('71, 142 and 100k Places photos use the identical bounded Gallery row windo
 })
 
 test('Places draws the canonical Gallery tiles and respects signed Owner pagination', () => {
-  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const gallery = read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
   const drawer = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
   const parent = read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   assert.match(gallery, /export function MediaVirtualTileGrid\(/)
@@ -63,7 +63,7 @@ test('Places draws the canonical Gallery tiles and respects signed Owner paginat
 
 test('trusted Parent touch activation remains one-shot and does not cross the Child map', () => {
   const drawer = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
-  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const gallery = read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
   assert.match(drawer, /listRef\.current\?\.contains\(tile\)/)
   assert.match(drawer, /items\.find\(item => item\.node\.id === id\)/)
   assert.match(drawer, /onPointerDownCapture=\{event =>/)
