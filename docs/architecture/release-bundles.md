@@ -73,7 +73,7 @@ checks remain authoritative.
 
 - `GET /api/v1/release-bundles/current` returns only the current Server
   Commit, its per-package cache state and exact digests with fallback URLs.
-  No historical Bundle selection endpoint or version selector exists. Entries list the Entries list the
+  No historical Bundle selection endpoint or version selector exists. Entries list the
   local authenticated download first **only when a verified cache exists**,
   followed by GitLab and then GitHub. Clients MUST check SHA-256/size before
   installing from any origin; if a source fails, try the next. They MUST
