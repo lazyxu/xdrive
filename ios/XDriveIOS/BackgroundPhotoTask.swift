@@ -243,11 +243,15 @@ enum XDriveIOSBackgroundPhotoTask {
                       let offset = XDrivePhotoBackupScanWindow.offset(
                         for: window
                       ) else {
-                    XDriveIOSBGAttemptStatus.record(
-                        (try XDriveIOSBGOriginalWindowStore.shared.pausedForReview(owner: owner))
-                            ? .pendingReceiptReview : .noDueWindow,
-                        owner: owner
-                    )
+                    // A paused scan must remain dormant until a trusted
+                    // receipt review. A no-due task may schedule the next
+                    // advisory attempt, but never count it as a backup.
+                    if try XDriveIOSBGOriginalWindowStore.shared
+                        .pausedForReview(owner: owner) {
+                        XDriveIOSBGAttemptStatus.record(.pendingReceiptReview, owner: owner)
+                        return
+                    }
+                    XDriveIOSBGAttemptStatus.record(.noDueWindow, owner: owner)
                     successful = true // no work due, no Server write
                     try? scheduleApprovedProbe(
                         afterMinutes: approved.intervalMinutes
@@ -472,6 +476,8 @@ enum XDriveIOSBackgroundPhotoTask {
                   let owner = try? grant.ownerScope(),
                   grant.matches(owner), grant.hasManagedDestination,
                   localStopVersion == stop,
+                  XDriveIOSBGAttemptStatus.last(owner: owner)?.reason ==
+                      .protectedDataUnavailable,
                   try !XDriveIOSBGOriginalWindowStore.shared.pausedForReview(owner: owner)
             else { return }
             guard try await XDriveIOSOriginalPendingReceiptPreflight
