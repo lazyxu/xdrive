@@ -73,6 +73,19 @@ for artifact in (
 assert '[[ -s "$file" && ! -L "$file" ]]' in checksum_step
 assert 'sha256sum "${optional[@]}"' in checksum_step
 assert '> SHA256SUMS.txt' in checksum_step
+# A slow/failed client build must never block publishing a healthy Server.
+# The Bundle includes only actual same-run packages present at publish time.
+master_publish = ci.split("\n  publish-master:\n", 1)[1].split("\n  publish-content-addressed-offline:", 1)[0]
+master_needs = master_publish.split("    needs:\n", 1)[1].split("    permissions:\n", 1)[0]
+for required in ("server-image", "caddy-image", "photo-face-image", "media-worker-image"):
+    assert "      - " + required + "\n" in master_needs, required
+for optional in ("build-client-core", "package-linux-client", "package-windows-client"):
+    assert "      - " + optional + "\n" not in master_needs, optional
+assert "needs.server-image.result == 'success'" in master_publish
+assert "needs.caddy-image.result == 'success'" in master_publish
+assert "needs.photo-face-image.result == 'success'" in master_publish
+assert "needs.media-worker-image.result == 'success'" in master_publish
+
 notify_marker = "      - name: Notify bounded queued-CI prune after verified Snapshot publication\n"
 assert release.count(notify_marker) == 1
 notify = release.split(notify_marker, 1)[1].split("\n      - name:", 1)[0]
