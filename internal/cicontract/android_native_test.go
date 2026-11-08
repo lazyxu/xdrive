@@ -102,7 +102,7 @@ func validateAndroidWorkflow(workflow map[string]any) error {
 	if androidStep(job, "run", "sdkmanager 'platforms;android-35' 'build-tools;35.0.0'") == nil {
 		return fmt.Errorf("Android requires SDK 35 and build-tools 35.0.0")
 	}
-	unit := androidStep(job, "run", "bash gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug")
+	unit := androidStep(job, "run", "node ../scripts/ci/retry-transient-download.mjs bash gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug")
 	if unit == nil || unit["working-directory"] != "android" {
 		return fmt.Errorf("Android must use the repository wrapper for unit, lint and debug APK")
 	}
@@ -179,7 +179,7 @@ func TestAndroidNativeCIContract(t *testing.T) {
 	// Both test commands use this checksum-pinned wrapper, never ambient Gradle.
 	properties := readFile(t, filepath.Join(repositoryRoot(t), "android", "gradle", "wrapper", "gradle-wrapper.properties"))
 	for _, line := range []string{
-		`distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip`,
+		`distributionUrl=https\://downloads.gradle.org/distributions/gradle-8.11.1-bin.zip`,
 		`distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6`,
 		`validateDistributionUrl=true`,
 	} {
