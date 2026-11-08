@@ -51,9 +51,9 @@ func (ClipboardChange) TableName() string { return "xd_clipboard_changes" }
 // Separate Owner/device Clipboard capability; not an arbitrary Source/Root
 // entitlement. The Server stores public Curve25519 material only.
 type ClipboardDeviceKey struct {
-	OwnerID   uint64     `gorm:"primaryKey"`
-	DeviceID  string     `gorm:"size:36;primaryKey"`
-	PublicKey string     `gorm:"size:44;not null"`
+	OwnerID   uint64 `gorm:"primaryKey"`
+	DeviceID  string `gorm:"size:36;primaryKey"`
+	PublicKey string `gorm:"size:44;not null"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	RevokedAt *time.Time `gorm:"index"`
