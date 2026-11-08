@@ -111,7 +111,7 @@ test('stale PhotoKit generations hide old queue totals and task rows without ref
   assert.match(taskModel, /if let freshTotals = try await queue\.summary\(owner: owner\)/)
   assert.match(taskModel, /try await queue\.isCaughtUp\(owner: owner\)/)
   assert.match(taskModel, /clearPage\(\) \/\/ Never retain a previous page after permission loss/)
-  assert.match(taskModel, /if \(result == nil\) \{[\s\S]*?PhotoKit 变更尚未回放/)
+  assert.match(taskModel, /if\s+result == nil\s*\{[\s\S]*?PhotoKit 变更尚未回放/)
   assert.match(taskModel, /self\.clearPage\(\)[\s\S]*?当前未启用“仅备份新照片”/)
   assert.match(taskModel, /self\.clearPage\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
   assert.match(tasks, /\.onChange\(of: controller\.busy\)/)
@@ -146,6 +146,9 @@ test('a completed whole-library audit persists only an as-of authenticated Node 
   const history = read('ios/XDriveIOS/NativePhotoAuditHistory.swift')
   assert.match(audit, /if self\.checked == count,[\s\S]*?XDriveIOSNativePhotoAuditHistory\.save\(/)
   assert.match(audit, /native-ios-photo-historical-whole-audit/)
+  // Keep this modifier attached to a Text, never an if conditional ViewBuilder.
+  assert.match(audit, /Text\("从本机读取原件 SHA-256[^"]*"\)\s*\.font\(\.footnote\)\.foregroundStyle\(\.secondary\)/)
+  assert.doesNotMatch(audit, /\}\s*\.font\(\.footnote\)\.foregroundStyle\(\.secondary\)\s*Toggle\("核验时允许下载 iCloud 原件"/)
   assert.match(audit, /不代表当前覆盖率/)
   assert.match(history, /matched \+ unmatched == total/)
   assert.match(history, /sourceID > 0, targetNodeID > 0/)
