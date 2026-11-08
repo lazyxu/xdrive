@@ -207,7 +207,7 @@ test('BG run shares current-Owner pending ACK gate with foreground before due re
     'do not reserve a BG scan window or start a writer before the global encrypted pending ACK check')
   assert.match(task, /let olderPending = try await XDriveIOSOriginalPendingReceiptPreflight[\s\S]*?\.pendingCount\(owner: owner\)/)
   assert.match(task, /try Task\.checkCancellation\(\)[\s\S]*?guard approved\.matches\(owner\)/)
-  assert.match(task, /if olderPending > 0 \{\s*try XDriveIOSBGOriginalWindowStore\.shared\.pause\(owner: owner\)[\s\S]*?return\s*\}/)
+  assert.match(task, /if olderPending > 0 \{\s*XDriveIOSBGAttemptStatus\.record\(\.pendingReceiptReview, owner: owner\)\s*try XDriveIOSBGOriginalWindowStore\.shared\.pause\(owner: owner\)[\s\S]*?return\s*\}/)
   assert.match(identity, /enum XDriveIOSOriginalPendingReceiptPreflight/)
   assert.match(identity, /existingLocalScope\(owner: owner\)/)
   assert.match(identity, /pendingReceiptSnapshot\(scope: scope, limit: 0\)\.pending/)
@@ -349,7 +349,7 @@ test('BG runner defers to foreground when only-new history requires full reconci
 test('BG only-new history loss requires consent and full Photos permission', () => {
   const task = read('BackgroundPhotoTask.swift')
   const store = read('PhotoAutoScheduleStore.swift')
-  assert.match(task, /guard access == \.authorized else \{ return \}/)
+  assert.match(task, /guard access == \.authorized else \{\s*XDriveIOSBGAttemptStatus\.record\(\.photosPermissionUnavailable, owner: owner\)\s*return\s*\}/)
   assert.doesNotMatch(task, /guard access == \.authorized \|\| access == \.limited/)
   const replay = task.slice(
     task.indexOf('let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)'),
