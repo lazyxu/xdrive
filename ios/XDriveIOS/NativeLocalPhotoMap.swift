@@ -739,6 +739,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
             XDriveIOSNativeSquarePhotoTile(candidate: item)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("native-ios-map-photo-wall-tile")
         .disabled(busy || !XDriveIOSNativeMapViewerAdmission.supported(item))
         .id(item.id)
         .accessibilityFocused($focusedTileID, equals: item.id)
