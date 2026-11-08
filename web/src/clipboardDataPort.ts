@@ -21,7 +21,9 @@ export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: stri
     requireActive(signal)
     if (!Number.isSafeInteger(root.id) || root.id <= 0 || root.type !== 'dir')
       throw new Error('当前 Owner 的文件根目录不可用。')
-    const result = await api.uploadWithConflictPolicy(root.id, file, 'fail')
+    const result = await api.uploadWithConflictPolicy(
+      root.id, file, 'fail', undefined, '', '', '', signal,
+    )
     requireActive(signal)
     if (result.skipped || result.node.type !== 'file' ||
         result.node.parent_id !== root.id || !Number.isSafeInteger(result.node.id) ||
