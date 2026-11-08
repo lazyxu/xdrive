@@ -2659,14 +2659,13 @@ jobs:
           echo "Scoped $CI_SCOPE PR validation passed; master and v* remain full."
 
   publish-master:
-    # Server publication is independent of optional client artifact failures.
-    # The Server/Caddy/face/media images remain mandatory and exact-source.
+    # Server publication is independent of both client artifact failures AND
+    # client build queues: only the four required Server image jobs gate start.
+    # The immutable Bundle captures whichever same-run client assets already
+    # exist; missing platforms are omitted rather than invented.
     # Full Final Gate keeps running independently; stable v* still waits for it.
     if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.server-image.result == 'success' && needs.caddy-image.result == 'success' && needs.photo-face-image.result == 'success' && needs.media-worker-image.result == 'success' }}
     needs:
-      - build-client-core
-      - package-linux-client
-      - package-windows-client
       - server-image
       - caddy-image
       - photo-face-image
