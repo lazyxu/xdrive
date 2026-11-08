@@ -8,8 +8,9 @@ import type { XDriveBaiduMapPhotoScope } from './media-gallery-baidu-map-photo-s
 
 /** An Owner-authenticated Cell Range, NOT the anonymous SDK labels, owns the drawer. */
 export const XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT = 48
-// A Viewer return may restore at most ten already-viewed pages. The browser
-// re-fetches each signed page; no stale media is retained across navigation.
+// Up to ten original pages are re-fetched eagerly on short returns. A deeper
+// previously visited position is restored only as bounded numeric geometry;
+// all visible signed pages remain demand-fetched after fresh Owner validation.
 export const XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT = 480
 // Only bounded numeric visual intent is retained. Neither visited depth nor
 // pixel offset authorizes a private photo; every visible page is rechecked.
