@@ -41,7 +41,7 @@ test('Web Clipboard imports user-chosen local file via current Owner Files Uploa
   const result = await port.uploadLocalFile(new File([Uint8Array.of(1,2,3)], 'report.txt'), signal)
   assert.deepEqual(result, { node_id: 118 })
   assert.deepEqual(calls, ['root','upload'])
-  assert.match(portSource, /api\.uploadWithConflictPolicy\(root\.id, file, 'fail'\)/)
+  assert.match(portSource, /root\\.id, file, 'fail', undefined, '', '', '', signal/)
   assert.doesNotMatch(portSource, /fetch\([^\n]*\/api\/v1\/uploads/)
 })
 
@@ -209,4 +209,13 @@ test('rejected CAS receipts never become device-directed file references', async
     port.uploadLocalFile(new File([Uint8Array.of(2)], 'conflict.txt'),new AbortController().signal),
     /没有收到可用于 Clipboard 的有效节点收据/,
   )
+})
+
+test('Clipboard import passes its retired Owner signal into the real CAS writer', () => {
+  const source=read('web/src/api.ts')
+  assert.match(source, /externalSignal\\?: AbortSignal/)
+  assert.match(source, /externalSignal\\.addEventListener\\('abort', abortFromCaller/)
+  assert.match(source, /webTransferStore\\.cancel\\(activeTransferID\\)/)
+  assert.match(source, /externalSignal\\?\\.removeEventListener\\('abort', abortFromCaller/)
+  assert.match(portSource, /root\\.id, file, 'fail', undefined, '', '', '', signal/)
 })
