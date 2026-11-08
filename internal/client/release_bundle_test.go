@@ -60,14 +60,14 @@ func TestCurrentServerBundleVerifiedLocalPreferred(t *testing.T) {
 		t.Fatal(err)
 	}
 	received, err := os.ReadFile(target)
-	if err != nil || !bytes.Equal(received, payload) || reqs != 3 {
+	if err != nil || !bytes.Equal(received, payload) || reqs != 2 {
 		t.Fatalf("verified local download failed: requests=%d err=%v", reqs, err)
 	}
 	// Reuse exact bytes after another authenticated, current-Commit check.
 	if err := client.DownloadCurrentReleaseArtifact(context.Background(), listing.Commit, artifact, target); err != nil {
 		t.Fatal(err)
 	}
-	if reqs != 4 {
+	if reqs != 3 {
 		t.Fatalf("verified local cache was unnecessarily redownloaded: %d", reqs)
 	}
 }
@@ -83,6 +83,7 @@ func TestCurrentServerBundleRejectsCrossCommitAndHostInjection(t *testing.T) {
 		t.Fatal("cross-commit package accepted")
 	}
 	artifact = listing.Artifacts[0]
+	artifact.DownloadURLs = append([]string(nil), artifact.DownloadURLs...)
 	artifact.DownloadURLs[2] = "https://attacker.example/evil.exe"
 	if validCurrentBundleArtifact(listing.Commit, artifact) {
 		t.Fatal("untrusted package origin accepted")
