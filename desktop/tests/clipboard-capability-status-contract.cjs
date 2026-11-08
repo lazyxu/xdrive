@@ -9,7 +9,7 @@ const page = read('ui/shared/src/mui/ClipboardPage.tsx')
 test('current Clipboard architecture distinguishes merged v1/v2 and native Viewer from past candidates',()=>{
   assert.match(doc, /Current source status \(2026-11-08\)/)
   assert.match(doc, /#4106.*Final Gate/)
-  assert.match(doc, /#4110.*Files Viewer/)
+  assert.match(doc, /(?:#4110.*Files Viewer|Files Viewer.*#4110)/)
   assert.match(doc, /Desktop and DSM outbound Agent\/CGI transports remain \*\*v1 text-only/)
   assert.match(doc, /Direct local image\/file Clipboard ingestion/)
   assert.match(doc, /Android Keystore/)
