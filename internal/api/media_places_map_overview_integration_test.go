@@ -371,12 +371,15 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	dated, err := queryMediaPlacesMapOverview(ctx, db, owner, world, true, scope)
+	// An earlier cancellation regression intentionally cancelled ctx.
+	// Use a fresh lease for the independent date-scope consistency checks.
+	dateCtx := context.Background()
+	dated, err := queryMediaPlacesMapOverview(dateCtx, db, owner, world, true, scope)
 	if err != nil || dated.Aggregated || dated.TotalPhotoCount != 4 ||
 		len(dated.Items) != 4 {
 		t.Fatalf("date-scoped map includes photos from other dates/Owners: %+v %v", dated, err)
 	}
-	paged, err := queryMediaPlacesViewport(ctx, db, owner, world, 64, 0, scope)
+	paged, err := queryMediaPlacesViewport(dateCtx, db, owner, world, 64, 0, scope)
 	if err != nil || paged.TotalPhotoCount != 4 || len(paged.Items) != 4 {
 		t.Fatalf("date-scoped map vs place-list mismatch: %+v %v", paged, err)
 	}
@@ -386,7 +389,7 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 		if !ok {
 			t.Fatalf("map returned noncanonical date-filtered place %+v", item)
 		}
-		q, err := server.mediaItemsBaseQuery(ctx, owner, mediaQueryOptions{
+		q, err := server.mediaItemsBaseQuery(dateCtx, owner, mediaQueryOptions{
 			CapturedFrom: &from, CapturedTo: &to, Place: &cell,
 		}, "")
 		if err != nil {
@@ -402,7 +405,7 @@ func TestMediaMapOverviewRealPostgresJinhuaDistribution(t *testing.T) {
 		}
 	}
 	outOfDate := &mediaCaptureBounds{From: to, To: to.Add(24 * time.Hour)}
-	emptyRange, err := queryMediaPlacesMapOverview(ctx, db, owner, world, true, outOfDate)
+	emptyRange, err := queryMediaPlacesMapOverview(dateCtx, db, owner, world, true, outOfDate)
 	if err != nil || emptyRange.TotalPhotoCount != 0 || len(emptyRange.Items) != 0 {
 		t.Fatalf("expired map date retained stale GPS entries: %+v %v", emptyRange, err)
 	}

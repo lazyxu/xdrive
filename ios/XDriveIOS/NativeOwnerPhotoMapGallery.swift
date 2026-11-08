@@ -480,6 +480,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
         span: MKCoordinateSpan(latitudeDelta: 160, longitudeDelta: 360))
 
+    private var recentMapYears: [Int] {
+        let current = Calendar.current.component(.year, from: Date())
+        return Array((max(1, current - 20)...current).reversed())
+    }
+
     private var activeCaptureRange: XDriveIOSNativePhotoMapCaptureRange? {
         usingCaptureOverride ? captureOverride : inheritedCaptureRange
     }
@@ -667,9 +672,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                         setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
                     }
                     Section("按年份") {
-                        ForEach((max(1, Calendar.current.component(.year, from: Date()) - 20)...
-                            Calendar.current.component(.year, from: Date())).reversed(),
-                            id: \.self) { year in
+                        ForEach(recentMapYears, id: \.self) { year in
                             Button("\(year) 年") {
                                 setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(year))
                             }
