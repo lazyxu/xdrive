@@ -4,7 +4,11 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import type { MediaItem } from '../models'
-import { XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT } from '../media-gallery-places-photo-drawer'
+import {
+  XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
+  XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT,
+  XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT,
+} from '../media-gallery-places-photo-drawer'
 import type { XDrivePlacesDrawerPresentation } from '../media-gallery-places-photo-drawer'
 import { MediaTile, MediaVirtualTileGrid } from './MediaGallerySharedTiles'
 import type { XDriveMediaGalleryVirtualCollection } from './MediaGallerySharedTiles'
@@ -144,11 +148,19 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     onLoadMore()
   }, [phase, initialPresentation, loadingMore, pageError, loadedDepth, total, onLoadMore])
   const position = (): XDrivePlacesDrawerPresentation => {
-    const bounded = (n: number) => Number.isFinite(n)
-      ? Math.max(0, Math.min(10_000, Math.floor(n))) : 0
-    return {expanded, scrollTop: bounded(listRef.current?.scrollTop ?? 0),
-      scrollLeft: bounded(listRef.current?.scrollLeft ?? 0),
-      loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,loadedDepth)}
+    const bounded = (n: number, max: number) => Number.isFinite(n)
+      ? Math.max(0, Math.min(max, Math.floor(n))) : 0
+    // This snapshot holds only numeric UI coordinates; the trusted Parent
+    // independently reauthorizes every Owner Cell page after Viewer Back.
+    // A 100k wall may exceed 10,000 scroll pixels without materializing tiles.
+    return {expanded,
+      scrollTop:bounded(listRef.current?.scrollTop ?? 0,
+        XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT),
+      scrollLeft:bounded(listRef.current?.scrollLeft ?? 0,10_000),
+      loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,loadedDepth),
+      ...(loadedDepth > XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT
+        ? {visitedDepth:Math.min(XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT,loadedDepth)}
+        : {})}
   }
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md" disableScrollLock
