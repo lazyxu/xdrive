@@ -43,7 +43,17 @@ export function createDesktopClipboardDataPort(
     vault: signal => run(() => agent.cloudClipboardVault(), signal),
     initializeCheck: (value, signal) => run(() => agent.cloudClipboardCheck(value), signal),
     list: (before, signal) => run(() => agent.cloudClipboardList(before ?? 0), signal),
-    create: (value, signal) => run(() => agent.cloudClipboardCreate(value), signal),
+    create: (value, signal) => {
+      // Desktop Agent IPC remains a narrow v1-only transport; retaining the
+      // recipient is mandatory for v2 and cannot silently fall back to v1.
+      if ((value.kind !== 'text/plain' && value.kind !== 'text/uri-list') ||
+          value.target_device_id || value.ephemeral_key || value.wrapped_key || value.node_id) {
+        throw new Error('Desktop Clipboard Agent 暂不支持定向消息或文件引用')
+      }
+      const legacy = { client_event_id: value.client_event_id, kind: value.kind,
+        nonce: value.nonce, ciphertext: value.ciphertext }
+      return run(() => agent.cloudClipboardCreate(legacy), signal)
+    },
     remove: (id, signal) => run(() => agent.cloudClipboardDelete(id), signal),
     clear: signal => run(() => agent.cloudClipboardClear(), signal),
     readText: async () => {
