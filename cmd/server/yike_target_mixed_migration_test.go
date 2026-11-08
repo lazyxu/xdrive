@@ -225,3 +225,73 @@ func TestLegacyYikeFlatMixedSplitRejectsConcurrentWorkOrForeignClaims(t *testing
 		})
 	}
 }
+
+func TestLegacyYikeFlatMixedSplitRejectsForeignOwnerDirectChild(t *testing.T) {
+	for _, kind := range []string{meta.NodeTypeFile, meta.NodeTypeDir} {
+		t.Run(kind, func(t *testing.T) {
+			db := openYikeMigrationTestDB(t)
+			user, oldRoot, ordinary, item, source := setupLegacyYikeFlatMixed(t, db)
+			foreignUser := meta.User{
+				Username: "migration-foreign-child-" + uuid.NewString(),
+				PasswordHash: "x", Role: meta.UserRoleUser,
+			}
+			if err := db.Create(&foreignUser).Error; err != nil {
+				t.Fatal(err)
+			}
+			// The production parent/Owner FK was installed NOT VALID to
+			// preserve historical corrupt edges for fail-closed review.
+			// Model an old cross-Owner edge in this isolated migration
+			// fixture: an Owner-scoped child query must not hide it.
+			alien := meta.Node{
+				OwnerID: foreignUser.ID, ParentID: &oldRoot.ID,
+				Name: "foreign-direct-" + kind, Type: kind, Revision: 1,
+			}
+			if err := db.Create(&alien).Error; err != nil {
+				t.Fatal(err)
+			}
+			rootShare := meta.Share{
+				OwnerID: user.ID, NodeID: oldRoot.ID,
+				TokenHash: strings.Repeat("f", 64), Access: "read_only",
+			}
+			if err := db.Create(&rootShare).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := migrateLegacyYikeTargets(db); err != nil {
+				t.Fatalf("malformed legacy Source must pause, not stop migration startup: %v", err)
+			}
+			var afterSource meta.Source
+			var afterRoot, afterOrdinary, afterPhoto, afterAlien meta.Node
+			var afterItem meta.SourceItem
+			var afterShare meta.Share
+			for _, err := range []error{
+				db.First(&afterSource, source.ID).Error,
+				db.First(&afterRoot, oldRoot.ID).Error,
+				db.First(&afterOrdinary, ordinary.ID).Error,
+				db.First(&afterPhoto, *item.NodeID).Error,
+				db.First(&afterAlien, alien.ID).Error,
+				db.First(&afterItem, item.ID).Error,
+				db.First(&afterShare, rootShare.ID).Error,
+			} {
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if afterSource.Status != meta.SourceStatusPaused ||
+				afterSource.LastError == "" ||
+				afterSource.TargetNodeID == nil || *afterSource.TargetNodeID != oldRoot.ID ||
+				afterRoot.ParentID == nil || *afterRoot.ParentID != *oldRoot.ParentID ||
+				afterOrdinary.ParentID == nil || *afterOrdinary.ParentID != oldRoot.ID ||
+				afterPhoto.ParentID == nil || *afterPhoto.ParentID != oldRoot.ID ||
+				afterPhoto.Revision != 1 ||
+				afterAlien.ParentID == nil || *afterAlien.ParentID != oldRoot.ID ||
+				afterAlien.OwnerID != foreignUser.ID ||
+				afterItem.NodeID == nil || *afterItem.NodeID != *item.NodeID ||
+				afterItem.NodeRevision != item.NodeRevision ||
+				afterShare.NodeID != rootShare.NodeID ||
+				afterShare.TokenHash != rootShare.TokenHash {
+				t.Fatalf("cross-Owner direct child was ignored or split mutated identities: source=%+v root=%+v ordinary=%+v photo=%+v alien=%+v item=%+v share=%+v",
+					afterSource, afterRoot, afterOrdinary, afterPhoto, afterAlien, afterItem, afterShare)
+			}
+		})
+	}
+}

@@ -38,7 +38,9 @@ func splitLegacyYikeMixedTargetTx(
 	}
 
 	// Lock the old root before classifying children, so new children cannot be
-	// inserted through its FK while a split is being committed.
+	// inserted through its FK while a split is being committed. Historical
+	// databases may contain cross-Owner child edges predating the NOT VALID
+	// parent/Owner FK: child inventory must not silently filter those out.
 	var current meta.Node
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
@@ -113,8 +115,7 @@ func splitLegacyYikeMixedTargetTx(
 
 	var children []meta.Node
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL",
-			source.OwnerID, target.ID).Order("id ASC").
+		Where("parent_id = ? AND deleted_at IS NULL", target.ID).Order("id ASC").
 		Limit(maxLegacyYikeMixedChildren + 1).Find(&children).Error; err != nil {
 		return err
 	}
@@ -122,6 +123,12 @@ func splitLegacyYikeMixedTargetTx(
 		return blocked("empty or oversized mixed legacy target")
 	}
 	for _, child := range children {
+		// Do not treat foreign-Owner children as harmless ordinary files:
+		// any legacy cross-Owner parent edge invalidates the complete
+		// ownership proof for an atomic split of the Source subtree.
+		if child.OwnerID != source.OwnerID {
+			return blocked("legacy target contains a foreign-Owner direct child")
+		}
 		if child.Revision == 0 || (child.Type != meta.NodeTypeFile && child.Type != meta.NodeTypeDir) {
 			return blocked("invalid legacy content needs reviewed migration")
 		}
