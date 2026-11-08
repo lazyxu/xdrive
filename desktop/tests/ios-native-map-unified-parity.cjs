@@ -89,6 +89,10 @@ test('Owner/PhotoKit filter, captured date and revocation never mix old and curr
 })
 
 test('iOS native visual, accessibility, login-free dismiss and real simulator routes are covered', () => {
+  // The real five-tab Dynamic slot jumps straight into the Gallery Map.
+  // Simulator must not wait for the now-unmounted "打开地图" fallback CTA.
+  assert.match(dashboard, /if next == \.dynamic && emptyDynamicMapFallback \{\s*openGallery\(\.map\)/)
+  assert.match(simulator, /if !map\.waitForExistence\(timeout: 4\) &&[\s\S]*?!request\.waitForExistence\(timeout: 4\)/)
   assert.match(dashboard, /private func closeGalleryMap\(\) \{[\s\S]*?guard gallerySource == \.map else \{ return \}/)
   assert.match(local, /native-ios-map-verified-count/)
   assert.match(local, /navigationBarTitleDisplayMode\(\.inline\)/)
