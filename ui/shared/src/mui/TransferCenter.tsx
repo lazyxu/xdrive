@@ -100,6 +100,7 @@ function uploadOutcomeLabel(item: XDriveTransferTask) {
   switch (xDriveTransferUploadOutcome(item)) {
     case 'instant': return '秒传'
     case 'partially_reused': return '部分复用'
+    case 'resumed': return '断点续传'
     case 'uploaded': return '普通上传'
     case 'skipped': return '已跳过'
     default: return null
@@ -108,8 +109,9 @@ function uploadOutcomeLabel(item: XDriveTransferTask) {
 
 function uploadOutcomeSummary(item: XDriveTransferTask) {
   switch (xDriveTransferUploadOutcome(item)) {
-    case 'instant': return `无需上传文件内容 · 节省 ${formatBytes(item.bytes_total)}`
-    case 'partially_reused': return `实际上传 ${formatBytes(item.upload_transferred_bytes || 0)} · 复用 ${formatBytes(item.bytes_total - (item.upload_transferred_bytes || 0))}`
+    case 'instant': return `无需上传文件内容 · CAS 复用 ${formatBytes(item.bytes_total)}`
+    case 'partially_reused': return `实际上传 ${formatBytes(item.upload_transferred_bytes || 0)} · CAS 复用 ${formatBytes(item.upload_cas_reused_bytes || 0)}${item.upload_resume_reused_bytes ? ` · 断点复用 ${formatBytes(item.upload_resume_reused_bytes)}` : ''}`
+    case 'resumed': return `实际上传 ${formatBytes(item.upload_transferred_bytes || 0)} · 断点复用 ${formatBytes(item.upload_resume_reused_bytes || 0)}`
     case 'uploaded': return `实际上传 ${formatBytes(item.upload_transferred_bytes || 0)}`
     case 'skipped': return '因冲突跳过，未上传文件内容'
     default: return null
@@ -159,7 +161,8 @@ function TransferLeafItem({
   const speedLabel = item.speed_source === 'server' ? '服务端发送速度' : '当前速度'
   const uploadOutcome = xDriveTransferUploadOutcome(item)
   const uploadSummary = uploadOutcomeSummary(item)
-  const withoutUpload = uploadOutcome === 'instant' || uploadOutcome === 'skipped'
+  const withoutUpload = uploadOutcome === 'instant' || uploadOutcome === 'skipped' ||
+    (uploadOutcome === 'resumed' && item.upload_transferred_bytes === 0)
 
   if (compact) {
     return (
@@ -217,7 +220,7 @@ function TransferLeafItem({
           <Typography variant="caption" color="text.secondary">
             {withoutUpload ? uploadSummary : `${active ? speedLabel : item.speed_source === 'server' ? '平均服务端发送速度' : '平均速度'} ${formatBytes(active ? instantSpeed : Math.max(0, item.average_bytes_per_second || 0))}/s`}
           </Typography>
-          {uploadOutcome === 'partially_reused' ? (
+          {uploadOutcome === 'partially_reused' || uploadOutcome === 'resumed' ? (
             <Typography variant="caption" color="text.secondary">{uploadSummary}</Typography>
           ) : null}
           <Typography variant="caption" color="text.secondary">
@@ -360,6 +363,7 @@ function TransferGroupItem({
   const processed = Math.min(progress.total, progress.completed + progress.failed)
   const instantChildren = children.filter((child) => xDriveTransferUploadOutcome(child) === 'instant')
   const reusedChildren = children.filter((child) => xDriveTransferUploadOutcome(child) === 'partially_reused')
+  const resumedChildren = children.filter((child) => xDriveTransferUploadOutcome(child) === 'resumed')
   const allInstant = item.direction === 'upload' && item.state === 'completed' &&
     children.length > 0 && instantChildren.length === children.length
   const phaseLabel = xDriveTransferPhaseLabel(item.phase)
@@ -453,6 +457,7 @@ function TransferGroupItem({
           <Typography variant="caption" color="text.secondary">等待 {progress.queued.toLocaleString('zh-CN')}</Typography>
           {instantChildren.length > 0 ? <Typography variant="caption" color="success.main">秒传 {instantChildren.length.toLocaleString('zh-CN')}</Typography> : null}
           {reusedChildren.length > 0 ? <Typography variant="caption" color="warning.main">部分复用 {reusedChildren.length.toLocaleString('zh-CN')}</Typography> : null}
+          {resumedChildren.length > 0 ? <Typography variant="caption" color="text.secondary">断点续传 {resumedChildren.length.toLocaleString('zh-CN')}</Typography> : null}
         </Stack>
 
         {compact ? (
