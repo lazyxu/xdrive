@@ -2345,7 +2345,7 @@ function createMainWindow(showOnReady = true) {
       // A late event from an already retired Guest cannot revoke the newer
       // Owner's independent HTTPS partition.
       if(desktopPlacesGuests.get(guest.id)===identity)closeDesktopPlacesGuests()
-      if(!guest.isDestroyed())guest.destroy()
+      if(!guest.isDestroyed())guest.close({waitForBeforeUnload:false})
     }
     guest.on('did-start-navigation',details=>{
       if(details.isMainFrame && details.isSameDocument)
