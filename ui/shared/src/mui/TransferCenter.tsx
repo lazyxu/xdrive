@@ -302,7 +302,7 @@ function TransferLeafItem({
           <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="完成时间">{transferTime(item.completed_at)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label={speedLabel}>{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={speedLabel}>{withoutUpload ? '—（无需上传）' : formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label={item.speed_source === 'server' ? '平均服务端发送速度' : '平均速度'}>{withoutUpload ? '—（无需上传）' : formatBytesPerSecond(item.average_bytes_per_second)}</XDriveDescriptionItem>
           {uploadSummary ? <XDriveDescriptionItem label="上传结果">{uploadSummary}</XDriveDescriptionItem> : null}
           <XDriveDescriptionItem label="方向">{xDriveTransferKindLabel(item.direction)}</XDriveDescriptionItem>
@@ -482,7 +482,7 @@ function TransferGroupItem({
         ) : <XDriveDescriptionGrid columns={4}>
           <XDriveDescriptionItem label="阶段">{phaseLabel || xDriveTransferStateLabel(item.state)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="总体进度">{bytes.total > 0 ? `${percent.toFixed(1)}%` : '—'}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label={speedLabel}>{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={speedLabel}>{allInstant ? '—（全部秒传）' : formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label={speed.serverReported ? '平均服务端发送速度' : '平均速度'}>{allInstant ? '—（全部秒传）' : formatBytesPerSecond(averageSpeed)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="开始时间">{transferTime(item.started_at)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
