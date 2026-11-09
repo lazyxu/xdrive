@@ -23,7 +23,8 @@ const sources = {
   "e": "ios/XDriveIOS/NativeFilesSavedSearches.swift",
   "o": "ios/XDriveIOS/NativeFilesOperationHistory.swift",
   "x": "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift",
-  "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift"
+  "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift",
+  "z": "ios/scripts/capture-navigation-smoke-frames.py"
 }
 const scenarios = [
   {
@@ -942,6 +943,76 @@ const scenarios = [
       {
         "file": "x",
         "pattern": "func testAlternatingGalleryFilesSettledFramesAcrossThreeTabs\\(\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Files\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Mine\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "79 Cloud denial album filter and Files return",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells\\(\\)[\\s\\S]*?native-ios-files-error-page[\\s\\S]*?native-ios-gallery-open-filters[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after cloud denial and album filter\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "80 Trash denial retry then Files rail and Gallery return",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels\\(\\)[\\s\\S]*?native-ios-files-trash-error-page[\\s\\S]*?native-ios-files-trash-retry[\\s\\S]*?native-ios-files-section-\\\\\\(section\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after Trash retry and Files rail\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "81 People → denied Cloud → Gallery stable frame",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank\\(\\)[\\s\\S]*?native-ios-gallery-people-page[\\s\\S]*?native-ios-files-error-page[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after People and denied Cloud Files\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "82 Repeated foreground Gallery/Files activation",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank\\(\\)[\\s\\S]*?XCUIDevice\\.shared\\.press\\(\\.home\\)[\\s\\S]*?app\\.activate\\(\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after foreground activation\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "83 Local PhotoKit source survives Files and Mine",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testLocalPhotosSourceSurvivesFilesMineAndGalleryRoundTrip\\(\\)[\\s\\S]*?native-ios-gallery-source-local[\\s\\S]*?native-ios-tab-mine[\\s\\S]*?assertNotSolidScreen\\(app, \"Local PhotoKit route after Files and Mine\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "84 Files search keyboard and Gallery filter return",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes\\(\\)[\\s\\S]*?search\\.typeText\\(\"ab\"\\)[\\s\\S]*?native-ios-gallery-open-filters[\\s\\S]*?assertNotSolidScreen\\(app, \"Files after search and Gallery filter\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "85 Live frame sampler uses actual taps with bounded per-case ownership",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "TAP_FRAME_OFFSETS_SECONDS = \\(0\\.15, 0\\.55\\)[\\s\\S]*?tap_start = re\\.compile[\\s\\S]*?current_case in active[\\s\\S]*?tap_counts\\.get\\(current_case, 0\\)[\\s\\S]*?if count < 3:[\\s\\S]*?if key not in active:",
         "flags": ""
       }
     ]
