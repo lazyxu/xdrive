@@ -193,3 +193,46 @@ test('folder history counts verified reused children without relabeling skipped 
   assert.match(text, /部分复用\s+1/)
   assert.match(text, /断点续传\s+1/)
 })
+
+test('truncated folder history must never claim every upload was instant', () => {
+  const folder = (count) => task('folder', {
+    scope: 'group', kind: 'upload', direction: 'upload', state: 'completed',
+    phase: 'finalizing', scan_complete: true, items_total: count,
+    items_completed: count, bytes_done: count * 4096, bytes_total: count * 4096,
+    percent: 100,
+  })
+  const child = (id) => task(id, {
+    kind: 'upload', direction: 'upload', state: 'completed',
+    phase: 'finalizing', parent_id: 'folder', root_id: 'folder',
+    bytes_done: 4096, bytes_total: 4096, percent: 100,
+    upload_transferred_bytes: 0, upload_cas_reused_bytes: 4096,
+  })
+  const children = [child('one'), child('two')]
+
+  const complete = visibleText(render(XDriveTransferCenter, { transfers: [folder(2), ...children] }))
+  assert.match(complete, /全部秒传/)
+  const truncated = visibleText(render(XDriveTransferCenter, { transfers: [folder(3), ...children] }))
+  assert.doesNotMatch(truncated, /全部秒传/,
+    'bounded persisted history cannot prove an unretained child had a CAS hit')
+  assert.match(truncated, /秒传\\s+2/, 'only retained verified child receipts may be counted')
+
+  const unknownInventory = visibleText(render(XDriveTransferCenter, {
+    transfers: [task('folder', { ...folder(2), scan_complete: false }), ...children],
+  }))
+  assert.doesNotMatch(unknownInventory, /全部秒传/,
+    'an incomplete folder scan cannot establish a complete instant result')
+})
+
+test('a resumed-only zero-byte upload cannot be labeled CAS instant', () => {
+  const item = task('resumed-only', {
+    kind: 'upload', direction: 'upload', state: 'completed', phase: 'finalizing',
+    percent: 100, bytes_done: 4096, bytes_total: 4096,
+    upload_transferred_bytes: 0, upload_resume_reused_bytes: 4096,
+  })
+  const text = visibleText(render(XDriveTransferTreeItem, {
+    node: xDriveTransferTree([item])[0],
+    compact: true, retryDisabled: false, retryingID: '',
+  }))
+  assert.match(text, /断点续传/)
+  assert.doesNotMatch(text, /秒传|CAS 复用/)
+})
