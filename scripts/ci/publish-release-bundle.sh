@@ -106,8 +106,14 @@ done
 if ! gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
   # Never hijack an existing unrelated tag. A failed create is ambiguous:
   # verify remote state rather than blindly uploading partial replacements.
-  if gh api "repos/$repo/git/ref/tags/$tag" >/dev/null 2>&1; then
+  # An API outage or missing GitHub permission is *not* evidence that the
+  # immutable tag is absent. Only an authenticated 404 permits first publish.
+  if tag_probe="$(gh api --include "repos/$repo/git/ref/tags/$tag" 2>&1)"; then
     echo "Existing Bundle tag without a verified Release" >&2
+    exit 1
+  fi
+  if ! grep -Eq '(\\(HTTP 404\\)|HTTP/[0-9.]+[[:space:]]404)' <<< "$tag_probe"; then
+    echo "Cannot verify absent Bundle tag; refusing to create Release" >&2
     exit 1
   fi
   gh release create "$tag" "${assets[@]}" --repo "$repo" \
