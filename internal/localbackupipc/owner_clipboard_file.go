@@ -53,7 +53,7 @@ func (c *Client) OwnerClipboardFileReference(ctx context.Context, nodeID uint64)
 	if err := c.requireCloudFilesRead(); err != nil {
 		return OwnerClipboardFileReference{}, err
 	}
-	if !hasCapability(c.capabilities, "node-location") || !ValidOwnerFileID(nodeID) {
+	if !ValidOwnerFileID(nodeID) {
 		return OwnerClipboardFileReference{}, errors.New("Owner file-location capability unavailable")
 	}
 	var out OwnerClipboardFileReference
