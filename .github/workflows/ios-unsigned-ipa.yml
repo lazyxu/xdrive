@@ -216,6 +216,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-epoch-check"
           "$RUNNER_TEMP/xdrive-ios-epoch-check"
 
+      - name: Verify fail-closed iOS APNs wake and Free Up Space policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/PhotoBackupResiliencePolicy.swift \
+            ios/tests/PhotoBackupResiliencePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-resilience"
+          "$RUNNER_TEMP/xdrive-ios-photo-resilience"
+          node --test desktop/tests/ios-photo-apns-free-space-contract.cjs
+
       - name: Verify bounded stable PhotoKit equal-date backup boundaries
         run: |
           set -euo pipefail
