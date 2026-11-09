@@ -34,13 +34,13 @@ func TestUploadReceiptDistinguishesCASReuseFromOrdinaryAndLegacy(t *testing.T) {
 	zero, partial, full := int64(0), int64(1024), total
 
 	instant := manager.Start(Spec{FileName: "instant", Kind: KindUpload, Direction: "upload", TotalBytes: total})
-	instant.CompleteUploadBytes(zero)
+	instant.CompleteUploadReceipt(UploadContentReceipt{TransferredBytes: zero, CASReusedBytes: total})
 	check("instant", &zero, false)
 	partialUpload := manager.Start(Spec{FileName: "partial", Kind: KindUpload, Direction: "upload", TotalBytes: total})
-	partialUpload.CompleteUploadBytes(partial)
+	partialUpload.CompleteUploadReceipt(UploadContentReceipt{TransferredBytes: partial, CASReusedBytes: total - partial})
 	check("partial", &partial, false)
 	regular := manager.Start(Spec{FileName: "regular", Kind: KindUpload, Direction: "upload", TotalBytes: total})
-	regular.CompleteUploadBytes(full)
+	regular.CompleteUploadReceipt(UploadContentReceipt{TransferredBytes: full})
 	check("regular", &full, false)
 	skip := manager.Start(Spec{FileName: "skipped", Kind: KindUpload, Direction: "upload", TotalBytes: total})
 	skip.CompleteSkipped()
@@ -49,10 +49,10 @@ func TestUploadReceiptDistinguishesCASReuseFromOrdinaryAndLegacy(t *testing.T) {
 	legacy.Complete()
 	check("legacy", nil, false)
 	invalid := manager.Start(Spec{FileName: "invalid", Kind: KindUpload, Direction: "upload", TotalBytes: total})
-	invalid.CompleteUploadBytes(total + 1)
+	invalid.CompleteUploadReceipt(UploadContentReceipt{TransferredBytes: total + 1})
 	check("invalid", nil, false)
 	download := manager.Start(Spec{FileName: "download", Kind: KindDownload, Direction: "download", TotalBytes: total})
-	download.CompleteUploadBytes(zero)
+	download.CompleteUploadReceipt(UploadContentReceipt{TransferredBytes: zero, CASReusedBytes: total})
 	check("download", nil, false)
 
 	history := manager.HistorySnapshot(30)
@@ -86,10 +86,10 @@ func TestManagedUploadReceiptHonorsFirstTerminalOutcomeAndCancellation(t *testin
 	group := manager.StartGroup(Spec{FileName: "folder", Kind: KindUpload, Direction: "upload"})
 	child := manager.StartChild(group, Spec{FileName: "child", Kind: KindUpload, Direction: "upload", TotalBytes: 4096})
 	zero := int64(0)
-	if err := child.FinishUploadBytes(StateCompleted, nil, &zero); err != nil {
+	if err := child.FinishUploadReceipt(StateCompleted, nil, &UploadContentReceipt{CASReusedBytes: 4096}); err != nil {
 		t.Fatal(err)
 	}
-	if err := child.FinishUploadBytes(StateFailed, errors.New("late failure"), nil); err != nil {
+	if err := child.FinishUploadReceipt(StateFailed, errors.New("late failure"), nil); err != nil {
 		t.Fatal(err)
 	}
 	group.Complete()
@@ -106,7 +106,7 @@ func TestManagedUploadReceiptHonorsFirstTerminalOutcomeAndCancellation(t *testin
 	if err := cancelled.Finish(StateCancelled, context.Canceled); err != nil {
 		t.Fatal(err)
 	}
-	cancelled.CompleteUploadBytes(0)
+	cancelled.CompleteUploadReceipt(UploadContentReceipt{CASReusedBytes: 100})
 	_, tasks = manager.Snapshot()
 	for _, item := range tasks {
 		if item.ID == cancelled.ID() && (item.State != StateCancelled || item.UploadTransferredBytes != nil) {
