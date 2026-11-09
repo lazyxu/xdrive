@@ -23,6 +23,8 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         let control = element(id, app)
         XCTAssertTrue(control.waitForExistence(timeout: 15),
                       "Missing native route: \(id)")
+        // Observe the actual tap, not only the start of the XCTest case.
+        print("IOS_NATIVE_NAV_TAP_START route=\(id)")
         control.tap()
         XCTAssertEqual(app.state, .runningForeground)
     }
