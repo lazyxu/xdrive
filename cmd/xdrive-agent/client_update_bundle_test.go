@@ -22,7 +22,7 @@ func TestClientUpdateOnlyPrefersExactMatchingCurrentServerCommit(t *testing.T) {
 	target := xupdate.Result{
 		Commit: sha, Channel: xupdate.ChannelMaster,
 		UpdateAvailable: true,
-		Asset: xupdate.Asset{Name: artifact.Filename},
+		Asset:           xupdate.Asset{Name: artifact.Filename},
 	}
 	preferred := matchCurrentServerBundle(target, listing, "windows")
 	if preferred.Bundle == nil || preferred.Bundle.Commit != sha ||
@@ -32,13 +32,19 @@ func TestClientUpdateOnlyPrefersExactMatchingCurrentServerCommit(t *testing.T) {
 	}
 	for name, candidate := range map[string]xupdate.Result{
 		"other client commit": func() xupdate.Result {
-			v := target; v.Commit = strings.Repeat("c", 40); return v
+			v := target
+			v.Commit = strings.Repeat("c", 40)
+			return v
 		}(),
 		"other filename": func() xupdate.Result {
-			v := target; v.Asset.Name = "another.exe"; return v
+			v := target
+			v.Asset.Name = "another.exe"
+			return v
 		}(),
 		"conflicting signed digest": func() xupdate.Result {
-			v := target; v.Asset.Digest = "sha256:"+strings.Repeat("d", 64); return v
+			v := target
+			v.Asset.Digest = "sha256:" + strings.Repeat("d", 64)
+			return v
 		}(),
 	} {
 		actual := matchCurrentServerBundle(candidate, listing, "windows")
