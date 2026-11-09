@@ -1247,6 +1247,8 @@ jobs:
           bash -n scripts/ci/gitlab-server-images.sh
           bash -n scripts/ci/gitlab-promote-images.sh
           bash -n scripts/ci/gitlab-registry-utils.sh
+          bash -n scripts/ci/gitlab-stable-prestage-gate.sh
+          bash scripts/ci/test-gitlab-stable-prestage-gate.sh
           bash -n scripts/ci/gitlab-stage-image.sh
           bash -n scripts/ci/gitlab-fetch-staged-image.sh
           bash -n scripts/ci/test-gitlab-registry-release.sh
