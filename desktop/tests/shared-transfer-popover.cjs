@@ -147,6 +147,7 @@ test('upload history cards display verified instant, partial reuse, normal, and 
     task('instant', { ...completed, upload_transferred_bytes: 0, upload_cas_reused_bytes: 4096 }),
     task('partial', { ...completed, upload_transferred_bytes: 1024, upload_cas_reused_bytes: 3072, average_bytes_per_second: 1024 }),
     task('normal', { ...completed, upload_transferred_bytes: 4096, average_bytes_per_second: 2048 }),
+    task('resume', { ...completed, upload_transferred_bytes: 0, upload_resume_reused_bytes: 4096 }),
     task('skipped', { ...completed, upload_skipped: true, bytes_done: 0 }),
     task('unknown', { ...completed }),
   ]
@@ -158,6 +159,8 @@ test('upload history cards display verified instant, partial reuse, normal, and 
   assert.match(text, /实际上传 1 KiB/)
   assert.match(text, /CAS 复用 3 KiB/)
   assert.match(text, /普通上传/)
+  assert.match(text, /断点续传/)
+  assert.match(text, /断点复用 4 KiB/)
   assert.match(text, /已跳过/)
   assert.match(text, /因冲突跳过/)
   const instant = visibleText(render(XDriveTransferTreeItem, {
@@ -167,7 +170,7 @@ test('upload history cards display verified instant, partial reuse, normal, and 
   assert.match(instant, /秒传/)
   assert.doesNotMatch(instant, /平均速度\s+0 B\/s/)
   const unknown = visibleText(render(XDriveTransferTreeItem, {
-    node: xDriveTransferTree([items[4]])[0], compact: true,
+    node: xDriveTransferTree([items[5]])[0], compact: true,
     retryDisabled: false, retryingID: '',
   }))
   assert.doesNotMatch(unknown, /秒传|部分复用|普通上传/)
@@ -183,8 +186,10 @@ test('folder history counts verified reused children without relabeling skipped 
     task('instant-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 0, upload_cas_reused_bytes: 4096 }),
     task('partial-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 2048, upload_cas_reused_bytes: 2048 }),
     task('skipped-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_skipped: true }),
+    task('resumed-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 0, upload_resume_reused_bytes: 4096 }),
   ]
   const text = visibleText(render(XDriveTransferCenter, { transfers: items }))
   assert.match(text, /秒传\s+1/)
   assert.match(text, /部分复用\s+1/)
+  assert.match(text, /断点续传\s+1/)
 })
