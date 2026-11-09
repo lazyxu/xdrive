@@ -232,6 +232,8 @@ export interface XDriveUploadResult {
   node: Node
   skipped: boolean
   transferred_bytes: number
+  cas_reused_bytes: number
+  resume_reused_bytes: number
 }
 
 export interface UploadSessionState {
@@ -248,6 +250,7 @@ export interface UploadSessionState {
   resume_key?: string
   expected_revision?: number
   status: 'active' | 'finalized' | 'skipped'
+  instant_cas_reused?: boolean
   expires_at: string
   received_chunks: UploadChunkState[]
   result?: Node
@@ -749,6 +752,8 @@ export class XDriveApi {
     error?: string
     skipped?: boolean
     transferredBytes?: number
+    casReusedBytes?: number
+    resumeReusedBytes?: number
   }) {
     webTransferStore.finishLifecycle(id, input)
     const owner = webUploadGroupOwners.get(id)
@@ -3892,17 +3897,22 @@ export class XDriveApi {
       tracking.check()
       if (session.status === 'skipped' && session.result) {
         if (!managedExternally) webTransferStore.completeSkipped(activeTransferID, file.size)
-        return { node: session.result, skipped: true, transferred_bytes: 0 }
+        return { node: session.result, skipped: true, transferred_bytes: 0,
+          cas_reused_bytes: 0, resume_reused_bytes: 0 }
       }
       if (session.status === 'finalized' && session.result) {
         reportProgress(file.size)
-        if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size, 0)
-        return { node: session.result, skipped: false, transferred_bytes: 0 }
+        const casReusedBytes = session.instant_cas_reused ? file.size : 0
+        if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size, 0, casReusedBytes, 0)
+        return { node: session.result, skipped: false, transferred_bytes: 0,
+          cas_reused_bytes: casReusedBytes, resume_reused_bytes: 0 }
       }
 
       const received = new Map(session.received_chunks.map((part) => [part.index, part]))
       let completed = 0
       let transferredBytes = 0
+      let casReusedBytes = 0
+      let resumeReusedBytes = 0
       let networkBytes = 0
 
       for (let index = 0; index < session.chunk_count; index += 1) {
@@ -3913,6 +3923,8 @@ export class XDriveApi {
         const hash = chunkHashes[index]
         const existing = received.get(index)
         if (existing && existing.size === expectedSize && existing.sha256 === hash) {
+          if (existing.reused) casReusedBytes += expectedSize
+          else resumeReusedBytes += expectedSize
           completed += expectedSize
           reportProgress(completed)
           continue
@@ -3947,12 +3959,14 @@ export class XDriveApi {
       reportProgress(file.size)
       if (!managedExternally) {
         if (finalized.status === 'skipped') webTransferStore.completeSkipped(activeTransferID, file.size)
-        else webTransferStore.complete(activeTransferID, file.size, file.size, transferredBytes)
+        else webTransferStore.complete(activeTransferID, file.size, file.size, transferredBytes, casReusedBytes, resumeReusedBytes)
       }
       return {
         node: finalized.result,
         skipped: finalized.status === 'skipped',
         transferred_bytes: transferredBytes,
+        cas_reused_bytes: casReusedBytes,
+        resume_reused_bytes: resumeReusedBytes,
       }
     } catch (error) {
       if (!managedExternally && !session.signal.aborted) {
