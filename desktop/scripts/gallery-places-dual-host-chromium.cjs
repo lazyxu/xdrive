@@ -3831,15 +3831,19 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       authorized?.limit===48&&errors.length===0)
     await page.keyboard.press('Escape')
     await dialog.waitFor({state:'hidden'})
-    // Continue into the OTHER signed 142-photo Cell. Its initial 48 cards
-    // must retain Owner authority while bounded user-driven next pages append.
+    // Continue into the OTHER signed 142-photo Cell. The shared Gallery
+    // scroll port now fetches the next authorized 48-item page on approach
+    // to the viewport tail: no synthetic/manual "Load more" button remains.
     await big.click()
     await dialog.waitFor({state:'visible'})
     await dialog.getByText('已显示 48 / 142 张',{exact:true}).waitFor()
-    const loadMore=page.locator('[data-xdrive-places-photo-drawer-load-more]')
-    await loadMore.click()
-    await dialog.getByText('已显示 96 / 142 张',{exact:true}).waitFor()
-    await loadMore.click()
+    const scrollPort=dialog.locator('[data-xdrive-places-photo-drawer-items]')
+    for (const requiredPages of [2,3]) {
+      await scrollPort.evaluate(el=>{el.scrollTop=el.scrollHeight})
+      await page.waitForFunction(n=>
+        window.__mapProbe.photoPreviewRanges.filter(p=>p.total===142).length>=n,
+        requiredPages,{timeout:15000})
+    }
     await dialog.getByText('此地点全部照片',{exact:true}).waitFor()
     const paged=await page.evaluate(()=>{
       const verified=window.__mapProbe.photoPreviewRanges.filter(p=>p.total===142)
