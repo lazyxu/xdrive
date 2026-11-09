@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
@@ -149,7 +148,3 @@ func (m *clientUpdateManager) InstallCurrentServerCommit(
 	return m.Snapshot(), nil
 }
 
-// The current-Server install is never run as a scheduled/background policy.
-// Keep the caller's selected target Commit fixed through confirmation, verified
-// download and the independent publisher check.
-var _ = strings.TrimSpace
