@@ -205,6 +205,17 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     const list=listRef.current
     if (list && list.scrollHeight-list.clientHeight < 180) onLoadMore()
   }, [sparse,phase,expanded,loadingMore,pageError,loadedDepth,total,items.length,onLoadMore])
+  // The date timeline describes the complete signed total, not only the
+  // resident prefix. For <=480 photos, complete the original 48-item
+  // sequential authorization BEFORE displaying grouped virtual geometry.
+  // Large Cells retain O(viewport) direct signed seeking and never eagerly
+  // download all 100k records.
+  useEffect(() => {
+    if (phase!=='ready' || !expanded || sparse || timeScale==='all' ||
+        !timelineGroups || loadedDepth>=total || loadingMore || pageError) return
+    onLoadMore()
+  }, [phase,expanded,sparse,timeScale,timelineGroups,loadedDepth,total,
+    loadingMore,pageError,onLoadMore])
   // Restore only when this trusted Parent Dialog actually finished entering
   // and a NEW authenticated Owner Cell Range has populated its grid. Never
   // replay old image bytes, reset the camera, or borrow SDK Child state.
@@ -505,7 +516,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                   maxColumns: 10,
                   onChange: pinchChange,
                 } : undefined}>
-                {timeScale !== 'all' && timelineGroups ? (
+                {timeScale !== 'all' && timelineGroups && (sparse || loadedDepth>=total) ? (
                   <XDriveMediaGalleryVirtualTimeline
                     placesDrawer
                     groups={timelineGroups[timeScale]}
@@ -634,6 +645,12 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               </Button>
             </Stack>
           </Stack>
+          {!sparse && timeScale!=='all' && loadedDepth<total ? (
+            <Typography role="status" variant="caption" color="text.secondary"
+              sx={{px:1.25,pb:1}} data-xdrive-places-photo-date-loading>
+              正在核对完整日期范围…已确认 {loadedDepth} / {total} 张
+            </Typography>
+          ) : null}
           {actionError ? (
             <Typography role="alert" variant="caption" color="error.main"
               sx={{px:1.25,pb:1}}>{actionError}</Typography>
