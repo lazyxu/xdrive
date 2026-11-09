@@ -28,6 +28,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         let control = target(id, in: app)
         XCTAssertTrue(control.waitForExistence(timeout: 15),
                       "Missing native navigation control: \(id)")
+        // Emit an actual click marker before the on-device transition. The
+        // Simulator frame watcher can sample near the tap, not merely test start.
+        print("IOS_NATIVE_NAV_TAP_START route=\(id)")
         control.tap()
         XCTAssertEqual(app.state, .runningForeground, "App exited after \(id)")
     }
@@ -332,6 +335,131 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             checkGallery(app)
             assertNotSolidScreen(app, "Gallery")
         }
+    }
+
+
+    func testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-root-location", in: app)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-files-error-return", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        select("native-ios-gallery-source-albums", in: app)
+        select("native-ios-gallery-source-unified", in: app)
+        select("native-ios-gallery-open-filters", in: app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery after cloud denial and album filter")
+    }
+
+    func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-trash", in: app)
+        XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-files-trash-retry", in: app)
+        XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-files-trash-error-return", in: app)
+        for section in ["recent", "favorites", "browse"] {
+            select("native-ios-files-section-\(section)", in: app)
+            checkFilesHome(app)
+        }
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery after Trash retry and Files rail")
+    }
+
+    func testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-gallery-people", in: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
+            .waitForExistence(timeout: 15))
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        checkGallery(app)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-root-location", in: app)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-files-error-return", in: app)
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery after People and denied Cloud Files")
+    }
+
+    func testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank() {
+        let app = launch()
+        for _ in 0..<3 {
+            select("native-ios-tab-files", in: app)
+            checkFilesHome(app)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            checkFilesHome(app)
+            assertNotSolidScreen(app, "Files after foreground activation")
+            select("native-ios-tab-gallery", in: app)
+            checkGallery(app)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            checkGallery(app)
+            assertNotSolidScreen(app, "Gallery after foreground activation")
+        }
+    }
+
+    func testLocalPhotosSourceSurvivesFilesMineAndGalleryRoundTrip() {
+        let app = launch()
+        select("native-ios-gallery-source-menu", in: app)
+        let local = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(local.waitForExistence(timeout: 15))
+        local.tap()
+        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-mine", in: app)
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+            .waitForExistence(timeout: 15))
+        assertNotSolidScreen(app, "Local PhotoKit route after Files and Mine")
+        select("native-ios-gallery-source-unified", in: app)
+        checkGallery(app)
+    }
+
+    func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes() {
+        let app = launch()
+        select("native-ios-tab-files", in: app)
+        let search = app.searchFields["搜索全部文件"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        search.tap()
+        search.typeText("ab")
+        XCTAssertEqual(app.state, .runningForeground)
+        // Dismiss the actual search keyboard before tapping the native tab bar.
+        if app.keyboards.buttons["Search"].exists {
+            app.keyboards.buttons["Search"].tap()
+        } else if app.keyboards.buttons["完成"].exists {
+            app.keyboards.buttons["完成"].tap()
+        } else {
+            search.typeText("\n")
+        }
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        select("native-ios-gallery-open-filters", in: app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        assertNotSolidScreen(app, "Files after search and Gallery filter")
     }
 
 }
