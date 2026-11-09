@@ -64,7 +64,9 @@ func TestCreateLocalSourceLegacyServerConfigurationRejection(t *testing.T) {
 		}
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode local source request: %v", err)
+			t.Errorf("decode local source request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		for key, expected := range map[string]string{
 			"name": "下载", "kind": "local_folder", "direction": "push",
