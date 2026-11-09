@@ -152,7 +152,8 @@ func TestLegacyMigrationPreviewDetectsAncestorAndDescendantSourceOverlap(t *test
 		{name: "another Source claims exact target", claimLocation: "target", wantOverlap: true},
 		{name: "archived Source claims verified nested directory", claimLocation: "nested", wantOverlap: true},
 		{name: "sibling Source does not overlap", claimLocation: "sibling"},
-		{name: "different Owner cannot block our target", claimLocation: "target", otherOwner: true},
+		{name: "foreign-Owner historical target binding blocks", claimLocation: "target", otherOwner: true, wantOverlap: true},
+		{name: "foreign-Owner unrelated sibling stays safe", claimLocation: "sibling", otherOwner: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -208,8 +209,9 @@ func TestLegacyMigrationPreviewDetectsAncestorAndDescendantSourceOverlap(t *test
 			if tc.otherOwner {
 				claimOwnerID = stranger.ID
 			}
-			// Archived Sources retain their targets and must still prevent
-			// migration or reparenting through an overlapping live subtree.
+			// Archived Sources (including malformed historical cross-Owner
+			// claims) retain their targets and must still prevent moving
+			// an overlapping live subtree. Unrelated sibling IDs stay safe.
 			other := meta.Source{
 				OwnerID: claimOwnerID, Name: "Other Source",
 				Kind: "synology_files", Direction: meta.SourceDirectionPull,
@@ -402,8 +404,9 @@ func TestLegacyMigrationPreviewRejectsMalformedTargetAncestry(t *testing.T) {
 	}
 }
 
-// A second Source can have SourceItem provenance pointing into a legacy
-// target even without a Source.TargetNodeID binding. Preview cannot bless
+// A second Source, including one from a historically mismatched Owner,
+// can have SourceItem provenance pointing into a legacy target even
+// without a Source.TargetNodeID binding. Preview cannot bless
 // such Nodes as exclusive based only on the current SourceItem rows.
 func TestLegacyMigrationPreviewRejectsOtherSourceItemClaims(t *testing.T) {
 	for _, tc := range []struct {
@@ -415,7 +418,8 @@ func TestLegacyMigrationPreviewRejectsOtherSourceItemClaims(t *testing.T) {
 		{name: "foreign Source claims nested directory", claimed: "nested", wantConflict: true, state: meta.SourceItemStateSynced},
 		{name: "pending foreign Source claims target root", claimed: "target", wantConflict: true, state: meta.SourceItemStatePending},
 		{name: "unrelated sibling SourceItem is safe", claimed: "sibling", state: meta.SourceItemStateSynced},
-		{name: "different Owner does not claim current Source", claimed: "photo", otherOwner: true, state: meta.SourceItemStateSynced},
+		{name: "foreign-Owner historical SourceItem claim blocks", claimed: "photo", otherOwner: true, wantConflict: true, state: meta.SourceItemStateSynced},
+		{name: "foreign-Owner unrelated sibling item stays safe", claimed: "sibling", otherOwner: true, state: meta.SourceItemStateSynced},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, srv, owner, stranger, root := setupFilePropertiesTestDB(t)
