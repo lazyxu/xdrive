@@ -22,6 +22,7 @@ func TestMigrateCreatesBaiduJSAPICrossReplicaQuota(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, root)
 	schema := "migrate_mapquota_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := root.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -38,6 +39,7 @@ func TestMigrateCreatesBaiduJSAPICrossReplicaQuota(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}

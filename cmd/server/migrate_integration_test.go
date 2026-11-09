@@ -26,6 +26,7 @@ func TestMigrateConvertsStorageKeyIndexesToNonUnique(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "migrate_dedup_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -45,6 +46,7 @@ func TestMigrateConvertsStorageKeyIndexesToNonUnique(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 
 	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
 		t.Fatal(err)
@@ -106,6 +108,7 @@ func TestMigrateBackfillsUploadReservations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "migrate_upload_reservation_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -125,6 +128,7 @@ func TestMigrateBackfillsUploadReservations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +191,7 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "migrate_sources_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -206,6 +211,7 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}
@@ -411,6 +417,7 @@ func TestMigrateBackfillsRecoverableSourceRunFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "migrate_source_failures_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -430,6 +437,7 @@ func TestMigrateBackfillsRecoverableSourceRunFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 
 	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}); err != nil {
 		t.Fatal(err)
@@ -483,6 +491,7 @@ func TestMigrateBackfillsStableSourceRunNumbers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "migrate_source_run_numbers_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -502,6 +511,7 @@ func TestMigrateBackfillsStableSourceRunNumbers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}
@@ -556,6 +566,7 @@ func TestMigrateDropsLegacySourceMediaMetadataColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "migrate_source_metadata_boundary_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -573,6 +584,7 @@ func TestMigrateDropsLegacySourceMediaMetadataColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}
@@ -607,6 +619,7 @@ func TestMigrateBackfillsOnlyVerifiedCanonicalPushDeviceID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "migrate_source_device_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -626,6 +639,7 @@ func TestMigrateBackfillsOnlyVerifiedCanonicalPushDeviceID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	if err := db.AutoMigrate(&meta.User{}, &meta.ClientDevice{}, &meta.Source{}); err != nil {
 		t.Fatal(err)
 	}

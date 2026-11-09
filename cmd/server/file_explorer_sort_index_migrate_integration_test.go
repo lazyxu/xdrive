@@ -22,6 +22,7 @@ func TestMigrateInstallsFileExplorerTypeSortIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "migrate_fileexplorer_type_sort_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -41,6 +42,7 @@ func TestMigrateInstallsFileExplorerTypeSortIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
