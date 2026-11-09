@@ -144,8 +144,8 @@ test('upload history cards display verified instant, partial reuse, normal, and 
     phase: 'finalizing', bytes_done: 4096, bytes_total: 4096, percent: 100,
     instant_bytes_per_second: 0, average_bytes_per_second: 0 }
   const items = [
-    task('instant', { ...completed, upload_transferred_bytes: 0 }),
-    task('partial', { ...completed, upload_transferred_bytes: 1024, average_bytes_per_second: 1024 }),
+    task('instant', { ...completed, upload_transferred_bytes: 0, upload_cas_reused_bytes: 4096 }),
+    task('partial', { ...completed, upload_transferred_bytes: 1024, upload_cas_reused_bytes: 3072, average_bytes_per_second: 1024 }),
     task('normal', { ...completed, upload_transferred_bytes: 4096, average_bytes_per_second: 2048 }),
     task('skipped', { ...completed, upload_skipped: true, bytes_done: 0 }),
     task('unknown', { ...completed }),
@@ -153,10 +153,10 @@ test('upload history cards display verified instant, partial reuse, normal, and 
   const text = visibleText(render(XDriveTransferCenter, { transfers: items }))
   assert.match(text, /秒传/)
   assert.match(text, /无需上传文件内容/)
-  assert.match(text, /节省 4 KiB/)
+  assert.match(text, /CAS 复用 4 KiB/)
   assert.match(text, /部分复用/)
   assert.match(text, /实际上传 1 KiB/)
-  assert.match(text, /复用 3 KiB/)
+  assert.match(text, /CAS 复用 3 KiB/)
   assert.match(text, /普通上传/)
   assert.match(text, /已跳过/)
   assert.match(text, /因冲突跳过/)
@@ -180,8 +180,8 @@ test('folder history counts verified reused children without relabeling skipped 
   const items = [
     task('folder', { scope: 'group', kind: 'upload', direction: 'upload',
       state: 'completed', bytes_done: 8192, bytes_total: 8192 }),
-    task('instant-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 0 }),
-    task('partial-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 2048 }),
+    task('instant-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 0, upload_cas_reused_bytes: 4096 }),
+    task('partial-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 2048, upload_cas_reused_bytes: 2048 }),
     task('skipped-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_skipped: true }),
   ]
   const text = visibleText(render(XDriveTransferCenter, { transfers: items }))
