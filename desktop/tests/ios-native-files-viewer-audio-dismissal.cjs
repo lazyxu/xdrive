@@ -64,7 +64,9 @@ test('audio player failure notification is scoped to an open viewer and exact pl
 test('reload, playback failure and page swipe cannot restart a closed viewer',()=>{
   assert.match(viewer,/private func reloadCurrent\(\) \{\s*guard authorized, !isClosing else \{ return \}/)
   assert.match(viewer,/private func playbackFailed\(_ failed: AVPlayerItem\) \{\s*guard authorized, !isClosing, let current/)
-  assert.match(viewer,/private func move\(_ direction: Int\) \{\s*guard !isClosing, let next = neighbor\(direction\), onNavigate\(next\)/)
+  assert.match(viewer,/private func move\(_ direction: Int\) \{\s*guard !isClosing, authorized, !neighborBusy else \{ return \}/)
+  assert.match(viewer,/private func commitNeighbor\(_ next: XDriveIOSNativeFilesNode\) \{\s*guard !isClosing, authorized, onNavigate\(next\) else \{ return \}/)
+  assert.match(viewer,/neighborJob\?\.cancel\(\)/)
 })
 test('existing selected node/revision, Owner and signed preview verification remains enforced',()=>{
   assert.match(viewer,/let credentials = try await login\.verifiedAuthorization\(\)/)

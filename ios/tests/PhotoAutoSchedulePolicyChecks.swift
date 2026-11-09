@@ -28,6 +28,14 @@ import Foundation
                  == .unknownDates)
     precondition(p.newOnlyCandidate(capturedAt: nil, modifiedAt: later, since: enabledAt)
                  == .eligible)
+    // An old photo newly imported through PhotoKit history must be taken
+    // from the durable inserted queue, not discarded by its capture date.
+    // Conversely a positional fallback must not treat a historical image
+    // whose dates predate consent as newly authorized.
+    precondition(p.newOnlyCandidate(capturedAt: prior, modifiedAt: prior,
+                                    since: enabledAt) == .olderThanStart)
+    precondition(p.newOnlyCandidate(capturedAt: prior, modifiedAt: later,
+                                    since: enabledAt) == .eligible)
     precondition(p.accepts(minutes: 15))
     precondition(p.accepts(minutes: 60))
     precondition(p.accepts(minutes: 1440))

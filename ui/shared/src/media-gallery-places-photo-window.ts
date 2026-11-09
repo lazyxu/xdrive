@@ -95,6 +95,11 @@ export function xDrivePlacesPhotoWindowRehydrate(
   if (!Number.isSafeInteger(offset) || offset < 0 ||
       offset >= window.depth ||
       !acceptsPage(selection, window, page, offset)) return null
+  // A rehydrated range may ONLY materialize previously visited rows.
+  // A valid Owner-signed page at an unusual offset can otherwise straddle
+  // depth and turn inert future placeholders into clickable identities.
+  // Append (not rehydrate) is the only operation that advances depth.
+  if (offset + page.items.length > window.depth) return null
   const currentEnd = window.start + window.items.length
   if (offset >= window.start && offset + page.items.length <= currentEnd) {
     const existing = window.items.slice(offset - window.start,

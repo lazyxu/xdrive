@@ -129,15 +129,22 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             Text("需在系统界面选择保存位置；当前只表示已暂存原件。")
                                 .font(.footnote).foregroundStyle(.secondary)
                         } else {
-                            Button(exporter.busy ? "正在下载…" : "下载并准备导出") {
+                            Button(exporter.busy ? "正在下载…" :
+                                   (exporter.retryAvailable ? "重试下载" : "下载并准备导出")) {
                                 exporter.prepare(file, login: login, transfers: transfers)
                             }
                             .disabled(anyBusy)
                             .accessibilityIdentifier("native-ios-files-export")
-                            Text("单文件导出最大 1 GiB，需足够暂存空间；不支持后台下载。")
+                            Text("通过 URLSession 流式下载，不限定 1 GiB；要求本机可用空间覆盖原文件及 128 MiB 余量。后台下载与断点续传尚不支持。")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                         if exporter.busy {
+                            if let progress = exporter.verifiedProgress {
+                                ProgressView(value: progress)
+                                    .accessibilityLabel("真实已接收的下载字节进度")
+                            } else {
+                                ProgressView("正在获取真实下载字节…")
+                            }
                             Button("取消当前下载", role: .cancel) {
                                 exporter.cancelCurrentTransfer()
                             }

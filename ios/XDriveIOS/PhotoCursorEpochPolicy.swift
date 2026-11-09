@@ -12,6 +12,18 @@ enum XDrivePhotoCursorEpochPolicy {
             previousAuthorization == currentAuthorization
     }
 
+    /// PhotoKit change-queue counts are only current if their durable replay
+    /// baseline matches the exact authorized library generation. An old local
+    /// confirmed row is not evidence of a current cloud receipt.
+    static func canShowChangeQueueSnapshot(
+        hasBaseline: Bool, tokenUnchanged: Bool,
+        previousAuthorization: Int?, currentAuthorization: Int
+    ) -> Bool {
+        canResume(hasPriorToken: hasBaseline, tokenUnchanged: tokenUnchanged,
+                  previousAuthorization: previousAuthorization,
+                  currentAuthorization: currentAuthorization)
+    }
+
     static func trustedWindow(
         requested: Int, hasPriorToken: Bool,
         tokenUnchanged: Bool, previousAuthorization: Int?,

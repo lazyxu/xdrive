@@ -13,7 +13,12 @@ test('native file transfers provide explicit, accessible cancel without inventin
   assert.match(panel, /if uploader\.busy \{\s*Button\("取消当前上传", role: \.cancel\)/)
   assert.match(panel, /uploader\.cancelCurrentTransfer\(\)/)
   assert.match(panel, /native-ios-files-upload-cancel/)
-  assert.match(panel, /if exporter\.busy \{\s*Button\("取消当前下载", role: \.cancel\)/)
+  const downloadBusySection = panel.slice(panel.indexOf("if exporter.busy {"),
+    panel.indexOf("if let status = exporter.status", panel.indexOf("if exporter.busy {")))
+  assert.ok(downloadBusySection.length > 0, "download busy area is present")
+  assert.match(downloadBusySection, /if let progress = exporter\.verifiedProgress/)
+  assert.match(downloadBusySection, /ProgressView\(value: progress\)/)
+  assert.match(downloadBusySection, /Button\("取消当前下载", role: \.cancel\)/)
   assert.match(panel, /exporter\.cancelCurrentTransfer\(\)/)
   assert.match(panel, /native-ios-files-download-cancel/)
   assert.match(panel, /createBusy \|\| exporter\.busy \|\| folderArchive\.busy \|\| uploader\.busy/)

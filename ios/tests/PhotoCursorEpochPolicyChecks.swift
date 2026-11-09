@@ -36,6 +36,19 @@ import Foundation
                                               previousAuthorization: 3,
                                               currentAuthorization: 3) == 0)
         }
+        // An empty/stale PhotoKit change queue must never publish old totals.
+        precondition(policy.canShowChangeQueueSnapshot(
+            hasBaseline: true, tokenUnchanged: true,
+            previousAuthorization: 3, currentAuthorization: 3))
+        precondition(!policy.canShowChangeQueueSnapshot(
+            hasBaseline: false, tokenUnchanged: true,
+            previousAuthorization: nil, currentAuthorization: 3))
+        precondition(!policy.canShowChangeQueueSnapshot(
+            hasBaseline: true, tokenUnchanged: false,
+            previousAuthorization: 3, currentAuthorization: 3))
+        precondition(!policy.canShowChangeQueueSnapshot(
+            hasBaseline: true, tokenUnchanged: true,
+            previousAuthorization: 4, currentAuthorization: 3))
         print("iOS persisted PhotoKit generation/window cursor policy: PASS")
     }
 }

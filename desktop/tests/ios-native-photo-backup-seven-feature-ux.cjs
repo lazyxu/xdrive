@@ -102,3 +102,91 @@ test('7: overall progress separates scan, current Node proof and local change-qu
   assert.match(writer, /var windowUploaded = 0/)
   assert.match(writer, /var changeQueueUploaded = 0/)
 })
+
+
+test('stale PhotoKit generations hide old queue totals and task rows without refreshing the wrong Owner', () => {
+  const epoch = read('ios/XDriveIOS/PhotoCursorEpochPolicy.swift')
+  assert.match(epoch, /func canShowChangeQueueSnapshot\(/)
+  assert.match(queue, /func summary\(owner: XDriveNativeOwnerRoot\)[\s\S]*?canShowChangeQueueSnapshot\([\s\S]*?baseline\.token, as: epoch\.token/)
+  assert.match(taskModel, /if let freshTotals = try await queue\.summary\(owner: owner\)/)
+  assert.match(taskModel, /try await queue\.isCaughtUp\(owner: owner\)/)
+  assert.match(taskModel, /clearPage\(\) \/\/ Never retain a previous page after permission loss/)
+  assert.match(taskModel, /if\s+result == nil\s*\{[\s\S]*?PhotoKit 变更尚未回放/)
+  assert.match(taskModel, /self\.clearPage\(\)[\s\S]*?当前未启用“仅备份新照片”/)
+  assert.match(taskModel, /self\.clearPage\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.match(tasks, /\.onChange\(of: controller\.busy\)/)
+  assert.match(tasks, /model\.refreshCurrent\(login: login, mode: mode, filter: filter\)/)
+  assert.match(tasks, /\.disabled\(model\.loading\)/)
+})
+
+
+test('full-library task-page proofs are bounded, read-only and invalidated by PhotoKit and Owner changes', () => {
+  const verifier = read('ios/XDriveIOS/NativeCurrentPhotoReceiptModel.swift')
+  assert.match(taskModel, /func verifyNextPageBatch\(/)
+  assert.match(taskModel, /Array\(rows\.dropFirst\(pageChecked\)\.prefix\(8\)\)/)
+  assert.match(taskModel, /XDriveIOSNativeCurrentPhotoReceiptModel\(\)/)
+  assert.match(taskModel, /await verifier\.verifyAndWait\(/)
+  assert.match(taskModel, /XDriveIOSPhotoKitLibraryEpoch\.matches\(/)
+  assert.match(taskModel, /self\.verifiedPageIDs\.formUnion\(found\)/)
+  assert.match(taskModel, /photoLibraryDidChange\(/)
+  assert.match(taskModel, /let readEpoch = try XDriveIOSPhotoKitLibraryEpoch\.capture\(\)/)
+  assert.match(taskModel, /XDriveIOSPhotoKitLibraryEpoch\.matches\([\s\S]*?readEpoch\.serialized, as: publishEpoch\.token/)
+  assert.match(tasks, /!controller\.busy && !model\.verifyingPage/)
+  assert.match(taskModel, /PHPhotoLibrary\.shared\(\)\.unregisterChangeObserver\(pagePhotoObserver\)/)
+  assert.match(tasks, /for: model\.verifiedPageIDs\.contains\(item\.id\) \? "matched" : item\.state/)
+  assert.match(tasks, /native-ios-photo-library-page-proof-next/)
+  assert.match(verifier, /existingReceiptForCurrentOriginal\(/)
+  assert.match(verifier, /verifyNodeReceipt\(/)
+  assert.doesNotMatch(taskModel, /createUploadSession|finalizeUploadSession|deleteAssets\(/)
+})
+
+
+test('a completed whole-library audit persists only an as-of authenticated Node coverage snapshot', () => {
+  const audit = read('ios/XDriveIOS/NativePhotoWholeLibraryAudit.swift')
+  const history = read('ios/XDriveIOS/NativePhotoAuditHistory.swift')
+  assert.match(audit, /if self\.checked == count,[\s\S]*?XDriveIOSNativePhotoAuditHistory\.save\(/)
+  assert.match(audit, /native-ios-photo-historical-whole-audit/)
+  // Keep this modifier attached to a Text, never an if conditional ViewBuilder.
+  assert.match(audit, /Text\("从本机读取原件 SHA-256[^"]*"\)\s*\.font\(\.footnote\)\.foregroundStyle\(\.secondary\)/)
+  assert.doesNotMatch(audit, /\}\s*\.font\(\.footnote\)\.foregroundStyle\(\.secondary\)\s*Toggle\("核验时允许下载 iCloud 原件"/)
+  assert.match(audit, /不代表当前覆盖率/)
+  assert.match(history, /matched \+ unmatched == total/)
+  assert.match(history, /sourceID > 0, targetNodeID > 0/)
+  assert.match(history, /UserDefaults\.standard\.set\(encoded/)
+  assert.doesNotMatch(history, /localIdentifier|accessToken|grantSecret|originalFilename/)
+})
+
+
+test('system background repair re-arms only after protected data and exact Owner receipt preflight', () => {
+  const bg = read('ios/XDriveIOS/BackgroundPhotoTask.swift')
+  const diag = read('ios/XDriveIOS/PhotoBackgroundAttemptStatus.swift')
+  assert.match(bg, /protectedDataDidBecomeAvailableNotification/)
+  assert.match(bg, /rearmAfterProtectedDataUnlock\(\)/)
+  assert.match(bg, /UIApplication\.shared\.isProtectedDataAvailable/)
+  assert.match(bg, /XDriveIOSOriginalPendingReceiptPreflight[\s\S]*?pendingCount\(owner: owner\) == 0/)
+  assert.match(bg, /XDriveIOSBGOriginalWindowStore\.shared\.pausedForReview/)
+  assert.match(bg, /localStopVersion == stop/)
+  assert.match(bg, /XDriveIOSBGAttemptStatus\.last\(owner: owner\)\?\.reason ==\s*\.protectedDataUnavailable/)
+  assert.match(bg, /if try XDriveIOSBGOriginalWindowStore\.shared\s*\.pausedForReview\(owner: owner\) \{[\s\S]*?return/)
+  assert.match(bg, /XDriveIOSBGAttemptStatus\.record\(\.noDueWindow, owner: owner\)/)
+  assert.match(bg, /scheduleApprovedProbe\(afterMinutes: grant\.intervalMinutes\)/)
+  assert.match(bg, /XDriveIOSBGAttemptStatus\.record\(\.protectedDataUnavailable/)
+  assert.match(bg, /XDriveIOSBGAttemptStatus\.record\(\.pendingReceiptReview/)
+  assert.match(bg, /beganOriginalWrite \? \.interruptedAfterWrite/)
+  assert.match(diag, /case protectedDataUnavailable/)
+  assert.match(diag, /case authorizationFailure/)
+  assert.match(diag, /case networkRetry/)
+  assert.doesNotMatch(bg, /kSecAttrAccessibleAfterFirstUnlock|URLSessionConfiguration\.background/)
+})
+
+test('real incremental PhotoKit recovery scenarios are covered by durable Swift fixture', () => {
+  const fixture = read('ios/tests/PhotoBackupChangeQueueStoreChecks.swift')
+  const policy = read('ios/tests/PhotoAutoSchedulePolicyChecks.swift')
+  for (const term of ['restart-old-import-edit-delete.sqlite3',
+    'import-with-old-capture-date', 'previous-confirmed', 'will-delete',
+    'stale reboot token was accepted', 'hasCompletedFullReconciliation']) {
+    assert.ok(fixture.includes(term), term)
+  }
+  assert.match(fixture, /try !restarted\.settle\(/)
+  assert.match(policy, /An old photo newly imported through PhotoKit history/)
+})
