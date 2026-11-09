@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedGalleryMain = (read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx') + '\n' + read('ui', 'shared', 'src', 'mui', 'MediaGallerySharedTiles.tsx'))
+const sharedGalleryTimelineSource = read('ui', 'shared', 'src', 'mui', 'MediaGallerySharedTimeline.tsx')
 const sharedWorkspaceSurface = read('ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx')
 const sharedGalleryDetails = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDetails.tsx')
 const sharedGalleryInspector = read('ui', 'shared', 'src', 'mui', 'MediaGalleryInspector.tsx')
@@ -273,10 +274,14 @@ test('Gallery photo wall keeps ordinary media quiet while preserving semantic ba
   ]) {
     assert.ok(sharedGalleryMain.includes(token), 'Gallery photo-wall contract missing: ' + token)
   }
-  assert.ok(
-    (sharedGalleryMain.match(/gap: `\$\{XDRIVE_MEDIA_GALLERY_GRID_GAP\}px`/g) || []).length >= 3,
-    'dense, sparse and timeline grids must share one compact gap',
-  )
+  // The shared Timeline was extracted into its own component. Keep all three
+  // actual rendered grids checked rather than counting only one source file.
+  const gridGap = /gap: `\$\{XDRIVE_MEDIA_GALLERY_GRID_GAP\}px`/g
+  assert.equal((sharedGalleryMain.match(gridGap) || []).length, 2,
+    'dense and sparse grids must keep the same compact gap')
+  assert.equal((sharedGalleryTimelineSource.match(gridGap) || []).length, 1,
+    'shared virtual timeline must use the same compact gap')
+
   assert.match(sharedGalleryPreview, /<Skeleton[\s\S]*animation=\{false\}[\s\S]*borderRadius: 0/)
   assert.equal(
     sharedGalleryPreview.includes('CircularProgress'),
@@ -1575,7 +1580,15 @@ test('Gallery time scales map compact group indexes onto the shared sparse Virtu
   for (const token of [
     'timelineGroupSets={timelineGroupSets}',
     'setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))',
-    'function MediaVirtualTimeline({',
+    "<MediaVirtualTimeline",
+    "MediaGallerySharedTimeline",
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery Timeline wiring missing: ${token}`)
+  }
+  // The sparse Timeline is shared by Gallery and signed Places after the
+  // component extraction; assert its actual bounded and Owner-safe rendering.
+  for (const token of [
+    'export function XDriveMediaGalleryVirtualTimeline({',
     'xDriveMediaGalleryTimelineLayout',
     'xDriveMediaGalleryTimelineWindow',
     'data-xdrive-media-gallery-virtual-timeline',
@@ -1583,9 +1596,11 @@ test('Gallery time scales map compact group indexes onto the shared sparse Virtu
     'collection.onRangeChange(',
     'data-xdrive-media-gallery-timeline-placeholder',
     'xDriveMediaGalleryTimelineIndexVisible',
+    'saveVideoPoster={saveVideoPoster}',
   ]) {
-    assert.ok(sharedGalleryMain.includes(token), `Gallery Timeline virtualization missing: ${token}`)
+    assert.ok(sharedGalleryTimelineSource.includes(token), `Shared Timeline virtualization missing: ${token}`)
   }
+
   for (const token of [
     'XDRIVE_MEDIA_GALLERY_TIMELINE_HEADER_HEIGHT = 32',
     'XDRIVE_MEDIA_GALLERY_TIMELINE_GROUP_GAP = 20',
