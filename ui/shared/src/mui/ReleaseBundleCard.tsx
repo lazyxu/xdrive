@@ -3,6 +3,7 @@ import { Box, Link, Stack, Typography } from '@mui/material'
 import type { XDriveReleaseBundlePort, XDriveReleaseBundleState } from '../release-bundles'
 import { xDriveReleaseBundleDownloadSources } from '../release-bundles'
 import { XDriveActionButton } from './ActionButton'
+import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
 
 const labels: Record<string, string> = {
@@ -28,6 +29,8 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
   const [state, setState] = useState<XDriveReleaseBundleState | null>(null)
   const [error, setError] = useState('')
   const [retrying, setRetrying] = useState(false)
+  const [installing, setInstalling] = useState(false)
+  const [pendingInstall, setPendingInstall] = useState<{ commit: string; filename: string } | null>(null)
   const refresh = useCallback(async () => {
     if (!port) return
     try {
@@ -72,6 +75,7 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
         </Stack>
         {state?.commit ? <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
           完整 Git Commit：{state.commit}
+          {state.server_version ? ` · Server 版本 ${state.server_version}` : ''}
         </Typography> : null}
         {state?.cached_commit && state.cached_commit !== state.commit ?
           <Typography variant="caption" color="text.secondary">
@@ -100,6 +104,14 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
               SHA-256：{artifact.sha256}
             </Typography>
             <Stack direction="row" spacing={2} flexWrap="wrap">
+              {port.installCurrent && port.platform === artifact.platform &&
+                state?.commit === artifact.build_commit &&
+                artifact.install_mode === 'manual' && sources.length > 0 ? (
+                <XDriveActionButton intent="primary" compact disabled={installing}
+                  onClick={() => setPendingInstall({ commit: artifact.build_commit, filename: artifact.filename })}>
+                  自愿升级此设备到当前 Server Commit
+                </XDriveActionButton>
+              ) : null}
               {artifact.cached && port.downloadCached ? (
                 <XDriveActionButton onClick={() => {
                   const transfer = port.downloadCached?.(artifact.filename)
@@ -122,6 +134,30 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
           安装前仍须满足平台签名和兼容性要求。Android 安装包仍须通过系统签名验证。
         </Typography>
       </Stack>
+      <XDriveConfirmDialog
+        open={pendingInstall !== null}
+        title="确认将本机客户端升级到 Server 当前 Commit？"
+        description={`仅升级当前设备，不会强制其他客户端升级。目标 Commit：${pendingInstall?.commit ?? '—'}。将独立校验公开发布的 Commit、SHA-256 与操作系统安装包签名。`}
+        confirmLabel="验证并安装"
+        confirmIntent="warning"
+        loading={installing}
+        onCancel={() => { if (!installing) setPendingInstall(null) }}
+        onConfirm={() => {
+          if (!pendingInstall || !port.installCurrent || installing) return
+          if (state?.commit !== pendingInstall.commit) {
+            setPendingInstall(null)
+            setError('Server Commit 已变化，请刷新后重新选择。')
+            return
+          }
+          setInstalling(true)
+          void port.installCurrent(pendingInstall.commit, pendingInstall.filename)
+            .then(() => { setPendingInstall(null); setError('已提交本机更新，等待安装器完成版本与健康检查。') })
+            .catch((reason: unknown) => {
+              setError(reason instanceof Error ? reason.message : '当前 Server 版本安装失败。')
+            })
+            .finally(() => setInstalling(false))
+        }}
+      />
     </Box>
   )
 }
