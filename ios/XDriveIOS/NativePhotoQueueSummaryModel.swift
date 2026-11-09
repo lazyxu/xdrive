@@ -141,6 +141,9 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
                 }
                 self.counts = result
                 self.failedReasonCounts = reasons
+                if result == nil {
+                    self.notice = "PhotoKit 变更尚未回放到当前图库版本，已隐藏旧的任务统计；请等下次前台增量检查后刷新。"
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -154,6 +157,16 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
     }
 }
 
+
+/// A read-only verified row must become unknown immediately when PhotoKit
+/// changes; an old SHA/Node result never survives a new image revision.
+private final class XDriveIOSNativeTaskListPhotoObserver: NSObject, PHPhotoLibraryChangeObserver {
+    let invalidated: () -> Void
+    init(invalidated: @escaping () -> Void) { self.invalidated = invalidated }
+    func photoLibraryDidChange(_ change: PHChange) {
+        DispatchQueue.main.async { [invalidated] in invalidated() }
+    }
+}
 
 /// Reuses PhotoKit's existing bounded readers. Nothing here initiates a
 /// transfer or infers complete cloud coverage from local queue ACKs.
@@ -207,7 +220,15 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
     @Published private(set) var libraryTotal: Int?
     @Published private(set) var offset = 0
     @Published private(set) var hasNext = false
+    // Only read-only current original/SHA + authenticated managed Node proof
+    // can place a row here. Discard after any new page or PhotoKit change.
+    @Published private(set) var verifiedPageIDs: Set<String> = []
+    @Published private(set) var pageChecked = 0
+    @Published private(set) var verifyingPage = false
 
+    private var pageProofJob: Task<Void, Never>?
+    private var activePageProof: XDriveIOSNativeCurrentPhotoReceiptModel?
+    private var pagePhotoObserver: XDriveIOSNativeTaskListPhotoObserver?
     private var ticket = UUID()
     private var job: Task<Void, Never>?
     private static let changePageSize = 32
@@ -218,15 +239,113 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
         job?.cancel()
         job = nil
         loading = false
+        pageProofJob?.cancel()
+        pageProofJob = nil
+        activePageProof?.cancel()
+        activePageProof = nil
+        verifyingPage = false
+        verifiedPageIDs = []
+        pageChecked = 0
+        if let pagePhotoObserver {
+            PHPhotoLibrary.shared().unregisterChangeObserver(pagePhotoObserver)
+        }
+        pagePhotoObserver = nil
     }
 
-    func reset() {
-        cancel()
+    /// Bounded, explicit, read-only verification of up to eight items on the
+    /// current library page. Neither a local queue ACK nor a partial scan
+    /// creates the green "current managed Node verified" proof.
+    func verifyNextPageBatch(login: XDriveIOSNativeOwnerLoginModel,
+                             allowICloudOriginals: Bool) {
+        guard !loading, !verifyingPage, pageChecked < rows.count,
+              let expectedOwner = login.owner,
+              UIApplication.shared.applicationState == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+        else { return }
+        let chosen = Array(rows.dropFirst(pageChecked).prefix(8))
+        let ticketAtStart = ticket
+        verifyingPage = true
+        errorMessage = nil
+        notice = "只读核验本页原始字节和当前受管云端 Node；未经核验仍显示待核验。"
+        if pagePhotoObserver == nil {
+            let observer = XDriveIOSNativeTaskListPhotoObserver { [weak self] in
+                guard let self else { return }
+                self.cancel()
+                self.clearPage()
+                self.notice = "系统图库已变化，旧页和本次云端核验结果均已失效；请刷新。"
+            }
+            PHPhotoLibrary.shared().register(observer)
+            pagePhotoObserver = observer
+        }
+        pageProofJob = Task { @MainActor [weak self, weak login] in
+            guard let self, let login else { return }
+            defer {
+                if self.ticket == ticketAtStart {
+                    self.verifyingPage = false
+                    self.pageProofJob = nil
+                    self.activePageProof?.cancel()
+                    self.activePageProof = nil
+                }
+            }
+            do {
+                let startEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                let verifier = XDriveIOSNativeCurrentPhotoReceiptModel()
+                self.activePageProof = verifier
+                var found: Set<String> = []
+                for item in chosen {
+                    try Task.checkCancellation()
+                    guard self.ticket == ticketAtStart,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+                          UIApplication.shared.applicationState == .active,
+                          PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                    else { throw CancellationError() }
+                    let latest = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                    guard XDriveIOSPhotoKitLibraryEpoch.matches(
+                        startEpoch.serialized, as: latest.token
+                    ) else { throw CancellationError() }
+                    if item.localAvailable,
+                       await verifier.verifyAndWait(
+                        localIdentifier: item.id, login: login,
+                        allowICloudOriginals: allowICloudOriginals
+                       ) {
+                        found.insert(item.id)
+                    }
+                    verifier.cancel()
+                }
+                try Task.checkCancellation()
+                let finalEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                guard self.ticket == ticketAtStart,
+                      XDriveIOSPhotoKitLibraryEpoch.matches(
+                        startEpoch.serialized, as: finalEpoch.token
+                      ),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+                      UIApplication.shared.applicationState == .active
+                else { throw CancellationError() }
+                self.verifiedPageIDs.formUnion(found)
+                self.pageChecked += chosen.count
+                self.notice = "本页已逐项核验 \(self.pageChecked)/\(self.rows.count) 项；\(self.verifiedPageIDs.count) 项刚通过受管 Node 核验。未核验和失败项不可视为备份成功。"
+            } catch {
+                guard self.ticket == ticketAtStart else { return }
+                self.verifiedPageIDs = []
+                self.pageChecked = 0
+                self.notice = "原件、照片权限或账户在核验期间变化；已撤销本页通过结果，请重新核验。"
+            }
+        }
+    }
+
+    private func clearPage() {
         rows = []
         counts = nil
         libraryTotal = nil
         offset = 0
         hasNext = false
+        verifiedPageIDs = []
+        pageChecked = 0
+    }
+
+    func reset() {
+        cancel()
+        clearPage()
         errorMessage = nil
         notice = nil
     }
@@ -248,22 +367,25 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
         load(login: login, mode: mode, filter: filter, at: max(0, offset - size), clearExisting: false)
     }
 
+    /// Refresh the visible page after a single-photo priority writer finishes
+    /// without jumping the user back to the first page.
+    func refreshCurrent(login: XDriveIOSNativeOwnerLoginModel, mode: Mode, filter: Filter) {
+        guard !loading else { return }
+        load(login: login, mode: mode, filter: filter,
+             at: offset, clearExisting: false)
+    }
+
     private func load(login: XDriveIOSNativeOwnerLoginModel, mode: Mode,
                       filter: Filter, at requestedOffset: Int,
                       clearExisting: Bool) {
         cancel()
-        if clearExisting {
-            rows = []
-            counts = nil
-            libraryTotal = nil
-            offset = 0
-            hasNext = false
-        }
+        if clearExisting { clearPage() }
         errorMessage = nil
         notice = nil
         guard let owner = login.owner,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               UIApplication.shared.applicationState == .active else {
+            clearPage() // Never retain a previous page after permission loss.
             notice = "需要已验证账户、App 前台与“所有照片”权限；未读取队列。"
             return
         }
@@ -281,8 +403,15 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                 let auth = try await login.verifiedAuthorization()
                 guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
-                else { return }
+                else {
+                    if self.ticket == id { self.clearPage() }
+                    return
+                }
 
+                // One stable PhotoKit generation must span the complete
+                // asynchronous page read. A late edit/import invalidates
+                // previously located 64-item windows before publication.
+                let readEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
                 var page: [Row] = []
                 var more = false
                 var totals: XDriveIOSPhotoBackupChangeQueueStore.Counts?
@@ -295,6 +424,7 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                     guard let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
                           plan.enabled, plan.backupStartRule == .onlyNew else {
                         if self.ticket == id {
+                            self.clearPage()
                             self.notice = "当前未启用“仅备份新照片”。请选择“当前图库”查看分页核验清单；这些条目不等于未备份。"
                         }
                         return
@@ -329,7 +459,17 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                                 localAvailable: asset != nil && record.state != .missingLocal
                             )
                         }
-                        totals = try await queue.summary(owner: owner)
+                        if let freshTotals = try await queue.summary(owner: owner),
+                           try await queue.isCaughtUp(owner: owner) {
+                            totals = freshTotals
+                        } else {
+                            // PhotoKit changed between SQLite pagination and
+                            // PhotoKit asset lookup. No old rows or counts may
+                            // be published as the current revision.
+                            page = []
+                            more = false
+                            readNotice = "本机变更历史尚未回放到当前 PhotoKit 版本；已隐藏过期任务页，请重新刷新。"
+                        }
                     } else {
                         readNotice = "本机增量历史尚未同步到当前 PhotoKit 版本；此时不能显示旧状态，请先在备份设置中核对或恢复。"
                     }
@@ -350,10 +490,22 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                     readNotice = "这是授权图库的待核验清单，未读取云端原件收据；不能把未核验判为未备份或备份成功。"
                 }
                 try Task.checkCancellation()
-                guard self.ticket == id,
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                guard self.ticket == id else { return }
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
-                      UIApplication.shared.applicationState == .active else { return }
+                      UIApplication.shared.applicationState == .active else {
+                    self.clearPage()
+                    self.notice = "账户或相册权限已变化，旧任务页不再显示。"
+                    return
+                }
+                let publishEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                guard XDriveIOSPhotoKitLibraryEpoch.matches(
+                    readEpoch.serialized, as: publishEpoch.token
+                ) else {
+                    self.clearPage()
+                    self.notice = "读取期间 PhotoKit 图库已变化，旧分页已清除；请刷新。"
+                    return
+                }
                 self.rows = page
                 self.hasNext = more
                 self.offset = requestedOffset
@@ -363,8 +515,13 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
             } catch is CancellationError {
             } catch {
                 guard self.ticket == id else { return }
-                self.rows = []
-                self.hasNext = false
+                self.clearPage()
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      UIApplication.shared.applicationState == .active else {
+                    self.notice = "账户、图库权限或前台状态已经变化；旧任务页已清除。"
+                    return
+                }
                 self.errorMessage = "读取任务列表失败；没有改变任何照片、队列或上传收据。请恢复权限并重试。"
             }
         }

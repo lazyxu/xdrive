@@ -406,6 +406,83 @@ import SQLite3
             try expect(try lifecycle.counts() == .init())
             try expect(try lifecycle.baseline()?.token == Data([34]))
         }
+        // Combined recovery: an old-capture-date photo can be freshly
+        // imported and must survive token replay + app restart. Editing a
+        // previously confirmed photo revokes that *revision's* local ACK;
+        // deleting a photo is a tombstone, never permission to delete CAS.
+        // A lost Server finalize ACK is never fabricated by SQLite.
+        let crashFile = dir.appendingPathComponent("restart-old-import-edit-delete.sqlite3")
+        let t0 = Data([90]), t1 = Data([91]), t2 = Data([92])
+        var confirmedBeforeEdit: XDriveIOSPhotoBackupChangeQueueStore.Pending?
+        do {
+            let active = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: crashFile)
+            try expect(try active.installBaselineIfAbsent(token: t0, authorization: 3))
+            _ = try active.apply(
+                inserted: ["previous-confirmed", "will-delete"],
+                updated: [], deleted: [], expectedToken: t0,
+                nextToken: t1, authorization: 3
+            )
+            let first = try active.pending()
+            guard let original = first.first(where: {
+                $0.localIdentifier == "previous-confirmed"
+            }) else { preconditionFailure("confirmed source missing") }
+            confirmedBeforeEdit = original
+            try expect(try active.settle(
+                original, result: .confirmed,
+                expectedBaselineToken: t1, authorization: 3
+            ))
+        }
+        do {
+            let restarted = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: crashFile)
+            try expect(try restarted.baseline()?.token == t1)
+            try expect(try restarted.status(for: "previous-confirmed")?.state == .confirmed)
+            _ = try restarted.apply(
+                inserted: ["import-with-old-capture-date"],
+                updated: ["previous-confirmed"],
+                deleted: ["will-delete"],
+                expectedToken: t1, nextToken: t2, authorization: 3
+            )
+            let statuses = try restarted.counts()
+            precondition(statuses.pending == 2 && statuses.confirmed == 0 &&
+                         statuses.missingLocal == 1)
+            guard let prior = confirmedBeforeEdit else {
+                preconditionFailure("missing old receipt candidate")
+            }
+            try expect(try !restarted.settle(
+                prior, result: .confirmed, expectedBaselineToken: t2,
+                authorization: 3
+            ))
+            let chosen = try restarted.pending()
+            precondition(chosen.contains(where: {
+                $0.localIdentifier == "import-with-old-capture-date" &&
+                $0.priority == 2
+            }))
+            // An interrupted/uncertain write is not a SQLite confirmation.
+            // Preserve this pending revision and replay token after restart.
+        }
+        do {
+            let rebooted = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: crashFile)
+            try expect(try rebooted.baseline()?.token == t2)
+            try expect(try rebooted.counts().pending == 2)
+            try expect(try rebooted.counts().confirmed == 0)
+            try expect(try rebooted.status(for: "will-delete")?.state == .missingLocal)
+            do {
+                _ = try rebooted.apply(
+                    inserted: ["cannot-advance-unknown"],
+                    updated: [], deleted: [], expectedToken: t1,
+                    nextToken: Data([93]), authorization: 3
+                )
+                fatalError("stale reboot token was accepted")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            try expect(try rebooted.baseline()?.token == t2)
+            try rebooted.completeFullReconciliation(
+                token: Data([94]), authorization: 3
+            )
+            try expect(try rebooted.counts() == .init())
+            try expect(try rebooted.hasCompletedFullReconciliation(
+                token: Data([94]), authorization: 3
+            ))
+        }
         print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation+failure codes: PASS")
     }
 }
