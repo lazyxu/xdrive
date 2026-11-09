@@ -489,8 +489,8 @@ declare global {
     node: AgentCloudNode
     skipped: boolean
     transferred_bytes: number
-    cas_reused_bytes: number
-    resume_reused_bytes: number
+    cas_reused_bytes?: number
+    resume_reused_bytes?: number
   }
   type AgentCloudUploadBatchResult = {
     canceled: boolean
