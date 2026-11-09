@@ -66,6 +66,11 @@ func TestMigrateIOSPhotoOriginalRetentionProtectsCASAndAncestors(t *testing.T) {
     if err != nil { t.Fatal(err) }
     file := meta.File{NodeID: node.ID, Size: 3, SHA256: hash, StorageKey: key}
     if err := db.Create(&file).Error; err != nil { t.Fatal(err) }
+    // Historical file revisions of a protected original are independently
+    // fenced from version-pruning jobs, not just the current File row.
+    version := meta.FileVersion{NodeID: node.ID, Revision: 1,
+        Size: file.Size, SHA256: hash, StorageKey: key}
+    if err := db.Create(&version).Error; err != nil { t.Fatal(err) }
     blob := meta.ContentBlob{SHA256: hash, Size: file.Size,
         StorageKey: key, RefCount: 1, State: meta.ContentBlobStateReady}
     if err := db.Create(&blob).Error; err != nil { t.Fatal(err) }
@@ -85,6 +90,8 @@ func TestMigrateIOSPhotoOriginalRetentionProtectsCASAndAncestors(t *testing.T) {
 
     blocked := []struct{name string; apply func() error}{
         {"file delete", func() error { return db.Delete(&meta.File{}, "node_id = ?", node.ID).Error }},
+        {"FileVersion delete", func() error { return db.Delete(&meta.FileVersion{}, "node_id = ?", node.ID).Error }},
+        {"FileVersion replacement", func() error { return db.Model(&meta.FileVersion{}).Where("node_id = ?", node.ID).Update("storage_key", "other-key").Error }},
         {"file SHA replacement", func() error { return db.Model(&meta.File{}).Where("node_id = ?", node.ID).Update("sha256", strings.Repeat("c", 64)).Error }},
         {"original Node trash", func() error { return db.Model(&meta.Node{}).Where("id = ?", node.ID).Update("deleted_at", time.Now()).Error }},
         {"target Node trash", func() error { return db.Model(&meta.Node{}).Where("id = ?", target.ID).Update("deleted_at", time.Now()).Error }},
