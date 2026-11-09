@@ -192,7 +192,7 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
     func configure(_ image: UIImage?, count: Int, enabled: Bool) {
         imageView.image = image
         placeholder.isHidden = image != nil
-        badge.isHidden = count <= 1
+        badge.isHidden = !enabled || count <= 1
         badge.text = count >= 1000 ? "999+" : String(count)
         // Old pins may remain visually during a gesture, but must not
         // become actionable VoiceOver targets or stale SDK selections.
@@ -200,6 +200,7 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
         isAccessibilityElement = enabled
         accessibilityTraits = enabled ? .button : []
         accessibilityLabel = enabled ? "\(count) 张已索引照片的云端位置" : nil
+        accessibilityHint = enabled ? "双击打开已核对的地点照片" : nil
     }
 
     override func prepareForReuse() {
@@ -600,17 +601,22 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             if let overview {
                 if verifiedBounds != nil {
                     Text("当前视窗已有 \(overview.total_photo_count) 张已索引照片；地图显示 \(overview.items.count) 个位置代表项。")
-                        .font(.caption).monospacedDigit().lineLimit(1)
+                        .font(.caption).monospacedDigit()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("native-ios-owner-map-verified-count")
                 } else {
                     // Retain old annotations VISUALLY during pan/zoom but do
                     // not mislabel them as the newly authorized camera count.
                     Text("上次验证视窗有 \(overview.total_photo_count) 张已索引照片；地图移动后旧标记暂不可打开。")
                         .font(.caption).monospacedDigit()
-                        .foregroundStyle(.secondary).lineLimit(1)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("native-ios-owner-map-stale-count")
                 }
                 if overview.aggregated {
                     Text("区域仍为聚合结果；放大后刷新才能进入精确地点照片。")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if let activeCaptureRange {
@@ -628,6 +634,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         }
         .padding(.horizontal, 8)
         .navigationTitle("云端照片地图")
+        .navigationBarTitleDisplayMode(.inline)
         .alert("云端照片地图说明", isPresented: $showingMapHelp) {
             Button("完成", role: .cancel) {}
         } message: {
@@ -639,6 +646,14 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     DatePicker("拍摄日期", selection: $requestedCaptureDay,
                                displayedComponents: .date)
                         .datePickerStyle(.graphical)
+                    Button("显示选择日期所在月份") {
+                        let calendar = Calendar.current
+                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.month(
+                            calendar.component(.year, from: requestedCaptureDay),
+                            calendar.component(.month, from: requestedCaptureDay)))
+                        datePickerOpen = false
+                    }
+                    .accessibilityIdentifier("native-ios-owner-map-selected-month")
                     Button("显示选择日期所在年份") {
                         setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(
                             Calendar.current.component(.year, from: requestedCaptureDay)))

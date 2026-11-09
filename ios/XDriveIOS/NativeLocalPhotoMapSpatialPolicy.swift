@@ -218,6 +218,39 @@ extension XDriveIOSNativeLocalMapSpatialPolicy {
 /// needs a new geographic scope do we rescan, never on every MapKit drag.
 enum XDriveIOSNativeLocalMapAutoRefinePolicy {
     static let settleNanoseconds: UInt64 = 900_000_000
+    // No more than two previously verified spatial windows survive in memory
+    // during a single uninterrupted, observed PhotoKit generation.
+    static let maximumCachedWindows = 2
+    static let maximumLatencySamples = 32
+
+    static func canReuse(
+        cached: XDriveIOSNativeLocalMapViewport,
+        camera: XDriveIOSNativeLocalMapViewport
+    ) -> Bool {
+        XDriveIOSNativeLocalMapSpatialPolicy.containsViewport(
+            cached, current: camera
+        ) && !shouldRefine(camera, scanned: cached)
+    }
+
+    /// Nearest-rank empirical percentiles, based ONLY on measured non-negative
+    /// monotonic milliseconds. Never derive timings from synthetic photo
+    /// counts; the consumer keeps the last 32 actual completed scans.
+    static func scanPercentiles(
+        _ milliseconds: [Double]
+    ) -> (p50: Double, p95: Double)? {
+        guard !milliseconds.isEmpty,
+              milliseconds.count <= maximumLatencySamples,
+              milliseconds.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+            return nil
+        }
+        let ordered = milliseconds.sorted()
+        func quantile(_ fraction: Double) -> Double {
+            let index = max(0, Int(ceil(fraction * Double(ordered.count))) - 1)
+            return ordered[index]
+        }
+        return (p50: quantile(0.5), p95: quantile(0.95))
+    }
+
     static let maximumLatitudeSpan = 24.0
     static let maximumLongitudeSpan = 48.0
 

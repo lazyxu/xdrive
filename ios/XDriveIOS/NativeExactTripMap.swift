@@ -99,14 +99,16 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                 focusRequestID: fitRequestID,
                 focusCamera: fittedCamera,
                 onCameraWillChange: {
-                    // Revoke stale taps before the new Owner viewport reply.
+                    // The gesture invalidates in-flight Owner HTTP responses
+                    // immediately, before they can re-enable stale MapKit pins.
                     moving = true
-                    viewportTask?.cancel()
-                    coverTask?.cancel()
+                    revokePendingViewportRead()
                 },
                 onCamera: { next in
                     camera = next
                     moving = true
+                    // Also fence a camera callback without a matching willChange.
+                    revokePendingViewportRead()
                     scheduleViewportReload(next)
                 },
                 onPlace: { facet in
@@ -136,7 +138,11 @@ struct XDriveIOSNativeExactTripMapScreen: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("native-ios-exact-trip-map")
-            if let overview {
+            if moving {
+                Text("地图视窗正在变化，旧位置与数量需重新核对。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-exact-trip-map-moving")
+            } else if let overview {
                 Text("当前地图 \(overview.total_photo_count) / 旅行共 \(overview.trip_photo_count ?? 0) 张 · \(overview.aggregated ? "缩放展开聚合位置" : "\(overview.items.count) 个真实地点")")
                     .font(.caption).monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -225,6 +231,21 @@ struct XDriveIOSNativeExactTripMapScreen: View {
         }
     }
 
+    /// Revoke the old viewport lease synchronously at the first camera
+    /// callback. Cancelling requests alone is insufficient: an HTTP response
+    /// may already be on MainActor, so the generation must change first.
+    /// Old annotations remain visual-only while moving is true.
+    private func revokePendingViewportRead() {
+        epoch = UUID()
+        task?.cancel()
+        task = nil
+        viewportTask?.cancel()
+        viewportTask = nil
+        coverTask?.cancel()
+        coverTask = nil
+        busy = false
+    }
+
     private func invalidate() {
         epoch = UUID()
         task?.cancel()
@@ -286,11 +307,18 @@ struct XDriveIOSNativeExactTripMapScreen: View {
                 overview = result
                 revision = UUID()
                 if !preservingCamera {
-                    let positions = result.items.map {
+                    let positions = result.items.map { facet in
                         XDriveIOSNativeExactTripMapPoint(
-                            latitude: $0.latitude, longitude: $0.longitude)
+                            latitude: facet.latitude, longitude: facet.longitude,
+                            displayBounds: facet.display_bounds.map { bounds in
+                                XDriveIOSNativeExactTripMapBounds(
+                                    west: bounds.west, south: bounds.south,
+                                    east: bounds.east, north: bounds.north)
+                            })
                     }
-                    guard let frame = XDriveIOSNativeExactTripMapCameraPolicy.fit(positions)
+                    // The first camera must cover the entire authenticated
+                    // aggregated region, not just its sample cover coordinate.
+                    guard let frame = XDriveIOSNativeExactTripMapCameraPolicy.fitIncludingDisplayBounds(positions)
                     else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
                     fittedCamera = MKCoordinateRegion(
                         center: CLLocationCoordinate2D(
