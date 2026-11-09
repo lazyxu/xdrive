@@ -30,10 +30,23 @@ test('ephemeral HTTPS forwards real Owner proof and partial signed H264 Range', 
     fixture = await startViewerFirstFrameHTTPSProxy('http://127.0.0.1:' + upstream.address().port)
     let verifier
     installPinnedViewerFixtureCertificate({ setCertificateVerifyProc(fn) { verifier=fn } },fixture)
-    const verdict=(hostname,fingerprint)=>{let code;verifier({hostname,certificate:{fingerprint}},v=>{code=v});return code}
-    assert.equal(verdict('127.0.0.1',fixture.fingerprint.toUpperCase()),0)
-    assert.equal(verdict('untrusted.example',fixture.fingerprint),-3)
-    assert.equal(verdict('127.0.0.1','00:01:02'),-3)
+    const verdict=(hostname,certificatePEM,displayFingerprint)=>{
+      let code
+      verifier({hostname,certificate:{data:certificatePEM,fingerprint:displayFingerprint}},v=>{code=v})
+      return code
+    }
+    assert.match(fixture.fingerprint,/^(?:[0-9a-f]{2}:){31}[0-9a-f]{2}$/)
+    assert.equal(verdict('127.0.0.1',fixture.certificatePEM,'wrong-electron-display-hash'),0)
+    assert.equal(verdict('untrusted.example',fixture.certificatePEM),-3)
+    assert.equal(verdict('127.0.0.1','invalid PEM',fixture.fingerprint),-2,
+      'a forged display fingerprint must never substitute for pinned certificate data')
+    const alternate = await startViewerFirstFrameHTTPSProxy(
+      'http://127.0.0.1:' + upstream.address().port)
+    try {
+      assert.notEqual(alternate.fingerprint,fixture.fingerprint)
+      assert.equal(verdict('127.0.0.1',alternate.certificatePEM),-2,
+        'another self-signed loopback leaf must be rejected, not globally trusted')
+    } finally { await alternate.close() }
     const read=(endpoint,headers)=>new Promise((resolve,reject)=>{
       // The independent Node test client alone permits this one self-signed
       // fixture certificate; the product Electron session must PIN its hash.
