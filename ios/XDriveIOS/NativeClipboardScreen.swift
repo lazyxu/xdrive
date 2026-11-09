@@ -63,7 +63,7 @@ struct XDriveIOSNativeClipboardScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("端到端加密的当前账号文本收件箱。仅在你点击后读取或写入本机剪贴板。")
+                Text("当前账号的端到端加密收件箱；图片与文件以 CAS Node 引用传递。仅在你点击后读取或写入本机剪贴板。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if let message {
                     Text(message).font(.footnote).foregroundStyle(.orange)
