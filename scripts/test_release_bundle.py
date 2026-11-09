@@ -320,5 +320,46 @@ class BundleCacheTests(unittest.TestCase):
                     "admin retry was silently ignored for a ready cache")
 
 
+    def test_stale_worker_pid_is_not_an_active_release_bundle_job(self):
+        """A recycled PID must not block a user-requested package retry."""
+        home = self.root / "pid-home"
+        for name in ("bin", "config", "logs", "state", "data/release-bundles"):
+            (home / name).mkdir(parents=True, exist_ok=True)
+        sha = "d" * 40
+        (home / "config" / ".env").write_text(
+            f"XD_RELEASE_COMMIT={sha}\n", encoding="utf-8",
+        )
+        (home / "bin" / "release_bundle.py").write_text(
+            "from pathlib import Path\nimport os\n"
+            "Path(os.environ['XD_RELEASE_TEST_MARKER']).write_text('started')\n",
+            encoding="utf-8",
+        )
+        marker = self.root / "stale-pid-retry-started"
+        env = {**os.environ, "XD_CONFIG_DIR": str(home),
+               "XD_HOST_CONTROL_SOURCE_ONLY": "1",
+               "XD_RELEASE_TEST_MARKER": str(marker)}
+        unrelated = subprocess.Popen(["sleep", "15"], cwd=self.root)
+        try:
+            (home / "state" / "release-bundle-worker.pid").write_text(
+                str(unrelated.pid), encoding="utf-8",
+            )
+            script = Path(__file__).resolve().parents[1] / "scripts" / "server-control.sh"
+            run = subprocess.run(
+                ["bash", "-c", 'source "$1"; release_bundle_enqueue true',
+                 "fixture", str(script)],
+                cwd=self.root, env=env, capture_output=True, text=True, timeout=8,
+            )
+            self.assertEqual(run.returncode, 0, run.stderr)
+            deadline = time.monotonic() + 3
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(marker.exists(), "unrelated live PID suppressed release retry")
+            self.assertIsNone(unrelated.poll(),
+                "checking stale PID unexpectedly terminated another process")
+        finally:
+            unrelated.terminate()
+            unrelated.wait(timeout=3)
+
+
 if __name__ == "__main__":
     unittest.main()
