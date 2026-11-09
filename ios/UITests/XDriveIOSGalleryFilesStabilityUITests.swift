@@ -366,9 +366,13 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         select("native-ios-files-open-trash", in: app)
         XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
             .waitForExistence(timeout: 15))
-        select("native-ios-files-trash-retry", in: app)
-        XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
+        // Synthetic Owner deliberately has no local Session. The fail-closed
+        // recovery page must ask for a real login, not offer a Retry that can
+        // never produce a token. A valid but denied real Session has the
+        // separate explicit retry path in NativeFilesTrash.
+        XCTAssertTrue(target("native-ios-files-trash-no-session", in: app)
             .waitForExistence(timeout: 15))
+        XCTAssertFalse(target("native-ios-files-trash-retry", in: app).exists)
         select("native-ios-files-trash-error-return", in: app)
         for section in ["recent", "favorites", "browse"] {
             select("native-ios-files-section-\(section)", in: app)
