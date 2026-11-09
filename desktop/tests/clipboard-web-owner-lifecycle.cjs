@@ -451,6 +451,9 @@ test('Clipboard directed Node retry cannot reuse an unknown ACK with a changed M
 
     // Only the requested MIME kind changed. The Node and target stayed fixed.
     await type(app, '内容类型', 'file')
+    assert.equal(app.field('已上传的云端文件 ID').props.value, '',
+      'media kind change invalidates the old Node choice')
+    await type(app, '已上传的云端文件 ID', '118')
     await click(app, '加密发送')
     assert.equal(records.length, 1, 'must not send old image ciphertext under new file intent')
     assert.equal(encryptedKinds.length, 1, 'must not silently create a new EventID after unknown ACK')
@@ -458,10 +461,207 @@ test('Clipboard directed Node retry cannot reuse an unknown ACK with a changed M
 
     // Restore the exact original intent; only then retry identical bytes/ID.
     await type(app, '内容类型', 'image')
+    assert.equal(app.field('已上传的云端文件 ID').props.value, '')
+    await type(app, '已上传的云端文件 ID', '118')
     await click(app, '加密发送')
     assert.equal(records.length, 2)
     assert.deepEqual(records[1], records[0], 'safe retry preserves exact authenticated kind and EventID')
     assert.deepEqual(encryptedKinds, ['image/x-xdrive-node-ref'])
+  } finally {
+    await app.unmount()
+  }
+})
+
+test('Clipboard switches image/file kind only after a fresh Node choice, never auto-sends', async () => {
+  const deviceID = 'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2'
+  const submissions = []
+  const encrypted = []
+  const Page = makeUI(undefined, async (_scope, target, _pub, _event, kind, clear, nodeID) => {
+    encrypted.push({target, kind, clear, nodeID})
+    return {
+      kind, target_device_id: target, node_id: nodeID,
+      ephemeral_key: Buffer.alloc(32, 8).toString('base64'),
+      wrapped_key: Buffer.alloc(60, 9).toString('base64'),
+      nonce: 'nonce', ciphertext: 'sealed:' + kind,
+    }
+  })
+  const app = await mount(Page, port('https://drive.example:kind-bound-owner', {
+    listDevices: async () => ({ devices: [{
+      device_id: deviceID, name: 'Authorized iPhone', platform: 'ios',
+      public_key: Buffer.alloc(32, 7).toString('base64'),
+    }] }),
+    create: async item => { submissions.push({...item}); return {id: 119, ...item} },
+  }))
+  try {
+    await unlock(app)
+    await act(() => {})
+    await type(app, '发送范围', deviceID)
+    await type(app, '内容类型', 'image')
+    await type(app, '已上传的云端文件 ID', '118')
+    await type(app, '内容类型', 'file')
+    assert.equal(app.field('已上传的云端文件 ID').props.value, '',
+      'old image Node must not carry into file MIME selection')
+    assert.equal(app.button('加密发送').props.disabled, true)
+    assert.equal(submissions.length, 0)
+    await type(app, '已上传的云端文件 ID', '119')
+    await click(app, '加密发送')
+    assert.equal(submissions.length, 1)
+    assert.equal(submissions[0].kind, 'application/x-xdrive-node-ref')
+    assert.equal(submissions[0].node_id, 119)
+    assert.deepEqual(encrypted, [{
+      target: deviceID, kind: 'application/x-xdrive-node-ref',
+      clear: 'asset:119', nodeID: 119,
+    }])
+    await type(app, '内容类型', 'image')
+    assert.equal(app.field('已上传的云端文件 ID').props.value, '',
+      'new MIME selection must require another explicit Node choice')
+    assert.equal(app.button('加密发送').props.disabled, true)
+    assert.equal(submissions.length, 1, 'type changes never send by themselves')
+  } finally {
+    await app.unmount()
+  }
+})
+
+test('Clipboard PNG CAS receipt is not sent until a separate user confirmation', async () => {
+  const deviceID = 'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2'
+  const publicKey = Buffer.alloc(32, 7).toString('base64')
+  const submitted = []
+  let imports = 0
+  const Page = makeUI(undefined, async (_scope, target, _pub, _event, kind, clear, nodeID) => {
+    assert.equal(target, deviceID)
+    assert.equal(kind, 'image/x-xdrive-node-ref')
+    assert.equal(nodeID, 118)
+    assert.equal(clear, 'asset:118')
+    return {
+      kind, target_device_id: target, node_id: nodeID,
+      ephemeral_key: Buffer.alloc(32, 8).toString('base64'),
+      wrapped_key: Buffer.alloc(60, 9).toString('base64'),
+      nonce: 'nonce', ciphertext: 'encrypted-node-only',
+    }
+  })
+  const app = await mount(Page, port('https://drive.example:verified-cas-owner', {
+    listDevices: async () => ({ devices: [
+      { device_id: deviceID, name: 'Verified iPhone', platform: 'ios', public_key: publicKey },
+    ] }),
+    importImageFromClipboard: async signal => {
+      assert.equal(signal.aborted, false)
+      imports++
+      return { node_id: 118 }
+    },
+    uploadLocalFile: async () => { throw Error('wrong import path') },
+    create: async item => { submitted.push({ ...item }); return { id: 46, ...item } },
+  }))
+  try {
+    await unlock(app)
+    await act(() => {})
+    await type(app, '发送范围', deviceID)
+    await type(app, '内容类型', 'image')
+    await click(app, '读取本机剪贴板图片并上传')
+    assert.equal(imports, 1)
+    assert.equal(app.field('已上传的云端文件 ID').props.value, '118')
+    assert.equal(submitted.length, 0, 'upload is NOT an implicit encrypted send')
+    assert.match(app.snapshot(), /请检查文件，然后明确点击/)
+    await click(app, '加密发送')
+    assert.equal(submitted.length, 1)
+    assert.equal(submitted[0].kind, 'image/x-xdrive-node-ref')
+    assert.equal(submitted[0].target_device_id, deviceID)
+    assert.equal(submitted[0].node_id, 118)
+  } finally {
+    await app.unmount()
+  }
+})
+
+test('Clipboard import resolved after Lock cannot restore a stale CAS Node or automatically send', async () => {
+  const deviceID = 'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2'
+  const selected = deferred()
+  const submitted = []
+  let imports = 0
+  const app = await mount(makeUI(), port('https://drive.example:retired-cas-owner', {
+    listDevices: async () => ({ devices: [
+      { device_id: deviceID, name: 'iPhone', platform: 'ios',
+        public_key: Buffer.alloc(32, 7).toString('base64') },
+    ] }),
+    importImageFromClipboard: signal => {
+      imports++
+      assert.equal(signal.aborted, false)
+      return selected.promise
+    },
+    create: async item => { submitted.push(item); return { id: 46, ...item } },
+  }))
+  try {
+    await unlock(app)
+    await act(() => {})
+    await type(app, '发送范围', deviceID)
+    await type(app, '内容类型', 'image')
+    await click(app, '读取本机剪贴板图片并上传')
+    assert.equal(imports, 1)
+    await click(app, '锁定')
+    selected.resolve({ node_id: 118 })
+    await act(() => {})
+    assert.ok(app.button('解锁'), 'Lock keeps user in locked state')
+    assert.doesNotMatch(app.snapshot(), /asset:118|已上传到当前 Owner/)
+    assert.equal(submitted.length, 0)
+  } finally {
+    await app.unmount()
+  }
+})
+
+test('Clipboard React targeted Node reads use exact server item ID and reject wrong decrypted Node', async () => {
+  const deviceID = 'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2'
+  const record = {
+    id: 78, client_event_id: '5f0d0c4b-c7b4-46d1-b068-dfd81b1794f7',
+    kind: 'application/x-xdrive-node-ref', target_device_id: deviceID, node_id: 118,
+    nonce: 'nonce', ciphertext: 'ciphertext',
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 40000).toISOString(),
+  }
+  const asked = []
+  const app = await mount(makeUI(), port('https://drive.example:target-owner', {
+    list: async () => ({items:[record],next_before:null}),
+    decryptTarget: async (id, signal) => {
+      asked.push(id)
+      assert.equal(signal.aborted,false)
+      return 'asset:119' // valid E2EE of another Node must never be shown as this Node
+    },
+  }))
+  try {
+    await unlock(app)
+    await act(() => {})
+    assert.ok(asked.includes(78),'only server item ID may enter narrow Agent decrypt API')
+    assert.match(app.snapshot(), /无法解密/)
+    assert.doesNotMatch(app.snapshot(), /asset:119|剪贴板明文（仅在此页面内解密）/)
+  } finally {
+    await app.unmount()
+  }
+})
+
+test('Clipboard React Lock discards delayed device decrypt and A→B→A cannot revive it', async () => {
+  const pendingDecrypt = deferred()
+  const deviceID = 'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2'
+  const record = {
+    id: 79, client_event_id: '5f0d0c4b-c7b4-46d1-b068-dfd81b1794f7',
+    kind: 'image/x-xdrive-node-ref', target_device_id: deviceID, node_id: 118,
+    nonce: 'nonce', ciphertext: 'ciphertext',
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 40000).toISOString(),
+  }
+  let callCount = 0
+  const a = port('https://drive.example:owner-a', {
+    list: async()=>({items:[record],next_before:null}),
+    decryptTarget: async()=>{callCount++;return pendingDecrypt.promise},
+  })
+  const b = port('https://drive.example:owner-b')
+  const app = await mount(makeUI(), a)
+  try {
+    await unlock(app)
+    assert.ok(callCount>0,'device-targeted decrypt must start for current Owner')
+    await click(app,'锁定')
+    await app.update(b)
+    await app.update(a)
+    pendingDecrypt.resolve('asset:118')
+    await act(()=>{})
+    assert.ok(app.button('解锁'),'Owner A after B must start locked')
+    assert.doesNotMatch(app.snapshot(),/asset:118|剪贴板明文（仅在此页面内解密）/)
   } finally {
     await app.unmount()
   }

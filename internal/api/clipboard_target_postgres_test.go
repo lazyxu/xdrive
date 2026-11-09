@@ -182,6 +182,37 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	if !strings.Contains(rightDevice.Body.String(), targetEvent) {
 		t.Fatal("registered device did not receive its directed envelope")
 	}
+	// Even after a SECOND same-Owner device enrolls successfully, the first
+	// target's ciphertext must never appear in its inbox. In the opposite
+	// direction, device A may not receive A2's targeted message either.
+	deviceRequest(http.MethodPut, "/api/v1/clipboard/devices/self",
+		ownerABearer, deviceA2, deviceSecret,
+		fmt.Sprintf("{\"public_key\":%q}", otherKey), http.StatusOK)
+	deviceA2Event := uuid.NewString()
+	payloadA2 := strings.Replace(targetPayload(deviceA2Event, 0), deviceA, deviceA2, 1)
+	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
+		ownerABearer, "", "", payloadA2, http.StatusCreated)
+	inboxA2 := deviceRequest(http.MethodGet, "/api/v1/clipboard/items",
+		ownerABearer, deviceA2, deviceSecret, "", http.StatusOK)
+	if strings.Contains(inboxA2.Body.String(), targetEvent) ||
+		!strings.Contains(inboxA2.Body.String(), deviceA2Event) {
+		t.Fatal("directed Clipboard items leaked between independently enrolled devices")
+	}
+	inboxAAgain := deviceRequest(http.MethodGet, "/api/v1/clipboard/items",
+		ownerABearer, deviceA, deviceSecret, "", http.StatusOK)
+	if strings.Contains(inboxAAgain.Body.String(), deviceA2Event) {
+		t.Fatal("directed A2 item leaked to target device A")
+	}
+	// The same idempotency ID cannot be reused with another recipient even
+	// when Owner and AES ciphertext are otherwise identical.
+	retargeted := strings.Replace(targetPayload(targetEvent, 0), deviceA, deviceA2, 1)
+	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
+		ownerABearer, "", "", retargeted, http.StatusConflict)
+	deviceRequest(http.MethodGet, "/api/v1/clipboard/items",
+		ownerABearer, deviceA, "stale-installation-credential", "", http.StatusForbidden)
+	deviceRequest(http.MethodGet, "/api/v1/clipboard/items",
+		ownerBBearer, deviceA2, deviceSecret, "", http.StatusForbidden)
+
 	deviceRequest(http.MethodGet, "/api/v1/clipboard/items",
 		ownerBBearer, deviceA, deviceSecret, "", http.StatusForbidden)
 	deviceRequest(http.MethodDelete, fmt.Sprintf("/api/v1/clipboard/items/%d", receipt.ID),
@@ -224,8 +255,29 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	// The file reference's MIME and Node ID are authenticated. A lost ACK
+	// followed by a changed MIME must be a hard 409, not a replay receipt.
+	nodeEvent := uuid.NewString()
+	fileWire := targetPayload(nodeEvent, own.ID)
 	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
-		ownerABearer, "", "", targetPayload(uuid.NewString(), own.ID), http.StatusCreated)
+		ownerABearer, "", "", fileWire, http.StatusCreated)
+	imageWire := strings.Replace(fileWire,
+		"\"kind\":\"application/x-xdrive-node-ref\"",
+		"\"kind\":\"image/x-xdrive-node-ref\"", 1)
+	if imageWire == fileWire {
+		t.Fatal("fixture must exercise actual MIME substitution")
+	}
+	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
+		ownerABearer, "", "", imageWire, http.StatusConflict)
+	// Trashing a source Node must invalidate NEW reference sends even if the
+	// original encrypted message remains in bounded history. Native Viewer
+	// must independently revalidate the current File/Node on opening.
+	if err := db.Model(&meta.Node{}).Where("id = ? AND owner_id = ?", own.ID, ownerA.ID).
+		Update("trash_root_id", own.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
+		ownerABearer, "", "", targetPayload(uuid.NewString(), own.ID), http.StatusForbidden)
 
 	deviceRequest(http.MethodPost, "/api/v1/clipboard/devices/"+deviceA+"/revoke",
 		ownerBBearer, "", "", "", http.StatusNotFound)
@@ -240,4 +292,16 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	}
 	deviceRequest(http.MethodPut, "/api/v1/clipboard/devices/self",
 		ownerABearer, deviceA, deviceSecret, enrollment, http.StatusConflict)
+	// A valid Clipboard public-key row does not override installation-level
+	// device revocation. The Owner's bearer alone cannot reinstate access.
+	if err := db.Model(&meta.ClientDevice{}).
+		Where("owner_id = ? AND id = ?", ownerA.ID, deviceA2).
+		Update("revoked_at", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
+	deviceRequest(http.MethodGet, "/api/v1/clipboard/items",
+		ownerABearer, deviceA2, deviceSecret, "", http.StatusForbidden)
+	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
+		ownerABearer, "", "", strings.Replace(
+			targetPayload(uuid.NewString(), 0), deviceA, deviceA2, 1), http.StatusForbidden)
 }
