@@ -52,11 +52,11 @@ type agentCloudSearchRange struct {
 }
 
 type agentCloudUploadResult struct {
-	Node             client.Node `json:"node"`
-	Skipped          bool        `json:"skipped"`
-	TransferredBytes int64       `json:"transferred_bytes"`
-	CASReusedBytes   int64       `json:"cas_reused_bytes"`
-	ResumeReusedBytes int64      `json:"resume_reused_bytes"`
+	Node              client.Node `json:"node"`
+	Skipped           bool        `json:"skipped"`
+	TransferredBytes  int64       `json:"transferred_bytes"`
+	CASReusedBytes    int64       `json:"cas_reused_bytes"`
+	ResumeReusedBytes int64       `json:"resume_reused_bytes"`
 }
 
 type agentCloudArchiveDownloadResult struct {
