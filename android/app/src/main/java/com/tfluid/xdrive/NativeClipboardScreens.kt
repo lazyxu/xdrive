@@ -375,7 +375,12 @@ internal fun NativeClipboardScreen(
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     listOf("text" to "文字", "image" to "图片引用", "file" to "文件引用").forEach { pair ->
                         FilterChip(selected=referenceKind==pair.first,
-                            onClick={referenceKind=pair.first},label={Text(pair.second)},
+                            onClick={
+                                if (referenceKind != pair.first) {
+                                    referenceKind = pair.first
+                                    referenceNodeID = ""
+                                }
+                            },label={Text(pair.second)},
                             enabled=!busy)
                     }
                 }
