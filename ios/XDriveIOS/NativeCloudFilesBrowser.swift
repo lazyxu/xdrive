@@ -1169,8 +1169,11 @@ struct XDriveIOSNativeFilesBrowser: View {
         _offset = State(initialValue: initialOffset)
     }
 
-    private init(login: XDriveIOSNativeOwnerLoginModel,
-                 folder: XDriveIOSNativeFilesFolder) {
+    // The no-Session child and this Browser are distinct file-scope views.
+    // This initializer is not a Server permission grant; readers still
+    // revalidate the exact Owner and authorized directory.
+    fileprivate init(login: XDriveIOSNativeOwnerLoginModel,
+                     folder: XDriveIOSNativeFilesFolder) {
         self.login = login
         self.folder = folder
         focusedNode = nil
