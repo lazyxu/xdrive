@@ -10,6 +10,7 @@ local_image="${3:?local image required}"
 : "${CI_JOB_ID:?job ID required}"
 source scripts/ci/gitlab-release-version.sh
 source scripts/ci/gitlab-registry-utils.sh
+bash scripts/ci/gitlab-stable-prestage-gate.sh
 xdrive_assert_image_identity "$local_image" "$XDRIVE_RELEASE_VERSION" "$CI_COMMIT_SHA"
 xdrive_registry_login
 
