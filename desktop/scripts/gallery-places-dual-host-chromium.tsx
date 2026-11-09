@@ -248,6 +248,15 @@ const listOwnerCellItems=async(selection:any,limit:number,offset:number,
   }else{
     const count=selection.photo_count
     range={offset,limit,total_count:count,
+      ...(largePlace100k && offset===0 ? {
+        // Controlled COMPLETE Server-like timeline index for testing shared
+        // date-grouped virtual rows, never generated from a sparse resident page.
+        timeline_group_sets: {
+          year:[{key:'2026',item_count:count,start_index:0}],
+          month:[{key:'2026-01',item_count:count,start_index:0}],
+          day:[{key:'2026-01-01',item_count:count,start_index:0}],
+        },
+      } : {}),
       ...(sort.anchorNodeID && sort.anchorNodeID>=selection.node_id &&
           sort.anchorNodeID<selection.node_id+count
         ? {anchor_index:sort.anchorNodeID-selection.node_id} : {}),

@@ -1,4 +1,4 @@
-import type { MediaBaiduNativeCellSelection, MediaItem, MediaItemRange } from './models'
+import type { MediaBaiduNativeCellSelection, MediaItem, MediaItemRange, MediaTimelineGroupSets, MediaTimelineGroupIndex } from './models'
 import { xDriveValidBaiduNativeCellRangePage } from './media-gallery-baidu-jsapi4-cell-range'
 import {
   XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,
@@ -196,4 +196,44 @@ export function xDrivePlacesPhotoWindowMissingOffset(
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }
   return null
+}
+
+/** Admit only a COMPLETE Owner-signed timeline index for this Cell. A 48-item
+ * sparse page cannot be grouped by dates locally: it would fabricate the
+ * missing date boundaries and could make a 100k location appear smaller.
+ * This index is display-only and cannot authorize an unloaded photo.
+ */
+export function xDrivePlacesPhotoTimelineGroups(
+  page: MediaItemRange,
+): MediaTimelineGroupSets | null {
+  if (page?.offset !== 0 || !Number.isSafeInteger(page.total_count) ||
+      page.total_count < 1 || !page.timeline_group_sets) return null
+  const input = page.timeline_group_sets
+  const output = {} as MediaTimelineGroupSets
+  const formats: ReadonlyArray<keyof MediaTimelineGroupSets> = ['year','month','day']
+  for (const scale of formats) {
+    const groups = input[scale]
+    if (!Array.isArray(groups) || groups.length < 1 ||
+        groups.length > page.total_count) return null
+    const accepted: MediaTimelineGroupIndex[] = []
+    let count = 0
+    const datePattern = scale === 'year' ? /^\d{4}$/ :
+      scale === 'month' ? /^\d{4}-\d{2}$/ : /^\d{4}-\d{2}-\d{2}$/
+    for (const group of groups) {
+      if (!group || typeof group.key !== 'string' ||
+          !(group.key === 'unknown' || datePattern.test(group.key)) ||
+          !Number.isSafeInteger(group.item_count) || group.item_count < 1 ||
+          !Number.isSafeInteger(group.start_index) ||
+          group.start_index !== count ||
+          group.item_count > page.total_count - count) return null
+      accepted.push({
+        key: group.key, item_count: group.item_count,
+        start_index: group.start_index,
+      })
+      count += group.item_count
+    }
+    if (count !== page.total_count) return null
+    output[scale] = accepted
+  }
+  return output
 }

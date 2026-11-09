@@ -3553,6 +3553,34 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
     await dialog.getByText('100,000 张照片和视频',{exact:true}).waitFor()
     await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor()
     await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor()
+    // A real mounted 100k Owner Cell supplies a COMPLETE signed date index.
+    // Switching the Parent's shared Timeline must never materialize 100k cards
+    // or hand photo identity to either isolated third-party SDK Host.
+    const grouped=[]
+    for(const scale of ['year','month','day']){
+      const control=dialog.locator('[data-xdrive-places-photo-time-scale="'+scale+'"]')
+      await control.click()
+      await dialog.locator('[data-xdrive-media-gallery-virtual-timeline]').waitFor({state:'visible'})
+      const state=await dialog.evaluate(el=>({
+        tiles:el.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+        headers:el.querySelectorAll('[data-xdrive-gallery-sticky-date]').length,
+        placeholders:el.querySelectorAll('[data-xdrive-media-gallery-timeline-placeholder]').length,
+        virtual:!!el.querySelector('[data-xdrive-media-gallery-virtual-timeline]'),
+      }))
+      grouped.push(state)
+      record(mode+': 100k signed '+scale+' virtual date view stays viewport-bounded',
+        state.virtual && state.headers===1 && state.tiles>0 &&
+        state.tiles<160 && state.placeholders<160 && errors.length===0)
+    }
+    await dialog.locator('[data-xdrive-places-photo-time-scale="all"]').click()
+    await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
+    // The last date-mode gesture restores its anchor in up to two frames.
+    // Exhaust that one-shot intent before deliberate far-range scroll tests.
+    await page.evaluate(()=>new Promise(resolve=>
+      requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+    record(mode+': 100k signed Owner date views reuse full Gallery timeline',
+      grouped.length===3 && grouped.every(x=>x.virtual && x.tiles<160) &&
+      errors.length===0)
     const samples=[]
     for(const ratio of [0.25,0.61,0.88]){
       const started=Date.now()
@@ -3803,15 +3831,19 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       authorized?.limit===48&&errors.length===0)
     await page.keyboard.press('Escape')
     await dialog.waitFor({state:'hidden'})
-    // Continue into the OTHER signed 142-photo Cell. Its initial 48 cards
-    // must retain Owner authority while bounded user-driven next pages append.
+    // Continue into the OTHER signed 142-photo Cell. The shared Gallery
+    // scroll port now fetches the next authorized 48-item page on approach
+    // to the viewport tail: no synthetic/manual "Load more" button remains.
     await big.click()
     await dialog.waitFor({state:'visible'})
     await dialog.getByText('已显示 48 / 142 张',{exact:true}).waitFor()
-    const loadMore=page.locator('[data-xdrive-places-photo-drawer-load-more]')
-    await loadMore.click()
-    await dialog.getByText('已显示 96 / 142 张',{exact:true}).waitFor()
-    await loadMore.click()
+    const scrollPort=dialog.locator('[data-xdrive-places-photo-drawer-items]')
+    for (const requiredPages of [2,3]) {
+      await scrollPort.evaluate(el=>{el.scrollTop=el.scrollHeight})
+      await page.waitForFunction(n=>
+        window.__mapProbe.photoPreviewRanges.filter(p=>p.total===142).length>=n,
+        requiredPages,{timeout:15000})
+    }
     await dialog.getByText('此地点全部照片',{exact:true}).waitFor()
     const paged=await page.evaluate(()=>{
       const verified=window.__mapProbe.photoPreviewRanges.filter(p=>p.total===142)

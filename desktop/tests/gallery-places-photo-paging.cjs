@@ -81,7 +81,7 @@ test('shared Owner Parent alone paginates, fences cancellations and retains the 
     'windowStart={activeDrawer.windowStart} loadedDepth={activeDrawer.loadedDepth}',
   ])assert.ok(surface.includes(needle),needle)
   for(const needle of [
-    'data-xdrive-places-photo-drawer-load-more',
+    'data-xdrive-places-photo-drawer-auto-more',
     'data-xdrive-places-photo-drawer-page-error',
     'data-xdrive-places-album-dialog',
     'onScroll={event => {',
