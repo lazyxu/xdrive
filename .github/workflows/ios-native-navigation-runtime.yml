@@ -126,6 +126,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          # Capture a device-level frame even if XCTest was unable to
+          # construct an accessibility snapshot for the native child page.
+          # Failure attachments generated before an AX timeout are exported
+          # below; this frame is independent of XCUIElement queries.
+          if [[ -n "${SMOKE_SIM:-}" ]]; then
+            xcrun simctl io "$SMOKE_SIM" screenshot \
+              "$RUNNER_TEMP/native-navigation-results/diagnostics/simulator-final-frame.png" \
+              >/dev/null 2>&1 || true
+          fi
           find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 3 -type f \
             \( -iname '*xDrive*' -o -iname '*.ips' \) -mmin -45 \
             -exec cp {} "$RUNNER_TEMP/native-navigation-results/diagnostics/" \; 2>/dev/null || true

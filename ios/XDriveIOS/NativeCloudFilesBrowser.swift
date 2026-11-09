@@ -2164,9 +2164,39 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private var filesChrome: some View {
-        filesList
-        .listStyle(.plain)
-        .overlay(alignment: .bottom) { filesQuickFeedback }
+        Group {
+            // An unreadable Owner folder has no verified rows to enumerate.
+            // Build a small native error surface instead of keeping the entire
+            // virtual List/thumbnail/navigation AX tree alive under a failed
+            // authorization. This also gives XCTest a bounded accessibility
+            // hierarchy on the recoverable child route.
+            if !isHome && !model.loading && !model.verifiedPage,
+               let failure = model.errorMessage {
+                VStack(alignment: .leading, spacing: 18) {
+                    Label("无法读取当前目录", systemImage: "exclamationmark.triangle")
+                        .font(.headline)
+                    Text(failure).font(.subheadline).foregroundStyle(.secondary)
+                    HStack {
+                        Button("重试当前页") { reload() }
+                            .accessibilityIdentifier("native-ios-files-retry")
+                        Button { dismiss() } label: {
+                            Label("返回文件", systemImage: "chevron.left")
+                        }
+                        .accessibilityIdentifier("native-ios-files-error-return")
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer(minLength: 0)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("native-ios-files-error-page")
+            } else {
+                filesList
+                    .listStyle(.plain)
+                    .overlay(alignment: .bottom) { filesQuickFeedback }
+            }
+        }
         .searchable(
             text: $queryDraft,
             placement: .navigationBarDrawer(displayMode: .automatic),
@@ -2812,6 +2842,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                     // states await explicit Retry instead of another full fetch.
                     loadFavoriteShortcuts()
                 }
+            } else if !isHome && !model.verifiedPage &&
+                      model.errorMessage != nil {
+                // Re-entering an unreadable child must not spin an auth GET or
+                // remount the List every time SwiftUI delivers onAppear.
+                // Explicit Retry remains the only re-entry after a denial.
             } else if let folderID = parentID,
                       model.canResume(
                         owner: login.owner, folderID: folderID,

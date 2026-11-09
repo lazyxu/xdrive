@@ -297,12 +297,19 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
         select("native-ios-files-open-trash", in: app)
-        // Real Simulator repro: global navigationBar/toolbar snapshot timed out
-        // for 120s in the unauthenticated error page. Use its explicit
-        // recoverable native content action, not an index-based AX query.
+        // Capture a real rendered frame BEFORE traversing the AX hierarchy,
+        // so a repeated 120s XCUI snapshot failure still has a visual record.
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = "trash-child-after-push"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        let errorPage = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-trash-error-page").firstMatch
+        XCTAssertTrue(errorPage.waitForExistence(timeout: 12),
+                      "Unreadable Trash must mount a bounded error surface")
         let back = app.buttons["native-ios-files-trash-error-return"].firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 25),
-                      "Recently Deleted error recovery did not mount")
+        XCTAssertTrue(back.waitForExistence(timeout: 12),
+                      "Recently Deleted native recovery did not mount")
         back.tap()
         XCTAssertTrue(find("native-ios-files-open-trash", in: app)
             .waitForExistence(timeout: 15))

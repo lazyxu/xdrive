@@ -93,12 +93,15 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         select("native-ios-tab-files", in: app)
         checkFilesHome(app)
         select("native-ios-files-open-root-location", in: app)
-        // The synthetic Owner has no token; its cloud read must fail closed.
-        XCTAssertTrue(target("native-ios-files-retry", in: app)
-            .waitForExistence(timeout: 25),
-                      "Unauthorized Cloud read did not publish a recoverable error")
-        // The old global navigationBars snapshot repeatedly blocked for 120s.
-        // On error the native child offers a direct, accessible return action.
+        // Capture the child *before* an AX request. Previously AX snapshot
+        // enumeration hung for 128 seconds in a nested unreadable Files List.
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = "cloud-child-after-push"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 12),
+                      "Unreadable cloud folder must render a bounded error page")
         select("native-ios-files-error-return", in: app)
         checkFilesHome(app)
         XCTAssertTrue(target("native-ios-files-open-root-location", in: app)
@@ -196,6 +199,137 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
                           "Native People back was unavailable")
             back.tap()
             checkGallery(app)
+        }
+    }
+
+    func testGalleryBackgroundResumeKeepsNativeSourceAndPixels() {
+        let app = launch()
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery foreground reentry")
+    }
+
+    func testFilesBackgroundResumeKeepsQuickRailAndPixels() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        checkFilesHome(app)
+        assertNotSolidScreen(app, "Files foreground reentry")
+    }
+
+    func testGalleryFilesRotateLandscapeAndReturnPortrait() {
+        let device = XCUIDevice.shared
+        let app = launch()
+        defer { device.orientation = .portrait }
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        device.orientation = .landscapeLeft
+        checkFilesHome(app)
+        assertNotSolidScreen(app, "Files landscape")
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery landscape")
+        device.orientation = .portrait
+        checkGallery(app)
+    }
+
+    func testGalleryAlbumsSurviveBackgroundAndSourceRoundTrip() {
+        let app = launch()
+        select("native-ios-gallery-source-albums", in: app)
+        checkGallery(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        checkGallery(app)
+        select("native-ios-gallery-source-unified", in: app)
+        checkGallery(app)
+        select("native-ios-gallery-source-albums", in: app)
+        checkGallery(app)
+        assertNotSolidScreen(app, "Albums after foreground/source transition")
+    }
+
+    func testFilesHomeDeepScrollTabReturnKeepsQuickNavigation() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 12),
+                      "Files Home native collection missing")
+        list.swipeUp()
+        list.swipeUp()
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        assertNotSolidScreen(app, "Files home after deep scroll/return")
+    }
+
+    func testNativeMineGalleryFilesSwitchAfterSourceChanges() {
+        let app = launch()
+        for _ in 0..<3 {
+            select("native-ios-gallery-source-albums", in: app)
+            select("native-ios-tab-mine", in: app)
+            XCTAssertEqual(app.state, .runningForeground)
+            select("native-ios-tab-files", in: app)
+            checkFilesHome(app)
+            select("native-ios-tab-gallery", in: app)
+            checkGallery(app)
+            select("native-ios-gallery-source-unified", in: app)
+        }
+        assertNotSolidScreen(app, "Gallery after Mine/Files roundtrip")
+    }
+
+    func testFilesSearchFocusThenGalleryReturnPreservesShell() {
+        let app = launch()
+        select("native-ios-tab-files", in: app)
+        let search = app.searchFields["搜索全部文件"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        search.tap()
+        search.typeText("ab")
+        XCTAssertEqual(app.state, .runningForeground)
+        // Keyboard dismissal is a real interaction; no coordinate guessing.
+        if app.keyboards.buttons["Search"].exists {
+            app.keyboards.buttons["Search"].tap()
+        } else if app.keyboards.buttons["完成"].exists {
+            app.keyboards.buttons["完成"].tap()
+        } else {
+            search.typeText("\n")
+        }
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+    }
+
+    func testFilesGalleryNativeRelaunchDoesNotLoseInitialPages() {
+        let app = launch()
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        app.terminate()
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        assertNotSolidScreen(app, "Files after native app relaunch")
+    }
+
+    func testAlternatingGalleryFilesSettledFramesAcrossThreeTabs() {
+        let app = launch()
+        for _ in 0..<2 {
+            select("native-ios-tab-files", in: app)
+            checkFilesHome(app)
+            assertNotSolidScreen(app, "Files")
+            select("native-ios-tab-mine", in: app)
+            assertNotSolidScreen(app, "Mine")
+            select("native-ios-tab-gallery", in: app)
+            checkGallery(app)
+            assertNotSolidScreen(app, "Gallery")
         }
     }
 

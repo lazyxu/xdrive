@@ -21,7 +21,9 @@ const sources = {
   "s": "ios/XDriveIOS/NativeLocalPhotoGallery.swift",
   "t": "ios/XDriveIOS/NativeFilesTrash.swift",
   "e": "ios/XDriveIOS/NativeFilesSavedSearches.swift",
-  "o": "ios/XDriveIOS/NativeFilesOperationHistory.swift"
+  "o": "ios/XDriveIOS/NativeFilesOperationHistory.swift",
+  "x": "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift",
+  "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift"
 }
 const scenarios = [
   {
@@ -815,6 +817,126 @@ const scenarios = [
       {
         "file": "o",
         "pattern": "accessibilityIdentifier\\(\"native-ios-files-operation-history-page\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "67 Unreadable Cloud Files swaps complex list for a bounded native error surface",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if !isHome && !model\\.loading && !model\\.verifiedPage,[\\s\\S]*?let failure = model\\.errorMessage[\\s\\S]*?native-ios-files-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "68 Unreadable Cloud Files never automatically reloads on return",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "else if !isHome && !model\\.verifiedPage &&\\s*model\\.errorMessage != nil \\{[\\s\\S]*?Explicit Retry",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "69 Unreadable Trash hides the destructive List behind a bounded error surface",
+    "checks": [
+      {
+        "file": "t",
+        "pattern": "if let failure = model\\.error, !model\\.loading,[\\s\\S]*?!model\\.canDisplay\\(owner: login\\.owner\\)[\\s\\S]*?native-ios-files-trash-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "70 Trash failed reentry remains terminal until explicit Retry",
+    "checks": [
+      {
+        "file": "t",
+        "pattern": "if phase == \\.active && !model\\.loading && model\\.error == nil \\{[\\s\\S]*?reload\\(preserveVisibleRows: true\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "71 Cloud navigation captures a real screen before accessibility enumeration",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "evidence\\.name = \"cloud-child-after-push\"[\\s\\S]*?native-ios-files-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "72 Trash navigation captures a real screen before accessibility enumeration",
+    "checks": [
+      {
+        "file": "y",
+        "pattern": "evidence\\.name = \"trash-child-after-push\"[\\s\\S]*?native-ios-files-trash-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "73 Gallery and Files background resume have real app activation tests",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryBackgroundResumeKeepsNativeSourceAndPixels\\(\\)[\\s\\S]*?func testFilesBackgroundResumeKeepsQuickRailAndPixels\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "74 Gallery and Files rotation roundtrip is exercised on simulator",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryFilesRotateLandscapeAndReturnPortrait\\(\\)[\\s\\S]*?device\\.orientation = \\.landscapeLeft",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "75 Native Files search and gallery return is tested after typing",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testFilesSearchFocusThenGalleryReturnPreservesShell\\(\\)[\\s\\S]*?search\\.typeText\\(\"ab\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "76 Files deep home scroll return revalidates native quick rail",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testFilesHomeDeepScrollTabReturnKeepsQuickNavigation\\(\\)[\\s\\S]*?list\\.swipeUp\\(\\)[\\s\\S]*?checkFilesHome\\(app\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "77 App native relaunch and first Files mount remain tested",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testFilesGalleryNativeRelaunchDoesNotLoseInitialPages\\(\\)[\\s\\S]*?app\\.terminate\\(\\)[\\s\\S]*?app\\.launch\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "78 Native Files Gallery Mine cross-tab returns use image audit",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testAlternatingGalleryFilesSettledFramesAcrossThreeTabs\\(\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Files\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Mine\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery\"\\)",
         "flags": ""
       }
     ]
