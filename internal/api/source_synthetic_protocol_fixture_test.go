@@ -20,18 +20,11 @@ func seedSyntheticSourceForProtocolTest(
 		t.Fatalf("load synthetic Source target: %v", err)
 	}
 	source := meta.Source{
-		OwnerID: target.OwnerID,
-		Name: name,
-		Kind: "test",
-		Direction: direction,
-		SyncMode: syncMode,
-		RunMode: runMode,
-		Status: meta.SourceStatusActive,
-		ScheduleType: "interval",
-		ScheduleExpression: "6h",
-		Revision: 1,
-		TargetNodeID: &targetID,
-		IgnoreRules: ignoreRules,
+		OwnerID: target.OwnerID, Name: name, Kind: "test",
+		Direction: direction, SyncMode: syncMode, RunMode: runMode,
+		Status: meta.SourceStatusActive, Revision: 1,
+		ScheduleType: "interval", ScheduleExpression: "6h",
+		TargetNodeID: &targetID, IgnoreRules: ignoreRules,
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatalf("insert synthetic Source fixture: %v", err)
