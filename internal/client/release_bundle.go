@@ -20,52 +20,8 @@ import (
 
 var bundleFullCommit = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var bundleFullDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
-var bundlePackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}package client
-
-// An authenticated current-Server Bundle is an optional download origin, never
-// permission to force a client to match the Server or to install unsigned bytes.
-import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-)
-
-var bundleFullCommit = regexp.MustCompile(`^[a-f0-9]{40}$`)
-var bundleFullDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
-)
-var bundleSignedAndroidPackageName = regexp.MustCompile(`^xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apkpackage client
-
-// An authenticated current-Server Bundle is an optional download origin, never
-// permission to force a client to match the Server or to install unsigned bytes.
-import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-)
-
-var bundleFullCommit = regexp.MustCompile(`^[a-f0-9]{40}$`)
-var bundleFullDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
-)
+var bundlePackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$`)
+var bundleSignedAndroidPackageName = regexp.MustCompile(`^xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apk$`)
 
 type ReleaseBundleArtifact struct {
 	Platform    string `json:"platform"`
