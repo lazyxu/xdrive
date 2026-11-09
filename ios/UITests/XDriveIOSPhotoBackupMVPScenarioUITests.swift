@@ -43,13 +43,16 @@ final class XDriveIOSPhotoBackupMVPScenarioUITests: XCTestCase {
         for cycle in 0..<3 {
             XCTAssertTrue(find("native-ios-backup-overview", app: app).exists)
             find("native-ios-photos-task-list", app: app).tap()
-            XCTAssertTrue(app.navigationBars["相册备份任务"]
-                .waitForExistence(timeout: 20),
-                "Task sheet must mount on cycle \(cycle)")
-            let done = app.buttons["完成"].firstMatch
-            XCTAssertTrue(done.waitForExistence(timeout: 12))
+            // Nested NavigationStack titles can be represented as parent
+            // bars by the accessibility runtime. The unique sheet Close
+            // control is an exact, visible native modal witness instead.
+            let done = find("native-ios-photo-task-list-done", app: app)
+            XCTAssertTrue(done.isHittable,
+                          "Native task sheet must be foreground on cycle \(cycle)")
             done.tap()
             XCTAssertTrue(find("native-ios-backup-overview", app: app).exists)
+            XCTAssertFalse(app.buttons["native-ios-photo-task-list-done"].exists,
+                           "Closing task sheet must release its modal controls")
             XCTAssertEqual(app.state, .runningForeground,
                            "Backup exited after task sheet cycle \(cycle)")
         }

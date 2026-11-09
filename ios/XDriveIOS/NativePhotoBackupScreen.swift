@@ -15,7 +15,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var controller: XDriveIOSNativePhotoBackupController
     var launchAction: XDriveIOSNativePhotoBackupLaunch = .overview
-    var launchNonce: UUID = UUID()
+    // A call site without an explicit nonce must not generate a new shortcut
+    // every time the parent SwiftUI body is rebuilt.
+    var launchNonce: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
     let onShowCloudOriginals: () -> Void
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
@@ -24,6 +26,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var originalProof = XDriveIOSNativeCurrentPhotoReceiptModel()
     @StateObject private var destination = XDriveIOSNativePhotoBackupDestinationModel()
     @State private var page = Page.overview
+    @State private var lastAppliedLaunchNonce: UUID?
     @State private var showTaskList = false
     @State private var detail: Detail?
     @State private var enablingAutomaticBackup = false
@@ -452,6 +455,16 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         overviewQueue.refresh(login: login)
     }
 
+    private func applyLaunchActionIfNeeded() {
+        // onAppear can fire again during a child page transition or after a
+        // sheet is presented. Replaying .overview here would silently bounce
+        // the user back and hide the task sheet. Only an explicit new launch
+        // nonce is permitted to reapply a shortcut.
+        guard lastAppliedLaunchNonce != launchNonce else { return }
+        lastAppliedLaunchNonce = launchNonce
+        applyLaunchAction()
+    }
+
     private func applyLaunchAction() {
         // A shortcut navigates only; Focused still requires separate consent.
         switch launchAction {
@@ -469,10 +482,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             XDriveIOSNativePhotoBackupTaskList(login: login, controller: controller)
         }
         .onAppear {
-            applyLaunchAction()
+            applyLaunchActionIfNeeded()
             refreshOverviewQueueIfEligible()
         }
-        .onChange(of: launchNonce) { _ in applyLaunchAction() }
+        .onChange(of: launchNonce) { _ in applyLaunchActionIfNeeded() }
         .onChange(of: receipts.mode) { mode in
             if mode == .idle {
                 controller.refresh(owner: login.owner)

@@ -34,6 +34,7 @@ s += """
 private struct XDriveIOSNativeNavigationSmokeRoot: View {
     @StateObject private var login = XDriveIOSNativeOwnerLoginModel()
     @StateObject private var backup = XDriveIOSNativePhotoBackupController()
+    @State private var backupLaunchNonce = UUID()
     var body: some View {
         Group {
             if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-photo-backup-direct") {
@@ -42,6 +43,7 @@ private struct XDriveIOSNativeNavigationSmokeRoot: View {
                 NavigationStack {
                     XDriveIOSNativePhotoBackupScreen(
                         login: login, controller: backup,
+                        launchNonce: backupLaunchNonce,
                         onShowCloudOriginals: {}
                     )
                 }

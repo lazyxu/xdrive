@@ -24,6 +24,11 @@ func TestMigrateIOSPhotoOriginalRetentionProtectsCASAndAncestors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	adminSQL, err := admin.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = adminSQL.Close() }()
 	schema := "ios_retention_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := admin.Exec(fmt.Sprintf("CREATE SCHEMA %q", schema)).Error; err != nil {
 		t.Fatal(err)
@@ -40,6 +45,11 @@ func TestMigrateIOSPhotoOriginalRetentionProtectsCASAndAncestors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testSQL, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = testSQL.Close() }()
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}

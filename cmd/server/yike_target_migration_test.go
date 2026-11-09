@@ -24,6 +24,13 @@ func openYikeMigrationTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	baseSQL, err := baseDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Register first so the schema drop (registered next) executes before
+	// the admin pool closes. Every isolated test must return its sessions.
+	t.Cleanup(func() { _ = baseSQL.Close() })
 	schema := "yike_target_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -43,6 +50,13 @@ func openYikeMigrationTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// LIFO cleanup closes this pool before schema deletion and closes
+	// the admin pool last, avoiding PostgreSQL max_connections exhaustion.
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.Share{}, &meta.UploadSession{}, &meta.FileOperation{}); err != nil {
 		t.Fatal(err)
 	}
