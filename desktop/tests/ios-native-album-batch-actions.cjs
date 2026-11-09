@@ -109,7 +109,14 @@ test('scene, source/page changes cancel batch tasks and forget selected photo id
   assert.match(source, /private func invalidate\(\) \{\s*cancelAlbumOperations\(\)/)
   assert.match(source, /\.onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?invalidate\(\)/)
   assert.match(source, /\.onChange\(of: phase\) \{ state in[\s\S]*?if state != \.active/)
-  assert.match(source, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
+  // A foreground tab return may retain an authorized page to avoid a blank flash.
+  // Backgrounding must still invalidate the wall unless a Viewer owns its media.
+  const lifecycle = source.slice(
+    source.indexOf('.onChange(of: phase) { state in'),
+    source.indexOf('private var albumAuthorized')
+  )
+  assert.match(lifecycle, /if state != \.active \{[\s\S]*?if selected != nil \{[\s\S]*?suspendForViewer\(\)\s*page = nil[\s\S]*?else \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)/)
+  assert.match(lifecycle, /\.onDisappear \{\s*isContentVisible = false[\s\S]*?if selected != nil \|\| showingAlbumMap \|\|\s*\(phase == \.active && albumAuthorized\) \{\s*suspendForViewer\(\)\s*\} else \{\s*libraryMonitor\.stop\(\)\s*invalidate\(\)/)
   assert.match(source, /onCrossPage: \{ oldPage, anchor, direction in/)
   assert.match(source, /viewerReturnID = next\.id/)
 })
