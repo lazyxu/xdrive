@@ -138,6 +138,12 @@ test('short Owner Cell scrolls continuously without manual load-more controls',(
   assert.match(drawer,/onLoadMore\(\)/)
   assert.match(drawer,/data-xdrive-places-photo-drawer-auto-more/)
   assert.doesNotMatch(drawer,/data-xdrive-places-photo-drawer-load-more/)
+  // The small signed prefix must be complete before the shared date
+  // Timeline renders its total count; never treat a 48-item prefix as total.
+  assert.match(drawer,/timeScale==='all' \|\|/)
+  assert.match(drawer,/loadedDepth>=total \|\| loadingMore \|\| pageError/)
+  assert.match(drawer,/timeScale !== 'all' && timelineGroups && \(sparse \|\| loadedDepth>=total\)/)
+  assert.match(drawer,/data-xdrive-places-photo-date-loading/)
   assert.match(drawer,/onClick=\{pageErrorKind === 'window' \? onRetryWindow : onLoadMore\}/)
   assert.match(parent,/xDrivePlacesPhotoWindowSeek\(selection,priorWindow,range\)/)
   assert.match(parent,/xDrivePlacesPhotoWindowRehydrate\(selection,priorWindow,range\)/)
