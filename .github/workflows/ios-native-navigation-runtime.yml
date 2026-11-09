@@ -5,13 +5,20 @@ on:
       - '.github/workflows/ios-native-navigation-runtime.yml'
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
+      - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
+      - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
       - 'ios/XDriveIOS/NativeFilesTrash.swift'
       - 'ios/XDriveIOS/NativeFilesSavedSearches.swift'
       - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
       - 'ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift'
+      - 'ios/XDriveIOS/NativeFilesNavigationPolicy.swift'
+      - 'ios/tests/NativeFilesNavigationChecks.swift'
       - 'ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift'
       - 'ios/XDriveIOS/NativePhotoWallDensityPolicy.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
+      - 'ios/scripts/capture-navigation-smoke-frames.py'
+      - 'ios/scripts/summarize-navigation-latency.py'
+      - 'ios/XDriveIOS/NativeOwnerLoginModel.swift'
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
       # Changes in a child Files/Gallery route must also compile and exercise
       # the real five-tab return smoke; Browser.swift is not always modified.
@@ -24,6 +31,11 @@ on:
       - 'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift'
       - 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'
       - 'ios/XDriveIOS/NativeLocalPhotoGallery.swift'
+      - 'ios/XDriveIOS/NativeLocalContinuousGallery.swift'
+      - 'ios/XDriveIOS/NativePhotoVideoSurface.swift'
+      - 'ios/scripts/summarize-navigation-latency.py'
+      - 'ios/scripts/capture-navigation-smoke-frames.py'
+      - 'desktop/tests/ios-native-files-video-firstframe.cjs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,16 +45,20 @@ concurrency:
 jobs:
   simulator-navigation:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        source: [release-c83, candidate]
+        # Keep published baseline separate and require both current native
+        # suites; no unrelated older CI-success can waive this exact HEAD.
+        source: [release-c83, candidate-navigation, candidate-gallery-files]
     continue-on-error: ${{ matrix.source == 'release-c83' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # The latest PR HEAD, not a stale PR merge ref or a previously green SHA.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Prepare original release/current source and UI smoke scheme
         shell: bash
         run: |
@@ -103,14 +119,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/native-navigation-results"
+          mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          python3 -m py_compile "$GITHUB_WORKSPACE/ios/scripts/capture-navigation-smoke-frames.py" \
+            "$GITHUB_WORKSPACE/ios/scripts/summarize-navigation-latency.py"
+          # Keep a few frames from the LIVE failed route, not SpringBoard after
+          # xcodebuild exits. Never use AX queries from this observer.
+          if [[ "${{ matrix.source }}" != "release-c83" ]]; then
+            python3 "$SMOKE_ROOT/ios/scripts/capture-navigation-smoke-frames.py" \
+              "$SMOKE_SIM" \
+              "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
+              "$RUNNER_TEMP/native-navigation-results/diagnostics/live-frames" &
+            frame_watcher=$!
+            trap 'kill "$frame_watcher" >/dev/null 2>&1 || true' EXIT
+          fi
           # Legacy release is only an informational baseline: it does not
           # contain new child content IDs, so run the compatible tab smoke.
-          # The candidate always runs the COMPLETE native UI-test target.
-          native_test_target="xDriveIOSNavigationUITests"
-          if [[ "${{ matrix.source }}" == "release-c83" ]]; then
-            native_test_target="xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesFirstOpenAndSixGalleryReturnsDoNotExit"
-          fi
+          # BOTH candidate jobs are mandatory (not continue-on-error).
+          # Never silently skip one native child suite when new tests appear.
+          native_test_args=()
+          case "${{ matrix.source }}" in
+            release-c83)
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesFirstOpenAndSixGalleryReturnsDoNotExit") ;;
+            candidate-navigation)
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests") ;;
+            candidate-gallery-files)
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests") ;;
+            *) echo "Unsupported UI suite" >&2; exit 2 ;;
+          esac
           xcodebuild test \
             -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
             -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
@@ -119,13 +155,18 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
-            "-only-testing:$native_test_target" test \
+            "${native_test_args[@]}" \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
       - name: Capture crash diagnostics and XCTest summary
         if: always()
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          if [[ -f "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" ]]; then
+            python3 "$GITHUB_WORKSPACE/ios/scripts/summarize-navigation-latency.py" \
+              "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
+              "$RUNNER_TEMP/native-navigation-results/diagnostics/navigation-latency.json" || true
+          fi
           # Capture a device-level frame even if XCTest was unable to
           # construct an accessibility snapshot for the native child page.
           # Failure attachments generated before an AX timeout are exported
