@@ -107,8 +107,8 @@ test('video loading placeholder and first decoded frame share exact shell and co
     assert.equal(typeof before.pb, 'string')
     assert.match(before.pb, /actions-filmstrip-clearance/)
     assert.equal(selected(view, 'data-xdrive-preview-media-loading', true).length, 0)
-    assert.equal(view.root.findAllByType('media-loading-progress').length, 1,
-      'pending signed URL should provide honest transfer status')
+    assert.equal(selected(view, 'data-xdrive-preview-video-loading-card', 'url').length, 1,
+      'waiting for a signed video URL should use the readable first-frame card')
     assert.equal(view.root.findAllByType('video').length, 0,
       'do not start native playback before the signed URL is authorized')
 
@@ -117,6 +117,10 @@ test('video loading placeholder and first decoded frame share exact shell and co
     assert.equal(native.props.preload, 'metadata',
       'active Viewer must not force-download a multi-GiB original for first frame')
     assert.equal(native.props.controls, true)
+    assert.equal(selected(view, 'data-xdrive-preview-video-loading-card', 'first-frame').length, 1,
+      'after URL acquisition but before decoding, keep readable first-frame status')
+    assert.equal(selected(view, 'data-xdrive-preview-video-loading-stage', 'first-frame').length, 1,
+      'initial video buffering must be distinct from playback rebuffering')
     assert.deepEqual(videoShell(view).props.sx, before,
       'native video must not resize the shared viewport when its signed URL resolves')
 
@@ -128,6 +132,12 @@ test('video loading placeholder and first decoded frame share exact shell and co
 
     await act(async () => { view.root.findByType('video').props.onWaiting(); await flush() })
     assert.equal(selected(view, 'data-xdrive-preview-media-loading', true).length, 1)
+    assert.equal(selected(view, 'data-xdrive-preview-video-loading-stage', 'rebuffer').length, 1)
+    assert.equal(selected(view, 'data-xdrive-preview-video-rebuffer-status', undefined).length, 0)
+    assert.equal(view.root.findAll(n => n.props?.['data-xdrive-preview-video-rebuffer-status'] !== undefined).length, 1,
+      'rebuffering after a decoded frame should use compact, non-blocking feedback')
+    assert.equal(selected(view, 'data-xdrive-preview-video-loading-card', 'first-frame').length, 0,
+      'do not cover a decoded frame with the initial loading card')
     assert.deepEqual(videoShell(view).props.sx, before,
       'buffering must not shift navigation or video content')
     await act(async () => { view.root.findByType('video').props.onCanPlay(); await flush() })
