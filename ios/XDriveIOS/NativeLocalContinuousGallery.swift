@@ -440,8 +440,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         .onDisappear {
             // Export metadata only for a fully read, exact current page.
             // The parent keeps ONE last-visible page, never all lazy pages.
+            let verifiedEpoch = retainedGeneration
             let verifiedPage = (
-                retainedGeneration == generation &&
+                verifiedEpoch == generation &&
                 page?.startOffset == offset &&
                 page?.totalAccessibleAssets == expectedTotal
             ) ? page : nil
@@ -455,7 +456,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             badgeReadEpoch = UUID()
             if let scanner { Task { await scanner.reset() } }
             scanner = nil
-            onPageHidden(offset, retainedGeneration, verifiedPage)
+            onPageHidden(offset, verifiedEpoch, verifiedPage)
         }
     }
 }
