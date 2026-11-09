@@ -23,7 +23,7 @@ case "$op" in
     if [[ "${MOCK_EDGE_STATE:-}" == outage && "$ref" == *:edge ]]; then
       echo 'dial tcp: connect timeout' >&2; exit 1
     fi
-    if [[ "${MOCK_EDGE_STATE:-}" == missing && "$ref" == *:edge ]]; then
+    if [[ "${MOCK_EDGE_STATE:-}" == missing && "$ref" == *:edge ]] && ! grep -Fxq "push $ref" "$MOCK_DOCKER_EVENTS"; then
       echo 'manifest unknown: manifest unknown' >&2; exit 1
     fi
     if [[ "${MOCK_RELEASE_EXISTS:-0}" != 1 && "$ref" == *:sha-* ]]; then
@@ -40,7 +40,7 @@ case "$op" in
       *org.opencontainers.image.version*) printf '%s\n' snapshot ;;
       *org.opencontainers.image.revision*)
         if [[ "$ref" == *:edge ]]; then
-          if [[ "$ref" == *xdrive-caddy:* && "${MOCK_LEGACY_CADDY:-0}" == 1 ]]; then
+          if [[ "$ref" == *xdrive-caddy:* && "${MOCK_LEGACY_CADDY:-0}" == 1 ]] && ! grep -Fxq "push $ref" "$MOCK_DOCKER_EVENTS"; then
             printf '<no value>\n'
           elif [[ "${MOCK_SERVER_NO_REV:-0}" == 1 && "$ref" == *xdrive-server:* ]]; then
             printf '<no value>\n'
