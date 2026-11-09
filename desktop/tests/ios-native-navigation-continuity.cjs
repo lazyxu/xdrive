@@ -27,7 +27,9 @@ const sources = {
   "p": "ios/scripts/capture-navigation-smoke-frames.py",
   "m": "ios/scripts/summarize-navigation-latency.py",
   "z": "ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift",
-  "j": ".github/workflows/ios-native-navigation-runtime.yml"
+  "j": ".github/workflows/ios-native-navigation-runtime.yml",
+  "i": "ios/XDriveIOS/NativeFilesViewer.swift",
+  "k": "desktop/tests/ios-native-files-video-firstframe.cjs"
 }
 const scenarios = [
   {
@@ -1301,6 +1303,141 @@ const scenarios = [
       {
         "file": "p",
         "pattern": "testNoSessionTrashReturnAfterGalleryFilterDismissal",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "90 Video navigation bottom bar stays interactive when playback chrome is hidden",
+    "checks": [
+      {
+        "file": "i",
+        "pattern": "\\.toolbar\\(chromeVisible \\? \\.visible : \\.hidden, for: \\.navigationBar\\)",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "\\.toolbar\\(isNativeVideo \\? \\.visible :[\\s\\S]*?for: \\.bottomBar\\)",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "Label\\(\"下一项\", systemImage: \"chevron\\.right\"\\)",
+        "flags": ""
+      },
+      {
+        "file": "k",
+        "pattern": "\\.toolbar\\\\\\(isNativeVideo",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "91 Signed device first-frame evidence is AVPlayerLayer-rendered and privacy-safe",
+    "checks": [
+      {
+        "file": "i",
+        "pattern": "import OSLog",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "Logger\\(subsystem: \"com\\.xdrive\\.ios\", category: \"FilesVideoFirstFrame\"\\)",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "current === renderedPlayer,[\\s\\S]*?!videoFirstFrameRecorded",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS stage=layer-ready value=",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "92 Five extra real no-Session UI journeys guard native denial and recovery",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testTrashDenialAcrossRepeatedForegroundActivationsStaysReadOnly\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testFilesQuickRailThenCloudDenialKeepsProtectedGridAbsent\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testCloudDenialGalleryFilterFilesReturnCanReenterDeniedChild\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testTrashDenialPeopleBackThenTrashDenialDoesNotLeakRows\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testCloudAndTrashDenialsCaptureVisibleNativeRecoveryScreens\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "93 Those five no-Session journeys have actual early Simulator frame evidence",
+    "checks": [
+      {
+        "file": "p",
+        "pattern": "testTrashDenialAcrossRepeatedForegroundActivationsStaysReadOnly",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testFilesQuickRailThenCloudDenialKeepsProtectedGridAbsent",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testCloudDenialGalleryFilterFilesReturnCanReenterDeniedChild",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testTrashDenialPeopleBackThenTrashDenialDoesNotLeakRows",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testCloudAndTrashDenialsCaptureVisibleNativeRecoveryScreens",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "94 Missing local session never offers destructive or unauthenticated retry controls",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "struct XDriveIOSNativeFilesNoSessionRoute: View",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "当前没有有效的原生登录会话",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "XCTAssertFalse\\(element\\(\"native-ios-files-trash-retry\", app\\)\\.exists\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "XCTAssertFalse\\(element\\(\"native-ios-files-grid\", app\\)\\.exists\\)",
         "flags": ""
       }
     ]
