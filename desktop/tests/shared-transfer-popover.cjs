@@ -174,6 +174,7 @@ test('upload history cards display verified instant, partial reuse, normal, and 
     retryDisabled: false, retryingID: '',
   }))
   assert.doesNotMatch(unknown, /秒传|部分复用|普通上传/)
+  assert.match(unknown, /方式未记录/, 'legacy task must explicitly show that upload method is unknown')
   assert.match(unknown, /平均速度\s+0 B\/s/, 'legacy missing metadata is unknown rather than inferred instant')
 })
 
