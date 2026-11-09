@@ -1253,7 +1253,7 @@ jobs:
           bash -n scripts/ci/gitlab-fetch-staged-image.sh
           bash -n scripts/ci/test-gitlab-registry-release.sh
           bash scripts/ci/test-gitlab-registry-release.sh
-          python3 -m unittest discover -s scripts/ci -p 'test-gitlab-core-image-manifest.py'
+          python3 scripts/ci/test-gitlab-core-image-manifest.py -v
           bash -n scripts/test-gitlab-optional-image-pins.sh
           bash scripts/test-gitlab-optional-image-pins.sh
           sh -n scripts/ci/gitlab-publish-release.sh
