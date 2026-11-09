@@ -27,7 +27,7 @@ test('Viewer preserves the last authorized PhotoKit pixels before cancelling req
 test('Viewer overlay retains cloud thumbnail for the unchanged Node revision', () => {
   const hidden = between('if !displayActive {', 'if let asset = row.local {');
   assert.doesNotMatch(hidden, /remote\s*=\s*nil/);
-  assert.match(tile, /else if let item = row\.cloud, remote == nil\s*\{\s*await loadCloud/);
+  assert.match(tile, /else if let item = row\.cloud, remote == nil\s*\{\s*(?:\/\/[^\n]*\n\s*)*await loadCloud/);
 });
 
 test('Viewer return does not initiate another PhotoKit request for cached pixels', () => {
