@@ -425,10 +425,16 @@ export default function App({
     ? clipboardIdentity + ':' + clipboardEpoch.current.generation : ''
   const clipboardCurrentScopeRef = useRef(clipboardOwnerScope)
   clipboardCurrentScopeRef.current = clipboardOwnerScope
+  // The Files controller is created later in this render. Keep an Owner-fenced
+  // bridge rather than injecting a second Files reader into Clipboard.
+  const clipboardOpenFileRef = useRef<(nodeID: number, signal: AbortSignal) => Promise<void>>(
+    async () => { throw new Error('当前文件 Viewer 不可用') },
+  )
   const desktopClipboardPort = useMemo(() => clipboardOwnerScope && status?.server
     ? createDesktopClipboardDataPort(window.xdriveDesktop.agent,
       clipboardOwnerScope, status.server,
-      () => clipboardCurrentScopeRef.current === clipboardOwnerScope)
+      () => clipboardCurrentScopeRef.current === clipboardOwnerScope,
+      (nodeID, signal) => clipboardOpenFileRef.current(nodeID, signal))
     : undefined, [clipboardOwnerScope, status?.server])
 
   const baiduDiagnosticScope = `desktop:${status?.server ?? ''}:${status?.username ?? ''}`
@@ -1965,7 +1971,7 @@ export default function App({
     ? `xdrive.desktop.files.navigation_session.v1:${encodeURIComponent(status.server)}:${encodeURIComponent(status.username)}`
     : ''
   const [cloudRevealTarget, setCloudRevealTarget] = useState<{
-    parentID: number; nodeID: number; requestID: string
+    parentID: number; nodeID: number; requestID: string; openPreview?: boolean
   } | null>(null)
   const cloudRevealSequenceRef = useRef(0)
   useEffect(() => {
@@ -1974,25 +1980,60 @@ export default function App({
   const revealCloudNodeInDirectory = async (
     parentID: number, nodeID: number | undefined,
     ancestry: AgentCloudCrumb[],
-  ) => {
+    openPreview = false,
+    stillAuthorized: () => boolean = () => true,
+  ): Promise<boolean> => {
     const requestID = ++cloudRevealSequenceRef.current
     setCloudRevealTarget(null)
     setView('files')
     try {
       const accepted = await loadCloudDirectory(parentID, ancestry)
-      if (requestID !== cloudRevealSequenceRef.current || activeViewRef.current !== 'files' || accepted === false) return
+      if (requestID !== cloudRevealSequenceRef.current || activeViewRef.current !== 'files' || accepted === false || !stillAuthorized()) return false
       if (nodeID && Number.isSafeInteger(nodeID) && nodeID > 0 &&
         nodeID !== parentID) {
         setCloudRevealTarget({
-          parentID, nodeID,
+          parentID, nodeID, openPreview,
           requestID: `desktop-external:${cloudFileActionLifecycleKey}:${requestID}`,
         })
+        return true
       }
+      return false
     } catch (error) {
       if (requestID === cloudRevealSequenceRef.current) {
         setError(error instanceof Error ? error.message : String(error))
       }
+      return false
     }
+  }
+
+  // Resolve the precise Node through the already authenticated Agent Files
+  // RPC. The following Files page verifies the current child, revision and
+  // ordinary Viewer read permission before opening Quick Look.
+  clipboardOpenFileRef.current = async (nodeID, signal) => {
+    const ownerScope = clipboardOwnerScope
+    const current = () => !signal.aborted && !!ownerScope &&
+      clipboardCurrentScopeRef.current === ownerScope
+    if (!current() || activeViewRef.current !== 'clipboard' ||
+        !Number.isSafeInteger(nodeID) || nodeID <= 0)
+      throw new Error('Clipboard Owner 已变化或文件引用不合法')
+    const result = await window.xdriveDesktop.agent.getNodeLocation(nodeID)
+    if (!current() || !result.ok) throw new Error('无法确认当前 Owner 的文件位置')
+    const location = result.data
+    const parent = location.parent_id
+    const ancestry = location.breadcrumbs
+      .filter(crumb => crumb.id !== location.node_id)
+      .map(crumb => ({ id: crumb.id, name: crumb.name }))
+    if (location.node_id !== nodeID || location.node_type !== 'file' ||
+        !Number.isSafeInteger(location.revision) || location.revision <= 0 ||
+        !Number.isSafeInteger(parent) || !parent ||
+        !ancestry.length || ancestry.at(-1)?.id !== parent ||
+        location.breadcrumbs.at(-1)?.id !== nodeID)
+      throw new Error('文件已移动、删除或当前 Owner 无权访问')
+    if (!current()) throw new Error('Clipboard Owner 已变化')
+    const accepted = await revealCloudNodeInDirectory(parent, nodeID, ancestry,
+      true, current)
+    if (!accepted || !current())
+      throw new Error('无法确认 Files 预览入口或当前 Owner')
   }
 
   const requestCloudFileAction = useCallback((action: DesktopFileExplorerAction) => {
