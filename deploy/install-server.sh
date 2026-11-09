@@ -2691,9 +2691,17 @@ repair_migrated_cas_parents_before_backup
 # core upgrades. Optional image upgrades are a separate, explicit operation.
 # Stable tags, GitHub releases and offline bundles remain exact-source.
 retain_gitlab_optional_image() {
-  local variable="$1" proposed="$2" existing=""
+  local variable="$1" proposed="$2" profile="$3" existing=""
   if [[ "$requested_source" != gitlab || "$requested_channel" != master ||
         "$UPGRADE_EXISTING" != 1 || -n "$OFFLINE_ASSET_DIR" ]]; then
+    printf '%s\n' "$proposed"
+    return 0
+  fi
+  # An inactive optional profile is not part of this deployment. An old
+  # mutable legacy image reference must not prevent an otherwise sound core
+  # Server/Caddy upgrade, nor be silently accepted as an immutable pin.
+  # The service's actual activation still requires an exact available image.
+  if ! compose_profile_enabled "$profile"; then
     printf '%s\n' "$proposed"
     return 0
   fi
@@ -2723,8 +2731,8 @@ server_image_ref="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
 caddy_image_ref="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
 photo_image_ref="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
 media_image_ref="$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
-photo_image_ref="$(retain_gitlab_optional_image XD_PHOTO_FACE_IMAGE "$photo_image_ref")"
-media_image_ref="$(retain_gitlab_optional_image XD_MEDIA_WORKER_IMAGE "$media_image_ref")"
+photo_image_ref="$(retain_gitlab_optional_image XD_PHOTO_FACE_IMAGE "$photo_image_ref" photo-intelligence)"
+media_image_ref="$(retain_gitlab_optional_image XD_MEDIA_WORKER_IMAGE "$media_image_ref" media-worker)"
 if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
   server_image_ref="${OFFLINE_SERVER_IMAGE:-$server_image_ref}"
   caddy_image_ref="${OFFLINE_CADDY_IMAGE:-$caddy_image_ref}"
