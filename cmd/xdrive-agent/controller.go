@@ -1044,6 +1044,16 @@ func (c *agentController) FinishTransfer(id, state, message string, skipped bool
 	return handle.Finish(state, finishErr)
 }
 
+// FinishTransferWithUpload retains CAS bytes with the first terminal outcome.
+func (c *agentController) FinishTransferWithUpload(id, state, message string, skipped bool, transferred *int64) error {
+	if transferred == nil || skipped { return c.FinishTransfer(id, state, message, skipped) }
+	handle := c.transfers.Handle(id)
+	if handle == nil { return errors.New("transfer not found") }
+	var finishErr error
+	if strings.TrimSpace(message) != "" { finishErr = errors.New(strings.TrimSpace(message)) }
+	return handle.FinishUploadBytes(state, finishErr, transferred)
+}
+
 func (c *agentController) ClearTransferHistory(scopes ...string) (uint64, []transfer.Task) {
 	c.historyMu.Lock()
 	defer c.historyMu.Unlock()
