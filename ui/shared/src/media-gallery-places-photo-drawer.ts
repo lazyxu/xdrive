@@ -32,6 +32,9 @@ export type XDrivePlacesDrawerPresentation = Readonly<{
   anchorIndex?: number
   /** Position of that photo within the scroll viewport in CSS pixels. */
   anchorViewportOffset?: number
+  /** UI-only time grouping and column choice, never Owner membership. */
+  timeScale?: 'all' | 'year' | 'month' | 'day'
+  columns?: number
 }>
 
 export type XDrivePlacesDrawerReturn = Readonly<{
@@ -68,11 +71,19 @@ function safePresentation(value?: XDrivePlacesDrawerPresentation):
         anchorIndex < 0 || anchorIndex >= XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT ||
         !Number.isSafeInteger(anchorViewportOffset) ||
         Math.abs(anchorViewportOffset!) > 10_000))) return null
+  const timeScale=value.timeScale
+  const columns=value.columns
+  if (timeScale!==undefined && timeScale!=='all' &&
+      timeScale!=='year' && timeScale!=='month' && timeScale!=='day') return null
+  if (columns!==undefined && (!Number.isSafeInteger(columns) ||
+      columns<2 || columns>10 || timeScale===undefined)) return null
   return { expanded: value.expanded, scrollTop: value.scrollTop,
     scrollLeft: value.scrollLeft,
     ...(loadedCount===undefined?{}:{loadedCount}),
     ...(visitedDepth===undefined?{}:{visitedDepth}),
-    ...(anchorIndex===undefined?{}:{anchorIndex,anchorViewportOffset}) }
+    ...(anchorIndex===undefined?{}:{anchorIndex,anchorViewportOffset}),
+    ...(timeScale===undefined?{}:{timeScale}),
+    ...(columns===undefined?{}:{columns}) }
 }
 
 const sessions = new Map<string, { snapshot: XDrivePlacesDrawerReturn; seen: number }>()
