@@ -86,6 +86,11 @@ stable = release_jobs["publish-release"]
 assert "publish-photo-face-image" in stable and "publish-media-worker-image" in stable
 assert "image-manifest.tsv" in stable
 assert "python3 scripts/ci/verify-gitlab-core-manifest.py" in stable
+github_ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+assert "python3 scripts/ci/test-gitlab-core-image-manifest.py -v" in github_ci, (
+    "Hyphenated Python test filenames must be run directly; unittest discover silently runs zero tests"
+)
+assert "unittest discover -s scripts/ci -p 'test-gitlab-core-image-manifest.py'" not in github_ci
 core_manifest_verifier = (ROOT / "scripts/ci/verify-gitlab-core-manifest.py").read_text(encoding="utf-8")
 for token in ("CI_COMMIT_SHA", "CI_COMMIT_TAG", "CI_REGISTRY_IMAGE",
               "xdrive-server", "xdrive-caddy", "sha256:"):
