@@ -1310,7 +1310,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             // A separate one-item, user-confirmed, physically retained CAS
             // proof gates PhotoKit deletion. The historical ledger audit
             // never grants deletion permission.
+            // An unverified destructive Apple Photos deletion flow is NOT part
+            // of the incremental-backup MVP. Only explicitly signed validation
+            // builds may expose it after device/iCloud retention acceptance.
+            #if XDRIVE_ENABLE_PHOTO_ORIGINAL_RELEASE
             XDriveIOSNativePhotoFreeSpaceSection(login: login, controller: controller)
+            #endif
             XDriveIOSNativePhotoWholeLibraryAuditSection(login: login)
                 .id(Detail.audit)
             Section("可选系统后台原件备份") {

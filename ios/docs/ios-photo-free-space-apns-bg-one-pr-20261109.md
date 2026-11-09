@@ -8,6 +8,15 @@ No second CAS writer, no Web bearer grant and no lower Keychain/file protection.
 
 ### Explicit iPhone original removal
 
+- **MVP distribution gate:** the destructive `XDriveIOSNativePhotoFreeSpaceSection`
+  is NOT mounted in default iOS builds. `NativePhotoBackupScreen.swift` requires
+  the explicit Swift compilation condition `XDRIVE_ENABLE_PHOTO_ORIGINAL_RELEASE`;
+  `ios/project.yml` does not define it. The code and Server retention proofs
+  remain for a separately signed, non-distribution device acceptance build.
+  Do not enable this flag in an IPA intended for general users until real
+  iCloud Photos deletion propagation, Live-pair restore and NAS persistence
+  tests have been documented. Incremental backups do not need this feature.
+
 - `NativePhotoFreeSpaceSection.swift` offers ONE explicitly selected PhotoKit
   image/video/Live Photo. No automatic/background/bulk Apple Photos deletion.
 - Before a server hold is prepared, the native current-original model hashes

@@ -149,3 +149,13 @@ test('APNs environment explicitly matches Info.plist and signing settings, not D
   assert.match(native, /didRegisterForRemoteNotificationsWithDeviceToken/)
   assert.doesNotMatch(native, /SecTaskCreateFromSelf|SecTaskCopyValueForEntitlement|#if DEBUG/)
 })
+
+test('MVP release does not expose unvalidated destructive iPhone original deletion', () => {
+  const screen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
+  const project = read('ios/project.yml')
+  // Candidate implementation remains compiled for explicit signed QA builds.
+  // No normal unsigned IPA or distribution project sets this opt-in symbol.
+  assert.match(screen, /#if XDRIVE_ENABLE_PHOTO_ORIGINAL_RELEASE\s+XDriveIOSNativePhotoFreeSpaceSection\(login: login, controller: controller\)\s+#endif/)
+  assert.equal((screen.match(/XDriveIOSNativePhotoFreeSpaceSection\(/g) || []).length, 1)
+  assert.doesNotMatch(project, /XDRIVE_ENABLE_PHOTO_ORIGINAL_RELEASE/)
+})

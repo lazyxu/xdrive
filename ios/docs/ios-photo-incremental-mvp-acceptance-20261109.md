@@ -52,7 +52,7 @@ remaining regression and optional original-retention/APNs features.
 | Case | Current #4141 behavior | Independent acceptance |
 | --- | --- | --- |
 | APNs background hint | Encrypted Owner/Device/Source token, Apple ES256 sender, advisory BG rearm | Correct Apple App ID, .p8, signed entitlement, real APNs delivery |
-| Release local original | Single explicitly selected PhotoKit item, permanent physical CAS hold, confirmation and deletion | Full Live pair, iCloud device propagation, restore, NAS backup strategy |
+| Release local original | Candidate single-item physical CAS hold + deletion flow, **UI disabled by default** behind explicit Swift compile flag | Separate signed test IPA; Full Live pair, iCloud propagation, restore, NAS backup strategy |
 | Locked-screen continuous upload | No promise; protected bytes stay protected and OS schedules as permitted | Cannot mark guaranteed or require bypassing iOS restrictions |
 
 ## Exact-HEAD gate
