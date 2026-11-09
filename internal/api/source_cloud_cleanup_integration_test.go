@@ -266,3 +266,189 @@ func TestSourceCloudCleanupRejectsUnsafeSharesWritersAndCrossSourceHistory(t *te
 	requestWithHeaders(t, router, http.MethodGet, preview,
 		token, nil, http.StatusOK, nil)
 }
+
+// A historical cross-Owner parent edge may survive a NOT VALID composite FK.
+// An Owner-scoped recursive inventory must not silently omit that node and
+// move its parent to Trash. This also protects an already issued preview.
+func TestSourceCloudCleanupRejectsCrossOwnerDescendants(t *testing.T) {
+	for _, tc := range []struct {
+		name, nodeType string
+		nested         bool
+	}{
+		{name: "foreign direct file", nodeType: meta.NodeTypeFile},
+		{name: "foreign nested directory", nodeType: meta.NodeTypeDir, nested: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, owner, other, source, target, photo, token, _ := sourceCleanupFixture(t)
+			db := server.DB
+			gin.SetMode(gin.TestMode)
+			router := server.Router()
+			path := fmt.Sprintf("/api/v1/sources/%d/cloud-cleanup", source.ID)
+
+			parentID := target.ID
+			if tc.nested {
+				parent := createFilePropertiesDir(t, db, owner.ID, target.ID, "nested-album")
+				parentID = parent.ID
+			}
+			before := requestWithHeaders(t, router, http.MethodGet,
+				path+"/preview", token, nil, http.StatusOK, nil)
+			var preview sourceCloudCleanupPreviewDTO
+			if err := json.Unmarshal(before.Body.Bytes(), &preview); err != nil {
+				t.Fatal(err)
+			}
+			foreign := meta.Node{
+				OwnerID: other.ID, ParentID: &parentID, Name: "foreign-descendant",
+				Type: tc.nodeType, Revision: 1,
+			}
+			if err := db.Create(&foreign).Error; err != nil {
+				t.Fatal(err)
+			}
+			requestWithHeaders(t, router, http.MethodGet,
+				path+"/preview", token, nil, http.StatusConflict, nil)
+			body := fmt.Sprintf(`{"preview_digest":%q,"confirm_name":%q,"target_node_id":%d,"target_revision":%d}`,
+				preview.PreviewDigest, source.Name, preview.TargetNodeID, preview.TargetRevision)
+			requestWithHeaders(t, router, http.MethodPost, path+"/trash",
+				token, strings.NewReader(body), http.StatusConflict,
+				map[string]string{"If-Match": fmt.Sprintf("%q", fmt.Sprint(source.Revision))})
+
+			for _, id := range []uint64{target.ID, photo.ID, foreign.ID, parentID} {
+				var current meta.Node
+				if err := db.First(&current, id).Error; err != nil {
+					t.Fatal(err)
+				}
+				if current.DeletedAt != nil || current.TrashRootID != nil {
+					t.Fatalf("blocked cleanup must retain all live nodes, id=%d node=%+v", id, current)
+				}
+			}
+			var retained meta.Source
+			if err := db.First(&retained, source.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if retained.TargetNodeID == nil || *retained.TargetNodeID != target.ID ||
+				retained.Revision != source.Revision || retained.Status != meta.SourceStatusArchived {
+				t.Fatalf("foreign child changed the Source binding: %+v", retained)
+			}
+		})
+	}
+}
+
+// Cross-Owner Source and Share rows can also survive historical upgrades.
+// Those references remain authoritative safety blockers even if their claimed
+// Owner differs from the actual Node Owner.
+func TestSourceCloudCleanupRejectsForeignOwnerSourceAndShareClaims(t *testing.T) {
+	for _, claim := range []string{"source target", "active share"} {
+		t.Run(claim, func(t *testing.T) {
+			server, _, other, source, target, photo, token, _ := sourceCleanupFixture(t)
+			db := server.DB
+			gin.SetMode(gin.TestMode)
+			router := server.Router()
+			path := fmt.Sprintf("/api/v1/sources/%d/cloud-cleanup", source.ID)
+			before := requestWithHeaders(t, router, http.MethodGet,
+				path+"/preview", token, nil, http.StatusOK, nil)
+			var preview sourceCloudCleanupPreviewDTO
+			if err := json.Unmarshal(before.Body.Bytes(), &preview); err != nil {
+				t.Fatal(err)
+			}
+			if claim == "source target" {
+				otherSource := meta.Source{
+					OwnerID: other.ID, Name: "historical foreign claim",
+					Kind: "yike_photos", Direction: meta.SourceDirectionPull,
+					SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
+					Status: meta.SourceStatusArchived, Revision: 1,
+					TargetNodeID: &photo.ID,
+				}
+				if err := db.Create(&otherSource).Error; err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				share := meta.Share{
+					OwnerID: other.ID, NodeID: photo.ID,
+					TokenHash: strings.Repeat("c", 64), Access: "read_only",
+				}
+				if err := db.Create(&share).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			requestWithHeaders(t, router, http.MethodGet,
+				path+"/preview", token, nil, http.StatusConflict, nil)
+			body := fmt.Sprintf(`{"preview_digest":%q,"confirm_name":%q,"target_node_id":%d,"target_revision":%d}`,
+				preview.PreviewDigest, source.Name, preview.TargetNodeID, preview.TargetRevision)
+			requestWithHeaders(t, router, http.MethodPost, path+"/trash",
+				token, strings.NewReader(body), http.StatusConflict,
+				map[string]string{"If-Match": fmt.Sprintf("%q", fmt.Sprint(source.Revision))})
+			for _, id := range []uint64{target.ID, photo.ID} {
+				var current meta.Node
+				if err := db.First(&current, id).Error; err != nil {
+					t.Fatal(err)
+				}
+				if current.DeletedAt != nil || current.TrashRootID != nil {
+					t.Fatalf("foreign claim mutated a live node: %+v", current)
+				}
+			}
+		})
+	}
+}
+
+// Cleanup is a deliberately narrow archived Yike Pull option, not an Owner
+// back door for device Push backups or dormant Synology connectors. Each case
+// uses a valid, matching canonical managed hierarchy so a path mismatch alone
+// cannot make this assertion pass.
+func TestSourceCloudCleanupRejectsOtherManagedSourceKinds(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, direction, connector string
+	}{
+		{name: "local folder Push", kind: meta.SourceKindLocalFolder, direction: meta.SourceDirectionPush},
+		{name: "iOS Photos Push", kind: meta.SourceKindIOSPhotos, direction: meta.SourceDirectionPush},
+		{name: "Android Photos Push", kind: meta.SourceKindAndroidPhotos, direction: meta.SourceDirectionPush},
+		{name: "retired Synology Photos Push", kind: synologySourceKind, direction: meta.SourceDirectionPush},
+		{name: "dormant Synology Photos Pull", kind: synologySourceKind, direction: meta.SourceDirectionPull, connector: "Synology Photos"},
+		{name: "dormant Synology Files Pull", kind: synologyFilesSourceKind, direction: meta.SourceDirectionPull, connector: "Synology Files"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, _, _, source, target, photo, token, _ := sourceCleanupFixture(t)
+			db := server.DB
+			var connector meta.Node
+			if err := db.First(&connector, *target.ParentID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if connector.ParentID == nil {
+				t.Fatal("fixture connector lacks Pull parent")
+			}
+			if tc.direction == meta.SourceDirectionPush {
+				// Convert the Yike fixture into a canonical flat Push target:
+				// 同步文件夹/Push/<SourceName>.
+				if err := db.Model(&meta.Node{}).Where("id = ?", *connector.ParentID).
+					Update("name", "Push").Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Model(&meta.Node{}).Where("id = ?", target.ID).
+					Update("parent_id", *connector.ParentID).Error; err != nil {
+					t.Fatal(err)
+				}
+			} else if err := db.Model(&meta.Node{}).Where("id = ?", connector.ID).
+				Update("name", tc.connector).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).
+				Updates(map[string]any{
+					"kind": tc.kind, "direction": tc.direction,
+				}).Error; err != nil {
+				t.Fatal(err)
+			}
+			gin.SetMode(gin.TestMode)
+			router := server.Router()
+			path := fmt.Sprintf("/api/v1/sources/%d/cloud-cleanup", source.ID)
+			requestWithHeaders(t, router, http.MethodGet, path+"/preview",
+				token, nil, http.StatusConflict, nil)
+			for _, id := range []uint64{target.ID, photo.ID} {
+				var node meta.Node
+				if err := db.First(&node, id).Error; err != nil {
+					t.Fatal(err)
+				}
+				if node.DeletedAt != nil || node.TrashRootID != nil {
+					t.Fatalf("ineligible Source mutated live cloud nodes: %+v", node)
+				}
+			}
+		})
+	}
+}
