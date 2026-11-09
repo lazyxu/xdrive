@@ -214,7 +214,7 @@ test('truncated folder history must never claim every upload was instant', () =>
   const truncated = visibleText(render(XDriveTransferCenter, { transfers: [folder(3), ...children] }))
   assert.doesNotMatch(truncated, /全部秒传/,
     'bounded persisted history cannot prove an unretained child had a CAS hit')
-  assert.match(truncated, /秒传\\s+2/, 'only retained verified child receipts may be counted')
+  assert.match(truncated, /秒传\s+2/, 'only retained verified child receipts may be counted')
 
   const unknownInventory = visibleText(render(XDriveTransferCenter, {
     transfers: [task('folder', { ...folder(2), scan_complete: false }), ...children],
