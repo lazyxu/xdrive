@@ -36,9 +36,16 @@ func TestUploadReceiptDistinguishesCASReuseFromOrdinaryAndLegacy(t *testing.T) {
 	instant := manager.Start(Spec{FileName: "instant", Kind: KindUpload, Direction: "upload", TotalBytes: total})
 	instant.CompleteUploadReceipt(UploadContentReceipt{TransferredBytes: zero, CASReusedBytes: total})
 	check("instant", &zero, false)
+	_, initial := manager.Snapshot()
+	if initial[0].UploadCASReusedBytes != total || initial[0].UploadResumeReusedBytes != 0 {
+		t.Fatalf("instant CAS provenance is wrong: %+v", initial[0])
+	}
 	partialUpload := manager.Start(Spec{FileName: "partial", Kind: KindUpload, Direction: "upload", TotalBytes: total})
 	partialUpload.CompleteUploadReceipt(UploadContentReceipt{TransferredBytes: partial, CASReusedBytes: total - partial})
 	check("partial", &partial, false)
+	resume := manager.Start(Spec{FileName: "resume", Kind: KindUpload, Direction: "upload", TotalBytes: total})
+	resume.CompleteUploadReceipt(UploadContentReceipt{ResumeReusedBytes: total})
+	check("resume", &zero, false)
 	regular := manager.Start(Spec{FileName: "regular", Kind: KindUpload, Direction: "upload", TotalBytes: total})
 	regular.CompleteUploadReceipt(UploadContentReceipt{TransferredBytes: full})
 	check("regular", &full, false)
