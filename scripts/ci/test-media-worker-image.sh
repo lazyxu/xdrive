@@ -28,7 +28,9 @@ test "$version" = "$XDRIVE_BUILD_VERSION"
 # user namespace or live socket test capability. Preserve full tests for v*
 # and MR, and run master smoke diagnostics after the Release is published.
 if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" == "1" ]]; then
-  bash scripts/ci/export-docker-image.sh xdrive/media-worker:test "${1:-dist/media-worker-image}"
+  if [[ "${XDRIVE_GITLAB_STAGING_ONLY:-0}" != "1" ]]; then
+    bash scripts/ci/export-docker-image.sh xdrive/media-worker:test "${1:-dist/media-worker-image}"
+  fi
   echo "GitLab master Media Worker package exported; live socket smoke is post-release"
   exit 0
 fi
@@ -82,4 +84,6 @@ fi
 [[ "$(docker inspect --format '{{.HostConfig.Memory}}' "$container")" == "805306368" ]]
 [[ "$(docker inspect --format '{{.HostConfig.PidsLimit}}' "$container")" == "128" ]]
 docker exec "$container" sh -ec 'test ! -d /data && test -S /run/xdrive-media-worker/media-worker.sock'
-bash scripts/ci/export-docker-image.sh xdrive/media-worker:test "${1:-dist/media-worker-image}"
+if [[ "${XDRIVE_GITLAB_STAGING_ONLY:-0}" != "1" ]]; then
+  bash scripts/ci/export-docker-image.sh xdrive/media-worker:test "${1:-dist/media-worker-image}"
+fi
