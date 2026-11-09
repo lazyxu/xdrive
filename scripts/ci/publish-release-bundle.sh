@@ -18,19 +18,58 @@ with open(sys.argv[1], encoding="utf8") as f:
 PY
 )"
 [[ "$actual_sha" == "$sha" ]] || { echo "manifest commit mismatch" >&2; exit 1; }
-mapfile -t names < <(python3 - "$root/release-bundle.json" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding="utf8") as f:
-    data=json.load(f)
-names=[item["filename"] for item in data["artifacts"]]
-assert len(names) == len(set(names)) and all("/" not in n and "\\" not in n for n in names)
+# Process substitution hides the producer's exit status. A malformed
+# manifest used to look exactly like a legitimately empty Server-only Bundle,
+# potentially allowing publication with missing promised assets. Fail closed.
+names_output="$(python3 - "$root/release-bundle.json" "$sha" <<'PY'
+import json, re, sys
+from pathlib import Path
+with open(sys.argv[1], encoding="utf8") as stream:
+    data = json.load(stream)
+assert isinstance(data, dict) and data.get("schema_version") == 1
+assert data.get("commit") == sys.argv[2]
+assert data.get("channel") in ("master", "stable")
+items = data.get("artifacts")
+assert isinstance(items, list) and len(items) <= 30
+names = []
+for item in items:
+    assert isinstance(item, dict)
+    name = item.get("filename")
+    assert isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,180}", name)
+    assert item.get("build_commit") == sys.argv[2]
+    assert item.get("platform") in ("linux", "windows", "cli", "ios", "android", "dsm")
+    assert type(item.get("size")) is int and 0 < item["size"] <= (8 << 30)
+    assert isinstance(item.get("sha256"), str) and re.fullmatch(r"[0-9a-f]{64}", item["sha256"])
+    assert item.get("install_mode") in ("manual", "manual_test_only")
+    names.append(name)
+assert len(names) == len(set(names))
 for name in sorted(names):
     print(name)
 PY
-)
+)" || { echo "Invalid or incomplete immutable Bundle manifest" >&2; exit 1; }
+names=()
+if [[ -n "$names_output" ]]; then
+  mapfile -t names <<< "$names_output"
+fi
 assets=("$root/release-bundle.json")
 for name in "${names[@]}"; do
   [[ -s "$root/$name" && ! -L "$root/$name" ]] || { echo "missing $name" >&2; exit 1; }
+  # Verify exact on-disk bytes before immutable release mutation; a checksum
+  # mismatch is not authorization to publish the wrong installer.
+  IFS=' ' read -r expected_size expected_sha < <(python3 - "$root/release-bundle.json" "$name" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf8") as stream:
+    doc=json.load(stream)
+row=next(item for item in doc["artifacts"] if item["filename"] == sys.argv[2])
+print(row["size"], row["sha256"])
+PY
+)
+  actual_size="$(wc -c < "$root/$name" | tr -d '[:space:]')"
+  actual_sha="$(sha256sum "$root/$name" | cut -d' ' -f1)"
+  [[ "$actual_size" == "$expected_size" && "$actual_sha" == "$expected_sha" ]] || {
+    echo "Bundle artifact differs from its immutable SHA-256 manifest: $name" >&2
+    exit 1
+  }
   assets+=("$root/$name")
 done
 
