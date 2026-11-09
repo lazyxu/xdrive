@@ -72,6 +72,7 @@ optional = {
 assert closure("master") == core, closure("master") ^ core
 assert closure("stable") == core | optional, closure("stable") ^ (core | optional)
 assert "build-synology-ui" not in jobs
+assert re.search(r"(?m)^  needs: \[\]", jobs["release-assets"]), "source-only release-assets must bypass optional image stage barrier"
 assert "npm run build:synology" in jobs["web"]
 assert "node scripts/verify-synology-ui.mjs" in jobs["web"]
 assert "web/dist-synology/" in jobs["web"]
