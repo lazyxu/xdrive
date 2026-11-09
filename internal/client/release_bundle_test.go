@@ -166,9 +166,9 @@ func TestCurrentServerBundleFallbackOnUnavailableLocalAndCorruptGitLab(t *testin
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,
-				Body: io.NopCloser(bytes.NewReader(body)),
-				Header: make(http.Header),
-				Request: r,
+				Body:       io.NopCloser(bytes.NewReader(body)),
+				Header:     make(http.Header),
+				Request:    r,
 			}, nil
 		})}
 	t.Cleanup(func() { http.DefaultClient = originalDefault })
@@ -185,7 +185,7 @@ func TestCurrentServerBundleFallbackOnUnavailableLocalAndCorruptGitLab(t *testin
 	if err != nil || !bytes.Equal(content, payload) {
 		t.Fatalf("fallback output did not retain exact signed bytes: %v", err)
 	}
-	if _, err := os.Stat(target+".part"); !os.IsNotExist(err) {
+	if _, err := os.Stat(target + ".part"); !os.IsNotExist(err) {
 		t.Fatalf("corrupt GitLab partial was not discarded: %v", err)
 	}
 }
