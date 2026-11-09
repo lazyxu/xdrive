@@ -38,6 +38,18 @@ class NavigationSummaryTests(unittest.TestCase):
         self.assertEqual(payload["local_photo_page_modes"][0]["mode"], "tab-return")
         self.assertFalse(video["is_physical_device_measurement"])
 
+    def test_verified_100k_jump_has_separate_metric_from_actual_frames(self):
+        payload = module.summarize(
+            "IOS_NATIVE_FILES_JUMP_VERIFIED_MS value=44\\n"
+            "IOS_NATIVE_FILES_JUMP_VERIFIED_MS value=97\\n"
+        )
+        jump = payload["file_jump_verified"]
+        self.assertEqual(jump["samples"], 2)
+        self.assertEqual(jump["p50_ms"], 70.5)
+        self.assertEqual(jump["p95_ms"], 97)
+        self.assertIn("NOT rendered FPS", jump["metric"])
+        self.assertEqual(payload["video_first_displayed_frame"]["samples"], 0)
+
     def test_unbounded_and_unrelated_events_are_rejected(self):
         payload = module.summarize(
             "IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS stage=readyToPlay value=0\n"
