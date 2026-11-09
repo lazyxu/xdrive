@@ -1,91 +1,100 @@
-# Native iOS Photos: Free Up Space / APNs / locked-screen recovery (single PR)
+# iOS Photos Free Up Space, APNs and safe background recovery — PR #4141
 
-Target branch: `feat/ios-photos-free-space-apns-bg-recovery-20261109`.
-Existing baseline: #4104 and #4126 are merged. This is **not** a declaration
-that the new three capabilities are complete.
+**One implementation PR:** https://github.com/lazyxu/xdrive/pull/4141
+Existing core uploader and receipt reconciliation from #4104/#4126 are reused.
+No second CAS writer, no Web bearer grant and no lower Keychain/file protection.
 
-## Current implementation in this branch
-- Pure `PhotoBackupResiliencePolicy` rejects unexpected/alerting APNs payloads;
-  an APNs wake is not a backup receipt or an upload authorization.
-- `PhotoBackupRemoteHintDelegate` passes a specifically-shaped silent hint to
-  the existing `BackgroundPhotoTask` recovery gate. It requests **one future**
-  BGProcessing window only after re-reading the exact Owner/Source/Target grant,
-  Full Photos scope, original protected-data availability, approved automatic
-  plan, current stop generation, no pending UploadSession receipt, no full-history
-  recovery and no existing pending BG task. Remote hints are throttled at the
-  native Owner scope; no writer is launched by the callback.
-- The Free Up Space policy requires a durable Server retention guarantee over
-  *all* original resources, including Live still+motion, before an iPhone original
-  may be deleted. No existing historical ACK/Node proof can grant that guarantee.
+## 1. Current code paths (do not confuse with a verified release)
 
-## Explicitly not complete / still blocking shipping
-1. **Free Up Space:** a Server-backed retention hold/lease whose validity survives
-   concurrent Owner Node deletion, version replacement, trash/restore and CAS GC;
-   authenticated per-original SHA / full Live-pair proof, foreground item-by-item
-   irreversible-action confirmation, bounded batch and receipt; original deletion
-   stays disabled while any check or hold is absent. On iCloud Photos, Apple
-   deletions affect every synchronised device.
-2. **APNs delivery:** Apple-signed `aps-environment` entitlement/provisioning,
-   Owner+Device+Source+Target scoped token registration/rotation/revocation,
-   private encrypted Server token store, authenticated ES256 APNs provider,
-   periodic bounded scheduling and rate limits, invalid-token cleanup,
-   integration tests and physical signed-device acceptance. Adding the delegate
-   or `remote-notification` background mode does not itself deliver pushes.
-3. **Locked-screen background operation:** iOS can refuse/delay/terminate
-   BGProcessing and throttle silent pushes; `FileProtection.complete`
-   originals and `WhenUnlockedThisDeviceOnly` journal remain intentionally
-   inaccessible while locked. Never lower security to claim a continuous
-   locked-screen upload. The safe product contract is *eventual foreground /
-   system-admitted recovery*, Focused Backup and explicit blocked diagnostics.
+### Explicit iPhone original removal
 
-## Test and merge rules
-- Exact HEAD must pass macOS Swift policy tests, unsigned IPA, Node source
-  contracts, full CI and Final Gate. Do not merge this draft as a completed
-  three-feature delivery until the Server hold and token sender exist and the
-  destructive feature has independent proof.
-- Physical iPhone, APNs signing and locked-original acceptance: 跳过（未验收）.
-- Preserve one existing UploadSession/CAS/Node writer. Unknown ACK, Owner change,
-  revoke and protected data failures fail closed.
+- `NativePhotoFreeSpaceSection.swift` offers ONE explicitly selected PhotoKit
+  image/video/Live Photo. No automatic/background/bulk Apple Photos deletion.
+- Before a server hold is prepared, the native current-original model hashes
+  the locally authorized original, verifies the historical finalized receipt
+  and authenticates the exact current Owner/managed Source/Node.
+- The new `POST /api/v1/ios/photos/managed/original-retention` requires the
+  currently signed-in Owner **and** separately enrolled iPhone Device secret.
+  It rechecks Source/Target/Node/session/revision/content digest inside SQL,
+  requires an actual `CASReadLeaseProvider.OpenPinnedCAS` physical read lease,
+  hashes all original CAS bytes, and for Live ZIP validates exactly two
+  original still+motion members plus the JSON manifest, byte counts and CRC.
+  A backend without pinned CAS support fails closed; a historical ACK alone
+  cannot establish retention. No per-photo local identifier is sent to Server.
+- PostgreSQL stores immutable `IOSPhotoOriginalHold` and indexed ancestors.
+  The transactional migration installs guards on held Node/ancestor,
+  File/FileVersion, Source, ContentBlob and hold records, protecting against
+  ordinary trash, replacement, legacy cleanup, direct SQL mutation and CAS GC.
+  The CAS GC independent reference query also checks retained storage keys.
+  There is intentionally NO ordinary API that releases a permanent hold.
+- After another user confirmation, `GET .../original-retention/:id` rechecks
+  current managed authorization, physical bytes and hold status. The client
+  rechecks the same PhotoKit revision, foreground, Full Photos access, Owner
+  and zero pending/unknown ACK *again* before calling the OS PhotoKit
+  `PHAssetChangeRequest.deleteAssets`. iOS will request its own permission.
+  Deletion under iCloud Photos can affect other devices and Recently Deleted
+  may delay reclaimed capacity. An old or changed proof cannot delete.
+- A permanent Server hold is **not** a second geographically independent
+  backup. Disk failure, malicious DB superuser and actual NAS restore must be
+  handled by the existing external backup/restore discipline. The client does
+  not claim its device storage has immediately been freed.
 
+### APNs background hints
 
-## APNs Server + native integration (next implementation stage)
+- The signed App uses XcodeGen-generated `aps-environment` entitlement
+  (operator-selected `XDRIVE_APNS_ENVIRONMENT`, matching Apple provisioning)
+  and `remote-notification`. Runtime checks its actual signed entitlement
+  rather than inferring development vs production from a DEBUG define.
+- A native token callback is accepted only for the exact captured approved
+  Owner and stop generation; Owner switching invalidates the pending
+  registration. Encrypted Server token registration requires a separate
+  current Photo BG grant + Device secret. Grant rotation/revoke deauthorizes
+  the old token, and a repeated registration preserves its rate limit.
+- Server provider key is loaded only from a restricted operator local .p8 file,
+  ES256 JWT is freshly signed and sent to Apple using HTTPS/HTTP2 background
+  priority 5, at most once per grant every 2h with a multi-worker atomic claim.
+  Invalid token replies invalidate only matching tokens, not the uploaded data.
+  A push carries no credentials or PhotoKit identifiers. Missing provider or
+  encryption keys disables APNs without disrupting foreground backups.
+- **Deployment secrets outside source control:** `XD_IOS_PHOTO_APNS_TEAM_ID`,
+  `XD_IOS_PHOTO_APNS_KEY_ID`, `XD_IOS_PHOTO_APNS_PRIVATE_KEY_FILE`,
+  versioned `XD_CONNECTOR_SECRET_*` keyring, Apple App ID Push Notifications
+  capability, matching signed provisioning, and explicit Xcode build
+  `XDRIVE_APNS_ENVIRONMENT=development|production`.
 
-The continuation adds an encrypted **grant-owned** APNs token channel with
-`PUT/DELETE /api/v1/ios/photos/background-managed/apns-token`; both routes
-require the current independent native Device secret and revocable managed
-Photo grant. The Server rechecks Owner session, Device, Source and Target in
-the mutation transaction and encrypts the opaque device token with a versioned
-AES-GCM Source credential keyring, never plaintext or a generic JWT.
-Registration of the same token preserves its existing hint rate limit.
-Grant rotation invalidates its previous token automatically.
+### iOS background/lockscreen
 
-An **optional** server wake worker sends only `content-available:1` without
-PhotoKit identifiers, Node references, credentials or user-facing content;
-APNs requests use TLS+HTTP/2, ES256 provider JWT, the app topic, background
-push type and priority 5. Every candidate is rechecked against the current
-Owner/Device/Source/Target; a per-grant atomic claim allows at most one hint
-per two hours across competing server instances. Apple token revocation
-clears only a matching token digest and never deletes an uploaded original.
-The OS may delay, throttle or discard the hint.
+- A silent push only attempts to re-arm an OS-admitted **future**
+  BGProcessing window, never starts an upload in the push callback.
+- Requires unlocked protected bytes, Full Photos permission, same current
+  managed Device+Owner grant, unrevoked stop epoch, valid PhotoKit history,
+  no active writer, no pending/unknown receipt, no paused review, throttle and
+  no already-scheduled BG task. The existing foreground catch-up and Focused
+  Backup remain the reliable user-driven recovery path.
+- Apple does NOT guarantee BGProcessing scheduling or silent push delivery,
+  and the existing complete/WhenUnlocked media and journal are intentionally
+  inaccessible while locked. This limitation must remain explicit in UI.
 
-**Deployment prerequisites (no secrets in Git):**
-- Signed iOS app provisioning with `aps-environment` and `remote-notification`.
-- Server operator supplies `XD_IOS_PHOTO_APNS_TEAM_ID` and
-  `XD_IOS_PHOTO_APNS_KEY_ID` (Apple 10-character identifiers) and
-  `XD_IOS_PHOTO_APNS_PRIVATE_KEY_FILE` (secured local Apple .p8 PKCS8 path).
-- Configure the versioned `XD_CONNECTOR_SECRET_*` keyring to encrypt the
-  stored token. Incomplete key/entitlement configuration MUST disable APNs
-  rather than storing plaintext, faking a wake or blocking foreground backup.
-- The App requests a token only after the existing exact Owner/Device
-  background grant has been explicitly enabled and verified. A late callback
-  rechecks the captured Owner and stop generation; wrong Owner/expired grants
-  cannot register. Token registration is NOT a receipt and cannot upload.
-- Unsigned IPA, real APNs provider credentials and physical signed iPhone
-  validation: **跳过（未验收）**. A successful CI build alone is not delivery.
+## 2. Regression matrix and shipping conditions
 
-**Remaining high-risk gap:** no protected Server retention hold that survives
-Node delete/trash/version rewrite and CAS garbage collection. Therefore
-`PHAssetChangeRequest.deleteAssets` is still deliberately absent. The
-Free Up Space check is a fail-closed *policy only*, not permission to delete
-iPhone originals. Do not declare this feature complete or merge a Draft based
-solely on the new APNs tests.
+- Go: bad request/Owner/Device/Target/session rejection, physical SHA mismatch,
+  short/missing CAS, invalid Live manifest/missing motion/extra part, pinned
+  CAS admission, APNs signing and token revocation.
+- PostgreSQL: permanent hold+ancestor migration idempotence; ordinary Node,
+  File, Source, ContentBlob, hold and ancestor deletion/overwrite denied while
+  unrelated File deletion still works; CAS GC independent reference check.
+- Native/CI: exact-HEAD Swift policy tests, Node fail-closed contracts, signed
+  entitlement gate, Xcode unsigned IPA, all applicable full CI and Final Gate.
+- Real signed iPhone, APNs send/receive and iCloud Photos destructive behavior:
+  **跳过（未验收）** until an Apple-signed device is available. Never claim a
+  queued/skipped/earlier HEAD check passed.
+- Do not merge #4141 while any **applicable exact-HEAD** CI/Final Gate fails
+  or while the above persistence/deletion contract is unverified.
+
+## 3. Known hard limitations
+
+A database trigger protects application-level deletion, but does not defeat
+DB superuser tampering, host disk destruction or independent NAS data loss.
+The product must not claim an external independent copy unless its existing
+backup/restore system has proved one. APNs and BGProcessing can be delayed
+or suppressed by Apple; no continuous locked-screen guarantee can be made.

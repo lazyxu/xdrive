@@ -1,3 +1,4 @@
+import Security
 import UIKit
 
 /// An APNs background hint is advisory and untrusted input. It never starts a
@@ -10,6 +11,11 @@ final class XDriveIOSPhotoBackupRemoteHintDelegate: NSObject, UIApplicationDeleg
     // Owners or silently reactivate revoked backup schedules.
     @MainActor private static var expectedRegistration:
         (owner: XDriveNativeOwnerRoot, stopEpoch: UInt64)?
+
+    @MainActor
+    static func invalidatePendingRegistration() {
+        expectedRegistration = nil
+    }
 
     @MainActor
     static func requestRegistrationForApprovedBackgroundOwner(
@@ -28,16 +34,17 @@ final class XDriveIOSPhotoBackupRemoteHintDelegate: NSObject, UIApplicationDeleg
                     XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration
             else { return }
             Self.expectedRegistration = nil
-            // APNs environment is bound to the build's intended provisioning
-            // profile. The APNs service additionally validates the token;
-            // unsigned IPA builds have no registered APNs entitlement/token.
-            #if DEBUG
-            let environment = "development"
-            #else
-            let environment = "production"
-            #endif
+            // The actual installed Apple provisioning entitlement controls
+            // sandbox vs production. Never infer it from DEBUG/Release:
+            // sideloaded or incorrectly signed builds must fail closed.
+            guard let task = SecTaskCreateFromSelf(nil),
+                  let entitlement = SecTaskCopyValueForEntitlement(
+                    task, "aps-environment" as CFString, nil
+                  ) as? String,
+                  entitlement == "development" || entitlement == "production"
+            else { return }
             try? await XDriveIOSPhotoBackgroundGrantManager.shared.registerAPNSToken(
-                deviceToken, environment: environment,
+                deviceToken, environment: entitlement,
                 expectedOwner: expected.owner
             )
         }

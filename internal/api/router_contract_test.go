@@ -73,6 +73,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/ios/photos/background-managed/uploads/:id", suite: "ios-photo-managed-background-upload"},
 		{method: "GET", path: "/api/v1/ios/photos/backup-destination", suite: "ios-photo-backup-destination"},
 		{method: "GET", path: "/api/v1/ios/photos/managed/receipts/nodes/:id", suite: "ios-photo-managed-upload"},
+		{method: "POST", path: "/api/v1/ios/photos/managed/original-retention", suite: "ios-photo-retention-bound-source"},
+		{method: "GET", path: "/api/v1/ios/photos/managed/original-retention/:id", suite: "ios-photo-retention-bound-source"},
 		{method: "GET", path: "/api/v1/ios/photos/managed/uploads/:id", suite: "ios-photo-managed-upload"},
 		{method: "POST", path: "/api/v1/ios/photos/background-managed/uploads", suite: "ios-photo-managed-background-upload"},
 		{method: "POST", path: "/api/v1/ios/photos/background-managed/uploads/:id/finalize", suite: "ios-photo-managed-background-upload"},

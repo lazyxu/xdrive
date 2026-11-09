@@ -413,6 +413,18 @@ func (s *Server) releaseContentReferencesTx(
 // write and does not grant any local Push SourceRun/restore authority.
 func contentStorageKeyHasLiveFileReferencesTx(tx *gorm.DB, key string) (bool, error) {
 	var referenced bool
+	// A protected original is an independent durable reference even if
+	// historical corrupted SQL removed its ordinary File row. This check
+	// runs under the canonical CAS advisory hash lock before physical delete.
+	if tx.Migrator().HasTable(&meta.IOSPhotoOriginalHold{}) {
+		err := tx.Raw(
+			"SELECT EXISTS (SELECT 1 FROM xd_files WHERE storage_key = ?) "+
+				"OR EXISTS (SELECT 1 FROM xd_file_versions WHERE storage_key = ?) "+
+				"OR EXISTS (SELECT 1 FROM xd_ios_photo_original_holds WHERE storage_key = ?)",
+			key, key, key,
+		).Scan(&referenced).Error
+		return referenced, err
+	}
 	err := tx.Raw(
 		"SELECT EXISTS (SELECT 1 FROM xd_files WHERE storage_key = ?) "+
 			"OR EXISTS (SELECT 1 FROM xd_file_versions WHERE storage_key = ?)",

@@ -508,6 +508,11 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/ios/photos/managed/uploads/:id/finalize", s.iosPhotoManagedFinalize)
 	authed.POST("/ios/photos/managed/uploads/resume-lookup", s.iosPhotoManagedResumeLookup)
 	authed.GET("/ios/photos/managed/receipts/nodes/:id", s.iosPhotoManagedReceipt)
+
+	// Irreversible local deletion is authorized only after durable physical
+	// CAS+Source protection. Never expose this through a BG grant or Web cookie.
+	authed.POST("/ios/photos/managed/original-retention", s.prepareIOSPhotoOriginalHold)
+	authed.GET("/ios/photos/managed/original-retention/:id", s.verifyIOSPhotoOriginalHold)
 	authed.GET("/ios/photos/backup-destination", s.getIOSPhotoBackupDestination)
 	authed.PUT("/ios/photos/backup-destination", s.putIOSPhotoBackupDestination)
 	authed.GET("/android/photos/backup-destination", s.getAndroidPhotoBackupDestination)

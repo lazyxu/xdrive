@@ -526,6 +526,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             )
         }
         .onChange(of: login.owner) { _ in
+            XDriveIOSPhotoBackupRemoteHintDelegate.invalidatePendingRegistration()
             page = .overview
             destination.reset()
             destination.refresh(login: login)
@@ -1270,6 +1271,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text("只核验当前选择的普通照片或视频；Live Photo 需要同时核验静态图、动态视频和完整 ZIP 清单。此结果仅代表核验时刻，不能据此宣布全部照片已备份。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            // A separate one-item, user-confirmed, physically retained CAS
+            // proof gates PhotoKit deletion. The historical ledger audit
+            // never grants deletion permission.
+            XDriveIOSNativePhotoFreeSpaceSection(login: login, controller: controller)
             XDriveIOSNativePhotoWholeLibraryAuditSection(login: login)
                 .id(Detail.audit)
             Section("可选系统后台原件备份") {
