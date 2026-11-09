@@ -50,15 +50,15 @@ class FinalGateContract(unittest.TestCase):
         # report failures through their independent full Final Gate.
         self.assertNotIn("      - final-gate\n", publish)
         publish_needs = publish.split("    needs:\n", 1)[1].split("\n    permissions:", 1)[0]
+        # Only required Server images gate Snapshot. Client artifacts are
+        # collected from the exact run if present; absent platforms must not
+        # turn a successfully upgraded Server into a failed release.
         self.assertEqual(re.findall(r"(?m)^      - ([a-z0-9-]+)$", publish_needs), [
-            "build-client-core",
-            "package-linux-client",
-            "package-windows-client",
-            "server-image",
-            "caddy-image",
-            "photo-face-image",
-            "media-worker-image",
+            "server-image", "caddy-image", "photo-face-image", "media-worker-image",
         ])
+        for image in ("server-image", "caddy-image", "photo-face-image", "media-worker-image"):
+            self.assertIn(f"needs.{image}.result == 'success'", publish)
+        self.assertIn("always()", publish)
         self.assertNotIn("      - build-source-agent\n", publish_needs)
         self.assertIn("uses: ./.github/workflows/release.yml", publish)
         # Stable tags and offline promotion must retain exact Final Gate.

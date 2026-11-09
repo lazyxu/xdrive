@@ -20,6 +20,7 @@ sources=(
   scripts/server-doctor.sh
   scripts/server-migrate-user.sh
   scripts/server-control.sh
+  scripts/release_bundle.py
   scripts/caddy-env-config.py
   scripts/caddy-admission.py
   scripts/xdrive-share-update.py
@@ -63,6 +64,7 @@ expected="$fixture/expected.sha256"
     scripts/server-doctor.sh \
     scripts/server-migrate-user.sh \
     scripts/server-control.sh \
+    scripts/release_bundle.py \
     scripts/caddy-env-config.py \
     scripts/caddy-admission.py \
     scripts/xdrive-share-update.py \
@@ -87,7 +89,7 @@ while read -r digest source_path; do
     echo "Staged deployment asset differs from embedded digest: $source_path" >&2; exit 1
   }
 done < "$fixture/embedded.sha256"
-for name in server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
+for name in server-control.sh release_bundle.py caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
   grep -Fq -- "- release/$name" "$ROOT/infra/ci/gitlab-release.yml" || {
     echo "Deployment asset missing from GitLab artifact handoff: $name" >&2; exit 1
   }

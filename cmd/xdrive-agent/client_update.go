@@ -7,9 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/lazyxu/xdrive/internal/client"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
@@ -70,7 +72,64 @@ func (defaultClientUpdateBackend) Target(current string) (string, error) {
 }
 
 func (defaultClientUpdateBackend) Check(ctx context.Context, current, channel, source string) (xupdate.Result, error) {
-	return xupdate.CheckPlatformTargetFromSource(ctx, current, channel, source)
+	result, err := xupdate.CheckPlatformTargetFromSource(ctx, current, channel, source)
+	if err != nil || !result.UpdateAvailable || result.Channel != xupdate.ChannelMaster ||
+		len(result.Commit) != 40 {
+		return result, err
+	}
+	// The client chooses its own release/channel before consulting the
+	// authenticated Server cache. Only an exact matching source Commit may
+	// provide alternative installer bytes; this never forces a client upgrade.
+	config, err := userconfig.Load()
+	if err != nil || config.SessionInvalid {
+		return result, nil
+	}
+	owner, err := userconfig.NewClient(config)
+	if err != nil {
+		return result, nil
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	listing, err := owner.CurrentReleaseBundle(probeCtx)
+	if err != nil || listing.Commit != result.Commit {
+		return result, nil
+	}
+	return matchCurrentServerBundle(result, listing, runtime.GOOS), nil
+}
+
+// matchCurrentServerBundle only changes transport metadata for the package
+// already selected by the client's independent release channel. A different
+// Server Commit, platform, filename or channel digest is never substituted.
+func matchCurrentServerBundle(result xupdate.Result, listing client.ReleaseBundleListing, platform string) xupdate.Result {
+	if result.Commit != listing.Commit || len(result.Commit) != 40 {
+		return result
+	}
+	for _, artifact := range listing.Artifacts {
+		if artifact.Platform != platform || artifact.Filename != result.Asset.Name ||
+			artifact.BuildCommit != result.Commit {
+			continue
+		}
+		// The independent, selected update channel must already supply a
+		// cryptographic digest before the Server may become an alternate
+		// package source. Never let a compromised/old Server mint the first
+		// "trusted" digest for an independently chosen client update.
+		if !strings.EqualFold(strings.TrimSpace(result.Asset.Digest),
+			"sha256:"+artifact.SHA256) ||
+			(result.Asset.Size > 0 && result.Asset.Size != artifact.Size) {
+			// Both the independently selected release digest and any
+			// independently supplied size must agree with this Server
+			// cache entry. Never replace conflicting release metadata.
+			break
+		}
+		result.Asset.Size = artifact.Size
+		result.Bundle = &xupdate.BundlePreference{
+			Commit: artifact.BuildCommit, Filename: artifact.Filename,
+			Platform: artifact.Platform, SHA256: artifact.SHA256,
+			Size: artifact.Size,
+		}
+		break
+	}
+	return result
 }
 
 func (defaultClientUpdateBackend) Download(ctx context.Context, result xupdate.Result, progress xupdate.ProgressFunc) (string, error) {
@@ -79,11 +138,62 @@ func (defaultClientUpdateBackend) Download(ctx context.Context, result xupdate.R
 		cache = os.TempDir()
 	}
 	dir := filepath.Join(cache, "xdrive", "updates", result.Latest)
+	if bundle := result.Bundle; bundle != nil {
+		config, err := userconfig.Load()
+		if err == nil && !config.SessionInvalid {
+			if owner, err := userconfig.NewClient(config); err == nil {
+				listing, err := owner.CurrentReleaseBundle(ctx)
+				if err == nil && listing.Commit == bundle.Commit {
+					for _, artifact := range listing.Artifacts {
+						if artifact.Filename != bundle.Filename ||
+							artifact.Platform != bundle.Platform ||
+							artifact.SHA256 != bundle.SHA256 ||
+							artifact.Size != bundle.Size {
+							continue
+						}
+						pathname := filepath.Join(dir, artifact.Filename)
+						if progress != nil {
+							progress(xupdate.ProgressEvent{Step: 3, Stage: "download",
+								Message: "优先从当前 Server 缓存下载；失败后自动尝试 GitLab、GitHub"})
+						}
+						if err := owner.DownloadCurrentReleaseArtifact(ctx, listing.Commit, artifact, pathname); err == nil {
+							if progress != nil {
+								progress(xupdate.ProgressEvent{Step: 4, Stage: "verify",
+									Message: "客户端已验证当前 Commit 安装包 SHA-256 与大小"})
+							}
+							return pathname, nil
+						} else if ctx.Err() != nil {
+							return "", ctx.Err()
+						}
+					}
+				}
+			}
+		}
+		// If the Server cache and its GitLab/GitHub mirrors fail, preserve
+		// the independent channel updater with the SAME pinned SHA-256.
+	}
 	return xupdate.DownloadVerifiedWithProgress(ctx, xupdate.DefaultChecker(), result, dir, progress)
 }
 
-func (defaultClientUpdateBackend) Install(ctx context.Context, current, channel, source string, progress xupdate.ProgressFunc) (bool, xupdate.Result, error) {
-	return xupdate.InstallTargetFromSourceWithProgress(ctx, current, channel, source, progress)
+func (backend defaultClientUpdateBackend) Install(ctx context.Context, current, channel, source string, progress xupdate.ProgressFunc) (bool, xupdate.Result, error) {
+	result, err := backend.Check(ctx, current, channel, source)
+	if err != nil || !result.UpdateAvailable {
+		return false, result, err
+	}
+	if result.Bundle == nil {
+		// Preserve existing channel checksums and package install workflow.
+		return xupdate.InstallTargetFromSourceWithProgress(ctx, current, channel, source, progress)
+	}
+	pathname, err := backend.Download(ctx, result, progress)
+	if err != nil {
+		return false, result, err
+	}
+	if progress != nil {
+		progress(xupdate.ProgressEvent{Step: 5, Stage: "install",
+			Message: "启动平台安装器；再次验证下载包 SHA-256"})
+	}
+	_, err = xupdate.InstallPreviouslyVerified(ctx, pathname, result)
+	return err == nil, result, err
 }
 
 type clientUpdateManager struct {

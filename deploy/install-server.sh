@@ -6,6 +6,11 @@ XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
 CONFIG_DIR="$XDRIVE_HOME/config"
 BIN_DIR="$XDRIVE_HOME/bin"
 DATA_DIR="$XDRIVE_HOME/data"
+# Advisory, noncritical Host marker shared read-only with the Server container.
+DEPENDENCY_BUSY_MARKER="$DATA_DIR/release-bundles/dependency-busy"
+DEPENDENCY_READY_MARKER="$DATA_DIR/release-bundles/dependency-ready"
+dependency_busy_active=0
+dependency_ready_active=0
 BACKUP_ROOT="$XDRIVE_HOME/backups"
 SNAPSHOT_BACKUP_DIR="$BACKUP_ROOT/snapshots"
 PRE_UPGRADE_BACKUP_DIR="$BACKUP_ROOT/pre-upgrade"
@@ -128,6 +133,12 @@ on_exit() {
   local final_status="$status"
   local rollback_status=0
   stop_pull_monitor
+  # A completed dependency phase may allow background downloads while the
+  # transaction finishes. Revoke that exception before releasing install.lock.
+  if [[ "$dependency_ready_active" == "1" ]]; then
+    rm -f -- "$DEPENDENCY_READY_MARKER" || true
+    dependency_ready_active=0
+  fi
 
   if [[ "$ROLLBACK_ARMED" == "1" && "$ROLLBACK_RUNNING" != "1" ]]; then
     trap - EXIT ERR INT TERM
@@ -151,7 +162,17 @@ on_exit() {
       echo "[xDrive] rollback state preserved at: $UPGRADE_STATE_DIR" >&2
       final_status=71
     fi
+    if [[ "$dependency_busy_active" == "1" ]]; then
+      rm -f -- "$DEPENDENCY_BUSY_MARKER" || true
+      dependency_busy_active=0
+    fi
     exit "$final_status"
+  fi
+
+  # Even a failed upgrade must never leave the client download lane blocked.
+  if [[ "$dependency_busy_active" == "1" ]]; then
+    rm -f -- "$DEPENDENCY_BUSY_MARKER" || true
+    dependency_busy_active=0
   fi
 
   if [[ "$status" -ne 0 ]]; then
@@ -173,6 +194,8 @@ prepare_host_layout() {
     "$XDRIVE_HOME" "$CONFIG_DIR" "$BIN_DIR" "$DATA_DIR" \
     "$SNAPSHOT_BACKUP_DIR" "$PRE_UPGRADE_BACKUP_DIR" "$PRE_RESTORE_BACKUP_DIR" \
     "$LOG_DIR" "$STATE_DIR"
+  mkdir -p "$DATA_DIR/release-bundles"
+  chmod 0755 "$DATA_DIR/release-bundles"
   chmod 700 "$XDRIVE_HOME" "$CONFIG_DIR" "$BIN_DIR" "$DATA_DIR" "$BACKUP_ROOT" \
     "$SNAPSHOT_BACKUP_DIR" "$PRE_UPGRADE_BACKUP_DIR" "$PRE_RESTORE_BACKUP_DIR" \
     "$LOG_DIR" "$STATE_DIR"
@@ -192,7 +215,7 @@ prepare_host_layout() {
     cp -p "$LEGACY_CADDY_PATH" "$CADDY_PATH"
     chmod 600 "$CADDY_PATH"
   fi
-  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
+  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py release_bundle.py; do
     if [[ ! -f "$BIN_DIR/$legacy_tool" && -f "$XDRIVE_HOME/$legacy_tool" ]]; then
       cp -p "$XDRIVE_HOME/$legacy_tool" "$BIN_DIR/$legacy_tool"
       chmod 700 "$BIN_DIR/$legacy_tool"
@@ -386,6 +409,25 @@ while [[ $# -gt 0 ]]; do
 done
 
 acquire_install_lock
+
+# A new transaction revokes the previous install's download permission before
+# dependencies are staged, including after an interrupted/crashed installer.
+if [[ ! -L "$DATA_DIR/release-bundles" && ! -L "$DEPENDENCY_READY_MARKER" ]]; then
+  rm -f -- "$DEPENDENCY_READY_MARKER" || true
+fi
+
+# Server dependencies preempt all client-package transfers. This marker is
+# intentionally advisory: failure to publish it cannot fail/rollback a Server
+# upgrade. Host Control will remove an orphan marker after a hard-killed
+# installer only when it independently proves install.lock is free.
+if [[ ! -L "$DATA_DIR/release-bundles" && ! -L "$DEPENDENCY_BUSY_MARKER" ]]; then
+  if printf '%s\n' "$$" > "$DEPENDENCY_BUSY_MARKER"; then
+    dependency_busy_active=1
+    chmod 0644 "$DEPENDENCY_BUSY_MARKER" || true
+  else
+    echo "[xDrive] WARNING: Release Bundle dependency pause marker unavailable; Server upgrade continues." >&2
+  fi
+fi
 
 existing_env_value() {
   local key="$1"
@@ -1265,6 +1307,10 @@ else
   if [[ "$requested_channel" == "master" && -z "$requested_commit" && -n "$BUILT_COMMIT" ]] && ! is_template_placeholder "$BUILT_COMMIT"; then
     requested_commit="$BUILT_COMMIT"
   fi
+  # Stable v* bundles retain their real source Commit separately from the v* image tag.
+  if [[ "$requested_channel" == "stable" && -z "$requested_commit" && -n "$BUILT_COMMIT" ]] && ! is_template_placeholder "$BUILT_COMMIT"; then
+    requested_commit="$BUILT_COMMIT"
+  fi
   echo "Using packaged release source: $SOURCE_REF"
 fi
 
@@ -1338,7 +1384,7 @@ if [[ -z "$OFFLINE_ASSET_DIR" && "$requested_source" == "gitlab" ]]; then
 fi
 # The download counter follows the same list as offline staging; it is
 # independent of the nine top-level installer stages.
-maintenance_scripts=(server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py)
+maintenance_scripts=(server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py release_bundle.py)
 deployment_asset_total=$(( ${#maintenance_scripts[@]} + 2 ))
 if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
   # These assets were already verified against the independently trusted
@@ -1383,6 +1429,7 @@ verify_embedded_deploy_assets() {
     scripts/server-doctor.sh
     scripts/server-migrate-user.sh
     scripts/server-control.sh
+    scripts/release_bundle.py
     scripts/caddy-env-config.py
     scripts/caddy-admission.py
     scripts/xdrive-share-update.py
@@ -2900,7 +2947,7 @@ unset_env XD_WEB_PIDS_LIMIT
 unset_env XD_CADDY_BUILD_ID
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
+for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py xdrive-share-update.py release_bundle.py; do
   install -m 700 "$STAGING_DIR/$maintenance_script" "$BIN_DIR/$maintenance_script"
 done
 install -m 700 "$STAGING_DIR/xdrive-server" "$HOST_MANAGER_PATH"
@@ -3010,6 +3057,26 @@ done
 
 echo "[xDrive] container image pull complete in $(( $(date +%s) - pull_started ))s."
 rm -f "$PULL_LOG"
+# All container image dependency transfers are complete. The Host-owned
+# dependency-ready marker deliberately permits package transfers while this
+# installer still owns its transaction lock. A marker creation failure is
+# noncritical; the worker will conservatively wait for install.lock to exit.
+if [[ ! -L "$DATA_DIR/release-bundles" && ! -L "$DEPENDENCY_READY_MARKER" ]]; then
+  if printf '%s\n' "$" > "$DEPENDENCY_READY_MARKER"; then
+    dependency_ready_active=1
+    chmod 0644 "$DEPENDENCY_READY_MARKER" || true
+  else
+    echo "[xDrive] WARNING: Release Bundle worker will wait for install completion." >&2
+  fi
+fi
+# Resume authenticated HTTP downloads immediately. No post-install throttle.
+if [[ "$dependency_busy_active" == "1" ]]; then
+  if rm -f -- "$DEPENDENCY_BUSY_MARKER"; then
+    dependency_busy_active=0
+  else
+    echo "[xDrive] WARNING: Release Bundle pause marker could not be cleared; Host Control will retry." >&2
+  fi
+fi
 
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   DATABASE_ROLLBACK_REQUIRED=1

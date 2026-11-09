@@ -47,7 +47,7 @@ BASE_REQUIRED_ASSETS = (
     "assets/scripts/xdrive-server-host.sh",
 )
 SHARE_PROVIDER_ASSET = "assets/scripts/xdrive-share-update.py"
-REQUIRED_ASSETS = (*BASE_REQUIRED_ASSETS, SHARE_PROVIDER_ASSET)
+REQUIRED_ASSETS = (*BASE_REQUIRED_ASSETS, SHARE_PROVIDER_ASSET, "assets/scripts/release_bundle.py")
 SHA_RE = re.compile(r"[a-f0-9]{64}\Z")
 COMMIT_RE = re.compile(r"[a-f0-9]{40}\Z")
 IMAGE_ID_RE = re.compile(r"sha256:[a-f0-9]{64}\Z")

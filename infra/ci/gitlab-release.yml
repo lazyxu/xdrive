@@ -48,6 +48,7 @@ release-assets:
       - release/server-doctor.sh
       - release/server-migrate-user.sh
       - release/server-control.sh
+      - release/release_bundle.py
       - release/caddy-env-config.py
       - release/caddy-admission.py
       - release/xdrive-share-update.py

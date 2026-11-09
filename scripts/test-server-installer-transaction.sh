@@ -190,7 +190,7 @@ touch "$TEST_STATE/data-restored"
 exit 0
 '
     ;;
-  */scripts/server-backup-scheduled.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/server-control.sh|*/scripts/caddy-admission.py|*/scripts/caddy-env-config.py|*/scripts/xdrive-share-update.py|*/scripts/xdrive-server-host.sh)
+  */scripts/server-backup-scheduled.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/server-control.sh|*/scripts/release_bundle.py|*/scripts/caddy-admission.py|*/scripts/caddy-env-config.py|*/scripts/xdrive-share-update.py|*/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
 '
@@ -1101,7 +1101,7 @@ mkdir -p "$share_assets/deploy" "$share_assets/scripts"
 TEST_STATE="$TMP/state" "$TMP/bin/curl" -w '%{size_download}' -o "$share_assets/deploy/docker-compose.yml" https://fixture.invalid/deploy/docker-compose.yml >/dev/null
 for name in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh \
   server-doctor.sh server-migrate-user.sh server-control.sh caddy-env-config.py caddy-admission.py \
-  xdrive-share-update.py xdrive-server-host.sh; do
+  xdrive-share-update.py xdrive-server-host.sh release_bundle.py; do
   TEST_STATE="$TMP/state" "$TMP/bin/curl" -w '%{size_download}' -o "$share_assets/scripts/$name" "https://fixture.invalid/scripts/$name" >/dev/null
 done
 share_hashes="$(cd "$share_assets"; sha256sum deploy/docker-compose.yml scripts/* | base64 -w0)"

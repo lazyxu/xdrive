@@ -436,7 +436,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitHubJobNeeds(t, github, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitHubJobNeeds(t, github, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
 	// Master Snapshot is build/artifact-gated; stable tags still require Final Gate.
-	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-client-core", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
+	assertGitHubJobNeeds(t, github, "publish-master", []string{"server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate", "photo-ocr-master-smoke"})
 	requireRaw(t, "GitHub split critical test contract", githubRaw,
 		"go-linux-api:",
@@ -943,15 +943,13 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	)
 	requireRaw(t, "GitHub Publish Packages", githubRelease,
 		"workflow_call:",
-		"name: xdrive-linux-amd64",
-		"name: xdrive-windows-amd64",
+		"bash scripts/ci/download-optional-client-artifacts.sh release",
 		"gh release create snapshot release/* --repo \"$repo\" --prerelease",
 		"target_tag=\"edge\"",
 		"target_tag=\"latest\"",
 		"retention-days: 14",
 		"s|@IMAGE_REGISTRY@|ghcr.io/$GITHUB_REPOSITORY_OWNER|g",
-		"Download exact Linux installer produced by CI",
-		"Download exact Windows installer produced by CI",
+		"Collect successfully built exact-run client installers",
 		"Verify single-installer distribution contract",
 		"pattern: xdrive-*-image",
 		"load_exact xdrive-server-image xdrive/server:test",

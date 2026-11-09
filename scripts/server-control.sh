@@ -49,6 +49,73 @@ prepare_dir() {
 }
 
 
+
+# Public installation packages are downloaded by an independent host worker.
+# An upgrade always owns install.lock and therefore preempts every package
+# transfer; a failed mirror job is never a server transaction error.
+release_bundle_enqueue() {
+  local force="${1:-false}" sha worker cache pid_file pid
+  sha="$(env_value XD_RELEASE_COMMIT)"
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 0
+  worker="$BIN_DIR/release_bundle.py"
+  [[ -f "$worker" && ! -L "$worker" ]] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  cache="$(env_value XD_RELEASE_BUNDLE_HOST_DIR)"
+  [[ -n "$cache" ]] || cache="$XDRIVE_HOME/data/release-bundles"
+  [[ "$cache" == /* && ! -L "$cache" ]] || return 0
+  mkdir -p "$cache"
+  chmod 0755 "$cache"
+  # A SIGKILL or power cut can leave the shared marker behind. Remove it
+  # only if the authoritative installer flock is available, never by age.
+  # The probe is isolated so the daemon never retains the lock itself.
+  if [[ -e "$cache/dependency-busy" || -L "$cache/dependency-busy" ||
+        -e "$cache/dependency-ready" || -L "$cache/dependency-ready" ]]; then
+    (
+      command -v flock >/dev/null 2>&1 || exit 0
+      exec 7<>"$STATE_DIR/install.lock" || exit 0
+      if flock -n 7; then
+        rm -f -- "$cache/dependency-busy" "$cache/dependency-ready" || true
+      fi
+      flock -u 7 || true
+    )
+  fi
+  # An explicit admin retry must rescan a previously-ready cache: a missing
+  # or tampered installer may need repair even when status.json still says
+  # ready. Periodic polling keeps the cheap ready fast-path.
+  if [[ "$force" != "true" ]] &&
+     [[ -f "$cache/current.json" ]] &&
+     grep -Fq "\"commit\":\"$sha\"" "$cache/current.json" &&
+     [[ -f "$cache/status.json" ]] &&
+     grep -Fq '"state":"ready"' "$cache/status.json"; then
+    return 0
+  fi
+  pid_file="$STATE_DIR/release-bundle-worker.pid"
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  # A stale pid file is not evidence that the release worker is alive:
+  # after SIGKILL/reboot, Linux may reuse that PID for an unrelated daemon.
+  # Never signal the reused PID. Require this exact Worker path AND Commit
+  # in /proc cmdline. If cmdline is unavailable, the exclusive worker flock
+  # remains the final guard against two concurrent downloads.
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null &&
+     [[ -r "/proc/$pid/cmdline" ]]; then
+    local cmdline
+    cmdline="$(tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    if grep -Fxq -- "$worker" <<< "$cmdline" &&
+       grep -Fxq -- "$sha" <<< "$cmdline" &&
+       grep -Fxq -- '--commit' <<< "$cmdline"; then
+      return 0
+    fi
+  fi
+  (
+    exec 8>&- 9>&-
+    exec python3 "$worker" --commit "$sha" --cache-dir "$cache" \
+      --install-lock "$STATE_DIR/install.lock" --installed-env "$ENV_PATH" \
+      --dependency-busy-file "$cache/dependency-busy"
+  ) >>"$LOG_DIR/release-bundle.log" 2>&1 </dev/null &
+  printf '%s\n' "$!" > "$pid_file"
+  chmod 0600 "$pid_file"
+}
+
 directory_size_bytes() {
   local dir="$1" value
   [[ -d "$dir" ]] || { printf '0\n'; return; }
@@ -4138,7 +4205,7 @@ backup_admin_recover_interrupted() {
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
   local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data interrupted_plan_id interrupted_offline_id interrupted_trust_mode interrupted_plan_manifest_sha interrupted_plan_binary_sha
-  local storage_inventory_interval last_storage_inventory_at last_backup_admin_at last_caddy_observation_at now
+  local storage_inventory_interval last_storage_inventory_at last_backup_admin_at last_caddy_observation_at last_bundle_enqueue_at now
   dir="$(prepare_dir)"
   pid_file="$dir/runner.pid"
 
@@ -4265,6 +4332,8 @@ serve_cmd() {
   last_storage_inventory_at="$(date +%s)"
   last_backup_admin_at="$last_storage_inventory_at"
   last_caddy_observation_at="$last_storage_inventory_at"
+  last_bundle_enqueue_at="$last_storage_inventory_at"
+  release_bundle_enqueue || true
 
   while true; do
     touch_heartbeat
@@ -4277,6 +4346,13 @@ serve_cmd() {
     [[ -f "$dir/photo-host-control-request.json" ]] && photo_host_control_process
     photo_host_control_refresh || true
     now="$(date +%s)"
+    if [[ -f "$dir/release-bundle-retry" ]]; then
+      rm -f -- "$dir/release-bundle-retry"
+      release_bundle_enqueue true || true
+    elif (( now - last_bundle_enqueue_at >= 300 )); then
+      release_bundle_enqueue || true
+      last_bundle_enqueue_at="$now"
+    fi
     caddy_env_reap_secret_result "$dir/caddy-env-secret-result.json" "$now"
     if (( now - last_caddy_observation_at >= 15 )); then
       if caddy_host_refresh; then
@@ -4380,6 +4456,7 @@ install_cmd() {
     rm -f "$tmp"
   fi
   start_cmd
+  release_bundle_enqueue || true
 }
 
 if [[ "${XD_HOST_CONTROL_SOURCE_ONLY:-0}" == "1" ]]; then
