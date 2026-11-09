@@ -28,6 +28,83 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         add(capture)
     }
 
+    /// Do not mistake an app in Settings > Apps search results for its
+    /// per-app settings detail. The previous test tapped the selected search
+    /// result, stayed under "Apps", and then opened a *different* Photos
+    /// permission row. Only this exact xDrive detail page can authorize us.
+    private func xDriveSettingsDetailVisible(_ settings: XCUIApplication) -> Bool {
+        let detail = settings.navigationBars.matching(
+            NSPredicate(
+                format: "identifier ==[c] %@ OR label ==[c] %@",
+                "xDrive", "xDrive"
+            )
+        ).firstMatch
+        return detail.exists && !settings.searchFields.firstMatch.exists
+    }
+
+    private func openRealXDriveSettingsPage(
+        _ settings: XCUIApplication, in app: XCUIApplication
+    ) {
+        if xDriveSettingsDetailVisible(settings) { return }
+
+        // Use the exact installed bundle, never a generic xDrive label or
+        // similarly named UITest runner. The 18.5 accessibility tree exposes
+        // a separate navigation-uitests.xctrunner alongside the real app.
+        let appEntry = settings.buttons
+            .matching(identifier: "com.lazyxu.xdrive.ios").firstMatch
+        let appSearch = settings.searchFields.firstMatch
+        if appSearch.exists {
+            appSearch.tap()
+            let oldQuery = appSearch.value as? String ?? ""
+            if !oldQuery.localizedCaseInsensitiveContains("xdrive") {
+                appSearch.typeText("xDrive")
+            }
+            if !appEntry.waitForExistence(timeout: 12) {
+                print("MAP_PHOTOS_APPS_SEARCH AX tree:\n\(settings.debugDescription)")
+                diagnose("xDrive exact bundle missing from Settings Apps search", in: app)
+            }
+            XCTAssertTrue(appEntry.exists,
+                          "Must navigate to real xDrive app Settings")
+            appEntry.tap()
+            // The observed search-result AX item remained Selected on the
+            // Apps page after one tap. A second tap is safe only on the same
+            // exact bundle row, never a fuzzy-matched app or system Photos.
+            if !xDriveSettingsDetailVisible(settings),
+               appEntry.exists, appEntry.isHittable {
+                appEntry.tap()
+            }
+        }
+
+        if !xDriveSettingsDetailVisible(settings) {
+            // If the search was only selecting/filtering the Apps list,
+            // cancel it and follow the real installed-app list. The list is
+            // virtualized: scroll until the exact bundle row is hittable.
+            let cancel = settings.buttons["Cancel"].firstMatch
+            if cancel.exists { cancel.tap() }
+            let list = settings.collectionViews.firstMatch
+            for _ in 0..<16 {
+                if xDriveSettingsDetailVisible(settings) { break }
+                if appEntry.exists && appEntry.isHittable {
+                    appEntry.tap()
+                    if xDriveSettingsDetailVisible(settings) { break }
+                }
+                if !list.exists { break }
+                list.swipeUp()
+            }
+        }
+
+        if !xDriveSettingsDetailVisible(settings) {
+            print("MAP_PHOTOS_APP_DETAIL AX tree:\n\(settings.debugDescription)")
+            let capture = XCTAttachment(screenshot: settings.screenshot())
+            capture.name = "native-ios-app-settings-page-missing"
+            capture.lifetime = .keepAlways
+            add(capture)
+            diagnose("Settings is not inside xDrive's own app page", in: app)
+        }
+        XCTAssertTrue(xDriveSettingsDetailVisible(settings),
+                      "Never select Photos outside the real xDrive app Settings")
+    }
+
     /// Exercise an actual user-level Settings decision if the simulator
     /// reports Photos denied despite simctl/XCTest authorization resets.
     /// The production map remains fail closed for denied or Limited access.
@@ -43,39 +120,10 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(settings.state, .runningForeground,
                        "Expected Apple's native Settings app")
 
-        // iOS 18.5 opened Settings > Apps, NOT this app's page.
-        // The actual AX hierarchy showed title "Apps", a Search field,
-        // and only an alphabetic C...N slice of installed apps. Navigate
-        // to xDrive before seeking its Photos permission (never tap a
-        // different app's Photos setting).
-        let appSearch = settings.searchFields.firstMatch
-        if appSearch.exists {
-            appSearch.tap()
-            let oldQuery = appSearch.value as? String ?? ""
-            if !oldQuery.localizedCaseInsensitiveContains("xdrive") {
-                appSearch.typeText("xDrive")
-            }
-            let appByBundle = settings.buttons
-                .matching(identifier: "com.lazyxu.xdrive.ios").firstMatch
-            let appByName = settings.buttons
-                .matching(NSPredicate(format: "label ==[c] %@", "xDrive"))
-                .firstMatch
-            let appByText = settings.staticTexts
-                .matching(NSPredicate(format: "label ==[c] %@", "xDrive"))
-                .firstMatch
-            var appEntry = appByBundle
-            if !appEntry.waitForExistence(timeout: 12) {
-                appEntry = appByName
-            }
-            if !appEntry.exists { appEntry = appByText }
-            if !appEntry.exists {
-                print("MAP_PHOTOS_APPS_SEARCH AX tree:\n\(settings.debugDescription)")
-                diagnose("xDrive entry not found in iOS Settings Apps search", in: app)
-            }
-            XCTAssertTrue(appEntry.exists,
-                          "Must navigate to real xDrive app Settings")
-            appEntry.tap()
-        }
+        // In iOS 18.5 UIApplication.openSettingsURLString sometimes opens
+        // Settings > Apps rather than this app's detail. Prove the actual
+        // xDrive settings page *before* querying for a Photos permission row.
+        openRealXDriveSettingsPage(settings, in: app)
 
         let photosLabel = NSPredicate(
             format: "label BEGINSWITH[c] %@ OR label BEGINSWITH %@",
@@ -94,6 +142,22 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
         XCTAssertTrue(photos.exists, "Cannot reach real Photos permissions")
         photos.tap()
+
+        // A standalone Photos application page can also display "Full Access".
+        // It must be the Photos child of the verified xDrive settings detail,
+        // not a matching accessibility string elsewhere in the Apps list.
+        let photosPage = settings.navigationBars.matching(
+            NSPredicate(
+                format: "identifier ==[c] %@ OR label ==[c] %@ OR label ==[c] %@",
+                "Photos", "Photos", "照片"
+            )
+        ).firstMatch
+        if !photosPage.waitForExistence(timeout: 8) {
+            print("MAP_PHOTOS_CHILD_PAGE AX tree:\n\(settings.debugDescription)")
+            diagnose("xDrive Photos child permission page did not open", in: app)
+        }
+        XCTAssertTrue(photosPage.exists,
+                      "Do not choose a Full Access option on an unrelated page")
 
         let fullLabel = NSPredicate(
             format: "label CONTAINS[c] %@ OR label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@",
