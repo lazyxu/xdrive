@@ -64,6 +64,31 @@ const hostSections = read('ui/shared/src/mui/WorkspaceHostSections.tsx')
 const desktop = read('desktop/src/renderer/App.tsx')
 const dsm = read('web/src/synology.tsx')
 const dsmHost = read('web/src/synologyHost.ts')
+const dsmUIExports = read('ui/shared/src/mui/index.tsx')
+const dsmVite = read('web/vite.synology.config.ts')
+const webDependencies = JSON.parse(read('web/package.json')).dependencies
+const sharedPeers = JSON.parse(read('ui/shared/package.json')).peerDependencies
+// DSM must resolve shared Viewer peer modules from its own locked dependency
+// tree. A direct ../ui/shared import bypasses @xdrive/ui's symlink boundary
+// and caused sequential Rollup errors for icons then @mui/material.
+assert.ok(dsmUIExports.includes("export * from './SynologyClipboardReferenceViewer'") &&
+  dsm.includes('XDriveSynologyClipboardReferenceViewer') &&
+  !dsm.includes("from '../../ui/shared/src/mui/SynologyClipboardReferenceViewer'"),
+  'DSM must import the shared Viewer through the canonical @xdrive/ui/mui package')
+for (const peer of [
+  '@mui/material', '@mui/icons-material', '@emotion/react',
+  '@emotion/styled', 'react', 'react-dom',
+]) {
+  assert.ok(sharedPeers[peer] && webDependencies[peer],
+    'shared Viewer peer must be installed in locked DSM build: ' + peer)
+  const key = peer === 'react' ? 'react:' : "'" + peer + "':"
+  assert.ok(dsmVite.includes(key + " path.join(webRoot, 'node_modules'"),
+    'DSM Vite must resolve shared Viewer peer from web/node_modules: ' + peer)
+}
+assert.ok(dsmVite.includes('preserveSymlinks: true') &&
+  dsmVite.includes('publicDir: false') &&
+  dsmVite.includes("input: path.join(webRoot, 'synology.html')"),
+  'DSM build must preserve its isolation while fixing package resolution')
 assert.ok(desktop.includes('<XDriveApp') && dsm.includes('<XDriveApp'),
   'Desktop and DSM must mount the same complete app frame')
 assert.ok(sharedApp.includes('onSelect={onNavigate}') &&
