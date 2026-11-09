@@ -30,7 +30,7 @@ test('one existing gated UploadSession writer sequentially processes each staged
   assert.match(upload, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
   assert.match(upload, /defer \{[\s\S]*?XDriveIOSOriginalRunGate\.shared\.release\(gate\)/)
   assert.match(upload, /for \(index, fileURL\) in files\.enumerated\(\)/)
-  assert.match(upload, /let name = try await uploadOne\(/)
+  assert.match(upload, /let uploaded = try await uploadOne\([\s\S]*?let name = uploaded\.name/)
   assert.match(upload, /let staged = try await XDriveManualDocumentStager\.stage\(fileURL\)/)
   assert.match(upload, /defer \{ staged\.delete\(\) \}/)
   assert.match(upload, /XDriveNativeUploadSessionTransport\(/)

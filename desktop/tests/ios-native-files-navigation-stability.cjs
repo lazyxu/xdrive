@@ -16,7 +16,7 @@ const section = (start, end) => {
 
 test('directory navigation never removes the source NavigationLink on push', () => {
   const model = section('@MainActor\nprivate final class XDriveIOSNativeFilesPageModel', '@MainActor\nprivate final class XDriveIOSNativeFilesSearchOptionsModel')
-  const suspend = section('private func suspendVisibleRange()', 'var body: some View')
+  const suspend = section('private func suspendVisibleRange()', 'private func filesForegroundLifecycle(')
   assert.match(browser, /NavigationLink\(value: XDriveIOSNativeFilesFolder/)
   assert.match(browser, /\.navigationDestination\(for: XDriveIOSNativeFilesFolder\.self\)/)
   assert.match(suspend, /model\.suspendForNavigation\(\)/)
@@ -28,7 +28,7 @@ test('directory navigation never removes the source NavigationLink on push', () 
 })
 
 test('same verified Owner, folder, search and sort reuse parent rows after pop', () => {
-  const onAppear = section('var body: some View', '.onDisappear { suspendVisibleRange() }')
+  const onAppear = section('private func filesForegroundLifecycle(', '.onDisappear { suspendVisibleRange() }')
   assert.match(onAppear, /model\.canResume\(/)
   assert.match(onAppear, /pendingNavigationReturnNodeID = nil/)
   assert.match(onAppear, /else \{\s*reload\(\)/)
@@ -51,8 +51,8 @@ test('Owner switch or explicit refresh really invalidates old page', () => {
 })
 
 test('ordinary folder browse skips two unrelated source/tag reads', () => {
-  const appear = section('.onAppear {', '.onDisappear { suspendVisibleRange() }')
-  assert.match(appear, /if isGlobalSearch \{ searchOptions\.load\(login: login\) \}/)
+  const appear = section('private func filesForegroundLifecycle(', '.onDisappear { suspendVisibleRange() }')
+  assert.match(appear, /\.onAppear \{[\s\S]*?if isGlobalSearch \{ searchOptions\.load\(login: login\) \}/)
   assert.match(browser, /Button\("加载同步文件夹与标签筛选"\)/)
   assert.match(browser, /searchOptions\.load\(login: login\)/)
 })
