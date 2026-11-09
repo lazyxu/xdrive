@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
@@ -198,9 +199,26 @@ func createSynologyPullManagedTargetTx(
 // portable final folder segment. The caller supplies a stable fallback when
 // the remote service does not publish a usable display name.
 func managedTargetSuggestion(value, fallback string) string {
-	name := sanitizeYikeTargetSegment(value)
+	name := sanitizeManagedTargetSegment(value)
 	if name == "" || meta.ValidateName(name) != nil || !meta.ValidSourceName(name) {
 		return fallback
 	}
 	return name
 }
+
+func sanitizeManagedTargetSegment(value string) string {
+	value = strings.TrimSpace(value)
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r < 32:
+			b.WriteRune('_')
+		case strings.ContainsRune(`<>:"/\\|?*`, r):
+			b.WriteRune('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimRight(strings.TrimSpace(b.String()), " .")
+}
+
