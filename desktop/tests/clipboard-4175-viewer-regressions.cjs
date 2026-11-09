@@ -166,3 +166,35 @@ test('Desktop Clipboard to Files route handoff survives intentional page unmount
   assert.match(nav, /setCloudRevealTarget\(\{/)
   assert.match(nav, /openPreview,/)
 })
+
+test('Desktop intentional Clipboard unmount cannot revoke a previously admitted Files navigation',async()=>{
+  const source=new AbortController()
+  let ownerLive=true
+  let accepted=false
+  const port=desktop.createDesktopClipboardDataPort({},
+    'desktop-owner','https://drive.example/',()=>ownerLive,
+    async(nodeID,signal)=>{
+      assert.equal(nodeID,118)
+      assert.equal(signal.aborted,false)
+      accepted=true
+      // Navigation unmounts Clipboard immediately after the verified Files
+      // action was admitted; the cancellation must not undo the route.
+      source.abort()
+    })
+  await port.openReferencedFile(118,source.signal)
+  assert.equal(accepted,true)
+  ownerLive=false
+  await assert.rejects(port.openReferencedFile(118,new AbortController().signal),/账号已变化/)
+})
+
+test('Desktop Owner revocation after Files action starts still fails closed',async()=>{
+  let ownerLive=true
+  const port=desktop.createDesktopClipboardDataPort({},
+    'desktop-owner','https://drive.example/',()=>ownerLive,
+    async(nodeID,signal)=>{
+      assert.equal(nodeID,118)
+      assert.equal(signal.aborted,false)
+      ownerLive=false
+    })
+  await assert.rejects(port.openReferencedFile(118,new AbortController().signal),/账号已变化/)
+})
