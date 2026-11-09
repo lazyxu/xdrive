@@ -366,6 +366,7 @@ internal fun NativeClipboardScreen(
                     devices.forEach { device ->
                         DropdownMenuItem(text={Text(device.name+" · "+device.platform)},onClick={
                             targetID=device.deviceID;targetMenu=false
+                            referenceKind="text";referenceNodeID=""
                         })
                     }
                 }
