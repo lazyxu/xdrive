@@ -847,6 +847,11 @@ private struct XDriveIOSNativeFilesRowDestinationIntent: Identifiable {
     let kind: XDriveIOSNativeFilesDestinationKind
 }
 
+private struct XDriveIOSNativeFilesQuickOperationIntent {
+    let action: XDriveIOSNativeFilesOperationPolicy.Action
+    let operation: XDriveIOSNativeFilesOperation
+}
+
 private struct XDriveIOSNativeFilesFolder: Hashable {
     let id: UInt64
     let name: String
@@ -939,6 +944,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var showingFileOperations = false
     @State private var fileOperationsOwner: XDriveNativeOwnerRoot?
     @State private var operationWasAccepted = false
+    @StateObject private var operationShortcuts = XDriveIOSNativeFilesOperationsModel()
+    @State private var pendingQuickOperation: XDriveIOSNativeFilesQuickOperationIntent?
+    @State private var showingBatchProperties = false
     @State private var managementWriteConfirmed = false
     @State private var versionRestoreConfirmed = false
     @State private var showingPathPrompt = false
@@ -1066,6 +1074,22 @@ struct XDriveIOSNativeFilesBrowser: View {
             snapshots: selectedSnapshots, selectedIDs: selectedIDs,
             parentID: parentID
         ) ?? []
+    }
+
+    private var mostRecentUndo: XDriveIOSNativeFilesOperation? {
+        guard operationShortcuts.matches(login.owner), !operationShortcuts.busy,
+              !operationShortcuts.loading else { return nil }
+        return operationShortcuts.items.first {
+            XDriveIOSNativeFilesOperationPolicy.canPerform(.undo, for: $0)
+        }
+    }
+
+    private var mostRecentRedo: XDriveIOSNativeFilesOperation? {
+        guard operationShortcuts.matches(login.owner), !operationShortcuts.busy,
+              !operationShortcuts.loading else { return nil }
+        return operationShortcuts.items.first {
+            XDriveIOSNativeFilesOperationPolicy.canPerform(.redo, for: $0)
+        }
     }
 
     private var canPasteHere: Bool {
@@ -2240,6 +2264,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                           selectedIDs.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected)
                         .accessibilityIdentifier("native-ios-files-batch-tags")
                     Divider()
+                    Button("查看已选项目属性") {
+                        showingBatchProperties = true
+                    }
+                    .disabled(chosenItems.isEmpty || !canSelectPage)
+                    .accessibilityIdentifier("native-ios-files-batch-properties")
                     Button("已选项批量下载并导出") {
                         prepareSelectedExport()
                     }
@@ -2463,7 +2492,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// confirmed result and uncertain-operation errors.
     @ViewBuilder private var filesQuickFeedback: some View {
         let message = quickActionNotice ?? quickMutation.status ??
-            quickDestinationWriter.status ?? quickFavorite.status
+            quickDestinationWriter.status ?? quickFavorite.status ??
+            operationShortcuts.status
         if let message {
             HStack(spacing: 10) {
                 if quickMutation.busy || quickDestinationWriter.busy || quickFavorite.busy {
@@ -2744,6 +2774,24 @@ struct XDriveIOSNativeFilesBrowser: View {
                         }
                         .accessibilityIdentifier("native-ios-files-toolbar-organize-home")
                     }
+                    Button("撤销最近操作") {
+                        if let operation = mostRecentUndo {
+                            pendingQuickOperation = .init(action: .undo, operation: operation)
+                        }
+                    }
+                    .disabled(selecting || mostRecentUndo == nil || model.loading)
+                    .accessibilityIdentifier("native-ios-files-undo-shortcut")
+                    Button("重做最近操作") {
+                        if let operation = mostRecentRedo {
+                            pendingQuickOperation = .init(action: .redo, operation: operation)
+                        }
+                    }
+                    .disabled(selecting || mostRecentRedo == nil || model.loading)
+                    .accessibilityIdentifier("native-ios-files-redo-shortcut")
+                    Button("核对可撤销操作") { operationShortcuts.load(login: login) }
+                        .disabled(operationShortcuts.busy || operationShortcuts.loading ||
+                                  login.owner == nil)
+                        .accessibilityIdentifier("native-ios-files-refresh-operation-shortcuts")
                     Button { presentFileOperations() } label: {
                         Label("文件操作历史／撤销／重做",
                               systemImage: "arrow.uturn.backward.circle")
@@ -3198,6 +3246,68 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Text("当前账户已变化，请关闭后重新进入文件版本历史。")
             }
         }
+        .sheet(isPresented: $showingBatchProperties) {
+            NavigationStack {
+                List {
+                    Section("选择摘要") {
+                        LabeledContent("项目", value: String(chosenItems.count))
+                        LabeledContent("文件", value: String(chosenItems.filter { !$0.isDirectory }.count))
+                        LabeledContent("文件夹", value: String(chosenItems.filter { $0.isDirectory }.count))
+                        Text("大小只统计所选文件，不包含文件夹内未加载内容。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Section("已核验的选中项目") {
+                        ForEach(chosenItems, id: \.id) { node in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(node.name).lineLimit(2)
+                                HStack(spacing: 12) {
+                                    Text(node.isDirectory ? "文件夹" :
+                                         ByteCountFormatter.string(
+                                            fromByteCount: node.size, countStyle: .file))
+                                    Text("版本 \(node.revision)")
+                                }
+                                .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("所选项目属性")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { showingBatchProperties = false }
+                    }
+                }
+            }
+            .accessibilityIdentifier("native-ios-files-batch-properties-sheet")
+        }
+        .confirmationDialog(
+            pendingQuickOperation.map { $0.action.label + "最近文件操作？" } ?? "文件操作",
+            isPresented: Binding(
+                get: { pendingQuickOperation != nil },
+                set: { if !$0 { pendingQuickOperation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("确认" + (pendingQuickOperation?.action.label ?? "")) {
+                if let pending = pendingQuickOperation,
+                   operationShortcuts.matches(login.owner),
+                   operationShortcuts.items.contains(pending.operation),
+                   XDriveIOSNativeFilesOperationPolicy.canPerform(
+                      pending.action, for: pending.operation
+                   ) {
+                    operationShortcuts.submit(
+                        pending.action, operation: pending.operation, login: login
+                    ) {
+                        quickActionNotice = "服务器已接受文件操作；请在操作历史核对最终结果。"
+                    }
+                }
+                pendingQuickOperation = nil
+            }
+            Button("取消", role: .cancel) { pendingQuickOperation = nil }
+        } message: {
+            Text("只提交一次，服务器重新核验版本和权限；已排队不代表执行完成。")
+        }
         .fullScreenCover(item: $selectedFile, onDismiss: {
             selectedOwner = nil
             viewerAdmitted.removeAll()
@@ -3300,6 +3410,12 @@ struct XDriveIOSNativeFilesBrowser: View {
             filesModals
         .onAppear {
             restoreFilesSectionIfNeeded()
+            if phase == .active, let owner = login.owner {
+                operationShortcuts.updateExpectedOwner(owner)
+                if !operationShortcuts.matches(owner) {
+                    operationShortcuts.load(login: login)
+                }
+            }
             // Returning from a child must keep the same verified rows, their
             // SwiftUI NavigationLinks and scroll position. Do not refetch on
             // every stack pop; explicit refresh and Owner change still do.
@@ -3375,6 +3491,13 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            pendingQuickOperation = nil
+            showingBatchProperties = false
+            operationShortcuts.invalidate()
+            if phase == .active, let owner = login.owner {
+                operationShortcuts.updateExpectedOwner(owner)
+                operationShortcuts.load(login: login)
+            }
             isHomeEditing = false
             ancestorCrumbs = []
             ancestorStatus = nil

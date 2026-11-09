@@ -154,20 +154,22 @@ final class XDriveIOSNativeFilesOperationsModel: ObservableObject {
     @Published private(set) var verified = false
     @Published private(set) var status: String?
 
-    private var expected: XDriveNativeOwnerRoot
+    private var expected: XDriveNativeOwnerRoot?
     private var epoch = UUID()
     private var job: Task<Void, Never>?
 
-    init(owner: XDriveNativeOwnerRoot) { expected = owner }
+    init(owner: XDriveNativeOwnerRoot? = nil) { expected = owner }
 
     func updateExpectedOwner(_ owner: XDriveNativeOwnerRoot) {
-        guard !XDriveIOSNativePhotoOwnerScope.matches(expected, owner) else { return }
+        if let expected, XDriveIOSNativePhotoOwnerScope.matches(expected, owner) {
+            return
+        }
         invalidate()
         expected = owner
     }
 
     func matches(_ current: XDriveNativeOwnerRoot?) -> Bool {
-        guard let current else { return false }
+        guard let current, let expected else { return false }
         return verified && XDriveIOSNativePhotoOwnerScope.matches(current, expected)
     }
 
@@ -184,7 +186,7 @@ final class XDriveIOSNativeFilesOperationsModel: ObservableObject {
 
     func load(login: XDriveIOSNativeOwnerLoginModel) {
         guard !loading, !busy,
-              let owner = login.owner,
+              let owner = login.owner, let expected,
               XDriveIOSNativePhotoOwnerScope.matches(owner, expected) else {
             return
         }
@@ -229,7 +231,7 @@ final class XDriveIOSNativeFilesOperationsModel: ObservableObject {
                 operation: XDriveIOSNativeFilesOperation,
                 login: XDriveIOSNativeOwnerLoginModel,
                 onAccepted: @escaping () -> Void) {
-        guard matches(login.owner), !busy && !loading,
+        guard let expected, matches(login.owner), !busy && !loading,
               items.contains(operation),
               XDriveIOSNativeFilesOperationPolicy.canPerform(action, for: operation)
         else { return }
