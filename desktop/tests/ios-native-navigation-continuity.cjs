@@ -25,7 +25,9 @@ const sources = {
   "x": "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift",
   "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift",
   "p": "ios/scripts/capture-navigation-smoke-frames.py",
-  "m": "ios/scripts/summarize-navigation-latency.py"
+  "m": "ios/scripts/summarize-navigation-latency.py",
+  "z": "ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift",
+  "j": ".github/workflows/ios-native-navigation-runtime.yml"
 }
 const scenarios = [
   {
@@ -1159,6 +1161,146 @@ const scenarios = [
       {
         "file": "l",
         "pattern": "reportPhotoPageReady\\(\"tab-return\", started: pageStarted\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "85 Nine real no-Session recovery and background XCUITest routes",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testCloudFolderNoSessionIsSmallNativeRecoveryInsteadOfFilesList\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testRecentlyDeletedNoSessionDoesNotMountDestructiveRows\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testAlternatingDeniedCloudAndTrashChildrenKeepsHomeRail\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testDeniedChildBackgroundResumeRetainsExplicitRecoveryAndGallery\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testSignedOutOwnerCannotExposeCloudLocationAfterRelaunch\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testNoSessionCloudReturnAfterGalleryAlbumRoundtrip\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testNoSessionTrashReturnAfterGalleryFilterDismissal\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testRepeatedDeniedCloudDoesNotRenderProtectedRowsOrRetry\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testRepeatedDeniedTrashDoesNotRenderDestructiveRowsOrRetry\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "86 Both protected Readers fail closed before constructing a File or Trash List",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if !isHome && !login.hasLocalOwnerSession",
+        "flags": ""
+      },
+      {
+        "file": "t",
+        "pattern": "if !login.hasLocalOwnerSession",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "XDriveIOSNativeFilesNoSessionRoute",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "native-ios-files-error-page",
+        "flags": ""
+      },
+      {
+        "file": "t",
+        "pattern": "native-ios-files-trash-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "87 Absent Session offers Back but cannot retry protected Reads",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "XCTAssertFalse\\(target\\(\"native-ios-files-retry\"",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "XCTAssertFalse\\(target\\(\"native-ios-files-trash-retry\"",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "XCTAssertFalse\\(element\\(\"native-ios-files-retry\"",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "XCTAssertFalse\\(element\\(\"native-ios-files-trash-retry\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "88 Native mandatory no-Session simulator shard remains enabled",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]",
+        "flags": ""
+      },
+      {
+        "file": "j",
+        "pattern": "XDriveIOSFilesSessionRecoveryUITests",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "89 Live watcher collects bounded failing no-Session returns",
+    "checks": [
+      {
+        "file": "p",
+        "pattern": "testRepeatedDeniedCloudDoesNotRenderProtectedRowsOrRetry",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testRepeatedDeniedTrashDoesNotRenderDestructiveRowsOrRetry",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testNoSessionTrashReturnAfterGalleryFilterDismissal",
         "flags": ""
       }
     ]

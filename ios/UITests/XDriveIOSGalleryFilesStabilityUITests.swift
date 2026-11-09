@@ -477,9 +477,10 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         first.name = "cloud-failed-first-read"
         first.lifetime = .keepAlways
         add(first)
-        select("native-ios-files-retry", in: app)
+        XCTAssertFalse(target("native-ios-files-retry", in: app).exists,
+                           "A missing Session cannot retry a protected Cloud read")
         XCTAssertTrue(target("native-ios-files-error-page", in: app)
-            .waitForExistence(timeout: 15), "Offline retry lost the recovery surface")
+            .waitForExistence(timeout: 15), "Missing Session must preserve the fail-closed cloud page")
         select("native-ios-files-error-return", in: app)
         checkFilesHome(app)
         XCTAssertEqual(app.state, .runningForeground)
@@ -495,9 +496,10 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         first.name = "trash-failed-first-read"
         first.lifetime = .keepAlways
         add(first)
-        select("native-ios-files-trash-retry", in: app)
+        XCTAssertFalse(target("native-ios-files-trash-retry", in: app).exists,
+                           "A missing Session cannot retry or mutate Trash")
         XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
-            .waitForExistence(timeout: 15), "Offline Trash retry removed the recovery surface")
+            .waitForExistence(timeout: 15), "Missing Session must preserve the fail-closed Trash page")
         select("native-ios-files-trash-error-return", in: app)
         checkFilesHome(app)
         XCTAssertEqual(app.state, .runningForeground)
@@ -625,7 +627,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         select("native-ios-files-open-trash", in: app)
         XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
             .waitForExistence(timeout: 15))
-        select("native-ios-files-trash-retry", in: app)
+        XCTAssertFalse(target("native-ios-files-trash-retry", in: app).exists,
+                           "A missing Session cannot retry or mutate Trash")
         XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
             .waitForExistence(timeout: 15))
         select("native-ios-files-trash-error-return", in: app)

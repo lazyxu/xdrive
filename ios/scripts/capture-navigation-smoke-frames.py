@@ -51,6 +51,12 @@ TARGETS = {
     "testFavoritesShortcutNoSessionShowsRecoverableNativeChild",
     "testRecentAfterTrashDeniedReturnKeepsGalleryAvailable",
     "testFavoritesAfterCloudDeniedReturnKeepsGalleryAvailable",
+    "testDeniedChildBackgroundResumeRetainsExplicitRecoveryAndGallery",
+    "testSignedOutOwnerCannotExposeCloudLocationAfterRelaunch",
+    "testNoSessionCloudReturnAfterGalleryAlbumRoundtrip",
+    "testNoSessionTrashReturnAfterGalleryFilterDismissal",
+    "testRepeatedDeniedCloudDoesNotRenderProtectedRowsOrRetry",
+    "testRepeatedDeniedTrashDoesNotRenderDestructiveRowsOrRetry",
 }
 NAV_TARGETS = {
     "testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells",
