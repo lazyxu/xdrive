@@ -137,6 +137,8 @@ import type {
   XDriveUploadConflictPreflight,
 } from '../../ui/shared/src'
 import { xDriveCloudFilesPositionMatchesRequest } from '../../ui/shared/src/cloud-files'
+import { xDriveReleaseBundleDownloadSources } from '../../ui/shared/src/release-bundles'
+import { XDriveStreamingSHA256 } from './releaseBundleSHA256'
 import { webTransferStore } from './transfers'
 import { xDriveAssertMediaReadActive, xDriveMediaResponseBlob } from './mediaBinaryProgress'
 import type { XDriveViewerQualityPreset } from '../../ui/shared/src/viewer-quality-policy'
@@ -1653,12 +1655,30 @@ export class XDriveApi {
     if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(filename)) {
       throw new Error('无效的安装包名称')
     }
+    // File System Access requires the initial picker during the originating
+    // click gesture, before any authenticated network metadata awaits.
     const sink = await xDriveOpenWebDownloadSink(filename)
     if (sink.kind === 'cancelled') return
-    await this.downloadAuthenticated(
-      `/api/v1/release-bundles/current/artifacts/${encodeURIComponent(filename)}`,
-      filename, {}, true, sink,
-    )
+    try {
+      const current = await this.releaseBundleStatus()
+      const path = `/api/v1/release-bundles/current/artifacts/${encodeURIComponent(filename)}`
+      const artifact = current.artifacts.find(item =>
+        item.filename === filename && item.cached &&
+        item.cache_status === 'verified' && item.build_commit === current.commit &&
+        xDriveReleaseBundleDownloadSources(item).includes(path),
+      )
+      if (!artifact || !Number.isSafeInteger(artifact.size) || artifact.size <= 0 ||
+          !/^[0-9a-f]{64}$/.test(artifact.sha256)) {
+        throw new Error('当前 Server Commit 没有该安装包的可信缓存元数据，已取消保存。')
+      }
+      await this.downloadAuthenticated(
+        path, filename, {}, true, sink, '', undefined, undefined,
+        artifact.size, undefined, artifact.sha256,
+      )
+    } catch (error) {
+      await xDriveAbortWebDownloadSink(sink, error)
+      throw error
+    }
   }
 
 
@@ -5064,7 +5084,17 @@ export class XDriveApi {
     cloudNodeID?: number,
     expectedContentBytes?: number,
     onTransferCreated?: (transferID: string) => void,
+    expectedSHA256?: string,
   ) {
+    if (expectedSHA256 !== undefined && !/^[0-9a-f]{64}$/.test(expectedSHA256)) {
+      throw new Error('无效的当前 Commit 安装包 SHA-256，已拒绝下载。')
+    }
+    const digest = expectedSHA256 ? new XDriveStreamingSHA256() : null
+    const verifyDigest = () => {
+      if (digest && digest.digestHex() !== expectedSHA256) {
+        throw new Error('安装包 SHA-256 与当前 Server Commit 清单不一致，未保存。')
+      }
+    }
     const session = this.transferContext()
     const transferID = trackTransfer ? webTransferStore.create({
       fileName: filename,
@@ -5086,6 +5116,7 @@ export class XDriveApi {
       await tracking.api().ensureFresh(tracking.signal)
       const send = () => fetch(`${API_BASE}${path}`, {
         method: init.method,
+        ...(digest ? { redirect: 'error' as const, cache: 'no-store' as const } : {}),
         headers: {
           ...init.headers,
           ...(tracking.api().session.accessToken ? { Authorization: `Bearer ${tracking.api().session.accessToken}` } : {}),
@@ -5136,6 +5167,10 @@ export class XDriveApi {
             transferProgress?.progress(done)
           },
           exactExpectedBytes,
+          digest ? {
+            onChunk: (bytes) => digest.update(bytes),
+            verify: verifyDigest,
+          } : undefined,
         )
       } else {
         const contentType = response.headers.get('Content-Type') || 'application/octet-stream'
@@ -5148,6 +5183,10 @@ export class XDriveApi {
             if (done) break
             if (!value) continue
             completed += value.byteLength
+            if (exactExpectedBytes !== undefined && completed > exactExpectedBytes) {
+              throw new Error('安装包大小超过当前 Commit 清单，未保存。')
+            }
+            digest?.update(value)
             chunks.push(value as BlobPart)
             transferProgress?.progress(completed)
           }
@@ -5155,6 +5194,18 @@ export class XDriveApi {
         } else {
           blob = await response.blob()
           completed = blob.size
+          if (digest) {
+            const reader = blob.stream().getReader()
+            try {
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                if (value) digest.update(value)
+              }
+            } finally {
+              reader.releaseLock()
+            }
+          }
           transferProgress?.progress(completed)
         }
 
@@ -5162,6 +5213,7 @@ export class XDriveApi {
           throw new Error('下载内容长度不一致，已终止保存。')
         }
         tracking.check()
+        verifyDigest()
         const url = URL.createObjectURL(blob)
         try {
           const a = document.createElement('a')
