@@ -554,7 +554,7 @@ function configureDesktopPlacesWebSession(partition:string) {
     const target=desktopPlacesSelectedRoute(allowed,selectedIP)
     const active=desktopPlacesNetworkRoute
     if (!target || !active || active.partition!==partition ||
-      active.owner!==agentState.status.username ||
+      active.owner!==identity.owner ||
       active.origin!==target.origin || active.ip!==selectedIP ||
       !active.route.isActive()) {
       callback({cancel:true});return
@@ -566,10 +566,16 @@ function configureDesktopPlacesWebSession(partition:string) {
     if (requestOrigin!==target.origin) {
       callback({cancel:false});return // public provider retains DIRECT TLS
     }
+    // The proxy resolver may complete after sign-out, Owner switch, CA
+    // revocation or partition rotation. Its result is not authorization.
+    const generation=desktopPlacesWebGeneration
     void placesSession.resolveProxy(details.url).then(proxy=>{
       callback({cancel:partition!==desktopPlacesWebPartition ||
+        generation!==desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity) ||
+        desktopPlacesNetworkRoute!==active ||
         !active.route.isActive() ||
-        agentState.status?.connection_ip!==selectedIP ||
+        agentState.status?.connection_ip?.trim()!==selectedIP ||
         proxy!==active.route.proxyDirective})
     }).catch(()=>callback({cancel:true}))
   })
