@@ -110,6 +110,7 @@ var desktopIPCCapabilities = []string{
 	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
 	"server-update",
+	"release-bundle-current",
 	"server-offline-import",
 	"media-gallery",
 	"media-index-status",
@@ -776,6 +777,12 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
 	mux.HandleFunc("GET /v1/server-update", h.serverUpdateState)
 	mux.HandleFunc("POST /v1/server-update", h.startServerUpdate)
+	// Only the local Agent owns Server credentials. Desktop receives a fixed
+	// current-Commit protocol, never a caller-specified remote download URL.
+	mux.HandleFunc("GET /v1/release-bundle/current", h.releaseBundleState)
+	mux.HandleFunc("POST /v1/release-bundle/retry", h.releaseBundleRetry)
+	mux.HandleFunc("POST /v1/release-bundle/download", h.releaseBundleDownload)
+	mux.HandleFunc("POST /v1/release-bundle/install", h.releaseBundleInstall)
 	// Renderer cannot provide a Server credential or Host path; local Agent IPC
 	// forwards only fixed admin import identities and bounded bytes.
 	mux.HandleFunc("GET /v1/offline-imports", h.offlineImport)

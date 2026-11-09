@@ -25,7 +25,7 @@ func bundleTestFixture(t *testing.T) (string, []byte, releaseBundleManifest) {
 		SchemaVersion: 1, Commit: sha, Channel: "master",
 		Artifacts: []releaseBundleArtifact{{Platform: "ios", Filename: "xDrive-unsigned.ipa",
 			BuildCommit: sha, Size: int64(len(body)), SHA256: hex.EncodeToString(digest[:]),
-			InstallMode: "manual"}},
+			InstallMode: "manual_test_only"}},
 	}
 	manifest.Artifacts[0].Sources.GitLab = "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-" + sha + "/xDrive-unsigned.ipa"
 	manifest.Artifacts[0].Sources.GitHub = "https://github.com/lazyxu/xdrive/releases/download/bundle-" + sha + "/xDrive-unsigned.ipa"
@@ -81,6 +81,17 @@ func TestReleaseBundleRejectsCrossCommitAndPath(t *testing.T) {
 	m.Artifacts[0].Sources.GitHub = "https://evil.example/pkg"
 	if validReleaseBundleManifest(m) {
 		t.Fatal("untrusted origin accepted")
+	}
+}
+
+func TestReleaseBundleUnsignedIPACannotClaimNativeInstallMode(t *testing.T) {
+	_, _, manifest := bundleTestFixture(t)
+	if !validReleaseBundleManifest(manifest) {
+		t.Fatal("unsigned IPA testing-only manifest rejected")
+	}
+	manifest.Artifacts[0].InstallMode = "manual"
+	if validReleaseBundleManifest(manifest) {
+		t.Fatal("unsigned IPA accepted as a normal signed installer")
 	}
 }
 
@@ -304,5 +315,34 @@ func TestReleaseBundleEncodedPlusInApprovedAndroidPackage(t *testing.T) {
 	)
 	if validReleaseBundleManifest(m) {
 		t.Fatal("unescaped alternate GitHub source should not equal immutable source")
+	}
+}
+
+func TestReleaseBundleAPIEncodesLocalCachedAndroidPlus(t *testing.T) {
+	root, body, m := bundleTestFixture(t)
+	name := "xdrive-android-12-0.1.3+build.apk"
+	item := &m.Artifacts[0]
+	item.Platform = "android"
+	item.Filename = name
+	item.InstallMode = "manual"
+	item.Sources.GitLab = "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-" + m.Commit + "/xdrive-android-12-0.1.3%2Bbuild.apk"
+	item.Sources.GitHub = "https://github.com/lazyxu/xdrive/releases/download/bundle-" + m.Commit + "/xdrive-android-12-0.1.3%2Bbuild.apk"
+	manifestRaw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifests", m.Commit+".json"), manifestRaw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packages", m.Commit, name), body, 0644); err != nil {
+		t.Fatal(err)
+	}
+	listing := readReleaseBundleListingForServerCommit(root, m.Commit)
+	if len(listing.Artifacts) != 1 || !listing.Artifacts[0].Cached {
+		t.Fatalf("cached signed Android package disappeared: %+v", listing)
+	}
+	const expected = "/api/v1/release-bundles/current/artifacts/xdrive-android-12-0.1.3%2Bbuild.apk"
+	if got := listing.Artifacts[0].DownloadURLs[0]; got != expected {
+		t.Fatalf("Server must percent-encode '+' for Web/Go clients: got %q", got)
 	}
 }

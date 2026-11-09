@@ -831,6 +831,41 @@ export default function App({
     startUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
       window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData),
   }), [])
+  const releaseBundlePort = useMemo<import('../../../ui/shared/src/release-bundles').XDriveReleaseBundlePort | undefined>(() => {
+    if (!agent.hello?.capabilities.includes('release-bundle-current')) return undefined
+    const platform = info?.platform === 'win32' ? 'windows'
+      : info?.platform === 'linux' ? 'linux' : undefined
+    return {
+      platform,
+      getState: async () => {
+        const result = await window.xdriveDesktop.agent.getReleaseBundle()
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+      retry: async () => {
+        const result = await window.xdriveDesktop.agent.retryReleaseBundle()
+        if (!result.ok) throw new Error(result.error.message)
+      },
+      downloadCached: async (filename: string) => {
+        const snapshot = await window.xdriveDesktop.agent.getReleaseBundle()
+        if (!snapshot.ok) throw new Error(snapshot.error.message)
+        const manifest = snapshot.data
+        const item = manifest.artifacts.find(candidate =>
+          candidate.filename === filename && candidate.build_commit === manifest.commit &&
+          candidate.cached && candidate.cache_status === 'verified')
+        if (!manifest.commit || !item) {
+          throw new Error('当前 Server 已没有这个 Commit 的已校验缓存，请刷新后重试。')
+        }
+        const result = await window.xdriveDesktop.agent.saveReleaseBundle(manifest.commit, filename)
+        if (!result.ok) throw new Error(result.error.message)
+      },
+      installCurrent: platform && clientUpdate?.manual_install_supported === true ? async (commit, filename) => {
+        const result = await window.xdriveDesktop.agent.installReleaseBundle(commit, filename, true)
+        if (!result.ok) throw new Error(result.error.message)
+        setClientUpdate(result.data)
+      } : undefined,
+    }
+  }, [agent.hello?.capabilities, info?.platform, clientUpdate?.manual_install_supported])
   const offlineImportPort = useMemo<import('../../../ui/shared/src/offline-update').XDriveOfflineImportPort>(() => {
     async function call<T>(
       action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',
@@ -3341,6 +3376,7 @@ export default function App({
       adminUpdatePage: status?.role === 'admin'
         ? {
         updatePort: serverUpdatePort,
+        releaseBundlePort,
         offlinePort: agent.hello?.capabilities.includes('server-offline-import') ? offlineImportPort : undefined,
         clientUpdateContent: <DesktopClientUpdatePanel {...desktopClientUpdateProps} />,
         buildInfo: [

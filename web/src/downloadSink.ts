@@ -134,6 +134,7 @@ export async function xDriveWriteWebDownloadToSink(
   fallbackBlob: () => Promise<Blob>,
   onProgress?: (done: number) => void,
   expectedBytes?: number,
+  integrity?: { onChunk: (bytes: Uint8Array) => void; verify: () => void },
 ) {
   let completed = 0
   try {
@@ -161,6 +162,7 @@ export async function xDriveWriteWebDownloadToSink(
             if (expectedBytes !== undefined && completed + value.byteLength > expectedBytes) {
               throw new Error('下载数据超出预期大小，已终止保存。')
             }
+            integrity?.onChunk(value)
             await sink.writable.write(value)
             completed += value.byteLength
             onProgress?.(completed)
@@ -185,6 +187,18 @@ export async function xDriveWriteWebDownloadToSink(
       if (expectedBytes !== undefined && blob.size !== expectedBytes) {
         throw new Error('下载内容长度不一致，已终止保存。')
       }
+      if (integrity) {
+        const stream = blob.stream().getReader()
+        try {
+          while (true) {
+            const { done, value } = await stream.read()
+            if (done) break
+            if (value) integrity.onChunk(value)
+          }
+        } finally {
+          stream.releaseLock()
+        }
+      }
       await sink.writable.write(blob)
       completed = blob.size
       onProgress?.(completed)
@@ -194,6 +208,9 @@ export async function xDriveWriteWebDownloadToSink(
     if (expectedBytes !== undefined && completed !== expectedBytes) {
       throw new Error('下载内容不完整，已终止保存。')
     }
+    // Do not commit an installer to the picked destination before the
+    // independent streaming SHA-256 has verified its exact immutable digest.
+    integrity?.verify()
     await sink.writable.close()
     sink.settled = true
     return completed

@@ -274,6 +274,28 @@ export type AgentOfflineHostPlanStatus = {
   }
 }
 
+// Mirror the authenticated IPC DTO structurally in the CJS main process.
+// Importing ESM UI source here violates Node16 resolution and desktop rootDir.
+export type AgentReleaseBundleState = {
+  state: 'unavailable' | 'syncing' | 'paused_for_server' | 'retry_needed' | 'ready'
+  commit?: string
+  channel?: 'master' | 'stable'
+  server_version?: string
+  cached_commit?: string
+  message?: string
+  artifacts: Array<{
+    platform: 'ios' | 'android' | 'windows' | 'linux' | 'dsm' | 'cli'
+    filename: string
+    build_commit: string
+    sha256: string
+    size: number
+    install_mode: 'manual' | 'manual_test_only'
+    cached: boolean
+    cache_status: 'pending' | 'verified' | 'missing_upstream' | 'verification_failed' | 'retry_needed' | 'unavailable'
+    download_urls: string[]
+  }>
+}
+
 export type AgentServerUpdateState = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
@@ -307,6 +329,7 @@ export type AgentUpdateState = {
   update_available: boolean
   downloaded: boolean
   install_supported: boolean
+  manual_install_supported?: boolean
   last_checked_at?: string
   message?: string
   last_error?: string
@@ -4917,6 +4940,26 @@ export class AgentIPCClient {
 
   serverUpdate() {
     return this.request<AgentServerUpdateState>('GET', '/v1/server-update')
+  }
+
+  currentReleaseBundle() {
+    return this.request<AgentReleaseBundleState>('GET', '/v1/release-bundle/current')
+  }
+
+  retryReleaseBundle() {
+    return this.request<{ state: 'queued' }>('POST', '/v1/release-bundle/retry', {}, 45_000)
+  }
+
+  downloadReleaseBundle(commit: string, filename: string, destination: string) {
+    return this.request<{ saved: true }>('POST', '/v1/release-bundle/download',
+      { commit, filename, destination }, 30 * 60_000)
+  }
+
+  installCurrentServerCommit(commit: string, filename: string) {
+    // A lost ACK may follow a completed installation. NEVER automatically
+    // replay a privilege-changing user-confirmed operation over Agent IPC.
+    return this.request<AgentUpdateState>('POST', '/v1/release-bundle/install',
+      { commit, filename, confirm: true }, 15 * 60_000, undefined, false)
   }
 
   offlineImports() {

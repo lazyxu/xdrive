@@ -988,6 +988,12 @@ const agent = Object.freeze({
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
   startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
     ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
+  getReleaseBundle: () => ipcRenderer.invoke('agent:get-release-bundle'),
+  retryReleaseBundle: () => ipcRenderer.invoke('agent:retry-release-bundle'),
+  saveReleaseBundle: (commit: string, filename: string) =>
+    ipcRenderer.invoke('agent:save-release-bundle', commit, filename),
+  installReleaseBundle: (commit: string, filename: string, confirmed: boolean) =>
+    ipcRenderer.invoke('agent:install-release-bundle', commit, filename, confirmed),
   offlineImport: (action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',
     input: Record<string, unknown> = {}) =>
     ipcRenderer.invoke('agent:offline-import', action, input),
