@@ -21,6 +21,9 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       filesize: path.join(webRoot, 'node_modules', 'filesize', 'dist', 'filesize.js'),
+      // Shared UI source lives outside web/: resolve this optional Viewer icon
+      // package from the owning DSM build's installed dependency tree.
+      '@mui/icons-material': path.join(webRoot, 'node_modules', '@mui', 'icons-material'),
     },
   },
 })
