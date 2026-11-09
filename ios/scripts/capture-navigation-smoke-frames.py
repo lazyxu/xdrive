@@ -26,6 +26,8 @@ output.mkdir(parents=True, exist_ok=True)
 # Capture several moments after route start. High-frequency video tracing and
 # physically measured FPS remain separate from these low-overhead stills.
 FRAME_OFFSETS_SECONDS = (0.5, 1.5, 3.5)
+# Short tap-adjacent samples, still not a video/FPS measurement.
+TAP_FRAME_OFFSETS_SECONDS = (0.15, 0.55)
 TARGETS = {
     # Tab/source/section/sheet/background: real production native SwiftUI.
     "testRapidGalleryFilesTabOscillationPreservesBothShells",
@@ -50,11 +52,25 @@ TARGETS = {
     "testRecentAfterTrashDeniedReturnKeepsGalleryAvailable",
     "testFavoritesAfterCloudDeniedReturnKeepsGalleryAvailable",
 }
+NAV_TARGETS = {
+    "testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells",
+    "testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels",
+    "testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank",
+    "testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank",
+    "testLocalPhotosSourceSurvivesFilesMineAndGalleryRoundTrip",
+    "testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes",
+    "testRapidGalleryFilesTabOscillationPreservesBothShells",
+}
+TARGETS.update(NAV_TARGETS)
+tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
 attempts = {}
 active = set()
 scheduled = []
+tap_scheduled = []
+tap_counts = {}
+current_case = None
 cursor = 0
 manifest = output / "frame-trace.jsonl"
 
@@ -75,16 +91,33 @@ while True:
                 attempts[name] = count
                 key = (name, count)
                 active.add(key)
+                current_case = key
                 began = time.monotonic()
                 for index, delay in enumerate(FRAME_OFFSETS_SECONDS):
                     scheduled.append((began + delay, key, index, delay))
                 continue
+            tapped = tap_start.search(line)
+            if (tapped and current_case in active
+                    and current_case[0] in NAV_TARGETS):
+                count = tap_counts.get(current_case, 0)
+                # Avoid a large PNG archive for rapid 8-cycle tab oscillation.
+                if count < 3:
+                    count += 1
+                    tap_counts[current_case] = count
+                    now_tap = time.monotonic()
+                    for frame, delay in enumerate(TAP_FRAME_OFFSETS_SECONDS):
+                        tap_scheduled.append((
+                            now_tap + delay, current_case, count,
+                            frame, delay, tapped.group(1)
+                        ))
             ended = finish.search(line)
             if ended:
                 name = ended.group(1)
                 for key in tuple(active):
                     if key[0] == name:
                         active.discard(key)
+                        if current_case == key:
+                            current_case = None
 
     now = time.monotonic()
     due, scheduled = (
@@ -112,6 +145,37 @@ while True:
             stream.write(json.dumps({
                 "test": name, "attempt": count, "frame": index + 1,
                 "scheduled_after_start_seconds": delay,
+                "captured": ok, "file": destination.name if ok else None,
+            }, ensure_ascii=False) + "\n")
+    tap_due, tap_scheduled = (
+        [entry for entry in tap_scheduled if entry[0] <= now],
+        [entry for entry in tap_scheduled if entry[0] > now],
+    )
+    for _, key, tap_count, frame, delay, route in tap_due:
+        # A stale tap cannot capture frames from the next XCTest case.
+        if key not in active:
+            continue
+        name, count = key
+        destination = output / (
+            f"{name}-{count}-tap{tap_count}-{route}-frame{frame + 1}.png"
+        )
+        ok = False
+        try:
+            subprocess.run(
+                ["xcrun", "simctl", "io", simulator, "screenshot", str(destination)],
+                timeout=25, check=True, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            ok = True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+                FileNotFoundError):
+            pass
+        with manifest.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({
+                "test": name, "attempt": count, "route": route,
+                "tap_number": tap_count, "frame": frame + 1,
+                "scheduled_after_tap_seconds": delay,
+                "capture_mode": "tap-adjacent",
                 "captured": ok, "file": destination.name if ok else None,
             }, ensure_ascii=False) + "\n")
     time.sleep(0.3)
