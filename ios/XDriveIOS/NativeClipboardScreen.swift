@@ -1,6 +1,7 @@
 import CryptoKit
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// The Clipboard tool is a fully native SwiftUI L2 dynamic page. It never
 /// polls the iOS system pasteboard, persists its E2EE key or launches WebKit.
@@ -16,6 +17,16 @@ struct XDriveIOSNativeClipboardScreen: View {
     @State private var ownerAtUnlock: XDriveNativeOwnerRoot?
     @State private var recipientPrivateKey: Curve25519.KeyAgreement.PrivateKey?
     @State private var recipientProof: XDriveIOSBackgroundDeviceProof?
+    @State private var targetDevices: [XDriveIOSClipboardTargetDevice] = []
+    @State private var targetID = ""
+    @State private var referenceKind = "text"
+    @State private var referenceNodeID = ""
+    @State private var localFilePicker = false
+    @State private var uploadTask: Task<Void, Never>?
+    @State private var pickerGeneration: UInt64?
+    @State private var pickerTargetID = ""
+    @State private var pickerKind = ""
+    @State private var pendingDirected: PendingDirected?
     @State private var draft = ""
     @State private var items: [Decrypted] = []
     @State private var loading = false
@@ -38,13 +49,21 @@ struct XDriveIOSNativeClipboardScreen: View {
         let createdAt: Date
         let wire: XDriveIOSClipboardCrypto.Encrypted
     }
+    private struct PendingDirected {
+        let sourceText: String
+        let targetID: String
+        let kind: String
+        let nodeID: UInt64
+        let createdAt: Date
+        let wire: XDriveIOSClipboardDirectedWrite
+    }
     private var unlocked: Bool { key != nil }
     private var currentScope: String { aadScope }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("端到端加密的当前账号文本收件箱。仅在你点击后读取或写入本机剪贴板。")
+                Text("当前账号的端到端加密收件箱；图片与文件以 CAS Node 引用传递。仅在你点击后读取或写入本机剪贴板。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if let message {
                     Text(message).font(.footnote).foregroundStyle(.orange)
@@ -72,13 +91,52 @@ struct XDriveIOSNativeClipboardScreen: View {
                     HStack {
                         Button("发送") { Task { await send() } }
                             .buttonStyle(.borderedProminent)
-                            .disabled(busy || draft.isEmpty)
+                            .disabled(busy || draft.isEmpty || !targetID.isEmpty)
                         Button("从本机粘贴") {
                             // Explicit user gesture. No background UIPasteboard reads.
                             if let text = UIPasteboard.general.string { draft = text }
                             else { message = "本机剪贴板没有可读取的文本。" }
                         }.disabled(busy)
                         Spacer()
+                    }
+                    Picker("发送范围", selection: $targetID) {
+                        Text("当前 Owner 广播（v1 文本）").tag("")
+                        ForEach(targetDevices) { device in
+                            Text(device.name + " · " + device.platform).tag(device.device_id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(busy)
+                    if !targetID.isEmpty {
+                        Picker("定向消息内容", selection: $referenceKind) {
+                            Text("文本或链接").tag("text")
+                            Text("现有云端图片引用").tag("image")
+                            Text("现有云端文件引用").tag("file")
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(busy)
+                        // Changing the authenticated media kind requires a fresh
+                        // Node choice; never reuse the last image/file reference.
+                        .onChange(of: referenceKind) { _ in referenceNodeID = "" }
+                        if referenceKind != "text" {
+                            TextField("已经完成上传的 CAS Node ID", text: $referenceNodeID)
+                                .keyboardType(.numberPad)
+                                .textFieldStyle(.roundedBorder)
+                                .disabled(busy)
+                            Button("选择本机文件并上传 CAS") {
+                                guard !busy, pending == nil, pendingDirected == nil else { return }
+                                pickerGeneration = sessionGeneration
+                                pickerTargetID = targetID
+                                pickerKind = referenceKind
+                                localFilePicker = true
+                            }
+                            .disabled(busy || pending != nil || pendingDirected != nil)
+                            Text("上传只创建当前 Owner 文件，不会自动发送。确认 Node ID 后再次点击定向加密发送。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Button("定向加密发送") { Task { await sendDirected() } }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(busy || !targetDevices.contains(where: { $0.device_id == targetID }))
                     }
                     if recipientProof == nil {
                         Button("启用本机设备定向加密接收") {
@@ -90,9 +148,10 @@ struct XDriveIOSNativeClipboardScreen: View {
                         Label("设备定向接收已启用", systemImage: "checkmark.shield")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    if retryNeedsAbandon && pending != nil {
+                    if retryNeedsAbandon && (pending != nil || pendingDirected != nil) {
                         Button("放弃待确认回执") {
                             pending = nil
+                            pendingDirected = nil
                             retryNeedsAbandon = false
                             message = "已放弃旧回执。请先核对历史，再发送新内容。"
                         }.foregroundStyle(.orange)
@@ -153,6 +212,21 @@ struct XDriveIOSNativeClipboardScreen: View {
             .padding(16)
         }
         .navigationTitle("剪贴板")
+        .fileImporter(isPresented: $localFilePicker,
+                      allowedContentTypes: [.item], allowsMultipleSelection: false) { outcome in
+            let generation = pickerGeneration
+            pickerGeneration = nil
+            guard let generation, generation == sessionGeneration,
+                  targetID == pickerTargetID, referenceKind == pickerKind,
+                  !targetID.isEmpty else { return }
+            switch outcome {
+            case .success(let urls):
+                guard let chosen = urls.first else { return }
+                uploadTask = Task { await importLocalFile(chosen, generation: generation) }
+            case .failure:
+                message = "本机文件选择没有完成，尚未上传。"
+            }
+        }
         .alert("确认清空剪贴板历史？", isPresented: $confirmClear) {
             Button("取消", role: .cancel) {}
             Button("清空", role: .destructive) { Task { await clear() } }
@@ -199,6 +273,11 @@ struct XDriveIOSNativeClipboardScreen: View {
                 do { try await Task.sleep(nanoseconds: 3_000_000_000) }
                 catch { break }
             }
+        }
+        .onChange(of: targetID) { _ in
+            // A previous CAS Node must never follow a new recipient intent.
+            referenceKind = "text"
+            referenceNodeID = ""
         }
         .onChange(of: recipientProof?.deviceID) { _ in
             // The 15-second GET fallback never waits for the next tick after
@@ -260,6 +339,7 @@ struct XDriveIOSNativeClipboardScreen: View {
             key = derived
             passphrase = ""
             await refresh()
+            await refreshTargets(generation: generation)
         } catch {
             if sessionGeneration == generation { message = error.localizedDescription }
         }
@@ -364,8 +444,150 @@ struct XDriveIOSNativeClipboardScreen: View {
     }
 
     @MainActor
+    private func refreshTargets(generation: UInt64) async {
+        guard key != nil, generation == sessionGeneration else { return }
+        do {
+            let client = try await authorizedClient(for: generation)
+            let directory = try await client.devices()
+            guard sessionGeneration == generation, key != nil,
+                  ownerAtUnlock == client.owner else { return }
+            targetDevices = directory
+            if !targetID.isEmpty && !directory.contains(where: { $0.device_id == targetID }) {
+                targetID = ""
+                referenceNodeID = ""
+            }
+        } catch {
+            if sessionGeneration == generation {
+                targetDevices = [] // A stale recipient cannot remain selectable.
+            }
+        }
+    }
+
+    @MainActor
+    private func importLocalFile(_ selectedURL: URL, generation: UInt64) async {
+        guard generation == sessionGeneration, !busy, key != nil,
+              !targetID.isEmpty, referenceKind != "text",
+              pending == nil, pendingDirected == nil else { return }
+        let expectedTarget = targetID
+        let expectedKind = referenceKind
+        referenceNodeID = ""
+        busy = true
+        defer {
+            if sessionGeneration == generation {
+                busy = false
+                uploadTask = nil
+            }
+        }
+        do {
+            guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+                throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+            }
+            defer { XDriveIOSOriginalRunGate.shared.release(gate) }
+            let client = try await authorizedClient(for: generation)
+            let staged = try await XDriveManualDocumentStager.stage(selectedURL)
+            defer { staged.delete() }
+            guard staged.byteCount > 0 && staged.byteCount <= 64 * 1_048_576,
+                  generation == sessionGeneration, ownerAtUnlock == client.owner,
+                  referenceKind == expectedKind, targetID == expectedTarget else {
+                throw XDriveIOSClipboardCrypto.Failure.invalidOwner
+            }
+            try Task.checkCancellation()
+            // This is exactly the existing Owner Files UploadSession writer.
+            // A lost finalize ACK is unknown; never retry automatically or
+            // turn it into a confirmed clipboard reference.
+            let writer = try XDriveNativeUploadSessionTransport(
+                origin: client.owner.origin, accessToken: client.token)
+            let receipt = try await writer.uploadOnce(
+                from: staged.fileURL, name: staged.originalName,
+                parentID: client.owner.rootNodeID)
+            let after = try await authorizedClient(for: generation)
+            let verifier = XDriveIOSNativeFilesUploadReadback(
+                owner: after.owner, accessToken: after.token)
+            try await verifier.requireCommitted(
+                receipt, parentID: after.owner.rootNodeID,
+                name: staged.originalName, byteCount: staged.byteCount)
+            try Task.checkCancellation()
+            guard generation == sessionGeneration, key != nil,
+                  ownerAtUnlock == after.owner, targetID == expectedTarget,
+                  referenceKind == expectedKind else { return }
+            referenceNodeID = String(receipt.nodeID)
+            message = "原件已上传到当前 Owner 的 CAS。请检查 Node 后，再明确点击“定向加密发送”。"
+        } catch {
+            if generation == sessionGeneration {
+                referenceNodeID = ""
+                message = "本机文件上传未确认：请先检查 Files 目录，勿自动重传。"
+            }
+        }
+    }
+
+    @MainActor
+    private func sendDirected() async {
+        guard !busy, key != nil, !aadScope.isEmpty,
+              let device = targetDevices.first(where: { $0.device_id == targetID })
+        else { return }
+        let generation = sessionGeneration
+        let selected = targetID
+        let nodeID = referenceKind == "text" ? 0 : (UInt64(referenceNodeID) ?? 0)
+        let kind: String
+        switch referenceKind {
+        case "image": kind = "image/x-xdrive-node-ref"
+        case "file": kind = "application/x-xdrive-node-ref"
+        default: kind = XDriveIOSClipboardCrypto.kind(draft)
+        }
+        guard (referenceKind == "text" && !draft.isEmpty) ||
+              (referenceKind != "text" && nodeID > 0) else {
+            message = "请选择有效文本或已确认的 CAS 文件 Node。"
+            return
+        }
+        guard pending == nil else {
+            retryNeedsAbandon = true
+            message = "旧广播消息的回执未确认，请先核对历史并处理。"
+            return
+        }
+        let payload = nodeID > 0 ? "asset:\(nodeID)" : draft
+        let scope = aadScope
+        busy = true
+        defer { if sessionGeneration == generation { busy = false } }
+        do {
+            let wire: XDriveIOSClipboardDirectedWrite
+            if let prior = pendingDirected {
+                let elapsed = Date().timeIntervalSince(prior.createdAt)
+                guard elapsed >= 0, elapsed < 300,
+                      prior.sourceText == payload, prior.targetID == selected,
+                      prior.kind == kind, prior.nodeID == nodeID else {
+                    retryNeedsAbandon = true
+                    message = "待确认的定向回执不能更换设备、MIME 或 Node；请先核对历史或明确放弃。"
+                    return
+                }
+                wire = prior.wire
+            } else {
+                wire = try XDriveIOSClipboardDeviceCrypto.encryptForDevice(
+                    payload, ownerScope: scope, deviceID: selected,
+                    publicKey: device.public_key, kind: kind, nodeID: nodeID)
+                pendingDirected = PendingDirected(sourceText: payload, targetID: selected,
+                    kind: kind, nodeID: nodeID, createdAt: Date(), wire: wire)
+            }
+            let client = try await authorizedClient(for: generation)
+            guard generation == sessionGeneration, ownerAtUnlock == client.owner,
+                  key != nil else { return }
+            _ = try await client.sendDirected(wire)
+            guard generation == sessionGeneration, ownerAtUnlock == client.owner,
+                  key != nil else { return }
+            pendingDirected = nil
+            if nodeID == 0 && draft == payload { draft = "" }
+            message = "已加密发送至指定设备。"
+            await refresh()
+        } catch {
+            if generation == sessionGeneration {
+                message = "定向发送回执未知：请检查历史，不要自动重新加密投递。"
+            }
+        }
+    }
+
+    @MainActor
     private func send() async {
-        guard !busy, let localKey = key, !aadScope.isEmpty else { return }
+        guard !busy, let localKey = key, !aadScope.isEmpty, targetID.isEmpty,
+              pendingDirected == nil else { return }
         let generation = sessionGeneration
         let textAtStart = draft
         busy = true
@@ -457,6 +679,17 @@ struct XDriveIOSNativeClipboardScreen: View {
         ownerAtUnlock = nil
         recipientPrivateKey = nil
         recipientProof = nil
+        targetDevices = []
+        targetID = ""
+        referenceKind = "text"
+        referenceNodeID = ""
+        localFilePicker = false
+        uploadTask?.cancel()
+        uploadTask = nil
+        pickerGeneration = nil
+        pickerTargetID = ""
+        pickerKind = ""
+        pendingDirected = nil
         loading = false
         busy = false
         confirmClear = false

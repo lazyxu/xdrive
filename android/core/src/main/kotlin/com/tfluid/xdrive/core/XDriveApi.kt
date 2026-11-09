@@ -449,6 +449,9 @@ data class OwnerClipboardItem(
     }
 }
 data class OwnerClipboardPage(val items: List<OwnerClipboardItem>,val nextBefore: Long?)
+data class OwnerClipboardDevice(
+    val deviceID: String, val name: String, val platform: String, val publicKey: String,
+)
 
 interface XDriveService {
     suspend fun login(username: String, password: String): AuthSession
@@ -519,6 +522,12 @@ interface XDriveService {
     ) { throw ApiException(501,"Clipboard device enrollment unavailable") }
     suspend fun clipboardCreate(accessToken: String, item: XDriveClipboardCrypto.Wire): OwnerClipboardItem =
         throw ApiException(501,"Owner Clipboard send unavailable")
+    /** Public keys only: no private key or installation credential in this list. */
+    suspend fun clipboardDevices(accessToken: String): List<OwnerClipboardDevice> =
+        throw ApiException(501, "Clipboard device directory unavailable")
+    suspend fun clipboardCreateDirected(
+        accessToken: String, item: XDriveClipboardTargetCrypto.Wire,
+    ): OwnerClipboardItem = throw ApiException(501, "Clipboard targeted send unavailable")
     suspend fun clipboardDelete(accessToken: String, id: Long) {
         throw ApiException(501,"Owner Clipboard delete unavailable")
     }
@@ -1128,6 +1137,64 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             receipt.string("public_key") != publicKey) invalidPayload()
     }
 
+    override suspend fun clipboardDevices(accessToken: String): List<OwnerClipboardDevice> {
+        val result = request("clipboard/devices", accessToken)
+        val rows = result["devices"] as? JsonArray ?: invalidPayload()
+        if (rows.size > 100) invalidPayload()
+        val seen = HashSet<String>()
+        return rows.map { value ->
+            val item = value as? JsonObject ?: invalidPayload()
+            val id = item.string("device_id")
+            val name = item.string("name")
+            val platform = item.string("platform")
+            val key = item.string("public_key")
+            if (runCatching { java.util.UUID.fromString(id).toString() == id }.getOrDefault(false) != true ||
+                !seen.add(id) || name.isBlank() || name.length > 128 ||
+                platform.isBlank() || platform.length > 32 ||
+                runCatching {
+                    val bytes = java.util.Base64.getDecoder().decode(key)
+                    bytes.size == 32 && java.util.Base64.getEncoder().encodeToString(bytes) == key &&
+                        bytes.any { it != 0.toByte() }
+                }.getOrDefault(false) != true) invalidPayload()
+            OwnerClipboardDevice(id, name, platform, key)
+        }
+    }
+
+    override suspend fun clipboardCreateDirected(
+        accessToken: String, item: XDriveClipboardTargetCrypto.Wire,
+    ): OwnerClipboardItem {
+        require(item.kind in setOf("text/plain", "text/uri-list",
+            "image/x-xdrive-node-ref", "application/x-xdrive-node-ref"))
+        require(runCatching {
+            java.util.UUID.fromString(item.targetDeviceID).toString() == item.targetDeviceID &&
+                java.util.UUID.fromString(item.clientEventID).toString() == item.clientEventID
+        }.getOrDefault(false))
+        require(item.nodeID >= 0L &&
+            (item.nodeID > 0L) == item.kind.endsWith("-node-ref"))
+        require(item.ciphertext.length in 24..90000 &&
+            java.util.Base64.getDecoder().decode(item.nonce).size == 12 &&
+            java.util.Base64.getDecoder().decode(item.ephemeralKey).size == 32 &&
+            java.util.Base64.getDecoder().decode(item.wrappedKey).size == 60)
+        val values = mapOf(
+            "client_event_id" to item.clientEventID, "target_device_id" to item.targetDeviceID,
+            "kind" to item.kind, "nonce" to item.nonce, "ciphertext" to item.ciphertext,
+            "ephemeral_key" to item.ephemeralKey, "wrapped_key" to item.wrappedKey,
+        )
+        // The Node ID is a JSON number, NEVER a string or a File authorization
+        // credential. Server revalidates current Owner, live Node and CAS.
+        val received = clipboardItemRow(request("clipboard/items", accessToken,
+            values = values,
+            numberValues = if (item.nodeID == 0L) emptyMap()
+                else mapOf("node_id" to item.nodeID)))
+        if (received.clientEventID != item.clientEventID ||
+            received.targetDeviceID != item.targetDeviceID ||
+            received.kind != item.kind || received.nodeID != item.nodeID ||
+            received.nonce != item.nonce || received.ciphertext != item.ciphertext ||
+            received.ephemeralKey != item.ephemeralKey ||
+            received.wrappedKey != item.wrappedKey) invalidPayload()
+        return received
+    }
+
     override suspend fun clipboardCreate(
         accessToken: String,item: XDriveClipboardCrypto.Wire): OwnerClipboardItem {
         require(item.ciphertext.length in 24..90000 && item.nonce.length == 16 &&
@@ -1203,6 +1270,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 cursor.cursor
             }
         } catch (failure: IOException) {
+            // Preserve tested PR #4124 fix: a real HTTP revocation denial
+            // stays an API 401/403, never masked as generic transport failure.
+            if (failure is ApiException) throw failure
             throw transportFailure(failure)
         } finally {
             dispose?.dispose()

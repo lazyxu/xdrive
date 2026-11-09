@@ -38,7 +38,24 @@ enum NativeLANTrustChecks {
         }
 
         let valid = try trust("ip")
+        // Build throwable SecTrust fixtures before any non-throwing precondition autoclosure.
+        // Each trust is fresh so negative diagnostics cannot reuse a mutated evaluation.
+        let matchedPolicyTrust = try trust("ip")
+        let changedIPTrust = try trust("ip")
+        let changedCATrust = try trust("ip")
+        let dnsSANTrust = try trust("dns")
         precondition(XDriveIOSServerTLSDelegate.verify(valid, target: ip, rootDER: root), "correct CA and IP SAN")
+        precondition(XDriveIOSServerTLSDelegate.inspect(matchedPolicyTrust,
+            target: ip, rootDER: root) == .trusted, "strict CA + literal IP SAN succeeds")
+        precondition(XDriveIOSServerTLSDelegate.inspect(changedIPTrust,
+            target: otherIP, rootDER: root) == .ipIdentityOrServerUsageMismatch,
+            "basic X.509 chain passes but strict IP identity fails")
+        precondition(XDriveIOSServerTLSDelegate.inspect(changedCATrust,
+            target: ip, rootDER: otherRoot) == .chainOrValidityMismatch,
+            "wrong pinned CA cannot be reported as a mere IP SAN mismatch")
+        precondition(XDriveIOSServerTLSDelegate.inspect(dnsSANTrust,
+            target: ip, rootDER: root) == .ipIdentityOrServerUsageMismatch,
+            "DNS SAN must not authenticate a private-IP literal")
         // Real Caddy 'tls internal' chains include an intermediate CA.
         // A passed SecTrust evaluation under the PINNED root is sufficient,
         // even if an iOS release omits the externally added anchor from its
@@ -52,6 +69,15 @@ enum NativeLANTrustChecks {
             SecPolicyCreateBasicX509(), &caddyTrust) == errSecSuccess)
         precondition(XDriveIOSServerTLSDelegate.verify(caddyTrust!, target: ip, rootDER: root),
             "real Caddy root -> intermediate -> matching IP-SAN leaf")
+        // A normal TLS server presents its leaf and intermediate; the root
+        // is NOT generally sent in the peer chain. Only the downloaded,
+        // explicitly anchored Caddy root may finish verification.
+        var withoutTransmittedRoot: SecTrust?
+        precondition(SecTrustCreateWithCertificates([child, intermediate] as CFArray,
+            SecPolicyCreateBasicX509(), &withoutTransmittedRoot) == errSecSuccess)
+        precondition(XDriveIOSServerTLSDelegate.verify(withoutTransmittedRoot!,
+            target: ip, rootDER: root),
+            "Caddy leaf + intermediate must verify against separately pinned root")
         var wrongCaddyRoot: SecTrust?
         precondition(SecTrustCreateWithCertificates([child, intermediate, publicRoot] as CFArray,
             SecPolicyCreateBasicX509(), &wrongCaddyRoot) == errSecSuccess)
@@ -72,6 +98,12 @@ enum NativeLANTrustChecks {
         let expired = try trust("ip")
         precondition(SecTrustSetVerifyDate(expired, Date(timeIntervalSinceNow: 14 * 86_400) as CFDate) == errSecSuccess)
         precondition(!XDriveIOSServerTLSDelegate.verify(expired, target: ip, rootDER: root), "reject expired leaf")
+        let expiredDiagnostic = try trust("ip")
+        precondition(SecTrustSetVerifyDate(expiredDiagnostic,
+            Date(timeIntervalSinceNow: 14 * 86_400) as CFDate) == errSecSuccess)
+        precondition(XDriveIOSServerTLSDelegate.inspect(expiredDiagnostic,
+            target: ip, rootDER: root) == .chainOrValidityMismatch,
+            "expired leaf must not be described as an IP SAN mismatch")
         let leafPEM = try Data(contentsOf: fixtures.appendingPathComponent("ip.pem"))
         precondition(XDriveIOSLANPairing.rootDER(from: leafPEM) == nil, "reject leaf as the root")
         print("Native LAN certificate policy checks passed")

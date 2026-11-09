@@ -85,6 +85,56 @@ object XDriveClipboardTargetCrypto {
         return cipher.doFinal(ciphertextAndTag)
     }
 
+    private fun seal(key: SecretKeySpec, nonce: ByteArray, clear: ByteArray, binding: String): ByteArray {
+        require(nonce.size == 12 && clear.isNotEmpty())
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, nonce))
+        cipher.updateAAD(binding.toByteArray(Charsets.UTF_8))
+        return cipher.doFinal(clear)
+    }
+
+    /**
+     * Native sender uses the same v2 wire as WebCrypto and the existing
+     * Android/iOS receivers. The Owner-selected recipient public key must be
+     * fetched from the authenticated Clipboard device directory. No recipient
+     * private key, raw content key, or plaintext is sent to the Server.
+     */
+    fun encrypt(
+        scope: String, targetDeviceID: String, recipientPublicKey: String,
+        kind: String, text: String, nodeID: Long = 0L,
+        eventID: String = UUID.randomUUID().toString(),
+    ): Wire {
+        val plain = text.toByteArray(Charsets.UTF_8)
+        require(plain.size in 1..MAX_BYTES)
+        val context = aad(scope, eventID, targetDeviceID, kind, nodeID)
+        val random = SecureRandom()
+        val recipient = decode(recipientPublicKey, 32)
+        require(recipient.any { it != 0.toByte() })
+        val ephemeral = X25519PrivateKeyParameters(random)
+        val pub = ephemeral.generatePublicKey().encoded
+        val shared = ByteArray(32)
+        ephemeral.generateSecret(X25519PublicKeyParameters(recipient), shared, 0)
+        val wrapKey = wrappingKey(shared, context)
+        val contentKey = ByteArray(32).also(random::nextBytes)
+        try {
+            val wrapNonce = ByteArray(12).also(random::nextBytes)
+            val contentNonce = ByteArray(12).also(random::nextBytes)
+            val sealedKey = seal(wrapKey, wrapNonce, contentKey,
+                context + "|key|" + kind + "|" + nodeID)
+            require(sealedKey.size == 48)
+            val sealedText = seal(SecretKeySpec(contentKey, "AES"), contentNonce,
+                plain, context + "|content|" + kind + "|" + nodeID)
+            return Wire(eventID, targetDeviceID, kind,
+                Base64.getEncoder().encodeToString(contentNonce),
+                Base64.getEncoder().encodeToString(sealedText),
+                Base64.getEncoder().encodeToString(pub),
+                Base64.getEncoder().encodeToString(wrapNonce + sealedKey), nodeID)
+        } finally {
+            plain.fill(0)
+            contentKey.fill(0)
+        }
+    }
+
     /** No user-visible text is returned for another target, Owner, or tampered Node ID. */
     fun decrypt(scope: String, deviceID: String, privateKey: ByteArray, message: Wire): String {
         require(message.targetDeviceID == deviceID)
