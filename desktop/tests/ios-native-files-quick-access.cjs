@@ -27,7 +27,8 @@ test('Native and PWA use the same authoritative 64-Node quick-access endpoints',
 test('home pinned folder group is backed by verified Server Node ID, not stale local favorites', () => {
   assert.match(view, /@StateObject private var quickAccess = XDriveIOSNativeFilesQuickAccessModel\.shared/)
   assert.match(view, /DisclosureGroup\("固定的文件夹", isExpanded: \$quickAccessExpanded\)/)
-  assert.match(view, /if quickAccess\.matches\(login\.owner\)/)
+  assert.match(view, /if let expectedOwner = login\.owner,\s*quickAccess\.matches\(expectedOwner\)/)
+  assert.match(view, /sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, expectedOwner\s*\)/)
   assert.match(view, /ForEach\(quickAccess\.items\) \{ item in/)
   assert.match(view, /folderID: item\.node\.id/)
   assert.match(view, /native-ios-files-pinned-folder-/)
