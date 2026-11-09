@@ -3743,11 +3743,13 @@ struct XDriveIOSNativeFilesBrowser: View {
         filesArrangementLifecycle(returnScroll: returnScroll)
         .onChange(of: model.loading) { loading in
             if !loading, model.verifiedPage, let target = pendingJumpIndex,
+               let expectedOwner = login.owner,
                target >= model.startOffset,
                target - model.startOffset < model.entries.count {
                 let node = model.entries[target - model.startOffset]
+                // Capture the *non-optional* authorized Owner before a delayed
+                // scroll. A logout while Task.yield() is pending must retire it.
                 let expectedFolder = parentID
-                let expectedOwner = login.owner
                 pendingJumpIndex = nil
                 Task { @MainActor in
                     await Task.yield()

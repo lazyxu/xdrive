@@ -29,7 +29,7 @@ test('one native Files modal opens from the current real page and reanchors afte
   // Cancellation is still mandatory; clearing the verified source rows here
   // caused the observed immediate pop/flicker on folder taps.
   const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'),
-    browser.indexOf('var body: some View', browser.indexOf('private func suspendVisibleRange()')));
+    browser.indexOf('private func filesForegroundLifecycle(', browser.indexOf('private func suspendVisibleRange()')));
   assert.match(suspend, /model\.suspendForNavigation\(\)/);
   assert.doesNotMatch(suspend, /model\.invalidate\(\)/);
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?model\.invalidate\(\)/);

@@ -37,7 +37,8 @@ test('directory and full-library search use canonical counted Owner Range', () =
   assert.match(view, /completionHandler\(nil\)/);
   assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
   assert.match(view, /private func suspendVisibleRange\(\) \{[\s\S]*?model\.suspendForNavigation\(\)/);
-  const suspension = view.slice(view.indexOf('private func suspendVisibleRange()'), view.indexOf('var body: some View', view.indexOf('private func suspendVisibleRange()')));
+  const suspension = view.slice(view.indexOf('private func suspendVisibleRange()'), view.indexOf('private func filesForegroundLifecycle(', view.indexOf('private func suspendVisibleRange()')));
+  assert.match(suspension, /model\.suspendForNavigation\(\)/)
   assert.doesNotMatch(suspension, /model\.invalidate\(\)/);
   assert.match(view, /model\.canResume\(/);
   assert.match(view, /job\?\.cancel\(\)/);
