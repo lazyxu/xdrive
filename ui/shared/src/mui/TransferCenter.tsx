@@ -364,8 +364,11 @@ function TransferGroupItem({
   const instantChildren = children.filter((child) => xDriveTransferUploadOutcome(child) === 'instant')
   const reusedChildren = children.filter((child) => xDriveTransferUploadOutcome(child) === 'partially_reused')
   const resumedChildren = children.filter((child) => xDriveTransferUploadOutcome(child) === 'resumed')
+  // A persisted folder may retain only a bounded subset of child receipts.
+  // Never claim the *whole* folder was instant from a truncated child list.
   const allInstant = item.direction === 'upload' && item.state === 'completed' &&
-    children.length > 0 && instantChildren.length === children.length
+    item.scan_complete === true && progress.total > 0 && children.length === progress.total &&
+    instantChildren.length === children.length
   const phaseLabel = xDriveTransferPhaseLabel(item.phase)
   const discoveredLabel = scanIncomplete
     ? `已发现 ${progress.total.toLocaleString('zh-CN')} 个文件${bytes.total > 0 ? ` · ${formatBytes(bytes.total)}` : ''}`
