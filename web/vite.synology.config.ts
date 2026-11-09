@@ -21,9 +21,16 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       filesize: path.join(webRoot, 'node_modules', 'filesize', 'dist', 'filesize.js'),
-      // Shared UI source lives outside web/: resolve this optional Viewer icon
-      // package from the owning DSM build's installed dependency tree.
+      // Shared @xdrive/ui source lives outside web/. With preserveSymlinks,
+      // Vite otherwise resolves peer imports from ui/shared rather than the
+      // isolated DSM application's installed dependency tree. Route all shared
+      // MUI/Emotion/React peers to one explicitly pinned Web installation.
       '@mui/icons-material': path.join(webRoot, 'node_modules', '@mui', 'icons-material'),
+      '@mui/material': path.join(webRoot, 'node_modules', '@mui', 'material'),
+      '@emotion/react': path.join(webRoot, 'node_modules', '@emotion', 'react'),
+      '@emotion/styled': path.join(webRoot, 'node_modules', '@emotion', 'styled'),
+      'react-dom': path.join(webRoot, 'node_modules', 'react-dom'),
+      react: path.join(webRoot, 'node_modules', 'react'),
     },
   },
 })
