@@ -2685,10 +2685,46 @@ repair_migrated_cas_parents_before_backup() {
 # and must never bypass a real detected inconsistency.
 repair_migrated_cas_parents_before_backup
 
+# GitLab's rolling core Snapshot is source-exact, but its optional images
+# are built/published independently. Never invent a same-Commit optional image:
+# preserve an existing immutable, already configured optional reference during
+# core upgrades. Optional image upgrades are a separate, explicit operation.
+# Stable tags, GitHub releases and offline bundles remain exact-source.
+retain_gitlab_optional_image() {
+  local variable="$1" proposed="$2" existing=""
+  if [[ "$requested_source" != gitlab || "$requested_channel" != master ||
+        "$UPGRADE_EXISTING" != 1 || -n "$OFFLINE_ASSET_DIR" ]]; then
+    printf '%s\n' "$proposed"
+    return 0
+  fi
+  existing="$(existing_env_value "$variable")"
+  if [[ -z "$existing" || "$existing" == "$proposed" ]]; then
+    printf '%s\n' "$proposed"
+    return 0
+  fi
+  if [[ "$existing" == -* || "$existing" == *[[:space:]]* ]]; then
+    echo "[xDrive] unsafe existing optional image reference in $variable" >&2
+    return 1
+  fi
+  case "$existing" in
+    *@sha256:*) [[ "$existing" =~ @sha256:[0-9a-f]{64}$ ]] || return 1 ;;
+    *:sha-*) [[ "$existing" =~ :sha-[0-9a-f]{12}$ ]] || return 1 ;;
+    *:v*) [[ "$existing" =~ :v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9._-]+)?$ ]] || return 1 ;;
+    *)
+      echo "[xDrive] refusing mutable/unknown optional image $variable; pin a verified digest first" >&2
+      return 1
+      ;;
+  esac
+  echo "[xDrive] retaining independently versioned optional image $variable=$existing during core upgrade" >&2
+  printf '%s\n' "$existing"
+}
+
 server_image_ref="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
 caddy_image_ref="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
 photo_image_ref="$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
 media_image_ref="$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
+photo_image_ref="$(retain_gitlab_optional_image XD_PHOTO_FACE_IMAGE "$photo_image_ref")"
+media_image_ref="$(retain_gitlab_optional_image XD_MEDIA_WORKER_IMAGE "$media_image_ref")"
 if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
   server_image_ref="${OFFLINE_SERVER_IMAGE:-$server_image_ref}"
   caddy_image_ref="${OFFLINE_CADDY_IMAGE:-$caddy_image_ref}"
