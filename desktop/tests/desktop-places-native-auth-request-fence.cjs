@@ -27,16 +27,26 @@ const owner = 'current-owner'
 const partition = 'xdrive-places-web-test'
 const identity = {owner, origin}
 
-function harness({bound = identity, deferredCertificate = false} = {}) {
+function harness({bound = identity, deferredCertificate = false,
+  selectedIP = '', deferredProxy = false} = {}) {
   let request, certificate, completeVerify, certificateCalls = 0
+  let completeProxy, proxyCalls = 0
+  const proxyDirective = 'PROXY 127.0.0.1:10999'
   const state = {connected:true,status:{
     configured:true, username:owner, server:origin, auth_status:'已登录',
-    must_change_password:false, connection_ip:'',
+    must_change_password:false, connection_ip:selectedIP,
   }}
   const placesSession = {
     setPermissionRequestHandler(){},
     setPermissionCheckHandler(){},
     webRequest:{onBeforeRequest(fn){request = fn}},
+    resolveProxy() {
+      proxyCalls++
+      if (!deferredProxy) return Promise.resolve(proxyDirective)
+      return new Promise(resolve => {
+        completeProxy = () => resolve(proxyDirective)
+      })
+    },
     setCertificateVerifyProc(fn){certificate = fn},
   }
   const env = {
@@ -44,11 +54,16 @@ function harness({bound = identity, deferredCertificate = false} = {}) {
     desktopPlacesWebGeneration:1, desktopPlacesWebReady:null,
     desktopPlacesWebPending:bound && {...bound,promise:Promise.resolve(true)},
     desktopPlacesWebConfiguredPartitions:new Set(),
-    desktopPlacesNetworkRoute:null,
+    desktopPlacesNetworkRoute: selectedIP ? {
+      partition, owner, origin, ip:selectedIP,
+      route:{proxyDirective,isActive:()=>true},
+    } : null,
     session:{fromPartition:()=>placesSession},
     xDriveResolveSecureBaiduMapTarget:server =>
       [origin,otherOrigin].includes(server) ? {origin:server} : null,
     placesGuestIPRequestAllowed:()=>true,
+    desktopPlacesSelectedRoute:(allowed,ip) =>
+      allowed===origin && ip===selectedIP ? {origin} : null,
     privateLANOrigin:server => server===origin
       ? {origin,ip:'192.168.7.8',port:8443} : null,
     requiresApprovedLANPin:()=>false,
@@ -77,6 +92,13 @@ function harness({bound = identity, deferredCertificate = false} = {}) {
       request({url}, response => {result=response})
       return result
     },
+    requestAsync:(url=origin+'/api/v1/version') => new Promise(resolve =>
+      request({url}, resolve)),
+    completeProxy:() => {
+      assert.equal(typeof completeProxy,'function')
+      completeProxy()
+    },
+    proxyCalls:() => proxyCalls,
     certificate:() => new Promise(resolve =>
       certificate({hostname:'192.168.7.8'}, resolve)),
     completeVerify:() => {
@@ -158,4 +180,39 @@ test('all map embed, attach and independent-scope IPC gates recheck native auth'
     assert.match(main.slice(start,end),/desktopPlacesWebOwnerStillCurrent\(/,
       'native auth must be checked before exposing map scope: '+startMarker)
   }
+})
+
+test('selected Agent IP proxy allows a live Owner without weakening public SDK isolation', async () => {
+  const h = harness({selectedIP:'192.168.7.8'})
+  assert.deepEqual(await h.requestAsync(origin+'/api/v1/version'),
+    {cancel:false})
+  assert.equal(h.proxyCalls(),1)
+  // Third-party SDK requests do not consume the private Server proxy.
+  assert.deepEqual(h.request('https://api.map.baidu.com/v3/?qt=tile'),
+    {cancel:false})
+  assert.equal(h.proxyCalls(),1)
+})
+
+test('late proxy resolution is rejected after native sign-out, Owner or IP changes', async () => {
+  for (const patch of [
+    {auth_status:'需要重新登录'},
+    {must_change_password:true},
+    {username:'other-owner'},
+    {connection_ip:'192.168.7.9'},
+    {configured:false},
+  ]) {
+    const h = harness({selectedIP:'192.168.7.8',deferredProxy:true})
+    const pending = h.requestAsync(origin+'/api/v1/version')
+    assert.equal(h.proxyCalls(),1)
+    Object.assign(h.state.status,patch)
+    h.completeProxy()
+    assert.deepEqual(await pending,{cancel:true},
+      'must deny a stale proxy answer after '+JSON.stringify(patch))
+  }
+  const disconnected=harness({selectedIP:'192.168.7.8',
+    deferredProxy:true})
+  const pending=disconnected.requestAsync(origin+'/api/v1/version')
+  disconnected.state.connected=false
+  disconnected.completeProxy()
+  assert.deepEqual(await pending,{cancel:true})
 })
