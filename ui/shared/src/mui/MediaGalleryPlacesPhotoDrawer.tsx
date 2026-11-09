@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
@@ -19,7 +19,7 @@ import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
 export function XDriveMediaGalleryPlacesPhotoDrawer({
   items, total, windowStart = 0, loadedDepth = items.length,
   phase, expanded, loadingMore, pageError, pageErrorKind, loadThumbnail, photoTileMinWidth = 108, onExpand,
-  onClose, onRetry, onRefreshMap, onLoadMore, onWindowRange, onRetryWindow, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
+  onClose, onRetry, onRefreshMap, onLoadMore, onWindowRange, onRetryWindow, onVisibleAnchorChange, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
   total: number
@@ -39,6 +39,8 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   onLoadMore: () => void
   onWindowRange?: (startIndex: number, endIndex: number) => void
   onRetryWindow?: () => void
+  /** Numeric viewport intent only; Owner/Cell admission stays with Parent. */
+  onVisibleAnchorChange?: (index: number, viewportOffset: number, gridWidth: number) => void
   onOpenPhoto: (item: MediaItem, presentation: XDrivePlacesDrawerPresentation) => void
   onOpenAll: () => void
   /** Same signed Owner camera viewport as the map's original camera wall. */
@@ -80,16 +82,43 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   // Only Owner-validated /cell-items pages enter this collection. The
   // full Gallery viewport engine virtualizes *mounted tiles*; existing
   // Parent pagination/abort/freshness guards continue to own all I/O.
+  // Small albums retain their established incremental 48-item navigation.
+  // Larger albums can directly seek any logical row of their freshly signed total.
+  const sparse = total > XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT
+  const resident = useMemo(
+    () => new Map(items.map((item, index) => [windowStart + index, item])),
+    [items, windowStart],
+  )
+  const itemAt = useCallback((index: number) => resident.get(index), [resident])
+  const rangePort = useRef({phase,windowStart,residentCount:items.length,
+    total,loadedDepth,onWindowRange})
+  rangePort.current = {phase,windowStart,residentCount:items.length,
+    total,loadedDepth,onWindowRange}
+  const notifyRange = useCallback((start: number, end: number) => {
+    const state = rangePort.current
+    const extent = state.total > XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT
+      ? state.total : state.loadedDepth
+    if (state.phase==='ready' && end < extent &&
+        (start < state.windowStart ||
+         end >= state.windowStart + state.residentCount))
+      state.onWindowRange?.(start,end)
+  }, [])
   const collection = useMemo<XDriveMediaGalleryVirtualCollection>(() => ({
-    itemCount: loadedDepth,
-    loadedItems: new Map(items.map((item, index) => [windowStart + index, item])),
-    itemAt: index => items[index - windowStart],
-    onRangeChange: (start, end) => {
-      if (phase === 'ready' && (start < windowStart ||
-          (end >= windowStart + items.length && end < loadedDepth)))
-        onWindowRange?.(start,end)
-    },
-  }), [items, windowStart, loadedDepth, phase, onWindowRange])
+    itemCount: sparse && phase==='ready' ? total : loadedDepth,
+    loadedItems: resident,
+    itemAt,
+    onRangeChange: notifyRange,
+  }), [sparse, phase, total, loadedDepth, resident, itemAt, notifyRange])
+  const visibleAnchor = useRef<{index:number;viewportOffset:number}|null>(null)
+  // Ref-backed callback preserves the shared Gallery scroll/ResizeObserver
+  // lifetime when Parent's authorized page state changes.
+  const anchorPort = useRef(onVisibleAnchorChange)
+  anchorPort.current = onVisibleAnchorChange
+  const captureVisibleAnchor = useCallback(
+    (index:number,viewportOffset:number,gridWidth:number) => {
+      visibleAnchor.current={index,viewportOffset:Math.round(viewportOffset)}
+      anchorPort.current?.(index,viewportOffset,gridWidth)
+    }, [])
   const tileItem = (target: EventTarget | null) => {
     const tile = target instanceof Element
       ? target.closest('[data-xdrive-places-photo-drawer-item]') : null
@@ -98,7 +127,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     return Number.isSafeInteger(id) && id > 0
       ? items.find(item => item.node.id === id) ?? null : null
   }
-  const openTile = (item: MediaItem) => onOpenPhoto(item, position())
+  const openTile = (item: MediaItem) => onOpenPhoto(item, position(item))
   // Restore only when this trusted Parent Dialog actually finished entering
   // and a NEW authenticated Owner Cell Range has populated its grid. Never
   // replay old image bytes, reset the camera, or borrow SDK Child state.
@@ -106,14 +135,24 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     if (phase !== 'ready') { appliedReturn.current = null; return }
     const node = listRef.current
     if (!node || appliedReturn.current === node) return
+    const hasExactAnchor = sparse && expanded &&
+      initialPresentation?.anchorIndex !== undefined &&
+      initialPresentation.anchorIndex < total &&
+      initialPresentation.anchorViewportOffset !== undefined
     const target=Math.min(initialPresentation?.loadedCount ?? 0,total)
-    if (loadedDepth < target && !pageError) return
+    if (!hasExactAnchor && loadedDepth < target && !pageError) return
     if (!initialPresentation) { appliedReturn.current=node; return }
     // The prior attempt restored during Dialog's focus/Enter lifecycle; MUI
     // subsequently focused the first tile and scrolled the gallery to top.
     // This one-shot post-enter check wins that race without disabling the
     // Dialog's keyboard focus trap or its accessible default focus.
     if (!portalEntered) return
+    if (hasExactAnchor) {
+      // Gallery restores the logical row after the Dialog focus transition.
+      // Replaying a legacy pixel snapshot here would undo that restoration.
+      appliedReturn.current=node
+      return
+    }
     const view=node.ownerDocument.defaultView
     const apply = () => {
       if (listRef.current !== node || !node.isConnected) return
@@ -138,21 +177,36 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       if (first !== undefined) view?.cancelAnimationFrame(first)
       if (second !== undefined) view?.cancelAnimationFrame(second)
     }
-  }, [phase, expanded, initialPresentation, loadedDepth, total, pageError, portalEntered])
+  }, [phase, expanded, initialPresentation, loadedDepth, total, pageError, portalEntered, sparse])
   useEffect(() => {
+    if (sparse && initialPresentation?.anchorIndex !== undefined) return
     if (phase !== 'ready' || !initialPresentation || loadingMore || pageError ||
         loadedDepth>=total ||
         (initialPresentation.loadedCount ?? 0)<=loadedDepth) return
     // User previously visited these pages. Only restore their bounded count
     // through NEW authenticated /cell-items, never reuse old media bytes.
     onLoadMore()
-  }, [phase, initialPresentation, loadingMore, pageError, loadedDepth, total, onLoadMore])
-  const position = (): XDrivePlacesDrawerPresentation => {
+  }, [phase, initialPresentation, loadingMore, pageError, loadedDepth, total, onLoadMore, sparse])
+  const position = (item?: MediaItem): XDrivePlacesDrawerPresentation => {
     const bounded = (n: number, max: number) => Number.isFinite(n)
       ? Math.max(0, Math.min(max, Math.floor(n))) : 0
     // This snapshot holds only numeric UI coordinates; the trusted Parent
     // independently reauthorizes every Owner Cell page after Viewer Back.
     // A 100k wall may exceed 10,000 scroll pixels without materializing tiles.
+    const indexInWindow=item && items.findIndex(value =>
+      value.node.id===item.node.id && value.node.revision===item.node.revision)
+    const index=indexInWindow!==undefined && indexInWindow>=0
+      ? windowStart+indexInWindow : visibleAnchor.current?.index
+    const tile=index!==undefined ? listRef.current?.querySelector<HTMLElement>(
+      `[data-xdrive-media-index="${index}"]`) : null
+    const relativeTop=tile && listRef.current
+      ? tile.getBoundingClientRect().top-listRef.current.getBoundingClientRect().top
+      : visibleAnchor.current?.viewportOffset
+    const anchor=sparse && expanded && index!==undefined &&
+      Number.isSafeInteger(index) && index>=0 && index<total &&
+      relativeTop!==undefined && Number.isFinite(relativeTop)
+      ? {anchorIndex:index,anchorViewportOffset:Math.max(-10_000,
+          Math.min(10_000,Math.round(relativeTop)))} : {}
     return {expanded,
       scrollTop:bounded(listRef.current?.scrollTop ?? 0,
         XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT),
@@ -160,7 +214,8 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,loadedDepth),
       ...(loadedDepth > XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT
         ? {visitedDepth:Math.min(XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT,loadedDepth)}
-        : {})}
+        : {}),
+      ...anchor}
   }
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md" disableScrollLock
@@ -282,7 +337,8 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
           <Box ref={listRef} data-xdrive-places-photo-drawer-items
             onScroll={event => {
               const list=event.currentTarget
-              if (expanded && !loadingMore && !pageError && loadedDepth < total &&
+              if (!sparse && expanded && !loadingMore && !pageError &&
+                  loadedDepth < total &&
                   list.scrollHeight-list.scrollTop-list.clientHeight < 180) onLoadMore()
             }}
             onPointerDownCapture={event => {
@@ -324,7 +380,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                   Math.hypot(event.clientX-tap.startX,event.clientY-tap.startY)>12 ||
                   event.timeStamp-tap.startAt>700) return
               // Genuine short touch opens once even if the browser omits click.
-              onOpenPhoto(item,position())
+              onOpenPhoto(item,position(item))
             }}
             onClickCapture={event => {
               const handled=touchActivated.current
@@ -354,6 +410,14 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                 onSelect={() => undefined}
                 loadThumbnail={loadThumbnail}
                 thumbnailScheduler={thumbnailScheduler}
+                onVisibleAnchorChange={captureVisibleAnchor}
+                restoreAnchorIndex={sparse && portalEntered && expanded &&
+                  (initialPresentation?.anchorIndex ?? -1) < total
+                    ? initialPresentation?.anchorIndex : undefined}
+                restoreAnchorRevision={sparse && portalEntered && expanded &&
+                  initialPresentation?.anchorIndex !== undefined ? 1 : 0}
+                restoreAnchorViewportOffset={
+                  initialPresentation?.anchorViewportOffset}
                 onOpen={openTile}
                 onPreview={openTile}
                 onToggleFavorite={() => undefined}
@@ -390,12 +454,14 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
           <Stack direction="row" alignItems="center" justifyContent="space-between"
             spacing={1} sx={{px:1.25,pb:1,pt:0.25,flexShrink:0,flexWrap:'wrap',rowGap:0.25}}>
             <Typography variant="caption" color="text.secondary">
-              {loadedDepth < total
-                ? `已显示 ${loadedDepth.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 张`
-                : '此地点全部照片'}
+              {sparse
+                ? `共 ${total.toLocaleString('zh-CN')} 张 · 当前缓存 ${items.length.toLocaleString('zh-CN')} 张`
+                : loadedDepth < total
+                  ? `已显示 ${loadedDepth.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 张`
+                  : '此地点全部照片'}
             </Typography>
             <Stack direction="row" alignItems="center" spacing={0.25}>
-              {loadedDepth < total ? (
+              {!sparse && loadedDepth < total ? (
                 <Button data-xdrive-places-photo-drawer-load-more
                   variant="outlined" onClick={onLoadMore} disabled={loadingMore}
                   aria-label="继续加载此地点的照片"

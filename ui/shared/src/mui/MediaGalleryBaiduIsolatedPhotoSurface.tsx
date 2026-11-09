@@ -19,6 +19,7 @@ import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cel
 import { xDriveBaiduCellReturnMatchesFreshSelection } from '../media-gallery-baidu-cell-return-session'
 import {
   XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
+  XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT, XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT,
   xDrivePlacesDrawerValidRange, xDrivePlacesDrawerReturnLogicalDepth,
   xDrivePlacesDrawerMatchesFresh, xDrivePlacesDrawerMatchesResizedCell,
   xDriveTakePlacesDrawerViewerReturn,
@@ -30,6 +31,7 @@ import { xDriveAppendPlacesDrawerPage } from '../media-gallery-places-photo-pagi
 import {
   xDrivePlacesPhotoWindowBound, xDrivePlacesPhotoWindowAppend,
   xDrivePlacesPhotoWindowMissingOffset, xDrivePlacesPhotoWindowRehydrate,
+  xDrivePlacesPhotoWindowSeek,
 } from '../media-gallery-places-photo-window'
 import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDrawer'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
@@ -219,6 +221,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // authorizes media, crosses the isolated Child, or reuses the old Cell
   // selector. Both Hosts can use the same Parent DOM/Owner check.
   const committedDrawer = useRef<DrawerView | null>(null)
+  // The last authenticated visible row survives a CSS resize even if React
+  // retires the old Grid before the map SDK emits its cancel callback.
+  // This holds numeric geometry only; it never authorizes a photo.
+  const latestDrawerVisibleAnchor = useRef<{
+    key:string;nodeID:number;revision:number;index:number;viewportOffset:number
+    /** Capture the column geometry before a layout-changing viewport resize. */
+    gridWidth:number
+  } | null>(null)
   const pendingResizeDrawer = useRef<{
     owner:string; key:string; hint:XDrivePlacesDrawerReturn
   } | null>(null)
@@ -248,6 +258,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     drawerFetch.current=controller
     const cell={...selection,bounds:{...selection.bounds}}
     const key=approved.key
+    // A fresh signed Cell on Viewer Back or after rotation starts a new
+    // geometry epoch. Its presentation already holds the old numeric anchor;
+    // never keep the previous Grid's column width after fresh authorization.
+    if (presentation ||
+        latestDrawerVisibleAnchor.current?.key!==key ||
+        latestDrawerVisibleAnchor.current?.nodeID!==cell.node_id ||
+        latestDrawerVisibleAnchor.current?.revision!==cell.node_revision)
+      latestDrawerVisibleAnchor.current=null
     setDrawer({selection:cell,key,phase:'loading',items:[],
       windowStart:0,loadedDepth:0,total:cell.photo_count,expanded:presentation?.expanded ?? true,
       loadingMore:false,pageError:false,returnPresentation:presentation})
@@ -404,14 +422,22 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
            current.windowStart!==state.windowStart ||
            !xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection))
           return current
-        const window=xDrivePlacesPhotoWindowRehydrate(selection,{
+        const priorWindow={
           start:current.windowStart,items:current.items,
           depth:current.loadedDepth,total:current.total,
-        },range)
+        }
+        // Preserve #4127's visited-only rehydration fence. A new first-time
+        // deep seek follows a separate aligned signed Range admission path.
+        const window=offset >= current.loadedDepth
+          ? xDrivePlacesPhotoWindowSeek(selection,priorWindow,range)
+          : xDrivePlacesPhotoWindowRehydrate(selection,priorWindow,range)
         return {...current,loadingMore:false,pageError:!window,
           pageErrorKind:window?undefined:'window',
           failedWindowRange:window?undefined:{start:visibleStart,end:visibleEnd},
           windowStart:window?.start ?? current.windowStart,
+          // Only a newly contiguous signed page may advance the prefix.
+          // A direct far seek never claims the intervening rows were visited.
+          loadedDepth:window?.depth ?? current.loadedDepth,
           items:window ? [...window.items] : current.items}
       })
     }).catch(()=>{
@@ -494,6 +520,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     if(lastFilterKey.current===currentFilterKey)return
     lastFilterKey.current=currentFilterKey
     pendingResizeDrawer.current=null
+    latestDrawerVisibleAnchor.current=null
     pendingCoverClick.current=null
     setCoverClickStatus('')
     committedPresentation.current=null
@@ -610,19 +637,55 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
              state.key===approved.key && latestAcceptedViewport.current) {
             const list=node.ownerDocument.querySelector<HTMLElement>(
               '[data-xdrive-places-album-dialog] [data-xdrive-places-photo-drawer-items]')
-            const bounded=(value:number)=>Number.isFinite(value)
-              ? Math.max(0,Math.min(10_000,Math.floor(value))) : 0
+            const bounded=(value:number,max=10_000)=>Number.isFinite(value)
+              ? Math.max(0,Math.min(max,Math.floor(value))) : 0
+            // The current visible tile belongs to the trusted Parent's
+            // authenticated sparse Grid, never to the third-party SDK Child.
+            // A stable logical photo row survives a width/column count change.
+            const bounds=list?.getBoundingClientRect()
+            const visibleTile=list && bounds ? Array.from(
+              list.querySelectorAll<HTMLElement>(
+                '[data-xdrive-media-gallery-virtual-grid] [data-xdrive-media-index]'),
+            ).find(tile=>{
+              const rect=tile.getBoundingClientRect()
+              return rect.bottom>bounds.top && rect.top<bounds.bottom &&
+                rect.right>bounds.left && rect.left<bounds.right
+            }) : undefined
+            const rawIndex=visibleTile
+              ? Number(visibleTile.getAttribute('data-xdrive-media-index')) : -1
+            const cached=latestDrawerVisibleAnchor.current
+            const remembered=cached && cached.key===approved.key &&
+              cached.nodeID===state.selection.node_id &&
+              cached.revision===state.selection.node_revision &&
+              Number.isSafeInteger(cached.index) && cached.index>=0 &&
+              cached.index<state.total && Number.isFinite(cached.viewportOffset)
+              ? cached : null
+            const anchorIndex=remembered?.index ?? rawIndex
+            const offset=remembered?.viewportOffset ??
+              (bounds && visibleTile
+                ? visibleTile.getBoundingClientRect().top-bounds.top : NaN)
+            const anchor=state.total>XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT &&
+              Number.isSafeInteger(anchorIndex) && anchorIndex>=0 &&
+              anchorIndex<state.total && Number.isFinite(offset)
+              ? {anchorIndex,
+                  anchorViewportOffset:Math.max(-10_000,Math.min(10_000,
+                    Math.round(offset)))}
+              : {}
             pendingResizeDrawer.current={owner:scope??'',key:approved.key,
               hint:{selection:{...state.selection,
                 bounds:{...state.selection.bounds}},photoScope,
                 presentation:{expanded:state.expanded,
-                  scrollTop:bounded(list?.scrollTop??0),
+                  scrollTop:bounded(list?.scrollTop??0,
+                    XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT),
                   scrollLeft:bounded(list?.scrollLeft??0),
-                  // Keep the already-viewed signed page depth on rotation.
-                  // The new camera must still reauthorize every page, capped
-                  // at the same 10-page limit as Viewer Back.
+                  // Retain only numeric visual intent; fresh Owner Cells and
+                  // signed /cell-items pages still authorize all rehydration.
                   loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
-                    state.loadedDepth)}}}
+                    state.loadedDepth),
+                  ...(state.loadedDepth>XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT
+                    ? {visitedDepth:Math.min(
+                        XDRIVE_PLACES_DRAWER_RETURN_VISITED_LIMIT,state.loadedDepth)} : {}),
+                  ...anchor}}}
           }
           // When several CSS resize frames precede one /cells response,
           // preserve only the first valid intent. Native Hosts coalesce the
@@ -1327,6 +1390,29 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             onOpenAll={openDrawerAll} onOpenPhoto={openDrawerPhoto}
             onLoadMore={loadDrawerMore}
             onWindowRange={loadDrawerWindow}
+            onVisibleAnchorChange={(index,viewportOffset,gridWidth) => {
+              // Ignore revoked scopes and snapshots produced after a resize
+              // reflows the old Grid's column count. Without this width fence,
+              // old scrollTop can turn index 87,976 into index 96,432 before
+              // the SDK cancellation captures the true pre-rotation anchor.
+              const state=activeDrawer
+              if (!state || state.phase!=='ready' ||
+                  state.key!==acceptedScope.current?.key ||
+                  !hasAcceptedCell(state.selection) ||
+                  !Number.isSafeInteger(index) || index<0 ||
+                  index>=state.total || !Number.isFinite(viewportOffset) ||
+                  !Number.isFinite(gridWidth) || gridWidth<=0) return
+              const previous=latestDrawerVisibleAnchor.current
+              if (previous && previous.key===state.key &&
+                  previous.nodeID===state.selection.node_id &&
+                  previous.revision===state.selection.node_revision &&
+                  previous.gridWidth!==gridWidth) return
+              latestDrawerVisibleAnchor.current={
+                key:state.key,nodeID:state.selection.node_id,
+                revision:state.selection.node_revision,index,gridWidth,
+                viewportOffset:Math.max(-10_000,Math.min(10_000,
+                  Math.round(viewportOffset)))}
+            }}
             onRetryWindow={retryDrawerWindow}
             onOpenNearby={acceptedViewport && activeDrawer.phase==='ready' &&
               openViewport.current && trustedSummary && trustedSummary.total_count>0

@@ -39,6 +39,7 @@ const {
   XDRIVE_PLACES_DRAWER_WINDOW_ITEM_LIMIT: bound,
   xDrivePlacesPhotoWindowAppend: append,
   xDrivePlacesPhotoWindowRehydrate: rehydrate,
+  xDrivePlacesPhotoWindowSeek: seek,
   xDrivePlacesPhotoWindowMissingOffset: missing,
 } = loadTS('ui/shared/src/media-gallery-places-photo-window.ts')
 
@@ -227,4 +228,74 @@ test('a signed rehydrate response cannot materialize unvisited logical rows', ()
   assert.ok(rehydrate(selection,back,page(480)))
   assert.equal(rehydrate(selection,back,page(512)),null)
   assert.equal(back.depth,528)
+})
+
+
+test('first-visit 100k logical wall directly seeks signed page 90k without visiting earlier pages', () => {
+  // A newly opened place knows the exact, signed total but has only page zero.
+  const cold={start:0,items:page(0).items,depth:48,total}
+  const visibleStart=90253, visibleEnd=90269
+  const offset=Math.floor(visibleStart/limit)*limit
+  assert.equal(missing(cold,visibleStart,visibleEnd),offset)
+  assert.ok(offset>480)
+  const signed=seek(selection,cold,page(offset))
+  assert.ok(signed)
+  assert.equal(signed.start,offset)
+  assert.equal(signed.depth,48,'a far visit does not invent a contiguous prefix')
+  assert.equal(signed.items.length,48)
+  assert.equal(missing(signed,visibleStart,visibleEnd),null)
+  assert.equal(missing(signed,0,7),0)
+  // Restoring the start and subsequently reading its next page is still safe.
+  const first=rehydrate(selection,signed,page(0))
+  assert.ok(first)
+  assert.equal(first.depth,48)
+  assert.equal(first.start,0)
+  const next=seek(selection,first,page(48))
+  assert.ok(next)
+  assert.equal(next.depth,96)
+  assert.equal(next.items.length,96)
+  // No guessed range, altered revision, or beyond-total seek is accepted.
+  assert.equal(seek(selection,cold,{...page(offset),total_count:total-1}),null)
+  assert.equal(seek(selection,cold,{...page(offset),offset:total}),null)
+  assert.equal(missing(cold,total,total),null)
+})
+
+test('trusted sparse Gallery wiring restores logical index, not 480 pages or old private IDs', () => {
+  const read = p => fs.readFileSync(path.join(root,p),'utf8')
+  const sheet=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+  const parent=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
+  const shared=read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
+  const returns=read('ui/shared/src/media-gallery-places-photo-drawer.ts')
+  assert.match(sheet,/itemCount: sparse && phase==='ready' \? total : loadedDepth/)
+  assert.match(sheet,/onRangeChange: notifyRange/)
+  assert.match(sheet,/onVisibleAnchorChange=\{captureVisibleAnchor\}/)
+  assert.match(sheet,/restoreAnchorIndex=/)
+  assert.match(sheet,/anchorIndex:index,anchorViewportOffset:/)
+  assert.match(shared,/visibleWindow\.startRow \* metrics\.rowStep - visibleTop/)
+  assert.match(shared,/collection\.loadedItems, collection\.onRangeChange/)
+  assert.match(parent,/loadedDepth:window\?\.depth \?\? current\.loadedDepth/)
+  assert.ok(parent.includes('const anchorIndex=remembered?.index ?? rawIndex'))
+  assert.ok(parent.includes('latestDrawerVisibleAnchor.current'))
+  assert.ok(parent.includes('onVisibleAnchorChange={(index,viewportOffset,gridWidth) =>'))
+  assert.ok(parent.includes('previous.gridWidth!==gridWidth'))
+  assert.ok(parent.includes('if (presentation ||'))
+  assert.ok(sheet.includes('anchorPort.current?.(index,viewportOffset,gridWidth)'))
+  assert.ok(shared.includes('currentHost.clientWidth,'))
+  assert.match(returns,/anchorIndex\?: number/)
+  assert.match(returns,/anchorViewportOffset\?: number/)
+  assert.doesNotMatch(returns,/\.items.*anchorIndex/,'return hints cannot retain media')
+})
+
+test('first-time signed seek cannot bypass #4127 visited-only rehydration',()=>{
+  const current={start:0,items:page(0).items,depth:96,total}
+  assert.equal(rehydrate(selection,current,page(80)),null)
+  assert.equal(seek(selection,current,page(80)),null,
+    'unaligned stale ranges must not bypass visited-depth fence')
+  assert.equal(seek(selection,current,page(512)),null,
+    'new signed direct seek requires a 48-item aligned offset')
+  const distant=seek(selection,current,page(528))
+  assert.ok(distant)
+  assert.equal(distant.depth,96)
+  assert.equal(distant.items.length,48)
+  assert.equal(rehydrate(selection,distant,page(480)),null)
 })

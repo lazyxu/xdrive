@@ -133,14 +133,51 @@ export function xDrivePlacesPhotoWindowRehydrate(
     depth: window.depth, total: window.total }
 }
 
+
+/** Explicit first-time seek beyond the visited prefix. Preserve #4127:
+ * rehydration must never materialize unvisited rows; a separate seek can
+ * use a newly verified 48-item aligned signed Owner page. */
+export function xDrivePlacesPhotoWindowSeek(
+  selection: MediaBaiduNativeCellSelection,
+  window: XDrivePlacesPhotoWindow,
+  page: MediaItemRange,
+): XDrivePlacesPhotoWindow | null {
+  const offset = page?.offset
+  if (!Number.isSafeInteger(offset) || offset < window.depth ||
+      offset >= window.total ||
+      offset % XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT !== 0 ||
+      !acceptsPage(selection, window, page, offset)) return null
+  if (offset === window.depth)
+    return xDrivePlacesPhotoWindowAppend(selection, window, page)
+  const residentEnd = window.start + window.items.length
+  const duplicate = page.items.some(item => window.items.some(old =>
+    old.node.id === item.node.id))
+  if ((offset === residentEnd ||
+       offset + page.items.length === window.start) && duplicate) return null
+  if (offset === residentEnd) {
+    return xDrivePlacesPhotoWindowBound({
+      start: window.start, items: [...window.items, ...page.items],
+      depth: window.depth, total: window.total,
+    })
+  }
+  if (offset + page.items.length === window.start) {
+    const combined = [...page.items, ...window.items]
+    return { start: offset,
+      items: combined.slice(0, XDRIVE_PLACES_DRAWER_WINDOW_ITEM_LIMIT),
+      depth: window.depth, total: window.total }
+  }
+  return { start: offset, items: [...page.items],
+    depth: window.depth, total: window.total }
+}
+
 export function xDrivePlacesPhotoWindowMissingOffset(
   window: XDrivePlacesPhotoWindow,
   start: number,
   end: number,
 ): number | null {
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
-      start < 0 || end < start || end >= window.depth ||
-      window.items.length < 1 || window.depth <= 0) return null
+      start < 0 || end < start || end >= window.total ||
+      window.items.length < 1 || window.total <= 0) return null
   const residentEnd = window.start + window.items.length
   if (start < window.start) {
     return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
@@ -154,7 +191,7 @@ export function xDrivePlacesPhotoWindowMissingOffset(
     return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }
-  if (end >= residentEnd && residentEnd < window.depth) {
+  if (end >= residentEnd && residentEnd < window.total) {
     return Math.floor(residentEnd / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }

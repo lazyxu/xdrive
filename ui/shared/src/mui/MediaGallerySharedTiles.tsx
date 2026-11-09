@@ -632,7 +632,7 @@ export function MediaVirtualTileGrid({
   restoreAnchorRevision?: number
   restoreAnchorViewportOffset?: number
   returnViewport?: MediaGalleryReturnViewport
-  onVisibleAnchorChange?: (index: number) => void
+  onVisibleAnchorChange?: (index: number, viewportOffset: number, gridWidth: number) => void
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef<number | null>(null)
@@ -722,7 +722,12 @@ export function MediaVirtualTileGrid({
           visibleBottom,
         })
         if (visibleWindow.end > visibleWindow.start) {
-          onVisibleAnchorChange?.(visibleWindow.start)
+          // Record the first visible logical row and its position relative
+          // to this scroll port, independent of any old CSS scroll height.
+          onVisibleAnchorChange?.(
+            visibleWindow.start, visibleWindow.startRow * metrics.rowStep - visibleTop,
+            currentHost.clientWidth,
+          )
         }
         setLayout((current) => (
           current.metrics.columns === metrics.columns &&
@@ -764,6 +769,15 @@ export function MediaVirtualTileGrid({
       }
     }
   }, [collection.itemCount, collection.onRangeChange, minTileWidth, minColumns, referenceColumnWidth, baselineColumns, onVisibleAnchorChange])
+
+  // A freshly signed sparse page can cover only part of the visible rows.
+  // Continue loading the next missing visible 48-item page when resident
+  // identities change, without remounting scroll/ResizeObserver listeners.
+  useEffect(() => {
+    if (layout.window.end > layout.window.start) {
+      void collection.onRangeChange(layout.window.start, layout.window.end - 1)
+    }
+  }, [collection.loadedItems, collection.onRangeChange, layout.window.start, layout.window.end])
 
   // A restore revision is a one-shot navigation/gesture intent. Re-rendering
   // the existing sparse wall for pending metadata, loading badges or a newly

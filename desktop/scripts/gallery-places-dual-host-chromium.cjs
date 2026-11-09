@@ -3528,6 +3528,217 @@ async function testPhotoCellAlbumDialog28(browser,mode,port){
 // Screenshot regression: 142 and 28 nearby Owner Cells must BOTH show
 // real photo covers (not an unexplained white numeric-only SDK label).
 // The two 72px cards are separated by 99x90 pixels and do not overlap.
+
+/** Real mounted React/MUI Grid in Chromium for both independent SDK Hosts.
+ * The Owner Cell carries 100k LOGICAL photos, but signed replies are at
+ * most 48 media identities each. This is not a 100k-originals network bench.
+ */
+async function test100kSparseRangeViewerAndResize(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',e=>errors.push(e.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>
+    route.fulfill({status:200,contentType:'text/javascript',body:sdkStub}))
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&place_100k=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 100,000 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    const dialog=page.getByRole('dialog',{name:'此地点的照片'})
+    await dialog.waitFor({state:'visible'})
+    await dialog.getByText('100,000 张照片和视频',{exact:true}).waitFor()
+    await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor()
+    await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor()
+    const samples=[]
+    for(const ratio of [0.25,0.61,0.88]){
+      const started=Date.now()
+      const before=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.length)
+      await dialog.locator('[data-xdrive-places-photo-drawer-items]')
+        .evaluate((el,r)=>{el.scrollTop=Math.floor((el.scrollHeight-el.clientHeight)*r)},ratio)
+      const expectedMin=Math.floor(100_000*ratio)-400
+      await page.waitForFunction(minIndex=>{
+        const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+        const rect=list?.getBoundingClientRect()
+        return !!rect && Array.from(list.querySelectorAll('[data-xdrive-places-photo-drawer-item]'))
+          .some(tile=>{
+            const index=Number(tile.getAttribute('data-xdrive-media-index'))
+            const box=tile.getBoundingClientRect()
+            return index>minIndex && box.bottom>rect.top && box.top<rect.bottom
+          })
+      },expectedMin)
+      const sample=await page.evaluate(()=>{
+        const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+        const tiles=[...list.querySelectorAll('[data-xdrive-places-photo-drawer-item]')]
+        const ranges=window.__mapProbe.photoPreviewRanges
+        return {tiles:tiles.length,requests:ranges.length,
+          lastOffset:ranges.at(-1)?.offset,
+          errors:document.querySelectorAll(
+            '[data-xdrive-places-photo-drawer-page-error]').length,
+          height:list.scrollHeight,scroll:list.scrollTop}
+      })
+      const delta=sample.requests-before
+      samples.push({...sample,delta,elapsedMs:Date.now()-started})
+      record(mode+': 100k first-visit direct signed seek '+ratio+
+        ' (reads='+String(delta)+
+        ',DOM='+String(sample.tiles)+')',
+        delta>=1 && delta<=8 &&
+        sample.tiles>0 && sample.tiles<160 &&
+        sample.lastOffset>20_000 && sample.lastOffset<100_000 &&
+        sample.errors===0 && errors.length===0)
+    }
+    const clicked=await dialog.locator('[data-xdrive-places-photo-drawer-items]')
+      .evaluate(el=>{
+        const rect=el.getBoundingClientRect()
+        const tile=Array.from(el.querySelectorAll('[data-xdrive-places-photo-drawer-item]'))
+          .find(node=>{
+            const box=node.getBoundingClientRect()
+            return box.top>=rect.top && box.bottom<=rect.bottom
+          })
+        if(!tile)return null
+        return {index:Number(tile.getAttribute('data-xdrive-media-index')),
+          offset:Math.round(tile.getBoundingClientRect().top-rect.top),
+          scroll:el.scrollTop}
+      })
+    assert(clicked && clicked.index>80_000,'a deep signed visible tile must be mounted')
+    await dialog.locator('[data-xdrive-media-index="'+clicked.index+'"]').click()
+    await page.locator('#fixture-viewer').waitFor({state:'visible'})
+    const opened=await page.evaluate(()=>window.__mapProbe.photoOpens.at(-1))
+    record(mode+': 100k deep Viewer authenticates selected row and saves logical index',
+      opened?.valid===true && opened.anchorIndex===clicked.index &&
+      opened.returnAnchorIndex===clicked.index &&
+      Math.abs(opened.returnAnchorViewportOffset-clicked.offset)<=2 &&
+      errors.length===0)
+    const beforeBack=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.length)
+    await page.locator('#fixture-viewer-back').click()
+    await dialog.waitFor({state:'visible'})
+    await page.waitForFunction(index=>{
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const tile=list?.querySelector('[data-xdrive-media-index="'+index+'"]')
+      const rect=list?.getBoundingClientRect(),box=tile?.getBoundingClientRect()
+      return !!(rect&&box&&box.bottom>rect.top&&box.top<rect.bottom)
+    },clicked.index)
+    const restored=await dialog.locator('[data-xdrive-places-photo-drawer-items]')
+      .evaluate((el,index)=>{
+        const tile=el.querySelector('[data-xdrive-media-index="'+index+'"]')
+        const ranges=window.__mapProbe.photoPreviewRanges
+        return {offset:Math.round(tile.getBoundingClientRect().top-
+            el.getBoundingClientRect().top),
+          reads:ranges.length,depth:el.scrollHeight,
+          dom:el.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+          target:ranges.at(-1)?.offset}
+      },clicked.index)
+    record(mode+': 100k Viewer Back returns to signed selected pixel row without 480-page walk',
+      Math.abs(restored.offset-clicked.offset)<=12 &&
+      restored.reads-beforeBack<=8 && restored.dom>0 && restored.dom<160 &&
+      restored.target>80_000 && errors.length===0)
+    const beforeRotate=await page.evaluate(()=>{
+      const probe=window.__mapProbe
+      const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=drawer?.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const rect=list?.getBoundingClientRect()
+      const visible=list&&rect?Array.from(
+        list.querySelectorAll('[data-xdrive-places-photo-drawer-item]')).find(node=>{
+          const r=node.getBoundingClientRect()
+          return r.bottom>rect.top && r.top<rect.bottom &&
+            r.right>rect.left && r.left<rect.right
+        }):null
+      probe.deep100kPreRotateDrawer=drawer
+      return {queries:probe.queries.length,
+        previews:probe.photoPreviewRanges.length,
+        anchorIndex:visible?Number(visible.getAttribute('data-xdrive-media-index')):-1,
+        anchorOffset:visible&&rect
+          ?Math.round(visible.getBoundingClientRect().top-rect.top):null}
+    })
+    assert(beforeRotate.anchorIndex>80_000 &&
+      Number.isFinite(beforeRotate.anchorOffset),
+      'a real deep visible photo anchor must exist before rotation')
+    await page.setViewportSize({width:844,height:390})
+    try{
+      await page.waitForFunction(before=>{
+        const probe=window.__mapProbe
+        const old=probe.deep100kPreRotateDrawer
+        const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+        if(!old || old.isConnected || !drawer || drawer===old ||
+            probe.queries.length<=before.queries)return false
+        const newRanges=probe.photoPreviewRanges.slice(before.previews)
+        const firstAuthorized=newRanges.some(range=>
+          range.total===100_000 && range.offset===0 && range.items===48)
+        const deepAuthorized=newRanges.some(range=>
+          range.total===100_000 &&
+          range.offset<=before.anchorIndex &&
+          before.anchorIndex<range.offset+range.items)
+        if(!firstAuthorized || !deepAuthorized)return false
+        const list=drawer.querySelector('[data-xdrive-places-photo-drawer-items]')
+        const tile=list?.querySelector('[data-xdrive-media-index="'+before.anchorIndex+'"]')
+        const rect=list?.getBoundingClientRect(),box=tile?.getBoundingClientRect()
+        return !!(rect&&box&&box.bottom>rect.top&&box.top<rect.bottom)
+      },beforeRotate)
+    }catch(error){
+      // Bounded synthetic numbers only; no Owner IDs, private URLs or tokens.
+      const diagnostic=await page.evaluate(before=>{
+        const p=window.__mapProbe
+        const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+        return {freshQueries:p.queries.length-before.queries,
+          freshRanges:p.photoPreviewRanges.slice(before.previews).map(x=>({
+            offset:x.offset,count:x.items,total:x.total})).slice(0,12),
+          oldDetached:p.deep100kPreRotateDrawer?.isConnected===false,
+          present:!!list,
+          tiles:list?.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length??0,
+          anchorMounted:!!list?.querySelector(
+            '[data-xdrive-media-index="'+before.anchorIndex+'"]'),
+          pageError:!!document.querySelector(
+            '[data-xdrive-places-photo-drawer-page-error]')}
+      },beforeRotate)
+      console.error('places-100k-rotation-signed-gate',
+        JSON.stringify({mode,before:beforeRotate,after:diagnostic}))
+      throw error
+    }
+    const afterRotate=await page.evaluate(before=>{
+      const probe=window.__mapProbe
+      const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=drawer.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const tile=list.querySelector('[data-xdrive-media-index="'+before.anchorIndex+'"]')
+      const ranges=probe.photoPreviewRanges.slice(before.previews)
+      return {reads:ranges.length,queries:probe.queries.length-before.queries,
+        dom:list.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+        oldDetached:probe.deep100kPreRotateDrawer?.isConnected===false,
+        firstSigned:ranges.some(x=>x.total===100_000&&x.offset===0&&x.items===48),
+        deepSigned:ranges.some(x=>x.total===100_000 &&
+          x.offset<=before.anchorIndex &&
+          before.anchorIndex<x.offset+x.items),
+        offset:Math.round(tile.getBoundingClientRect().top-list.getBoundingClientRect().top),
+        hasError:Boolean(document.querySelector(
+          '[data-xdrive-places-photo-drawer-page-error]'))}
+    },beforeRotate)
+    // Retain the bounded diagnostic added by the concurrent failed-HEAD run.
+    console.log('Places 100k resize '+mode+' '+JSON.stringify({
+      signedReads:afterRotate.reads,mountedTiles:afterRotate.dom,
+      reauthorized:afterRotate.firstSigned && afterRotate.deepSigned,
+      oldDetached:afterRotate.oldDetached,
+      pageError:afterRotate.hasError,runtimeErrorCount:errors.length,
+    }))
+    record(mode+': 100k resize anchors visible photo through fresh Owner range'+
+      ' (reads='+afterRotate.reads+',queries='+afterRotate.queries+
+      ',dom='+afterRotate.dom+')',
+      afterRotate.oldDetached && afterRotate.firstSigned && afterRotate.deepSigned &&
+      afterRotate.queries>=1 && afterRotate.reads>=2 && afterRotate.reads<=8 &&
+      afterRotate.dom>0 && afterRotate.dom<160 &&
+      Math.abs(afterRotate.offset-beforeRotate.anchorOffset)<=16 &&
+      !afterRotate.hasError && errors.length===0)
+    record(mode+': 100k real Chromium samples stay viewport bounded (3 runs)',
+      samples.length===3 && samples.every(x=>x.tiles<160 && x.delta<=8) &&
+      errors.length===0)
+    console.log('Places 100k Chromium '+mode+' '+JSON.stringify(samples.map(x=>({
+      dom:x.tiles,reads:x.delta,elapsedMs:x.elapsedMs}))))
+  }finally{
+    await context.close()
+  }
+}
+
 async function testAdjacent142And28PhotoCovers(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',
@@ -4460,6 +4671,8 @@ async function main(){
       await testPhotoCellAlbumDialog28(browser,'isolated',port)
       await testPhotoDrawerSameCellRetry(browser,'inline',port)
       await testPhotoDrawerSameCellRetry(browser,'isolated',port)
+      await test100kSparseRangeViewerAndResize(browser,'inline',port)
+      await test100kSparseRangeViewerAndResize(browser,'isolated',port)
       await testAdjacent142And28PhotoCovers(browser,'inline',port)
       await testAdjacent142And28PhotoCovers(browser,'isolated',port)
       await testMapOverlayPinOcclusion(browser,'inline',port)
