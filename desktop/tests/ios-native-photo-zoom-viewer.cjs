@@ -94,8 +94,8 @@ test('cloud PhotoAsset first ticket uses the frozen presenting Owner rather than
   assert.match(preview, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?dismiss\(\)/)
   // Current native L3 Viewer now offers explicitly initiated, Owner-verified
   // original export without bouncing to the hidden Files management panel.
-  assert.match(files, /case \.unsupported:[\s\S]*?failure = "当前格式不支持原生预览。可以在此下载原件并使用其他 App/)
-  assert.match(files, /case \.tooLarge:[\s\S]*?failure = "文件超过本机预览上限。可以在此下载原件并使用其他 App/)
+  assert.match(files, /case \.unsupported:[\s\S]*?failure = "当前格式不支持原生预览。可以在本机空间足够时下载原件，再通过系统分享使用其他 App/)
+  assert.match(files, /case \.tooLarge:[\s\S]*?failure = "文件超过本机预览上限。可在本机空间足够时下载原件，再通过系统分享使用其他 App/)
   assert.match(files, /case \.noThumbnail:[\s\S]*?exportFallbackEligible = true/)
   assert.match(files, /@StateObject private var exporter = XDriveIOSNativeFilesExportModel\(\)/)
   assert.match(files, /if authorized && exportFallbackEligible/)

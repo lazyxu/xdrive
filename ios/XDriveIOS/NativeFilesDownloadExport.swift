@@ -118,9 +118,9 @@ struct XDriveIOSNativeFilesExportReader {
               XDriveIOSNativeFilesFolderNamePolicy.normalized(node.name) == node.name else {
             throw XDriveIOSNativeFilesExportFailure.unsupported
         }
-        // URLSession.download writes to a local temporary file before the
-        // protected share staging move. Do not start a 1 GiB transfer if
-        // the iPhone cannot accommodate a complete copy with free reserve.
+        // URLSession.download streams to a temporary disk file; the protected
+        // staging step moves it on the same filesystem, not into RAM.
+        // Admit only when current free space covers the full file plus reserve.
         let freeSpace = (try? FileManager.default.attributesOfFileSystem(
             forPath: FileManager.default.temporaryDirectory.path
         ))?[.systemFreeSize] as? NSNumber
@@ -134,7 +134,7 @@ struct XDriveIOSNativeFilesExportReader {
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.urlCache = nil
         config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 1800
+        config.timeoutIntervalForResource = 24 * 60 * 60
         let downloadDelegate = XDriveIOSFilesDenyDownloadRedirects(
             onProgress: onProgress
         )
@@ -230,11 +230,21 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
     private var epoch = UUID()
     private var task: Task<Void, Never>?
     private var lastProgressPercent = -1
+    @Published private(set) var receivedBytes: Int64 = 0
+    @Published private(set) var expectedBytes: Int64 = 0
+    @Published private(set) var retryAvailable = false
+    var verifiedProgress: Double? {
+        guard busy, expectedBytes > 0 else { return nil }
+        return min(0.99, Double(receivedBytes) / Double(expectedBytes))
+    }
 
     func invalidate() {
         epoch = UUID()
         activity = nil
         lastProgressPercent = -1
+        receivedBytes = 0
+        expectedBytes = 0
+        retryAvailable = false
         task?.cancel()
         task = nil
         prepared?.discard()
@@ -263,7 +273,9 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
         let activity = transfers?.begin(.download, title: node.name, owner: expected)
         self.activity = activity
         busy = true
-        status = "正在下载原文件；即将显示接收的真实字节进度。"
+        expectedBytes = node.size
+        retryAvailable = false
+        status = "正在下载原文件；收到真实字节后显示进度，完成后须再次选择保存位置。"
         task = Task { @MainActor in
             var failureDetail: String?
             defer {
@@ -304,6 +316,7 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
                                 ),
                               percent > self.lastProgressPercent else { return }
                         self.lastProgressPercent = percent
+                        self.receivedBytes = received
                         let actual = ByteCountFormatter.string(
                             fromByteCount: received, countStyle: .file
                         )
@@ -321,6 +334,8 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                     else { output.discard(); return }
                     prepared = output
+                    receivedBytes = node.size
+                    retryAvailable = false
                     status = "已准备好原文件。点击系统分享按钮选择“存储到文件”；尚未自动保存到 iPhone。"
                 } catch {
                     output.discard()
@@ -333,16 +348,18 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
                 if let failure = error as? XDriveIOSNativeFilesExportFailure {
                     switch failure {
                     case .unsupported:
-                        status = "当前只支持 1 GiB 以内的常规文件导出，未下载。"
+                        status = "此文件不可用于原件导出，请刷新文件列表核对类型和版本。"
                     case .insufficientDiskSpace:
-                        status = "本机暂存空间不足（需额外保留 128 MiB），没有开始下载。"
+                        status = "本机剩余空间不足（文件完整大小加 128 MiB 安全余量），未开始下载。"
                     case .staleNode, .server(401), .server(403), .server(404):
                         status = "文件版本或访问权限已变化，请刷新文件列表。"
                     default:
-                        status = "下载未完成，请检查当前文件及网络后重试。"
+                        retryAvailable = true
+                        status = "下载未完成，已清理暂存文件。网络恢复后可重新选择同一文件重试。"
                     }
                 } else {
-                    status = "下载未完成，请检查网络后重试。"
+                    retryAvailable = true
+                    status = "下载未完成，已清理暂存文件；可以重试下载。"
                 }
                 failureDetail = status
             }
