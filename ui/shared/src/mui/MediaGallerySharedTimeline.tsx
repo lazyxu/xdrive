@@ -140,11 +140,9 @@ export function XDriveMediaGalleryVirtualTimeline({
     const scrollTarget: HTMLElement | Window = scrollParent ?? window
     let disposed = false
 
-    const update = () => {
-      if (disposed) return
-      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current)
-      frameRef.current = window.requestAnimationFrame(() => {
-        frameRef.current = null
+    // First geometry is measured synchronously before paint, just like
+    // MediaVirtualTileGrid. Later scroll/resize work remains rAF-coalesced.
+    const measure = () => {
         if (disposed || !hostRef.current) return
         const currentHost = hostRef.current
         const layout = xDriveMediaGalleryTimelineLayout({
@@ -197,6 +195,13 @@ export function XDriveMediaGalleryVirtualTimeline({
             nextWindow.endIndex - 1,
           )
         }
+    }
+    const update = () => {
+      if (disposed) return
+      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current)
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = null
+        measure()
       })
     }
 
@@ -204,7 +209,7 @@ export function XDriveMediaGalleryVirtualTimeline({
     resizeObserver.observe(host)
     scrollTarget.addEventListener('scroll', update, { passive: true })
     window.addEventListener('resize', update)
-    update()
+    measure()
 
     return () => {
       disposed = true
