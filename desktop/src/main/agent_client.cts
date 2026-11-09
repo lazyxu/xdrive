@@ -448,6 +448,8 @@ export type AgentTransferLifecycleInput = {
   error?: string
   skipped?: boolean
   upload_transferred_bytes?: number
+  upload_cas_reused_bytes?: number
+  upload_resume_reused_bytes?: number
   children?: Array<{
     file_name: string
     path?: string
@@ -1011,6 +1013,8 @@ export type AgentCloudUploadResult = {
   node: AgentCloudNode
   skipped: boolean
   transferred_bytes: number
+  cas_reused_bytes: number
+  resume_reused_bytes: number
 }
 
 export type AgentCloudArchiveExtractResult = {
