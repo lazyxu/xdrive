@@ -53,9 +53,14 @@ Snapshot tag, or formal `v*` tag), instead of inventing the core
 `sha-<new-server-commit>` for these services. The core Server+Caddy and
 client artifacts **still must match the release Commit**. Mutable/unknown
 existing optional tags fail closed rather than being silently substituted.
-Existing optional services therefore stay on their explicit prior version
-until they are updated separately with compatibility checks; a fresh install
-with optional profiles enabled still needs an exact-Commit optional artifact.
+Existing **enabled** optional services therefore stay on their explicit
+prior version until they are updated separately with compatibility checks.
+**Disabled** optional profiles are not consulted for core upgrade eligibility:
+an old `latest` image value in an inactive profile will not block a
+Server/Caddy update. Its selected inactive reference may be rewritten to the
+new release's source tag; enabling that service later must explicitly verify
+and install a compatible published optional image. A fresh install with
+optional profiles enabled still needs an exact-Commit optional artifact.
 Stable releases and offline packages retain their existing exact-version
 behavior. This preserves active optional services without making a very
 large optional model download part of the Server's publication dependency.
