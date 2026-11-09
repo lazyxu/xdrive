@@ -451,6 +451,9 @@ test('Clipboard directed Node retry cannot reuse an unknown ACK with a changed M
 
     // Only the requested MIME kind changed. The Node and target stayed fixed.
     await type(app, '内容类型', 'file')
+    assert.equal(app.field('已上传的云端文件 ID').props.value, '',
+      'media kind change invalidates the old Node choice')
+    await type(app, '已上传的云端文件 ID', '118')
     await click(app, '加密发送')
     assert.equal(records.length, 1, 'must not send old image ciphertext under new file intent')
     assert.equal(encryptedKinds.length, 1, 'must not silently create a new EventID after unknown ACK')
@@ -458,10 +461,62 @@ test('Clipboard directed Node retry cannot reuse an unknown ACK with a changed M
 
     // Restore the exact original intent; only then retry identical bytes/ID.
     await type(app, '内容类型', 'image')
+    assert.equal(app.field('已上传的云端文件 ID').props.value, '')
+    await type(app, '已上传的云端文件 ID', '118')
     await click(app, '加密发送')
     assert.equal(records.length, 2)
     assert.deepEqual(records[1], records[0], 'safe retry preserves exact authenticated kind and EventID')
     assert.deepEqual(encryptedKinds, ['image/x-xdrive-node-ref'])
+  } finally {
+    await app.unmount()
+  }
+})
+
+test('Clipboard switches image/file kind only after a fresh Node choice, never auto-sends', async () => {
+  const deviceID = 'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2'
+  const submissions = []
+  const encrypted = []
+  const Page = makeUI(undefined, async (_scope, target, _pub, _event, kind, clear, nodeID) => {
+    encrypted.push({target, kind, clear, nodeID})
+    return {
+      kind, target_device_id: target, node_id: nodeID,
+      ephemeral_key: Buffer.alloc(32, 8).toString('base64'),
+      wrapped_key: Buffer.alloc(60, 9).toString('base64'),
+      nonce: 'nonce', ciphertext: 'sealed:' + kind,
+    }
+  })
+  const app = await mount(Page, port('https://drive.example:kind-bound-owner', {
+    listDevices: async () => ({ devices: [{
+      device_id: deviceID, name: 'Authorized iPhone', platform: 'ios',
+      public_key: Buffer.alloc(32, 7).toString('base64'),
+    }] }),
+    create: async item => { submissions.push({...item}); return {id: 119, ...item} },
+  }))
+  try {
+    await unlock(app)
+    await act(() => {})
+    await type(app, '发送范围', deviceID)
+    await type(app, '内容类型', 'image')
+    await type(app, '已上传的云端文件 ID', '118')
+    await type(app, '内容类型', 'file')
+    assert.equal(app.field('已上传的云端文件 ID').props.value, '',
+      'old image Node must not carry into file MIME selection')
+    assert.equal(app.button('加密发送').props.disabled, true)
+    assert.equal(submissions.length, 0)
+    await type(app, '已上传的云端文件 ID', '119')
+    await click(app, '加密发送')
+    assert.equal(submissions.length, 1)
+    assert.equal(submissions[0].kind, 'application/x-xdrive-node-ref')
+    assert.equal(submissions[0].node_id, 119)
+    assert.deepEqual(encrypted, [{
+      target: deviceID, kind: 'application/x-xdrive-node-ref',
+      clear: 'asset:119', nodeID: 119,
+    }])
+    await type(app, '内容类型', 'image')
+    assert.equal(app.field('已上传的云端文件 ID').props.value, '',
+      'new MIME selection must require another explicit Node choice')
+    assert.equal(app.button('加密发送').props.disabled, true)
+    assert.equal(submissions.length, 1, 'type changes never send by themselves')
   } finally {
     await app.unmount()
   }
