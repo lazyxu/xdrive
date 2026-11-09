@@ -286,3 +286,23 @@ func TestReleaseBundleCurrentServerCommitFencesHistoricalCache(t *testing.T) {
 		t.Fatalf("current-commit retry warning was lost or unsafe: %+v", retry)
 	}
 }
+
+func TestReleaseBundleEncodedPlusInApprovedAndroidPackage(t *testing.T) {
+	_, _, m := bundleTestFixture(t)
+	name := "xdrive-android-12-0.1.3+build.apk"
+	item := &m.Artifacts[0]
+	item.Platform = "android"
+	item.Filename = name
+	item.InstallMode = "manual"
+	item.Sources.GitLab = "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-" + m.Commit + "/xdrive-android-12-0.1.3%2Bbuild.apk"
+	item.Sources.GitHub = "https://github.com/lazyxu/xdrive/releases/download/bundle-" + m.Commit + "/xdrive-android-12-0.1.3%2Bbuild.apk"
+	if !validReleaseBundleManifest(m) {
+		t.Fatal("generated immutable manifest with encoded '+' was rejected")
+	}
+	m.Artifacts[0].Sources.GitHub = strings.Replace(
+		m.Artifacts[0].Sources.GitHub, "%2B", "+", 1,
+	)
+	if validReleaseBundleManifest(m) {
+		t.Fatal("unescaped alternate GitHub source should not equal immutable source")
+	}
+}
