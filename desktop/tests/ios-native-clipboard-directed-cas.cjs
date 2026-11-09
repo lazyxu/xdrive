@@ -18,7 +18,7 @@ test('iOS native directed sender uses X25519 HKDF, AES-GCM and exact Owner/targe
   assert.match(crypto,/ephemeral\.publicKey\.rawRepresentation/)
   assert.match(crypto,/context \+ "\|key\|/)
   assert.match(crypto,/context \+ "\|content\|/)
-  assert.match(crypto,/node_id: nodeID > 0 \\? nodeID : nil/)
+  assert.match(crypto,/node_id: nodeID > 0 \? nodeID : nil/)
   assert.doesNotMatch(crypto,/Server.*(privateKey|rawRepresentation).*POST/)
 })
 test('iOS public-key directory and targeted sender never use device token as a send grant',()=>{
