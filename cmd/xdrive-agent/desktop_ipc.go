@@ -110,6 +110,7 @@ var desktopIPCCapabilities = []string{
 	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
 	"server-update",
+	"release-bundle-current",
 	"server-offline-import",
 	"media-gallery",
 	"media-index-status",
