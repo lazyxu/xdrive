@@ -89,7 +89,7 @@ test('frame observer covers five or more distinct real navigation and recovery j
 
 test('frame samples are scoped to the active XCTest case; expired captures do not implicate another page', () => {
   assert.match(monitor, /Test Case .*passed\|failed/)
-  assert.match(monitor, /active\.delete\(/)
+  assert.match(monitor, /active\.discard\(/)
   assert.match(monitor, /if key not in active:/)
   assert.match(monitor, /FRAME_OFFSETS_SECONDS/)
 })
