@@ -146,11 +146,15 @@ func (defaultClientUpdateBackend) Download(ctx context.Context, result xupdate.R
 							continue
 						}
 						pathname := filepath.Join(dir, artifact.Filename)
-						if progress != nil { progress(xupdate.ProgressEvent{Step: 3, Stage: "download",
-							Message: "优先从当前 Server 缓存下载；失败后自动尝试 GitLab、GitHub"}) }
+						if progress != nil {
+							progress(xupdate.ProgressEvent{Step: 3, Stage: "download",
+								Message: "优先从当前 Server 缓存下载；失败后自动尝试 GitLab、GitHub"})
+						}
 						if err := owner.DownloadCurrentReleaseArtifact(ctx, listing.Commit, artifact, pathname); err == nil {
-							if progress != nil { progress(xupdate.ProgressEvent{Step: 4, Stage: "verify",
-								Message: "客户端已验证当前 Commit 安装包 SHA-256 与大小"}) }
+							if progress != nil {
+								progress(xupdate.ProgressEvent{Step: 4, Stage: "verify",
+									Message: "客户端已验证当前 Commit 安装包 SHA-256 与大小"})
+							}
 							return pathname, nil
 						} else if ctx.Err() != nil {
 							return "", ctx.Err()
@@ -178,8 +182,10 @@ func (backend defaultClientUpdateBackend) Install(ctx context.Context, current, 
 	if err != nil {
 		return false, result, err
 	}
-	if progress != nil { progress(xupdate.ProgressEvent{Step: 5, Stage: "install",
-		Message: "启动平台安装器；再次验证下载包 SHA-256"}) }
+	if progress != nil {
+		progress(xupdate.ProgressEvent{Step: 5, Stage: "install",
+			Message: "启动平台安装器；再次验证下载包 SHA-256"})
+	}
 	_, err = xupdate.InstallPreviouslyVerified(ctx, pathname, result)
 	return err == nil, result, err
 }
