@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""GitLab is a release-only publisher; GitHub owns tests and Final Gate.
-
-Keep the exact artifact dependency DAG and fail-closed publication while
-preventing GitLab from consuming runners for duplicate test suites.
-This source-only contract runs on GitHub Actions, not in GitLab CI.
-"""
+"""GitLab builds its own release bytes; GitHub only supplies CI/Final Gate."""
 import re
 from pathlib import Path
 
@@ -26,97 +21,108 @@ def blocks(source):
 ci_jobs = blocks(CI)
 release_jobs = blocks(RELEASE)
 all_jobs = {**ci_jobs, **release_jobs}
-release_only = '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
-
-required_builds = {
-    "desktop-linux", "desktop-windows", "build-synology-ui", "build-client-core",
-    "package-linux-client", "server-image",
-    "media-worker-image", "photo-face-image", "caddy-image",
-    "package-windows-client", "web",
+master_rule = '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+builds = {
+    "desktop-linux", "desktop-windows", "build-client-core",
+    "package-linux-client", "server-image", "media-worker-image",
+    "photo-face-image", "caddy-image", "package-windows-client", "web",
 }
-required_publishers = {
-    "release-assets", "publish-server-images", "promote-server-images", "publish-release",
+publishers = {
+    "release-assets", "publish-server-images", "promote-server-images",
+    "publish-photo-face-image", "publish-media-worker-image", "publish-release",
 }
-assert {name for name, block in ci_jobs.items() if "  stage: " in block} == required_builds
-assert {name for name, block in release_jobs.items() if "  stage: " in block} == required_publishers
-
+assert {name for name, block in ci_jobs.items() if "  stage: " in block} == builds
+assert {name for name, block in release_jobs.items() if "  stage: " in block} == publishers
 stages = re.findall(r"(?m)^  - ([\w-]+)$", ci_jobs["stages"])
 assert stages == ["build", "package", "release-build", "promote", "release"], stages
-workflow = ci_jobs["workflow"]
-assert 'CI_COMMIT_TAG =~ /^v.+/' in workflow
-assert release_only in workflow
-assert 'merge_request_event' not in workflow
-assert 'CI_PIPELINE_SOURCE == "web"' not in workflow
-assert "    - when: never" in workflow
+assert "CI_COMMIT_TAG =~ /^v.+/" in ci_jobs["workflow"]
+assert master_rule in ci_jobs["workflow"]
+assert "merge_request_event" not in ci_jobs["workflow"]
+assert "  stage: test" not in RELEASE
 assert 'XDRIVE_GITLAB_PACKAGE_ONLY: "1"' in ci_jobs["variables"]
 
 for name, block in all_jobs.items():
-    if name in required_builds | required_publishers:
-        assert "      allow_failure: true" not in block, f"{name}: mandatory release step became optional"
-        assert "  stage: test" not in block and "  stage: verify" not in block
-        assert "post-release-test" not in block and "final-gate" not in block
     for need in re.findall(r"(?m)^\s+- job: ([\w-]+)$", block):
-        assert need in all_jobs, f"{name}: missing job in needs: {need}"
+        assert need in all_jobs, f"{name}: missing needs job: {need}"
+for name in builds:
+    assert re.search(r"(?m)^  stage: (build|package)$", ci_jobs[name]), name
+    assert master_rule in ci_jobs[name] and "CI_COMMIT_TAG =~ /^v.+/" in ci_jobs[name], name
 
-for name in required_builds:
-    block = ci_jobs[name]
-    assert re.search(r"(?m)^  stage: (build|package)$", block), name
-    assert "    - when: on_success" in block, name
-
-for name in ("server-image", "media-worker-image", "photo-face-image", "caddy-image"):
+for name, image in (
+    ("server-image", "xdrive-server"),
+    ("caddy-image", "xdrive-caddy"),
+    ("photo-face-image", "xdrive-photo-face"),
+    ("media-worker-image", "xdrive-media-worker"),
+):
     block = ci_jobs[name]
     assert "XDRIVE_GITLAB_PACKAGE_ONLY=1" in block, name
+    assert "XDRIVE_GITLAB_STAGING_ONLY=1" in block, name
+    assert f"gitlab-stage-image.sh {image} " in block, name
+    assert "image.commit" in block and "image.digest" in block, name
     assert "XDRIVE_CI_GO_IMAGE" in block, name
     assert "*install_docker_cli_only" in block, name
+    assert "image.tar.gz" not in block, name
 
-assert "npm run lint" not in ci_jobs["web"]
 core = ci_jobs["build-client-core"]
-assert "test-synology-spk.py" not in core
-assert "test-synology-spk-ui.py" not in core
 assert "test-synology-release.sh" not in core
 assert "test-backup-cli-archives.sh" not in core
 assert "verify-synology-spk-release.sh release/synology --require-mui" in core
 assert "web/dist-synology" in core
+assert "npm run lint" not in ci_jobs["web"]
+assert "npm run build:synology" in ci_jobs["web"]
 
-for name in required_publishers:
+for name in publishers:
     block = release_jobs[name]
-    assert release_only in block, name
-    assert "CI_COMMIT_TAG =~ /^v.+/'" in block, name
-    assert "      when: on_success" in block, name
-
-assert "build-source-agent" not in release_jobs["release-assets"]
-for name in ("server-image", "caddy-image", "photo-face-image", "media-worker-image"):
-    assert name in release_jobs["publish-server-images"], name
+    assert master_rule in block, name
+    assert "CI_COMMIT_TAG =~ /^v.+/" in block, name
 assert "release-assets" in release_jobs["promote-server-images"]
 assert "publish-server-images" in release_jobs["promote-server-images"]
-snapshot_publisher = (ROOT / "scripts/ci/gitlab-publish-release.sh").read_text(encoding="utf-8")
-assert 'read_snapshot || exit 1' in snapshot_publisher
-assert "HTTP 404|404 Not Found" in snapshot_publisher
-assert "HTTP (429|500|502|503|504)" in snapshot_publisher
-assert 'glab api --method POST "$project_api/releases"' in snapshot_publisher
-assert "glab release create snapshot --ref" not in snapshot_publisher
-for phase in ("probe-existing-snapshot", "create-initial-snapshot",
-              "stage-verified-links", "commit-verified-marker"):
-    assert "release phase=" + phase in snapshot_publisher
+core_publisher = release_jobs["publish-server-images"]
+assert "server-image" in core_publisher and "caddy-image" in core_publisher
+assert "photo-face-image" not in core_publisher
+assert "media-worker-image" not in core_publisher
+assert "image-manifest.tsv" in core_publisher
+stable = release_jobs["publish-release"]
+assert "publish-photo-face-image" in stable and "publish-media-worker-image" in stable
+assert "image-manifest.tsv" in stable
+assert "build-client-core" in stable and "package-linux-client" in stable
+assert "package-windows-client" in stable and "release-assets" in stable
+assert "promote-server-images" in stable
+assert "xdrive-backup-windows-amd64.zip" in stable
+assert "verify-synology-spk-release.sh release --require-mui" in stable
 
-publisher = release_jobs["publish-release"]
-for name in ("build-client-core", "package-linux-client", "package-windows-client",
-             "release-assets", "promote-server-images"):
-    assert name in publisher, name
-assert "xdrive-backup-windows-amd64.zip" in publisher
-assert "verify-synology-spk-release.sh release --require-mui" in publisher
-assert "rm -rf release/core release/backup-cli release/synology" in publisher
-assert "docker info >/dev/null" in release_jobs[".release-linux-docker"]
-# Both public v* tag upload and mutable latest promotion need the gate:
-# checking only at promotion would publish an untested stable image first.
-for script in ("gitlab-server-images.sh", "gitlab-promote-images.sh"):
-    publisher_script = (ROOT / "scripts/ci" / script).read_text(encoding="utf-8")
-    assert 'if [[ -n "${CI_COMMIT_TAG:-}" ]]; then' in publisher_script, script
-    assert "go run scripts/ci/verify-github-stable-final-gate.go" in publisher_script, script
-    assert publisher_script.index("verify-github-stable-final-gate.go") < publisher_script.index("docker login"), script
-gate = (ROOT / "scripts/ci/verify-github-stable-final-gate.go").read_text(encoding="utf-8")
+p = (ROOT / "scripts/ci/gitlab-publish-release.sh").read_text(encoding="utf-8")
+for token in ("read_snapshot || exit 1", "HTTP 404|404 Not Found",
+              "HTTP (429|500|502|503|504)", 'glab api --method POST "$project_api/releases"',
+              "probe-existing-snapshot", "create-initial-snapshot",
+              "stage-verified-links", "commit-verified-marker", "image-manifest.tsv"):
+    assert token in p, token
+assert "glab release create snapshot --ref" not in p
+
+registry = (ROOT / "scripts/ci/gitlab-registry-utils.sh").read_text(encoding="utf-8")
+stage = (ROOT / "scripts/ci/gitlab-stage-image.sh").read_text(encoding="utf-8")
+fetch = (ROOT / "scripts/ci/gitlab-fetch-staged-image.sh").read_text(encoding="utf-8")
+publish = (ROOT / "scripts/ci/gitlab-server-images.sh").read_text(encoding="utf-8")
+promote = (ROOT / "scripts/ci/gitlab-promote-images.sh").read_text(encoding="utf-8")
+assert "docker login" in registry
+assert "git merge-base --is-ancestor" in registry
+assert "xdrive_pull_or_absent" in registry
+assert "CI_PIPELINE_ID" in stage and "CI_JOB_ID" in stage
+assert "image.digest" in stage and "image.commit" in stage
+assert "docker push" in stage
+assert "docker pull" in fetch and "$remote_repo@$digest" in fetch
+assert "xdrive_assert_image_identity" in fetch
+assert "xdrive-fetch-from-github" not in fetch
+for script in (publish, promote):
+    assert 'if [[ -n "${CI_COMMIT_TAG:-}" ]]; then' in script
+    assert "go run scripts/ci/verify-github-stable-final-gate.go" in script
+    assert script.index("verify-github-stable-final-gate.go") < script.index("xdrive_registry_login")
+assert "xdrive_assert_promotion_ancestry" in promote
+assert "xdrive_assert_image_identity" in promote and "xdrive_assert_image_identity" in publish
+
+gate = (ROOT / "scripts/ci/verify-github-stable-final-gate.go").read_text()
 for token in ("stableTagPattern", "fullCommitPattern", 'HeadBranch != tag',
               'run.Conclusion != "success"', '"final-gate"', '"photo-ocr-master-smoke"'):
-    assert token in gate, "GitHub exact-SHA stable gate regressed: " + token
+    assert token in gate, token
 
-print("GitLab release-only job graph, exact-image package mode, and artifact guards: passed")
+print("GitLab source-exact local builds, Registry staging and fail-closed publication contracts passed")
