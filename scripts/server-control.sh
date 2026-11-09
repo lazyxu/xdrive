@@ -99,7 +99,7 @@ release_bundle_enqueue() {
   if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null &&
      [[ -r "/proc/$pid/cmdline" ]]; then
     local cmdline
-    cmdline="$(tr '\\0' '\\n' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    cmdline="$(tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null || true)"
     if grep -Fxq -- "$worker" <<< "$cmdline" &&
        grep -Fxq -- "$sha" <<< "$cmdline" &&
        grep -Fxq -- '--commit' <<< "$cmdline"; then
