@@ -97,7 +97,9 @@ test('real Simulator smoke is triggered by Files/Gallery subroute edits, not onl
   assert.doesNotMatch(watched, /-\s*'ios\/\*\*'/,
     'Do not make unrelated iOS modules consume two expensive Simulator jobs')
   assert.match(workflow, /xcodebuild test/)
-  assert.match(workflow, /matrix:\s*source:\s*\[release-c83, candidate\]/)
+  assert.match(workflow, /source: \[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\]/)
+  assert.match(workflow, /continue-on-error: \$\{\{ matrix\.source == 'release-c83' \}\}/)
+  assert.match(workflow, /XDriveIOSFilesSessionRecoveryUITests/)
   // A no-token smoke only validates mounting/return and process survival;
   // it is not proof of logged-in Owner data or real audio/video playback.
   const fixture = src('ios/scripts/prepare-navigation-runtime-smoke.py')
