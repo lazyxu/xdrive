@@ -1980,6 +1980,91 @@ const scenarios = [
         "flags": ""
       }
     ]
+  },
+  {
+    "name": "182 Actual native navigation taps emit route-specific frame markers",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "IOS_NATIVE_NAV_TAP_START route=",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "tap_start = re\\.compile\\(r\"IOS_NATIVE_NAV_TAP_START route=",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "current_case\\[0\\] in NAV_TARGETS",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "if key not in active:",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "183 Six cross-child Gallery and Files tests stay in executable Simulator suite",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testLocalPhotosSourceSurvivesFilesMineAndGalleryRoundTrip\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "184 Screenshot observer samples bounded active-case route transitions",
+    "checks": [
+      {
+        "file": "p",
+        "pattern": "TAP_FRAME_OFFSETS_SECONDS = \\(0\\.15, 0\\.55\\)",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "if count < 3:",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "scheduled_after_tap_seconds",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "\"capture_mode\": \"tap-adjacent\"",
+        "flags": ""
+      }
+    ]
   }
 ]
 const cache = new Map()
