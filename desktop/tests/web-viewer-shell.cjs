@@ -2694,7 +2694,7 @@ test('P1-320 routed media Viewer fits six 44px actions and preserves explicit Mo
 })
 
 
-test('both mounted mobile Viewer frames release native video clearance when chrome hides', async () => {
+test('image chrome still releases safe area while routed video keeps its navigation visible', async () => {
   compactTouch = true
   viewportWidth = 390
   const property = '--xdrive-viewer-video-actions-clearance'
@@ -2702,13 +2702,36 @@ test('both mounted mobile Viewer frames release native video clearance when chro
   const visible = 'calc(56px + env(safe-area-inset-bottom))'
   const visibleWithFilmstrip = 'calc(128px + env(safe-area-inset-bottom))'
 
-  const exercise = async (renderer, selector) => {
+  const exercise = async (renderer, selector, keepVideoChromeVisible = false) => {
     const view = () => renderer.root.find(selector)
     const frame = view()
     assert.equal(frame.props.sx[property], visible)
     assert.equal(frame.props.sx[filmstripProperty], visibleWithFilmstrip)
     const timeout = Array.from(timers.values()).find(entry => entry.delay === 2200)
-    assert.ok(timeout, 'the original immersive chrome timer must still run')
+    if (keepVideoChromeVisible) {
+      assert.equal(timeout, undefined,
+        'routed video must not hide Back, Next or native playback controls after 2200ms')
+      const headers = renderer.root.findAll(el => el.type === 'div' &&
+        el.props?.['data-xdrive-web-viewer-chrome'] === 'header')
+      assert.equal(headers.length, 1)
+      assert.equal(headers[0].props.sx.visibility, 'visible')
+      const pointer = { pointerType: 'touch', pointerId: 13, clientX: 120, clientY: 120,
+        target: { closest() { return null } } }
+      await act(async () => {
+        frame.props.onPointerDownCapture(pointer)
+        frame.props.onPointerUpCapture(pointer)
+      })
+      const tap = Array.from(timers.values()).find(entry => entry.delay === 260)
+      assert.ok(tap, 'shared video tap still operates through the real gesture')
+      await act(async () => tap.callback())
+      assert.equal(view().props.sx[property], visible)
+      assert.equal(view().props.sx[filmstripProperty], visibleWithFilmstrip)
+      assert.equal(renderer.root.findAll(el => el.type === 'div' &&
+        el.props?.['data-xdrive-web-viewer-chrome'] === 'header')[0].props.sx.visibility, 'visible',
+        'video tap must not hide the native media-safe navigation')
+      return
+    }
+    assert.ok(timeout, 'ordinary immersive image chrome must still auto-hide')
     await act(async () => timeout.callback())
     assert.equal(view().props.sx[property], '0px')
     assert.equal(view().props.sx[filmstripProperty], '0px')
@@ -2777,7 +2800,7 @@ test('both mounted mobile Viewer frames release native video clearance when chro
     const frame = () => routed.root.find(el =>
       el.type === 'div' && el.props['data-xdrive-web-viewer'] !== undefined)
     await exercise(routed, el => el.type === 'div' &&
-      el.props['data-xdrive-web-viewer'] !== undefined)
+      el.props['data-xdrive-web-viewer'] !== undefined, true)
     assert.equal(frame().props.role, 'dialog')
     assert.equal(frame().props['aria-modal'], 'true')
     assert.equal(routed.root.findAllByType('media-content').length, 1,

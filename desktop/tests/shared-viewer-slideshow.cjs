@@ -318,13 +318,14 @@ test('both routed and shared Gallery Viewer suspend slideshow under blocking act
   const shared = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/MediaGalleryViewer.tsx'), 'utf8')
   assert.match(routed, /interactionPaused:\s*keepChromeVisible/)
   assert.match(shared, /interactionPaused:\s*externalInteractionPaused\s*\|\|\s*moreOpen\s*\|\|\s*deleteOpen\s*\|\|\s*creativeOpen\s*\|\|\s*editOpen\s*\|\|\s*locationOpen/)
-  assert.match(routed, /keepChromeVisible=\{shareVisible\s*\|\|\s*tagsVisible\s*\|\|\s*infoVisible/)
+  assert.match(routed, /keepChromeVisible=\{viewer\.loading\s*\|\|\s*viewer\.navigationLoading\s*\|\|\s*previewKind === 'video'\s*\|\|\s*shareVisible\s*\|\|\s*tagsVisible\s*\|\|\s*infoVisible/,
+    'video/metadata navigation and Share/Tags/Info modal pause must coexist')
   const gallery = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
   assert.match(gallery, /shareDialogOpen=\{Boolean\(shareItem\)\}/,
     'Page share dialog must suspend the embedded Viewer while it owns the dialog')
   assert.match(gallery, /externalInteractionPaused=\{Boolean\(selected\)\s*\|\|\s*shareDialogOpen\}/,
     'Viewer Info inspector and Page share dialog must use the same pause state')
-  assert.match(shared, /keepChromeVisible=\{externalInteractionPaused\s*\|\|\s*moreOpen/,
+  assert.match(shared, /keepChromeVisible=\{slideshowKind === 'video'\s*\|\|\s*externalInteractionPaused\s*\|\|\s*moreOpen/,
     'interactive parent-owned UI must also preserve the Viewer chrome')
 })
 

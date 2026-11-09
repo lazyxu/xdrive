@@ -22,7 +22,7 @@ import {
 } from '../media-gallery-photo-swipe'
 import type { XDrivePreviewImageDimensions, XDrivePreviewPoint, XDrivePreviewViewport } from '../file-preview-viewport'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
-import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
+import { XDriveMediaLoadingProgress, xDriveMediaBufferProgressLabel } from './MediaLoadProgress'
 import { xDriveAbortHTMLMediaElement } from './mediaPreviewStreamTeardown'
 import { XDriveDecodedImagePreview } from './FilePreviewImage'
 import {
@@ -997,6 +997,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       </Typography>
     </Stack>
   )
+  const mediaBufferLabel = xDriveMediaBufferProgressLabel(
+    bufferProgress.bufferedSeconds, bufferProgress.durationSeconds, bufferProgress.bufferedStartSeconds,
+  )
   const mediaLoadingOverlay = mediaPending ? (
     <Box
       data-xdrive-preview-media-loading
@@ -1016,8 +1019,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     >
       {previewKind === 'video' ? (
         mediaReady ? (
-          <Stack data-xdrive-preview-video-rebuffer-status direction="row" spacing={1}
-            alignItems="center" role="status" aria-label="视频正在缓冲"
+          <Stack data-xdrive-preview-video-rebuffer-status data-xdrive-media-loading-stage="buffering"
+            direction="row" spacing={1} alignItems="center" role="status" aria-label={mediaBufferLabel}
             sx={{
               mt: 'max(72px, env(safe-area-inset-top))',
               px: 1.75, py: 1,
@@ -1028,7 +1031,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               pointerEvents: 'none',
             }}>
             <CircularProgress size={16} thickness={5} sx={{ color: 'inherit' }} />
-            <Typography variant="caption" sx={{ color: 'inherit' }}>正在缓冲，播放即将继续</Typography>
+            <Typography variant="caption" sx={{ color: 'inherit' }}>{mediaBufferLabel}</Typography>
           </Stack>
         ) : videoLoadingCard('first-frame')
       ) : previewKind === 'audio' ? (
