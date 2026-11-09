@@ -87,6 +87,19 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         }
     }
 
+    func testOfflineOwnerCloudFilesPushSurvivesDelayedAuthorizationFailure() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-files-open-root-location", in: app)
+        // Isolate entering the genuine native child route from a later
+        // interactive-pop problem. This Owner intentionally has no Session.
+        // No navigation-bar or global AX snapshot is requested after push.
+        Thread.sleep(forTimeInterval: 5)
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Native process exited following offline Owner child push")
+    }
+
     func testOfflineOwnerCloudFilesBackKeepsHomeAndDoesNotExit() {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)

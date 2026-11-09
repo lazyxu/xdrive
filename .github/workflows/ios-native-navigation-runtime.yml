@@ -9,6 +9,7 @@ on:
       - 'ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift'
       - 'ios/XDriveIOS/NativePhotoWallDensityPolicy.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
+      - 'ios/scripts/monitor-native-navigation-hang.py'
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
       # Changes in a child Files/Gallery route must also compile and exercise
       # the real five-tab return smoke; Browser.swift is not always modified.
@@ -101,7 +102,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/native-navigation-results"
-          xcodebuild test \
+          # XCTest can stall for minutes while obtaining the AX tree even
+          # when the app PID stays alive. Capture external Simulator evidence
+          # from an independent host process before XCUI query times out.
+          python3 -m py_compile "$GITHUB_WORKSPACE/ios/scripts/monitor-native-navigation-hang.py"
+          python3 "$GITHUB_WORKSPACE/ios/scripts/monitor-native-navigation-hang.py" \
+            --simulator "$SMOKE_SIM" \
+            --output "$RUNNER_TEMP/native-navigation-results" -- \
+            xcodebuild test \
             -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
             -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$SMOKE_SIM" \
@@ -109,8 +117,7 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
-            -only-testing:xDriveIOSNavigationUITests test \
-            2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
+            -only-testing:xDriveIOSNavigationUITests test
       - name: Capture crash diagnostics and XCTest summary
         if: always()
         shell: bash
