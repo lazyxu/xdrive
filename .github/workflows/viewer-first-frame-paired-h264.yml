@@ -78,7 +78,11 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y xvfb
-          npm --prefix desktop ci --no-audit --no-fund
+          # Desktop deliberately has no package-lock.json. Match the proven
+          # existing signed H264 Electron/Go benchmark workflows: npm install.
+          # Web (including the SHA-pinned baseline worktree) does have locks
+          # and keeps reproducible npm ci.
+          npm --prefix desktop install --no-audit --no-fund
           npm --prefix web ci --no-audit --no-fund
           npm --prefix "$VIEWER_BASE_DIR/web" ci --no-audit --no-fund
           node --check desktop/scripts/viewer-first-frame-probe.cjs
