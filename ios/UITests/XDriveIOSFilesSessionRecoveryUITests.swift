@@ -259,9 +259,15 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         if !item.exists {
             let list = app.collectionViews.firstMatch
             if list.exists {
-                for _ in 0..<6 {
-                    list.swipeUp()
+                // A prior child can leave the Home list below Recent.
+                // Search in both directions with a bounded swipe budget.
+                for _ in 0..<5 {
                     if item.exists { break }
+                    list.swipeUp()
+                }
+                for _ in 0..<10 {
+                    if item.exists { break }
+                    list.swipeDown()
                 }
             }
         }
