@@ -912,6 +912,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var resumeTicket = UUID()
     @State private var scrollResumeTask: Task<Void, Never>?
     @State private var routeResumeMessage: String?
+    @State private var ancestorCrumbs: [XDriveIOSNativeFilesLocationCrumb] = []
+    @State private var ancestorStatus: String?
     @State private var showingOrganizeHome = false
     @State private var organizeHomeOwner: XDriveNativeOwnerRoot?
     @State private var viewerAdmitted = [UInt64: XDriveIOSNativeFilesNode]()
@@ -1259,6 +1261,63 @@ struct XDriveIOSNativeFilesBrowser: View {
         guard let owner = login.owner, !quickAccess.busy else { return }
         organizeHomeOwner = owner
         showingOrganizeHome = true
+    }
+
+    @MainActor
+    private func loadAncestorCrumbs() async {
+        ancestorCrumbs = []
+        ancestorStatus = nil
+        guard let folder, let owner = login.owner, phase == .active,
+              quickSection == .browse else { return }
+        do {
+            let auth = try await login.verifiedAuthorization()
+            try Task.checkCancellation()
+            guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner) else { return }
+            let found = try await XDriveIOSNativeFilesLocateReader(
+                owner: auth.owner, accessToken: auth.accessToken
+            ).verifiedDirectoryBreadcrumbs(folder.id)
+            try Task.checkCancellation()
+            guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                  parentID == folder.id, phase == .active else { return }
+            ancestorCrumbs = found
+        } catch is CancellationError {
+        } catch {
+            guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+            ancestorStatus = "目录位置暂无法核验，请重试。"
+        }
+    }
+
+    @MainActor
+    private func openVerifiedAncestor(_ crumb: XDriveIOSNativeFilesLocationCrumb) {
+        guard let folder, crumb.id != folder.id, !pathBusy,
+              ancestorCrumbs.contains(crumb), let owner = login.owner,
+              phase == .active, quickSection == .browse else { return }
+        cancelPathLookup()
+        let ticket = UUID()
+        pathTicket = ticket
+        pathBusy = true
+        pathTask = Task { @MainActor in
+            defer { if pathTicket == ticket { pathBusy = false; pathTask = nil } }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner) else { return }
+                let found = try await XDriveIOSNativeFilesLocateReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                ).verifiedDirectoryBreadcrumbs(folder.id)
+                try Task.checkCancellation()
+                guard pathTicket == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      parentID == folder.id, phase == .active,
+                      found.contains(crumb), found.last?.id == folder.id else { return }
+                // Do not infer a path from a stale displayed folder name.
+                pathDestination = XDriveIOSNativeFilesFolder(id: crumb.id, name: crumb.name)
+            } catch is CancellationError {
+            } catch {
+                guard pathTicket == ticket else { return }
+                ancestorStatus = "上级目录已变化或无法核验，请刷新位置。"
+            }
+        }
     }
 
     private var arrangementStatusText: String {
@@ -2499,6 +2558,38 @@ struct XDriveIOSNativeFilesBrowser: View {
             XDriveIOSNativeFilesBrowser(login: login, folder: next)
         }
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                if let folder, !isGlobalSearch {
+                    Menu {
+                        if ancestorCrumbs.isEmpty {
+                            Button(ancestorStatus ?? "重新核验目录位置") {
+                                Task { await loadAncestorCrumbs() }
+                            }
+                        } else {
+                            ForEach(ancestorCrumbs, id: \.id) { crumb in
+                                Button {
+                                    openVerifiedAncestor(crumb)
+                                } label: {
+                                    if crumb.id == folder.id {
+                                        Label(crumb.name, systemImage: "checkmark")
+                                    } else {
+                                        Label(crumb.name, systemImage: "folder")
+                                    }
+                                }
+                            }
+                            Button("刷新位置", systemImage: "arrow.clockwise") {
+                                Task { await loadAncestorCrumbs() }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(folder.name).lineLimit(1)
+                            Image(systemName: "chevron.down").font(.caption2)
+                        }
+                    }
+                    .accessibilityIdentifier("native-ios-files-path-dropdown")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if selecting {
                     Button("完成") {
@@ -2643,6 +2734,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
             }
         }
+        .task(id: folder?.id) { await loadAncestorCrumbs() }
     }
 
     /// Keep the Files-only Recent/Browse/Favorites rail accessible inside a
@@ -3245,6 +3337,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            ancestorCrumbs = []
+            ancestorStatus = nil
             browseReturnAnchor = nil
             // Files-local section belongs to a verified Owner; a new Owner
             // must not inherit the previous account's Recent/Favorites route.

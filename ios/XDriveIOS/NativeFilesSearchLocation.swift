@@ -75,6 +75,38 @@ struct XDriveIOSNativeFilesLocateReader {
         return result
     }
 
+    /// Verify the complete current directory ancestry on both sides of the
+    /// location read. A moved or revoked folder never supplies navigation.
+    func verifiedDirectoryBreadcrumbs(_ folderID: UInt64) async throws
+        -> [XDriveIOSNativeFilesLocationCrumb] {
+        guard folderID > 0 else { throw XDriveIOSNativeFilesLocateFailure.invalidLocation }
+        if folderID == owner.rootNodeID {
+            // The root identity comes from the verified current Owner.
+            return [.init(id: owner.rootNodeID, name: "xDrive 云端")]
+        }
+        let selected: XDriveIOSNativeFilesNode = try await read(
+            "/api/v1/nodes/\(folderID)", maximumBytes: 65_536
+        )
+        guard selected.id == folderID, selected.isDirectory,
+              selected.parent_id != nil else {
+            throw XDriveIOSNativeFilesLocateFailure.nodeChanged
+        }
+        let location: XDriveIOSNativeFilesLocationDTO = try await read(
+            "/api/v1/nodes/\(folderID)/location", maximumBytes: 2 * 1_048_576
+        )
+        guard let result = XDriveIOSNativeFilesLocationPolicy.directoryBreadcrumbs(
+            of: selected, at: location, ownerRootID: owner.rootNodeID
+        ) else { throw XDriveIOSNativeFilesLocateFailure.invalidLocation }
+        try Task.checkCancellation()
+        let after: XDriveIOSNativeFilesNode = try await read(
+            "/api/v1/nodes/\(folderID)", maximumBytes: 65_536
+        )
+        guard after == selected else {
+            throw XDriveIOSNativeFilesLocateFailure.nodeChanged
+        }
+        return result
+    }
+
     /// Reuse the existing Owner-scoped GET transport; never copy a stale hit.
     func copyPath(_ selected: XDriveIOSNativeFilesNode) async throws -> String {
         guard selected.id > 0, selected.revision > 0,

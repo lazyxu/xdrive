@@ -29,6 +29,15 @@ struct NativeFilesLocationPolicyChecks {
         )
         check(P.parent(of: dir, at: dirLocation, ownerRootID: 10) ==
               .init(id: 10, name: "云端根目录"), "directory -> root parent")
+        check(P.directoryBreadcrumbs(of: dir, at: dirLocation, ownerRootID: 10) ==
+              [.init(id: 10, name: "xDrive 云端"), folder],
+              "valid Owner-proven directory breadcrumb menu")
+        check(P.directoryBreadcrumbs(of: dir, at: dirLocation, ownerRootID: 11) == nil,
+              "cross-Owner breadcrumb denied")
+        check(P.directoryBreadcrumbs(of: dir, at: .init(node_id: 20,
+              revision: 2, node_type: "dir", parent_id: 10,
+              breadcrumbs: [root, .init(id: 20, name: "renamed")]),
+              ownerRootID: 10) == nil, "renamed breadcrumb denied")
         let atRoot = XDriveIOSNativeFilesNode(id: 41, parent_id: 10,
             name: "plain.txt", type: "file", size: 4, revision: 1)
         check(P.parent(of: atRoot, at: .init(node_id: 41, revision: 1,
