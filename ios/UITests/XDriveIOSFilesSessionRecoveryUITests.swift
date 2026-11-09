@@ -155,4 +155,100 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
             expect("native-ios-files-section-browse", app)
         }
     }
+
+    /// Repeating iOS foreground reactivation must not turn a locally denied
+    /// Trash route into a partially authorized, destructive list.
+    func testTrashDenialAcrossRepeatedForegroundActivationsStaysReadOnly() {
+        let app = launch()
+        files(app)
+        tap("native-ios-files-open-trash", app)
+        expect("native-ios-files-trash-error-page", app)
+        for _ in 0..<3 {
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            expect("native-ios-files-trash-error-page", app)
+            XCTAssertFalse(element("native-ios-files-trash-retry", app).exists)
+            XCTAssertFalse(element("native-ios-files-trash-restore-0", app).exists)
+        }
+        tap("native-ios-files-trash-error-return", app)
+        expect("native-ios-files-section-browse", app)
+    }
+
+    /// Files' rail must remain independent of the denied Server folder tree,
+    /// even if Recent/Favorites were opened immediately before Cloud.
+    func testFilesQuickRailThenCloudDenialKeepsProtectedGridAbsent() {
+        let app = launch()
+        files(app)
+        for section in ["recent", "favorites", "browse"] {
+            tap("native-ios-files-section-\\(section)", app)
+            expect("native-ios-files-section-browse", app)
+        }
+        tap("native-ios-files-open-root-location", app)
+        expect("native-ios-files-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        tap("native-ios-files-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        expect("native-ios-gallery-source-unified", app)
+    }
+
+    func testCloudDenialGalleryFilterFilesReturnCanReenterDeniedChild() {
+        let app = launch()
+        files(app)
+        tap("native-ios-files-open-root-location", app)
+        expect("native-ios-files-error-page", app)
+        tap("native-ios-files-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-open-filters", app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        tap("native-ios-tab-files", app)
+        expect("native-ios-files-section-browse", app)
+        tap("native-ios-files-open-root-location", app)
+        expect("native-ios-files-error-page", app)
+        XCTAssertFalse(element("native-ios-files-retry", app).exists)
+        tap("native-ios-files-error-return", app)
+    }
+
+    func testTrashDenialPeopleBackThenTrashDenialDoesNotLeakRows() {
+        let app = launch()
+        files(app)
+        tap("native-ios-files-open-trash", app)
+        expect("native-ios-files-trash-error-page", app)
+        tap("native-ios-files-trash-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-people", app)
+        expect("native-ios-gallery-people-page", app)
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        expect("native-ios-gallery-source-unified", app)
+        files(app)
+        tap("native-ios-files-open-trash", app)
+        expect("native-ios-files-trash-error-page", app)
+        XCTAssertFalse(element("native-ios-files-trash-retry", app).exists)
+        tap("native-ios-files-trash-error-return", app)
+    }
+
+    /// Capture native fail-closed pixels at both child routes before AX
+    /// enumeration can mask a broken navigation shell with a 120s timeout.
+    func testCloudAndTrashDenialsCaptureVisibleNativeRecoveryScreens() {
+        let app = launch()
+        files(app)
+        for route in [
+            ("native-ios-files-open-root-location", "native-ios-files-error-page",
+             "native-ios-files-error-return"),
+            ("native-ios-files-open-trash", "native-ios-files-trash-error-page",
+             "native-ios-files-trash-error-return"),
+        ] {
+            tap(route.0, app)
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = route.1 + "-visible-recovery"
+            shot.lifetime = .keepAlways
+            add(shot)
+            expect(route.1, app)
+            tap(route.2, app)
+            expect("native-ios-files-section-browse", app)
+        }
+    }
 }
