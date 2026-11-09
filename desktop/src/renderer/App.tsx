@@ -2011,8 +2011,12 @@ export default function App({
   // ordinary Viewer read permission before opening Quick Look.
   clipboardOpenFileRef.current = async (nodeID, signal) => {
     const ownerScope = clipboardOwnerScope
-    const current = () => !signal.aborted && !!ownerScope &&
+    // User-driven route change disposes the Clipboard page and aborts its
+    // action signal. Only the pre-navigation work is cancelled by that
+    // signal; the already-admitted Files navigation has its own Owner lease.
+    const sameOwner = () => !!ownerScope &&
       clipboardCurrentScopeRef.current === ownerScope
+    const current = () => !signal.aborted && sameOwner()
     if (!current() || activeViewRef.current !== 'clipboard' ||
         !Number.isSafeInteger(nodeID) || nodeID <= 0)
       throw new Error('Clipboard Owner 已变化或文件引用不合法')
@@ -2031,8 +2035,8 @@ export default function App({
       throw new Error('文件已移动、删除或当前 Owner 无权访问')
     if (!current()) throw new Error('Clipboard Owner 已变化')
     const accepted = await revealCloudNodeInDirectory(parent, nodeID, ancestry,
-      true, current)
-    if (!accepted || !current())
+      true, sameOwner)
+    if (!accepted || !sameOwner())
       throw new Error('无法确认 Files 预览入口或当前 Owner')
   }
 
