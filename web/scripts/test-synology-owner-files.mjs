@@ -192,7 +192,18 @@ const hostAdapterSource = fs.readFileSync(path.join(repo, 'web/src/synologyHost.
 assert.match(hostEntrySource, /const host = createXDriveSynologyHost\(\)/)
 assert.match(hostEntrySource, /<XDriveApp\s+host=\{notesHost\}/)
 assert.match(hostEntrySource, /services:\s*\{\s*\.\.\.host\.services,\s*notesPage:\s*notesPort,\s*clipboardPage:\s*clipboardPort\s*\}/)
-assert.match(hostEntrySource, /createXDriveDSMClipboardPort\(cgi, clipboardOwnerScope\)/)
+// The DSM Files Viewer callback is mandatory for directed Clipboard Node
+// references and must use the current Owner/session, never a bare node ID.
+assert.match(hostEntrySource,
+  /createXDriveDSMClipboardPort\(cgi, clipboardOwnerScope, openClipboardReference\)/)
+assert.match(hostEntrySource, /clipboardScopeRef\.current !== owner/)
+assert.match(hostEntrySource, /signal\.throwIfAborted\(\)/)
+assert.match(hostEntrySource, /Number\.isSafeInteger\(reference\.node\.id\)/)
+assert.match(hostEntrySource, /setClipboardPreview\(\{ ownerScope: owner, file: reference \}\)/)
+assert.match(hostEntrySource, /setClipboardPreview\(null\)/)
+assert.match(hostEntrySource, /currentOwnerScope=\{clipboardOwnerScope\}/)
+assert.doesNotMatch(hostEntrySource, /createXDriveDSMClipboardPort\(cgi, clipboardOwnerScope\)/,
+  'DSM Viewer must not silently omit the current Owner reauthorization callback')
 assert.match(hostEntrySource, /return cgi && notesOwnerScope\s*\? createXDriveDSMNotesPort\(cgi, notesOwnerScope, notesImagesEnabled\) : undefined/)
 assert.match(hostAdapterSource, /ownerFilesPage:\s*\{\s*client:\s*local,\s*unavailableActions:\s*\{/)
 assert.match(hostOutletSource, /client=\{services\.ownerFilesPage\.client\}/)
