@@ -266,6 +266,7 @@ func TestSourceCloudCleanupRejectsUnsafeSharesWritersAndCrossSourceHistory(t *te
 	requestWithHeaders(t, router, http.MethodGet, preview,
 		token, nil, http.StatusOK, nil)
 }
+
 // A historical cross-Owner parent edge may survive a NOT VALID composite FK.
 // An Owner-scoped recursive inventory must not silently omit that node and
 // move its parent to Trash. This also protects an already issued preview.
