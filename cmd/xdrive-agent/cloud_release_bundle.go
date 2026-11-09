@@ -52,8 +52,7 @@ func (c *agentController) CloudDownloadReleaseBundle(ctx context.Context, fullCo
 		return fmt.Errorf("Server Commit changed after selecting client installer")
 	}
 	for _, item := range listing.Artifacts {
-		if item.Filename == filename && item.BuildCommit == fullCommit &&
-			item.InstallMode == "manual" {
+		if releaseBundleDownloadAllowed(item, fullCommit, filename) {
 			return cli.DownloadCurrentReleaseArtifact(ctx, fullCommit, item, destination)
 		}
 	}
@@ -66,4 +65,17 @@ func (c *agentController) CloudInstallCurrentServerCommit(ctx context.Context, f
 		return c.updates.Snapshot(), err
 	}
 	return c.updates.InstallCurrentServerCommit(ctx, cli, fullCommit, filename)
+}
+
+func releaseBundleDownloadAllowed(item client.ReleaseBundleArtifact, fullCommit, filename string) bool {
+	if item.Filename != filename || item.BuildCommit != fullCommit {
+		return false
+	}
+	if item.InstallMode == "manual" {
+		return true
+	}
+	// Unsigned IPA remains available for developer-side signing and testing,
+	// but never participates in the native automatic installer.
+	return item.InstallMode == "manual_test_only" &&
+		item.Platform == "ios" && item.Filename == "xDrive-unsigned.ipa"
 }
