@@ -180,7 +180,7 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         let app = launch()
         files(app)
         for section in ["recent", "favorites", "browse"] {
-            tap("native-ios-files-section-\\(section)", app)
+            tap("native-ios-files-section-\(section)", app)
             expect("native-ios-files-section-browse", app)
         }
         tap("native-ios-files-open-root-location", app)
