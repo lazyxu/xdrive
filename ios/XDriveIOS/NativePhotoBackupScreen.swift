@@ -120,14 +120,23 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
         }
-        // An active user's taps or scrolls reset the 10-second idle window.
-        // Simultaneous gestures preserve Form scroll and Button interactions.
+        // Bind task presentation to the stable page host, not outside a
+        // stack of mutually exclusive confirmation dialogs. It must remain
+        // mounted while the content switches between overview and details.
+        .sheet(isPresented: $showTaskList) {
+            XDriveIOSNativePhotoBackupTaskList(login: login, controller: controller)
+        }
+        // Only Focused Backup needs the full-screen activity gestures.
+        // A permanent ancestor tap/drag recognizer interferes with nested
+        // Form buttons and native sheet navigation on real Simulator.
         .simultaneousGesture(
-            TapGesture().onEnded { noteFocusedUserActivity() }
+            TapGesture().onEnded { noteFocusedUserActivity() },
+            including: focusedPresentationActive ? .all : .none
         )
         .simultaneousGesture(
             DragGesture(minimumDistance: 4)
-                .onChanged { _ in noteFocusedUserActivity() }
+                .onChanged { _ in noteFocusedUserActivity() },
+            including: focusedPresentationActive ? .all : .none
         )
         // Synology-style focused display: dark, not locked. A tap wakes the
         // native status screen without cancelling or restarting the uploader.
@@ -478,14 +487,28 @@ struct XDriveIOSNativePhotoBackupScreen: View {
 
     var body: some View {
         backupLifetimeContent
-        .sheet(isPresented: $showTaskList) {
-            XDriveIOSNativePhotoBackupTaskList(login: login, controller: controller)
-        }
         .onAppear {
-            applyLaunchActionIfNeeded()
+            // The default overview is already the @State initial route. A
+            // SwiftUI reappear after a tap must never reapply .overview.
+            // Explicit shortcuts and later nonce changes still navigate.
+            if launchAction != .overview { applyLaunchActionIfNeeded() }
             refreshOverviewQueueIfEligible()
         }
         .onChange(of: launchNonce) { _ in applyLaunchActionIfNeeded() }
+        .onChange(of: page) { newPage in
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
+                print("BACKUP_MVP_ROUTE page=\(String(describing: newPage))")
+            }
+            #endif
+        }
+        .onChange(of: showTaskList) { shown in
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
+                print("BACKUP_MVP_TASK_SHEET visible=\(shown)")
+            }
+            #endif
+        }
         .onChange(of: receipts.mode) { mode in
             if mode == .idle {
                 controller.refresh(owner: login.owner)

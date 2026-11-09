@@ -74,6 +74,15 @@ private struct XDriveIOSNativeNavigationSmokeRoot: View {
 }
 #endif
 """
+# Historical c83/b9 sources must compile using their ACTUAL Backup screen
+# initializer. Only current candidates have the explicit launchNonce API.
+# This adapts a disposable test harness; it does not rewrite release code.
+backup_api = (root / "ios/XDriveIOS/NativePhotoBackupScreen.swift").read_text()
+if "var launchNonce:" not in backup_api:
+    old_argument = "                        launchNonce: backupLaunchNonce,\n"
+    if s.count(old_argument) != 1:
+        raise SystemExit("Unexpected historical Backup constructor")
+    s = s.replace(old_argument, "")
 app.write_text(s)
 spec = project.read_text()
 if "xDriveIOSNavigationUITests" in spec or "\nschemes:" in spec:
