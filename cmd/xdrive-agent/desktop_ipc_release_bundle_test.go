@@ -16,9 +16,9 @@ type releaseBundleIPCTestController struct {
 	retryCount    int
 	downloadCount int
 	installCount  int
-	commit       string
-	filename     string
-	destination  string
+	commit        string
+	filename      string
+	destination   string
 }
 
 func (f *releaseBundleIPCTestController) CloudReleaseBundleState(context.Context) (client.ReleaseBundleListing, error) {
@@ -87,8 +87,8 @@ func TestDesktopBundleIPCRejectsBadFileIdentityBeforeDownload(t *testing.T) {
 	handler := newDesktopIPCHandler(f, "secret", func() {})
 	for _, body := range []string{
 		`{"commit":"invalid","filename":"xDriveSetup-amd64.exe","destination":"C:\\Temp\\xDrive.exe"}`,
-		`{"commit":"`+strings.Repeat("a", 40)+`","filename":"../evil","destination":"C:\\Temp\\xDrive.exe"}`,
-		`{"commit":"`+strings.Repeat("a", 40)+`","filename":"xDriveSetup-amd64.exe","destination":""}`,
+		`{"commit":"` + strings.Repeat("a", 40) + `","filename":"../evil","destination":"C:\\Temp\\xDrive.exe"}`,
+		`{"commit":"` + strings.Repeat("a", 40) + `","filename":"xDriveSetup-amd64.exe","destination":""}`,
 	} {
 		rr := desktopIPCRequest(t, handler, http.MethodPost, "/v1/release-bundle/download", body)
 		if rr.Code != http.StatusBadRequest {

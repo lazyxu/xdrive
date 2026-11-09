@@ -10,8 +10,8 @@ import (
 func TestCurrentReleaseBundleDownloadAdmitsOnlyApprovedManualOrUnsignedTestingIPA(t *testing.T) {
 	commit := strings.Repeat("a", 40)
 	item := client.ReleaseBundleArtifact{
-		Platform: "windows",
-		Filename: "xDriveSetup-amd64.exe",
+		Platform:    "windows",
+		Filename:    "xDriveSetup-amd64.exe",
 		BuildCommit: commit,
 		InstallMode: "manual",
 	}

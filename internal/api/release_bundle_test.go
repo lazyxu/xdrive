@@ -318,7 +318,6 @@ func TestReleaseBundleEncodedPlusInApprovedAndroidPackage(t *testing.T) {
 	}
 }
 
-
 func TestReleaseBundleAPIEncodesLocalCachedAndroidPlus(t *testing.T) {
 	root, body, m := bundleTestFixture(t)
 	name := "xdrive-android-12-0.1.3+build.apk"

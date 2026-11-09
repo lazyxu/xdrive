@@ -43,7 +43,7 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 						refSHA = strings.Repeat("c", 40)
 					}
 					_ = json.NewEncoder(w).Encode(map[string]any{
-						"ref": "refs/tags/" + tag,
+						"ref":    "refs/tags/" + tag,
 						"object": map[string]string{"type": "commit", "sha": refSHA},
 					})
 				case "/repos/lazyxu/xdrive/releases/tags/" + tag:
