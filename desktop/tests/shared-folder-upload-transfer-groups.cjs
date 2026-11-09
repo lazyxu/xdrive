@@ -929,3 +929,22 @@ test('folder mkdir planning propagates AbortSignal and stops subsequent Server c
   ]) assert.ok(webApp.includes(required), 'Web Owner folder upload must forward abort: ' + required)
   assert.ok(webApi.includes('createDirectory(parentID: number, name: string, signal?: AbortSignal)'))
 })
+
+
+test('upload result byte counts flow through both Web and Desktop child lifecycle, with skip distinct', () => {
+  assert.ok(controller.includes('transferredBytes: result.transferred_bytes'),
+    'managed child must pass true CAS upload byte count into terminal transfer')
+  assert.ok(webApi.includes('webTransferStore.complete(activeTransferID, file.size, file.size, transferredBytes)'),
+    'direct Web upload records actual chunk bytes')
+  assert.ok(webApi.includes('webTransferStore.complete(activeTransferID, file.size, file.size, 0)'),
+    'already-finalized session can complete without re-uploading')
+  assert.ok(webStore.includes('upload_skipped: completed && skipped'),
+    'skip must be distinct from instant upload')
+  assert.ok(desktopExplorer.includes('upload_transferred_bytes: input.transferredBytes'),
+    'Desktop child must forward result to authenticated Agent IPC')
+  assert.ok(agentCloud.includes('handle.CompleteUploadBytes(result.TransferredBytes)'),
+    'Desktop standalone uploads must persist the Agent verified CAS result')
+  const model = read('internal', 'transfer', 'model.go')
+  assert.ok(model.includes('UploadTransferredBytes *int64'), 'Go task must retain optional verified bytes')
+  assert.ok(model.includes('UploadSkipped'), 'skips must remain distinguishable from CAS reuse')
+})
