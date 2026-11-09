@@ -193,7 +193,7 @@ func TestReleaseBundlePartialCurrentCommitCacheStatusAndFallback(t *testing.T) {
 		Commit: sha, State: "retry_needed",
 		Artifacts: map[string]string{
 			"xDrive-unsigned.ipa": "verified",
-			"unpublished.ipa":    "missing_upstream",
+			"unpublished.ipa":     "missing_upstream",
 		},
 		Message: "1 verified; 1 installer package pending retry",
 	})
