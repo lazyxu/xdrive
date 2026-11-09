@@ -63,8 +63,9 @@ type releaseBundleItem struct {
 type releaseBundleListing struct {
 	State        string              `json:"state"`
 	Commit       string              `json:"commit,omitempty"`
-	Channel      string              `json:"channel,omitempty"`
-	CachedCommit string              `json:"cached_commit,omitempty"`
+	Channel       string              `json:"channel,omitempty"`
+	ServerVersion string              `json:"server_version,omitempty"`
+	CachedCommit  string              `json:"cached_commit,omitempty"`
 	Artifacts    []releaseBundleItem `json:"artifacts"`
 	Message      string              `json:"message,omitempty"`
 }
@@ -124,7 +125,12 @@ func validReleaseBundleManifest(m releaseBundleManifest) bool {
 }
 
 func readReleaseBundleListing(root string) releaseBundleListing {
-	return readReleaseBundleListingForServerCommit(root, version.Metadata().Commit)
+	running := version.Metadata()
+	listing := readReleaseBundleListingForServerCommit(root, running.Commit)
+	// Explicit, authoritative target installer version; never synthesize a
+	// version from the Commit prefix or from a stale Host cache.
+	listing.ServerVersion = running.Version
+	return listing
 }
 
 // The running Server binary, rather than stale Host cache pointers, decides
