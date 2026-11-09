@@ -35,8 +35,7 @@ func TestDSMClipboardV2StrictDeviceTargetAndNodeValidation(t *testing.T) {
 	invalid := map[string]string{
 		"missing-target":        strings.Replace(base, target, "", 1),
 		"short-wrapped-key":     strings.Replace(base, wrapped, encoded(59), 1),
-		"bad-ephemeral-key":     strings.Replace(base,
-			`"ephemeral_key":`+fmt.Sprintf("%q", ephemeral), `"ephemeral_key":"plaintext"`, 1),
+		"bad-ephemeral-key":     strings.Replace(base, `"ephemeral_key":"`+ephemeral+`"`, `"ephemeral_key":"plaintext"`, 1),
 		"media-without-node":    strings.Replace(base, `"node_id":118`, `"node_id":0`, 1),
 		"bad-kind":              strings.Replace(base, "image/x-xdrive-node-ref", "image/png", 1),
 		"cross-purpose-text":    strings.Replace(base, "image/x-xdrive-node-ref", "text/plain", 1),
