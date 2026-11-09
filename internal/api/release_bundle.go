@@ -61,13 +61,13 @@ type releaseBundleItem struct {
 }
 
 type releaseBundleListing struct {
-	State        string              `json:"state"`
-	Commit       string              `json:"commit,omitempty"`
+	State         string              `json:"state"`
+	Commit        string              `json:"commit,omitempty"`
 	Channel       string              `json:"channel,omitempty"`
 	ServerVersion string              `json:"server_version,omitempty"`
 	CachedCommit  string              `json:"cached_commit,omitempty"`
-	Artifacts    []releaseBundleItem `json:"artifacts"`
-	Message      string              `json:"message,omitempty"`
+	Artifacts     []releaseBundleItem `json:"artifacts"`
+	Message       string              `json:"message,omitempty"`
 }
 
 func readBundleJSON(path string, limit int64, dest any) error {

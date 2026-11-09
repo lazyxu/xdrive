@@ -141,6 +141,21 @@ func TestCurrentServerBundleRejectsUnapprovedInstallModes(t *testing.T) {
 	}
 }
 
+func TestCurrentServerBundleRejectsDuplicateInstallerMetadata(t *testing.T) {
+	payload := []byte("unique verified client installer")
+	listing, artifact := bundleClientFixture(t, payload)
+	listing.Artifacts = append(listing.Artifacts, artifact)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(listing)
+	}))
+	defer server.Close()
+	cli := New(server.URL, "owner-test")
+	if _, err := cli.CurrentReleaseBundle(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("Server-provided duplicate Bundle filename was accepted: %v", err)
+	}
+}
+
 func TestCurrentServerBundleRefusesEqualSizeInvalidHashBeforeInstallation(t *testing.T) {
 	payload := []byte("good-release-installer")
 	listing, artifact := bundleClientFixture(t, payload)

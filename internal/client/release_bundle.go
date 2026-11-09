@@ -40,8 +40,8 @@ type ReleaseBundleArtifact struct {
 }
 
 type ReleaseBundleListing struct {
-	State     string                  `json:"state"`
-	Commit    string                  `json:"commit"`
+	State         string                  `json:"state"`
+	Commit        string                  `json:"commit"`
 	Channel       string                  `json:"channel"`
 	ServerVersion string                  `json:"server_version"`
 	Artifacts     []ReleaseBundleArtifact `json:"artifacts"`
@@ -113,10 +113,15 @@ func (c *Client) CurrentReleaseBundle(ctx context.Context) (ReleaseBundleListing
 	if !bundleFullCommit.MatchString(listing.Commit) || len(listing.Artifacts) > 30 {
 		return ReleaseBundleListing{}, errors.New("invalid current Server Bundle identity")
 	}
+	seen := make(map[string]bool, len(listing.Artifacts))
 	for _, artifact := range listing.Artifacts {
 		if !validCurrentBundleArtifact(listing.Commit, artifact) {
 			return ReleaseBundleListing{}, errors.New("invalid current Server Bundle artifact or source")
 		}
+		if seen[artifact.Filename] {
+			return ReleaseBundleListing{}, errors.New("duplicate current Server Bundle installer filename")
+		}
+		seen[artifact.Filename] = true
 	}
 	return listing, nil
 }
