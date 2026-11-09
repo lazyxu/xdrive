@@ -221,6 +221,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // authorizes media, crosses the isolated Child, or reuses the old Cell
   // selector. Both Hosts can use the same Parent DOM/Owner check.
   const committedDrawer = useRef<DrawerView | null>(null)
+  // The last authenticated visible row survives a CSS resize even if React
+  // retires the old Grid before the map SDK emits its cancel callback.
+  // This holds numeric geometry only; it never authorizes a photo.
+  const latestDrawerVisibleAnchor = useRef<{
+    key:string;nodeID:number;revision:number;index:number;viewportOffset:number
+  } | null>(null)
   const pendingResizeDrawer = useRef<{
     owner:string; key:string; hint:XDrivePlacesDrawerReturn
   } | null>(null)
@@ -250,6 +256,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     drawerFetch.current=controller
     const cell={...selection,bounds:{...selection.bounds}}
     const key=approved.key
+    if (latestDrawerVisibleAnchor.current?.key!==key ||
+        latestDrawerVisibleAnchor.current?.nodeID!==cell.node_id ||
+        latestDrawerVisibleAnchor.current?.revision!==cell.node_revision)
+      latestDrawerVisibleAnchor.current=null
     setDrawer({selection:cell,key,phase:'loading',items:[],
       windowStart:0,loadedDepth:0,total:cell.photo_count,expanded:presentation?.expanded ?? true,
       loadingMore:false,pageError:false,returnPresentation:presentation})
@@ -504,6 +514,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     if(lastFilterKey.current===currentFilterKey)return
     lastFilterKey.current=currentFilterKey
     pendingResizeDrawer.current=null
+    latestDrawerVisibleAnchor.current=null
     pendingCoverClick.current=null
     setCoverClickStatus('')
     committedPresentation.current=null
@@ -636,12 +647,23 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             }) : undefined
             const rawIndex=visibleTile
               ? Number(visibleTile.getAttribute('data-xdrive-media-index')) : -1
+            const cached=latestDrawerVisibleAnchor.current
+            const remembered=cached && cached.key===approved.key &&
+              cached.nodeID===state.selection.node_id &&
+              cached.revision===state.selection.node_revision &&
+              Number.isSafeInteger(cached.index) && cached.index>=0 &&
+              cached.index<state.total && Number.isFinite(cached.viewportOffset)
+              ? cached : null
+            const anchorIndex=remembered?.index ?? rawIndex
+            const offset=remembered?.viewportOffset ??
+              (bounds && visibleTile
+                ? visibleTile.getBoundingClientRect().top-bounds.top : NaN)
             const anchor=state.total>XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT &&
-              Number.isSafeInteger(rawIndex) && rawIndex>=0 &&
-              rawIndex<state.total && bounds && visibleTile
-              ? {anchorIndex:rawIndex,
+              Number.isSafeInteger(anchorIndex) && anchorIndex>=0 &&
+              anchorIndex<state.total && Number.isFinite(offset)
+              ? {anchorIndex,
                   anchorViewportOffset:Math.max(-10_000,Math.min(10_000,
-                    Math.round(visibleTile.getBoundingClientRect().top-bounds.top)))}
+                    Math.round(offset)))}
               : {}
             pendingResizeDrawer.current={owner:scope??'',key:approved.key,
               hint:{selection:{...state.selection,
@@ -1362,6 +1384,21 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             onOpenAll={openDrawerAll} onOpenPhoto={openDrawerPhoto}
             onLoadMore={loadDrawerMore}
             onWindowRange={loadDrawerWindow}
+            onVisibleAnchorChange={(index,viewportOffset) => {
+              // Ignore callbacks from revoked/older scopes and never copy
+              // Node identities or original media into the return hint.
+              const state=activeDrawer
+              if (!state || state.phase!=='ready' ||
+                  state.key!==acceptedScope.current?.key ||
+                  !hasAcceptedCell(state.selection) ||
+                  !Number.isSafeInteger(index) || index<0 ||
+                  index>=state.total || !Number.isFinite(viewportOffset)) return
+              latestDrawerVisibleAnchor.current={
+                key:state.key,nodeID:state.selection.node_id,
+                revision:state.selection.node_revision,index,
+                viewportOffset:Math.max(-10_000,Math.min(10_000,
+                  Math.round(viewportOffset)))}
+            }}
             onRetryWindow={retryDrawerWindow}
             onOpenNearby={acceptedViewport && activeDrawer.phase==='ready' &&
               openViewport.current && trustedSummary && trustedSummary.total_count>0

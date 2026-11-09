@@ -19,7 +19,7 @@ import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
 export function XDriveMediaGalleryPlacesPhotoDrawer({
   items, total, windowStart = 0, loadedDepth = items.length,
   phase, expanded, loadingMore, pageError, pageErrorKind, loadThumbnail, photoTileMinWidth = 108, onExpand,
-  onClose, onRetry, onRefreshMap, onLoadMore, onWindowRange, onRetryWindow, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
+  onClose, onRetry, onRefreshMap, onLoadMore, onWindowRange, onRetryWindow, onVisibleAnchorChange, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
   total: number
@@ -39,6 +39,8 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   onLoadMore: () => void
   onWindowRange?: (startIndex: number, endIndex: number) => void
   onRetryWindow?: () => void
+  /** Numeric viewport intent only; Owner/Cell admission stays with Parent. */
+  onVisibleAnchorChange?: (index: number, viewportOffset: number) => void
   onOpenPhoto: (item: MediaItem, presentation: XDrivePlacesDrawerPresentation) => void
   onOpenAll: () => void
   /** Same signed Owner camera viewport as the map's original camera wall. */
@@ -108,8 +110,13 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     onRangeChange: notifyRange,
   }), [sparse, phase, total, loadedDepth, resident, itemAt, notifyRange])
   const visibleAnchor = useRef<{index:number;viewportOffset:number}|null>(null)
+  // Ref-backed callback preserves the shared Gallery scroll/ResizeObserver
+  // lifetime when Parent's authorized page state changes.
+  const anchorPort = useRef(onVisibleAnchorChange)
+  anchorPort.current = onVisibleAnchorChange
   const captureVisibleAnchor = useCallback((index:number,viewportOffset:number) => {
     visibleAnchor.current={index,viewportOffset:Math.round(viewportOffset)}
+    anchorPort.current?.(index,viewportOffset)
   }, [])
   const tileItem = (target: EventTarget | null) => {
     const tile = target instanceof Element

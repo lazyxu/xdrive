@@ -3635,29 +3635,100 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
       Math.abs(restored.offset-clicked.offset)<=12 &&
       restored.reads-beforeBack<=8 && restored.dom>0 && restored.dom<160 &&
       restored.target>80_000 && errors.length===0)
-    const beforeRotate=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.length)
+    const beforeRotate=await page.evaluate(()=>{
+      const probe=window.__mapProbe
+      const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=drawer?.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const rect=list?.getBoundingClientRect()
+      const visible=list&&rect?Array.from(
+        list.querySelectorAll('[data-xdrive-places-photo-drawer-item]')).find(node=>{
+          const r=node.getBoundingClientRect()
+          return r.bottom>rect.top && r.top<rect.bottom &&
+            r.right>rect.left && r.left<rect.right
+        }):null
+      probe.deep100kPreRotateDrawer=drawer
+      return {queries:probe.queries.length,
+        previews:probe.photoPreviewRanges.length,
+        anchorIndex:visible?Number(visible.getAttribute('data-xdrive-media-index')):-1,
+        anchorOffset:visible&&rect
+          ?Math.round(visible.getBoundingClientRect().top-rect.top):null}
+    })
+    assert(beforeRotate.anchorIndex>80_000 &&
+      Number.isFinite(beforeRotate.anchorOffset),
+      'a real deep visible photo anchor must exist before rotation')
     await page.setViewportSize({width:844,height:390})
-    await page.waitForFunction(index=>{
-      const el=document.querySelector('[data-xdrive-places-photo-drawer-items]')
-      const tile=el?.querySelector('[data-xdrive-media-index="'+index+'"]')
-      const rect=el?.getBoundingClientRect(),t=tile?.getBoundingClientRect()
-      return Boolean(rect&&t&&t.bottom>rect.top&&t.top<rect.bottom)
-    },clicked.index)
-    const afterRotate=await page.evaluate(()=>({
-      reads:window.__mapProbe.photoPreviewRanges.length,
-      dom:document.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
-      hasError:Boolean(document.querySelector(
-        '[data-xdrive-places-photo-drawer-page-error]'))}))
-    // CI-only bounded synthetic resize evidence; no Owner IDs, GPS or URLs.
+    try{
+      await page.waitForFunction(before=>{
+        const probe=window.__mapProbe
+        const old=probe.deep100kPreRotateDrawer
+        const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+        if(!old || old.isConnected || !drawer || drawer===old ||
+            probe.queries.length<=before.queries)return false
+        const newRanges=probe.photoPreviewRanges.slice(before.previews)
+        const firstAuthorized=newRanges.some(range=>
+          range.total===100_000 && range.offset===0 && range.items===48)
+        const deepAuthorized=newRanges.some(range=>
+          range.total===100_000 &&
+          range.offset<=before.anchorIndex &&
+          before.anchorIndex<range.offset+range.items)
+        if(!firstAuthorized || !deepAuthorized)return false
+        const list=drawer.querySelector('[data-xdrive-places-photo-drawer-items]')
+        const tile=list?.querySelector('[data-xdrive-media-index="'+before.anchorIndex+'"]')
+        const rect=list?.getBoundingClientRect(),box=tile?.getBoundingClientRect()
+        return !!(rect&&box&&box.bottom>rect.top&&box.top<rect.bottom)
+      },beforeRotate)
+    }catch(error){
+      // Bounded synthetic numbers only; no Owner IDs, private URLs or tokens.
+      const diagnostic=await page.evaluate(before=>{
+        const p=window.__mapProbe
+        const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+        return {freshQueries:p.queries.length-before.queries,
+          freshRanges:p.photoPreviewRanges.slice(before.previews).map(x=>({
+            offset:x.offset,count:x.items,total:x.total})).slice(0,12),
+          oldDetached:p.deep100kPreRotateDrawer?.isConnected===false,
+          present:!!list,
+          tiles:list?.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length??0,
+          anchorMounted:!!list?.querySelector(
+            '[data-xdrive-media-index="'+before.anchorIndex+'"]'),
+          pageError:!!document.querySelector(
+            '[data-xdrive-places-photo-drawer-page-error]')}
+      },beforeRotate)
+      console.error('places-100k-rotation-signed-gate',
+        JSON.stringify({mode,before:beforeRotate,after:diagnostic}))
+      throw error
+    }
+    const afterRotate=await page.evaluate(before=>{
+      const probe=window.__mapProbe
+      const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=drawer.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const tile=list.querySelector('[data-xdrive-media-index="'+before.anchorIndex+'"]')
+      const ranges=probe.photoPreviewRanges.slice(before.previews)
+      return {reads:ranges.length,queries:probe.queries.length-before.queries,
+        dom:list.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+        oldDetached:probe.deep100kPreRotateDrawer?.isConnected===false,
+        firstSigned:ranges.some(x=>x.total===100_000&&x.offset===0&&x.items===48),
+        deepSigned:ranges.some(x=>x.total===100_000 &&
+          x.offset<=before.anchorIndex &&
+          before.anchorIndex<x.offset+x.items),
+        offset:Math.round(tile.getBoundingClientRect().top-list.getBoundingClientRect().top),
+        hasError:Boolean(document.querySelector(
+          '[data-xdrive-places-photo-drawer-page-error]'))}
+    },beforeRotate)
+    // Retain the bounded diagnostic added by the concurrent failed-HEAD run.
     console.log('Places 100k resize '+mode+' '+JSON.stringify({
-      signedReads:afterRotate.reads-beforeRotate,
-      mountedTiles:afterRotate.dom,
-      pageError:afterRotate.hasError,
-      runtimeErrorCount:errors.length,
+      signedReads:afterRotate.reads,mountedTiles:afterRotate.dom,
+      reauthorized:afterRotate.firstSigned && afterRotate.deepSigned,
+      oldDetached:afterRotate.oldDetached,
+      pageError:afterRotate.hasError,runtimeErrorCount:errors.length,
     }))
-    record(mode+': 100k resize anchors visible photo through fresh Owner range',
-      afterRotate.reads-beforeRotate<=8 && afterRotate.dom>0 &&
-      afterRotate.dom<160 && !afterRotate.hasError && errors.length===0)
+    record(mode+': 100k resize anchors visible photo through fresh Owner range'+
+      ' (reads='+afterRotate.reads+',queries='+afterRotate.queries+
+      ',dom='+afterRotate.dom+')',
+      afterRotate.oldDetached && afterRotate.firstSigned && afterRotate.deepSigned &&
+      afterRotate.queries>=1 && afterRotate.reads>=2 && afterRotate.reads<=8 &&
+      afterRotate.dom>0 && afterRotate.dom<160 &&
+      Math.abs(afterRotate.offset-beforeRotate.anchorOffset)<=16 &&
+      !afterRotate.hasError && errors.length===0)
     record(mode+': 100k real Chromium samples stay viewport bounded (3 runs)',
       samples.length===3 && samples.every(x=>x.tiles<160 && x.delta<=8) &&
       errors.length===0)
