@@ -951,6 +951,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var versionRestoreConfirmed = false
     @State private var showingPathPrompt = false
     @State private var pathDraft = ""
+    @State private var showingIndexJump = false
+    @State private var jumpIndexDraft = ""
+    @State private var pendingJumpIndex: Int?
     @State private var pathBusy = false
     @State private var pathError: String?
     @State private var pathDestination: XDriveIOSNativeFilesFolder?
@@ -2756,6 +2759,15 @@ struct XDriveIOSNativeFilesBrowser: View {
                         .accessibilityIdentifier("native-ios-files-save-current-search")
                     }
                     Button {
+                        showingIndexJump = true
+                        jumpIndexDraft = ""
+                    } label: {
+                        Label("跳转到文件序号…", systemImage: "arrow.down.to.line.compact")
+                    }
+                    .disabled(isHome || isGlobalSearch || selecting ||
+                              !model.verifiedPage || model.loading || model.total == 0)
+                    .accessibilityIdentifier("native-ios-files-jump-to-index")
+                    Button {
                         showingPathPrompt = true
                         pathError = nil
                     } label: {
@@ -2958,6 +2970,14 @@ struct XDriveIOSNativeFilesBrowser: View {
             } else {
                 Text("账户已变化，请关闭后重新打开整理页面。")
             }
+        }
+        .alert("跳转到文件序号", isPresented: $showingIndexJump) {
+            TextField("1–\(model.total)", text: $jumpIndexDraft)
+                .keyboardType(.numberPad)
+            Button("跳转") { jumpToItemIndex() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("根据服务器已确认的 \(model.total) 项总数定位；跳转后会再次核验该页。")
         }
         .alert("前往文件夹", isPresented: $showingPathPrompt) {
             TextField("例如 /工作/文档", text: $pathDraft)
@@ -3491,6 +3511,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            pendingJumpIndex = nil
+            showingIndexJump = false
             pendingQuickOperation = nil
             showingBatchProperties = false
             operationShortcuts.invalidate()
@@ -3661,6 +3683,15 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: grouping) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: foldersFirst) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: model.loading) { loading in
+            if !loading, model.verifiedPage, let target = pendingJumpIndex,
+               target >= model.startOffset,
+               target - model.startOffset < model.entries.count {
+                let node = model.entries[target - model.startOffset]
+                pendingJumpIndex = nil
+                returnScroll.scrollTo(node.id, anchor: .center)
+                lastAppearedNodeID = node.id
+                persistVisibleAnchorSoon()
+            }
             if !loading && model.verifiedPage { persistVerifiedFolder() }
             guard !loading, selectedFile == nil else { return }
             if let returnID = pendingNavigationReturnNodeID,
@@ -3798,6 +3829,25 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedIDs.insert(entry.id)
             selectedSnapshots[entry.id] = entry.node
         }
+    }
+
+    private func jumpToItemIndex() {
+        guard !isHome, !isGlobalSearch, !selecting,
+              model.verifiedPage, !model.loading, let owner = login.owner,
+              parentID != nil,
+              let number = Int(jumpIndexDraft),
+              let page = XDriveIOSNativeFilesContinuousWindowPolicy.pageContaining(
+                itemNumber: number, total: model.total
+              ) else {
+            quickActionNotice = "序号无效；请输入当前目录总数范围内的整数。"
+            return
+        }
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+        pendingJumpIndex = number - 1
+        pendingNavigationReturnNodeID = nil
+        lastAppearedNodeID = nil
+        offset = page
+        reload()
     }
 
     private func cancelPathLookup() {

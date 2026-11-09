@@ -112,6 +112,14 @@ struct XDriveIOSNativeFilesContinuousWindowChecks {
             lastAppearedNodeID: 0, startOffset: 0,
             loadedIDs: ids(0, 64), total: 100_000
         ) == nil, "reject zero Node identity")
+        require(Window.pageContaining(itemNumber: 1, total: 100_000) == 0,
+                "first file can jump")
+        require(Window.pageContaining(itemNumber: 99_999, total: 100_000) == 99_968,
+                "distant file uses one aligned 64-item Range")
+        require(Window.pageContaining(itemNumber: 100_001, total: 100_000) == nil,
+                "reject out-of-range jump")
+        require(Window.pageContaining(itemNumber: Int.max, total: 100_000) == nil,
+                "reject overflowing item number")
         // A corrupt but page-aligned Int cursor previously overflowed before
         // checking total, crashing on both scroll and Viewer return paths.
         let hugeAligned = Int.max - 63
