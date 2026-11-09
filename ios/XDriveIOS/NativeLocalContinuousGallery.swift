@@ -212,7 +212,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         guard ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke")
         else { return }
         let ms = Int(max(0, Date().timeIntervalSince(started) * 1000))
-        print("IOS_NATIVE_LOCAL_PHOTO_PAGE_READY_MS mode=\\(mode) value=\\(ms)")
+        print("IOS_NATIVE_LOCAL_PHOTO_PAGE_READY_MS mode=\(mode) value=\(ms)")
     }
 
     var body: some View {
