@@ -207,6 +207,14 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         XDriveIOSNativePhotoWallPlaceholderTile()
     }
 
+    private func reportPhotoPageReady(_ mode: String, started: Date) {
+        // Diagnostic only: no PhotoKit asset IDs, media titles or metadata.
+        guard ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke")
+        else { return }
+        let ms = Int(max(0, Date().timeIntervalSince(started) * 1000))
+        print("IOS_NATIVE_LOCAL_PHOTO_PAGE_READY_MS mode=\\(mode) value=\\(ms)")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             if let page {
@@ -321,6 +329,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         .padding(.horizontal, 12)
         .id("page:\(offset)")
         .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)") {
+            let pageStarted = Date()
             if let cached = page, retainedGeneration == generation,
                cached.startOffset == offset,
                cached.totalAccessibleAssets == expectedTotal,
@@ -328,6 +337,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
                ) {
                 onRead(cached)
+                reportPhotoPageReady("mounted", started: pageStarted)
                 await refreshVisibleBackupQueueStatuses()
                 return
             }
@@ -344,6 +354,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 page = navigationRetainedPage
                 retainedGeneration = generation
                 onRead(navigationRetainedPage)
+                reportPhotoPageReady("tab-return", started: pageStarted)
                 await refreshVisibleBackupQueueStatuses()
                 return
             }
@@ -375,6 +386,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 page = loaded
                 retainedGeneration = generation
                 onRead(loaded)
+                reportPhotoPageReady("photokit", started: pageStarted)
                 // Read at most this mounted 64-item page; never enumerate the
                 // entire PhotoKit library or leak IDs to the Server for a badge.
                 let initialBadgeEpoch = UUID()
