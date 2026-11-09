@@ -11,6 +11,8 @@ on:
       - 'ios/XDriveIOS/NativeFilesSavedSearches.swift'
       - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
       - 'ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift'
+      - 'ios/XDriveIOS/NativeFilesNavigationPolicy.swift'
+      - 'ios/tests/NativeFilesNavigationChecks.swift'
       - 'ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift'
       - 'ios/XDriveIOS/NativePhotoWallDensityPolicy.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
