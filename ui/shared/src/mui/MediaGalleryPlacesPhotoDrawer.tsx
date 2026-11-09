@@ -105,12 +105,21 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   } | null>(null)
   const layoutRevision = useRef(1)
   const [actionError, setActionError] = useState('')
-  const toggleFavorite = useCallback((item: MediaItem) => {
-    if (!onSetFavorite) return
+  const [favoriteBusy, setFavoriteBusy] = useState(false)
+  // Places tiles are native photo buttons. Expose favorite as a separate
+  // adjacent toolbar action, never an interactive button nested inside Tile.
+  const toggleFavorite = useCallback(async (item: MediaItem) => {
+    if (!onSetFavorite || favoriteBusy) return
+    setFavoriteBusy(true)
     setActionError('')
-    void onSetFavorite(item, !item.favorite).catch(() =>
-      setActionError('收藏操作失败，照片权限或版本可能已变化，请重试'))
-  }, [onSetFavorite])
+    try {
+      await onSetFavorite(item, !item.favorite)
+    } catch {
+      setActionError('收藏操作失败，照片权限或版本可能已变化，请重试')
+    } finally {
+      setFavoriteBusy(false)
+    }
+  }, [onSetFavorite, favoriteBusy])
   useEffect(() => {
     if (phase==='ready' && !timelineGroups) setTimeScale('all')
   }, [phase,timelineGroups])
@@ -145,6 +154,8 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     onRangeChange: notifyRange,
   }), [sparse, phase, total, loadedDepth, resident, itemAt, notifyRange])
   const visibleAnchor = useRef<{index:number;viewportOffset:number}|null>(null)
+  const [visibleIndex, setVisibleIndex] = useState<number | null>(null)
+  const visibleItem = resident.get(visibleIndex ?? windowStart)
   // Ref-backed callback preserves the shared Gallery scroll/ResizeObserver
   // lifetime when Parent's authorized page state changes.
   const anchorPort = useRef(onVisibleAnchorChange)
@@ -152,6 +163,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   const captureVisibleAnchor = useCallback(
     (index:number,viewportOffset:number,gridWidth:number) => {
       visibleAnchor.current={index,viewportOffset:Math.round(viewportOffset)}
+      setVisibleIndex(current => current===index ? current : index)
       anchorPort.current?.(index,viewportOffset,gridWidth)
     }, [])
   const captureTimelineAnchor = useCallback((index:number) => {
@@ -509,7 +521,6 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                     thumbnailScheduler={thumbnailScheduler}
                     loadPreviewURL={loadPreviewURL}
                     saveVideoPoster={saveVideoPoster}
-                    onSetFavorite={onSetFavorite}
                     onVisibleAnchorChange={captureTimelineAnchor}
                     restoreAnchorIndex={layoutRestore?.index ?? initialPresentation?.anchorIndex}
                     restoreAnchorRevision={layoutRestore?.revision ??
@@ -535,7 +546,6 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                     thumbnailScheduler={thumbnailScheduler}
                     loadPreviewURL={loadPreviewURL}
                     saveVideoPoster={saveVideoPoster}
-                    onSetFavorite={onSetFavorite}
                     onVisibleAnchorChange={captureVisibleAnchor}
                     restoreAnchorIndex={layoutRestore?.index ?? (sparse && portalEntered && expanded &&
                       (initialPresentation?.anchorIndex ?? -1) < total
@@ -570,8 +580,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                       // so that cleanup cannot cancel a newly mounted strip.
                       loadPreviewURL={loadPreviewURL}
                       saveVideoPoster={saveVideoPoster}
-                      onSetFavorite={onSetFavorite}
-                      onOpen={openTile}
+                        onOpen={openTile}
                       onPreview={openTile}
                       onToggleFavorite={toggleFavorite}
                     />
@@ -599,6 +608,16 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                   role="status" data-xdrive-places-photo-drawer-auto-more>
                   正在连续加载…
                 </Typography>
+              ) : null}
+              {onSetFavorite && visibleItem ? (
+                <Button data-xdrive-places-photo-drawer-favorite
+                  size="small" variant="text" disabled={favoriteBusy}
+                  aria-label={visibleItem.favorite
+                    ? '取消收藏当前可见照片' : '收藏当前可见照片'}
+                  onClick={() => void toggleFavorite(visibleItem)}
+                  sx={{minHeight:44,textTransform:'none'}}>
+                  {visibleItem.favorite ? '取消收藏' : '收藏当前照片'}
+                </Button>
               ) : null}
               {onOpenNearby ? (
                 <Button data-xdrive-places-photo-drawer-nearby
