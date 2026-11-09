@@ -28,6 +28,7 @@ release-assets:
   tags:
     - linux
   stage: release-build
+  needs: []  # Source-only: do not wait for Photo Face / Media Worker builds.
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
