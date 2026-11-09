@@ -829,6 +829,14 @@ function desktopPlacesGuestFrameAllowed(raw:unknown,origin:string):boolean {
     return url.hash==='#/app/gallery?section=places'
   }catch{return false}
 }
+/** Only a canonical map-only frame may navigate or follow a redirect.
+ * This shares the exact allowlist with the one-use Guest scope consumer. */
+function desktopPlacesGuestNavigationAllowed(
+  rawURL: unknown, identity: DesktopPlacesWebIdentity,
+): boolean {
+  return desktopPlacesGuestFrameAllowed(rawURL, identity.origin) &&
+    desktopPlacesWebOwnerStillCurrent(identity)
+}
 // Main-only accepted Child Origin; never copied to Renderer or persisted.
 let secureBaiduMapChildOrigin: string | null = null
 // A previously authenticated HTTPS Session can NEVER be reused for another
@@ -2319,16 +2327,8 @@ function createMainWindow(showOnReady = true) {
         /Uncaught|TypeError|ReferenceError/i.test(message)?'javascript':'other'
       lifecycleLog?.record('places_guest_console_error',{category})
     })
-    const authorized=(rawURL:string)=>{
-      try {
-        const url=new URL(rawURL)
-        return url.protocol==='https:' && url.origin===identity.origin &&
-          (url.pathname==='/' || url.pathname==='/index.html') &&
-          url.searchParams.get('desktop_places_embed')==='1' &&
-          agentState.connected && agentState.status?.username===identity.owner &&
-          xDriveResolveSecureBaiduMapTarget(agentState.status?.server)?.origin===identity.origin
-      } catch {return false}
-    }
+    const authorized=(rawURL:string)=>
+      desktopPlacesGuestNavigationAllowed(rawURL,identity)
     guest.on('will-navigate',(event,url)=>{if(!authorized(url))event.preventDefault()})
     guest.on('will-redirect',(event,url)=>{if(!authorized(url))event.preventDefault()})
     guest.on('destroyed',()=>desktopPlacesGuests.delete(guest.id))
