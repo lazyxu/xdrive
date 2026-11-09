@@ -122,3 +122,7 @@ fix/ios-lan-pinned-trust-test-contract-20261109	513f92fb56759e123a8a40f52b09e716
 fix/ios-lan-stage3-strict-tls-diagnostics-20261109	6b0c5a48bd7da8159cd30c167abda417e9509516	exact ancestor of open iOS LAN successor PR #4142 (ahead=4 behind=0)
 fix/sync-mixed-yike-foreign-owner-direct-child-20261109	a2c522892c242cb7869300eb5ece3bbee5472bce	ancestor of closed superseded #4143 (ahead=2 behind=0); Owner explicitly cancelled historical migration work, no production migration
 fix/yike-migration-gofmt-gate-20261109	aaed35d221fa455f6764e48a9022d23c063a574d	ancestor of closed superseded #4143 (ahead=1 behind=0); Owner explicitly cancelled historical migration work, no production migration
+
+# 2026-11-09: two verified source-exact GitLab predecessor refs retained by current #4170 successor.
+fix/gitlab-release-gate-followup-20261109	3d763b28ece80b053cd67dd5ec9b971bb8d260cd	2026-11-09 exact ancestor of active GitLab one-PR successor #4170: 9 commits ahead 0 behind, unchanged source incorporated
+fix/gitlab-release-monotonic-successor-20261109	504875ac671e0fc5f8e15af1270be66c5b06838f	2026-11-09 exact ancestor of active GitLab one-PR successor #4170: 15 commits ahead 0 behind, no unique unpaired source
