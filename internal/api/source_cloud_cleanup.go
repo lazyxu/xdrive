@@ -125,6 +125,34 @@ func loadSourceCloudCleanupTreeTx(tx *gorm.DB, ownerID, sourceID uint64, lock bo
 	if _, err := managedSourceTargetAncestorIDsTx(tx, src, out.target); err != nil {
 		return out, errSourceCloudCleanupBlocked
 	}
+	// activeSubtreeIDsDB intentionally scopes normal traversal to one Owner.
+	// Historic databases may nevertheless contain cross-Owner parent edges
+	// created before the composite parent/Owner FK was installed NOT VALID.
+	// A scoped traversal would silently omit those children and trash the
+	// parent; prove the complete live ancestry without an Owner filter first.
+	// UNION (not UNION ALL) bounds malformed cyclic historical references.
+	var ownership struct {
+		HasForeignOwner bool `gorm:"column:has_foreign_owner"`
+	}
+	if err := tx.Raw(`WITH RECURSIVE descendants AS (
+		SELECT id, owner_id
+		FROM xd_nodes
+		WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+		UNION
+		SELECT child.id, child.owner_id
+		FROM xd_nodes AS child
+		JOIN descendants AS parent ON child.parent_id = parent.id
+		WHERE child.deleted_at IS NULL
+	)
+	SELECT EXISTS (
+		SELECT 1 FROM descendants WHERE owner_id <> ?
+	) AS has_foreign_owner`, out.target.ID, ownerID, ownerID).
+		Scan(&ownership).Error; err != nil {
+		return out, err
+	}
+	if ownership.HasForeignOwner {
+		return out, errSourceCloudCleanupBlocked
+	}
 	ids, err := activeSubtreeIDsDB(tx, ownerID, out.target.ID)
 	if err != nil {
 		return out, err
@@ -149,14 +177,15 @@ func loadSourceCloudCleanupTreeTx(tx *gorm.DB, ownerID, sourceID uint64, lock bo
 	}
 	out.ids = ids
 
-	// Another Source or historical SourceItem pointing into this subtree
-	// would make even a reversible move violate cross-Source ownership.
+	// Other Sources, historical SourceItems and active Shares pointing into
+	// this subtree block reversible cleanup even when a corrupt legacy row
+	// claims another Owner; never hide references by filtering OwnerID.
 	sourceTargetQuery, err := sourceCloudCleanupIDs(tx.Model(&meta.Source{}), "target_node_id", ids)
 	if err != nil {
 		return out, err
 	}
 	var overlapping int64
-	if err := sourceTargetQuery.Where("owner_id = ? AND id <> ?", ownerID, src.ID).
+	if err := sourceTargetQuery.Where("id <> ?", src.ID).
 		Count(&overlapping).Error; err != nil {
 		return out, err
 	}
@@ -182,7 +211,7 @@ func loadSourceCloudCleanupTreeTx(tx *gorm.DB, ownerID, sourceID uint64, lock bo
 			return out, err
 		}
 		var shares int64
-		if err := shareQuery.Where("owner_id = ? AND revoked_at IS NULL", ownerID).
+		if err := shareQuery.Where("revoked_at IS NULL").
 			Count(&shares).Error; err != nil {
 			return out, err
 		}
