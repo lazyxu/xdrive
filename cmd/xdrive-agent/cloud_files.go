@@ -1213,8 +1213,8 @@ func (c *agentController) cloudUploadWithConflictPolicyTracked(
 			handle.CompleteSkipped()
 		} else {
 			handle.CompleteUploadReceipt(transfer.UploadContentReceipt{
-				TransferredBytes: result.TransferredBytes,
-				CASReusedBytes: result.CASReusedBytes,
+				TransferredBytes:  result.TransferredBytes,
+				CASReusedBytes:    result.CASReusedBytes,
 				ResumeReusedBytes: result.ResumeReusedBytes,
 			})
 		}
