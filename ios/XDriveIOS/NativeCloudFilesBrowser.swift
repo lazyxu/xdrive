@@ -1433,7 +1433,12 @@ struct XDriveIOSNativeFilesBrowser: View {
             .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
             .accessibilityIdentifier("native-ios-files-open-trash")
             NavigationLink {
-                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
+                // Do not construct Recent rows without a verified native Session.
+                if login.hasLocalOwnerSession {
+                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
+                } else {
+                    XDriveIOSNativeFilesNoSessionRoute(kind: .recent)
+                }
             } label: {
                 Label("最近使用", systemImage: "clock")
             }
@@ -1443,7 +1448,11 @@ struct XDriveIOSNativeFilesBrowser: View {
         Section("个人收藏文件夹") {
             DisclosureGroup("收藏夹和常用收藏", isExpanded: $favoriteFoldersExpanded) {
                 NavigationLink {
-                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+                    if login.hasLocalOwnerSession {
+                        XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+                    } else {
+                        XDriveIOSNativeFilesNoSessionRoute(kind: .favorites)
+                    }
                 } label: {
                     Label("收藏夹", systemImage: "star")
                 }
@@ -4975,46 +4984,74 @@ struct XDriveIOSNativeFilesBrowser: View {
 /// *display construction* only; it never grants a token or replaces the
 /// server's authoritative Owner check after a real sign-in.
 struct XDriveIOSNativeFilesNoSessionRoute: View {
-    enum Kind { case cloud, trash }
+    enum Kind { case cloud, trash, recent, favorites }
 
     let kind: Kind
     @Environment(\.dismiss) private var dismiss
 
-    private var isTrash: Bool {
-        if case .trash = kind { return true }
-        return false
+    private var routeTitle: String {
+        switch kind {
+        case .cloud: return "xDrive 云端"
+        case .trash: return "最近删除"
+        case .recent: return "最近使用"
+        case .favorites: return "收藏夹"
+        }
+    }
+
+    private var errorTitle: String {
+        if case .cloud = kind { return "无法读取当前目录" }
+        return "无法读取" + routeTitle
+    }
+
+    private var errorPageID: String {
+        switch kind {
+        case .cloud: return "native-ios-files-error-page"
+        case .trash: return "native-ios-files-trash-error-page"
+        case .recent: return "native-ios-files-recent-error-page"
+        case .favorites: return "native-ios-files-favorites-error-page"
+        }
+    }
+
+    private var errorReturnID: String {
+        switch kind {
+        case .cloud: return "native-ios-files-error-return"
+        case .trash: return "native-ios-files-trash-error-return"
+        case .recent: return "native-ios-files-recent-error-return"
+        case .favorites: return "native-ios-files-favorites-error-return"
+        }
+    }
+
+    // Distinguish Cloud/Trash/Recent/Favorites denials in real crash UI logs.
+    private var noSessionID: String {
+        switch kind {
+        case .cloud: return "native-ios-files-cloud-no-session"
+        case .trash: return "native-ios-files-trash-no-session"
+        case .recent: return "native-ios-files-recent-no-session"
+        case .favorites: return "native-ios-files-favorites-no-session"
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Label(isTrash ? "无法读取最近删除" : "无法读取当前目录",
-                  systemImage: "lock.shield")
+            Label(errorTitle, systemImage: "lock.shield")
                 .font(.headline)
             Text("当前没有有效的原生登录会话。请返回并登录 xDrive 后重试。")
                 .font(.subheadline).foregroundStyle(.secondary)
-                // A no-token denial must not offer the normal network Retry:
-                // authentication can only resume after a real login.
-                .accessibilityIdentifier(isTrash
-                    ? "native-ios-files-trash-no-session"
-                    : "native-ios-files-cloud-no-session")
+                .accessibilityIdentifier(noSessionID)
             Button {
                 dismiss()
             } label: {
                 Label("返回文件", systemImage: "chevron.left")
             }
-            .accessibilityIdentifier(isTrash
-                ? "native-ios-files-trash-error-return"
-                : "native-ios-files-error-return")
+            .accessibilityIdentifier(errorReturnID)
             .buttonStyle(.bordered)
             Spacer(minLength: 0)
         }
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(isTrash
-            ? "native-ios-files-trash-error-page"
-            : "native-ios-files-error-page")
-        .navigationTitle(isTrash ? "最近删除" : "xDrive 云端")
+        .accessibilityIdentifier(errorPageID)
+        .navigationTitle(routeTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
 }

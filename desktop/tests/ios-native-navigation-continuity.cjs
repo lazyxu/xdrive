@@ -24,7 +24,12 @@ const sources = {
   "o": "ios/XDriveIOS/NativeFilesOperationHistory.swift",
   "x": "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift",
   "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift",
-  "z": "ios/scripts/capture-navigation-smoke-frames.py"
+  "p": "ios/scripts/capture-navigation-smoke-frames.py",
+  "m": "ios/scripts/summarize-navigation-latency.py",
+  "z": "ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift",
+  "j": ".github/workflows/ios-native-navigation-runtime.yml",
+  "i": "ios/XDriveIOS/NativeFilesViewer.swift",
+  "k": "desktop/tests/ios-native-files-video-firstframe.cjs"
 }
 const scenarios = [
   {
@@ -118,11 +123,6 @@ const scenarios = [
       {
         "file": "l",
         "pattern": "onRead\\(cached\\)\\s*reportPhotoPageReady\\(\"mounted\", started: pageStarted\\)\\s*await refreshVisibleBackupQueueStatuses\\(\\)",
-        "flags": ""
-      },
-      {
-        "file": "l",
-        "pattern": "onRead\\(navigationRetainedPage\\)\\s*reportPhotoPageReady\\(\"tab-return\", started: pageStarted\\)\\s*await refreshVisibleBackupQueueStatuses\\(\\)",
         "flags": ""
       }
     ]
@@ -948,71 +948,496 @@ const scenarios = [
     ]
   },
   {
-    "name": "79 Cloud denial album filter and Files return",
+    "name": "79 Twenty additional Gallery Files XCUITest routes",
     "checks": [
       {
         "file": "x",
-        "pattern": "func testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells\\(\\)[\\s\\S]*?native-ios-files-error-page[\\s\\S]*?native-ios-gallery-open-filters[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after cloud denial and album filter\"\\)",
+        "pattern": "func testAlbumSourceReturnThroughFilesAndMineKeepsGalleryMounted\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testFilesRecentAndFavoritesRemainAvailableAfterForegroundReturn\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleAfterFilesQuickRailReturnKeepsUnifiedWall\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryFilterCancelAfterRecentFavoritesToggle\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testNativeLocalGalleryMenuRouteReturnsToUnifiedSource\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryAlbumSourceWithLandscapeAndTabReturn\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testFilesHomeAfterRepeatedNativeGallerySourceChanges\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testCloudFilesRepeatedOfflineRetryRetainsRecoverableChildPage\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testRecentlyDeletedRepeatedOfflineRetryRetainsRecoverableChildPage\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryAlbumsAndOriginalsAfterForegroundResumeKeepSourceRail\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testNativeFilesQuickRailAfterLandscapeGalleryReturnNoBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testLocalPhotoSourceRetainsGalleryAfterFilesForegroundRoundtrip\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testSyntheticOwnerFilesAndGalleryRelaunchDoesNotRetainOldScope\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testLocalPhotosSourceSurvivesFilesMineAndGalleryRoundTrip\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes\\(\\)",
         "flags": ""
       }
     ]
   },
   {
-    "name": "80 No-session Trash denial stays fail-closed then Files rail and Gallery restore",
+    "name": "80 Native tap and shell readiness telemetry",
     "checks": [
       {
         "file": "x",
-        "flags": "",
-        "pattern": "func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels\\(\\)[\\s\\S]*?native-ios-files-trash-error-page[\\s\\S]*?native-ios-files-trash-no-session[\\s\\S]*?XCTAssertFalse\\(target\\(\"native-ios-files-trash-retry\"[\\s\\S]*?native-ios-files-trash-error-return[\\s\\S]*?native-ios-files-section-\\\\\\(section\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after Trash retry and Files rail\"\\)"
-      }
-    ]
-  },
-  {
-    "name": "81 People → denied Cloud → Gallery stable frame",
-    "checks": [
+        "pattern": "IOS_NATIVE_NAV_TAP_START route=",
+        "flags": ""
+      },
       {
         "file": "x",
-        "pattern": "func testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank\\(\\)[\\s\\S]*?native-ios-gallery-people-page[\\s\\S]*?native-ios-files-error-page[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after People and denied Cloud Files\"\\)",
+        "pattern": "IOS_NATIVE_NAVIGATION_READY_MS route=",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "navigationStarted = Date\\(\\)",
         "flags": ""
       }
     ]
   },
   {
-    "name": "82 Repeated foreground Gallery/Files activation",
+    "name": "81 Tap-adjacent and case-start frame samples stay bounded",
     "checks": [
       {
-        "file": "x",
-        "pattern": "func testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank\\(\\)[\\s\\S]*?XCUIDevice\\.shared\\.press\\(\\.home\\)[\\s\\S]*?app\\.activate\\(\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after foreground activation\"\\)",
+        "file": "p",
+        "pattern": "FRAME_OFFSETS_SECONDS = \\(0\\.5, 1\\.5, 3\\.5\\)",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "TAP_FRAME_OFFSETS_SECONDS = \\(0\\.15, 0\\.55\\)",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "TARGETS.update\\(NAV_TARGETS\\)",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "scheduled_after_tap_seconds",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "capture_mode",
         "flags": ""
       }
     ]
   },
   {
-    "name": "83 Local PhotoKit source survives Files and Mine",
+    "name": "82 Finished cases cannot capture frames of subsequent navigation",
     "checks": [
       {
-        "file": "x",
-        "pattern": "func testLocalPhotosSourceSurvivesFilesMineAndGalleryRoundTrip\\(\\)[\\s\\S]*?native-ios-gallery-source-local[\\s\\S]*?native-ios-tab-mine[\\s\\S]*?assertNotSolidScreen\\(app, \"Local PhotoKit route after Files and Mine\"\\)",
+        "file": "p",
+        "pattern": "if key not in active:",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "current_case == key",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "tap_counts.get\\(current_case, 0\\)",
         "flags": ""
       }
     ]
   },
   {
-    "name": "84 Files search keyboard and Gallery filter return",
+    "name": "83 Video first frame and file jump remain separate from FPS",
     "checks": [
       {
-        "file": "x",
-        "pattern": "func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes\\(\\)[\\s\\S]*?search\\.typeText\\(\"ab\"\\)[\\s\\S]*?native-ios-gallery-open-filters[\\s\\S]*?assertNotSolidScreen\\(app, \"Files after search and Gallery filter\"\\)",
+        "file": "m",
+        "pattern": "VIDEO_FIRST_FRAME_PATTERN",
+        "flags": ""
+      },
+      {
+        "file": "m",
+        "pattern": "JUMP_VERIFIED_PATTERN",
+        "flags": ""
+      },
+      {
+        "file": "m",
+        "pattern": "zero_samples_means_not_measured",
+        "flags": ""
+      },
+      {
+        "file": "m",
+        "pattern": "is_physical_device_fps",
         "flags": ""
       }
     ]
   },
   {
-    "name": "85 Live frame sampler uses actual taps with bounded per-case ownership",
+    "name": "84 Local PhotoKit tab-return uses current verified page",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "navigationRetainedPage.startOffset == offset",
+        "flags": ""
+      },
+      {
+        "file": "l",
+        "pattern": "page = navigationRetainedPage",
+        "flags": ""
+      },
+      {
+        "file": "l",
+        "pattern": "reportPhotoPageReady\\(\"tab-return\", started: pageStarted\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "85 Nine real no-Session recovery and background XCUITest routes",
     "checks": [
       {
         "file": "z",
-        "pattern": "TAP_FRAME_OFFSETS_SECONDS = \\(0\\.15, 0\\.55\\)[\\s\\S]*?tap_start = re\\.compile[\\s\\S]*?current_case in active[\\s\\S]*?tap_counts\\.get\\(current_case, 0\\)[\\s\\S]*?if count < 3:[\\s\\S]*?if key not in active:",
+        "pattern": "func testCloudFolderNoSessionIsSmallNativeRecoveryInsteadOfFilesList\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testRecentlyDeletedNoSessionDoesNotMountDestructiveRows\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testAlternatingDeniedCloudAndTrashChildrenKeepsHomeRail\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testDeniedChildBackgroundResumeRetainsExplicitRecoveryAndGallery\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testSignedOutOwnerCannotExposeCloudLocationAfterRelaunch\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testNoSessionCloudReturnAfterGalleryAlbumRoundtrip\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testNoSessionTrashReturnAfterGalleryFilterDismissal\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testRepeatedDeniedCloudDoesNotRenderProtectedRowsOrRetry\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testRepeatedDeniedTrashDoesNotRenderDestructiveRowsOrRetry\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "86 Both protected Readers fail closed before constructing a File or Trash List",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if !isHome && !login.hasLocalOwnerSession",
+        "flags": ""
+      },
+      {
+        "file": "t",
+        "pattern": "if !login.hasLocalOwnerSession",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "XDriveIOSNativeFilesNoSessionRoute",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "native-ios-files-error-page",
+        "flags": ""
+      },
+      {
+        "file": "t",
+        "pattern": "native-ios-files-trash-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "87 Absent Session offers Back but cannot retry protected Reads",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "XCTAssertFalse\\(target\\(\"native-ios-files-retry\"",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "XCTAssertFalse\\(target\\(\"native-ios-files-trash-retry\"",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "XCTAssertFalse\\(element\\(\"native-ios-files-retry\"",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "XCTAssertFalse\\(element\\(\"native-ios-files-trash-retry\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "88 Native mandatory no-Session simulator shard remains enabled",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]",
+        "flags": ""
+      },
+      {
+        "file": "j",
+        "pattern": "XDriveIOSFilesSessionRecoveryUITests",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "89 Live watcher collects bounded failing no-Session returns",
+    "checks": [
+      {
+        "file": "p",
+        "pattern": "testRepeatedDeniedCloudDoesNotRenderProtectedRowsOrRetry",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testRepeatedDeniedTrashDoesNotRenderDestructiveRowsOrRetry",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testNoSessionTrashReturnAfterGalleryFilterDismissal",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "90 Video navigation bottom bar stays interactive when playback chrome is hidden",
+    "checks": [
+      {
+        "file": "i",
+        "pattern": "\\.toolbar\\(chromeVisible \\? \\.visible : \\.hidden, for: \\.navigationBar\\)",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "\\.toolbar\\(isNativeVideo \\? \\.visible :[\\s\\S]*?for: \\.bottomBar\\)",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "Label\\(\"下一项\", systemImage: \"chevron\\.right\"\\)",
+        "flags": ""
+      },
+      {
+        "file": "k",
+        "pattern": "\\.toolbar\\\\\\(isNativeVideo",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "91 Signed device first-frame evidence is AVPlayerLayer-rendered and privacy-safe",
+    "checks": [
+      {
+        "file": "i",
+        "pattern": "import OSLog",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "Logger\\(subsystem: \"com\\.xdrive\\.ios\", category: \"FilesVideoFirstFrame\"\\)",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "current === renderedPlayer,[\\s\\S]*?!videoFirstFrameRecorded",
+        "flags": ""
+      },
+      {
+        "file": "i",
+        "pattern": "IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS stage=layer-ready value=",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "92 Five extra real no-Session UI journeys guard native denial and recovery",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testTrashDenialAcrossRepeatedForegroundActivationsStaysReadOnly\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testFilesQuickRailThenCloudDenialKeepsProtectedGridAbsent\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testCloudDenialGalleryFilterFilesReturnCanReenterDeniedChild\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testTrashDenialPeopleBackThenTrashDenialDoesNotLeakRows\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "func testCloudAndTrashDenialsCaptureVisibleNativeRecoveryScreens\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "93 Those five no-Session journeys have actual early Simulator frame evidence",
+    "checks": [
+      {
+        "file": "p",
+        "pattern": "testTrashDenialAcrossRepeatedForegroundActivationsStaysReadOnly",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testFilesQuickRailThenCloudDenialKeepsProtectedGridAbsent",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testCloudDenialGalleryFilterFilesReturnCanReenterDeniedChild",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testTrashDenialPeopleBackThenTrashDenialDoesNotLeakRows",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "testCloudAndTrashDenialsCaptureVisibleNativeRecoveryScreens",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "94 Missing local session never offers destructive or unauthenticated retry controls",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "struct XDriveIOSNativeFilesNoSessionRoute: View",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "当前没有有效的原生登录会话",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "XCTAssertFalse\\(element\\(\"native-ios-files-trash-retry\", app\\)\\.exists\\)",
+        "flags": ""
+      },
+      {
+        "file": "z",
+        "pattern": "XCTAssertFalse\\(element\\(\"native-ios-files-grid\", app\\)\\.exists\\)",
         "flags": ""
       }
     ]

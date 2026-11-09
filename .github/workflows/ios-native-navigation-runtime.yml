@@ -51,7 +51,7 @@ jobs:
       matrix:
         # Keep published baseline separate and require both current native
         # suites; no unrelated older CI-success can waive this exact HEAD.
-        source: [release-c83, candidate-navigation, candidate-gallery-files]
+        source: [release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session]
     continue-on-error: ${{ matrix.source == 'release-c83' }}
     steps:
       - uses: actions/checkout@v4
@@ -148,6 +148,8 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests") ;;
             candidate-gallery-files)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests") ;;
+            candidate-no-session)
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests") ;;
             *) echo "Unsupported UI suite" >&2; exit 2 ;;
           esac
           xcodebuild test \
