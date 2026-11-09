@@ -21,7 +21,7 @@
     - docker info >/dev/null
 
 release-assets:
-  # The image/asset publisher must finish once its master pipeline starts.
+  # Immutable source asset collection is safe to cancel on superseded master.
   interruptible: true
   extends: .publish-only
   image: $XDRIVE_CI_GO_IMAGE
@@ -245,7 +245,7 @@ publish-release:
       }
       cp "$1" "$1.sha256" release/
       bash scripts/ci/verify-synology-spk-release.sh release --require-mui
-      test "$(awk -F '\\t' '$1=="commit"{print $2}' dist/release-image/image-manifest.tsv)" = "$CI_COMMIT_SHA"
+      grep -Fqx "$(printf 'commit\\t%s' "$CI_COMMIT_SHA")" dist/release-image/image-manifest.tsv
       test "$(grep -c '^image' dist/release-image/image-manifest.tsv)" = 2
       cp dist/release-image/image-manifest.tsv release/image-manifest.tsv
       # Stable glab release create expands release/*; never pass build/core
