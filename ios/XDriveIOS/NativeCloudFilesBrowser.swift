@@ -3746,6 +3746,17 @@ struct XDriveIOSNativeFilesBrowser: View {
         // Leave all real authentication in verifiedAuthorization() below.
         if !isHome && !login.hasLocalOwnerSession {
             XDriveIOSNativeFilesNoSessionRoute(kind: .cloud)
+                .onAppear {
+                    // A revoked/absent local Session must retire earlier
+                    // verified rows and selection, even if the same Owner
+                    // signs in again while this child route remains open.
+                    model.invalidate()
+                    inlineFolders.invalidate()
+                    cancelSelectAllRead()
+                    selecting = false
+                    selectedIDs.removeAll()
+                    selectedSnapshots.removeAll()
+                }
         } else {
         filesArrangementLifecycle(returnScroll: returnScroll)
         .onChange(of: model.loading) { loading in
