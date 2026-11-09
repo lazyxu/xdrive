@@ -56,6 +56,14 @@ frame-by-frame review remain mandatory.
   `IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS stage=layer-ready value=N` when
   `AVPlayerLayer.isReadyForDisplay` becomes true for the current player.
   Signed ticket or `readyToPlay` alone does not qualify.
+- For a signed physical iPhone, inspect Console or `log collect` output
+  under subsystem `com.xdrive.ios`, category `FilesVideoFirstFrame`.
+  The production log has only the elapsed milliseconds, no file name,
+  account identity, URL or access token. The separate CI `print` marker
+  is available only with `-xdrive-ui-navigation-smoke`.
+- Hide/reveal the video timeline during actual playback: the bottom
+  Previous/Next buttons must remain visible at all times, including while
+  waiting for the first frame and after hiding the video transport controls.
 - Seek, pause/resume, tap to hide controls, next/previous across an initial
   256-item Viewer window boundary, close and reopen, and rotate while
   buffering. Controls must remain usable and old player callbacks must not
