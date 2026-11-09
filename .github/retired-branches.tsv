@@ -107,3 +107,18 @@ fix/ios-navigation-covered-page-ci-20261107	7fbcf1dc5ef0bb8e07e63e69352f1cff7afe
 
 # 2026-11-08: verified orphan Clipboard Viewer integration alias after full-green #4110 merged.
 dev/clipboard-viewer-receiver-20261108	4fd4e000f103618402337fd6406b1a59615bbd91	2026-11-08 post-#4110 exact-tree audit: 6,869 source blobs, zero source-only filenames after #4110 merged; both originally missing iOS/Android Clipboard Viewer regression tests and both modified native Clipboard screen blobs are byte-identical to accepted #4110 head 21a19ef7a479734d64f1d66bd3db474ad7ce184d; 88 remaining changed old non-Clipboard blobs are superseded by current master; do not import stale history
+
+# 2026-11-09: SHA-pinned redundant development aliases checked against immutable successor PR ancestry; active PR heads are protected by cleanup script.
+dev/clipboard-4124-final-review-20261109	6daa64efbe3b6638120bce17fb44a900640ba506	identical exact HEAD to open Clipboard PR #4124; only retire the duplicate ref, not the PR head
+dev/ios-lan-certificate-diagnostic-test-20261109	ba30c6f302ea4ff2c7bbafb1c75dc46329fc0e09	exact ancestor of open iOS LAN successor PR #4142 (ahead=3 behind=0)
+feat/ios-files-pwa-parity-stability-unified-20261109	9977d5126fcc4017c225e7ca5f35f3eda0a2386b	exact ancestor of open iOS Files successor PR #4154 (ahead=4 behind=0)
+feat/release-bundle-cache-foundation-20261108	8a04db406d1c579fd13a3b329a0caea9e8f7305a	exact ancestor of open Release Bundle PR #4152 (ahead=10 behind=0)
+feat/release-bundle-download-pause-20261108	36e7ba0920d16cf45957b42c9b17ee0b48f3ac12	exact ancestor of open Release Bundle PR #4152 (ahead=90 behind=0)
+feat/release-bundle-warning-state-20261108	9eefb2d68e20e76900c68fb7cc5d0cd671f93d7f	exact ancestor of open Release Bundle PR #4152 (ahead=9 behind=0)
+fix/ios-files-split-view-lifecycle-4147-20261109	15f25a926cc9a18ddb349ada30d791c036a50303	exact ancestor of open iOS Files successor PR #4154 (ahead=1 behind=0)
+fix/ios-gallery-files-ci-recovery-and-deeper-ui-tests-20261109	f80594bcaf504165931f4e0a8929406559860c1a	exact ancestor of open iOS Gallery Files PR #4151 and successor #4156 (ahead=12 behind=0 to #4151)
+fix/ios-gallery-files-transient-return-stability-20261109	e2981939aefa600b724432dc16c1f189fdccc49c	exact ancestor of open iOS Gallery Files PR #4151 and successor #4156 (ahead=3 behind=0 to #4151)
+fix/ios-lan-pinned-trust-test-contract-20261109	513f92fb56759e123a8a40f52b09e7165f909292	exact ancestor of open iOS LAN successor PR #4142 (ahead=1 behind=0)
+fix/ios-lan-stage3-strict-tls-diagnostics-20261109	6b0c5a48bd7da8159cd30c167abda417e9509516	exact ancestor of open iOS LAN successor PR #4142 (ahead=4 behind=0)
+fix/sync-mixed-yike-foreign-owner-direct-child-20261109	a2c522892c242cb7869300eb5ece3bbee5472bce	ancestor of closed superseded #4143 (ahead=2 behind=0); Owner explicitly cancelled historical migration work, no production migration
+fix/yike-migration-gofmt-gate-20261109	aaed35d221fa455f6764e48a9022d23c063a574d	ancestor of closed superseded #4143 (ahead=1 behind=0); Owner explicitly cancelled historical migration work, no production migration
