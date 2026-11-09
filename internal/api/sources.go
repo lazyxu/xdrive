@@ -408,20 +408,20 @@ func (s *Server) createSource(c *gin.Context) {
 	}
 	managedPush := isLocalFolder || isSynologyPush
 	managedPull := isYike || isSynologyPull
-	if managedPush || managedPull {
-		if req.TargetNodeID != 0 {
-			fail(c, http.StatusBadRequest, "managed Push/Pull target is server-provisioned; target_node_id is not accepted")
-			return
-		}
-	} else {
-		if req.TargetNodeID == 0 {
-			fail(c, http.StatusBadRequest, "target_node_id is required")
-			return
-		}
-		if _, err := s.ownedDirectory(userID(c), req.TargetNodeID); err != nil {
-			fail(c, http.StatusBadRequest, "target directory not found")
-			return
-		}
+	// Reject every unknown or mismatched connector before it can create an
+	// ordinary-directory Source. New Push/Pull targets have one server-side
+	// provisioner; there is no supported arbitrary target selection path.
+	if isYike && req.Direction != meta.SourceDirectionPull {
+		fail(c, http.StatusBadRequest, "Yike Photos only supports pull direction")
+		return
+	}
+	if !managedPush && !managedPull {
+		fail(c, http.StatusBadRequest, "unsupported source kind or direction")
+		return
+	}
+	if req.TargetNodeID != 0 {
+		fail(c, http.StatusBadRequest, "managed Push/Pull target is server-provisioned; target_node_id is not accepted")
+		return
 	}
 	if _, err := sourcepkg.CompileIgnoreRules(req.IgnoreRules); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
