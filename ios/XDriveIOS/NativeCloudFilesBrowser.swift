@@ -907,6 +907,9 @@ private struct XDriveIOSNativeFilesNoSessionChild: View {
     @Environment(\.dismiss) private var dismiss
     @State private var checking = false
     @State private var verifiedForOpen = false
+    @State private var isVisible = false
+    @State private var retryEpoch = UUID()
+    @State private var retryTask: Task<Void, Never>?
     @State private var notice = "尚未建立当前账户的有效登录会话，请返回文件首页登录。"
 
     var body: some View {
@@ -935,7 +938,13 @@ private struct XDriveIOSNativeFilesNoSessionChild: View {
                         }
                         .disabled(checking)
                         .accessibilityIdentifier(kind.retryID)
-                        Button { dismiss() } label: {
+                        Button {
+                            // The View can disappear before task cancellation
+                            // reaches verifiedAuthorization(). Retire its ticket
+                            // synchronously before dismissing the navigation.
+                            cancelPendingVerification()
+                            dismiss()
+                        } label: {
                             Label("返回文件", systemImage: "chevron.left")
                         }
                         .accessibilityIdentifier(kind.returnID)
@@ -951,30 +960,57 @@ private struct XDriveIOSNativeFilesNoSessionChild: View {
         }
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { isVisible = true }
+        .onDisappear {
+            isVisible = false
+            cancelPendingVerification()
+        }
         .onChange(of: login.owner) { next in
             if !XDriveIOSNativePhotoOwnerScope.matches(next, expectedOwner) {
-                verifiedForOpen = false
+                cancelPendingVerification()
                 notice = "账户已经切换，旧页面无权访问新账户的文件。"
             }
         }
     }
 
+    private func cancelPendingVerification() {
+        // Ticket retirement protects against successful but late Server
+        // responses, even if an underlying network operation ignores cancel.
+        retryEpoch = UUID()
+        retryTask?.cancel()
+        retryTask = nil
+        checking = false
+        verifiedForOpen = false
+    }
+
     private func retryAuthorization() {
         guard !checking else { return }
+        guard isVisible,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
+        else { return }
         checking = true
-        Task { @MainActor in
-            defer { checking = false }
+        let ticket = UUID()
+        retryEpoch = ticket
+        retryTask = Task { @MainActor in
+            defer {
+                if retryEpoch == ticket {
+                    checking = false
+                    retryTask = nil
+                }
+            }
             do {
                 let auth = try await login.verifiedAuthorization()
                 try Task.checkCancellation()
-                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expectedOwner),
+                guard retryEpoch == ticket, isVisible,
+                      login.hasSameOwnerSessionForNavigation,
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expectedOwner),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
-                else {
-                    notice = "账户已经变化，请返回文件首页重新打开。"
-                    return
-                }
+                else { return }
                 verifiedForOpen = true
+            } catch is CancellationError {
+                // Dismissal/Owner switch is not a failed credential.
             } catch {
+                guard retryEpoch == ticket, isVisible else { return }
                 // Never expose token, credential, origin or Server error body.
                 notice = "当前服务器会话无法验证，请返回文件首页重新登录。"
             }

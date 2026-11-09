@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// Real SwiftUI routing on an iOS 18.5 Simulator. The synthetic Owner has
 /// NO active Session, token or protected Server grant. Successful UI recovery
@@ -133,4 +134,140 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         tap("native-ios-tab-gallery", app)
         expect("native-ios-gallery-source-unified", app)
     }
+    // Settled, small-sample frame check. This cannot prove that no individual
+    // 60/120Hz frame flashed during an animated route transition.
+    private func assertNonuniformFrame(_ app: XCUIApplication, _ label: String) {
+        let shot = app.screenshot()
+        guard let source = shot.image.cgImage else {
+            XCTFail("Missing real Simulator frame: " + label)
+            return
+        }
+        let width = 24, height = 32
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = pixels.withUnsafeMutableBytes { bytes -> Bool in
+            guard let pointer = bytes.baseAddress,
+                  let context = CGContext(
+                    data: pointer, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  ) else { return false }
+            context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        XCTAssertTrue(drawn, "Could not sample native frame after " + label)
+        guard drawn else { return }
+        let colors = Set(stride(from: 0, to: pixels.count, by: 4).map { i in
+            (Int(pixels[i]) << 16) |
+            (Int(pixels[i + 1]) << 8) | Int(pixels[i + 2])
+        })
+        XCTAssertGreaterThan(colors.count, 8, "Visually blank native page: " + label)
+    }
+
+    func testNoSessionCloudReturnAfterGalleryAlbumRoundtrip() {
+        let app = launch()
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-albums", app)
+        expect("native-ios-gallery-source-unified", app)
+        files(app)
+        tap("native-ios-files-open-root-location", app)
+        expect("native-ios-files-error-page", app)
+        tap("native-ios-files-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        expect("native-ios-gallery-source-unified", app)
+        assertNonuniformFrame(app, "Gallery after denied Cloud Files")
+    }
+
+    func testNoSessionTrashReturnAfterGalleryFilterDismissal() {
+        let app = launch()
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-open-filters", app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        files(app)
+        tap("native-ios-files-open-trash", app)
+        expect("native-ios-files-trash-error-page", app)
+        tap("native-ios-files-trash-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        expect("native-ios-gallery-source-unified", app)
+    }
+
+    func testNoSessionCloudRetryThenImmediateBackNeverReopensOldChild() {
+        let app = launch()
+        files(app)
+        for _ in 0..<3 {
+            tap("native-ios-files-open-root-location", app)
+            expect("native-ios-files-error-page", app)
+            tap("native-ios-files-retry", app)
+            tap("native-ios-files-error-return", app)
+            expect("native-ios-files-section-browse", app)
+            XCTAssertFalse(element("native-ios-files-error-page", app).exists)
+        }
+        // The cancelled verification must never repush the old destination.
+        Thread.sleep(forTimeInterval: 0.6)
+        expect("native-ios-files-section-browse", app)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testNoSessionTrashRetryThenImmediateBackCannotExposeDeletion() {
+        let app = launch()
+        files(app)
+        for _ in 0..<2 {
+            tap("native-ios-files-open-trash", app)
+            expect("native-ios-files-trash-error-page", app)
+            tap("native-ios-files-trash-retry", app)
+            tap("native-ios-files-trash-error-return", app)
+            expect("native-ios-files-section-browse", app)
+        }
+        Thread.sleep(forTimeInterval: 0.6)
+        XCTAssertFalse(element("native-ios-files-trash-error-page", app).exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testNoSessionTrashRecoverySurvivesRepeatedForegroundActivation() {
+        let app = launch()
+        files(app)
+        tap("native-ios-files-open-trash", app)
+        expect("native-ios-files-trash-error-page", app)
+        for _ in 0..<2 {
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            expect("native-ios-files-trash-error-page", app)
+        }
+        tap("native-ios-files-trash-error-return", app)
+        expect("native-ios-files-section-browse", app)
+        assertNonuniformFrame(app, "Files after Trash foreground recovery")
+    }
+
+    func testNoSessionFilesQuickRailSwitchDoesNotExposeCloudChildren() {
+        let app = launch()
+        files(app)
+        for section in ["recent", "favorites", "browse", "recent", "browse"] {
+            tap("native-ios-files-section-\(section)", app)
+            expect("native-ios-files-section-browse", app)
+        }
+        tap("native-ios-files-open-root-location", app)
+        expect("native-ios-files-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        tap("native-ios-files-error-return", app)
+        expect("native-ios-files-section-browse", app)
+    }
+
+    func testNoSessionCloudAndTrashErrorPagesAreNotSolidBlankScreens() {
+        let app = launch()
+        files(app)
+        for _ in 0..<2 {
+            tap("native-ios-files-open-root-location", app)
+            expect("native-ios-files-error-page", app)
+            assertNonuniformFrame(app, "No-session Cloud error")
+            tap("native-ios-files-error-return", app)
+            tap("native-ios-files-open-trash", app)
+            expect("native-ios-files-trash-error-page", app)
+            assertNonuniformFrame(app, "No-session Trash error")
+            tap("native-ios-files-trash-error-return", app)
+            expect("native-ios-files-section-browse", app)
+        }
+    }
+
 }

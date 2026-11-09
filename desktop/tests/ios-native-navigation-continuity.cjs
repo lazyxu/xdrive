@@ -1610,6 +1610,186 @@ const scenarios = [
         "flags": ""
       }
     ]
+  },
+  {
+    "name": "145 No-Session child owns and invalidates the retry task token",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "@State private var retryEpoch = UUID\\(\\)[\\s\\S]*?@State private var retryTask: Task<Void, Never>\\?",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "146 No-Session return cancels pending verification before navigation dismissal",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "Button \\{[\\s\\S]*?cancelPendingVerification\\(\\)\\s*dismiss\\(\\)\\s*\\} label: \\{\\s*Label\\(\"返回文件\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "147 No-Session disappearing child cancels in-flight auth work",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "\\.onDisappear \\{\\s*isVisible = false\\s*cancelPendingVerification\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "148 No-Session Owner switch invalidates old auth ticket and verified flag",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "\\.onChange\\(of: login\\.owner\\) \\{ next in\\s*if !XDriveIOSNativePhotoOwnerScope\\.matches\\(next, expectedOwner\\) \\{\\s*cancelPendingVerification\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "149 No-Session cancel advances ticket and retires task/result identity",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "private func cancelPendingVerification\\(\\) \\{[\\s\\S]*?retryEpoch = UUID\\(\\)\\s*retryTask\\?\\.cancel\\(\\)\\s*retryTask = nil\\s*checking = false\\s*verifiedForOpen = false",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "150 No-Session Retry requires child visibility and original Owner",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "private func retryAuthorization\\(\\) \\{\\s*guard !checking else \\{ return \\}\\s*guard isVisible,[\\s\\S]*?matches\\(login\\.owner, expectedOwner\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "151 No-Session Retry must prove same-Owner session after awaiting authorization",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "guard retryEpoch == ticket, isVisible,\\s*login\\.hasSameOwnerSessionForNavigation,[\\s\\S]*?matches\\(auth\\.owner, expectedOwner\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "152 No-Session stale task may not publish a success result",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "verifiedForOpen = true[\\s\\S]*?catch is CancellationError",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "153 No-Session stale failed task cannot overwrite current error message",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "catch \\{\\s*guard retryEpoch == ticket, isVisible else \\{ return \\}[\\s\\S]*?notice = \"当前服务器会话无法验证",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "154 No-Session current retry defer retires only matching task",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "defer \\{\\s*if retryEpoch == ticket \\{\\s*checking = false\\s*retryTask = nil",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "155 No-Session rapid Cloud Retry Back repeats and keeps Home",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testNoSessionCloudRetryThenImmediateBackNeverReopensOldChild\\(\\)[\\s\\S]*?Thread\\.sleep\\(forTimeInterval: 0\\.6\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "156 No-Session rapid Trash Retry Back repeats without deleting",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testNoSessionTrashRetryThenImmediateBackCannotExposeDeletion\\(\\)[\\s\\S]*?native-ios-files-trash-error-return",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "157 No-Session Gallery Albums roundtrip after denied Cloud remains tested",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testNoSessionCloudReturnAfterGalleryAlbumRoundtrip\\(\\)[\\s\\S]*?native-ios-gallery-source-albums",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "158 No-Session Gallery filter dismissal before denied Trash remains tested",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testNoSessionTrashReturnAfterGalleryFilterDismissal\\(\\)[\\s\\S]*?native-ios-gallery-open-filters",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "159 No-Session background and foreground Trash still returns to Files",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testNoSessionTrashRecoverySurvivesRepeatedForegroundActivation\\(\\)[\\s\\S]*?XCUIDevice\\.shared\\.press\\(\\.home\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "160 No-Session Quick Rail switching cannot expose cloud children",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testNoSessionFilesQuickRailSwitchDoesNotExposeCloudChildren\\(\\)[\\s\\S]*?native-ios-files-grid",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "161 No-Session Cloud and Trash settled frames retain visible content",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testNoSessionCloudAndTrashErrorPagesAreNotSolidBlankScreens\\(\\)[\\s\\S]*?assertNonuniformFrame\\(app, \"No-session Trash error\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "162 No-Session frame audit samples actual pixel diversity",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "let colors = Set\\(stride\\(from: 0, to: pixels\\.count, by: 4\\)[\\s\\S]*?XCTAssertGreaterThan\\(colors\\.count, 8",
+        "flags": ""
+      }
+    ]
   }
 ]
 const cache = new Map()
