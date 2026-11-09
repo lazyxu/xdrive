@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,13 +109,14 @@ func matchCurrentServerBundle(result xupdate.Result, listing client.ReleaseBundl
 			artifact.BuildCommit != result.Commit {
 			continue
 		}
-		if digest := result.Asset.Digest; digest != "" &&
-			digest != "sha256:"+artifact.SHA256 {
-			// The update channel and Server Bundle disagree about the exact
-			// artifact. Keep the existing channel and its trusted digest.
+		// The independent, selected update channel must already supply a
+		// cryptographic digest before the Server may become an alternate
+		// package source. Never let a compromised/old Server mint the first
+		// "trusted" digest for an independently chosen client update.
+		if !strings.EqualFold(strings.TrimSpace(result.Asset.Digest),
+			"sha256:"+artifact.SHA256) {
 			break
 		}
-		result.Asset.Digest = "sha256:" + artifact.SHA256
 		result.Asset.Size = artifact.Size
 		result.Bundle = &xupdate.BundlePreference{
 			Commit: artifact.BuildCommit, Filename: artifact.Filename,
