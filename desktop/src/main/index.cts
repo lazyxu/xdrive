@@ -1866,7 +1866,9 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
   opened: true; separate_login_required: true
 }>> {
   if (!agentState.connected || !agentState.status?.configured ||
-      !agentState.status.username) {
+      !agentState.status.username ||
+      agentState.status.auth_status !== '已登录' ||
+      agentState.status.must_change_password === true) {
     return { ok: false, error: { code: 'map_login_required',
       message: '请先登录 xDrive Desktop，才能打开独立 HTTPS 地图窗口。' } }
   }
@@ -1886,9 +1888,11 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
   // JSAPI4 release. The isolated HTTPS Renderer is NEVER allowed to propose
   // an Origin or opt into an arbitrary provider/CDN destination.
   const ownerName = agentState.status.username
-  const sameOwner = () => Boolean(agentState.connected &&
-    agentState.status?.username === ownerName &&
-    xDriveResolveSecureBaiduMapTarget(agentState.status?.server)?.origin === target.origin)
+  // The asynchronous SDK release can finish after native auth loss.
+  // Recheck the same fail-closed predicate as the authenticated Guest.
+  const sameOwner = () => desktopPlacesWebOwnerStillCurrent({
+    owner: ownerName, origin: target.origin,
+  })
   let releasedOrigin: string | null = null
   try {
     const released = await requireAgentClient().mediaBaiduJSAPI4Release()
