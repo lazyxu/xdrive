@@ -674,7 +674,9 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               <Stack spacing={1.5}>
                 <Stack direction="row" alignItems="center" justifyContent="space-between">
                   <Typography variant="caption" color="text.secondary">
-                    {record.kind === 'text/uri-list' ? '链接' : '文本'} · {new Date(record.created_at).toLocaleString()}
+                    {record.kind === 'text/uri-list' ? '链接'
+                      : record.kind === 'image/x-xdrive-node-ref' ? '云端图片引用'
+                      : record.kind === 'application/x-xdrive-node-ref' ? '云端文件引用' : '文本'} · {new Date(record.created_at).toLocaleString()}
                   </Typography>
                   <Button size="small" color="error" disabled={busy}
                     onClick={() => { void runAction(signal => port.remove(record.id, signal), '已删除消息。') }}>
