@@ -11,6 +11,7 @@ enum XDriveIOSPhotoBackupResiliencePolicy {
               let available = aps["content-available"] as? Int,
               available == 1,
               aps["alert"] == nil, aps["sound"] == nil, aps["badge"] == nil,
+              aps.keys.allSatisfy({ $0 == "content-available" }),
               payload["xdrive_kind"] as? String == "photos-backup-wake",
               payload["xdrive_version"] as? Int == 1 else { return false }
         // A push contains NO Owner, PhotoKit ID, credential, Node name or

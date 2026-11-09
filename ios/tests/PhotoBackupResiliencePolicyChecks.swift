@@ -18,6 +18,18 @@ import Foundation
         invalid = silent
         invalid["xdrive_version"] = 2
         precondition(!p.isSilentPhotoWakeHint(invalid))
+        invalid = silent
+        invalid["aps"] = ["content-available": 1, "owner_id": 88]
+        precondition(!p.isSilentPhotoWakeHint(invalid))
+        invalid = silent
+        invalid["aps"] = ["content-available": 1, "mutable-content": 1]
+        precondition(!p.isSilentPhotoWakeHint(invalid))
+        invalid = silent
+        invalid["aps"] = ["content-available": 2]
+        precondition(!p.isSilentPhotoWakeHint(invalid))
+        invalid = silent
+        invalid["untrusted_device_id"] = "fake-device"
+        precondition(!p.isSilentPhotoWakeHint(invalid))
 
         func mayWake(_ protected: Bool = true, _ granted: Bool = true,
                      _ last: Date? = nil, _ pending: Bool = false,
