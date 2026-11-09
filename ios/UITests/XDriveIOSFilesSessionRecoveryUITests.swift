@@ -251,4 +251,130 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
             expect("native-ios-files-section-browse", app)
         }
     }
+
+    /// Recent and Favorites can live below the fold in native Files Home.
+    /// Search this Home List only; never force an unreadable child AX tree.
+    private func openHomeShortcut(_ id: String, _ app: XCUIApplication) {
+        let item = element(id, app)
+        if !item.exists {
+            let list = app.collectionViews.firstMatch
+            if list.exists {
+                for _ in 0..<6 {
+                    list.swipeUp()
+                    if item.exists { break }
+                }
+            }
+        }
+        tap(id, app)
+    }
+
+    func testRecentShortcutNoSessionShowsReadOnlyNativeRecovery() {
+        let app = launch()
+        files(app)
+        openHomeShortcut("native-ios-files-open-recent", app)
+        expect("native-ios-files-recent-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        XCTAssertFalse(element("native-ios-files-recent-retry", app).exists)
+        tap("native-ios-files-recent-error-return", app)
+        expect("native-ios-files-section-browse", app)
+    }
+
+    func testFavoritesShortcutNoSessionShowsReadOnlyNativeRecovery() {
+        let app = launch()
+        files(app)
+        openHomeShortcut("native-ios-files-open-favorites", app)
+        expect("native-ios-files-favorites-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        XCTAssertFalse(element("native-ios-files-favorites-retry", app).exists)
+        tap("native-ios-files-favorites-error-return", app)
+        expect("native-ios-files-section-browse", app)
+    }
+
+    func testRecentAfterTrashDeniedKeepsGalleryMounted() {
+        let app = launch()
+        files(app)
+        tap("native-ios-files-open-trash", app)
+        expect("native-ios-files-trash-error-page", app)
+        tap("native-ios-files-trash-error-return", app)
+        openHomeShortcut("native-ios-files-open-recent", app)
+        expect("native-ios-files-recent-error-page", app)
+        tap("native-ios-files-recent-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        expect("native-ios-gallery-source-unified", app)
+    }
+
+    func testFavoritesAfterCloudDeniedKeepsGalleryMounted() {
+        let app = launch()
+        files(app)
+        tap("native-ios-files-open-root-location", app)
+        expect("native-ios-files-error-page", app)
+        tap("native-ios-files-error-return", app)
+        openHomeShortcut("native-ios-files-open-favorites", app)
+        expect("native-ios-files-favorites-error-page", app)
+        tap("native-ios-files-favorites-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        expect("native-ios-gallery-source-unified", app)
+    }
+
+    func testRecentFavoritesQuickRailDeniedThenAlbumsRemainUsable() {
+        let app = launch()
+        files(app)
+        openHomeShortcut("native-ios-files-open-recent", app)
+        expect("native-ios-files-recent-error-page", app)
+        tap("native-ios-files-recent-error-return", app)
+        for section in ["recent", "favorites", "browse"] {
+            tap("native-ios-files-section-\(section)", app)
+            expect("native-ios-files-section-browse", app)
+        }
+        openHomeShortcut("native-ios-files-open-favorites", app)
+        expect("native-ios-files-favorites-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        tap("native-ios-files-favorites-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-albums", app)
+        expect("native-ios-gallery-source-unified", app)
+    }
+
+    func testRecentFavoritesRepeatedDenialsNeverRetainOldScope() {
+        let app = launch()
+        files(app)
+        for _ in 0..<2 {
+            openHomeShortcut("native-ios-files-open-recent", app)
+            expect("native-ios-files-recent-error-page", app)
+            XCTAssertFalse(element("native-ios-files-recent-retry", app).exists)
+            tap("native-ios-files-recent-error-return", app)
+            openHomeShortcut("native-ios-files-open-favorites", app)
+            expect("native-ios-files-favorites-error-page", app)
+            XCTAssertFalse(element("native-ios-files-favorites-retry", app).exists)
+            tap("native-ios-files-favorites-error-return", app)
+            expect("native-ios-files-section-browse", app)
+        }
+        app.terminate()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        files(app)
+        XCTAssertFalse(element("native-ios-files-open-recent", app).exists)
+    }
+
+    func testRecentFavoritesErrorScreensHaveActualSimulatorEvidence() {
+        let app = launch()
+        files(app)
+        for route in [
+            ("native-ios-files-open-recent", "native-ios-files-recent-error-page",
+             "native-ios-files-recent-error-return"),
+            ("native-ios-files-open-favorites", "native-ios-files-favorites-error-page",
+             "native-ios-files-favorites-error-return"),
+        ] {
+            openHomeShortcut(route.0, app)
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.name = route.1 + "-before-AX"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+            expect(route.1, app)
+            tap(route.2, app)
+            expect("native-ios-files-section-browse", app)
+        }
+    }
+
 }
