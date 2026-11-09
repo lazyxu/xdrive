@@ -182,4 +182,6 @@ if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" != "1" ]]; then
 fi
 
 rm -rf "$artifact_dir"
-bash scripts/ci/export-docker-image.sh "$final_image" "$artifact_dir"
+if [[ "${XDRIVE_GITLAB_STAGING_ONLY:-0}" != "1" ]]; then
+  bash scripts/ci/export-docker-image.sh "$final_image" "$artifact_dir"
+fi
