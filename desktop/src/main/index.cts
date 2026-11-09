@@ -1866,7 +1866,9 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
   opened: true; separate_login_required: true
 }>> {
   if (!agentState.connected || !agentState.status?.configured ||
-      !agentState.status.username) {
+      !agentState.status.username ||
+      agentState.status.auth_status !== '已登录' ||
+      agentState.status.must_change_password === true) {
     return { ok: false, error: { code: 'map_login_required',
       message: '请先登录 xDrive Desktop，才能打开独立 HTTPS 地图窗口。' } }
   }
@@ -1886,9 +1888,11 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
   // JSAPI4 release. The isolated HTTPS Renderer is NEVER allowed to propose
   // an Origin or opt into an arbitrary provider/CDN destination.
   const ownerName = agentState.status.username
-  const sameOwner = () => Boolean(agentState.connected &&
-    agentState.status?.username === ownerName &&
-    xDriveResolveSecureBaiduMapTarget(agentState.status?.server)?.origin === target.origin)
+  // The asynchronous SDK release can finish after native auth loss.
+  // Recheck the same fail-closed predicate as the authenticated Guest.
+  const sameOwner = () => desktopPlacesWebOwnerStillCurrent({
+    owner: ownerName, origin: target.origin,
+  })
   let releasedOrigin: string | null = null
   try {
     const released = await requireAgentClient().mediaBaiduJSAPI4Release()
@@ -2336,6 +2340,24 @@ function createMainWindow(showOnReady = true) {
       desktopPlacesGuestNavigationAllowed(rawURL,identity)
     guest.on('will-navigate',(event,url)=>{if(!authorized(url))event.preventDefault()})
     guest.on('will-redirect',(event,url)=>{if(!authorized(url))event.preventDefault()})
+    // Electron will-navigate does NOT fire for hash/history.pushState routes.
+    // Those in-page transitions are non-cancellable: synchronously retire
+    // this one-use Guest's network partition and forcibly destroy it before
+    // an unreviewed React route can retain a privileged map browser session.
+    const revokeInPageNavigation=(rawURL:string)=>{
+      if(authorized(rawURL))return
+      // A late event from an already retired Guest cannot revoke the newer
+      // Owner's independent HTTPS partition.
+      if(desktopPlacesGuests.get(guest.id)===identity)closeDesktopPlacesGuests()
+      if(!guest.isDestroyed())guest.close({waitForBeforeUnload:false})
+    }
+    guest.on('did-start-navigation',details=>{
+      if(details.isMainFrame && details.isSameDocument)
+        revokeInPageNavigation(details.url)
+    })
+    guest.on('did-navigate-in-page',(_event,url,isMainFrame)=>{
+      if(isMainFrame)revokeInPageNavigation(url)
+    })
     guest.on('destroyed',()=>desktopPlacesGuests.delete(guest.id))
   })
   win.webContents.on('will-navigate', (event, url) => {
