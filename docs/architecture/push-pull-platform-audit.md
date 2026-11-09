@@ -58,7 +58,7 @@ Relevant already-integrated automated coverage includes source_managed_flat_cont
 
 ## 4. Explicitly excluded or suspended — not backlog items
 
-- **No historical target migration**. Old Yike/mixed-root/nested 1A–5B migrations are tracked separately under historical Issue #3774, not this new-source MVP. Cloud cleanup is NOT a migration, does not delete provider data, and never rebinds Source/Node IDs.
+- **No historical target migration**. Per the 2026-11-09 no-production-data decision, the old Yike reparenting/splitters, read-only migration-preview API and uid_* target adoption have been removed; no new migration work is tracked. Cloud cleanup remains a separate confirmed reversible Trash action, not migration.
 - **No standalone DSM Synology Photos Push**; do not restore xdrive-source-agent, its upload routes or a parallel CAS writer.
 - **No re-enabling Synology Photos/Files Pull** until a separate Owner decision. Keep existing data/history readable and execution disabled.
 - **No remote device backup trigger from Web/Desktop/DSM** for PhotoKit/MediaStore or an unowned local Root.
