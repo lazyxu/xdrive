@@ -23,14 +23,14 @@ var bundleFullDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var bundlePackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$`)
 
 type ReleaseBundleArtifact struct {
-	Platform string `json:"platform"`
-	Filename string `json:"filename"`
+	Platform    string `json:"platform"`
+	Filename    string `json:"filename"`
 	BuildCommit string `json:"build_commit"`
-	SHA256 string `json:"sha256"`
-	Size int64 `json:"size"`
-	Cached bool `json:"cached"`
+	SHA256      string `json:"sha256"`
+	Size        int64  `json:"size"`
+	Cached      bool   `json:"cached"`
 	CacheStatus string `json:"cache_status"`
-	Sources struct {
+	Sources     struct {
 		GitLab string `json:"gitlab"`
 		GitHub string `json:"github"`
 	} `json:"sources"`
@@ -38,9 +38,9 @@ type ReleaseBundleArtifact struct {
 }
 
 type ReleaseBundleListing struct {
-	State string `json:"state"`
-	Commit string `json:"commit"`
-	Channel string `json:"channel"`
+	State     string                  `json:"state"`
+	Commit    string                  `json:"commit"`
+	Channel   string                  `json:"channel"`
 	Artifacts []ReleaseBundleArtifact `json:"artifacts"`
 }
 
