@@ -2716,3 +2716,22 @@ jobs:
       publish: true
     secrets: inherit
 
+
+  verify-published-bundle:
+    # A separate parent-workflow job: failure is visible in CI/required checks,
+    # but does not mark publish-master or publish-stable's reusable workflow
+    # as failed, and cannot gate Server publication/offline dependencies.
+    if: ${{ always() && github.event_name == 'push' && ((github.ref == 'refs/heads/master' && needs.publish-master.result == 'success') || (startsWith(github.ref, 'refs/tags/v') && needs.publish-stable.result == 'success')) }}
+    needs: [publish-master, publish-stable]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Independently verify actual GitHub Bundle, Commit and Sigstore
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/verify-live-release-bundle.py --commit "$GITHUB_SHA" --require-sigstore

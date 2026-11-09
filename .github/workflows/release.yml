@@ -679,20 +679,3 @@ jobs:
             exit 1
           fi
           bash scripts/ci/publish-dsm-package-source.sh "$channel" release "$GITHUB_SHA"
-
-  verify-immutable-bundle:
-    # Independent post-publication acceptance: must NEVER delay or block the
-    # core Server/Snapshot publish transaction when GitHub attestation lookup
-    # or optional client package mirrors are slow/unavailable.
-    if: inputs.publish
-    needs: [bundle]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      attestations: read
-    steps:
-      - uses: actions/checkout@v4
-      - name: Audit published GitHub Bundle and independent OIDC attestation
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/verify-live-release-bundle.py --commit "$GITHUB_SHA" --require-sigstore

@@ -13,9 +13,11 @@ checks remain authoritative.
 - An immutable GitHub Release `bundle-<full-sha>` publishes
   `release-bundle.json` and the exact same-commit client packages. Its
   publisher verifies the tag ref, every asset name and SHA-256 on retries.
-  CI also produces a Sigstore attestation for the manifest. The release workflow
-  performs a **read-only public Release and independent Sigstore acceptance
-  check after publication**; that step cannot succeed merely from publisher mocks.
+  CI also produces a Sigstore attestation for the manifest. A **separate
+  top-level post-publish CI job** verifies the actual published Release and
+  independent Sigstore proof, without becoming a dependency or nested failure
+  of the Server's reusable release workflow. Real verification cannot pass
+  merely from publisher mocks.
 - Artifact records include `platform`, `filename`, `build_commit`,
   `sha256`, `size`, `install_mode` and ordered preferred origins.
   **Missing platforms are omitted**. Android Debug APKs are never mirrored. Only independently approved,
