@@ -7629,9 +7629,9 @@ func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Req
 		State        string `json:"state,omitempty"`
 		Error        string `json:"error,omitempty"`
 		Skipped      bool   `json:"skipped,omitempty"`
-		UploadedBytes *int64 `json:"upload_transferred_bytes,omitempty"`
-		CASBytes *int64 `json:"upload_cas_reused_bytes,omitempty"`
-		ResumeBytes *int64 `json:"upload_resume_reused_bytes,omitempty"`
+		SentBytes    *int64 `json:"upload_transferred_bytes,omitempty"`
+		CASBytes     *int64 `json:"upload_cas_reused_bytes,omitempty"`
+		ResumeBytes  *int64 `json:"upload_resume_reused_bytes,omitempty"`
 		Children     []struct {
 			FileName     string `json:"file_name,omitempty"`
 			Path         string `json:"path,omitempty"`
@@ -7767,9 +7767,9 @@ func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Req
 		}
 		state := strings.TrimSpace(input.State)
 		var err error
-		if input.UploadedBytes != nil && input.CASBytes != nil &&
+		if input.SentBytes != nil && input.CASBytes != nil &&
 			input.ResumeBytes != nil {
-			if state != transfer.StateCompleted || input.Skipped || *input.UploadedBytes < 0 ||
+			if state != transfer.StateCompleted || input.Skipped || *input.SentBytes < 0 ||
 				*input.CASBytes < 0 || *input.ResumeBytes < 0 {
 				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_upload_receipt", "uploaded bytes require successful non-skipped completion")
 				return
@@ -7778,7 +7778,7 @@ func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Req
 				FinishTransferWithUploadReceipt(string, string, string, bool, *int64, *int64, *int64) error
 			}); ok {
 				err = port.FinishTransferWithUploadReceipt(input.ID, state, input.Error, false,
-					input.UploadedBytes, input.CASBytes, input.ResumeBytes)
+					input.SentBytes, input.CASBytes, input.ResumeBytes)
 			} else {
 				// Older hosts finish normally without falsely claiming CAS reuse.
 				err = h.ctrl.FinishTransfer(input.ID, state, input.Error, false)
