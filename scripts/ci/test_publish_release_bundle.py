@@ -59,6 +59,10 @@ if args[:1] == ["api"]:
     endpoint = args[1] if len(args) > 1 else ""
     if endpoint == "repos/lazyxu/xdrive/git/ref/tags/" + tag:
         if not state["tag"]:
+            if state.get("tag_probe_error"):
+                print("gh: request timed out (network unavailable)", file=sys.stderr)
+            else:
+                print("gh: Not Found (HTTP 404)", file=sys.stderr)
             sys.exit(22)
         if "--jq" in args:
             print(state["ref"])
@@ -118,9 +122,10 @@ class PublishCurrentCommitBundleTests(unittest.TestCase):
             if mode == "missing-asset":
                 assets.pop()
             state = {
-                "tag": mode != "new",
-                "release": mode not in ("new", "orphan"),
+                "tag": mode not in ("new", "tag-probe-failure"),
+                "release": mode not in ("new", "orphan", "tag-probe-failure"),
                 "ref": OTHER if mode == "wrong-ref" else COMMIT,
+                "tag_probe_error": mode == "tag-probe-failure",
                 "assets": assets,
                 "create_count": 0,
             }
@@ -154,7 +159,7 @@ class PublishCurrentCommitBundleTests(unittest.TestCase):
         result, state = self.run_case("existing")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(state["create_count"], 0)
-        for mode in ("tampered", "missing-asset", "wrong-ref", "orphan"):
+        for mode in ("tampered", "missing-asset", "wrong-ref", "orphan", "tag-probe-failure"):
             bad, state = self.run_case(mode)
             self.assertNotEqual(bad.returncode, 0, (mode, bad.stdout, bad.stderr))
             self.assertEqual(state["create_count"], 0, mode)
