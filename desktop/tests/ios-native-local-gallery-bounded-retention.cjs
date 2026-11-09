@@ -57,12 +57,12 @@ test('PhotoKit page is reusable only if its generation, offset, total and grant 
 })
 
 test('child onDisappear submits only verified page evidence to a bounded parent cache', () => {
-  assert.match(child, /let onPageHidden: \\(Int, UUID\\?, XDrivePhotoKitScanPage\\?\\) -> Void/)
+  assert.match(child, /let onPageHidden: \(Int, UUID\?, XDrivePhotoKitScanPage\?\) -> Void/)
   const disappear = section(child, '.onDisappear {', '\n    }\n}')
-  assert.match(disappear, /let verifiedEpoch = retainedGeneration[\\s\\S]*verifiedEpoch == generation/)
+  assert.match(disappear, /let verifiedEpoch = retainedGeneration[\s\S]*verifiedEpoch == generation/)
   assert.match(disappear, /page\?\.startOffset == offset/)
   assert.match(disappear, /page\?\.totalAccessibleAssets == expectedTotal/)
-  assert.match(disappear, /onPageHidden\\(offset, verifiedEpoch, verifiedPage\\)/)
+  assert.match(disappear, /onPageHidden\(offset, verifiedEpoch, verifiedPage\)/)
 })
 
 test('background, scene suspension and permission changes revoke any navigation cache', () => {
