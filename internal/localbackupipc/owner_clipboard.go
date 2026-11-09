@@ -122,7 +122,6 @@ func (c *Client) OwnerClipboardClear(ctx context.Context) error {
 	return c.request(ctx, http.MethodDelete, "/v1/cloud/clipboard/items", nil, nil)
 }
 
-
 // These are narrow, separate Owner+installation capabilities. The DSM
 // browser never receives an Agent device credential or a private key.
 func (c *Client) OwnerClipboardEnableDevice(ctx context.Context) (client.ClipboardDevice, error) {
@@ -159,7 +158,6 @@ func (c *Client) OwnerClipboardDecrypt(ctx context.Context, itemID uint64) (stri
 	}
 	return out.Text, nil
 }
-
 
 func (c *Client) OwnerClipboardRevokeDevice(ctx context.Context, deviceID string) error {
 	if err := c.requireClipboard(); err != nil {
