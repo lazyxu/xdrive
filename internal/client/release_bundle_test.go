@@ -324,6 +324,18 @@ func TestReleaseBundleClientRecognizesEncodedPlus(t *testing.T) {
 	if !validCurrentBundleArtifact(listing.Commit, artifact) {
 		t.Fatal("client rejected immutable manifest's percent-encoded APK source")
 	}
+	artifact.Cached = true
+	artifact.DownloadURLs = append([]string{
+		"/api/v1/release-bundles/current/artifacts/xdrive-android-12-0.1.3%2Bbuild.apk",
+	}, artifact.DownloadURLs...)
+	if !validCurrentBundleArtifact(listing.Commit, artifact) {
+		t.Fatal("client rejected correctly escaped local cached APK URL")
+	}
+	artifact.DownloadURLs[0] = strings.Replace(artifact.DownloadURLs[0], "%2B", "+", 1)
+	if validCurrentBundleArtifact(listing.Commit, artifact) {
+		t.Fatal("client admitted an unescaped alternate cached APK source")
+	}
+	artifact.Cached = false
 	artifact.DownloadURLs = []string{
 		artifact.Sources.GitLab, strings.Replace(artifact.Sources.GitHub, "%2B", "+", 1),
 	}

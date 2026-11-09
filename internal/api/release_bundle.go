@@ -212,7 +212,7 @@ func readReleaseBundleListingForServerCommit(root, serverCommit string) releaseB
 		}
 		urls := []string{}
 		if cached {
-			urls = append(urls, "/api/v1/release-bundles/current/artifacts/"+artifact.Filename)
+			urls = append(urls, "/api/v1/release-bundles/current/artifacts/"+url.QueryEscape(artifact.Filename))
 		}
 		urls = append(urls, artifact.Sources.GitLab, artifact.Sources.GitHub)
 		result.Artifacts = append(result.Artifacts, releaseBundleItem{

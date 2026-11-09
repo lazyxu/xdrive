@@ -140,7 +140,7 @@ func validCurrentBundleArtifact(commit string, artifact ReleaseBundleArtifact) b
 	}
 	sources := []string{gitlab, github}
 	if artifact.Cached {
-		sources = append([]string{"/api/v1/release-bundles/current/artifacts/" + artifact.Filename}, sources...)
+		sources = append([]string{"/api/v1/release-bundles/current/artifacts/" + escapedName}, sources...)
 	}
 	if len(artifact.DownloadURLs) != len(sources) {
 		return false

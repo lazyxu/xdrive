@@ -421,6 +421,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.ref == 'refs/heads/master' && steps.snapshot_app_token.outputs.token || github.token }}
         run: bash scripts/ci/publish-release-bundle.sh "$GITHUB_SHA" release
+      - name: Verify live immutable Bundle and independent Sigstore identity
+        # Local publication mocks are not sufficient: check the real GitHub
+        # Release, exact tag, package inventory and signed OIDC proof.
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.ref == 'refs/heads/master' && steps.snapshot_app_token.outputs.token || github.token }}
+        run: python3 scripts/ci/verify-live-release-bundle.py --commit "$GITHUB_SHA" --require-sigstore
       - name: Probe snapshot Git ref authorization before release mutation
         if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'
         shell: bash
