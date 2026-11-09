@@ -180,21 +180,11 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Exercise generic Source CRUD/optimistic revisions here; Synology Push is covered by its device-proof integration tests.
-	createBody := fmt.Sprintf(`{
-		"name":"Synology Photos",
-		"kind":"test",
-		"direction":"push",
-		"sync_mode":"backup",
-		"run_mode":"scan",
-		"target_node_id":%d,
-		"ignore_rules":"@eaDir/\n\\#recycle/\n*.tmp\n"
-	}`, targetA.ID)
-	createdRes := request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(createBody), http.StatusCreated)
-	var created sourceDTO
-	if err := json.Unmarshal(createdRes.Body.Bytes(), &created); err != nil {
-		t.Fatal(err)
-	}
+	// Preserve generic Source CRUD/revision coverage with a PostgreSQL-only
+	// synthetic provider; unknown kinds can no longer provision HTTP targets.
+	created := seedSyntheticSourceForProtocolTest(t, db, targetA.ID,
+		"Synology Photos", meta.SourceDirectionPush, meta.SourceSyncModeBackup,
+		meta.SourceRunModeScan, "@eaDir/\\n\\\\#recycle/\\n*.tmp\\n")
 	if created.ID == 0 || created.Revision != 1 || created.RunMode != meta.SourceRunModeScan ||
 		created.SyncMode != meta.SourceSyncModeBackup || created.Status != meta.SourceStatusActive ||
 		created.TargetNodeID == nil || *created.TargetNodeID != targetA.ID || created.TargetPath != "Synology" ||
@@ -202,13 +192,11 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatalf("unexpected created source: %+v", created)
 	}
 
-	// Mirror is an explicit local trash policy; provider-side deletion remains unsupported.
-	mirrorBody := fmt.Sprintf(`{"name":"Mirror","kind":"test","direction":"push","sync_mode":"mirror","target_node_id":%d}`, targetA.ID)
-	mirrorRes := request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(mirrorBody), http.StatusCreated)
-	var mirrorSource sourceDTO
-	if err := json.Unmarshal(mirrorRes.Body.Bytes(), &mirrorSource); err != nil {
-		t.Fatal(err)
-	}
+	// Mirror policy and Source archive are still tested on a synthetic
+	// persisted Source; the production create route cannot select target IDs.
+	mirrorSource := seedSyntheticSourceForProtocolTest(t, db, targetA.ID,
+		"Mirror", meta.SourceDirectionPush, meta.SourceSyncModeMirror,
+		meta.SourceRunModeSync, "")
 	if mirrorSource.SyncMode != meta.SourceSyncModeMirror || mirrorSource.Revision != 1 {
 		t.Fatalf("unexpected mirror source: %+v", mirrorSource)
 	}
@@ -221,9 +209,21 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	foreignBody := fmt.Sprintf(`{"name":"Foreign","kind":"test","direction":"pull","target_node_id":%d}`, rootB.ID)
 	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(foreignBody), http.StatusBadRequest)
 
-	// Names are unique per owner, case-insensitively.
-	duplicateBody := fmt.Sprintf(`{"name":"synology photos","kind":"test","direction":"push","target_node_id":%d}`, targetA.ID)
-	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(duplicateBody), http.StatusConflict)
+	// The database still enforces case-insensitive Source identity even for
+	// synthetic historical Source fixtures.
+	var storedCreated meta.Source
+	if err := db.First(&storedCreated, created.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicate := meta.Source{
+		OwnerID: storedCreated.OwnerID, Name: "synology photos", Kind: "test",
+		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive, Revision: 1,
+		TargetNodeID: &targetA.ID,
+	}
+	if err := db.Create(&duplicate).Error; err == nil {
+		t.Fatal("case-insensitive Source duplicate was accepted")
+	}
 
 	listA := request(t, router, http.MethodGet, "/api/v1/sources", tokenA, nil, http.StatusOK)
 	var sourcesA []sourceDTO
