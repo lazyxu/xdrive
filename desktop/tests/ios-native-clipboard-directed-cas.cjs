@@ -18,7 +18,7 @@ test('iOS native directed sender uses X25519 HKDF, AES-GCM and exact Owner/targe
   assert.match(crypto,/ephemeral\.publicKey\.rawRepresentation/)
   assert.match(crypto,/context \+ "\|key\|/)
   assert.match(crypto,/context \+ "\|content\|/)
-  assert.match(crypto,/kind: kind, nodeID: nodeID/)
+  assert.match(crypto,/node_id: nodeID > 0 \\? nodeID : nil/)
   assert.doesNotMatch(crypto,/Server.*(privateKey|rawRepresentation).*POST/)
 })
 test('iOS public-key directory and targeted sender never use device token as a send grant',()=>{
@@ -39,7 +39,7 @@ test('iOS manual document enters the existing CAS writer and exact Node/SHA veri
   assert.match(screen,/verifier\.requireCommitted\(/)
   assert.match(files,/^struct XDriveIOSNativeFilesUploadReadback/m)
   assert.match(screen,/referenceNodeID = String\(receipt\.nodeID\)/)
-  assert.match(screen,/再次点击“定向加密发送”/)
+  assert.match(screen,/再次点击定向加密发送/)
   assert.match(screen,/uploadTask\?\.cancel\(\)/)
 })
 test('iOS original v1 send cannot fall back from directed or replay changed unknown ACK',()=>{
