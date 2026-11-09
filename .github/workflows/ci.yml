@@ -1251,6 +1251,8 @@ jobs:
           bash -n scripts/ci/gitlab-fetch-staged-image.sh
           bash -n scripts/ci/test-gitlab-registry-release.sh
           bash scripts/ci/test-gitlab-registry-release.sh
+          bash -n scripts/test-gitlab-optional-image-pins.sh
+          bash scripts/test-gitlab-optional-image-pins.sh
           sh -n scripts/ci/gitlab-publish-release.sh
           sh -n scripts/ci/install-gitlab-release-tools.sh
           bash scripts/ci/test-gitlab-release-tools.sh
