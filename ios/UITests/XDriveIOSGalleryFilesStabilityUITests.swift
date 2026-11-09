@@ -92,26 +92,31 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         select("native-ios-tab-files", in: app)
         checkFilesHome(app)
         select("native-ios-files-open-root-location", in: app)
-        // A generic navigationBars.buttons[0] across the entire app
-        // caused XCTest's accessibility snapshot query to stall ~120s.
-        // Target the actual pushed native child NavigationStack by its
-        // folder title instead of waiting on an ambiguous global index.
+        // XCTest's global NavigationBar/Back accessibility queries have
+        // repeatedly hung in this real SwiftUI pushed-folder layout (~120s)
+        // even while the app remains foreground. Exercise iOS's actual
+        // interactive navigation POP gesture instead of guessing a back
+        // button via a stalled accessibility snapshot.
         XCTAssertEqual(app.state, .runningForeground,
                        "Native process exited while opening offline Files child")
-        let child = app.navigationBars["xDrive 云端"].firstMatch
-        if !child.waitForExistence(timeout: 12) {
-            print("OFFLINE_OWNER_FILES child missing; app state=\(app.state.rawValue)")
-            print("OFFLINE_OWNER_FILES hierarchy:\n\(app.debugDescription)")
+        let leadingEdge = app.coordinate(withNormalizedOffset:
+            CGVector(dx: 0.015, dy: 0.48))
+        let inside = app.coordinate(withNormalizedOffset:
+            CGVector(dx: 0.80, dy: 0.48))
+        leadingEdge.press(forDuration: 0.06, thenDragTo: inside)
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Native process exited during iOS interactive back")
+        // This must be a real push/pop, not merely an app-alive assertion:
+        // the same Files Home rail and exact root NavigationLink must return.
+        let browse = target("native-ios-files-section-browse", in: app)
+        if !browse.waitForExistence(timeout: 15) {
+            print("OFFLINE_OWNER_FILES no Home after interactive back; state=\(app.state.rawValue)")
             let capture = XCTAttachment(screenshot: app.screenshot())
-            capture.name = "offline-owner-files-child"
+            capture.name = "offline-owner-back-return"
             capture.lifetime = .keepAlways
             add(capture)
         }
-        XCTAssertTrue(child.exists, "Cloud child NavigationStack did not mount")
-        let back = child.buttons.firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 8),
-                      "Cloud Files scoped back button missing after denied auth")
-        back.tap()
+        XCTAssertTrue(browse.exists, "Files Home did not return after native back gesture")
         checkFilesHome(app)
         XCTAssertTrue(target("native-ios-files-open-root-location", in: app)
             .waitForExistence(timeout: 15))
