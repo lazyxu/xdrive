@@ -257,7 +257,7 @@ test('native Files child navigation retains verified source/tag filters without 
   assert.match(suspension, /epoch = UUID\(\)/);
   assert.match(suspension, /job\?\.cancel\(\)/);
   assert.doesNotMatch(suspension, /sources = \[\]|tags = \[\]|loadedOwner = nil|verified = false/);
-  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}\s*\.onDisappear \{\s*(?:chunked\.invalidate\(\)\s*)?searchOptions\.suspendForNavigation\(\)/);
+  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?searchPresented = false\s*chunked\.invalidate\(\)\s*searchOptions\.suspendForNavigation\(\)/);
   // A genuine Owner/root change still clears options, and the visible filter
   // list checks the exact Owner before rendering cached suggestions.
   assert.match(filterModel, /func invalidate\(\) \{[\s\S]*?loadedOwner = nil[\s\S]*?sources = \[\][\s\S]*?tags = \[\]/);
