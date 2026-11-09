@@ -112,7 +112,7 @@ test('CI-only local photo readiness distinguishes retained tab pages from fresh 
   }
   assert.ok(child.includes('IOS_NATIVE_LOCAL_PHOTO_PAGE_READY_MS mode='))
   const report = child.slice(child.indexOf('private func reportPhotoPageReady('),
-    child.indexOf('    private var placeholderTile:'))
+    child.indexOf('    var body: some View', child.indexOf('private func reportPhotoPageReady(')))
   assert.doesNotMatch(report, /candidate\.id|localIdentifier|fileURL|ownerID|login\.token/)
 })
 
