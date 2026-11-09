@@ -554,7 +554,11 @@ export function XDriveMediaGalleryViewer({
         onNext={nextIfCurrent}
         actions={actions}
         footer={footer}
-        keepChromeVisible={externalInteractionPaused || moreOpen || deleteOpen || creativeOpen || editOpen || locationOpen}
+        // Video loading/first-frame playback must not silently hide the only
+        // previous/next controls after the 2.2s immersive chrome timer. The
+        // stable chrome also keeps native playback controls above the filmstrip.
+        // Photos retain their established auto-hide/tap-to-wake behavior.
+        keepChromeVisible={slideshowKind === 'video' || externalInteractionPaused || moreOpen || deleteOpen || creativeOpen || editOpen || locationOpen}
         chromeSessionKey={actionOwner.session}
         immersive
         mobileEdgeToEdge
