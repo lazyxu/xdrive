@@ -131,11 +131,14 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let selectionMode: Bool
     let selectedIDs: Set<String>
     let retainWhileCovered: Bool
+    // One verified 64-slot parent-owned snapshot may outlive tab unmount.
+    // It is discarded on PhotoKit change, permission loss or scene exit.
+    let navigationRetainedPage: XDrivePhotoKitScanPage?
     let accessibilityFocus: AccessibilityFocusState<String?>.Binding
     let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
     let onShare: (XDrivePhotoKitScanCandidate, Bool) -> Void
     let onRead: (XDrivePhotoKitScanPage) -> Void
-    let onPageHidden: (Int) -> Void
+    let onPageHidden: (Int, UUID?, XDrivePhotoKitScanPage?) -> Void
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
     @State private var precedingCapturedAt: Date?
@@ -202,6 +205,14 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
 
     private var placeholderTile: some View {
         XDriveIOSNativePhotoWallPlaceholderTile()
+    }
+
+    private func reportPhotoPageReady(_ mode: String, started: Date) {
+        // Diagnostic only: no PhotoKit asset IDs, media titles or metadata.
+        guard ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke")
+        else { return }
+        let ms = Int(max(0, Date().timeIntervalSince(started) * 1000))
+        print("IOS_NATIVE_LOCAL_PHOTO_PAGE_READY_MS mode=\(mode) value=\(ms)")
     }
 
     var body: some View {
@@ -318,6 +329,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         .padding(.horizontal, 12)
         .id("page:\(offset)")
         .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)") {
+            let pageStarted = Date()
             if let cached = page, retainedGeneration == generation,
                cached.startOffset == offset,
                cached.totalAccessibleAssets == expectedTotal,
@@ -325,6 +337,24 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
                ) {
                 onRead(cached)
+                reportPhotoPageReady("mounted", started: pageStarted)
+                await refreshVisibleBackupQueueStatuses()
+                return
+            }
+            // A native Gallery→Files tab transition destroys the lazy page's
+            // local @State on some SwiftUI mounts. Reuse at most one parent-
+            // retained 64-slot page, subject to the current PhotoKit grant.
+            if let navigationRetainedPage,
+               navigationRetainedPage.startOffset == offset,
+               navigationRetainedPage.totalAccessibleAssets == expectedTotal,
+               navigationRetainedPage.items.count <= 64,
+               [.authorized, .limited].contains(
+                   PHPhotoLibrary.authorizationStatus(for: .readWrite)
+               ) {
+                page = navigationRetainedPage
+                retainedGeneration = generation
+                onRead(navigationRetainedPage)
+                reportPhotoPageReady("tab-return", started: pageStarted)
                 await refreshVisibleBackupQueueStatuses()
                 return
             }
@@ -356,6 +386,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 page = loaded
                 retainedGeneration = generation
                 onRead(loaded)
+                reportPhotoPageReady("photokit", started: pageStarted)
                 // Read at most this mounted 64-item page; never enumerate the
                 // entire PhotoKit library or leak IDs to the Server for a badge.
                 let initialBadgeEpoch = UUID()
@@ -419,6 +450,14 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             }
         }
         .onDisappear {
+            // Export metadata only for a fully read, exact current page.
+            // The parent keeps ONE last-visible page, never all lazy pages.
+            let verifiedEpoch = retainedGeneration
+            let verifiedPage = (
+                verifiedEpoch == generation &&
+                page?.startOffset == offset &&
+                page?.totalAccessibleAssets == expectedTotal
+            ) ? page : nil
             if !retainWhileCovered {
                 page = nil
                 precedingCapturedAt = nil
@@ -429,7 +468,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             badgeReadEpoch = UUID()
             if let scanner { Task { await scanner.reset() } }
             scanner = nil
-            onPageHidden(offset)
+            onPageHidden(offset, verifiedEpoch, verifiedPage)
         }
     }
 }
@@ -469,12 +508,20 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @Binding var exactDateTarget: XDriveIOSNativePhotoExactDateTarget?
     @Environment(\.scenePhase) private var phase
     @State private var total = 0
+    @State private var isVisible = false
+    // A successfully read empty library is still a completed first read.
+    // Do not restart its PhotoKit scan after every foreground tab change.
+    @State private var hasCompletedInitialRead = false
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
     @State private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var failure: String?
     @State private var generation = UUID()
+    // Bounded tab-return cache: one verified 64-item window, not a library-
+    // sized identity array. This cache never persists to disk.
+    @State private var navigationReturnPage: XDrivePhotoKitScanPage?
+    @State private var navigationReturnGeneration: UUID?
     @State private var scanTask: Task<Void, Never>?
     @State private var monitor: XDriveIOSNativeVirtualWallChangeMonitor?
     @State private var selected: XDriveIOSNativeVirtualViewerSelection?
@@ -692,6 +739,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                     framing: framing, selectionMode: selectionMode,
                                     selectedIDs: Set(selectedCandidates.keys),
                                     retainWhileCovered: selected != nil || showingMap,
+                                    navigationRetainedPage: verifiedNavigationReturnPage(offset: offset),
                                     accessibilityFocus: $accessibilityFocusedTileID,
                                     onSelect: { asset, page in
                                         if selectionMode { toggleSelection(asset) }
@@ -717,8 +765,20 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                             }
                                         }
                                     },
-                                    onPageHidden: { hiddenOffset in
+                                    onPageHidden: { hiddenOffset, pageEpoch, verifiedPage in
                                         dragLoadedPages.removeValue(forKey: hiddenOffset)
+                                        guard let verifiedPage,
+                                              pageEpoch == generation,
+                                              hiddenOffset == savedOffset,
+                                              phase == .active && authorized,
+                                              verifiedPage.startOffset == hiddenOffset,
+                                              verifiedPage.totalAccessibleAssets == total,
+                                              verifiedPage.items.count <= 64
+                                        else { return }
+                                        // Replacing this optional bounds the
+                                        // cache even after scrolling 100k tiles.
+                                        navigationReturnPage = verifiedPage
+                                        navigationReturnGeneration = generation
                                     },
                                     onFailure: {
                                         exactDateTarget = nil
@@ -889,17 +949,24 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             })
         }
         .onAppear {
-            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            isVisible = true
+            let freshGrant = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if freshGrant != permission { invalidate(with: nil) }
+            permission = freshGrant
             if monitor == nil {
                 let observer = XDriveIOSNativeVirtualWallChangeMonitor {
                     permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                    if selected == nil && authorized && phase == .active { reload() }
+                    // An offscreen PhotoKit change invalidates retained IDs,
+                    // but never launches a new scan until that tab is visible.
+                    if selected == nil && authorized && phase == .active &&
+                       isVisible { reload() }
                     else { invalidate(with: nil) }
                 }
                 observer.start()
                 monitor = observer
             }
-            if authorized && selected == nil && !loading && total == 0 { reload() }
+            if authorized && selected == nil && !loading &&
+               !hasCompletedInitialRead { reload() }
         }
         .onChange(of: exactDateTarget) { value in
             if let value {
@@ -910,7 +977,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         .onChange(of: mediaFilter) { _ in
             calendarMapRange = nil
             exactDateTarget = nil
-            guard phase == .active else { return }
+            guard phase == .active && isVisible else {
+                invalidate(with: nil)
+                return
+            }
             selectionMode = false
             selectedCandidates.removeAll()
             actionMessage = nil
@@ -927,9 +997,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                 cancelSharePreparation()
                 invalidate(with: nil)
             }
-            else if selected == nil && authorized { reload() }
+            else if selected == nil && authorized && isVisible { reload() }
         }
         .onDisappear {
+            isVisible = false
             accessibilityFocusedTileID = nil
             cancelSharePreparation()
             showingAlbumPicker = false
@@ -938,11 +1009,11 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             actionBusy = false
             selectedCandidates.removeAll()
             selectionMode = false
-            if selected != nil || showingMap {
-                // A full-screen native child temporarily covers the Gallery.
-                // Cancel obsolete scanning, but do not zero the verified
-                // virtual-page count and flash an empty wall on Map return.
-                // Keep PhotoKit changes observed while the cover is active.
+            if selected != nil || showingMap ||
+               (phase == .active && authorized) {
+                // A Viewer, Map or ordinary foreground tab switch temporarily
+                // hides the Gallery. Keep the verified bounded page count;
+                // PhotoKit changes remain observed and can revoke it.
                 suspendForCoveredNavigation()
             } else {
                 invalidate(with: nil)
@@ -1232,10 +1303,23 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         // still goes through invalidate(with:), and Viewer return rechecks.
     }
 
+    private func verifiedNavigationReturnPage(
+        offset: Int
+    ) -> XDrivePhotoKitScanPage? {
+        guard phase == .active, authorized,
+              navigationReturnGeneration == generation,
+              let page = navigationReturnPage,
+              page.startOffset == offset,
+              page.totalAccessibleAssets == total,
+              page.items.count <= 64 else { return nil }
+        return page
+    }
+
     private func reload() {
         requestedOffset = returnPageOffset ?? savedOffset
         invalidate(with: nil)
         guard authorized, phase == .active else { return }
+        hasCompletedInitialRead = true
         let epoch = generation
         loading = true
         scanTask = Task { @MainActor in
@@ -1258,6 +1342,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private func invalidate(with message: String?) {
+        navigationReturnPage = nil
+        navigationReturnGeneration = nil
         accessibilityFocusedTileID = nil
         cancelSharePreparation()
         selectedCandidates.removeAll()
@@ -1268,6 +1354,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         scanTask?.cancel()
         scanTask = nil
         total = 0
+        hasCompletedInitialRead = false
         loading = false
         failure = message
     }
