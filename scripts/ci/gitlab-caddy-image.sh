@@ -14,6 +14,7 @@ GOSUMDB="${GOSUMDB:-sum.golang.org}"
 
 docker build \
   --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" \
+  --build-arg "BUILD_COMMIT=${CI_COMMIT_SHA:-$(git rev-parse HEAD)}" \
   --build-arg "GOPROXY=$GOPROXY" \
   --build-arg "GOSUMDB=$GOSUMDB" \
   -f deploy/Caddy.Dockerfile \
@@ -25,7 +26,9 @@ if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" == "1" ]]; then
   [[ "$version" == "$XDRIVE_RELEASE_VERSION" ]] || {
     echo "packaged Caddy image version mismatch: $version" >&2; exit 1;
   }
-  bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image
+  if [[ "${XDRIVE_GITLAB_STAGING_ONLY:-0}" != "1" ]]; then
+    bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image
+  fi
   echo "GitLab master Caddy package exported; runtime smoke is post-release"
   exit 0
 fi
