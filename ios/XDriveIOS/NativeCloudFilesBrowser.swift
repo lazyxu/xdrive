@@ -1408,7 +1408,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
             .accessibilityIdentifier("native-ios-files-open-recent")
         }
-        Section("个人收藏") {
+        Section("个人收藏文件夹") {
             DisclosureGroup("收藏夹和常用收藏", isExpanded: $favoriteFoldersExpanded) {
                 NavigationLink {
                     XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
@@ -1450,8 +1450,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                 }
             }
-        }
-        Section("快捷目录") {
+            // Keep Favorites and pinned shortcuts in the same home grouping
+            // as Web/PWA. Both nested disclosures retain their own load/status
+            // and permission guards, but do not consume separate long Sections.
             DisclosureGroup("固定的文件夹", isExpanded: $quickAccessExpanded) {
                 if quickAccess.matches(login.owner) {
                     ForEach(Array(quickAccess.items.prefix(isHomeEditing ? quickAccess.items.count : 5))) { item in
@@ -4445,7 +4446,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             Spacer(minLength: 6)
         }
         .contentShape(Rectangle())
-        .frame(minHeight: 44)
+        // Slightly taller than a bare minimum touch target: two-line long
+        // names remain readable in Dynamic Type and match PWA's row rhythm.
+        .frame(minHeight: 52)
     }
 
     private func requestLocation(for entry: XDriveIOSNativeFilesEntry) {
