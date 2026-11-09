@@ -38,6 +38,12 @@ different commit and label it as the selected source commit.
   manifest plus exact CLI, Windows EXE, Linux DEB and DSM SPK artifacts, then
   stages SHA-256 verified GitLab Packages and updates the Snapshot Release.
   Existing GitLab Release links retain their rollback protections.
+  Immediately before publishing Release links, a dedicated verifier requires
+  exactly four records (full Commit, channel, Server image, Caddy image) in the
+  CI-produced manifest; both fully qualified refs and 64-byte SHA256 digests
+  must be exact, unique, ordered and valid. A duplicate or malformed image
+  record fails closed, even when its Commit header matches.
+
 
 **Optional services:** Photo Face and Media Worker are outside the rolling
 Snapshot's core dependency graph. Each is built and published only after
