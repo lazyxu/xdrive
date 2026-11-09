@@ -181,9 +181,15 @@ test('native video canvas pages through current authorized neighboring media, no
     media.indexOf('/// Root and album-specific media wall'))
   const originalDetail = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
     cloud.indexOf('/// SwiftUI\'s ForEach identity'))
-  const canvas = video.slice(video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player)'),
-    video.indexOf('if showChrome {'))
-  const controls = video.slice(video.indexOf('if showChrome {'))
+  // The rendering layer now accepts an exact first-frame callback. Slice
+  // from the actual AVPlayerLayer through the canvas-only swipe and buffering
+  // overlay; do not mistake an obsolete anchor for an empty View scope.
+  const canvasStart = video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player, onFirstFrame: onFirstFrame)')
+  const chromeStart = video.indexOf('if showChrome {', canvasStart)
+  assert.ok(canvasStart >= 0 && chromeStart > canvasStart,
+    'missing video rendering layer, swipe canvas or buffering overlay')
+  const canvas = video.slice(canvasStart, chromeStart)
+  const controls = video.slice(chromeStart)
   assert.match(video, /let onNavigateSwipe: \(\(Int\) -> Void\)\?/)
   assert.match(video, /onNavigateSwipe: \(\(Int\) -> Void\)\? = nil/)
   assert.match(canvas, /\.simultaneousGesture\(\s*DragGesture\(minimumDistance: 72, coordinateSpace: \.local\)/)
