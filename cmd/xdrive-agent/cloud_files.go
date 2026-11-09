@@ -1210,7 +1210,7 @@ func (c *agentController) cloudUploadWithConflictPolicyTracked(
 		if result.Skipped {
 			handle.CompleteSkipped()
 		} else {
-			finishAgentCloudTransfer(handle, nil)
+			handle.CompleteUploadBytes(result.TransferredBytes)
 		}
 	}
 	if !result.Skipped {
