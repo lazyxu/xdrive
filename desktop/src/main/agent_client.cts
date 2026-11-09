@@ -274,6 +274,9 @@ export type AgentOfflineHostPlanStatus = {
   }
 }
 
+export type AgentReleaseBundleState =
+  import('../../../ui/shared/src/release-bundles').XDriveReleaseBundleState
+
 export type AgentServerUpdateState = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
@@ -4912,6 +4915,26 @@ export class AgentIPCClient {
 
   serverUpdate() {
     return this.request<AgentServerUpdateState>('GET', '/v1/server-update')
+  }
+
+  currentReleaseBundle() {
+    return this.request<AgentReleaseBundleState>('GET', '/v1/release-bundle/current')
+  }
+
+  retryReleaseBundle() {
+    return this.request<{ state: 'queued' }>('POST', '/v1/release-bundle/retry', {}, 45_000)
+  }
+
+  downloadReleaseBundle(commit: string, filename: string, destination: string) {
+    return this.request<{ saved: true }>('POST', '/v1/release-bundle/download',
+      { commit, filename, destination }, 30 * 60_000)
+  }
+
+  installCurrentServerCommit(commit: string, filename: string) {
+    // A lost ACK may follow a completed installation. NEVER automatically
+    // replay a privilege-changing user-confirmed operation over Agent IPC.
+    return this.request<AgentUpdateState>('POST', '/v1/release-bundle/install',
+      { commit, filename, confirm: true }, 15 * 60_000, undefined, false)
   }
 
   offlineImports() {
