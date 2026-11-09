@@ -256,7 +256,7 @@ internal fun NativeClipboardScreen(
     }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("剪贴板", style = MaterialTheme.typography.headlineSmall)
-        Text("当前账号的加密文本收件箱。系统剪贴板只在点击后读取或写入。",
+        Text("当前账号的加密收件箱；图片/文件使用 CAS 引用。系统剪贴板只在点击后读取或写入。",
             style = MaterialTheme.typography.bodySmall)
         if (message != null) Text(message!!,color = MaterialTheme.colorScheme.error,
             modifier=Modifier.testTag("native-clipboard-status"))
