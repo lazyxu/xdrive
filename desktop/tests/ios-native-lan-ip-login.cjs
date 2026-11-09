@@ -43,8 +43,12 @@ test('one anonymous no-redirect HTTPS probe selects a fixed origin before creden
   assert.match(route, /throw XDriveIOSLANPairingFailure\.ipCertificateInvalid/)
   assert.match(route, /let timeout: TimeInterval = pairing \? 8 : 3/)
   assert.match(trust, /SecTrustSetAnchorCertificatesOnly\(trust, true\)/)
-  assert.match(trust, /return SecTrustEvaluateWithError\(trust, nil\)/)
-  assert.doesNotMatch(trust, /SecTrustCopyCertificateChain\(trust\)/)
+  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{ return \.trusted \}/)
+  assert.match(trust, /SecTrustCopyCertificateChain\(trust\)/)
+  assert.match(trust, /SecPolicyCreateBasicX509\(\)/)
+  assert.ok(trust.indexOf('if SecTrustEvaluateWithError(trust, nil) { return .trusted }') <
+    trust.indexOf('SecTrustCopyCertificateChain(trust)'),
+  'secondary certificate-chain diagnosis must follow strict IP SAN + paired CA trust refusal')
   assert.doesNotMatch(route, /http:\/\//)
   assert.match(route, /\.cannotConnectToHost, \.timedOut, \.networkConnectionLost/)
   const fallback = route.slice(route.indexOf('static func selectOrigin(\n'),
@@ -117,7 +121,10 @@ test('downstream PhotoKit, Gallery and original uploads use verified Owner origi
 
 test('iOS pairing identifies the real failure stage while preserving strict root/IP identity', () => {
   assert.match(route, /static func pairingProbeFailure\(_ error: Error\)/)
-  assert.match(route, /case \.secureConnectionFailed, \.serverCertificateUntrusted/)
+  assert.match(route, /case \.secureConnectionFailed:[\s\S]*?return \.ipTLSHandshakeFailed\(url\.errorCode\)/)
+  assert.match(route, /case \.serverCertificateUntrusted, \.serverCertificateHasBadDate/)
+  assert.doesNotMatch(route, /case \.secureConnectionFailed, \.serverCertificateUntrusted/,
+    'generic transport handshake failures cannot claim confirmed certificate identity denial')
   assert.match(route, /case \.redirectRefused: return \.ipVersionRedirect/)
   assert.match(route, /case \.invalidLANProbe: return \.ipVersionInvalid/)
   assert.match(route, /ipVersionStatus\(http\.statusCode\)/)
