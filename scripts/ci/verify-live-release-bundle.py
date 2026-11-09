@@ -253,6 +253,9 @@ def check_authenticated_range_download(origin, token, artifact):
 
 def check_sigstore(commit, raw):
     """Independent GitHub OIDC/Sigstore verifier, using gh (no Host credentials)."""
+    channel = json.loads(raw.decode("utf-8")).get("channel")
+    if not COMMIT.fullmatch(commit) or channel not in ("master", "stable"):
+        raise GateError("Sigstore acceptance requires exact Commit and release channel")
     gh = shutil.which("gh")
     if not gh:
         raise GateError("gh CLI required for independent Sigstore verification")
@@ -265,8 +268,16 @@ def check_sigstore(commit, raw):
             "--source-digest", commit, "--deny-self-hosted-runners",
             "--format", "json",
         ]
+        if channel == "master":
+            command += ["--source-ref", "refs/heads/master"]
+        # The public verifier never needs an Owner bearer even if the operator
+        # provided one for a later authenticated running Server API check.
+        env = {key: value for key, value in os.environ.items() if key not in (
+            "XD_BUNDLE_OWNER_TOKEN", "XD_OWNER_TOKEN", "XD_ACCESS_TOKEN",
+            "XDRIVE_API_TOKEN",
+        )}
         try:
-            p = subprocess.run(command, capture_output=True, text=True,
+            p = subprocess.run(command, env=env, capture_output=True, text=True,
                                timeout=90, check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise GateError("independent Sigstore verification unavailable") from exc

@@ -210,6 +210,22 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_sigstore_requires_master_ref_and_never_passes_owner_token(self):
+        from types import SimpleNamespace
+        proof = {"verificationResult": {"signature": {"certificate": {
+            "sourceRepositoryIdentifier": audit.REPO_ID,
+        }}}}
+        with patch.object(audit.shutil, "which", return_value="/usr/bin/gh"), \
+             patch.object(audit.subprocess, "run", return_value=SimpleNamespace(
+                 returncode=0, stdout=json.dumps([proof]), stderr="")) as run, \
+             patch.dict(audit.os.environ, {"XD_BUNDLE_OWNER_TOKEN": "secret-test-token"}):
+            audit.check_sigstore(COMMIT, self.raw)
+            command = run.call_args.args[0]
+            self.assertEqual(command[command.index("--source-ref") + 1],
+                             "refs/heads/master")
+            self.assertEqual(command[command.index("--source-digest") + 1], COMMIT)
+            self.assertNotIn("XD_BUNDLE_OWNER_TOKEN", run.call_args.kwargs["env"])
+
     def test_unsigned_ipa_never_an_auto_install_admission(self):
         item = dict(self.item, platform="ios", filename="xDrive-unsigned.ipa",
                     install_mode="manual")
