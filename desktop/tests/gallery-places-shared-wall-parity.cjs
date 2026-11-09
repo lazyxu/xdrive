@@ -45,6 +45,38 @@ const first = (n=142) => ({
   timeline_group_sets: fullGroups(n),
 })
 
+test('Viewer and resize keep only validated UI date/column hints',()=>{
+  const state = loadPolicy('ui/shared/src/media-gallery-places-photo-drawer.ts')
+  const select = {
+    bounds:{coordinate_space:'bd09ll',west:118,south:30,east:122,north:33},
+    cell_x:3,cell_y:4,asset_id:23,node_id:45,node_revision:7,photo_count:142,
+  }
+  const scope = {filters:{sort_by:'captured',sort_dir:'desc'},albumKey:''}
+  const good = {
+    expanded:true,scrollTop:880,scrollLeft:0,
+    loadedCount:48,timeScale:'month',columns:5,
+    anchorIndex:72,anchorViewportOffset:33,
+  }
+  assert.equal(state.xDriveRememberPlacesDrawerViewerReturn(
+    'gallery-parity-1',select,scope,1000,good),true)
+  assert.deepEqual(
+    state.xDriveTakePlacesDrawerViewerReturn('gallery-parity-1',1001).presentation,
+    good)
+  for(const invalid of [
+    {...good,timeScale:'invalid'},
+    {...good,columns:1},
+    {...good,columns:11},
+    {...good,columns:NaN},
+    {...good,timeScale:undefined,columns:3},
+  ]){
+    assert.equal(state.xDriveRememberPlacesDrawerViewerReturn(
+      'gallery-parity-2',select,scope,1000,invalid),false)
+  }
+  assert.match(parent,/data-xdrive-places-photo-scale/)
+  assert.match(parent,/data-xdrive-media-gallery-virtual-timeline/)
+  assert.match(drawer,/data-xdrive-places-photo-columns/)
+})
+
 test('date grouping uses only complete same-Owner first-page indices, not sparse resident dates',()=>{
   const got = policy.xDrivePlacesPhotoTimelineGroups(first())
   assert.ok(got)
