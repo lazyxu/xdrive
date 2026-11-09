@@ -1034,7 +1034,6 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	requireRaw(t, "GitLab source-only release assets bypass optional stage",
 		gitlabRelease, "needs: []  # Source-only: do not wait for Photo Face / Media Worker builds.")
 
-
 	requireRaw(t, "GitLab release pipeline", gitlabRelease,
 		`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`,
 		"release-assets:",
