@@ -23,7 +23,7 @@ import (
 func (m *clientUpdateManager) InstallCurrentServerCommit(
 	ctx context.Context, cli *client.Client, expectedCommit, filename string,
 ) (clientUpdateState, error) {
-	if !m.Snapshot().InstallSupported {
+	if !m.Snapshot().ManualInstallSupported {
 		return m.Snapshot(), fmt.Errorf("当前平台未提供可验证的系统安装授权；请下载当前 Server 安装包后使用平台安装程序")
 	}
 	opCtx, ok := m.beginOperation(ctx)
