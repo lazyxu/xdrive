@@ -1,4 +1,4 @@
-import { IncrementalSHA256 } from './uploadFullSha256.mjs'
+import { IncrementalSHA256, feedFullUploadHash } from './uploadFullSha256.mjs'
 import type { PhotoContentSources } from '../../ui/shared/src/photo-content-identity'
 import { photoContentPath, photoContentSelection, validPhotoContentKey } from '../../ui/shared/src/photo-content-identity'
 import { xDriveBaiduNativeCellsFilterParams, xDriveBaiduNativeViewportRangeParams, xDriveValidBaiduNativeViewportRangePage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
@@ -5342,22 +5342,6 @@ export class XDriveApi {
 }
 
 type UploadHashScratch = { buffer: ArrayBuffer | null; byob: boolean }
-
-// Yield between bounded JS hash updates so large video preflights remain
-// cancellable, and never make the main thread process an 8 MiB chunk at once.
-async function feedFullUploadHash(
-  fullFileHasher: IncrementalSHA256, bytes: Uint8Array, check?: () => void,
-) {
-  const windowSize = 1024 * 1024
-  for (let offset = 0; offset < bytes.byteLength; offset += windowSize) {
-    check?.()
-    fullFileHasher.update(bytes.subarray(offset, Math.min(offset + windowSize, bytes.byteLength)))
-    if (offset + windowSize < bytes.byteLength) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    }
-  }
-  check?.()
-}
 
 async function sha256Blob(
   blob: Blob, scratch: UploadHashScratch,
