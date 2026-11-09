@@ -77,10 +77,10 @@ test('finalized SHA-256 state cannot silently be reused', () => {
 
 test('Web CAS UploadSession sends the full-file digest with canonical chunk hashes', async () => {
   const source = await readFile(new URL('../src/api.ts', import.meta.url), 'utf8')
-  assert.match(source, /const fullFileHasher = new IncrementalSHA256\\(\\)/)
-  assert.match(source, /sha256Blob\\(file\\.slice\\(start, end\\), hashScratch, fullFileHasher, tracking\\.check\\)/)
-  assert.match(source, /const fullFileSHA256 = fullFileHasher\\.digestHex\\(\\)/)
-  assert.match(source, /chunk_sha256: chunkHashes,[\\s\\S]{0,90}sha256: fullFileSHA256/)
-  assert.match(source, /session\\.instant_cas_reused \\? file\\.size : 0/)
-  assert.match(source, /existing\\.reused\\) casReusedBytes/)
+  assert.match(source, /const fullFileHasher = new IncrementalSHA256\(\)/)
+  assert.match(source, /sha256Blob\(file\.slice\(start, end\), hashScratch, fullFileHasher, tracking\.check\)/)
+  assert.match(source, /const fullFileSHA256 = fullFileHasher\.digestHex\(\)/)
+  assert.match(source, /chunk_sha256: chunkHashes,[\s\S]{0,90}sha256: fullFileSHA256/)
+  assert.match(source, /session\.instant_cas_reused \? file\.size : 0/)
+  assert.match(source, /existing\.reused\) casReusedBytes/)
 })
