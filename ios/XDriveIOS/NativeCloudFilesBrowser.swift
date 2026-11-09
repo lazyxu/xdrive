@@ -956,6 +956,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var showingIndexJump = false
     @State private var jumpIndexDraft = ""
     @State private var pendingJumpIndex: Int?
+    @State private var pendingJumpStartedAt: TimeInterval?
     @State private var pathBusy = false
     @State private var pathError: String?
     @State private var pathDestination: XDriveIOSNativeFilesFolder?
@@ -3559,6 +3560,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             quickHistoryReadAttempted = false
             showingAncestorsSheet = false
             pendingJumpIndex = nil
+            pendingJumpStartedAt = nil
             showingIndexJump = false
             pendingQuickOperation = nil
             showingBatchProperties = false
@@ -3768,19 +3770,39 @@ struct XDriveIOSNativeFilesBrowser: View {
                 let node = model.entries[target - model.startOffset]
                 // Capture the *non-optional* authorized Owner before a delayed
                 // scroll. A logout while Task.yield() is pending must retire it.
-                let expectedFolder = parentID
+                guard let expectedFolder = parentID else { return }
+                let startedAt = pendingJumpStartedAt
                 pendingJumpIndex = nil
+                pendingJumpStartedAt = nil
                 Task { @MainActor in
                     await Task.yield()
                     guard parentID == expectedFolder,
                           XDriveIOSNativePhotoOwnerScope.matches(
                               login.owner, expectedOwner
                           ), model.verifiedPage,
+                          model.canResume(
+                            owner: expectedOwner, folderID: expectedFolder,
+                            query: activeQuery, filters: searchFilters,
+                            sort: sort, order: order,
+                            grouping: grouping, foldersFirst: foldersFirst
+                          ),
                           model.entries.contains(where: { $0.id == node.id })
                     else { return }
                     returnScroll.scrollTo(node.id, anchor: .center)
                     lastAppearedNodeID = node.id
                     persistVisibleAnchorSoon()
+                    // This measures receipt-to-authorized-scroll-command, not
+                    // actual FPS/visible pixels. The current Owner and sorting
+                    // still have to pass revalidation after Task.yield.
+                    if let startedAt,
+                       ProcessInfo.processInfo.arguments.contains(
+                         "-xdrive-ui-navigation-smoke"
+                       ) {
+                        let elapsed = max(0, Int(
+                            (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
+                        ))
+                        print("IOS_NATIVE_FILES_JUMP_VERIFIED_MS value=\(elapsed)")
+                    }
                 }
             }
             if !loading && model.verifiedPage { persistVerifiedFolder() }
@@ -3941,6 +3963,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
         pendingJumpIndex = number - 1
+        pendingJumpStartedAt = ProcessInfo.processInfo.systemUptime
         pendingNavigationReturnNodeID = nil
         lastAppearedNodeID = nil
         offset = page
