@@ -251,7 +251,8 @@ FROM tree ORDER BY depth, id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2)
 			}
 		}
 		// The current Source may have perfectly synced SourceItems while
-		// another same-Owner Source still claims the very same live Nodes.
+		// another Source (including a historically malformed foreign-Owner Source)
+		// still claims the very same live Nodes.
 		// Only inspecting this Source's own items can therefore incorrectly
 		// classify a contested subtree as apparently exclusive. Count the
 		// distinct contested NodeIDs using the exact bounded snapshot, not
@@ -261,13 +262,17 @@ FROM tree ORDER BY depth, id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2)
 		for _, node := range nodes {
 			inventoryNodeIDs = append(inventoryNodeIDs, node.ID)
 		}
+		// Historical NOT VALID ownership constraints can leave a different
+		// Owner's Source/SourceItem referring to these Node IDs. A migration
+		// preview is advisory, but must never label such contested content
+		// apparently exclusive. Do not filter competing claims by OwnerID.
 		var crossSourceItemClaims int64
 		if err := tx.Raw(`
 SELECT COUNT(DISTINCT item.node_id) FROM xd_source_items AS item
 JOIN xd_sources AS other ON other.id = item.source_id
-WHERE other.owner_id = ? AND other.id <> ?
+WHERE other.id <> ?
 	AND item.node_id IN ?`,
-			source.OwnerID, source.ID, inventoryNodeIDs).
+			source.ID, inventoryNodeIDs).
 			Scan(&crossSourceItemClaims).Error; err != nil {
 			return err
 		}
@@ -330,13 +335,13 @@ WITH RECURSIVE ancestors AS (
 	WHERE parent.owner_id = ? AND parent.deleted_at IS NULL
 )
 SELECT COUNT(*) FROM xd_sources AS other
-WHERE other.owner_id = ? AND other.id <> ?
+WHERE other.id <> ?
 	AND other.target_node_id IS NOT NULL
 	AND (
 		other.target_node_id IN (SELECT id FROM ancestors)
 		OR other.target_node_id IN ?
 	)`, target.ID, source.OwnerID, source.OwnerID,
-			source.OwnerID, source.ID, descendantIDs).
+			source.ID, descendantIDs).
 			Scan(&preview.OtherSourceClaims).Error; err != nil {
 			return err
 		}
