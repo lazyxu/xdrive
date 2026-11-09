@@ -232,7 +232,7 @@ func TestLegacyYikeFlatMixedSplitRejectsForeignOwnerDirectChild(t *testing.T) {
 			db := openYikeMigrationTestDB(t)
 			user, oldRoot, ordinary, item, source := setupLegacyYikeFlatMixed(t, db)
 			foreignUser := meta.User{
-				Username: "migration-foreign-child-" + uuid.NewString(),
+				Username:     "migration-foreign-child-" + uuid.NewString(),
 				PasswordHash: "x", Role: meta.UserRoleUser,
 			}
 			if err := db.Create(&foreignUser).Error; err != nil {
@@ -346,7 +346,7 @@ func TestLegacyYikeCleanTargetRejectsForeignOwnerDescendant(t *testing.T) {
 				t.Fatal(err)
 			}
 			foreignOwner := meta.User{
-				Username: "legacy-other-owner-" + uuid.NewString(),
+				Username:     "legacy-other-owner-" + uuid.NewString(),
 				PasswordHash: "x", Role: meta.UserRoleUser,
 			}
 			if err := db.Create(&foreignOwner).Error; err != nil {
