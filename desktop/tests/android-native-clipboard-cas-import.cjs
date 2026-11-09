@@ -16,6 +16,7 @@ test('Android native SAF file picker never silently submits Clipboard message', 
   assert.match(ui, /controller\.clipboardImportLocalFile\(context, uri\)/)
   assert.match(ui, /referenceNodeID = result\.id\.toString\(\)/)
   assert.match(ui, /再次点击定向加密发送/)
+  assert.match(ui, /if \(referenceKind != pair\.first\) \{\s*referenceKind = pair\.first\s*referenceNodeID = ""/)
   assert.doesNotMatch(ui.slice(ui.indexOf('val localFilePicker ='), ui.indexOf('Column(Modifier.fillMaxSize')),
     /clipboardCreateDirected\(/)
 })
