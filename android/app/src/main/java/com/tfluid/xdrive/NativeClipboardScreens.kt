@@ -146,22 +146,26 @@ internal fun NativeClipboardScreen(
     }
     // Recipient discovery has no device token: only the current interactive
     // Owner may read public keys. Discard late results on Lock or A→B→A.
-    // One-shot public recipient discovery. No background polling or OS clipboard read.
-    LaunchedEffect(epoch, key, "recipient-directory") {
+    // A single scoped recipient-directory GET on each visible foreground
+    // entry. Lifecycle STOP cancels it; there is NO background polling.
+    LaunchedEffect(epoch, key, lifecycleOwner) {
         if (key == null) return@LaunchedEffect
-        val snapshot = actionFence.capture()
-        try {
-            val received = controller.clipboardDevices()
-            if (stillSession(snapshot) && key != null) {
-                devices = received
-                if (targetID.isNotEmpty() && received.none { it.deviceID == targetID }) {
-                    targetID = ""
-                    referenceNodeID = ""
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (!stillOwner() || key == null) return@repeatOnLifecycle
+            val snapshot = actionFence.capture()
+            try {
+                val received = controller.clipboardDevices()
+                if (stillSession(snapshot) && key != null) {
+                    devices = received
+                    if (targetID.isNotEmpty() && received.none { it.deviceID == targetID }) {
+                        targetID = ""
+                        referenceNodeID = ""
+                    }
                 }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (stillSession(snapshot)) devices = emptyList()
             }
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) {
-            if (stillSession(snapshot)) devices = emptyList()
         }
     }
 
