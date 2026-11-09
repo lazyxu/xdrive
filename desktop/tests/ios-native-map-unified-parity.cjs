@@ -149,3 +149,27 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(runtimeWorkflow, /synthetic-gps-map-second\.jpg/)
   assert.match(runtimeWorkflow, /xcodebuild test/)
 })
+
+test('iOS 18.5 Settings permission smoke proves exact app detail before Photos selection', () => {
+  // The candidate Simulator left the Apps search result "xDrive" Selected,
+  // yet could still click an unrelated PHOTOS row and its Full Access option.
+  // That is a false-positive authorization route, not an app privacy bug.
+  assert.match(simulator, /private func xDriveSettingsDetailVisible\(/)
+  assert.match(simulator, /settings\.navigationBars\.matching\(/)
+  assert.match(simulator, /return detail\.exists && !settings\.searchFields\.firstMatch\.exists/)
+  assert.match(simulator, /matching\(identifier: "com\.lazyxu\.xdrive\.ios"\)/)
+  assert.match(simulator, /appEntry\.tap\(\)/)
+  assert.match(simulator, /settings\.collectionViews\.firstMatch/)
+  assert.match(simulator, /MAP_PHOTOS_APP_DETAIL AX tree/)
+  assert.match(simulator, /MAP_PHOTOS_CHILD_PAGE AX tree/)
+  assert.match(simulator, /Never select Photos outside the real xDrive app Settings/)
+  assert.match(simulator, /Do not choose a Full Access option on an unrelated page/)
+  const inSettings = simulator.indexOf('openRealXDriveSettingsPage(settings, in: app)')
+  const findPhotos = simulator.indexOf('let photosLabel = NSPredicate(', inSettings)
+  const findFullAccess = simulator.indexOf('let fullLabel = NSPredicate(', findPhotos)
+  assert.ok(inSettings > 0 && inSettings < findPhotos && findPhotos < findFullAccess,
+    'Do not search for Photos or Full Access on the parent Apps list')
+  assert.match(simulator, /XCTAssertTrue\(xDriveSettingsDetailVisible\(settings\)/)
+  assert.match(simulator, /app\.activate\(\)/)
+  assert.match(simulator, /Expected actual user-granted Full Access; still denied or Limited/)
+})
