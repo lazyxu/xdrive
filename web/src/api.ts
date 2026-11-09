@@ -748,6 +748,7 @@ export class XDriveApi {
     state: 'completed' | 'partial' | 'failed' | 'cancelled'
     error?: string
     skipped?: boolean
+    transferredBytes?: number
   }) {
     webTransferStore.finishLifecycle(id, input)
     const owner = webUploadGroupOwners.get(id)
@@ -3895,7 +3896,7 @@ export class XDriveApi {
       }
       if (session.status === 'finalized' && session.result) {
         reportProgress(file.size)
-        if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size)
+        if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size, 0)
         return { node: session.result, skipped: false, transferred_bytes: 0 }
       }
 
@@ -3944,7 +3945,10 @@ export class XDriveApi {
       tracking.check()
       if (!finalized.result) throw new ApiError(500, 'Finalize upload returned no file')
       reportProgress(file.size)
-      if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size)
+      if (!managedExternally) {
+        if (finalized.status === 'skipped') webTransferStore.completeSkipped(activeTransferID, file.size)
+        else webTransferStore.complete(activeTransferID, file.size, file.size, transferredBytes)
+      }
       return {
         node: finalized.result,
         skipped: finalized.status === 'skipped',
