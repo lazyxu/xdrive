@@ -361,5 +361,39 @@ class BundleCacheTests(unittest.TestCase):
             unrelated.wait(timeout=3)
 
 
+    def test_live_matching_worker_pid_still_prevents_duplicate(self):
+        """Only the exact running worker for this Commit owns the PID fence."""
+        home = self.root / "active-pid-home"
+        for name in ("bin", "config", "logs", "state", "data/release-bundles"):
+            (home / name).mkdir(parents=True, exist_ok=True)
+        sha = "e" * 40
+        (home / "config" / ".env").write_text(
+            f"XD_RELEASE_COMMIT={sha}\n", encoding="utf-8",
+        )
+        worker = home / "bin" / "release_bundle.py"
+        worker.write_text("import time\ntime.sleep(15)\n", encoding="utf-8")
+        active = subprocess.Popen(
+            ["python3", str(worker), "--commit", sha],
+            cwd=self.root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        try:
+            pid_file = home / "state" / "release-bundle-worker.pid"
+            pid_file.write_text(str(active.pid), encoding="utf-8")
+            script = Path(__file__).resolve().parents[1] / "scripts" / "server-control.sh"
+            env = {**os.environ, "XD_CONFIG_DIR": str(home),
+                   "XD_HOST_CONTROL_SOURCE_ONLY": "1"}
+            run = subprocess.run(
+                ["bash", "-c", 'source "$1"; release_bundle_enqueue true',
+                 "fixture", str(script)],
+                cwd=self.root, env=env, capture_output=True, text=True, timeout=8,
+            )
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertEqual(int(pid_file.read_text()), active.pid,
+                "active exact-commit worker was needlessly started twice")
+        finally:
+            active.terminate()
+            active.wait(timeout=3)
+
+
 if __name__ == "__main__":
     unittest.main()
