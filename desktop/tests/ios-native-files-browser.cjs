@@ -87,10 +87,17 @@ test('native Browse home uses a verified cloud location rather than automaticall
 });
 
 test('native SwiftUI search collapses in the toolbar and restores directory on clear', () => {
-  assert.match(view, /\.searchable\(\s*text: \$queryDraft,/)
+  assert.match(view, /private struct XDriveIOSNativeFilesSearchPresentation: ViewModifier/)
+  assert.match(view, /if #available\(iOS 17\.0, \*\)/)
+  assert.match(view, /content\.searchable\(\s*text: \$text, isPresented: \$presented,/)
+  assert.match(view, /content\.searchable\(\s*text: \$text,\s*placement:/)
+  assert.match(view, /\.modifier\(XDriveIOSNativeFilesSearchPresentation\(\s*text: \$queryDraft, presented: \$searchPresented/)
   assert.match(view, /placement: \.navigationBarDrawer\(displayMode: \.automatic\)/)
   assert.match(view, /prompt: "搜索全部文件"/)
-  assert.match(view, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
+  assert.match(view, /\.onSubmit\(of: \.search\) \{\s*submitSearch\(\)[\s\S]*?searchPresented = false\s*\}/)
+  assert.match(view, /\.onDisappear \{[\s\S]*?searchPresented = false\s*chunked\.invalidate\(\)/)
+  // Committing a query must retain the Server-scoped search and return anchor.
+  assert.match(view, /activeQuery = query\s*reload\(resetOffset: true\)/)
   assert.match(view, /private func submitSearch\(\)/)
   assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
   assert.match(view, /if searchReturnOffset == nil \{\s*let saved = rememberedPosition\(\)\s*searchReturnOffset = saved\?\.pageOffset \?\? offset\s*searchReturnNodeID = saved\?\.nodeID/)
@@ -146,8 +153,8 @@ test('Browse home displays only verified favorite folders as native direct navig
 
 test('native Files full-library search debounces valid keyboard drafts and cancels superseded searches', () => {
   const chrome = view.slice(view.indexOf('private var filesChrome:'), view.indexOf('private var filesModals:'))
-  assert.match(chrome, /\.searchable\(\s*text: \$queryDraft,/)
-  assert.match(chrome, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
+  assert.match(chrome, /\.modifier\(XDriveIOSNativeFilesSearchPresentation\(\s*text: \$queryDraft, presented: \$searchPresented/)
+  assert.match(chrome, /\.onSubmit\(of: \.search\) \{\s*submitSearch\(\)[\s\S]*?searchPresented = false\s*\}/)
   assert.match(chrome, /\.task\(id: queryDraft\) \{/)
   assert.match(chrome, /let query = queryDraft\.trimmingCharacters\(in: \.whitespacesAndNewlines\)/)
   assert.match(chrome, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
