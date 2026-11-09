@@ -2336,6 +2336,24 @@ function createMainWindow(showOnReady = true) {
       desktopPlacesGuestNavigationAllowed(rawURL,identity)
     guest.on('will-navigate',(event,url)=>{if(!authorized(url))event.preventDefault()})
     guest.on('will-redirect',(event,url)=>{if(!authorized(url))event.preventDefault()})
+    // Electron will-navigate does NOT fire for hash/history.pushState routes.
+    // Those in-page transitions are non-cancellable: synchronously retire
+    // this one-use Guest's network partition and forcibly destroy it before
+    // an unreviewed React route can retain a privileged map browser session.
+    const revokeInPageNavigation=(rawURL:string)=>{
+      if(authorized(rawURL))return
+      // A late event from an already retired Guest cannot revoke the newer
+      // Owner's independent HTTPS partition.
+      if(desktopPlacesGuests.get(guest.id)===identity)closeDesktopPlacesGuests()
+      if(!guest.isDestroyed())guest.destroy()
+    }
+    guest.on('did-start-navigation',details=>{
+      if(details.isMainFrame && details.isSameDocument)
+        revokeInPageNavigation(details.url)
+    })
+    guest.on('did-navigate-in-page',(_event,url,isMainFrame)=>{
+      if(isMainFrame)revokeInPageNavigation(url)
+    })
     guest.on('destroyed',()=>desktopPlacesGuests.delete(guest.id))
   })
   win.webContents.on('will-navigate', (event, url) => {
