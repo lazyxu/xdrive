@@ -8,6 +8,19 @@ import UIKit
 final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    // XCTest has its own AX/idling overhead. These timings are comparative
+    // navigation diagnostics, not device FPS or an animation-duration claim.
+    private var navigationStarted: Date?
+    private var navigationID: String?
+
+    private func reportNavigationReady(_ page: String) {
+        guard let start = navigationStarted, let route = navigationID else { return }
+        let milliseconds = Int((Date().timeIntervalSince(start) * 1000).rounded())
+        print("IOS_NATIVE_NAVIGATION_READY_MS route=\(route) page=\(page) value=\(milliseconds)")
+        navigationStarted = nil
+        navigationID = nil
+    }
+
     private func launch(syntheticOwner: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
@@ -27,6 +40,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         let control = target(id, in: app)
         XCTAssertTrue(control.waitForExistence(timeout: 15),
                       "Missing native navigation control: \(id)")
+        navigationStarted = Date()
+        navigationID = id
         control.tap()
         XCTAssertEqual(app.state, .runningForeground, "App exited after \(id)")
     }
@@ -35,12 +50,14 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         XCTAssertTrue(target("native-ios-files-section-browse", in: app)
             .waitForExistence(timeout: 15), "Files quick rail disappeared")
         XCTAssertEqual(app.state, .runningForeground)
+        reportNavigationReady("files")
     }
 
     private func checkGallery(_ app: XCUIApplication) {
         XCTAssertTrue(target("native-ios-gallery-source-unified", in: app)
             .waitForExistence(timeout: 15), "Gallery source rail disappeared")
         XCTAssertEqual(app.state, .runningForeground)
+        reportNavigationReady("gallery")
     }
 
     func testRapidGalleryFilesTabOscillationPreservesBothShells() {
