@@ -128,3 +128,7 @@ feat/release-bundle-4152-url-encoding-20261109	7a454764341f16e4a1b836fec99626be3
 fix/gitlab-release-monotonic-independent-images-20261109	266b65a9528516143e9d5ff514fc1f92ec19f717	strict ancestor of latest GitLab release successor #4163 branch: ahead=12 behind=0
 fix/ios-map-4125-ci-repair-staging-20261109	d41b3a004d08f685edb3540411e1e9772699a025	exact duplicate of retained fix/ios-exact-trip-map-view-lease-region-fit-20261108, preserve retained source
 fix/ios-files-no-session-destination-simulator-20261109	763705abe266cb28ff54a56cb9443768116c8aac	exact duplicate of open Gallery/Files PR #4158 HEAD; open PR source remains protected
+
+# 2026-11-09: archived source aliases of merged Clipboard #4124; retire only matching SHA under guarded Actions.
+dev/clipboard-4124-seven-scope-20261108	4aa57535ea2c6df9fa9ca9b32846a52a194321de	2026-11-09 audit: 40 source paths all included among merged full-green Clipboard #4124 41 paths; inspected 12 legacy test groups and all existing test identities are present in accepted master, new code/test coverage extends them; local recipient key retirement preserved
+dev/clipboard-local-image-cas-upload-20261108	de32227948a3b7505df57c9afc3d4c36a3c928e2	2026-11-09 audit: only 3 Web Clipboard PNG/CAS test and data-port paths, each implemented and expanded in merged #4124; all four old PNG user-gesture, permission and CAS tests retained in master
