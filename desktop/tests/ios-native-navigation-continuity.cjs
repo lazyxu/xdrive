@@ -952,7 +952,7 @@ const scenarios = [
       },
       {
         "file": "x",
-        "pattern": "func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels\\(\\)",
+        "pattern": "func testTrashDeniedNoSessionThenFilesRailAndGalleryReturnKeepsPixels\\(\\)",
         "flags": ""
       },
       {
@@ -1028,6 +1028,41 @@ const scenarios = [
       {
         "file": "p",
         "pattern": "\"capture_mode\": \"tap-adjacent\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "82 No-session Cloud and Trash routes deny unauthenticated retries but signed-in Trash can retry",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "struct XDriveIOSNativeFilesNoSessionRoute: View \\{",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "Text\\(\"当前没有有效的原生登录会话",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "Label\\(\"返回文件\", systemImage: \"chevron\\.left\"\\)",
+        "flags": ""
+      },
+      {
+        "file": "t",
+        "pattern": "Button\\(\"重试\"\\) \\{ reload\\(\\) \\}[\\s\\S]*?native-ios-files-trash-retry",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "XCTAssertFalse\\(target\\(\"native-ios-files-trash-retry\", in: app\\)\\.exists",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "XCTAssertFalse\\(target\\(\"native-ios-files-retry\", in: app\\)\\.exists",
         "flags": ""
       }
     ]
