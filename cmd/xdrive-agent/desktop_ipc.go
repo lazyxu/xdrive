@@ -805,6 +805,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/item", h.mediaItem)
 	mux.HandleFunc("GET /v1/cloud/node-location", h.nodeLocation)
+	mux.HandleFunc("GET /v1/cloud/clipboard-file", h.cloudClipboardFile)
 	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
 	mux.HandleFunc("GET /v1/media/index-status", h.mediaIndexStatus)
 	mux.HandleFunc("POST /v1/media/selection-snapshot", h.mediaCreateSelectionSnapshot)

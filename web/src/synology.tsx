@@ -8,7 +8,8 @@ import {
   useXDriveWorkspaceNavigationState,
 } from '@xdrive/ui/mui'
 import { XDriveDSMLoginNoCommitError } from '@xdrive/ui/mui'
-import type { XDriveSynologyBackupLocalClient } from '@xdrive/ui/mui'
+import type { XDriveSynologyBackupLocalClient, XDriveSynologyClipboardFileReference } from '@xdrive/ui/mui'
+import { XDriveSynologyClipboardReferenceViewer, type XDriveDSMClipboardViewerSelection } from '../../ui/shared/src/mui/SynologyClipboardReferenceViewer'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
 import { createXDriveDSMNotesPort } from './synologyNotesPort'
@@ -295,6 +296,25 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [notesOwnerScope, setNotesOwnerScope] = useState('')
   const [clipboardOwnerScope, setClipboardOwnerScope] = useState('')
+  const [clipboardPreview, setClipboardPreview] = useState<XDriveDSMClipboardViewerSelection | null>(null)
+  const clipboardScopeRef = useRef(clipboardOwnerScope)
+  clipboardScopeRef.current = clipboardOwnerScope
+  const openClipboardReference = React.useCallback(async (
+    reference: XDriveSynologyClipboardFileReference, signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted()
+    const owner = clipboardOwnerScope
+    if (!owner || clipboardScopeRef.current !== owner ||
+        !Number.isSafeInteger(reference.node.id) || reference.node.id <= 0) {
+      throw new Error('Clipboard 文件 Owner 已变化')
+    }
+    // The Agent/File Server independently re-verified this file and returned
+    // its exact Node, revision and location. Never open a naked asset:<id>.
+    setClipboardPreview({ ownerScope: owner, file: reference })
+  }, [clipboardOwnerScope])
+  useEffect(() => {
+    setClipboardPreview(null)
+  }, [clipboardOwnerScope])
   const [notesImagesEnabled, setNotesImagesEnabled] = useState(false)
   // A DSM package login is not an xDrive Owner login. Only expose the shared
   // Notes route after the original Agent's current Owner and Notes capability
@@ -398,8 +418,8 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
   const clipboardPort = useMemo(() => {
     const cgi = host.services?.localBackupClient
     return cgi && clipboardOwnerScope
-      ? createXDriveDSMClipboardPort(cgi, clipboardOwnerScope) : undefined
-  }, [host, clipboardOwnerScope])
+      ? createXDriveDSMClipboardPort(cgi, clipboardOwnerScope, openClipboardReference) : undefined
+  }, [host, clipboardOwnerScope, openClipboardReference])
   const notesHost = useMemo(() => ({
     ...host,
     services: { ...host.services, notesPage: notesPort, clipboardPage: clipboardPort },
@@ -414,6 +434,9 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
     adminRoleVerified: host.adminRoleVerified === true,
   })
 
+  useEffect(() => {
+    if (selected !== 'clipboard') setClipboardPreview(null)
+  }, [selected])
   return (
     <XDriveApp
       host={notesHost}
@@ -437,6 +460,7 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
       }}
       revision={pageRevision}
       overlays={
+        <>
         <XDriveSettingsDialog
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
@@ -453,6 +477,15 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
             <Typography variant="body2" role="status">DSM Agent 连接能力尚未接通。</Typography>
           )}
         </XDriveSettingsDialog>
+        {host.services?.localBackupClient && clipboardPort ? (
+          <XDriveSynologyClipboardReferenceViewer
+            client={host.services.localBackupClient}
+            currentOwnerScope={clipboardOwnerScope}
+            selection={selected === 'clipboard' ? clipboardPreview : null}
+            onClose={() => setClipboardPreview(null)}
+          />
+        ) : null}
+        </>
       }
     />
   )

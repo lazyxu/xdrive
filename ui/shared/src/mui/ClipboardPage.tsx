@@ -67,6 +67,8 @@ export type XDriveClipboardDataPort = {
   uploadLocalFile?(file: File, signal: AbortSignal): Promise<{ node_id: number }>
   /** Foreground browser Clipboard.read image/png with user consent only. */
   importImageFromClipboard?(signal: AbortSignal): Promise<{ node_id: number }>
+  /** Explicit, reauthorized Files Viewer handoff. A Clipboard Node is never a read grant. */
+  openReferencedFile?(nodeID: number, signal: AbortSignal): Promise<void>
 }
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
@@ -426,6 +428,23 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     }, '已上传到当前 Owner 的云端根目录。请检查文件，然后明确点击“加密发送”；不发送也不会自动删除原件。')
   }
 
+  const openVerifiedReference = (record: XDriveClipboardItem, text: string | null) => {
+    if (!key || busy || !port.openReferencedFile || !record.target_device_id ||
+        (record.kind !== 'image/x-xdrive-node-ref' &&
+         record.kind !== 'application/x-xdrive-node-ref') ||
+        !Number.isSafeInteger(record.node_id) || !record.node_id ||
+        text !== 'asset:' + record.node_id ||
+        !items.some(row => row.record.id === record.id && row.record === record &&
+          row.text === text)) {
+      setMessage('文件引用已失效或当前设备无权预览，请刷新后重新验证。')
+      return
+    }
+    // The existing Files Host rechecks Owner, Node location, revision and
+    // its normal read permission. Do not fetch bytes from Clipboard.
+    void runAction(signal => port.openReferencedFile!(record.node_id!, signal),
+      '已转到经过授权的文件 Viewer。')
+  }
+
   const pasteFromBrowser = async () => {
     if (!port.readText || reading) return
     const actionToken = actionFence.current.capture()
@@ -703,6 +722,16 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                     <TextField fullWidth multiline minRows={1} maxRows={7} value={text}
                       InputProps={{ readOnly: true }} aria-label="剪贴板明文（仅在此页面内解密）" />
                     <Stack direction="row" justifyContent="flex-end">
+                      {port.openReferencedFile && record.target_device_id &&
+                        Number.isSafeInteger(record.node_id) && !!record.node_id &&
+                        (record.kind === 'image/x-xdrive-node-ref' ||
+                         record.kind === 'application/x-xdrive-node-ref') &&
+                        text === 'asset:' + record.node_id ? (
+                          <Button size="small" variant="contained" disabled={busy}
+                            onClick={() => openVerifiedReference(record, text)}>
+                            在文件 Viewer 中打开
+                          </Button>
+                        ) : null}
                       <Button size="small" onClick={() => {
                         const actionToken = actionFence.current.capture()
                         void port.copyText(text).then(() => {

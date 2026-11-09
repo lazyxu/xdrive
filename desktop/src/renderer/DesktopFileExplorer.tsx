@@ -226,7 +226,7 @@ export default function DesktopFileExplorer({
   onNavigationStateChange?: (
     state: XDriveFileExplorerNavigationState<AgentCloudCrumb>,
   ) => void
-  revealTarget?: { parentID: number; nodeID: number; requestID: string } | null
+  revealTarget?: { parentID: number; nodeID: number; requestID: string; openPreview?: boolean } | null
   onOpenTrash: () => void
   trashActive: boolean
   trashAdapter: XDriveTrashDialogAdapter

@@ -43,6 +43,12 @@ export type XDriveSynologyOwnerFilePageResponse = {
   sort: 'name' | 'updated' | 'type' | 'size'
   order: 'asc' | 'desc'
 }
+// A Clipboard reference is only a File locator. This exact current-Owner
+// projection is separately authorized by the Files read path at open time.
+export type XDriveSynologyClipboardFileReference = {
+  node: XDriveSynologyOwnerFileNode
+  crumbs: { id: number; name: string }[]
+}
 export type XDriveSynologyOwnerSearchHit = {
   node: XDriveSynologyOwnerFileNode
   crumbs: { id: number; name: string }[]
@@ -175,6 +181,44 @@ function validOwnerFileNode(raw: unknown, expectedParentID?: number): raw is XDr
       ? node.parent_id === undefined
       : node.parent_id === expectedParentID)
 }
+export function xDriveValidateSynologyClipboardFileReference(
+  raw: unknown, requestedID: number,
+): XDriveSynologyClipboardFileReference {
+  if (!Number.isSafeInteger(requestedID) || requestedID < 1 ||
+      !raw || typeof raw !== 'object' || Array.isArray(raw) ||
+      Object.keys(raw).length !== 2 ||
+      Object.keys(raw).some(key => key !== 'node' && key !== 'crumbs')) {
+    throw new Error('Untrusted Owner Clipboard file identity')
+  }
+  const ref = raw as XDriveSynologyClipboardFileReference
+  if (!ref.node || !Number.isSafeInteger(ref.node.parent_id) ||
+      (ref.node.parent_id ?? 0) <= 0 ||
+      !validOwnerFileNode(ref.node, ref.node.parent_id) ||
+      ref.node.id !== requestedID || ref.node.type !== 'file' ||
+      !Array.isArray(ref.crumbs) ||
+      ref.crumbs.length < 2 || ref.crumbs.length > 48) {
+    throw new Error('Clipboard reference no longer belongs to the current Owner Files')
+  }
+  const seen = new Set<number>()
+  for (const crumb of ref.crumbs) {
+    if (!crumb || typeof crumb !== 'object' || Array.isArray(crumb) ||
+        Object.keys(crumb).length !== 2 ||
+        !Number.isSafeInteger(crumb.id) || crumb.id <= 0 ||
+        seen.has(crumb.id) ||
+        typeof crumb.name !== 'string' || !crumb.name ||
+        crumb.name.length > 512 || /[\u0000\r\n]/.test(crumb.name)) {
+      throw new Error('Untrusted Clipboard Files breadcrumb')
+    }
+    seen.add(crumb.id)
+  }
+  if (ref.crumbs.at(-1)?.id !== requestedID ||
+      ref.crumbs.at(-1)?.name !== ref.node.name ||
+      ref.crumbs.at(-2)?.id !== ref.node.parent_id) {
+    throw new Error('Clipboard Files node moved or location changed')
+  }
+  return ref
+}
+
 export function xDriveValidateSynologyOwnerCreatedFolder(
   raw: unknown, parentID: number, name: string,
 ): XDriveSynologyOwnerFileNode {
@@ -577,6 +621,7 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   }>
   clipboardEnableDevice(ownerScope: string, signal?: AbortSignal): Promise<import('./mui/ClipboardPage').XDriveClipboardTargetDevice>
   clipboardDecrypt(ownerScope: string, id: number, signal?: AbortSignal): Promise<{ text: string }>
+  clipboardFileReference(id: number, signal?: AbortSignal): Promise<XDriveSynologyClipboardFileReference>
   clipboardRevokeDevice(ownerScope: string, deviceID: string, signal?: AbortSignal): Promise<void>
   clipboardCreate(ownerScope: string, item: {
     client_event_id: string
@@ -823,7 +868,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
        'cloud-live-motion', 'nas-shares',
        'local-source', 'local-source-rename', 'local-target', 'local-mode', 'local-rules', 'local-bound-remove',
        'cloud-clipboard-capability', 'cloud-clipboard-vault', 'cloud-clipboard-check',
-        'cloud-clipboard-list', 'cloud-clipboard-devices', 'cloud-clipboard-create',
+        'cloud-clipboard-list', 'cloud-clipboard-devices', 'cloud-clipboard-file', 'cloud-clipboard-create',
         'cloud-clipboard-enable-device', 'cloud-clipboard-decrypt', 'cloud-clipboard-revoke-device',
         'cloud-clipboard-delete', 'cloud-clipboard-clear',
         'cloud-notes-capability', 'cloud-notes-namespace', 'cloud-notes-list', 'cloud-notes-read', 'cloud-notes-create',
@@ -961,6 +1006,14 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         throw new Error('Invalid Clipboard device decrypt receipt')
       }
       return result
+    },
+    async clipboardFileReference(id, signal) {
+      if (!Number.isSafeInteger(id) || id <= 0)
+        throw new Error('Invalid current Owner Clipboard file identity')
+      const raw = await request<unknown>(
+        '/v1/cloud-clipboard-file?node_id=' + id, 'GET', undefined, signal)
+      signal?.throwIfAborted()
+      return xDriveValidateSynologyClipboardFileReference(raw, id)
     },
     async clipboardRevokeDevice(ownerScope, deviceID, signal) {
       if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(deviceID))

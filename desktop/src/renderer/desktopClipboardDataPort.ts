@@ -12,6 +12,7 @@ export function createDesktopClipboardDataPort(
   ownerScopeKey: string,
   server: string,
   ownerCurrent: () => boolean,
+  openVerifiedFile?: (nodeID: number, signal: AbortSignal) => Promise<void>,
 ): XDriveClipboardDataPort {
   const verify = (signal?: AbortSignal) => {
     signal?.throwIfAborted()
@@ -48,6 +49,17 @@ export function createDesktopClipboardDataPort(
     listDevices: signal => run(() => agent.cloudClipboardDevices(), signal),
     enableDeviceRecipient: signal => run(() => agent.cloudClipboardEnableDevice(), signal),
     revokeDevice: (id, signal) => run(() => agent.cloudClipboardRevokeDevice(id), signal),
+    openReferencedFile: openVerifiedFile ? async (nodeID, signal) => {
+      if (!Number.isSafeInteger(nodeID) || nodeID <= 0)
+        throw new Error('invalid Clipboard file reference')
+      verify(signal)
+      await openVerifiedFile(nodeID, signal)
+      // A successful, explicit Clipboard -> Files route transition unmounts
+      // Clipboard and cancels its page-scoped action signal. Keep the Owner
+      // check, but never mistake this expected disposal for an authorization
+      // failure after the verified Files handoff has already been admitted.
+      verify()
+    } : undefined,
     decryptTarget: async (id, signal) => {
       if (!Number.isSafeInteger(id) || id <= 0) throw Error('Invalid Clipboard item ID')
       const result = await run(() => agent.cloudClipboardDecrypt(id), signal)

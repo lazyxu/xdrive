@@ -84,7 +84,7 @@ assert.ok(!dsm.includes('pages: {') && !dsm.includes('<XDriveHomePage') &&
   'DSM provides domain ports and no independent page JSX')
 assert.ok(dsm.includes('const host = createXDriveSynologyHost()') &&
   dsm.includes('services: { ...host.services, notesPage: notesPort, clipboardPage: clipboardPort }') &&
-  dsm.includes('createXDriveDSMClipboardPort(cgi, clipboardOwnerScope)') &&
+  dsm.includes('createXDriveDSMClipboardPort(cgi, clipboardOwnerScope, openClipboardReference)') &&
   dsm.includes('createXDriveDSMNotesPort(cgi, notesOwnerScope, notesImagesEnabled)') &&
   dsm.includes('showNotes: Boolean(notesPort)') &&
   dsmHost.includes('services: {') &&
@@ -92,6 +92,16 @@ assert.ok(dsm.includes('const host = createXDriveSynologyHost()') &&
   hostContract.includes('XDriveWorkspaceHostServices') &&
   sharedOutlet.includes('switch (view)') && sharedOutlet.includes('services.deviceBackups'),
   'shared page outlet composes pages using authenticated host data')
+// A Clipboard node reference is a request to reauthorize a Viewer handoff,
+// never direct read permission. DSM must carry the current Owner-scoped
+// callback and clear stale previews on Owner changes.
+assert.ok(dsm.includes('signal.throwIfAborted()') &&
+  dsm.includes('clipboardScopeRef.current !== owner') &&
+  dsm.includes('setClipboardPreview({ ownerScope: owner, file: reference })') &&
+  dsm.includes('setClipboardPreview(null)') &&
+  dsm.includes('currentOwnerScope={clipboardOwnerScope}'),
+  'DSM Clipboard Viewer must remain current-Owner and cancellation fenced')
+
 assert.ok(dsm.includes('sections: xDriveWorkspaceHostSections({') &&
   desktop.includes('xDriveWorkspaceHostSections({') &&
   hostSections.includes('...(adminRoleVerified ? [') &&
