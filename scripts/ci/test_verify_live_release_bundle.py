@@ -107,6 +107,43 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
             with self.assertRaisesRegex(audit.GateError, "differs"):
                 audit.check_host(home, COMMIT, self.manifest)
 
+    def test_host_partial_current_commit_is_usable_without_faking_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cache = home / "data/release-bundles"
+            (home / "config").mkdir(parents=True)
+            (home / "config/.env").write_text("XD_RELEASE_COMMIT=" + COMMIT + "\n")
+            (cache / "manifests").mkdir(parents=True)
+            (cache / "packages" / COMMIT).mkdir(parents=True)
+            second = dict(self.item, filename="other-platform.exe", platform="windows")
+            second["sources"] = {
+                "gitlab": self.item["sources"]["gitlab"].replace(
+                    "xdrive-linux-amd64.deb", "other-platform.exe"),
+                "github": self.item["sources"]["github"].replace(
+                    "xdrive-linux-amd64.deb", "other-platform.exe"),
+            }
+            manifest = dict(self.manifest, artifacts=[self.item, second])
+            (cache / "manifests" / (COMMIT + ".json")).write_text(
+                json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n")
+            (cache / "current.json").write_text(json.dumps({"commit": COMMIT}))
+            status = {"commit": COMMIT, "state": "retry_needed",
+                      "artifacts": {self.item["filename"]: "verified",
+                                    second["filename"]: "missing_upstream"}}
+            (cache / "status.json").write_text(json.dumps(status))
+            (cache / "packages" / COMMIT / self.item["filename"]).write_bytes(self.payload)
+            self.assertEqual(audit.check_host(home, COMMIT, manifest),
+                             [self.item["filename"]])
+            with self.assertRaisesRegex(audit.GateError, "partially verified"):
+                audit.check_host(home, COMMIT, manifest, require_complete=True)
+            (cache / "packages" / COMMIT / second["filename"]).write_bytes(self.payload)
+            with self.assertRaisesRegex(audit.GateError, "unverified package"):
+                audit.check_host(home, COMMIT, manifest)
+            (cache / "packages" / COMMIT / second["filename"]).unlink()
+            status["artifacts"][self.item["filename"]] = "verification_failed"
+            (cache / "status.json").write_text(json.dumps(status))
+            with self.assertRaisesRegex(audit.GateError, "no verified subset"):
+                audit.check_host(home, COMMIT, manifest)
+
     def test_sigstore_requires_verifier_without_trust_downgrade(self):
         with patch.object(audit.shutil, "which", return_value=None):
             with self.assertRaisesRegex(audit.GateError, "gh CLI"):

@@ -144,6 +144,12 @@ For a real authenticated download and resume SHA-256 check add
 performs two actual HTTP `Range` transfers per cached artifact, recombines the
 bytes in order and compares the full hash. It never installs a package.
 
+Host acceptance treats the documented `retry_needed` **partial verified cache**
+as usable when at least one package passed full disk SHA-256; unavailable
+platforms do not block the Server or verified packages. Use
+`--require-complete-cache` only when an operator explicitly requires every
+platform to be cached. A zero-verified partial cache still fails.
+
 For an intentional, expensive end-to-end mirror-byte audit add
 `--check-package-bytes`. This verifies actual package bytes from both GitLab
 and GitHub; inaccessible GitLab or a missing optional upstream fails that

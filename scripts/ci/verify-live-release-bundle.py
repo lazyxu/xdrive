@@ -74,7 +74,7 @@ def check_release(commit, get_json=public_json, get_bytes=public_bytes):
     return doc, raw
 
 
-def check_host(home, commit, manifest):
+def check_host(home, commit, manifest, *, require_complete=False):
     """Validate installed Host cache as bytes, not merely status.json claims."""
     home = Path(home)
     cache = home / "data" / "release-bundles"
@@ -109,12 +109,25 @@ def check_host(home, commit, manifest):
             ):
                 raise GateError("Host verified-package bytes changed: " + item["filename"])
             good.append(item["filename"])
+        elif reported not in ("pending", "missing_upstream",
+                              "verification_failed", "retry_needed", "unavailable"):
+            raise GateError("Host reports unknown package status: " + item["filename"])
         elif exists:
             raise GateError("unverified package unexpectedly visible: " + item["filename"])
-    if state.get("state") == "ready" and len(good) != len(expected):
-        raise GateError("Host claims ready with missing or unverified package bytes")
-    if state.get("state") != "ready":
-        raise GateError("Host cache not fully ready: " + str(state.get("state")))
+    overall = state.get("state")
+    if overall == "ready":
+        if len(good) != len(expected):
+            raise GateError("Host claims ready with missing or unverified package bytes")
+    elif overall == "retry_needed":
+        # A partial cache is a successful, usable subset of the current Commit.
+        # Do not demand a completely mirrored Bundle when a platform is absent.
+        # But empty/fully verified "retry" states must not masquerade as healthy.
+        if not good or len(good) == len(expected):
+            raise GateError("Host partial cache contains no verified subset or stale status")
+    else:
+        raise GateError("Host cache not usable: " + str(overall))
+    if require_complete and overall != "ready":
+        raise GateError("Host cache is partially verified; strict complete-cache gate failed")
     return good
 
 
@@ -272,6 +285,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", required=True, help="current full 40-hex Server Commit")
     parser.add_argument("--host-home", type=Path, help="installed Host .xd directory")
+    parser.add_argument("--require-complete-cache", action="store_true",
+                        help="fail when any advertised client package is not cached")
     parser.add_argument("--server-url", help="authenticated Server origin")
     parser.add_argument("--allow-loopback-http", action="store_true")
     parser.add_argument("--require-sigstore", action="store_true",
@@ -288,7 +303,8 @@ def main(argv=None):
         if args.require_sigstore:
             check_sigstore(args.commit, raw)
         if args.host_home:
-            verified_host = check_host(args.host_home, args.commit, manifest)
+            verified_host = check_host(args.host_home, args.commit, manifest,
+                                       require_complete=args.require_complete_cache)
         if args.server_url:
             api = server_listing(args.server_url, os.environ.get("XD_BUNDLE_OWNER_TOKEN", ""),
                                  allow_loopback_http=args.allow_loopback_http)
