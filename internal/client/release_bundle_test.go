@@ -283,3 +283,30 @@ func TestCurrentServerBundleGitHubAssetRedirectOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestCurrentServerBundleMetadataCannotRedirectOwnerBearer(t *testing.T) {
+	var privatePathRequested bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/release-bundles/current":
+			if r.Header.Get("Authorization") != "Bearer owner-test" {
+				t.Error("authenticated metadata omitted bearer")
+			}
+			w.Header().Set("Location", "/private-redirected-metadata")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		case "/private-redirected-metadata":
+			privatePathRequested = true
+			t.Error("metadata API followed a bearer-authenticated redirect")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	c := New(server.URL, "owner-test")
+	if _, err := c.CurrentReleaseBundle(context.Background()); err == nil {
+		t.Fatal("metadata redirect was incorrectly accepted")
+	}
+	if privatePathRequested {
+		t.Fatal("metadata redirect leaked Owner request")
+	}
+}
