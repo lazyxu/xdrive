@@ -17,6 +17,7 @@ on:
       - 'ios/XDriveIOS/NativePhotoWallDensityPolicy.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
       - 'ios/scripts/capture-navigation-smoke-frames.py'
+      - 'ios/scripts/summarize-navigation-latency.py'
       - 'ios/XDriveIOS/NativeOwnerLoginModel.swift'
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
       # Changes in a child Files/Gallery route must also compile and exercise
@@ -113,6 +114,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          python3 -m py_compile "$GITHUB_WORKSPACE/ios/scripts/capture-navigation-smoke-frames.py" \
+            "$GITHUB_WORKSPACE/ios/scripts/summarize-navigation-latency.py"
           # Keep a few frames from the LIVE failed route, not SpringBoard after
           # xcodebuild exits. Never use AX queries from this observer.
           if [[ "${{ matrix.source }}" != "release-c83" ]]; then
@@ -155,6 +158,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          if [[ -f "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" ]]; then
+            python3 "$GITHUB_WORKSPACE/ios/scripts/summarize-navigation-latency.py" \
+              "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
+              "$RUNNER_TEMP/native-navigation-results/diagnostics/navigation-latency.json" || true
+          fi
           # Capture a device-level frame even if XCTest was unable to
           # construct an accessibility snapshot for the native child page.
           # Failure attachments generated before an AX timeout are exported
