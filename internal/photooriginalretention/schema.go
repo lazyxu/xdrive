@@ -31,10 +31,10 @@ BEGIN
                OR NEW.parent_id IS DISTINCT FROM OLD.parent_id
                OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
                OR NEW.type IS DISTINCT FROM OLD.type
+               OR NEW.name IS DISTINCT FROM OLD.name
                OR (EXISTS (SELECT 1 FROM xd_ios_photo_original_holds h
                            WHERE h.node_id = OLD.id)
-                   AND (NEW.revision IS DISTINCT FROM OLD.revision
-                        OR NEW.name IS DISTINCT FROM OLD.name)) THEN
+                   AND NEW.revision IS DISTINCT FROM OLD.revision) THEN
                 RAISE EXCEPTION 'retained iOS original ancestry is immutable'
                     USING ERRCODE = '23514';
             END IF;
@@ -95,7 +95,10 @@ BEGIN
                OR NEW.kind IS DISTINCT FROM OLD.kind
                OR NEW.direction IS DISTINCT FROM OLD.direction
                OR NEW.target_managed IS DISTINCT FROM OLD.target_managed
-               OR NEW.sync_mode IS DISTINCT FROM OLD.sync_mode THEN
+               OR NEW.sync_mode IS DISTINCT FROM OLD.sync_mode
+               OR NEW.name IS DISTINCT FROM OLD.name
+               OR NEW.status IS DISTINCT FROM OLD.status
+               OR NEW.revision IS DISTINCT FROM OLD.revision THEN
                 RAISE EXCEPTION 'retained iOS original Source binding immutable'
                     USING ERRCODE = '23514';
             END IF;
