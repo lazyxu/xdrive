@@ -121,3 +121,18 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(runtimeWorkflow, /synthetic-gps-map-second\.jpg/)
   assert.match(runtimeWorkflow, /xcodebuild test/)
 })
+
+test('MapKit CI permission gate runs after prior native Gallery and preserves full real GPS coverage', () => {
+  const oldSuite = runtimeWorkflow.indexOf('-skip-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests')
+  const fullGrant = runtimeWorkflow.indexOf('xcrun simctl privacy "$SMOKE_SIM" grant photos com.lazyxu.xdrive.ios')
+  const mapSuite = runtimeWorkflow.indexOf('-only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests')
+  assert.ok(oldSuite >= 0 && oldSuite < fullGrant && fullGrant < mapSuite,
+    'Gallery/b9 lifecycle suite must run first; grant real Full Photos before MapKit XCTest')
+  assert.match(runtimeWorkflow, /-resultBundlePath "\$RUNNER_TEMP\/native-navigation-results\/MapNavigation\.xcresult"/)
+  assert.match(runtimeWorkflow, /native-navigation-results\/map-navigation\.log/)
+  assert.match(runtimeWorkflow, /diagnostics\/map-summary\.json/)
+  assert.match(simulator, /XCTAssertTrue\(map\.exists, "Real native MKMapView did not mount"\)/)
+  assert.match(simulator, /verified\.label\.contains\("2 张"\)/)
+  assert.match(simulator, /marker\.tap\(\)/)
+  assert.match(local, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
+})
