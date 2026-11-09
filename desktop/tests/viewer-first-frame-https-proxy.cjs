@@ -3,6 +3,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const http = require('node:http')
 const https = require('node:https')
+const { X509Certificate } = require('node:crypto')
 const {
   startViewerFirstFrameHTTPSProxy,
   installPinnedViewerFixtureCertificate,
@@ -30,10 +31,16 @@ test('ephemeral HTTPS forwards real Owner proof and partial signed H264 Range', 
     fixture = await startViewerFirstFrameHTTPSProxy('http://127.0.0.1:' + upstream.address().port)
     let verifier
     installPinnedViewerFixtureCertificate({ setCertificateVerifyProc(fn) { verifier=fn } },fixture)
-    const verdict=(hostname,fingerprint)=>{let code;verifier({hostname,certificate:{fingerprint}},v=>{code=v});return code}
-    assert.equal(verdict('127.0.0.1',fixture.fingerprint.toUpperCase()),0)
-    assert.equal(verdict('untrusted.example',fixture.fingerprint),-3)
-    assert.equal(verdict('127.0.0.1','00:01:02'),-3)
+    const certificate=new X509Certificate(fixture.certificatePEM)
+    assert.equal(fixture.fingerprint,certificate.fingerprint256.toLowerCase(),
+      'pin the exact generated leaf SHA-256, not Node default SHA-1')
+    assert.notEqual(fixture.fingerprint,certificate.fingerprint.toLowerCase(),
+      'regression: SHA-1 pin must never be used for Electron')
+    const verdict=(hostname,data)=>{let code;verifier({hostname,certificate:{data}},v=>{code=v});return code}
+    assert.equal(verdict('127.0.0.1',fixture.certificatePEM),0)
+    assert.equal(verdict('untrusted.example',fixture.certificatePEM),-3)
+    assert.equal(verdict('127.0.0.1','not a certificate'),-3)
+    assert.equal(verdict('127.0.0.1',''),-3)
     const read=(endpoint,headers)=>new Promise((resolve,reject)=>{
       // The independent Node test client alone permits this one self-signed
       // fixture certificate; the product Electron session must PIN its hash.

@@ -31,7 +31,10 @@ async function startViewerFirstFrameHTTPSProxy(upstreamURL) {
     ], { stdio: 'ignore' })
     assert.equal(generated.status, 0, 'one-use test TLS certificate required')
     const certificate = fs.readFileSync(certPath)
-    const fingerprint = new X509Certificate(certificate).fingerprint.toLowerCase()
+    // Electron/Chromium certificate fingerprints are SHA-256; Node's
+    // .fingerprint is legacy SHA-1 and cannot match. Pin the exact DER via
+    // SHA-256 computed from the presented PEM, not from a spoofable header.
+    const fingerprint = new X509Certificate(certificate).fingerprint256.toLowerCase()
     server = https.createServer({
       cert: certificate, key: fs.readFileSync(keyPath),
     }, (req, res) => {
@@ -81,6 +84,7 @@ async function startViewerFirstFrameHTTPSProxy(upstreamURL) {
     return {
       origin: 'https://127.0.0.1:' + address.port,
       fingerprint,
+      certificatePEM: certificate.toString('utf8'),
       async close() {
         server.closeAllConnections()
         await new Promise(resolve => server.close(resolve))
@@ -105,7 +109,16 @@ function installPinnedViewerFixtureCertificate(electronSession, fixture) {
   // Isolated Electron session per sample; never change global TLS settings.
   // -3 means use Chromium's usual verification for any other certificate.
   electronSession.setCertificateVerifyProc((request, callback) => {
-    const fingerprint = (request.certificate?.fingerprint || '').toLowerCase()
+    // Electron exposes certificate.data as PEM. Derive the SHA-256 digest
+    // from those exact bytes, independent of Chromium's fingerprint format.
+    // Never accept a mismatched host or a missing/malformed certificate.
+    let fingerprint = ''
+    try {
+      const presented = request.certificate?.data
+      if (typeof presented === 'string' && presented.includes('BEGIN CERTIFICATE')) {
+        fingerprint = new X509Certificate(presented).fingerprint256.toLowerCase()
+      }
+    } catch { /* reject malformed or absent certificates */ }
     callback(request.hostname === url.hostname &&
       fingerprint === fixture.fingerprint ? 0 : -3)
   })

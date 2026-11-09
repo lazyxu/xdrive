@@ -7,7 +7,8 @@
   "description": "xDrive Electron desktop client",
   "license": "Apache-2.0",
   "overrides": {
-    "electron-to-chromium": "1.5.477"
+    "electron-to-chromium": "1.5.477",
+    "rollup": "4.68.0"
   },
   "scripts": {
     "clean": "node scripts/clean.mjs",
@@ -19,9 +20,6 @@
     "runtime:win": "npm run build && electron-builder --win --x64 --dir --publish never",
     "runtime:linux": "npm run build && electron-builder --linux --x64 --dir --publish never",
     "test:main": "npm run build:main && node --test tests/*.cjs"
-  },
-  "overrides": {
-    "electron-to-chromium": "1.5.477"
   },
   "devDependencies": {
     "@types/node": "22.10.2",
@@ -45,8 +43,5 @@
   "homepage": "https://github.com/lazyxu/xdrive",
   "dependencies": {
     "filesize": "11.0.25"
-  },
-  "overrides": {
-    "electron-to-chromium": "1.5.477"
   }
 }

@@ -91,6 +91,8 @@ test('actual Chromium probe is injected before original H264 viewer click, witho
   assert.match(h264, /galleryFirstVisibleVideoMP4Base64/)
   assert.ok(tlsProxy.includes('setCertificateVerifyProc') &&
     tlsProxy.includes('request.hostname === url.hostname') &&
+    tlsProxy.includes("new X509Certificate(presented).fingerprint256") &&
+    !tlsProxy.includes("new X509Certificate(certificate).fingerprint.toLowerCase()") &&
     tlsProxy.includes("fingerprint === fixture.fingerprint") &&
     !tlsProxy.includes('ignore-certificate-errors'),
     'test HTTPS cert trust must be pinned, never globally disabled')
@@ -126,4 +128,7 @@ test('paired workflow compiles both real production builds against the same Go/P
   assert.ok(!flow.includes('npm --prefix desktop ci'),
     'Desktop has no package-lock; CI must not attempt npm ci for it')
   assert.ok(!flow.includes('continue-on-error'), 'benchmark must fail closed')
+  const desktop = JSON.parse(read('desktop/package.json'))
+  assert.equal(desktop.overrides?.rollup, '4.68.0',
+    'Desktop must pin the published Rollup release instead of resolving nonexistent 4.68.2')
 })
