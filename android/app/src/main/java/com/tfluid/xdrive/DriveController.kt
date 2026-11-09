@@ -2,7 +2,9 @@ package com.tfluid.xdrive
 
 import android.content.Context
 import android.content.ContentUris
+import android.net.Uri
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 
 import com.tfluid.xdrive.core.*
 import java.io.ByteArrayOutputStream
@@ -4905,6 +4907,78 @@ class DriveController(
     }
     suspend fun clipboardCreate(item: XDriveClipboardCrypto.Wire): OwnerClipboardItem =
         withNotesOwner { service, token -> service.clipboardCreate(token,item) }
+
+    /**
+     * Explicit SAF file selection -> immutable private staging -> the ORIGINAL
+     * Owner Files UploadSession/CAS writer. This function only returns a
+     * verified Node receipt; it must never send a Clipboard message itself.
+     * No SourceRun/background credential, URI persistence, or second uploader.
+     */
+    suspend fun clipboardImportLocalFile(
+        context: Context, picked: Uri, currentClipboardSession: () -> Boolean,
+    ): DriveNode =
+        withNotesOwner { service, token ->
+            val start = state.value
+            val sameOwner = {
+                val now = state.value
+                now.nativeUiSessionId == start.nativeUiSessionId &&
+                    now.server == start.server && now.username == start.username &&
+                    now.nativeUiSessionId > 0 && session != null && api === service &&
+                    currentClipboardSession()
+            }
+            check(sameOwner()) { "Clipboard Owner changed before file selection" }
+            val metadata = withContext(Dispatchers.IO) {
+                val resolver = context.contentResolver
+                val cursor = resolver.query(picked,
+                    arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                    null, null, null) ?: error("Selected document metadata unavailable")
+                cursor.use {
+                    check(it.moveToFirst())
+                    val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = it.getColumnIndex(OpenableColumns.SIZE)
+                    require(nameIndex >= 0 && sizeIndex >= 0 && !it.isNull(sizeIndex))
+                    (it.getString(nameIndex) ?: error("Selected file has no name")) to
+                        it.getLong(sizeIndex)
+                }
+            }
+            val (name, size) = metadata
+            require(validDriveNodeName(name) && size in 1L..(64L * 1024 * 1024)) {
+                "Clipboard local file must be 1–64 MiB with a valid name"
+            }
+            check(sameOwner())
+            // A provider can change while uploading. Preserve a bounded private
+            // immutable snapshot and re-hash before the first Server mutation.
+            val staged = NativePhotoOriginalStager.stage(context.cacheDir, size) {
+                context.contentResolver.openInputStream(picked)
+                    ?: error("Selected file provider no longer permits reading")
+            }
+            staged.use { original ->
+                currentCoroutineContext().ensureActive()
+                check(sameOwner() && original.verifyBeforeWrite())
+                val root = service.root(token)
+                check(sameOwner() && root.id > 0 && root.isDirectory &&
+                    root.parentId == null && root.revision > 0)
+                // This is the existing Files UploadSession/chunk/finalize
+                // path. An unknown finalize ACK remains uncertain: caller
+                // never sends a Node reference or automatically retries it.
+                val uploaded = service.uploadFile(token, root, name, original.bytes,
+                    original::openVerifiedSource) { _ ->
+                    if (!sameOwner()) throw CancellationException("Clipboard Owner changed during upload")
+                }
+                currentCoroutineContext().ensureActive()
+                check(sameOwner() && uploaded.id > 0 && uploaded.type == "file" &&
+                    uploaded.parentId == root.id && uploaded.revision > 0 &&
+                    uploaded.size == original.bytes && uploaded.name == name) {
+                    "Clipboard UploadSession returned an unverified Node receipt"
+                }
+                uploaded
+            }
+        }
+
+    suspend fun clipboardDevices(): List<OwnerClipboardDevice> =
+        withNotesOwner { service, token -> service.clipboardDevices(token) }
+    suspend fun clipboardCreateDirected(item: XDriveClipboardTargetCrypto.Wire): OwnerClipboardItem =
+        withNotesOwner { service, token -> service.clipboardCreateDirected(token, item) }
     suspend fun clipboardDelete(id: Long) {
         withNotesOwner { service, token -> service.clipboardDelete(token,id) }
     }

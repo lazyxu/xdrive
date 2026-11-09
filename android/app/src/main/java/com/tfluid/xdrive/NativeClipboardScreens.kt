@@ -3,6 +3,8 @@ package com.tfluid.xdrive
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,6 +29,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URI
 import javax.crypto.spec.SecretKeySpec
+
+private data class DirectedClipboardPending(
+    val payload: String, val deviceID: String, val kind: String,
+    val nodeID: Long, val createdAt: Long, val wire: XDriveClipboardTargetCrypto.Wire,
+)
 
 /** Native, foreground-only Clipboard text mailbox. No automatic pasteboard
  * monitor, WebView, stored passphrase/key or auxiliary Owner credential.
@@ -57,6 +64,13 @@ internal fun NativeClipboardScreen(
     var list by remember(epoch) { mutableStateOf(emptyList<Pair<OwnerClipboardItem, String?>>()) }
     var pending by remember(epoch) { mutableStateOf<Triple<String, Long, XDriveClipboardCrypto.Wire>?>(null) }
     var requireAbandon by remember(epoch) { mutableStateOf(false) }
+    var devices by remember(epoch) { mutableStateOf(emptyList<OwnerClipboardDevice>()) }
+    var targetID by remember(epoch) { mutableStateOf("") }
+    var targetMenu by remember(epoch) { mutableStateOf(false) }
+    var referenceKind by remember(epoch) { mutableStateOf("text") }
+    var referenceNodeID by remember(epoch) { mutableStateOf("") }
+    var pickerIntent by remember(epoch) { mutableStateOf<Triple<Long, String, String>?>(null) }
+    var pendingDirected by remember(epoch) { mutableStateOf<DirectedClipboardPending?>(null) }
     var busy by remember(epoch) { mutableStateOf(false) }
     var message by remember(epoch) { mutableStateOf<String?>(null) }
     var clearConfirm by remember(epoch) { mutableStateOf(false) }
@@ -77,7 +91,14 @@ internal fun NativeClipboardScreen(
         draft = ""
         list = emptyList()
         pending = null
+        pendingDirected = null
         requireAbandon = false
+        devices = emptyList()
+        targetID = ""
+        targetMenu = false
+        referenceKind = "text"
+        referenceNodeID = ""
+        pickerIntent = null
         busy = false
         refreshing = false
         message = null
@@ -123,6 +144,26 @@ internal fun NativeClipboardScreen(
             if (stillSession(snapshot)) refreshing = false
         }
     }
+    // Recipient discovery has no device token: only the current interactive
+    // Owner may read public keys. Discard late results on Lock or A→B→A.
+    LaunchedEffect(epoch, key) {
+        if (key == null) return@LaunchedEffect
+        val snapshot = actionFence.capture()
+        try {
+            val received = controller.clipboardDevices()
+            if (stillSession(snapshot) && key != null) {
+                devices = received
+                if (targetID.isNotEmpty() && received.none { it.deviceID == targetID }) {
+                    targetID = ""
+                    referenceNodeID = ""
+                }
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            if (stillSession(snapshot)) devices = emptyList()
+        }
+    }
+
     // Inactive/background activities must not keep either a polling job or
     // the Owner SSE socket alive. Resume always reconciles full GET first.
     LaunchedEffect(epoch, key, recipient?.enrolled?.deviceId, lifecycleOwner) {
@@ -174,6 +215,42 @@ internal fun NativeClipboardScreen(
             // Send explicitly; no automatic cross-device transmission.
             draft = incomingText
             onIncomingConsumed()
+        }
+    }
+    // A provider picker can return after Owner switch, Lock, or new target
+    // selection. A callback is NEVER itself permission to send a message.
+    val localFilePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val intent = pickerIntent
+        pickerIntent = null
+        if (uri != null && intent != null && stillSession(intent.first) &&
+            targetID == intent.second && referenceKind == intent.third &&
+            key != null && !busy) {
+            val (snapshot, selectedTarget, selectedKind) = intent
+            referenceNodeID = ""
+            busy = true
+            scope.launch {
+                try {
+                    val result = controller.clipboardImportLocalFile(context, uri) {
+                        stillSession(snapshot) && key != null &&
+                            targetID == selectedTarget && referenceKind == selectedKind
+                    }
+                    if (stillSession(snapshot) && targetID == selectedTarget &&
+                        referenceKind == selectedKind) {
+                        referenceNodeID = result.id.toString()
+                        message = "文件已有已核验的 CAS Node 收据。请核对后再次点击定向加密发送。"
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    if (stillSession(snapshot)) {
+                        referenceNodeID = ""
+                        message = "上传未确认：" + (error.message ?: "请先查看 Files 目录，勿自动重传。")
+                    }
+                } finally {
+                    if (stillSession(snapshot)) busy = false
+                }
+            }
         }
     }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -270,6 +347,51 @@ internal fun NativeClipboardScreen(
                 Text("此 Android 设备已启用单独授权的定向解密",
                     style = MaterialTheme.typography.bodySmall)
             }
+            // Target selection is explicit. A directed v2 message must never
+            // be passed to the v1 broadcast send branch.
+            Box {
+                OutlinedButton(onClick={targetMenu=true},enabled=!busy) {
+                    Text(if (targetID.isEmpty()) "发送范围：当前账号广播" else
+                        "定向发送：" + (devices.firstOrNull { it.deviceID == targetID }?.name ?: "设备已失效"))
+                }
+                DropdownMenu(expanded=targetMenu,onDismissRequest={targetMenu=false}) {
+                    DropdownMenuItem(text={Text("当前 Owner 广播（v1 文本）")},onClick={
+                        targetID="";targetMenu=false;referenceKind="text";referenceNodeID=""
+                    })
+                    devices.forEach { device ->
+                        DropdownMenuItem(text={Text(device.name+" · "+device.platform)},onClick={
+                            targetID=device.deviceID;targetMenu=false
+                        })
+                    }
+                }
+            }
+            if (targetID.isNotEmpty()) {
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    listOf("text" to "文字", "image" to "图片引用", "file" to "文件引用").forEach { pair ->
+                        FilterChip(selected=referenceKind==pair.first,
+                            onClick={referenceKind=pair.first},label={Text(pair.second)},
+                            enabled=!busy)
+                    }
+                }
+                if (referenceKind!="text") {
+                    OutlinedTextField(value=referenceNodeID,
+                        onValueChange={referenceNodeID=it.take(20).filter(Char::isDigit)},
+                        modifier=Modifier.fillMaxWidth(),singleLine=true,
+                        label={Text("已上传 CAS 的文件 Node ID")},
+                        keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number))
+                    Text("只发送已存在的云端 Node 引用，不增加文件权限。",
+                        style=MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick={
+                        if (busy || key == null || targetID.isEmpty() ||
+                            pending != null || pendingDirected != null) return@OutlinedButton
+                        pickerIntent = Triple(actionFence.capture(), targetID, referenceKind)
+                        localFilePicker.launch(arrayOf(
+                            if (referenceKind == "image") "image/*" else "*/*"))
+                    }, enabled = !busy && pending == null && pendingDirected == null) {
+                        Text("选择本机文件并上传 CAS（不会自动发送）")
+                    }
+                }
+            }
             OutlinedTextField(value=draft,onValueChange={ draft=it; requireAbandon=false },
                 modifier=Modifier.fillMaxWidth().heightIn(min=100.dp),
                 label={Text("文字或链接")},maxLines=7)
@@ -280,7 +402,10 @@ internal fun NativeClipboardScreen(
                     if (text!=null) draft=text else message="本机没有可读取的文本"
                 },enabled=!busy){Text("粘贴本机")}
                 Button(onClick={
-                    if (busy) return@Button
+                    if (busy || pendingDirected != null || targetID.isNotEmpty()) {
+                        requireAbandon = pendingDirected != null
+                        return@Button
+                    }
                     val snapshot = actionFence.capture()
                     val keyAtStart = key ?: return@Button
                     val scopeAtStart = aadScope
@@ -324,7 +449,83 @@ internal fun NativeClipboardScreen(
                             if (stillSession(snapshot)) busy = false
                         }
                     }
-                },enabled=!busy && draft.isNotEmpty()){Text("加密发送")}
+                },enabled=!busy && draft.isNotEmpty() && targetID.isEmpty() &&
+                    pendingDirected == null){Text("加密发送")}
+            }
+            if (targetID.isNotEmpty()) {
+                Button(onClick={
+                    if (busy || key == null) return@Button
+                    val snapshot = actionFence.capture()
+                    val scopeAtStart = aadScope
+                    val target = targetID
+                    val device = devices.firstOrNull { it.deviceID == target }
+                    val kind = when(referenceKind) {
+                        "image" -> "image/x-xdrive-node-ref"
+                        "file" -> "application/x-xdrive-node-ref"
+                        else -> XDriveClipboardCrypto.mediaKind(draft)
+                    }
+                    val node = if (referenceKind == "text") 0L else referenceNodeID.toLongOrNull() ?: 0L
+                    val clear = if (node > 0L) "asset:"+node else draft
+                    if (device == null || (referenceKind != "text" && node <= 0) ||
+                        (referenceKind == "text" && clear.isEmpty())) {
+                        message="请选择有效的已登记设备、文本或原始 CAS Node。"
+                        return@Button
+                    }
+                    if (pending != null) {
+                        requireAbandon = true
+                        message="广播消息回执未确认；请先核对或放弃，不能切换到定向发送。"
+                        return@Button
+                    }
+                    busy = true
+                    scope.launch {
+                        try {
+                            val previous = pendingDirected
+                            val wire = if (previous != null) {
+                                val age = System.currentTimeMillis() - previous.createdAt
+                                if (age !in 0 until 300_000L ||
+                                    previous.payload != clear || previous.deviceID != target ||
+                                    previous.kind != kind || previous.nodeID != node) {
+                                    requireAbandon = true
+                                    error("旧定向回执未知：必须核对历史或明确放弃，不能改变投递目标。")
+                                }
+                                previous.wire
+                            } else {
+                                withContext(Dispatchers.Default) {
+                                    XDriveClipboardTargetCrypto.encrypt(
+                                        scopeAtStart, target, device.publicKey, kind, clear, node)
+                                }.also {
+                                    if (stillSession(snapshot)) pendingDirected = DirectedClipboardPending(
+                                        clear,target,kind,node,System.currentTimeMillis(),it)
+                                }
+                            }
+                            if (!stillSession(snapshot) || pendingDirected?.wire != wire)
+                                return@launch
+                            controller.clipboardCreateDirected(wire)
+                            if (stillSession(snapshot)) {
+                                pendingDirected=null
+                                if (referenceKind=="text" && draft==clear) draft=""
+                                message="已将加密内容定向发送到所选设备。"
+                                refresh()
+                            }
+                        } catch (e: CancellationException) { throw e }
+                        catch (e: Exception) {
+                            if (stillSession(snapshot)) message="定向发送回执未知："+
+                                (e.message ?: "请检查历史，不能盲目重传")
+                        } finally {
+                            if (stillSession(snapshot)) busy=false
+                        }
+                    }
+                },enabled=!busy && devices.any { it.deviceID==targetID }) {
+                    Text("定向加密发送")
+                }
+            }
+            if (requireAbandon && (pending != null || pendingDirected != null)) {
+                TextButton(onClick={
+                    pending=null
+                    pendingDirected=null
+                    requireAbandon=false
+                    message="已放弃旧回执。请先核对历史，再尝试新的发送。"
+                }) { Text("放弃不确定回执") }
             }
             if (requireAbandon && pending != null) {
                 TextButton(onClick={

@@ -12,7 +12,7 @@ import { ClipboardFileNodePicker, type ClipboardFileBrowsePort } from './Clipboa
 export type XDriveClipboardItem = {
   id: number
   client_event_id: string
-  kind: XDriveClipboardKind
+  kind: XDriveClipboardTargetWire['kind']
   nonce: string
   ciphertext: string
   created_at: string
@@ -58,6 +58,10 @@ export type XDriveClipboardDataPort = {
   /** Owner session only; public X25519 keys, no source/backup grants. */
   listDevices?(signal?: AbortSignal): Promise<{ devices: XDriveClipboardTargetDevice[] }>
   revokeDevice?(deviceID: string, signal?: AbortSignal): Promise<void>
+  /** Native Host enrolls an already registered local installation; no key leaves Agent. */
+  enableDeviceRecipient?(signal?: AbortSignal): Promise<XDriveClipboardTargetDevice>
+  /** Decrypts only a server-revalidated live item ID on the current Owner device. */
+  decryptTarget?(id: number, signal?: AbortSignal): Promise<string>
   browseFiles?: ClipboardFileBrowsePort
   /** Explicit Owner user gesture, canonical Files UploadSession/CAS only. */
   uploadLocalFile?(file: File, signal: AbortSignal): Promise<{ node_id: number }>
@@ -137,13 +141,32 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     setLoading(true)
     try {
       const page = await port.list(before, controller.signal)
-      const decoded = await Promise.all(page.items.map(async record => {
-        try {
-          return { record, text: await xDriveClipboardDecrypt(key, aadScope, record) }
-        } catch {
-          return { record, text: null }
+      // At most four expensive Agent/device GET+decrypt proofs at once.
+      // All responses are fenced by this Owner, AbortSignal and generation.
+      const decoded = new Array<DecodedItem>(page.items.length)
+      let cursor = 0
+      const decodeWorker = async () => {
+        while (cursor < page.items.length && !controller.signal.aborted) {
+          const index = cursor++
+          const record = page.items[index]
+          try {
+            let text: string | null = null
+            if (record.target_device_id) {
+              // Never try a broadcast/v1 key on a device-targeted envelope.
+              if (port.decryptTarget)
+                text = await port.decryptTarget(record.id, controller.signal)
+              if (record.node_id && text !== 'asset:' + record.node_id) text = null
+            } else if (record.kind === 'text/plain' || record.kind === 'text/uri-list') {
+              text = await xDriveClipboardDecrypt(key, aadScope, { ...record, kind: record.kind })
+            }
+            decoded[index] = { record, text }
+          } catch {
+            decoded[index] = { record, text: null }
+          }
         }
-      }))
+      }
+      await Promise.all(Array.from({ length: Math.min(4, page.items.length) },
+        () => decodeWorker()))
       if (!active.current || controller.signal.aborted || sequence !== generation.current) return
       setItems(previous => before
         ? [...previous, ...decoded.filter(row => !previous.some(existing => existing.record.id === row.record.id))]
@@ -489,6 +512,18 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               <TextField label="输入内容" multiline minRows={3} maxRows={10} fullWidth
                 value={draft} onChange={event => { setDraft(event.target.value); setRetryExpired(false) }}
                 helperText="最多 64 KiB；不会在浏览器本地持久保存。" />
+              {port.enableDeviceRecipient ? (
+                <Button size="small" variant="outlined" disabled={busy}
+                  onClick={() => {
+                    void runAction(async signal => {
+                      const device = await port.enableDeviceRecipient!(signal)
+                      if (active.current && !signal.aborted) {
+                        setTargetDevices(current => [...current.filter(
+                          row => row.device_id !== device.device_id), device])
+                      }
+                    }, '此安装已启用单独授权的 Clipboard 定向加密接收。')
+                  }}>启用此设备的定向接收（需要已登记安装）</Button>
+              ) : null}
               {port.listDevices ? (
                 <Stack spacing={1}>
                   <TextField select label="发送范围" value={targetID} disabled={busy}

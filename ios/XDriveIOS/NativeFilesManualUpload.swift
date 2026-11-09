@@ -32,7 +32,7 @@ private final class XDriveIOSNativeFilesUploadDenyRedirect: XDriveIOSServerTLSDe
 /// Read-only trust checks before and after the existing UploadSession writer.
 /// Photo backup's root-only receipt verifier stays unchanged; nested Files
 /// folders require their own exact parent Node evidence.
-private struct XDriveIOSNativeFilesUploadReadback {
+struct XDriveIOSNativeFilesUploadReadback {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 

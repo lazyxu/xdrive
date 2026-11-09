@@ -213,6 +213,9 @@ import {
   type AgentClipboardItem,
   type AgentClipboardWrite,
   type AgentClipboardPage,
+  type AgentClipboardDevices,
+  type AgentClipboardDevice,
+  type AgentClipboardCleartext,
   type AgentNotesNamespace,
   type AgentNotesRow,
   type AgentNotesDetail,
@@ -8952,7 +8955,10 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudShares(nodeID)
   }, false))
 
-  // Clipboard has six explicit channels and requires the current signed-in
+  // Clipboard has explicit, narrow Owner-only channels (including public
+  // recipient discovery). Neither a renderer nor a device token can
+  // forward arbitrary Server HTTP or obtain an Owner bearer.
+  // Clipboard requires the current signed-in
   // Owner. Renderer never sees a Server bearer or arbitrary HTTP URL.
   const requireClipboardAgent = async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
@@ -8984,16 +8990,53 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard encrypted item')
     }
     const v = value as Record<string, unknown>
-    if (typeof v.client_event_id !== 'string' ||
-        !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v.client_event_id) ||
-        (v.kind !== 'text/plain' && v.kind !== 'text/uri-list') ||
-        typeof v.nonce !== 'string' || v.nonce.length !== 16 ||
-        typeof v.ciphertext !== 'string' ||
-        v.ciphertext.length < 20 || v.ciphertext.length > 90000) {
-      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard ciphertext')
+    const knownFields = new Set(['client_event_id', 'kind', 'nonce', 'ciphertext',
+      'target_device_id', 'ephemeral_key', 'wrapped_key', 'node_id'])
+    if (Object.keys(v).some(name => !knownFields.has(name))) {
+      throw new AgentIPCError('invalid_input', 0, 'Unexpected Clipboard IPC metadata')
     }
-    return { client_event_id: v.client_event_id, kind: v.kind,
-      nonce: v.nonce, ciphertext: v.ciphertext }
+    const uuid = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
+    const decode = (raw: unknown, requiredLength: number): boolean => {
+      if (typeof raw !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(raw)) return false
+      const bytes = Buffer.from(raw, 'base64')
+      return bytes.length === requiredLength && bytes.toString('base64') === raw
+    }
+    const allowedKind = v.kind === 'text/plain' || v.kind === 'text/uri-list' ||
+      v.kind === 'image/x-xdrive-node-ref' || v.kind === 'application/x-xdrive-node-ref'
+    const media = v.kind === 'image/x-xdrive-node-ref' ||
+      v.kind === 'application/x-xdrive-node-ref'
+    const target = v.target_device_id
+    const directed = typeof target === 'string' && target !== ''
+    if (typeof v.client_event_id !== 'string' || !uuid.test(v.client_event_id) ||
+        (v.target_device_id !== undefined && typeof v.target_device_id !== 'string') ||
+        (v.ephemeral_key !== undefined && typeof v.ephemeral_key !== 'string') ||
+        (v.wrapped_key !== undefined && typeof v.wrapped_key !== 'string') ||
+        (v.node_id !== undefined && (typeof v.node_id !== 'number' ||
+          !Number.isSafeInteger(v.node_id))) ||
+        !allowedKind || !decode(v.nonce, 12) ||
+        typeof v.ciphertext !== 'string' || v.ciphertext.length > 90000 ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(v.ciphertext) ||
+        Buffer.from(v.ciphertext, 'base64').length < 17 ||
+        Buffer.from(v.ciphertext, 'base64').toString('base64') !== v.ciphertext ||
+        (media !== (typeof v.node_id === 'number' && Number.isSafeInteger(v.node_id) &&
+          v.node_id > 0)) ||
+        (directed && (!uuid.test(target as string) || !decode(v.ephemeral_key, 32) ||
+          !decode(v.wrapped_key, 60))) ||
+        (!directed && (media || v.ephemeral_key || v.wrapped_key || v.target_device_id)) ||
+        (v.node_id !== undefined && !media) ||
+        (v.target_device_id !== undefined && !directed)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard ciphertext or target')
+    }
+    // Construct a strict allowlisted payload. Never forward unknown IPC keys.
+    return {
+      client_event_id: v.client_event_id, kind: v.kind as AgentClipboardWrite['kind'],
+      nonce: v.nonce as string, ciphertext: v.ciphertext,
+      ...(directed ? {
+        target_device_id: target as string, ephemeral_key: v.ephemeral_key as string,
+        wrapped_key: v.wrapped_key as string,
+      } : {}),
+      ...(media ? { node_id: v.node_id as number } : {}),
+    }
   }
   ipcMain.handle('agent:cloud-clipboard-vault', () =>
     runAgentAction<AgentClipboardVault>(async () =>
@@ -9004,6 +9047,22 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:cloud-clipboard-list', (_event, before: unknown) =>
     runAgentAction<AgentClipboardPage>(async () =>
       (await requireClipboardAgent()).cloudClipboardList(clipboardIndex(before, true)), false))
+  ipcMain.handle('agent:cloud-clipboard-devices', () =>
+    runAgentAction<AgentClipboardDevices>(async () =>
+      (await requireClipboardAgent()).cloudClipboardDevices(), false))
+  ipcMain.handle('agent:cloud-clipboard-enable-device', () =>
+    runAgentAction<AgentClipboardDevice>(async () =>
+      (await requireClipboardAgent()).cloudClipboardEnableDevice(), false))
+  ipcMain.handle('agent:cloud-clipboard-decrypt', (_event, id: unknown) =>
+    runAgentAction<AgentClipboardCleartext>(async () =>
+      (await requireClipboardAgent()).cloudClipboardDecrypt(clipboardIndex(id)), false))
+  ipcMain.handle('agent:cloud-clipboard-revoke-device', (_event, deviceID: unknown) =>
+    runAgentAction<void>(async () => {
+      if (typeof deviceID !== 'string' ||
+          !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(deviceID))
+        throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard recipient')
+      return (await requireClipboardAgent()).cloudClipboardRevokeDevice(deviceID)
+    }, false))
   ipcMain.handle('agent:cloud-clipboard-create', (_event, value: unknown) =>
     runAgentAction<AgentClipboardItem>(async () =>
       (await requireClipboardAgent()).cloudClipboardCreate(clipboardWrite(value)), false))
