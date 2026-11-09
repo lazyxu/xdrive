@@ -1937,6 +1937,8 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci --no-audit --no-fund
+      - name: Verify current Commit Bundle URL admission
+        run: node --experimental-strip-types --test scripts/test-release-bundle-urls.mjs
       - run: npm run lint
       - run: npm run build
       - uses: actions/upload-artifact@v4
