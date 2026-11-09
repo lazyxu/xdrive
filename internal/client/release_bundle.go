@@ -30,6 +30,7 @@ type ReleaseBundleArtifact struct {
 	Size        int64  `json:"size"`
 	Cached      bool   `json:"cached"`
 	CacheStatus string `json:"cache_status"`
+	InstallMode string `json:"install_mode"`
 	Sources     struct {
 		GitLab string `json:"gitlab"`
 		GitHub string `json:"github"`
@@ -40,8 +41,38 @@ type ReleaseBundleArtifact struct {
 type ReleaseBundleListing struct {
 	State     string                  `json:"state"`
 	Commit    string                  `json:"commit"`
-	Channel   string                  `json:"channel"`
-	Artifacts []ReleaseBundleArtifact `json:"artifacts"`
+	Channel       string                  `json:"channel"`
+	ServerVersion string                  `json:"server_version"`
+	Artifacts     []ReleaseBundleArtifact `json:"artifacts"`
+}
+
+// RetryCurrentReleaseBundle only requests an independent Host retry. The
+// authenticated admin Server endpoint may not redirect or move an Owner
+// credential to an unrelated host. A failed cache retry never alters Server.
+func (c *Client) RetryCurrentReleaseBundle(ctx context.Context) error {
+	req, err := c.request(ctx, http.MethodPost,
+		"/api/v1/admin/release-bundles/retry", strings.NewReader("{}"))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	httpClient := c.HTTP
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	noRedirect := *httpClient
+	noRedirect.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := noRedirect.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		return responseError(resp)
+	}
+	return nil
 }
 
 // CurrentReleaseBundle returns only the Server's current version. The
