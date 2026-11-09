@@ -172,6 +172,12 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
             (cache / "packages" / COMMIT / second["filename"]).unlink()
             status["artifacts"][self.item["filename"]] = "verification_failed"
             (cache / "status.json").write_text(json.dumps(status))
+            # Even a correct-size file must be rejected if the Host marks its
+            # provenance as unverified; it must never be exposed to clients.
+            with self.assertRaisesRegex(audit.GateError, "unverified package"):
+                audit.check_host(home, COMMIT, manifest)
+            (cache / "packages" / COMMIT / self.item["filename"]).unlink()
+            # An empty retry-needed cache is not a usable verified subset.
             with self.assertRaisesRegex(audit.GateError, "no verified subset"):
                 audit.check_host(home, COMMIT, manifest)
 
