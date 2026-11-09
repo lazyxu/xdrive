@@ -144,3 +144,25 @@ test('No standalone Clip binary viewer, File grant, or automatic upload-triggere
   assert.match(dsmPage,/XDriveSynologyClipboardReferenceViewer/)
   assert.doesNotMatch(dsmPage,/ClipboardFileWriter|cloudUploadFile/)
 })
+
+
+test('Desktop Clipboard to Files route handoff survives intentional page unmount but never Owner switch', () => {
+  const app = read('desktop/src/renderer/App.tsx')
+  const start = app.indexOf('  clipboardOpenFileRef.current = async (nodeID, signal) => {')
+  const end = app.indexOf('\n  const requestCloudFileAction', start)
+  assert.ok(start >= 0 && end > start)
+  const bridge = app.slice(start, end)
+  assert.match(bridge, /const sameOwner = \(\) => !!ownerScope/)
+  assert.match(bridge, /const current = \(\) => !signal\.aborted && sameOwner\(\)/)
+  assert.match(bridge, /const result = await window\.xdriveDesktop\.agent\.getNodeLocation\(nodeID\)/)
+  assert.match(bridge, /if \(!current\(\)\) throw new Error\('Clipboard Owner 已变化'\)/)
+  assert.match(bridge, /revealCloudNodeInDirectory\(parent, nodeID, ancestry,\s*true, sameOwner\)/)
+  assert.doesNotMatch(bridge, /revealCloudNodeInDirectory\(parent, nodeID, ancestry,\s*true, current\)/,
+    'page unmount abort is expected after route change and must not cancel the admitted Files read')
+  const nav = app.slice(app.indexOf('  const revealCloudNodeInDirectory = async ('),
+    app.indexOf('  // Resolve the precise Node through the already authenticated Agent Files'))
+  assert.match(nav, /!stillAuthorized\(\)/)
+  assert.match(nav, /activeViewRef\.current !== 'files'/)
+  assert.match(nav, /setCloudRevealTarget\(\{/)
+  assert.match(nav, /openPreview,/)
+})
