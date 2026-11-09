@@ -546,7 +546,12 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                   {targetID ? (
                     <>
                       <TextField select label="内容类型" value={referenceKind} size="small" disabled={busy}
-                        onChange={e => setReferenceKind(e.target.value as 'text' | 'image' | 'file')}>
+                        onChange={e => {
+                          // A Node chosen for an image must never silently become
+                          // a file (or vice versa) without a fresh user choice.
+                          setReferenceKind(e.target.value as 'text' | 'image' | 'file')
+                          setNodeID('')
+                        }}>
                         <MenuItem value="text">文本或链接</MenuItem>
                         <MenuItem value="image">现有云端图片引用</MenuItem>
                         <MenuItem value="file">现有云端文件引用</MenuItem>
