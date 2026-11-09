@@ -25,7 +25,8 @@ const section = (text, start, end) => {
 test('foreground tab can preserve its exact last visible PhotoKit page in parent state', () => {
   assert.match(parent, /@State private var navigationReturnPage: XDrivePhotoKitScanPage\?/)
   assert.match(parent, /@State private var navigationReturnGeneration: UUID\?/)
-  const hidden = section(parent, 'onPageHidden: { hiddenOffset, verifiedPage in', 'onFailure: {')
+  const hidden = section(parent, 'onPageHidden: { hiddenOffset, pageEpoch, verifiedPage in', 'onFailure: {')
+  assert.match(hidden, /pageEpoch == generation/)
   assert.match(hidden, /hiddenOffset == savedOffset/)
   assert.match(hidden, /phase == \.active && authorized/)
   assert.match(hidden, /verifiedPage\.totalAccessibleAssets == total/)
@@ -56,12 +57,12 @@ test('PhotoKit page is reusable only if its generation, offset, total and grant 
 })
 
 test('child onDisappear submits only verified page evidence to a bounded parent cache', () => {
-  assert.match(child, /let onPageHidden: \(Int, XDrivePhotoKitScanPage\?\) -> Void/)
+  assert.match(child, /let onPageHidden: \\(Int, UUID\\?, XDrivePhotoKitScanPage\\?\\) -> Void/)
   const disappear = section(child, '.onDisappear {', '\n    }\n}')
   assert.match(disappear, /retainedGeneration == generation/)
   assert.match(disappear, /page\?\.startOffset == offset/)
   assert.match(disappear, /page\?\.totalAccessibleAssets == expectedTotal/)
-  assert.match(disappear, /onPageHidden\(offset, verifiedPage\)/)
+  assert.match(disappear, /onPageHidden\\(offset, retainedGeneration, verifiedPage\\)/)
 })
 
 test('background, scene suspension and permission changes revoke any navigation cache', () => {
