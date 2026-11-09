@@ -55,7 +55,10 @@ test('changing density never changes PhotoKit identity, backup scans or UI item 
   assert.doesNotMatch(page, /task\(id:.*density/)
   assert.match(page, /let count = try await reader\.start\(atOffset: offset, mediaFilter: mediaFilter\)/)
   assert.match(page, /loaded\.startOffset == offset/)
-  assert.match(page, /\.onDisappear \{\s*if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*\}/)
+  // Exact verified page can be offered to a one-slot parent cache, while
+  // offscreen lazy tiles still release their local PhotoKit page.
+  assert.match(page, /\.onDisappear \{[\s\S]*?let verifiedEpoch = retainedGeneration\s*let verifiedPage = \([\s\S]*?verifiedEpoch == generation &&\s*page\?\.startOffset == offset &&\s*page\?\.totalAccessibleAssets == expectedTotal\s*\) \? page : nil\s*if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil\s*retainedGeneration = nil\s*\}/)
+  assert.match(page, /onPageHidden\(offset, verifiedEpoch, verifiedPage\)/)
   assert.match(wall, /retainWhileCovered: selected != nil \|\| showingMap/)
   assert.match(square, /\.task\(id: "\\\(candidate\.id\)-\\\(framing\.rawValue\)"\)/)
   assert.match(square, /loader\.load\(\s*candidate\.id, size: CGSize\(width: 420, height: 420\),\s*contentMode: framing == \.complete \? \.aspectFit : \.aspectFill/)
