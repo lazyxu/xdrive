@@ -29,7 +29,9 @@ test('Android Clipboard reuses original Owner Files UploadSession with private i
   assert.match(ctrl, /located\.parentId == root\.id/)
   assert.match(ctrl, /located\.revision >= uploaded\.revision/)
   assert.match(ctrl, /currentClipboardSession\(\)/)
-  assert.doesNotMatch(ctrl, /clipboardImportLocalFile[\s\S]*?uploadManagedAndroidPhotoOriginal/)
+  const importBody = ctrl.slice(ctrl.indexOf('suspend fun clipboardImportLocalFile('),
+    ctrl.indexOf('suspend fun clipboardDevices()'))
+  assert.doesNotMatch(importBody, /uploadManagedAndroidPhotoOriginal|uploadNativePhotoOriginal|SourceRun/)
 })
 
 test('Android Owner A-B-A, Lock, stale target and unknown ACK never auto-retry or broadcast', () => {
