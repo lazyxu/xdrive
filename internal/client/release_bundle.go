@@ -210,14 +210,22 @@ func (c *Client) DownloadCurrentReleaseArtifact(
 		}
 		request.Header.Set("Accept-Encoding", "identity")
 		request.Header.Set("User-Agent", "xdrive-client-bundle/1")
-		var response *http.Response
-		if strings.HasPrefix(source, "/api/v1/") {
-			response, err = c.do(request)
-		} else {
-			// External CDN mirror must never receive the Owner bearer or
-			// device credentials; compare against immutable expected digest.
-			response, err = http.DefaultClient.Do(request)
+		// Redirects are never part of the immutable source allowlist. Use the
+		// same pinned TLS transport for the authenticated Owner endpoint, but
+		// prevent a 302/307 from forwarding credentials or switching package
+		// origins without the caller's exact digest/fallback decision.
+		h := http.DefaultClient
+		if strings.HasPrefix(source, "/api/v1/") && c.HTTP != nil {
+			h = c.HTTP
 		}
+		downloadClient := *h
+		downloadClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		// A large installer can take longer than metadata requests; Context
+		// cancellation still stops the stream. Transport dial/TLS limits stay.
+		downloadClient.Timeout = 0
+		response, err := downloadClient.Do(request)
 		if err != nil {
 			lastErr = err
 			continue
