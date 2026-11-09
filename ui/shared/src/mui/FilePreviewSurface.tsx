@@ -983,17 +983,37 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   // Do not expose a stale revision or late Owner's URL for a render.
   const activeVideoPosterURL = videoPoster?.identity === sourceIdentity &&
     videoPoster.loader === loadImagePreview ? videoPoster.url : ''
+  // Keep the same physical video viewport (including native controls safe
+  // area) before the signed URL, during buffering and after the first decoded
+  // frame. Previously the poster/loading branch had a different height and no
+  // clearance; the browser replaced it with a padded player mid-interaction.
+  const videoShellSx = {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    minHeight,
+    boxSizing: 'border-box',
+    bgcolor: 'black',
+    pb: videoControlsSafeArea === 'actions-filmstrip'
+      ? 'var(--xdrive-viewer-video-actions-filmstrip-clearance, calc(128px + env(safe-area-inset-bottom)))'
+      : videoControlsSafeArea === 'actions'
+        ? 'var(--xdrive-viewer-video-actions-clearance, calc(56px + env(safe-area-inset-bottom)))'
+        : undefined,
+  } as const
   const videoPlaceholder = (overlay: ReactNode) => {
-    if (previewKind !== 'video' || !activeVideoPosterURL) return overlay
+    if (previewKind !== 'video') return overlay
     return (
-      <Box data-xdrive-preview-video-poster sx={{
-        position: 'relative', width: '100%', height: '100%', minHeight: 96,
-        display: 'grid', placeItems: 'center', bgcolor: 'black',
-      }}>
-        <Box component="img" src={activeVideoPosterURL} alt="" aria-hidden
-          sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
-        <Box sx={{ position: 'relative', zIndex: 1, display: 'grid', placeItems: 'center',
-          bgcolor: 'rgba(0,0,0,.35)', color: 'common.white', p: 1 }}>
+      <Box data-xdrive-preview-video-poster data-xdrive-preview-media-state="video"
+        sx={videoShellSx}>
+        {activeVideoPosterURL ? (
+          <Box component="img" src={activeVideoPosterURL} alt="" aria-hidden
+            sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
+        ) : null}
+        <Box sx={{
+          position: 'relative', zIndex: 1, width: '100%', height: '100%',
+          display: 'grid', placeItems: 'center',
+          ...(activeVideoPosterURL ? { bgcolor: 'rgba(0,0,0,.35)', color: 'common.white' } : {}),
+        }}>
           {overlay}
         </Box>
       </Box>
@@ -1143,8 +1163,13 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (loading || acquiredIdentityRef.current !== sourceIdentity ||
         staleVideoStreamOwner || staleAudioOwner || stalePDFOwner || staleTextOwner) {
       return videoPlaceholder(
-        <Box sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
-          <CircularProgress size={26} />
+        <Box sx={{ position: 'relative', width: '100%', height: '100%', minHeight: 96,
+          display: 'grid', placeItems: 'center' }}>
+          {previewKind === 'video' ? (
+            <XDriveMediaLoadingProgress stage="transfer"
+              loadedBytes={urlDownloadProgress?.loadedBytes ?? 0}
+              totalBytes={urlDownloadProgress?.totalBytes} />
+          ) : <CircularProgress size={26} />}
         </Box>,
       )
     }
@@ -1189,23 +1214,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (!previewURL) return videoPlaceholder(fallback)
     if (previewKind === 'video') {
       return (
-        <Box data-xdrive-preview-media-state="video" sx={{
-          position: 'relative',
-          width: '100%',
-          height: '100%',
-          minHeight,
-          boxSizing: 'border-box',
-          // Both original and edited video share the existing media player.
-          // Native controls must clear the 56px Gallery actions and optional
-          // ~72px filmstrip. Consume the shared Viewer chrome visibility
-          // variable: hidden chrome releases the reserved strip without
-          // restarting a video or adding a second native-media renderer.
-          pb: videoControlsSafeArea === 'actions-filmstrip'
-            ? 'var(--xdrive-viewer-video-actions-filmstrip-clearance, calc(128px + env(safe-area-inset-bottom)))'
-            : videoControlsSafeArea === 'actions'
-              ? 'var(--xdrive-viewer-video-actions-clearance, calc(56px + env(safe-area-inset-bottom)))'
-              : undefined,
-        }}>
+        <Box data-xdrive-preview-media-state="video" sx={videoShellSx}>
           {mediaTransform ? (
             <XDriveTransformedVideoPreview
               key={`${target?.id}:${target?.revision ?? ''}:${previewURL}`}
