@@ -141,7 +141,7 @@ test('actual Electron Guest navigation AND redirects use the same strict scope a
   assert.match(wiring,/if\(isMainFrame\)revokeInPageNavigation\(url\)/)
   assert.match(wiring,/if\(desktopPlacesGuests\.get\(guest\.id\)===identity\)closeDesktopPlacesGuests\(\)/,
     'revoke Cookie partition only for the matching current Guest')
-  assert.match(wiring,/if\(!guest\.isDestroyed\(\)\)guest\.destroy\(\)/,
+  assert.match(wiring,/if\(!guest\.isDestroyed\(\)\)guest\.close\(\{waitForBeforeUnload:false\}\)/,
     'force-close unauthorized in-page document, ignoring beforeunload')
 })
 
