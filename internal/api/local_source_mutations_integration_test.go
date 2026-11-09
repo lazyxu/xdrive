@@ -524,10 +524,11 @@ func TestNonLocalSourceWritesPreserveOwnerJWTCompatibility(t *testing.T) {
 	// target. The Owner root is not a Source-owned directory and 5B must
 	// never rename it just because a synthetic Source points there.
 	syncRoot := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
-	connector := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, yikeTargetConnectorName)
-	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "uid_12345_Pull owner JWT")
+	pullRoot := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, yikePullTargetRootName)
+	connector := createFilePropertiesDir(t, db, owner.ID, pullRoot.ID, yikePullTargetConnectorName)
+	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "Pull owner JWT")
 	targetID := target.ID
-	source := meta.Source{OwnerID: owner.ID, Name: "Pull owner JWT", Kind: "yike_photos", Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1, TargetNodeID: &targetID}
+	source := meta.Source{OwnerID: owner.ID, Name: "Pull owner JWT", Kind: "yike_photos", Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1, TargetNodeID: &targetID, TargetManaged: true}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +538,7 @@ func TestNonLocalSourceWritesPreserveOwnerJWTCompatibility(t *testing.T) {
 	if err := db.First(&renamed, target.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if renamed.Name != "uid_12345_Pull updated" || renamed.Revision != target.Revision+1 {
+	if renamed.Name != "Pull updated" || renamed.Revision != target.Revision+1 {
 		t.Fatalf("Owner JWT Yike rename did not atomically update the real target: %+v", renamed)
 	}
 	request(t, router, http.MethodPost, url+"/trigger", ownerJWT, nil, http.StatusAccepted)

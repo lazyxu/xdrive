@@ -18,7 +18,7 @@ import (
 
 // The disabled HTTP entry point no longer authorizes Synology Pull edits.
 // Keep testing the dormant provider's existing atomic target-renamer directly,
-// so its legacy data-safety contract remains protected for future re-enable.
+// while keeping the canonical target and atomic rename contract.
 func TestManagedSourceRename5BAtomicAndLegacyGuard(t *testing.T) {
 	db, srv, owner, _, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{}); err != nil {
@@ -32,7 +32,7 @@ func TestManagedSourceRename5BAtomicAndLegacyGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
-	pull := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "远程拉取")
+	pull := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "Pull")
 	connector := createFilePropertiesDir(t, db, owner.ID, pull.ID, "Synology Photos")
 	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "原目录")
 	file := createFilePropertiesFile(t, db, owner.ID, target.ID, "document.jpg", 32)
@@ -177,7 +177,7 @@ func TestYikeSourceRenameKeepsAccountIDAndIgnoresCredentialNickname(t *testing.T
 	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
 	pull := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, yikePullTargetRootName)
 	connector := createFilePropertiesDir(t, db, owner.ID, pull.ID, yikePullTargetConnectorName)
-	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "uid_12345_旧昵称")
+	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "一刻来源")
 	targetID := target.ID
 	source := meta.Source{
 		OwnerID: owner.ID, Name: "一刻来源", Kind: yikeSourceKind,
@@ -204,8 +204,8 @@ func TestYikeSourceRenameKeepsAccountIDAndIgnoresCredentialNickname(t *testing.T
 	if err := db.First(&after, target.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if after.Name != "uid_12345_我的一刻" || after.ID != target.ID {
-		t.Fatalf("Yike rename changed account or root identity: %+v", after)
+	if after.Name != "我的一刻" || after.ID != target.ID {
+		t.Fatalf("Yike rename changed canonical target identity: %+v", after)
 	}
 	var changedSource meta.Source
 	if err := db.First(&changedSource, source.ID).Error; err != nil {
@@ -223,7 +223,7 @@ func TestYikeSourceRenameKeepsAccountIDAndIgnoresCredentialNickname(t *testing.T
 	if err := db.First(&after, target.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if after.Name != "uid_12345_我的一刻" {
+	if after.Name != "我的一刻" {
 		t.Fatalf("credential refresh reset Owner folder name: %q", after.Name)
 	}
 }

@@ -192,28 +192,18 @@ func trustedSourceRunTargetTx(ctx context.Context, tx *gorm.DB, c *gin.Context, 
 		return errManagedSourceWriteDenied
 	}
 	if source.TargetNodeID == nil || *source.TargetNodeID == 0 ||
-		(!source.TargetManaged && source.Kind != yikeSourceKind) {
+		!source.TargetManaged {
 		return errManagedSourceWriteDenied
 	}
-	// Legacy Yike Sources are not tagged target_managed yet. Do not let
-	// a valid Worker token convert a manually targeted ordinary folder into
-	// an implicit writable Source root: verify the canonical ancestors.
+	// Only a verified managed Pull target may receive SourceRun writes.
 	var target meta.Node
 	if err := tx.Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
 		*source.TargetNodeID, uid, meta.NodeTypeDir).Take(&target).Error; err != nil {
 		return errManagedSourceWriteDenied
 	}
-	if source.Kind == yikeSourceKind {
-		// New Yike Sources own their exact user-named leaf and store the
-		// verified account identity in Source.ProviderAccountID. A legacy
-		// Source still needs the old uid_* proof; names alone grant nothing.
-		isNewManagedLeaf := source.TargetManaged && source.ProviderAccountID != "" &&
-			target.Name == source.Name
-		if !isNewManagedLeaf {
-			if _, ok := managedYikeTargetAccountID(target.Name); !ok {
-				return errManagedSourceWriteDenied
-			}
-		}
+	if source.Kind == yikeSourceKind &&
+		(source.ProviderAccountID == "" || target.Name != source.Name) {
+		return errManagedSourceWriteDenied
 	}
 	if _, err := managedSourceTargetAncestorIDsTx(tx, source, target); err != nil {
 		return errManagedSourceWriteDenied

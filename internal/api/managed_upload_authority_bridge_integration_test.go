@@ -59,7 +59,7 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 	umbrella := createFilePropertiesDir(t, db, owner.ID, root.ID, "同步文件夹")
 	pull := createFilePropertiesDir(t, db, owner.ID, umbrella.ID, "Pull")
 	connector := createFilePropertiesDir(t, db, owner.ID, pull.ID, "Yike Photos")
-	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "uid_123_Photos")
+	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "Photos")
 	child := createFilePropertiesDir(t, db, owner.ID, target.ID, "Albums")
 	ordinary := createFilePropertiesDir(t, db, owner.ID, root.ID, "Ordinary")
 	source := meta.Source{
@@ -67,7 +67,7 @@ func TestManagedUploadAuthorityKeepsPullRunAndLocalPushSeparate(t *testing.T) {
 		Direction: meta.SourceDirectionPull,
 		SyncMode:  meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
 		Status: meta.SourceStatusActive, Revision: 1,
-		TargetNodeID: &target.ID, TargetManaged: true,
+		TargetNodeID: &target.ID, TargetManaged: true, ProviderAccountID: "123",
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
