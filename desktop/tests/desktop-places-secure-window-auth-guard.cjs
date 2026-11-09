@@ -35,7 +35,7 @@ function fixture(patch = {}) {
   }}
   let requested = 0, finishRelease, revoked = 0
   const env = {
-    exports:{}, agentState:state,
+    exports:{}, agentState:state, secureBaiduMapOpenGeneration:0,
     xDriveResolveSecureBaiduMapTarget:server =>
       server === origin ? {origin} : null,
     xDriveParseDesktopBaiduMapScope:raw =>
