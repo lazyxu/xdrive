@@ -186,7 +186,7 @@ iOS Photos 使用统一的 `Source(kind=ios_photos, direction=push, sync_mode=ba
 - Source Manager 展示统一目标目录、最近运行状态和分页运行历史；不提供 Server 端 Run Now、通用来源设置、虚构的相册集合或逐文件错误快照。继续备份、权限和自动计划仍在绑定的 iPhone 上管理。
 
 
-## Optional Source cloud-only cleanup — #4093 candidate
+## Optional Source cloud-only cleanup — merged #4093
 
 Cloud-only cleanup is a **separate explicit Owner action**, not Source archive/delete and not a replacement for ordinary Files operations. A retired or archived Source does not silently remove its cloud files.
 
@@ -196,7 +196,9 @@ Cloud-only cleanup is a **separate explicit Owner action**, not Source archive/d
 4. Unsettled UploadSessions, running SourceRuns, queued Files operations, foreign Source/SourceItem dependencies, active direct Shares, malformed ancestry and stale revisions **fail closed**. Data remains intact on refusal.
 5. The target subtree is only soft-deleted using the existing bounded, atomic Trash operation. Source/SourceItems/SyncRuns, file versions and CAS stay unchanged. The Owner uses the existing Trash Restore API for rollback; Source stays archived. Ordinary permanent Trash delete is denied while any Source remains bound to the target.
 
-This is a new API + UI candidate in #4093. It is not implemented in merged master until its exact HEAD CI, PostgreSQL tests and Final Gate succeed. Physical device/production validation remains separate.
+The preview/confirmation/Trash workflow above was **merged into master through #4093** (merge commit `e38ff7ed9aaf32b01e034a5a4e344f65d584320d`) after exact-HEAD CI. The eligible Source kind remains archived, managed **Yike Photos Pull only**; neither dormant Synology Pull nor native/device Push gains a cloud cleanup action.
+
+A follow-up fail-closed guard on `fix/sync-cleanup-cross-owner-fence-20261109` additionally requires the **server** (not only the UI) to enforce that Source-kind boundary. Before trashing, the server must prove that the entire live target subtree contains no other-Owner descendants, including anomalous historical parent edges, and that no other Owner has an active Share or Source target claim into it. Those changes and isolated PostgreSQL negative tests are **not part of accepted master until their own exact-head PR CI/Final Gate passes**. Physical device/production validation remains separate.
 
 ## S10–S18 destination policy (merged in #4082, 2026-11-07)
 
