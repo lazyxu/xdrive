@@ -266,3 +266,125 @@ func TestSourceCloudCleanupRejectsUnsafeSharesWritersAndCrossSourceHistory(t *te
 	requestWithHeaders(t, router, http.MethodGet, preview,
 		token, nil, http.StatusOK, nil)
 }
+// A historical cross-Owner parent edge may survive a NOT VALID composite FK.
+// An Owner-scoped recursive inventory must not silently omit that node and
+// move its parent to Trash. This also protects an already issued preview.
+func TestSourceCloudCleanupRejectsCrossOwnerDescendants(t *testing.T) {
+	for _, tc := range []struct {
+		name, nodeType string
+		nested         bool
+	}{
+		{name: "foreign direct file", nodeType: meta.NodeTypeFile},
+		{name: "foreign nested directory", nodeType: meta.NodeTypeDir, nested: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, owner, other, source, target, photo, token, _ := sourceCleanupFixture(t)
+			db := server.DB
+			gin.SetMode(gin.TestMode)
+			router := server.Router()
+			path := fmt.Sprintf("/api/v1/sources/%d/cloud-cleanup", source.ID)
+
+			parentID := target.ID
+			if tc.nested {
+				parent := createFilePropertiesDir(t, db, owner.ID, target.ID, "nested-album")
+				parentID = parent.ID
+			}
+			before := requestWithHeaders(t, router, http.MethodGet,
+				path+"/preview", token, nil, http.StatusOK, nil)
+			var preview sourceCloudCleanupPreviewDTO
+			if err := json.Unmarshal(before.Body.Bytes(), &preview); err != nil {
+				t.Fatal(err)
+			}
+			foreign := meta.Node{
+				OwnerID: other.ID, ParentID: &parentID, Name: "foreign-descendant",
+				Type: tc.nodeType, Revision: 1,
+			}
+			if err := db.Create(&foreign).Error; err != nil {
+				t.Fatal(err)
+			}
+			requestWithHeaders(t, router, http.MethodGet,
+				path+"/preview", token, nil, http.StatusConflict, nil)
+			body := fmt.Sprintf(`{"preview_digest":%q,"confirm_name":%q,"target_node_id":%d,"target_revision":%d}`,
+				preview.PreviewDigest, source.Name, preview.TargetNodeID, preview.TargetRevision)
+			requestWithHeaders(t, router, http.MethodPost, path+"/trash",
+				token, strings.NewReader(body), http.StatusConflict,
+				map[string]string{"If-Match": fmt.Sprintf("%q", fmt.Sprint(source.Revision))})
+
+			for _, id := range []uint64{target.ID, photo.ID, foreign.ID, parentID} {
+				var current meta.Node
+				if err := db.First(&current, id).Error; err != nil {
+					t.Fatal(err)
+				}
+				if current.DeletedAt != nil || current.TrashRootID != nil {
+					t.Fatalf("blocked cleanup must retain all live nodes, id=%d node=%+v", id, current)
+				}
+			}
+			var retained meta.Source
+			if err := db.First(&retained, source.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if retained.TargetNodeID == nil || *retained.TargetNodeID != target.ID ||
+				retained.Revision != source.Revision || retained.Status != meta.SourceStatusArchived {
+				t.Fatalf("foreign child changed the Source binding: %+v", retained)
+			}
+		})
+	}
+}
+
+// Cross-Owner Source and Share rows can also survive historical upgrades.
+// Those references remain authoritative safety blockers even if their claimed
+// Owner differs from the actual Node Owner.
+func TestSourceCloudCleanupRejectsForeignOwnerSourceAndShareClaims(t *testing.T) {
+	for _, claim := range []string{"source target", "active share"} {
+		t.Run(claim, func(t *testing.T) {
+			server, _, other, source, target, photo, token, _ := sourceCleanupFixture(t)
+			db := server.DB
+			gin.SetMode(gin.TestMode)
+			router := server.Router()
+			path := fmt.Sprintf("/api/v1/sources/%d/cloud-cleanup", source.ID)
+			before := requestWithHeaders(t, router, http.MethodGet,
+				path+"/preview", token, nil, http.StatusOK, nil)
+			var preview sourceCloudCleanupPreviewDTO
+			if err := json.Unmarshal(before.Body.Bytes(), &preview); err != nil {
+				t.Fatal(err)
+			}
+			if claim == "source target" {
+				otherSource := meta.Source{
+					OwnerID: other.ID, Name: "historical foreign claim",
+					Kind: "yike_photos", Direction: meta.SourceDirectionPull,
+					SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync,
+					Status: meta.SourceStatusArchived, Revision: 1,
+					TargetNodeID: &photo.ID,
+				}
+				if err := db.Create(&otherSource).Error; err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				share := meta.Share{
+					OwnerID: other.ID, NodeID: photo.ID,
+					TokenHash: strings.Repeat("c", 64), Access: "read_only",
+				}
+				if err := db.Create(&share).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			requestWithHeaders(t, router, http.MethodGet,
+				path+"/preview", token, nil, http.StatusConflict, nil)
+			body := fmt.Sprintf(`{"preview_digest":%q,"confirm_name":%q,"target_node_id":%d,"target_revision":%d}`,
+				preview.PreviewDigest, source.Name, preview.TargetNodeID, preview.TargetRevision)
+			requestWithHeaders(t, router, http.MethodPost, path+"/trash",
+				token, strings.NewReader(body), http.StatusConflict,
+				map[string]string{"If-Match": fmt.Sprintf("%q", fmt.Sprint(source.Revision))})
+			for _, id := range []uint64{target.ID, photo.ID} {
+				var current meta.Node
+				if err := db.First(&current, id).Error; err != nil {
+					t.Fatal(err)
+				}
+				if current.DeletedAt != nil || current.TrashRootID != nil {
+					t.Fatalf("foreign claim mutated a live node: %+v", current)
+				}
+			}
+		})
+	}
+}
+
