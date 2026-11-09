@@ -337,4 +337,20 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(find("native-ios-tab-mine", in: app).exists)
         XCTAssertEqual(app.state, .runningForeground)
     }
+    /// Actual simulator navigation: compact Home edit is a live SwiftUI
+    /// control, not a static source contract. No authenticated Owner required.
+    func testFilesHomeInlineEditKeepsBrowseShellAndRestoresDone() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        let edit = find("native-ios-files-home-edit-toggle", in: app)
+        XCTAssertTrue(edit.waitForExistence(timeout: 12))
+        edit.tap()
+        XCTAssertEqual(edit.label, "完成")
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+        XCTAssertTrue(find("native-ios-files-open-root-location", in: app).exists)
+        edit.tap()
+        XCTAssertEqual(edit.label, "编辑")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
 }

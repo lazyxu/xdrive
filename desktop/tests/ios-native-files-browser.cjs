@@ -126,7 +126,7 @@ test('Browse home displays only verified favorite folders as native direct navig
   const home = view.slice(view.indexOf('@ViewBuilder private var filesHome:'), view.indexOf('@ViewBuilder private var filesHeader:'))
   assert.match(home, /Section\("个人收藏"\)/)
   assert.match(home, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
-  assert.match(home, /ForEach\(verifiedFavoriteFolders\) \{ item in/)
+  assert.match(home, /ForEach\(isHomeEditing \? verifiedFavoriteFolders : Array\(verifiedFavoriteFolders\.prefix\(4\)\)\) \{ item in/)
   assert.match(home, /XDriveIOSNativeFilesBrowser\(\s*login: login, folderID: item\.node\.id,\s*folderName: item\.node\.name/)
   assert.match(home, /native-ios-files-favorite-folder-/)
   assert.match(home, /if favoriteShortcuts\.loading \{/)

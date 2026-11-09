@@ -6,7 +6,8 @@ const path = require('node:path')
 const source = fs.readFileSync(path.resolve(__dirname,'../..','ios/XDriveIOS/NativeFilesOperationHistory.swift'),'utf8')
 test('Operations model can rebind a reused sheet to a new expected Owner',()=>{
   assert.match(source,/private var expected: XDriveNativeOwnerRoot/)
-  assert.match(source,/func updateExpectedOwner\(_ owner: XDriveNativeOwnerRoot\) \{\s*guard !XDriveIOSNativePhotoOwnerScope\.matches\(expected, owner\) else \{ return \}\s*invalidate\(\)\s*expected = owner/)
+  assert.match(source,/func updateExpectedOwner\(_ owner: XDriveNativeOwnerRoot\) \{\s*if let expected, XDriveIOSNativePhotoOwnerScope\.matches\(expected, owner\) \{\s*return\s*\}\s*invalidate\(\)\s*expected = owner/)
+  assert.match(source,/init\(owner: XDriveNativeOwnerRoot\? = nil\)/)
 })
 test('old request failure cannot post error or uncertain ACK to a switched account',()=>{
   assert.equal((source.match(/\} catch \{\s*guard let self, self\.epoch == ticket,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)\s*else \{ return \}/g)||[]).length,2)
