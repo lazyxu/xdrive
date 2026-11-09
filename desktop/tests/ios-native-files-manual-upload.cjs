@@ -11,6 +11,16 @@ const stage = read('ios/XDriveIOS/NativeManualDocumentStage.swift')
 const policy = read('ios/XDriveIOS/NativeFilesUploadBatchPolicy.swift')
 const go = read('internal/api/router.go')
 
+test('UploadReadback remains module-visible after rebasing folder resume on master', () => {
+  // master deliberately exposed the shared verified-readback helper to other
+  // native files within the Swift module; reverting it to private is a real
+  // integration regression even when git reports a clean text merge.
+  assert.match(upload, /^struct XDriveIOSNativeFilesUploadReadback \\{/m)
+  assert.doesNotMatch(upload, /^\\s*private struct XDriveIOSNativeFilesUploadReadback \\{/m)
+  assert.match(upload, /func requireCommitted\\(/)
+  assert.match(upload, /func requireCreatedDirectory\\(/)
+})
+
 test('native Files picker uses the sole existing Go UploadSession writer and private one-shot staging', () => {
   assert.match(panel, /\.fileImporter\(/)
   assert.match(panel, /allowedContentTypes: \[\.item\]/)
