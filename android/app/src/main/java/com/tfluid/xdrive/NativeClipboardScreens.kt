@@ -146,7 +146,8 @@ internal fun NativeClipboardScreen(
     }
     // Recipient discovery has no device token: only the current interactive
     // Owner may read public keys. Discard late results on Lock or A→B→A.
-    LaunchedEffect(epoch, key) {
+    // One-shot public recipient discovery. No background polling or OS clipboard read.
+    LaunchedEffect(epoch, key, "recipient-directory") {
         if (key == null) return@LaunchedEffect
         val snapshot = actionFence.capture()
         try {
