@@ -5,13 +5,17 @@ package update
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 )
 
 //go:embed windows_upgrade_transaction.ps1
@@ -71,6 +75,36 @@ func LastInstallStatus() (InstallStatus, error) {
 }
 
 func installDownloaded(_ context.Context, path string, result Result) (string, error) {
+	// The installer is detached from the Agent. Pin the verified package
+	// identity as arguments; the transaction independently rechecks those
+	// bytes and its Authenticode publisher before running the executable.
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("stat verified installer: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 {
+		return "", fmt.Errorf("installer is not a regular nonempty file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	n, copyErr := io.Copy(h, file)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return "", copyErr
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	if n != info.Size() {
+		return "", fmt.Errorf("installer changed size during verification")
+	}
+	digest := hex.EncodeToString(h.Sum(nil))
+	if expected, has := assetSHA256(result.Asset); has && expected != digest {
+		return "", fmt.Errorf("installer differs from trusted release SHA-256")
+	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		cache = os.TempDir()
@@ -90,6 +124,8 @@ func installDownloaded(_ context.Context, path string, result Result) (string, e
 		"-WindowStyle", "Hidden",
 		"-File", transactionPath,
 		"-Installer", path,
+		"-ExpectedSHA256", digest,
+		"-ExpectedSize", strconv.FormatInt(info.Size(), 10),
 		"-TargetVersion", result.Latest,
 		"-CurrentVersion", result.Current,
 		"-LegacyCleanupScript", cleanupPath,
