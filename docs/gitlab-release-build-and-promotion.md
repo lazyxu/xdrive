@@ -78,14 +78,24 @@ the final Release appears. No partial stable Release is allowed.
 
 ## Stable pre-stage publication gate
 
-The Registry may expose even temporary `ci-<pipeline>-<job>` image tags to
-readers. Thus `v*` stable image **builders**, including Photo Face's
-long-lived model runtime cache uploads, first require the exact tag/Commit
-GitHub Final Gate to succeed. The staging helper checks again immediately
-before the first upload, and immutable tag publishing/promoting repeats
-the gate before public stable tags. No Release job depends on GitHub binary
-artifact downloads; these are CI verdict checks only. Master CI stays
-independent of stable-tag preflight.
+The Registry may expose even temporary `ci-<pipeline>-<job>` image tags
+to readers. GitLab **compiles first from source**, even when GitHub's
+same-tag Final Gate is pending. Immediately **before the first Registry
+write** (including Photo Face's model-runtime cache upload), the staging
+helper verifies the exact tag and full Commit. If GitHub's exact-tag CI is
+still not green, only that specific pending result is retried with a bounded
+30-minute default, five-minute polling interval. Tag mismatches, API failures
+and exhausted waits are fail-closed; no Registry bytes are uploaded.
+Normal master builds do not wait for GitHub's stable-tag CI.
+
+This avoids holding up every local Docker build at its startup merely because
+the tag's GitHub and GitLab pipelines began concurrently. Immutable stable
+tag publication and mutable latest promotion repeat the exact-tag gate.
+The retry window can be tuned via `XDRIVE_STABLE_GATE_MAX_WAIT_SECONDS` and
+`XDRIVE_STABLE_GATE_POLL_SECONDS` (bounded); if tag tests remain incomplete,
+the stable pipeline fails without publishing, and the GitLab job can be
+retried after GitHub completes. No GitLab Release job downloads GitHub-built
+artifacts: GitHub supplies only the CI verdict.
 
 ## Cache and Runner queue policy
 
