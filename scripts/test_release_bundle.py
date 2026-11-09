@@ -57,6 +57,14 @@ class BundleCacheTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(self.manifest, allow_local=True)
 
+    def test_unsigned_ipa_must_remain_testing_only(self):
+        self.manifest["artifacts"][0]["filename"] = "xDrive-unsigned.ipa"
+        self.manifest["artifacts"][0]["install_mode"] = "manual"
+        with self.assertRaisesRegex(ValueError, "testing only"):
+            validate(self.manifest, allow_local=True)
+        self.manifest["artifacts"][0]["install_mode"] = "manual_test_only"
+        validate(self.manifest, allow_local=True)
+
     def test_short_sha_rejected(self):
         self.manifest["commit"] = "a" * 12
         with self.assertRaises(ValueError):

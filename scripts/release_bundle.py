@@ -74,6 +74,10 @@ def validate(manifest, expected_commit=None, allow_local=False):
             raise ValueError("artifact was built from another commit")
         if item.get("install_mode", "manual") not in ("manual", "manual_test_only"):
             raise ValueError("invalid installation mode")
+        if item["platform"] == "ios" and name == "xDrive-unsigned.ipa" and (
+            item.get("install_mode") != "manual_test_only"
+        ):
+            raise ValueError("unsigned iOS IPA is manual testing only")
         if item["platform"] == "android" and (
             item.get("install_mode") != "manual" or
             not re.fullmatch(r"xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apk", name)

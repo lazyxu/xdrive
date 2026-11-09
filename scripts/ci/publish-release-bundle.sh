@@ -55,6 +55,8 @@ for item in items:
     ), "invalid package digest")
     mode = item.get("install_mode")
     require(mode in ("manual", "manual_test_only"), "invalid install mode")
+    if item["platform"] == "ios" and name == "xDrive-unsigned.ipa":
+        require(mode == "manual_test_only", "unsigned iOS IPA cannot be installable")
     if item["platform"] == "android":
         require(mode == "manual" and re.fullmatch(
             r"xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apk",

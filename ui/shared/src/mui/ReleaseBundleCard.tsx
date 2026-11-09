@@ -8,7 +8,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 
 const labels: Record<string, string> = {
   ios: 'iOS IPA', android: 'Android APK（已签名）',
-  windows: 'Windows EXE', linux: 'Linux', dsm: 'Synology SPK', cli: 'CLI',
+  windows: 'Windows EXE', linux: 'Linux', dsm: 'Synology SPK', cli: '备份 CLI',
 }
 const cacheStates: Record<string, string> = {
   pending: '等待缓存',
@@ -103,6 +103,11 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
             <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere', display: 'block' }}>
               SHA-256：{artifact.sha256}
             </Typography>
+            {artifact.install_mode === 'manual_test_only' ? (
+              <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
+                未签名测试包：不能直接安装或作为原生升级包；请使用平台签名流程完成测试。
+              </Typography>
+            ) : null}
             <Stack direction="row" spacing={2} flexWrap="wrap">
               {port.installCurrent && port.platform === artifact.platform &&
                 state?.commit === artifact.build_commit &&

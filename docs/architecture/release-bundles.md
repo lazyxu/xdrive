@@ -17,7 +17,9 @@ checks remain authoritative.
 - Artifact records include `platform`, `filename`, `build_commit`,
   `sha256`, `size`, `install_mode` and ordered preferred origins.
   **Missing platforms are omitted**. Android Debug APKs are never mirrored. Only independently approved,
-  fixed-key signed public Android APKs may be included.
+  fixed-key signed public Android APKs may be included. The `xDrive-unsigned.ipa`
+  is explicitly `manual_test_only`: it can be downloaded for developer signing,
+  but MUST NOT be offered as a direct or automatic iOS installer.
 - Existing Linux/Windows/Backup CLI/DSM publish contracts remain in place;
   separately published iOS and signed Android outputs may enter a Bundle only when the
   exact-source Release is already present and verified at Bundle publication.
@@ -100,6 +102,10 @@ Users should not confuse a Server upgrade success with an additional
 package-cache success. No client must update merely because the Server
 upgraded. Release Bundle publication needs its own exact-head CI/Final Gate
 before it is considered shipped.
+
+The bundled `cli` artifacts are currently **Backup-only CLI** archives; a separate
+standalone `xd`/Agent installation is not represented until its independent
+source-exact package build exists. Do not advertise these as all CLI variants.
 
 **Constraints:** This is not an automatic native app installer, IPA signing
 service, or Android production signing system. Native updates must still use

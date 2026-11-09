@@ -25,7 +25,7 @@ func bundleTestFixture(t *testing.T) (string, []byte, releaseBundleManifest) {
 		SchemaVersion: 1, Commit: sha, Channel: "master",
 		Artifacts: []releaseBundleArtifact{{Platform: "ios", Filename: "xDrive-unsigned.ipa",
 			BuildCommit: sha, Size: int64(len(body)), SHA256: hex.EncodeToString(digest[:]),
-			InstallMode: "manual"}},
+			InstallMode: "manual_test_only"}},
 	}
 	manifest.Artifacts[0].Sources.GitLab = "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-" + sha + "/xDrive-unsigned.ipa"
 	manifest.Artifacts[0].Sources.GitHub = "https://github.com/lazyxu/xdrive/releases/download/bundle-" + sha + "/xDrive-unsigned.ipa"
@@ -81,6 +81,17 @@ func TestReleaseBundleRejectsCrossCommitAndPath(t *testing.T) {
 	m.Artifacts[0].Sources.GitHub = "https://evil.example/pkg"
 	if validReleaseBundleManifest(m) {
 		t.Fatal("untrusted origin accepted")
+	}
+}
+
+func TestReleaseBundleUnsignedIPACannotClaimNativeInstallMode(t *testing.T) {
+	_, _, manifest := bundleTestFixture(t)
+	if !validReleaseBundleManifest(manifest) {
+		t.Fatal("unsigned IPA testing-only manifest rejected")
+	}
+	manifest.Artifacts[0].InstallMode = "manual"
+	if validReleaseBundleManifest(manifest) {
+		t.Fatal("unsigned IPA accepted as a normal signed installer")
 	}
 }
 

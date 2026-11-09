@@ -104,6 +104,9 @@ func validReleaseBundleManifest(m releaseBundleManifest) bool {
 		if a.InstallMode != "manual" && a.InstallMode != "manual_test_only" {
 			return false
 		}
+		if a.Platform == "ios" && a.Filename == "xDrive-unsigned.ipa" && a.InstallMode != "manual_test_only" {
+			return false
+		}
 		if a.Platform == "android" && (a.InstallMode != "manual" || !releaseBundleAndroidNamePattern.MatchString(a.Filename)) {
 			return false
 		}

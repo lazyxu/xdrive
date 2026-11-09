@@ -37,7 +37,11 @@ class GenerateBundleTests(unittest.TestCase):
         items = module.build(self.directory, SHA, "master")["artifacts"]
         self.assertEqual(len(items), 7)
         android, = [x for x in items if x["platform"] == "android"]
+        ios, = [x for x in items if x["platform"] == "ios"]
         self.assertEqual(android["install_mode"], "manual")
+        self.assertEqual(ios["install_mode"], "manual_test_only")
+        self.assertTrue(all(item["install_mode"] == "manual"
+                            for item in items if item["platform"] not in ("ios",)))
         self.assertEqual(android["sha256"], hashlib.sha256(b"apk").hexdigest())
 
     def test_omit_missing_client_platform_but_keep_other_verified_artifacts(self):
