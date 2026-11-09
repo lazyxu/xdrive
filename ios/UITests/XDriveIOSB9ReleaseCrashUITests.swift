@@ -9,7 +9,8 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
     private func record(_ app: XCUIApplication, _ stage: String) {
         print("B9_CRASH stage=\(stage) appState=\(app.state.rawValue)")
         if app.state == .runningForeground {
-            print("B9_CRASH AX hierarchy:\n\(app.debugDescription)")
+            // An AX hierarchy dump can itself block for 120s when an unreadable
+            // Files child is present. Capture pixels before any AX enumeration.
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = "b9-\(stage)"
             attachment.lifetime = .keepAlways
@@ -72,10 +73,10 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
     private func assertNoSessionSheetDenial(
         _ id: String, message: String, in app: XCUIApplication, cycle: Int
     ) {
-        // The smoke harness has a synthetic Owner identity but no actual
-        // authenticated Session. At source b9 its native sheets show an
-        // explicit "account changed" denial instead of an operation history.
-        // This is NOT a logged-in Owner success or a crash reproduction.
+        // A synthetic Owner is the *same identity* while the auth Session is
+        // absent. The real screen therefore mounts, but its protected GET
+        // fails closed and publishes the read error. "Account changed" is only
+        // correct for an actual Owner mismatch; never assert that false case.
         let denied = app.staticTexts[message].firstMatch
         if !denied.waitForExistence(timeout: 8) {
             record(app, "unexpected-\(id)-\(cycle)")
@@ -103,8 +104,22 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         app.launchArguments = []
         app.launch()
         alive(app, "real-second-start")
-        if !field.waitForExistence(timeout: 16) { record(app, "restart-not-mounted") }
-        XCTAssertTrue(field.exists, "Normal restart entered recovery or failed to mount")
+        if !field.waitForExistence(timeout: 16) {
+            // The cold-launch checkpoint intentionally treats termination
+            // before workspace readiness as an incomplete start. Recovery
+            // must be usable rather than misclassified as an App crash.
+            let rescue = app.buttons["native-ios-startup-safe-entry"].firstMatch
+            if !rescue.waitForExistence(timeout: 8) {
+                record(app, "restart-not-mounted")
+            }
+            XCTAssertTrue(rescue.exists,
+                          "Neither normal login nor safe startup recovery mounted")
+            rescue.tap()
+            alive(app, "recovery-safe-entry")
+            XCTAssertTrue(field.waitForExistence(timeout: 20),
+                          "Safe startup could not mount the native login form")
+        }
+        XCTAssertTrue(field.exists, "Native login must be reachable after restart")
     }
 
     func testPublishedB9EightRealGalleryFilesTabRoundTrips() {
@@ -139,7 +154,7 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             homeButton("native-ios-files-open-operations", in: app).tap()
             alive(app, "history-open-\(cycle)")
             assertNoSessionSheetDenial(
-                "history", message: "账户已经变化，请关闭操作历史。",
+                "history", message: "无法验证文件操作历史，请检查网络后重试。",
                 in: app, cycle: cycle)
             app.terminate()
         }
@@ -152,7 +167,7 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             homeButton("native-ios-files-open-saved-searches", in: app).tap()
             alive(app, "saved-search-open-\(cycle)")
             assertNoSessionSheetDenial(
-                "saved-search", message: "账户已经变化，请关闭智能文件夹。",
+                "saved-search", message: "无法验证当前账户的智能文件夹，请检查网络后重试。",
                 in: app, cycle: cycle)
             app.terminate()
         }

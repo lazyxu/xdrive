@@ -79,7 +79,7 @@ test('native Browse home uses a verified cloud location rather than automaticall
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
   assert.match(view, /XDriveIOSNativeFilesTrashScreen\(login: login\)/)
-  assert.match(view, /List \{\s*filesHeader\s*if !isHome && !isGlobalSearch \{[\s\S]*?native-ios-files-arrangement-status[\s\S]*?if isHome \{\s*filesHome\s*\} else \{/)
+  assert.match(view, /List \{\s*filesHeader\s*if isHome \{\s*filesHome\s*\} else \{/)
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return\s*\}/)
   assert.match(view, /queryDraft = ""\s*activeQuery = ""\s*searchReturnOffset = nil/)
 });
@@ -136,7 +136,7 @@ test('Browse home displays only verified favorite folders as native direct navig
   assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?if isHome, let current = login\.owner,[\s\S]*?favoriteShortcuts\.suspendForNavigation\(\)/)
   assert.match(view, /if !sameOwner \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = owner/)
   assert.match(view, /else \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil/)
-  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*if isHome \{ loadFavoriteShortcuts\(\) \}/)
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*homeReadAttempted = false\s*if isHome && phase == \.active \{\s*homeReadAttempted = true\s*reload\(\)/)
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return/)
   assert.doesNotMatch(home, /XDriveIOSNativeFilesCollectionsTransport\(|URLSession|\/api\/v1\/file-favorites/)
 })

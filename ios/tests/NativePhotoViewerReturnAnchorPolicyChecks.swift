@@ -18,6 +18,18 @@ struct XDriveNativePhotoViewerReturnAnchorChecks {
         check(XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(String(repeating: "x", count: 1025), in: ids, authorized: true) == nil, "oversized identity")
         check(XDriveIOSNativePhotoViewerReturnAnchorPolicy.target("photo-39", in: ids + ["extra"], authorized: true) == nil, "unbounded page")
         check(XDriveIOSNativePhotoViewerReturnAnchorPolicy.target("photo-38", in: Array(ids[0..<32]), authorized: true) == nil, "other page")
+        // A duplicate or corrupt PhotoKit page must never scroll to an
+        // ambiguous source tile after dismissing the full-screen Viewer.
+        check(XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+            "photo-39", in: ["photo-39", "photo-39"], authorized: true
+        ) == nil, "duplicate local tile IDs rejected at return")
+        check(XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+            "photo-39", in: ["photo-39", ""], authorized: true
+        ) == nil, "malformed empty local tile ID rejected at return")
+        check(XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+            "photo-39", in: ["photo-39", String(repeating: "x", count: 1025)],
+            authorized: true
+        ) == nil, "oversized local tile ID rejected at return")
         // Indexed cloud Viewer: exact Node ID + revision in the same current
         // bounded, authorized Owner page; never accept a reused/stale ID.
         let cloudPage: [(id: UInt64, revision: UInt64)] = (1...48).map {

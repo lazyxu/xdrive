@@ -469,6 +469,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @Binding var exactDateTarget: XDriveIOSNativePhotoExactDateTarget?
     @Environment(\.scenePhase) private var phase
     @State private var total = 0
+    @State private var isVisible = false
+    // A successfully read empty library is still a completed first read.
+    // Do not restart its PhotoKit scan after every foreground tab change.
+    @State private var hasCompletedInitialRead = false
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
     @State private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -889,17 +893,24 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             })
         }
         .onAppear {
-            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            isVisible = true
+            let freshGrant = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if freshGrant != permission { invalidate(with: nil) }
+            permission = freshGrant
             if monitor == nil {
                 let observer = XDriveIOSNativeVirtualWallChangeMonitor {
                     permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                    if selected == nil && authorized && phase == .active { reload() }
+                    // An offscreen PhotoKit change invalidates retained IDs,
+                    // but never launches a new scan until that tab is visible.
+                    if selected == nil && authorized && phase == .active &&
+                       isVisible { reload() }
                     else { invalidate(with: nil) }
                 }
                 observer.start()
                 monitor = observer
             }
-            if authorized && selected == nil && !loading && total == 0 { reload() }
+            if authorized && selected == nil && !loading &&
+               !hasCompletedInitialRead { reload() }
         }
         .onChange(of: exactDateTarget) { value in
             if let value {
@@ -910,7 +921,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         .onChange(of: mediaFilter) { _ in
             calendarMapRange = nil
             exactDateTarget = nil
-            guard phase == .active else { return }
+            guard phase == .active && isVisible else {
+                invalidate(with: nil)
+                return
+            }
             selectionMode = false
             selectedCandidates.removeAll()
             actionMessage = nil
@@ -927,9 +941,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                 cancelSharePreparation()
                 invalidate(with: nil)
             }
-            else if selected == nil && authorized { reload() }
+            else if selected == nil && authorized && isVisible { reload() }
         }
         .onDisappear {
+            isVisible = false
             accessibilityFocusedTileID = nil
             cancelSharePreparation()
             showingAlbumPicker = false
@@ -938,11 +953,11 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             actionBusy = false
             selectedCandidates.removeAll()
             selectionMode = false
-            if selected != nil || showingMap {
-                // A full-screen native child temporarily covers the Gallery.
-                // Cancel obsolete scanning, but do not zero the verified
-                // virtual-page count and flash an empty wall on Map return.
-                // Keep PhotoKit changes observed while the cover is active.
+            if selected != nil || showingMap ||
+               (phase == .active && authorized) {
+                // A Viewer, Map or ordinary foreground tab switch temporarily
+                // hides the Gallery. Keep the verified bounded page count;
+                // PhotoKit changes remain observed and can revoke it.
                 suspendForCoveredNavigation()
             } else {
                 invalidate(with: nil)
@@ -1236,6 +1251,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         requestedOffset = returnPageOffset ?? savedOffset
         invalidate(with: nil)
         guard authorized, phase == .active else { return }
+        hasCompletedInitialRead = true
         let epoch = generation
         loading = true
         scanTask = Task { @MainActor in
@@ -1268,6 +1284,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         scanTask?.cancel()
         scanTask = nil
         total = 0
+        hasCompletedInitialRead = false
         loading = false
         failure = message
     }

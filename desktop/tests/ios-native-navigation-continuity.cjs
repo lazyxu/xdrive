@@ -13,7 +13,19 @@ const sources = {
   "a": "ios/XDriveIOS/NativePhotoAlbumBrowser.swift",
   "f": "ios/XDriveIOS/NativeCloudFilesBrowser.swift",
   "c": "ios/XDriveIOS/NativeFilesCollections.swift",
-  "n": "ios/XDriveIOS/NativeFilesNavigationPolicy.swift"
+  "n": "ios/XDriveIOS/NativeFilesNavigationPolicy.swift",
+  "q": "ios/XDriveIOS/NativeFilesQuickAccess.swift",
+  "v": "ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift",
+  "r": "ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift",
+  "g": "ios/XDriveIOS/NativePhotoWallDensityPolicy.swift",
+  "s": "ios/XDriveIOS/NativeLocalPhotoGallery.swift",
+  "t": "ios/XDriveIOS/NativeFilesTrash.swift",
+  "e": "ios/XDriveIOS/NativeFilesSavedSearches.swift",
+  "o": "ios/XDriveIOS/NativeFilesOperationHistory.swift",
+  "x": "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift",
+  "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift",
+  "b": "ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift",
+  "j": ".github/workflows/ios-native-navigation-runtime.yml"
 }
 const scenarios = [
   {
@@ -116,7 +128,7 @@ const scenarios = [
     "checks": [
       {
         "file": "l",
-        "pattern": "if selected != nil \\|\\| showingMap \\{[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
+        "pattern": "if selected != nil \\|\\| showingMap \\|\\|[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
         "flags": ""
       }
     ]
@@ -242,11 +254,11 @@ const scenarios = [
     ]
   },
   {
-    "name": "18 Files Home child pop retains links and only refreshes changed projection",
+    "name": "18 Files Home initial mount loads once; offline child pop cannot trigger a fetch loop",
     "checks": [
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)",
+        "pattern": "if !homeReadAttempted \\{\\s*homeReadAttempted = true\\s*reload\\(\\)",
         "flags": ""
       }
     ]
@@ -392,11 +404,11 @@ const scenarios = [
     ]
   },
   {
-    "name": "29 Home's verified Favorites refresh silently on child return",
+    "name": "29 Home verified Favorites silently revalidates after child return",
     "checks": [
       {
         "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\) \\{\\s*reload\\(\\)\\s*\\} else \\{[\\s\\S]*?loadFavoriteShortcuts\\(\\)",
+        "pattern": "else if favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) &&\\s*quickAccess\\.matches\\(login\\.owner\\) \\{[\\s\\S]*?loadFavoriteShortcuts\\(\\)",
         "flags": ""
       }
     ]
@@ -412,7 +424,7 @@ const scenarios = [
     ]
   },
   {
-    "name": "31 Home Quick Access shared model still skips duplicate Owner requests",
+    "name": "31 Shared Quick Access still suppresses duplicate Owner reads",
     "checks": [
       {
         "file": "f",
@@ -420,8 +432,8 @@ const scenarios = [
         "flags": ""
       },
       {
-        "file": "f",
-        "pattern": "if !favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\) \\|\\|\\s*!quickAccess\\.matches\\(login\\.owner\\)",
+        "file": "q",
+        "pattern": "if matches\\(expected\\) && !force \\{ return \\}",
         "flags": ""
       }
     ]
@@ -707,6 +719,691 @@ const scenarios = [
       {
         "file": "c",
         "pattern": "func matches\\(_ owner: XDriveNativeOwnerRoot\\?,\\s*kind: XDriveIOSNativeFilesCollectionKind\\) -> Bool",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "57 Files page bounds check before cursor arithmetic",
+    "checks": [
+      {
+        "file": "v",
+        "pattern": "startOffset <= total,\\s*loadedIDs.count <= total - startOffset",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "58 Files next range bounds check before cursor arithmetic",
+    "checks": [
+      {
+        "file": "v",
+        "pattern": "startOffset <= total,\\s*loadedCount <= total - startOffset",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "59 PhotoKit Viewer return requires a well-formed unique page",
+    "checks": [
+      {
+        "file": "r",
+        "pattern": "Set\\(currentPageIDs\\)\\.count == currentPageIDs\\.count",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "60 Gallery shared wall refuses duplicate return anchors",
+    "checks": [
+      {
+        "file": "g",
+        "pattern": "for item in verifiedIDs where item == anchor \\{\\s*if found \\{ return false \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "61 Files Recent Favorites management return retains verified projection",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "\\.sheet\\(item: \\$managementIntent, onDismiss: \\{[\\s\\S]*?reload\\(preserveVerifiedRows: model\\.matches\\(login\\.owner, kind: kind\\)\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "62 Local Gallery foreground refresh only invalidates once",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "private func refresh\\(at requestedOffset: Int = 0\\)[\\s\\S]*?load\\(offset: max\\(0, requestedOffset\\)\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "63 Cloud Files unauthorised error has explicit native escape",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "accessibilityIdentifier\\(\"native-ios-files-error-return\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "64 Trash unauthorised error has explicit native escape",
+    "checks": [
+      {
+        "file": "t",
+        "pattern": "accessibilityIdentifier\\(\"native-ios-files-trash-error-return\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "65 Saved Searches modal exposes stable content accessibility",
+    "checks": [
+      {
+        "file": "e",
+        "pattern": "accessibilityIdentifier\\(\"native-ios-files-saved-searches-page\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "66 Operation History modal exposes stable content accessibility",
+    "checks": [
+      {
+        "file": "o",
+        "pattern": "accessibilityIdentifier\\(\"native-ios-files-operation-history-page\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "67 Unreadable Cloud Files swaps complex list for a bounded native error surface",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if !isHome && !isGlobalSearch && parentID != nil &&\\s*!model\\.loading && !model\\.verifiedPage,[\\s\\S]*?let failure = model\\.errorMessage[\\s\\S]*?native-ios-files-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "68 Unreadable Cloud Files never automatically reloads on return",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "else if !isGlobalSearch && !model\\.verifiedPage &&\\s*model\\.errorMessage != nil \\{[\\s\\S]*?explicit Retry",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "69 Unreadable Trash hides the destructive List behind a bounded error surface",
+    "checks": [
+      {
+        "file": "t",
+        "pattern": "if let failure = model\\.error, !model\\.loading,[\\s\\S]*?!model\\.canDisplay\\(owner: login\\.owner\\)[\\s\\S]*?native-ios-files-trash-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "70 Trash failed reentry remains terminal until explicit Retry",
+    "checks": [
+      {
+        "file": "t",
+        "pattern": "if phase == \\.active && !model\\.loading && model\\.error == nil \\{[\\s\\S]*?reload\\(preserveVisibleRows: true\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "71 Cloud navigation captures a real screen before accessibility enumeration",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "evidence\\.name = \"cloud-child-after-push\"[\\s\\S]*?native-ios-files-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "72 Trash navigation captures a real screen before accessibility enumeration",
+    "checks": [
+      {
+        "file": "y",
+        "pattern": "evidence\\.name = \"trash-child-after-push\"[\\s\\S]*?native-ios-files-trash-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "73 Gallery and Files background resume have real app activation tests",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryBackgroundResumeKeepsNativeSourceAndPixels\\(\\)[\\s\\S]*?func testFilesBackgroundResumeKeepsQuickRailAndPixels\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "74 Gallery and Files rotation roundtrip is exercised on simulator",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryFilesRotateLandscapeAndReturnPortrait\\(\\)[\\s\\S]*?device\\.orientation = \\.landscapeLeft",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "75 Native Files search and gallery return is tested after typing",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testFilesSearchFocusThenGalleryReturnPreservesShell\\(\\)[\\s\\S]*?search\\.typeText\\(\"ab\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "76 Files deep home scroll return revalidates native quick rail",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testFilesHomeDeepScrollTabReturnKeepsQuickNavigation\\(\\)[\\s\\S]*?list\\.swipeUp\\(\\)[\\s\\S]*?checkFilesHome\\(app\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "77 App native relaunch and first Files mount remain tested",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testFilesGalleryNativeRelaunchDoesNotLoseInitialPages\\(\\)[\\s\\S]*?app\\.terminate\\(\\)[\\s\\S]*?app\\.launch\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "78 Native Files Gallery Mine cross-tab returns use image audit",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testAlternatingGalleryFilesSettledFramesAcrossThreeTabs\\(\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Files\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Mine\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "79 Local PhotoKit tab leave retains verified window rather than resetting total",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if selected != nil \\|\\| showingMap \\|\\|[\\s\\S]*?phase == \\.active && authorized[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "80 Local PhotoKit empty library avoids repeated scans on tab return",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if authorized && selected == nil && !loading &&\\s*!hasCompletedInitialRead \\{ reload\\(\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "81 Local PhotoKit revision while hidden retires stale IDs without hidden scans",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if selected == nil && authorized && phase == \\.active &&\\s*isVisible \\{ reload\\(\\) \\}\\s*else \\{ invalidate\\(with: nil\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "82 Local PhotoKit permission change invalidates old page before reuse",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if freshGrant != permission \\{ invalidate\\(with: nil\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "83 Native album contents retains verified page on foreground tab transition",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "if selected != nil \\|\\| showingAlbumMap \\|\\|[\\s\\S]*?phase == \\.active && albumAuthorized[\\s\\S]*?suspendForViewer\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "84 Native album contents validates current library revision and grant",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "pageRevision == libraryMonitor\\.revision &&\\s*freshGrant == permission",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "85 Legacy local PhotoKit 64-page tab retention observes library revisions",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "@StateObject private var libraryChanges = XDriveIOSNativeLocalPageChanges\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "86 Legacy local PhotoKit page suspends instead of wiping valid foreground tab",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "if selected != nil \\{\\s*suspendForViewer\\(\\)\\s*\\} else if phase == \\.active[\\s\\S]*?suspendForViewer\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "87 Native Recent Favorites error requires explicit Retry on reentry",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if !model\\.loading && model\\.error == nil \\{ reload\\(\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "88 Native Recent Favorites scene resume retains verified data",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if model\\.matches\\(login\\.owner, kind: kind\\) \\{\\s*reload\\(preserveVerifiedRows: true\\)\\s*\\} else if model\\.error == nil \\{\\s*reload\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "89 Native Recent Favorites Owner rotation starts current verified read",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if isVisible && phase == \\.active && login\\.owner != nil \\{\\s*reload\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "90 Simulator covers local source Menu then Files tab return",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testNativeLocalGalleryMenuRouteReturnsToUnifiedSource\\(\\)[\\s\\S]*?native-ios-gallery-source-local[\\s\\S]*?native-ios-tab-files",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "91 Simulator covers PhotoKit gallery and Files foreground activation",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testFilesRecentAndFavoritesRemainAvailableAfterForegroundReturn\\(\\)[\\s\\S]*?XCUIDevice\\.shared\\.press\\(\\.home\\)[\\s\\S]*?app\\.activate\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "92 Simulator covers local album landscape and Files return",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryAlbumSourceWithLandscapeAndTabReturn\\(\\)[\\s\\S]*?device\\.orientation = \\.landscapeLeft",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "93 B9 no-token operation history uses the actual verified GET error",
+    "checks": [
+      {
+        "file": "b",
+        "pattern": "\"history\", message: \"无法验证文件操作历史，请检查网络后重试。\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "94 B9 no-token Saved Searches uses the actual verified GET error",
+    "checks": [
+      {
+        "file": "b",
+        "pattern": "\"saved-search\", message: \"无法验证当前账户的智能文件夹，请检查网络后重试。\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "95 B9 force-stop recovery offers safe login without classifying it as crash",
+    "checks": [
+      {
+        "file": "b",
+        "pattern": "let rescue = app\\.buttons\\[\"native-ios-startup-safe-entry\"\\]\\.firstMatch",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "96 Native Simulator shards all live Gallery Files and B9 child suites",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files\\]",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "97 Native navigation candidate runs B9 and Files child tests",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "candidate-navigation\\)[\\s\\S]*?XDriveIOSNavigationRuntimeUITests[\\s\\S]*?XDriveIOSB9ReleaseCrashUITests",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "98 Native Gallery candidate exercises real framebuffer/return suite",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "candidate-gallery-files\\)[\\s\\S]*?XDriveIOSGalleryFilesStabilityUITests",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "99 Local PhotoKit Viewer first appearance validates grant before reusing a page",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "if freshGrant != authorization \\{\\s*refresh\\(at: savedOffset\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "100 Local PhotoKit Viewer restores only a matching library revision",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "page == nil \\|\\| retainedLibraryRevision != libraryChanges\\.revision",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "101 Local PhotoKit Viewer tab switch suspends but does not clear a live page",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "if selected != nil \\{\\s*suspendForViewer\\(\\)\\s*\\} else if phase == \\.active &&[\\s\\S]*?suspendForViewer\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "102 Local album same-page reentry verifies PhotoKit permission and revision",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "pageRevision == libraryMonitor\\.revision &&\\s*freshGrant == permission",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "103 Local album foreground tab switch keeps bounded page only while authorized",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "if selected != nil \\|\\| showingAlbumMap \\|\\|[\\s\\S]*?phase == \\.active && albumAuthorized\\) \\{\\s*suspendForViewer\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "104 Continuous local PhotoKit empty library does not reload on every tab return",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if authorized && selected == nil && !loading &&\\s*!hasCompletedInitialRead \\{ reload\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "105 Continuous local PhotoKit observer does not scan an invisible tab",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if selected == nil && authorized && phase == \\.active &&\\s*isVisible \\{ reload\\(\\) \\}\\s*else \\{ invalidate\\(with: nil\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "106 Recent Favorites failure does not automatically restart auth read",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if !model\\.loading && model\\.error == nil \\{ reload\\(\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "107 Offline Cloud Files retry is simulated and still returns to native Home",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testCloudFilesRepeatedOfflineRetryRetainsRecoverableChildPage\\(\\)[\\s\\S]*?native-ios-files-retry[\\s\\S]*?native-ios-files-error-return",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "108 Offline Trash retry is simulated without stale destructive rows",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testRecentlyDeletedRepeatedOfflineRetryRetainsRecoverableChildPage\\(\\)[\\s\\S]*?native-ios-files-trash-retry[\\s\\S]*?native-ios-files-trash-error-return",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "109 Gallery People navigation after offline Files captures the settled frame",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank\\(\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after offline Files and People\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "110 Gallery Albums Originals foreground and source rail roundtrip is simulated",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryAlbumsAndOriginalsAfterForegroundResumeKeepSourceRail\\(\\)[\\s\\S]*?XCUIDevice\\.shared\\.press\\(\\.home\\)[\\s\\S]*?native-ios-gallery-source-unified",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "111 Native Files quick rail is rechecked after device rotation and Gallery return",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testNativeFilesQuickRailAfterLandscapeGalleryReturnNoBlank\\(\\)[\\s\\S]*?\\.landscapeLeft[\\s\\S]*?assertNotSolidScreen\\(app, \"Files quick rail after rotation\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "112 Synthetic Owner root cannot persist across signed-out process relaunch",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testSyntheticOwnerFilesAndGalleryRelaunchDoesNotRetainOldScope\\(\\)[\\s\\S]*?app\\.launchArguments = \\[\"-xdrive-ui-navigation-smoke\"\\][\\s\\S]*?XCTAssertFalse\\(target\\(\"native-ios-files-open-root-location\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "113 Files five-UX durable Owner scope retained after stability patch",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "private let resumeStore = XDriveIOSNativeFilesResumeStore\\(\\)[\\s\\S]*?@State private var resumeTask: Task<Void, Never>\\?",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "114 Files saved directory is re-proven by signed current Owner read",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "try await reader\\.referencedDirectory\\(nodeID: savedFolderID\\)[\\s\\S]*?let first = try await reader\\.children\\(",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "115 Files deep anchor persists and restores after verified scrolling",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "lastAppearedNodeID = visibleID\\s*persistVisibleAnchorSoon\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "116 Files-local rail remains accessible within pushed directories",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "private var filesMain: some View \\{\\s*VStack\\(spacing: 0\\) \\{\\s*switch quickSection",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "117 Files-local section is persisted per Owner, not across accounts",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "resumeStore\\.saveSection\\(option\\.rawValue, owner: owner\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "118 Files Home organizer retained after stability patch",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "showingOrganizeHome = true",
+        "flags": ""
+      },
+      {
+        "file": "f",
+        "pattern": "Label\\(\"整理浏览首页\", systemImage: \"square\\.grid\\.2x2\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "119 Files Viewer deep continuation retained beyond 256",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "private func verifiedViewerAdjacent\\([\\s\\S]*?reader\\.childPosition\\(",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "120 Files Viewer admitted rows remain bounded after deep continuation",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "viewerAdmitted\\[item\\.id\\] = item[\\s\\S]*?viewerAdmissionOrder\\.count > 512",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "121 Files sort/group pending state remains visible",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "private var arrangementStatusText: String[\\s\\S]*?native-ios-files-arrangement-status",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "122 Files Owner change retires stored resume and Viewer history",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "\\.onChange\\(of: login\\.owner\\) \\{ _ in[\\s\\S]*?resumeTask\\?\\.cancel\\(\\)[\\s\\S]*?viewerAdmitted\\.removeAll\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "123 Files error surface never hides global search or verified page",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if !isHome && !isGlobalSearch && parentID != nil &&\\s*!model\\.loading && !model\\.verifiedPage",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "124 Files same-Owner Home read does not re-trigger on stack pop",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if !homeReadAttempted \\{\\s*homeReadAttempted = true\\s*reload\\(\\)[\\s\\S]*?favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\)",
         "flags": ""
       }
     ]

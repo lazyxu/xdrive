@@ -56,7 +56,7 @@ test('PhotoKit permission revocation remains fail-closed', () => {
   assert.match(s, /showingAlbumMap = false\s*invalidate\(\)/);
 });
 test('Stale album Viewer cannot page or accept racing pages', () => {
-  const s = between(album, 'onViewed: { next in', '.onAppear {\n            permission = PHPhotoLibrary.authorizationStatus');
+  const s = between(album, 'onViewed: { next in', '.onAppear {\n            isContentVisible = true');
   for (const name of ['onViewed: { next in', 'onCrossPage: { oldPage, anchor, direction in', 'onCrossedPage: { next, verifiedPage in']) {
     const part = between(s, name, name === 'onViewed: { next in' ? 'onCrossPage:' : name === 'onCrossPage: { oldPage, anchor, direction in' ? 'onCrossedPage:' : '.environment(');
     assert.match(part, /guard !viewerPageInvalidated, phase == \.active/);

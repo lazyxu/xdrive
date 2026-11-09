@@ -33,9 +33,10 @@ enum XDriveIOSNativeFilesContinuousWindowPolicy {
               startOffset >= 0, startOffset % pageSize == 0,
               total > 0, total <= maximumTotal,
               !loadedIDs.isEmpty, loadedIDs.count <= maximumVisibleItems,
-              startOffset + loadedIDs.count <= total,
+              startOffset <= total,
+              loadedIDs.count <= total - startOffset,
               loadedIDs.count % pageSize == 0 ||
-                  startOffset + loadedIDs.count == total,
+                  loadedIDs.count == total - startOffset,
               Set(loadedIDs).count == loadedIDs.count,
               loadedIDs.allSatisfy({ $0 > 0 }),
               let index = loadedIDs.firstIndex(of: nodeID)
@@ -49,8 +50,9 @@ enum XDriveIOSNativeFilesContinuousWindowPolicy {
         guard startOffset >= 0, startOffset % pageSize == 0,
               total > 0, total <= maximumTotal,
               loadedCount > 0, loadedCount <= maximumVisibleItems,
-              startOffset + loadedCount <= total,
-              loadedCount % pageSize == 0 || startOffset + loadedCount == total
+              startOffset <= total,
+              loadedCount <= total - startOffset,
+              loadedCount % pageSize == 0 || loadedCount == total - startOffset
         else { return nil }
         switch direction {
         case .previous:

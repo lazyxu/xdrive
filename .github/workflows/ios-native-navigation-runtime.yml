@@ -4,6 +4,14 @@ on:
     paths:
       - '.github/workflows/ios-native-navigation-runtime.yml'
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
+      - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
+      - 'ios/XDriveIOS/NativeFilesTrash.swift'
+      - 'ios/XDriveIOS/NativeFilesSavedSearches.swift'
+      - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
+      - 'ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift'
+      - 'ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift'
+      - 'ios/XDriveIOS/NativePhotoWallDensityPolicy.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
       # Changes in a child Files/Gallery route must also compile and exercise
@@ -17,6 +25,7 @@ on:
       - 'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift'
       - 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'
       - 'ios/XDriveIOS/NativeLocalPhotoGallery.swift'
+      - 'ios/XDriveIOS/NativeLocalContinuousGallery.swift'
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,11 +35,13 @@ concurrency:
 jobs:
   simulator-navigation:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        source: [release-c83, candidate]
+        # Keep the published baseline separate; split current production
+        # suite so 40+ UI cases and their diagnostics fit the macOS job gate.
+        source: [release-c83, candidate-navigation, candidate-gallery-files]
     continue-on-error: ${{ matrix.source == 'release-c83' }}
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +108,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/native-navigation-results"
+          # Legacy release is only an informational baseline: it does not
+          # contain new child content IDs, so run the compatible tab smoke.
+          # BOTH candidate jobs are mandatory (not continue-on-error).
+          # Never silently skip one native child suite when new tests appear.
+          native_test_args=()
+          case "${{ matrix.source }}" in
+            release-c83)
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesFirstOpenAndSixGalleryReturnsDoNotExit") ;;
+            candidate-navigation)
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests") ;;
+            candidate-gallery-files)
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests") ;;
+            *) echo "Unsupported UI suite" >&2; exit 2 ;;
+          esac
           xcodebuild test \
             -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
             -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
@@ -105,13 +131,22 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
-            -only-testing:xDriveIOSNavigationUITests test \
+            "${native_test_args[@]}" test \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
       - name: Capture crash diagnostics and XCTest summary
         if: always()
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          # Capture a device-level frame even if XCTest was unable to
+          # construct an accessibility snapshot for the native child page.
+          # Failure attachments generated before an AX timeout are exported
+          # below; this frame is independent of XCUIElement queries.
+          if [[ -n "${SMOKE_SIM:-}" ]]; then
+            xcrun simctl io "$SMOKE_SIM" screenshot \
+              "$RUNNER_TEMP/native-navigation-results/diagnostics/simulator-final-frame.png" \
+              >/dev/null 2>&1 || true
+          fi
           find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 3 -type f \
             \( -iname '*xDrive*' -o -iname '*.ips' \) -mmin -45 \
             -exec cp {} "$RUNNER_TEMP/native-navigation-results/diagnostics/" \; 2>/dev/null || true
@@ -119,6 +154,11 @@ jobs:
             xcrun xcresulttool get test-results summary \
               --path "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
               > "$RUNNER_TEMP/native-navigation-results/diagnostics/summary.json" 2>&1 || true
+            mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics/failure-attachments"
+            xcrun xcresulttool export attachments \
+              --path "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
+              --output-path "$RUNNER_TEMP/native-navigation-results/diagnostics/failure-attachments" \
+              --only-failures > /dev/null 2>&1 || true
           fi
       - name: Upload runtime logs and crash evidence
         if: always()
