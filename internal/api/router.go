@@ -611,8 +611,6 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/sources/:id/connector-config", s.getSourceConnectorConfig)
 	authed.PUT("/sources/:id/connector-config", s.putSourceConnectorConfig)
 	authed.GET("/sources/:id/browse", s.browseSourceDirectories)
-	// M05 read-only diagnostics; this response never authorizes a migration.
-	authed.GET("/sources/:id/migration-preview", s.previewLegacySourceMigration)
 	authed.GET("/sources/:id/items", s.listSourceItems)
 	authed.GET("/sources/:id/collections", s.listSourceCollections)
 	authed.GET("/sources/:id/collections/:collectionID/items", s.listSourceCollectionItems)
