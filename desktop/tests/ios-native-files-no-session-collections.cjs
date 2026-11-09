@@ -94,3 +94,45 @@ test('frame watcher remains bounded to active test case and tap, not stale next 
   assert.match(watcher, /if count < 3:/)
   assert.match(watcher, /"capture_mode": "tap-adjacent"/)
 })
+
+
+test('settled no-Session Cloud/Trash and Recent/Favorites screens are sampled for solid-blank frames', () => {
+  const names = [
+    'testNoSessionCloudAndTrashErrorPagesAreNotSolidBlankScreens',
+    'testNoSessionRecentFavoritesDeniedPagesAreNotSolidBlankScreens',
+  ]
+  for (const name of names) {
+    assert.ok(ui.includes('func ' + name + '()'), 'missing real XCUITest: ' + name)
+    assert.ok(watcher.includes('"' + name + '"'), 'missing test-scoped Simulator frames: ' + name)
+  }
+  assert.match(ui, /private func assertNonuniformFrame\(_ app: XCUIApplication, _ route: String\)/)
+  assert.match(ui, /CGContext\([\s\S]*?context\.draw\(image, in: CGRect/)
+  assert.match(ui, /Set\(stride\(from: 0, to: rgba\.count, by: 4\)\.map/)
+  assert.match(ui, /XCTAssertGreaterThan\(colors\.count, 8,/)
+})
+
+test('rapid denied Cloud/Trash Back cannot re-present old protected child after Gallery/Files switch', () => {
+  const name = 'testNoSessionCloudTrashRapidBackDoesNotRepushOldChild'
+  const start = ui.indexOf('func ' + name + '()')
+  assert.ok(start >= 0, 'real rapid Back XCUITest required')
+  const end = ui.indexOf('\n    }', start)
+  assert.ok(end > start, 'complete rapid Back XCUITest scope required')
+  const body = ui.slice(start, end)
+  assert.match(body, /for _ in 0\.\.<3/)
+  assert.match(body, /native-ios-files-open-root-location/)
+  assert.match(body, /native-ios-files-open-trash/)
+  assert.match(body, /XCTAssertFalse\(element\("native-ios-files-error-page", app\)\.exists\)/)
+  assert.match(body, /XCTAssertFalse\(element\("native-ios-files-trash-error-page", app\)\.exists\)/)
+  assert.match(body, /native-ios-tab-gallery/)
+  assert.match(body, /native-ios-tab-files/)
+  assert.ok(watcher.includes('"' + name + '"'), 'no timed frame capture for rapid Back')
+})
+
+test('case-scoped denial screenshots never outlive their XCTest or fabricate FPS', () => {
+  assert.match(watcher, /FRAME_OFFSETS_SECONDS = \(0\.5, 1\.5, 3\.5\)/)
+  assert.match(watcher, /TAP_FRAME_OFFSETS_SECONDS = \(0\.15, 0\.55\)/)
+  assert.match(watcher, /if key not in active:\s*continue/)
+  assert.match(watcher, /if count < 3:/)
+  assert.match(watcher, /"capture_mode": "tap-adjacent"/)
+  assert.doesNotMatch(ui, /IOS_NATIVE_.*FPS=60|IOS_NATIVE_.*ZERO_FLICKER_PASS/)
+})
