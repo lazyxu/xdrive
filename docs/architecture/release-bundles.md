@@ -7,6 +7,18 @@ checks remain authoritative.
 
 ## Identity and immutable publication
 
+**Platform immutability is separate from source-level no-clobber guards.**
+The first observed public `bundle-2f5787bef3e1c825f00ff912e8bcd820d6862326`
+Release has `immutable: false`, despite its exact source ref and Release
+asset digest inventory. It must not be represented as a GitHub-locked Release.
+GitHub repository **Settings → Releases → Enable release immutability** must
+be enabled by an authorized repository administrator; this applies to
+future Releases, not retroactively to that already published one.
+The independent parent CI `verify-published-bundle` job now requires
+`immutable: true` *and* the signed Manifest proof for subsequent Releases.
+It is intentionally not a dependency of the core Server/Snapshot publish job.
+
+
 - A Bundle is identified by the **complete lowercase 40-hex Git Commit**,
   not by a rolling `snapshot`, 12-character prefix, build number or
   platform version string.

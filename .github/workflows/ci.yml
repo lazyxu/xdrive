@@ -2734,4 +2734,4 @@ jobs:
       - name: Independently verify actual GitHub Bundle, Commit and Sigstore
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/verify-live-release-bundle.py --commit "$GITHUB_SHA" --require-sigstore
+        run: python3 scripts/ci/verify-live-release-bundle.py --commit "$GITHUB_SHA" --require-sigstore --require-immutable

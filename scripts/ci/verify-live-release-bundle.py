@@ -96,13 +96,15 @@ def public_json(url):
     return json.loads(public_bytes(url))
 
 
-def check_release(commit, get_json=public_json, get_bytes=public_bytes):
+def check_release(commit, get_json=public_json, get_bytes=public_bytes, *, require_immutable=False):
     """Verify actual Release tag, manifest bytes and *all* release asset digests."""
     if not COMMIT.fullmatch(commit):
         raise GateError("expected full lowercase 40-character Git Commit")
     tag = "bundle-" + commit
     ref = get_json(GITHUB + "git/ref/tags/" + tag)
     release = get_json(GITHUB + "releases/tags/" + tag)
+    if require_immutable and release.get("immutable") is not True:
+        raise GateError("GitHub Release is mutable: enable repository release immutability for future bundles")
     raw = get_bytes("https://github.com/" + REPO +
                     "/releases/download/" + tag + "/release-bundle.json")
     doc = validate(json.loads(raw.decode("utf-8")), expected_commit=commit)
@@ -354,6 +356,8 @@ def main(argv=None):
                         help="fail when any advertised client package is not cached")
     parser.add_argument("--server-url", help="authenticated Server origin")
     parser.add_argument("--allow-loopback-http", action="store_true")
+    parser.add_argument("--require-immutable", action="store_true",
+                        help="fail unless GitHub platform-level release immutability is enabled")
     parser.add_argument("--require-sigstore", action="store_true",
                         help="verify signed manifest with pinned CI identity and Git Commit")
     parser.add_argument("--check-server-download", action="store_true",
@@ -362,7 +366,7 @@ def main(argv=None):
                         help="download and SHA-256 verify every GitLab/GitHub package; expensive")
     args = parser.parse_args(argv)
     try:
-        manifest, raw = check_release(args.commit)
+        manifest, raw = check_release(args.commit, require_immutable=args.require_immutable)
         verified_host = None
         api_count = None
         if args.require_sigstore:
@@ -386,6 +390,7 @@ def main(argv=None):
                     check_remote_bytes(item, origin)
         print(json.dumps({
             "commit": args.commit, "release": "verified",
+            "platform_immutable": "verified" if args.require_immutable else "not_checked",
             "published_artifacts": len(manifest["artifacts"]),
             "sigstore": "verified" if args.require_sigstore else "not_checked",
             "host": "verified" if verified_host is not None else "not_checked",

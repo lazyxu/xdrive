@@ -56,6 +56,21 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
         self.assertEqual(manifest, self.manifest)
         self.assertEqual(raw, self.raw)
 
+    def test_platform_immutable_release_required_for_production_acceptance(self):
+        self.release["immutable"] = False
+        def json_data(url):
+            return self.ref if "/git/ref/" in url else self.release
+        with self.assertRaisesRegex(audit.GateError, "mutable"):
+            audit.check_release(COMMIT, json_data, lambda _url: self.raw,
+                                require_immutable=True)
+        # A source-level no-clobber publisher is not an immutable GitHub
+        # Release. Only the platform's explicit immutable=true is accepted.
+        self.release["immutable"] = True
+        manifest, _ = audit.check_release(COMMIT, json_data,
+                                           lambda _url: self.raw,
+                                           require_immutable=True)
+        self.assertEqual(manifest["commit"], COMMIT)
+
     def test_reject_wrong_commit_or_changed_remote_digest(self):
         self.ref["object"]["sha"] = "b" * 40
         with self.assertRaises(ValueError):
