@@ -271,6 +271,11 @@ struct XDriveIOSNativeClipboardScreen: View {
                 catch { break }
             }
         }
+        .onChange(of: targetID) { _ in
+            // A previous CAS Node must never follow a new recipient intent.
+            referenceKind = "text"
+            referenceNodeID = ""
+        }
         .onChange(of: recipientProof?.deviceID) { _ in
             // The 15-second GET fallback never waits for the next tick after
             // a new Owner-scoped device capability is enrolled or revoked.
