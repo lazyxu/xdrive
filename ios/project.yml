@@ -41,6 +41,9 @@ targets:
           - com.lazyxu.xdrive.ios.photos.backup
         UIBackgroundModes:
           - processing
+          # Requires an Apple-signed aps-environment entitlement and an
+          # Owner-bound APNs sender before any real wake can be received.
+          - remote-notification
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lazyxu.xdrive.ios
