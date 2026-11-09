@@ -527,7 +527,15 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               {port.listDevices ? (
                 <Stack spacing={1}>
                   <TextField select label="发送范围" value={targetID} disabled={busy}
-                    onChange={e => { setTargetID(e.target.value); setConfirmRevoke(false); setPickerOpen(false) }} size="small">
+                    onChange={e => {
+                      setTargetID(e.target.value)
+                      setConfirmRevoke(false)
+                      setPickerOpen(false)
+                      // Switching recipient/broadcast invalidates the previous
+                      // Node intent; never silently send it to another device.
+                      setReferenceKind('text')
+                      setNodeID('')
+                    }} size="small">
                     <MenuItem value="">当前 Owner 所有已解锁客户端（广播）</MenuItem>
                     {targetDevices.map(device => (
                       <MenuItem key={device.device_id} value={device.device_id}>
