@@ -55,7 +55,11 @@ test('changing density never changes PhotoKit identity, backup scans or UI item 
   assert.doesNotMatch(page, /task\(id:.*density/)
   assert.match(page, /let count = try await reader\.start\(atOffset: offset, mediaFilter: mediaFilter\)/)
   assert.match(page, /loaded\.startOffset == offset/)
-  assert.match(page, /\.onDisappear \{\s*if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*\}/)
+  assert.match(page, /\.onDisappear \{[\s\S]*?let verifiedEpoch = retainedGeneration[\s\S]*?if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*\}/)
+  // Page cache is metadata-only, one 64-slot window, and cannot be reused
+  // after a changed PhotoKit generation/permission/total.
+  assert.match(page, /page\?\.totalAccessibleAssets == expectedTotal/)
+  assert.match(page, /onPageHidden\(offset, verifiedEpoch, verifiedPage\)/)
   assert.match(wall, /retainWhileCovered: selected != nil \|\| showingMap/)
   assert.match(square, /\.task\(id: "\\\(candidate\.id\)-\\\(framing\.rawValue\)"\)/)
   assert.match(square, /loader\.load\(\s*candidate\.id, size: CGSize\(width: 420, height: 420\),\s*contentMode: framing == \.complete \? \.aspectFit : \.aspectFill/)
