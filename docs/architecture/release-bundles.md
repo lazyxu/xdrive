@@ -75,9 +75,17 @@ checks remain authoritative.
   Commit, its per-package cache state and exact digests with fallback URLs.
   No historical Bundle selection endpoint or version selector exists. Entries list the
   local authenticated download first **only when a verified cache exists**,
-  followed by GitLab and then GitHub. Clients MUST check SHA-256/size before
-  installing from any origin; if a source fails, try the next. They MUST
-  enforce their own signed-package and platform compatibility requirements.
+  followed by GitLab and then GitHub. The native Desktop updater only opts
+  into this alternate source when the independently selected release channel
+  already pins the **same full Commit, filename, platform and SHA-256**; a
+  missing or conflicting channel digest falls back to the original channel
+  download rather than accepting a Server-created trust root.
+  No authenticated local redirect is followed, and Owner credentials never
+  leave the pinned Server origin. All downloaded bytes are SHA-256/size checked
+  before being made available as an installer. The Windows detached updater
+  also rechecks bytes and its installed Authenticode publisher identity before
+  execution, including after the Agent has exited. Other clients MUST enforce
+  their own signed-package and platform compatibility requirements.
 - `GET|HEAD /api/v1/release-bundles/current/artifacts/:name` serves only
   current cache regular files after normal user authentication; byte-range
   downloads are supported. A missing package gives 404, not stale files.
