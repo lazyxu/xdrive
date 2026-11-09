@@ -53,14 +53,9 @@ final class XDriveIOSOfflineAutoPopUITests: XCTestCase {
         if outcome != .completed {
             print("NATIVE_AUTOPOP_RESULT home marker not interactive; "
                 + "app state=\(app.state.rawValue)")
-            // Preserve an XCTest diagnostic screenshot; the independent
-            // workflow watcher also samples the process if the AX query hangs.
-            if app.state == .runningForeground {
-                let shot = XCTAttachment(screenshot: app.screenshot())
-                shot.name = "native-autopop-failed"
-                shot.lifetime = .keepAlways
-                add(shot)
-            }
+            // Do not request a second accessibility snapshot here: that masked
+            // the primary timeout for ~200s. An external Simulator screenshot,
+            // process sample, and app-container stage trace are archived by CI.
         }
         XCTAssertEqual(outcome, .completed,
             "Native SwiftUI dismiss did not restore an interactive Home; "
