@@ -40,8 +40,8 @@ class NavigationSummaryTests(unittest.TestCase):
 
     def test_verified_100k_jump_has_separate_metric_from_actual_frames(self):
         payload = module.summarize(
-            "IOS_NATIVE_FILES_JUMP_VERIFIED_MS value=44\\n"
-            "IOS_NATIVE_FILES_JUMP_VERIFIED_MS value=97\\n"
+            "IOS_NATIVE_FILES_JUMP_VERIFIED_MS value=44\n"
+            "IOS_NATIVE_FILES_JUMP_VERIFIED_MS value=97\n"
         )
         jump = payload["file_jump_verified"]
         self.assertEqual(jump["samples"], 2)
