@@ -98,7 +98,9 @@ test('real Simulator smoke is triggered by Files/Gallery subroute edits, not onl
     'Do not make unrelated iOS modules consume two expensive Simulator jobs')
   assert.match(workflow, /xcodebuild test/)
   // Every candidate shard is required: Navigation/B9 and Gallery/Files.
-  assert.match(workflow, /matrix:\s*[\s\S]*?source:\s*\[release-c83, candidate-navigation, candidate-gallery-files\]/)
+  assert.match(workflow, /matrix:\s*[\s\S]*?source:\s*\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\]/)
+  assert.match(workflow, /candidate-no-session\)[\s\S]*?XDriveIOSFilesSessionRecoveryUITests/)
+  assert.match(workflow, /continue-on-error: \$\{\{ matrix\.source == 'release-c83' \}\}/)
   assert.match(workflow, /candidate-navigation\)[\s\S]*?XDriveIOSNavigationRuntimeUITests/)
   assert.match(workflow, /candidate-gallery-files\)[\s\S]*?XDriveIOSGalleryFilesStabilityUITests/)
   // A no-token smoke only validates mounting/return and process survival;

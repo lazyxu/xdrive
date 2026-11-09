@@ -878,6 +878,110 @@ private enum XDriveIOSNativeFilesQuickSection: String, CaseIterable, Identifiabl
     }
 }
 
+/// A UI-only fail-closed navigation destination for an Owner identity
+/// without a matching active login Session. No Files Reader, virtual List,
+/// thumbnail task or authenticated Server request is constructed on this path.
+/// The real Files/Trash readers still verify the Server on every access.
+private struct XDriveIOSNativeFilesNoSessionChild: View {
+    enum Kind: Equatable {
+        case cloud, trash
+
+        var title: String { self == .cloud ? "xDrive 云端" : "最近删除" }
+        var errorPageID: String {
+            self == .cloud ? "native-ios-files-error-page" :
+                "native-ios-files-trash-error-page"
+        }
+        var retryID: String {
+            self == .cloud ? "native-ios-files-retry" :
+                "native-ios-files-trash-retry"
+        }
+        var returnID: String {
+            self == .cloud ? "native-ios-files-error-return" :
+                "native-ios-files-trash-error-return"
+        }
+    }
+
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let expectedOwner: XDriveNativeOwnerRoot
+    let kind: Kind
+    @Environment(\.dismiss) private var dismiss
+    @State private var checking = false
+    @State private var verifiedForOpen = false
+    @State private var notice = "尚未建立当前账户的有效登录会话，请返回文件首页登录。"
+
+    var body: some View {
+        Group {
+            if verifiedForOpen && login.hasSameOwnerSessionForNavigation &&
+                XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) {
+                // Only a separately reverified, exact same Owner may open the
+                // full protected reader after explicitly pressing Retry.
+                switch kind {
+                case .cloud:
+                    XDriveIOSNativeFilesBrowser(
+                        login: login, folderID: expectedOwner.rootNodeID,
+                        folderName: "xDrive 云端"
+                    )
+                case .trash:
+                    XDriveIOSNativeFilesTrashScreen(login: login)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 18) {
+                    Label("当前账户未完成登录验证", systemImage: "lock.shield")
+                        .font(.headline)
+                    Text(notice).font(.subheadline).foregroundStyle(.secondary)
+                    HStack {
+                        Button(kind == .cloud ? "重试当前页" : "重试") {
+                            retryAuthorization()
+                        }
+                        .disabled(checking)
+                        .accessibilityIdentifier(kind.retryID)
+                        Button { dismiss() } label: {
+                            Label("返回文件", systemImage: "chevron.left")
+                        }
+                        .accessibilityIdentifier(kind.returnID)
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer(minLength: 0)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(kind.errorPageID)
+            }
+        }
+        .navigationTitle(kind.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: login.owner) { next in
+            if !XDriveIOSNativePhotoOwnerScope.matches(next, expectedOwner) {
+                verifiedForOpen = false
+                notice = "账户已经切换，旧页面无权访问新账户的文件。"
+            }
+        }
+    }
+
+    private func retryAuthorization() {
+        guard !checking else { return }
+        checking = true
+        Task { @MainActor in
+            defer { checking = false }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expectedOwner),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
+                else {
+                    notice = "账户已经变化，请返回文件首页重新打开。"
+                    return
+                }
+                verifiedForOpen = true
+            } catch {
+                // Never expose token, credential, origin or Server error body.
+                notice = "当前服务器会话无法验证，请返回文件首页重新登录。"
+            }
+        }
+    }
+}
+
 /// iOS fixed Files tab: genuine native bounded Owner directory navigation
 /// and whole-library search. File previews use the separate native L3 Viewer;
 /// Owner-bound creation, transfers and mutations live in the native action sheet.
@@ -1286,10 +1390,16 @@ struct XDriveIOSNativeFilesBrowser: View {
         Section("位置") {
             if let owner = login.owner {
                 NavigationLink {
-                    XDriveIOSNativeFilesBrowser(
-                        login: login, folderID: owner.rootNodeID,
-                        folderName: "xDrive 云端"
-                    )
+                    if login.hasSameOwnerSessionForNavigation {
+                        XDriveIOSNativeFilesBrowser(
+                            login: login, folderID: owner.rootNodeID,
+                            folderName: "xDrive 云端"
+                        )
+                    } else {
+                        XDriveIOSNativeFilesNoSessionChild(
+                            login: login, expectedOwner: owner, kind: .cloud
+                        )
+                    }
                 } label: {
                     HStack(spacing: 12) {
                         Label("xDrive 云端", systemImage: "externaldrive")
@@ -1305,7 +1415,17 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .foregroundStyle(.secondary)
             }
             NavigationLink {
-                XDriveIOSNativeFilesTrashScreen(login: login)
+                if let expected = login.owner {
+                    if login.hasSameOwnerSessionForNavigation {
+                        XDriveIOSNativeFilesTrashScreen(login: login)
+                    } else {
+                        XDriveIOSNativeFilesNoSessionChild(
+                            login: login, expectedOwner: expected, kind: .trash
+                        )
+                    }
+                } else {
+                    Text("请先登录 xDrive 服务器")
+                }
             } label: {
                 Label("最近删除", systemImage: "trash")
             }

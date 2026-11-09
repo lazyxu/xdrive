@@ -79,7 +79,9 @@ test('native Browse home uses a verified cloud location rather than automaticall
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
   assert.match(view, /XDriveIOSNativeFilesTrashScreen\(login: login\)/)
-  assert.match(view, /List \{\s*filesHeader\s*if isHome \{\s*filesHome\s*\} else \{/)
+  // The merged #4131 implementation now has an arrangement/status row
+  // between the header and Home section. Never discard that functionality.
+  assert.match(view, /List \{\s*filesHeader\s*if !isHome && !isGlobalSearch \{[\s\S]*?native-ios-files-arrangement-status[\s\S]*?\}\s*if isHome \{\s*filesHome\s*\} else \{/)
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return\s*\}/)
   assert.match(view, /queryDraft = ""\s*activeQuery = ""\s*searchReturnOffset = nil/)
 });
@@ -136,7 +138,7 @@ test('Browse home displays only verified favorite folders as native direct navig
   assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?if isHome, let current = login\.owner,[\s\S]*?favoriteShortcuts\.suspendForNavigation\(\)/)
   assert.match(view, /if !sameOwner \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = owner/)
   assert.match(view, /else \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil/)
-  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*homeReadAttempted = false\s*if isHome && phase == \.active \{\s*homeReadAttempted = true\s*reload\(\)/)
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*homeReadAttempted = false[\s\S]*?if isHome && phase == \.active \{[\s\S]*?homeReadAttempted = true\s*reload\(\)/)
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return/)
   assert.doesNotMatch(home, /XDriveIOSNativeFilesCollectionsTransport\(|URLSession|\/api\/v1\/file-favorites/)
 })
@@ -262,4 +264,23 @@ test('Files Home Favorites cache call must pass explicit projection kind to comp
   assert.match(view, /favoriteShortcuts\.matches\(login\.owner, kind: \.favorites\)/)
   assert.match(view, /guard isHome, favoriteShortcuts\.verified,\s*favoriteShortcuts\.matches\(login\.owner, kind: \.favorites\)/)
   assert.doesNotMatch(view, /favoriteShortcuts\.matches\(login\.owner\)/)
+})
+
+test('synthetic Owner without a Session uses a bounded native recovery child, never the protected List', () => {
+  const login = read('ios/XDriveIOS/NativeOwnerLoginModel.swift')
+  assert.match(login, /var hasSameOwnerSessionForNavigation: Bool \{\s*guard let active, let owner else \{ return false \}\s*return sameScope\(active\.verifiedOwner, owner\)/)
+  const home = view.slice(view.indexOf('@ViewBuilder private var filesHome:'),
+    view.indexOf('@ViewBuilder private var filesHeader:'))
+  assert.match(home, /if login\.hasSameOwnerSessionForNavigation \{\s*XDriveIOSNativeFilesBrowser\(/)
+  assert.match(home, /else \{\s*XDriveIOSNativeFilesNoSessionChild\(\s*login: login, expectedOwner: owner, kind: \.cloud/)
+  assert.match(home, /if login\.hasSameOwnerSessionForNavigation \{\s*XDriveIOSNativeFilesTrashScreen\(login: login\)/)
+  assert.match(home, /else \{\s*XDriveIOSNativeFilesNoSessionChild\(\s*login: login, expectedOwner: expected, kind: \.trash/)
+  assert.match(view, /guard !checking else \{ return \}[\s\S]*?let auth = try await login\.verifiedAuthorization\(\)/)
+  assert.match(view, /verifiedForOpen && login\.hasSameOwnerSessionForNavigation &&[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\)/)
+  assert.match(view, /accessibilityIdentifier\(kind\.errorPageID\)/)
+  assert.match(view, /accessibilityIdentifier\(kind\.retryID\)/)
+  assert.match(view, /accessibilityIdentifier\(kind\.returnID\)/)
+  assert.match(view, /private func verifiedViewerAdjacent\(/)
+  assert.match(view, /resumeStore\.saveSection\(option\.rawValue, owner: owner\)/)
+  assert.match(view, /private var arrangementStatusText: String/)
 })

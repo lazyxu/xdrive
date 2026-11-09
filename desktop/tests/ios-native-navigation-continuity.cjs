@@ -25,7 +25,10 @@ const sources = {
   "x": "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift",
   "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift",
   "b": "ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift",
-  "j": ".github/workflows/ios-native-navigation-runtime.yml"
+  "j": ".github/workflows/ios-native-navigation-runtime.yml",
+  "h": "ios/XDriveIOS/NativeOwnerLoginModel.swift",
+  "z": "ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift",
+  "p": "ios/scripts/capture-navigation-smoke-frames.py"
 }
 const scenarios = [
   {
@@ -1118,7 +1121,7 @@ const scenarios = [
     "checks": [
       {
         "file": "j",
-        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files\\]",
+        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]",
         "flags": ""
       }
     ]
@@ -1404,6 +1407,206 @@ const scenarios = [
       {
         "file": "f",
         "pattern": "if !homeReadAttempted \\{\\s*homeReadAttempted = true\\s*reload\\(\\)[\\s\\S]*?favoriteShortcuts\\.matches\\(login\\.owner, kind: \\.favorites\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "125 No-Session navigation always requires a matching active login scope",
+    "checks": [
+      {
+        "file": "h",
+        "pattern": "var hasSameOwnerSessionForNavigation: Bool \\{\\s*guard let active, let owner else \\{ return false \\}\\s*return sameScope\\(active\\.verifiedOwner, owner\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "126 Files root chooses protected reader only with same-Owner active Session",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if login\\.hasSameOwnerSessionForNavigation \\{\\s*XDriveIOSNativeFilesBrowser\\(",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "127 No-Session cloud route uses a standalone child instead of the Files List",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "else \\{\\s*XDriveIOSNativeFilesNoSessionChild\\(\\s*login: login, expectedOwner: owner, kind: \\.cloud",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "128 Trash root chooses full reader only with same-Owner active Session",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if login\\.hasSameOwnerSessionForNavigation \\{\\s*XDriveIOSNativeFilesTrashScreen\\(login: login\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "129 No-Session Trash route does not instantiate destructive reader",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "else \\{\\s*XDriveIOSNativeFilesNoSessionChild\\(\\s*login: login, expectedOwner: expected, kind: \\.trash",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "130 No-Session Retry must still re-prove exact Server Owner",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "private func retryAuthorization\\(\\)[\\s\\S]*?let auth = try await login\\.verifiedAuthorization\\(\\)[\\s\\S]*?matches\\(auth\\.owner, expectedOwner\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "131 No-Session retry cannot open after Owner switch",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "verifiedForOpen && login\\.hasSameOwnerSessionForNavigation &&\\s*XDriveIOSNativePhotoOwnerScope\\.matches\\(login\\.owner, expectedOwner\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "132 No-Session Cloud Error uses a stable AX page identifier",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "self == \\.cloud \\? \"native-ios-files-error-page\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "133 No-Session Trash Error uses a stable AX page identifier",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "\"native-ios-files-trash-error-page\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "134 No-Session safe return and Retry controls have real actions",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "Button\\(kind == \\.cloud \\? \"重试当前页\" : \"重试\"\\) \\{\\s*retryAuthorization\\(\\)[\\s\\S]*?Button \\{ dismiss\\(\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "135 No-Session retry cannot materialize Server error body",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "notice = \"当前服务器会话无法验证，请返回文件首页重新登录。\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "136 No-Session test verifies missing protected file List",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testCloudFolderNoSessionIsSmallNativeRecoveryInsteadOfFilesList\\(\\)[\\s\\S]*?XCTAssertFalse\\(element\\(\"native-ios-files-grid\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "137 No-Session test verifies Trash hides destructive rows",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testRecentlyDeletedNoSessionDoesNotMountDestructiveRows\\(\\)[\\s\\S]*?XCTAssertFalse\\(delete\\.exists",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "138 No-Session test verifies retries never authorize fake Owner",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testCloudRetryCannotPromoteSyntheticOwnerIntoAuthenticatedReader\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "139 No-Session test verifies failed children can alternate without losing Home",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testAlternatingDeniedCloudAndTrashChildrenKeepsHomeRail\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "140 No-Session test verifies foreground resume and Gallery transition",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testDeniedChildBackgroundResumeRetainsExplicitRecoveryAndGallery\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "141 Simulator workflow requires standalone no-Session candidate shard",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "142 Live CI screenshot capture targets the failed child route before AX timeout",
+    "checks": [
+      {
+        "file": "p",
+        "pattern": "\"testSyntheticOwnerRecentlyDeletedReturnKeepsFilesHomeMounted\"[\\s\\S]*?time\\.monotonic\\(\\) \\+ 12",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "143 Exact GitHub test runner watches screen frames during Xcode build",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "capture-navigation-smoke-frames\\.py[\\s\\S]*?frame_watcher=\\$!",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "144 Authentic Files model continues to require current Server authorization",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "let auth = try await login\\.verifiedAuthorization\\(\\)[\\s\\S]*?XDriveIOSNativePhotoOwnerScope\\.matches\\(auth\\.owner, expected\\)",
         "flags": ""
       }
     ]

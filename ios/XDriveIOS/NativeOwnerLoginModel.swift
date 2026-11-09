@@ -27,6 +27,15 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     }
 
     private var active: Session?
+    // UI navigation eligibility only: this is NOT a Server authorization
+    // decision. Every protected read still calls verifiedAuthorization().
+    // A synthetic or stale Owner without an active same-scope session may
+    // display a recovery route, but must not construct protected Files views.
+    var hasSameOwnerSessionForNavigation: Bool {
+        guard let active, let owner else { return false }
+        return sameScope(active.verifiedOwner, owner)
+    }
+
     private var generation: UInt64 = 0
     private struct AuthorizationFlight {
         let id: UUID
