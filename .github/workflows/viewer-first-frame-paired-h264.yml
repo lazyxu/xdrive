@@ -1,0 +1,125 @@
+name: Viewer real H264 first frame paired baseline vs candidate
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/viewer-first-frame-paired-h264.yml'
+      - 'desktop/scripts/viewer-first-frame-*.cjs'
+      - 'desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs'
+      - 'desktop/tests/viewer-first-frame-benchmark-contract.cjs'
+      - 'ui/shared/src/mui/FilePreviewSurface.tsx'
+      - 'ui/shared/src/mui/MediaGalleryViewer.tsx'
+      - 'web/src/mediaGalleryAdapter.ts'
+
+permissions:
+  contents: read
+
+# Diagnostic benchmark; does not replace CI or Final Gate.
+concurrency:
+  group: viewer-ff-paired-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  signed-h264-first-frame-paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: [5432:5432]
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_P0C2_SPA_BEFORE: '1'
+      XD_PWA_P1_100K_VIEWER_BACK: '1'
+      XD_PWA_P1_H264_VIEWER_FRAME: '1'
+      XD_VIEWER_FIRST_FRAME_BENCH: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pin same-runner baseline to exact merge-base
+        shell: bash
+        env:
+          CI_BASE: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CI_HEAD"
+          BASE_SHA="$(git merge-base "$CI_BASE" "$CI_HEAD")"
+          test -n "$BASE_SHA" && test "$BASE_SHA" != "$CI_HEAD"
+          echo "VIEWER_BASE_SHA=$BASE_SHA" >> "$GITHUB_ENV"
+          echo "VIEWER_HEAD_SHA=$CI_HEAD" >> "$GITHUB_ENV"
+          echo "VIEWER_BASE_DIR=$RUNNER_TEMP/xdrive-viewer-before" >> "$GITHUB_ENV"
+          echo "VIEWER_RESULTS=$GITHUB_WORKSPACE/desktop/viewer-first-frame-paired-results" >> "$GITHUB_ENV"
+          git worktree add --detach "$RUNNER_TEMP/xdrive-viewer-before" "$BASE_SHA"
+          test "$(git -C "$RUNNER_TEMP/xdrive-viewer-before" rev-parse HEAD)" = "$BASE_SHA"
+      - name: Build actual before and after Web Viewer and Go/Gin Owner CAS fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix desktop ci --no-audit --no-fund
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix "$VIEWER_BASE_DIR/web" ci --no-audit --no-fund
+          node --check desktop/scripts/viewer-first-frame-probe.cjs
+          node --check desktop/scripts/viewer-first-frame-compare.cjs
+          node --check desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          node --test desktop/tests/viewer-first-frame-benchmark-contract.cjs
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix "$VIEWER_BASE_DIR/web" run build -- --config vite.config.ts
+          mkdir -p desktop/viewer-first-frame-go
+          go test -c -o desktop/viewer-first-frame-go/api.test ./internal/api
+          test -x desktop/viewer-first-frame-go/api.test
+          test -s web/dist/index.html && test -s "$VIEWER_BASE_DIR/web/dist/index.html"
+      - name: Run real signed H264 first-frame n3 before and n3 after in same Electron runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          export XD_GALLERY_MOBILE_NATIVE_GO_BINARY="$GITHUB_WORKSPACE/desktop/viewer-first-frame-go/api.test"
+          OUT="$VIEWER_RESULTS"
+          mkdir -p "$OUT"
+          printf 'baseline=%s\ncandidate=%s\nsource=%s\n' \
+            "$VIEWER_BASE_SHA" "$VIEWER_HEAD_SHA" "$(git rev-parse HEAD)" > "$OUT/source.txt"
+          export XD_VIEWER_FF_DIST="$VIEWER_BASE_DIR/web/dist"
+          test -s "$XD_VIEWER_FF_DIST/index.html"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+            ./desktop/node_modules/.bin/electron --no-sandbox \
+            desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          mv desktop/pwa-p1-owner-100k-h264-viewer-results "$OUT/baseline"
+          export XD_VIEWER_FF_DIST="$GITHUB_WORKSPACE/web/dist"
+          test -s "$XD_VIEWER_FF_DIST/index.html"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+            ./desktop/node_modules/.bin/electron --no-sandbox \
+            desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          mv desktop/pwa-p1-owner-100k-h264-viewer-results "$OUT/candidate"
+          node desktop/scripts/viewer-first-frame-compare.cjs \
+            "$OUT/baseline/summary.json" "$OUT/candidate/summary.json" \
+            "$OUT/paired-comparison.json" "$VIEWER_BASE_SHA" "$VIEWER_HEAD_SHA"
+          cat "$OUT/paired-comparison.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: viewer-real-signed-h264-first-frame-paired-${{ github.run_id }}
+          path: desktop/viewer-first-frame-paired-results/
+          if-no-files-found: warn
+          retention-days: 14
