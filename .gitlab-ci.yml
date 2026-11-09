@@ -248,6 +248,7 @@ server-image:
   tags:
     - linux
   before_script:
+    - bash scripts/ci/gitlab-stable-prestage-gate.sh
     - *install_docker_cli_only
   script:
     - XDRIVE_GITLAB_PACKAGE_ONLY=1 XDRIVE_GITLAB_STAGING_ONLY=1 bash scripts/ci/gitlab-server-image.sh
@@ -293,6 +294,7 @@ media-worker-image:
   tags:
     - linux
   before_script:
+    - bash scripts/ci/gitlab-stable-prestage-gate.sh
     - *install_docker_cli_only
   script:
     - XDRIVE_GITLAB_PACKAGE_ONLY=1 XDRIVE_GITLAB_STAGING_ONLY=1 bash scripts/ci/test-media-worker-image.sh dist/media-worker-image
@@ -343,6 +345,7 @@ photo-face-image:
     policy: pull-push
     when: always
   before_script:
+    - bash scripts/ci/gitlab-stable-prestage-gate.sh
     - *install_docker_cli_only
   script:
     # Leave time below the 2h job limit for cache:when:always to save
@@ -378,6 +381,7 @@ caddy-image:
   tags:
     - linux
   before_script:
+    - bash scripts/ci/gitlab-stable-prestage-gate.sh
     - *install_docker_cli_only
   script:
     - XDRIVE_GITLAB_PACKAGE_ONLY=1 XDRIVE_GITLAB_STAGING_ONLY=1 bash scripts/ci/gitlab-caddy-image.sh
