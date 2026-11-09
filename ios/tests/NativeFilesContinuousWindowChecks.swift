@@ -166,7 +166,7 @@ struct XDriveIOSNativeFilesContinuousWindowChecks {
                                       total: Window.maximumTotal + 1) == nil,
                 "reject implausible large directory totals")
         let stressMS = Int((ProcessInfo.processInfo.systemUptime - stressBegin) * 1000)
-        print("IOS_NATIVE_FILES_100K_POLICY_MS value=\\(stressMS) bounded_rows=256")
+        print("IOS_NATIVE_FILES_100K_POLICY_MS value=\(stressMS) bounded_rows=256")
         print("iOS Files bounded continuous scrolling policy passed")
     }
 }
