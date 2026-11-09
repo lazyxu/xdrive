@@ -97,6 +97,7 @@ test('paired workflow compiles both real production builds against the same Go/P
     'github.event.pull_request.base.sha',
     'git merge-base',
     'git worktree add --detach',
+    'npm --prefix desktop install --no-audit --no-fund',
     'npm --prefix web ci',
     'npm --prefix "$VIEWER_BASE_DIR/web" ci',
     'VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1',
@@ -111,5 +112,7 @@ test('paired workflow compiles both real production builds against the same Go/P
     'cancel-in-progress: false',
   ]) assert.ok(flow.includes(marker), 'paired before/after workflow missing: ' + marker)
   assert.ok(!flow.includes('|| true'), 'a failed real sample must not become a success')
+  assert.ok(!flow.includes('npm --prefix desktop ci'),
+    'Desktop has no package-lock; CI must not attempt npm ci for it')
   assert.ok(!flow.includes('continue-on-error'), 'benchmark must fail closed')
 })
