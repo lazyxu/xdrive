@@ -23,6 +23,7 @@ func (c *agentController) CloudClipboardCheck(ctx context.Context, value client.
 	}
 	return cli.ClipboardCheck(ctx, value)
 }
+
 // Public Owner recipient keys only; no installation token or private key.
 func (c *agentController) CloudClipboardDevices(ctx context.Context) (client.ClipboardDevices, error) {
 	cli, _, err := c.cloudClient()
@@ -48,6 +49,7 @@ func (c *agentController) CloudClipboardCreate(ctx context.Context, value client
 	}
 	return cli.ClipboardCreate(ctx, value)
 }
+
 // Revoke remains an explicit interactive Owner mutation; a device token
 // alone never carries authority to revoke another recipient.
 func (c *agentController) CloudClipboardRevokeDevice(ctx context.Context, id string) error {
