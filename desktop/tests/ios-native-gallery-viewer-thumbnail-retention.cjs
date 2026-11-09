@@ -8,6 +8,7 @@ const gallery = fs.readFileSync(path.join(__dirname, '../../ios/XDriveIOS/Native
 const start = gallery.indexOf('struct XDriveIOSUnifiedPhotoTile: View {');
 assert.ok(start >= 0, 'Native unified tile is required');
 const tile = gallery.slice(start);
+const wall = fs.readFileSync(path.join(__dirname, '../../ios/XDriveIOS/NativeUnifiedPhotoWall.swift'), 'utf8');
 const between = (begin, end) => {
   const first = tile.indexOf(begin);
   assert.ok(first >= 0, 'Missing thumbnail lifecycle start: ' + begin);
@@ -70,7 +71,7 @@ test('stale asynchronous thumbnail completion cannot repopulate a hidden or repl
 
 test('normal off-screen scrolling drops decoded pixels rather than caching unbounded tiles', () => {
   const disappearance = between('.onDisappear {', 'private func loadCloud(');
-  assert.match(disappearance, /if !displayActive, retainedKey == thumbnailKey/);
+  assert.match(disappearance, /if retainWhileCovered, retainedKey == thumbnailKey/);
   assert.match(disappearance, /else\s*\{[\s\S]*local\.cancel\(\)[\s\S]*retainedLocal = nil[\s\S]*remote = nil[\s\S]*retainedKey = nil/);
 });
 
@@ -79,4 +80,12 @@ test('hidden or replaced media never initiates a cloud fallback or displays fore
   assert.match(loading, /displayActive, retainedKey == thumbnailKey, !loading/);
   assert.match(loading, /local\.image == nil, retainedLocal == nil/);
   assert.match(tile, /guard displayActive, retainedKey == expectedKey/);
+});
+
+test('People and thumbnail-cache subroutes retain tiles independently of Viewer activity', () => {
+  assert.match(gallery, /retainWhileCovered: selected != nil \|\|[\s\S]*showingPeople \|\| showingThumbnailCache/);
+  assert.match(wall, /XDriveIOSUnifiedPhotoTile\([\s\S]*?displayActive: displayActive,\s*retainWhileCovered: retainWhileCovered/);
+  const disappearance = between('.onDisappear {', 'private func loadCloud(');
+  assert.match(disappearance, /if retainWhileCovered, retainedKey == thumbnailKey/);
+  assert.doesNotMatch(disappearance, /if !displayActive, retainedKey == thumbnailKey/);
 });

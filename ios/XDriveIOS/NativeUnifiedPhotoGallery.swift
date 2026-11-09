@@ -357,6 +357,7 @@ struct XDriveIOSUnifiedPhotoTile: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let presentingOwner: XDriveNativeOwnerRoot
     let displayActive: Bool
+    let retainWhileCovered: Bool
     @StateObject private var local = XDriveIOSPhotoImageLoader()
     @State private var remote: UIImage?
     @State private var fallback: Task<Void, Never>?
@@ -473,7 +474,7 @@ struct XDriveIOSUnifiedPhotoTile: View {
                 loadGeneration = UUID()
                 fallback?.cancel()
                 fallback = nil
-                if !displayActive, retainedKey == thumbnailKey,
+                if retainWhileCovered, retainedKey == thumbnailKey,
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, presentingOwner) {
                     retainedLocal = local.image ?? retainedLocal
                     local.cancel()
