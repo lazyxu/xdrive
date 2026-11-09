@@ -31,4 +31,6 @@ grep -Fqx "build time: $XDRIVE_BUILD_TIME" <<<"$server_version_output"
 if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" != "1" ]]; then
   bash scripts/test-server-chunk-storage.sh
 fi
-bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image
+if [[ "${XDRIVE_GITLAB_STAGING_ONLY:-0}" != "1" ]]; then
+  bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image
+fi
