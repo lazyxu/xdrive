@@ -76,6 +76,7 @@ func (h *desktopIPCHandler) cloudClipboardList(w http.ResponseWriter, r *http.Re
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, value)
 }
+
 // The recipient directory exposes only public X25519 keys and requires the
 // same signed-in interactive Owner capability as the existing text mailbox.
 func (h *desktopIPCHandler) cloudClipboardDevices(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +144,6 @@ func (h *desktopIPCHandler) cloudClipboardClear(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
-
 // Optional, explicit user-consent enrollment. The Agent looks up the CURRENT
 // registered installation credential and stores X25519 private bytes only in
 // its OS credential store. Nothing sensitive enters Electron renderer.
@@ -198,7 +198,6 @@ func (h *desktopIPCHandler) cloudClipboardDecrypt(w http.ResponseWriter, r *http
 	w.Header().Set("Cache-Control", "no-store")
 	writeDesktopIPCJSON(w, http.StatusOK, map[string]string{"text": clear})
 }
-
 
 // Only the exact UUID in a bounded JSON body may be revoked. The current
 // interactive Owner decides; the OS installation token has no revoke grant.
