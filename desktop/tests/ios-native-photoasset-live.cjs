@@ -192,8 +192,14 @@ test('video buffering is truthful, pausable while waiting, and cancels on scene 
     video.indexOf('private func retireReplay()'))
   const scrub = video.slice(video.indexOf('private func beginScrub()'),
     video.indexOf('private func previewScrub('))
-  const canvas = video.slice(video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player)'),
-    video.indexOf('if showChrome {'))
+  // The rendering layer now accepts an exact first-frame callback. Slice
+  // from the actual AVPlayerLayer through the canvas-only swipe and buffering
+  // overlay; do not mistake an obsolete anchor for an empty View scope.
+  const canvasStart = video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player, onFirstFrame: onFirstFrame)')
+  const chromeStart = video.indexOf('if showChrome {', canvasStart)
+  assert.ok(canvasStart >= 0 && chromeStart > canvasStart,
+    'missing video rendering layer, swipe canvas or buffering overlay')
+  const canvas = video.slice(canvasStart, chromeStart)
   assert.match(video, /@State private var buffering = false/)
   assert.match(refresh, /let transport = player\.timeControlStatus/)
   assert.match(refresh, /playing = canControl && transport != \.paused/)
