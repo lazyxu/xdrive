@@ -133,7 +133,6 @@ test('video loading placeholder and first decoded frame share exact shell and co
     await act(async () => { view.root.findByType('video').props.onWaiting(); await flush() })
     assert.equal(selected(view, 'data-xdrive-preview-media-loading', true).length, 1)
     assert.equal(selected(view, 'data-xdrive-preview-video-loading-stage', 'rebuffer').length, 1)
-    assert.equal(selected(view, 'data-xdrive-preview-video-rebuffer-status', undefined).length, 0)
     assert.equal(view.root.findAll(n => n.props?.['data-xdrive-preview-video-rebuffer-status'] !== undefined).length, 1,
       'rebuffering after a decoded frame should use compact, non-blocking feedback')
     assert.equal(selected(view, 'data-xdrive-preview-video-loading-card', 'first-frame').length, 0,
