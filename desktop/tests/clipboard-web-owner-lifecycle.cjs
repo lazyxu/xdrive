@@ -550,3 +550,64 @@ test('Clipboard import resolved after Lock cannot restore a stale CAS Node or au
     await app.unmount()
   }
 })
+
+test('Clipboard React targeted Node reads use exact server item ID and reject wrong decrypted Node', async () => {
+  const deviceID = 'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2'
+  const record = {
+    id: 78, client_event_id: '5f0d0c4b-c7b4-46d1-b068-dfd81b1794f7',
+    kind: 'application/x-xdrive-node-ref', target_device_id: deviceID, node_id: 118,
+    nonce: 'nonce', ciphertext: 'ciphertext',
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 40000).toISOString(),
+  }
+  const asked = []
+  const app = await mount(makeUI(), port('https://drive.example:target-owner', {
+    list: async () => ({items:[record],next_before:null}),
+    decryptTarget: async (id, signal) => {
+      asked.push(id)
+      assert.equal(signal.aborted,false)
+      return 'asset:119' // valid E2EE of another Node must never be shown as this Node
+    },
+  }))
+  try {
+    await unlock(app)
+    await act(() => {})
+    assert.ok(asked.includes(78),'only server item ID may enter narrow Agent decrypt API')
+    assert.match(app.snapshot(), /无法解密/)
+    assert.doesNotMatch(app.snapshot(), /asset:119|剪贴板明文（仅在此页面内解密）/)
+  } finally {
+    await app.unmount()
+  }
+})
+
+test('Clipboard React Lock discards delayed device decrypt and A→B→A cannot revive it', async () => {
+  const pendingDecrypt = deferred()
+  const deviceID = 'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2'
+  const record = {
+    id: 79, client_event_id: '5f0d0c4b-c7b4-46d1-b068-dfd81b1794f7',
+    kind: 'image/x-xdrive-node-ref', target_device_id: deviceID, node_id: 118,
+    nonce: 'nonce', ciphertext: 'ciphertext',
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 40000).toISOString(),
+  }
+  let callCount = 0
+  const a = port('https://drive.example:owner-a', {
+    list: async()=>({items:[record],next_before:null}),
+    decryptTarget: async()=>{callCount++;return pendingDecrypt.promise},
+  })
+  const b = port('https://drive.example:owner-b')
+  const app = await mount(makeUI(), a)
+  try {
+    await unlock(app)
+    assert.ok(callCount>0,'device-targeted decrypt must start for current Owner')
+    await click(app,'锁定')
+    await app.update(b)
+    await app.update(a)
+    pendingDecrypt.resolve('asset:118')
+    await act(()=>{})
+    assert.ok(app.button('解锁'),'Owner A after B must start locked')
+    assert.doesNotMatch(app.snapshot(),/asset:118|剪贴板明文（仅在此页面内解密）/)
+  } finally {
+    await app.unmount()
+  }
+})
