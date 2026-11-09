@@ -947,6 +947,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     @StateObject private var operationShortcuts = XDriveIOSNativeFilesOperationsModel()
     @State private var pendingQuickOperation: XDriveIOSNativeFilesQuickOperationIntent?
     @State private var showingBatchProperties = false
+    @State private var showingAncestorsSheet = false
+    @State private var quickHistoryReadAttempted = false
     @State private var managementWriteConfirmed = false
     @State private var versionRestoreConfirmed = false
     @State private var showingPathPrompt = false
@@ -2637,7 +2639,15 @@ struct XDriveIOSNativeFilesBrowser: View {
                                 Task { await loadAncestorCrumbs() }
                             }
                         } else {
-                            ForEach(ancestorCrumbs, id: \.id) { crumb in
+                            if ancestorCrumbs.count > 32,
+                               let root = ancestorCrumbs.first {
+                                Button {
+                                    openVerifiedAncestor(root)
+                                } label: {
+                                    Label(root.name, systemImage: "externaldrive")
+                                }
+                            }
+                            ForEach(ancestorCrumbs.suffix(32), id: \.id) { crumb in
                                 Button {
                                     openVerifiedAncestor(crumb)
                                 } label: {
@@ -2647,6 +2657,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                                         Label(crumb.name, systemImage: "folder")
                                     }
                                 }
+                            }
+                            if ancestorCrumbs.count > 32 {
+                                Button("查看全部 \(ancestorCrumbs.count) 级目录") {
+                                    showingAncestorsSheet = true
+                                }
+                                .accessibilityIdentifier("native-ios-files-all-ancestors")
                             }
                             Button("刷新位置", systemImage: "arrow.clockwise") {
                                 Task { await loadAncestorCrumbs() }
@@ -3266,6 +3282,30 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Text("当前账户已变化，请关闭后重新进入文件版本历史。")
             }
         }
+        .sheet(isPresented: $showingAncestorsSheet) {
+            NavigationStack {
+                List {
+                    ForEach(ancestorCrumbs, id: \.id) { crumb in
+                        Button {
+                            showingAncestorsSheet = false
+                            Task { @MainActor in
+                                await Task.yield()
+                                openVerifiedAncestor(crumb)
+                            }
+                        } label: {
+                            Label(crumb.name, systemImage: "folder")
+                        }
+                    }
+                }
+                .navigationTitle("所有上级目录")
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { showingAncestorsSheet = false }
+                    }
+                }
+            }
+            .accessibilityIdentifier("native-ios-files-all-ancestors-sheet")
+        }
         .sheet(isPresented: $showingBatchProperties) {
             NavigationStack {
                 List {
@@ -3430,11 +3470,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             filesModals
         .onAppear {
             restoreFilesSectionIfNeeded()
-            if phase == .active, let owner = login.owner {
+            if phase == .active, let owner = login.owner,
+               !quickHistoryReadAttempted {
+                quickHistoryReadAttempted = true
                 operationShortcuts.updateExpectedOwner(owner)
-                if !operationShortcuts.matches(owner) {
-                    operationShortcuts.load(login: login)
-                }
+                operationShortcuts.load(login: login)
             }
             // Returning from a child must keep the same verified rows, their
             // SwiftUI NavigationLinks and scroll position. Do not refetch on
@@ -3511,12 +3551,15 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            quickHistoryReadAttempted = false
+            showingAncestorsSheet = false
             pendingJumpIndex = nil
             showingIndexJump = false
             pendingQuickOperation = nil
             showingBatchProperties = false
             operationShortcuts.invalidate()
             if phase == .active, let owner = login.owner {
+                quickHistoryReadAttempted = true
                 operationShortcuts.updateExpectedOwner(owner)
                 operationShortcuts.load(login: login)
             }
@@ -3687,10 +3730,21 @@ struct XDriveIOSNativeFilesBrowser: View {
                target >= model.startOffset,
                target - model.startOffset < model.entries.count {
                 let node = model.entries[target - model.startOffset]
+                let expectedFolder = parentID
+                let expectedOwner = login.owner
                 pendingJumpIndex = nil
-                returnScroll.scrollTo(node.id, anchor: .center)
-                lastAppearedNodeID = node.id
-                persistVisibleAnchorSoon()
+                Task { @MainActor in
+                    await Task.yield()
+                    guard parentID == expectedFolder,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                              login.owner, expectedOwner
+                          ), model.verifiedPage,
+                          model.entries.contains(where: { $0.id == node.id })
+                    else { return }
+                    returnScroll.scrollTo(node.id, anchor: .center)
+                    lastAppearedNodeID = node.id
+                    persistVisibleAnchorSoon()
+                }
             }
             if !loading && model.verifiedPage { persistVerifiedFolder() }
             guard !loading, selectedFile == nil else { return }
