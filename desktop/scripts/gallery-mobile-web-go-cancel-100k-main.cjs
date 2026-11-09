@@ -6,14 +6,26 @@ const path = require('node:path')
 const { spawn, execFileSync } = require('node:child_process')
 const { performance } = require('node:perf_hooks')
 const { app, BrowserWindow } = require('electron')
+const {
+  xDriveStartViewerFirstFrameProbe,
+  xDriveReadViewerFirstFrameProbe,
+  xDriveStopViewerFirstFrameProbe,
+} = require('./viewer-first-frame-probe.cjs')
 
 const root = path.resolve(__dirname, '..', '..')
-const dist = path.join(root, 'web', 'dist')
+// Same signed Go fixture, same Electron runner; CI swaps only the genuine
+// production before/after Web bundle for paired first-frame measurements.
+const dist = process.env.XD_VIEWER_FF_DIST
+  ? path.resolve(process.env.XD_VIEWER_FF_DIST)
+  : path.join(root, 'web', 'dist')
 // P0-C2b1: opt-in cross-document navigation; this is not an SPA route switch.
 const p0c2PageLeaveMode = process.env.XD_PWA_P0C2_PAGELEAVE_BEFORE === '1'
 const p0c2SPAMode = process.env.XD_PWA_P0C2_SPA_BEFORE === '1'
 const p1Mode = process.env.XD_PWA_P1_100K_VIEWER_BACK === '1'
 const p1H264Mode = process.env.XD_PWA_P1_H264_VIEWER_FRAME === '1'
+const videoFirstFrameMode = process.env.XD_VIEWER_FIRST_FRAME_BENCH === '1'
+assert(!videoFirstFrameMode || p1H264Mode,
+  'first-frame benchmark requires actual Owner-signed H264 Viewer')
 const p1LiveMode = process.env.XD_PWA_P1_LIVE_MOTION_HOLD === '1'
 const p1ViewerVideoAbortMode = process.env.XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL === '1'
 // P1P is opt-in only: 100k Owner PhotoAssets backed by 115k SHA-distinct
@@ -534,6 +546,13 @@ async function p1MeasureRealH264ViewerMotion(win) {
   ),25000,'real 100k Owner visible deep H264 tile')
   assert(tile.depth>=0.7&&tile.tiles>0&&tile.tiles<1000,
     'real deep bounded Gallery H264 tile not visible')
+  if(videoFirstFrameMode){
+    // Install before the real pointer click to catch transient video DOM,
+    // early loadeddata and the earliest compositor-presented frame.
+    const installed=await win.webContents.executeJavaScript(
+      '('+xDriveStartViewerFirstFrameProbe.toString()+')()',true)
+    assert(installed,'real Viewer first-frame hook was not installed')
+  }
   const started=performance.now()
   sendActualPointer(win,tile)
   await until(async()=>win.webContents.executeJavaScript(
@@ -549,6 +568,22 @@ async function p1MeasureRealH264ViewerMotion(win) {
     played.presentedFrameDelta>=1&&played.width>0&&played.height>0,
     'requestVideoFrameCallback did not prove advancing decoded H264 motion')
   const presentedMs=performance.now()-started
+  const firstFrame = videoFirstFrameMode ? await win.webContents.executeJavaScript(
+    '('+xDriveReadViewerFirstFrameProbe.toString()+')()',true) : null
+  if(videoFirstFrameMode){
+    assert(firstFrame?.ready===true && firstFrame.actualSignedVideo===true &&
+      firstFrame.firstFrameMs>0 && firstFrame.firstFrameMs<=60000 &&
+      firstFrame.videoWidth>0 && firstFrame.videoHeight>0 &&
+      firstFrame.presentedFrames>0,
+      'actual authenticated H264 browser compositor first-frame measurement unavailable')
+    assert(firstFrame.urlMs>=0 && firstFrame.metadataMs>=0 &&
+      firstFrame.firstFrameMs>=firstFrame.urlMs,
+      'signed URL/metadata/first-frame chronology invalid')
+    await win.webContents.executeJavaScript(
+      '('+xDriveStopViewerFirstFrameProbe.toString()+')()',true)
+    // Log only event durations and bounded frame dimensions; never URLs.
+    console.log('XDRIVE_SIGNED_H264_FIRST_FRAME '+JSON.stringify(firstFrame))
+  }
   win.webContents.sendInputEvent({type:'mouseMove',x:18,y:20})
   const back=await until(async()=>win.webContents.executeJavaScript(
     '('+p1BackPoint.toString()+')()',true
@@ -559,6 +594,7 @@ async function p1MeasureRealH264ViewerMotion(win) {
   ),20000,'H264 Viewer Back returns to exact Gallery route and scroll')
   return {
     passed:true,deepFraction:tile.depth,presentedMs,
+    ...(videoFirstFrameMode ? {firstFrame} : {}),
     frameMediaDeltaMs:played.frameMediaDeltaMs,
     presentedFrameDelta:played.presentedFrameDelta,
     videoWidth:played.width,videoHeight:played.height,
@@ -1416,9 +1452,21 @@ async function main() {
       p1LivePresentedP50Ms:p1LiveMode ? rows.map(x=>x.p1LiveMotion.displayedMs).sort((a,b)=>a-b)[1] : null,
       p1H264PresentedP50Ms:p1H264Mode ? rows.map(x=>x.p1H264Frames.presentedMs).sort((a,b)=>a-b)[1] : null,
       p1OriginalDecodedP50Ms:p1Mode ? rows.map(x=>x.p1ViewerBack.originalDecodedMs).sort((a,b)=>a-b)[1] : null,
+      firstFrameBenchMode:videoFirstFrameMode,
+      firstFrameP50Ms:videoFirstFrameMode ?
+        rows.map(row=>row.p1H264Frames.firstFrame.firstFrameMs).sort((a,b)=>a-b)[1] : null,
+      firstFrameTTFBP50Ms:videoFirstFrameMode &&
+        rows.every(row=>row.p1H264Frames.firstFrame.rangeTTFBMs!==null) ?
+        rows.map(row=>row.p1H264Frames.firstFrame.rangeTTFBMs).sort((a,b)=>a-b)[1] : null,
       sampleCount: rows.length, budgetMs: 160,
       worstGoContextP50Ms: worst[1], worstGoContextMaxMs: worst[2],
       passed: rows.length === 3 && rows.every(row =>
+        (!videoFirstFrameMode || (row.p1H264Frames?.firstFrame?.ready===true &&
+          row.p1H264Frames.firstFrame.actualSignedVideo===true &&
+          row.p1H264Frames.firstFrame.firstFrameMs>0 &&
+          row.p1H264Frames.firstFrame.firstFrameMs<=60000 &&
+          row.p1H264Frames.firstFrame.videoWidth>0 &&
+          row.p1H264Frames.firstFrame.videoHeight>0)) &&
         (!p1ViewerVideoAbortMode || (row.p1ViewerRangeAbort?.passed===true &&
           row.p1ViewerRangeAbort.signedPartialContent>=1 &&
           row.p1ViewerRangeAbort.goContextDone>=1 &&
