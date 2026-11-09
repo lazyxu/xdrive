@@ -23,26 +23,56 @@ PY
 # potentially allowing publication with missing promised assets. Fail closed.
 names_output="$(python3 - "$root/release-bundle.json" "$sha" <<'PY'
 import json, re, sys
-from pathlib import Path
+from urllib.parse import quote
+
+def require(ok, detail):
+    if not ok:
+        raise ValueError(detail)
+
 with open(sys.argv[1], encoding="utf8") as stream:
     data = json.load(stream)
-assert isinstance(data, dict) and data.get("schema_version") == 1
-assert data.get("commit") == sys.argv[2]
-assert data.get("channel") in ("master", "stable")
+sha = sys.argv[2]
+require(isinstance(data, dict) and data.get("schema_version") == 1, "invalid schema")
+require(data.get("commit") == sha, "manifest source commit mismatch")
+require(data.get("channel") in ("master", "stable"), "invalid channel")
 items = data.get("artifacts")
-assert isinstance(items, list) and len(items) <= 30
+require(isinstance(items, list) and len(items) <= 30, "invalid artifact count")
 names = []
 for item in items:
-    assert isinstance(item, dict)
+    require(isinstance(item, dict), "invalid artifact record")
     name = item.get("filename")
-    assert isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,180}", name)
-    assert item.get("build_commit") == sys.argv[2]
-    assert item.get("platform") in ("linux", "windows", "cli", "ios", "android", "dsm")
-    assert type(item.get("size")) is int and 0 < item["size"] <= (8 << 30)
-    assert isinstance(item.get("sha256"), str) and re.fullmatch(r"[0-9a-f]{64}", item["sha256"])
-    assert item.get("install_mode") in ("manual", "manual_test_only")
+    require(isinstance(name, str) and re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._+-]{0,180}", name
+    ), "invalid package filename")
+    require(item.get("build_commit") == sha, "cross-commit package")
+    require(item.get("platform") in (
+        "linux", "windows", "cli", "ios", "android", "dsm"
+    ), "unknown platform")
+    size, digest = item.get("size"), item.get("sha256")
+    require(type(size) is int and 0 < size <= (8 << 30), "invalid package size")
+    require(isinstance(digest, str) and re.fullmatch(
+        r"[0-9a-f]{64}", digest
+    ), "invalid package digest")
+    mode = item.get("install_mode")
+    require(mode in ("manual", "manual_test_only"), "invalid install mode")
+    if item["platform"] == "android":
+        require(mode == "manual" and re.fullmatch(
+            r"xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\\.apk",
+            name
+        ), "Android debug or unsigned APK cannot be published")
+    origins = item.get("sources")
+    require(isinstance(origins, dict) and set(origins) == {
+        "gitlab", "github"
+    }, "invalid download origins")
+    require(origins["gitlab"] ==
+        "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive"
+        "/packages/generic/xdrive-build-packages/sha-" + sha + "/" + quote(name),
+        "untrusted GitLab source")
+    require(origins["github"] ==
+        "https://github.com/lazyxu/xdrive/releases/download/bundle-" + sha +
+        "/" + quote(name), "untrusted GitHub source")
     names.append(name)
-assert len(names) == len(set(names))
+require(len(names) == len(set(names)), "duplicate package filename")
 for name in sorted(names):
     print(name)
 PY
