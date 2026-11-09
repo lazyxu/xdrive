@@ -86,3 +86,24 @@ test('black-screen regression: React root alone must never expose an empty WebVi
   assert.match(component,/role=\{failed\?'alert':'status'\}/)
   assert.match(component,/按 F12 查看地图 Console 和 Network/)
 })
+
+
+test('map SDK phase and auth denial are re-probed after a full-document mode reload',async()=>{
+  const phase=['loading','ready','loading','unavailable','ready']
+  let index=0
+  const guest={executeJavaScript:query=>{
+    assert.equal(query,script)
+    return Promise.resolve(guestState({rootPresent:true,phase:phase[index++]}))
+  }}
+  for(const expected of ['pending','ready','pending','unavailable','ready'])
+    assert.equal(decode(await start(guest,script)),expected)
+  assert.equal(index,phase.length)
+  assert.equal(guestState({rootPresent:true,phase:'ready',denied:true}),'denied')
+  assert.equal(guestState({rootPresent:true,phase:'ready',login:true}),'login')
+  // Actual React/Guest lifecycle must re-hide the old ready document, retain
+  // the sandboxed failed guest for F12 and offer an explicit local retry.
+  assert.match(component,/guest\.addEventListener\('did-start-navigation',navigating\)/)
+  assert.match(component,/setEmbedGuestReady\(null\)/)
+  assert.match(component,/setEmbedRetry\(n=>n\+1\)/)
+  assert.match(component,/按 F12 查看地图 Console 和 Network/)
+})
