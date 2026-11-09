@@ -360,6 +360,27 @@ struct XDriveIOSUnifiedPhotoTile: View {
     @StateObject private var local = XDriveIOSPhotoImageLoader()
     @State private var remote: UIImage?
     @State private var fallback: Task<Void, Never>?
+    // The local PhotoKit loader intentionally clears its own UIImage when
+    // cancelled. Retain only this visible tile's last verified pixels while
+    // a Viewer/child route covers the wall, never across media or Owner changes.
+    @State private var retainedLocal: UIImage?
+    @State private var retainedKey: String?
+    @State private var loadGeneration = UUID()
+
+    private var thumbnailKey: String {
+        [
+            presentingOwner.origin.absoluteString,
+            presentingOwner.instanceID,
+            String(presentingOwner.ownerID),
+            row.id,
+            row.local?.id ?? "",
+            String(describing: row.local?.modifiedAt),
+            String(describing: row.local?.capturedAt),
+            String(row.match?.node_id ?? 0),
+            String(row.cloud?.node.revision ?? 0),
+            row.cloud?.metadata.thumbnail_version ?? ""
+        ].joined(separator: "|")
+    }
 
     var body: some View {
         XDriveIOSNativePhotoWallTileShell(
@@ -369,7 +390,9 @@ struct XDriveIOSUnifiedPhotoTile: View {
         Rectangle().fill(.quaternary)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if let image = local.image ?? remote {
+                if XDriveIOSNativePhotoOwnerScope.matches(login.owner, presentingOwner),
+                   retainedKey == thumbnailKey,
+                   let image = local.image ?? retainedLocal ?? remote {
                     Image(uiImage: image).resizable().scaledToFill()
                 } else {
                     Image(systemName: row.isVideo ? "play.rectangle" : "photo")
@@ -386,33 +409,91 @@ struct XDriveIOSUnifiedPhotoTile: View {
                     .background(.black.opacity(0.72), in: Capsule())
                     .padding(4)
             }
-            .task(id: "\(displayActive):\(row.id):\(row.match?.node_id ?? 0):\(row.cloud?.node.revision ?? 0):\(row.cloud?.metadata.thumbnail_version ?? "")") {
-                local.cancel()
-                fallback?.cancel()
-                remote = nil
-                guard displayActive else { return }
+            .task(id: "\(displayActive):\(thumbnailKey)") {
+                let key = thumbnailKey
+                let ownerValid = XDriveIOSNativePhotoOwnerScope.matches(
+                    login.owner, presentingOwner
+                )
+                if retainedKey != key || !ownerValid {
+                    // A different Node revision, PhotoKit mutation or Owner
+                    // can never display the previous thumbnail during a swap.
+                    loadGeneration = UUID()
+                    fallback?.cancel()
+                    fallback = nil
+                    local.cancel()
+                    retainedLocal = nil
+                    remote = nil
+                    retainedKey = ownerValid ? key : nil
+                }
+                guard ownerValid else { return }
+
+                if !displayActive {
+                    // Viewer/child overlay: stop decoding and network work,
+                    // but do not replace already displayed pixels with blank
+                    // placeholders when the exact same wall returns.
+                    retainedLocal = local.image ?? retainedLocal
+                    loadGeneration = UUID()
+                    fallback?.cancel()
+                    fallback = nil
+                    local.cancel()
+                    return
+                }
                 if let asset = row.local {
-                    local.load(asset.id, size: CGSize(width: 280, height: 280), allowICloud: false)
-                } else if let item = row.cloud {
+                    // Do not re-request an unchanged local thumbnail after
+                    // Viewer dismissal; the hidden wall retained its image.
+                    if local.image == nil && retainedLocal == nil {
+                        local.load(asset.id, size: CGSize(width: 280, height: 280),
+                                   allowICloud: false)
+                    }
+                } else if let item = row.cloud, remote == nil {
+                    // Likewise, reuse the same Owner + revision cloud image.
                     await loadCloud(item, match: nil)
                 }
             }
             .onChange(of: local.isLoading) { loading in
-                if displayActive, !loading, local.image == nil, row.cloud != nil || row.match != nil {
+                if displayActive, retainedKey == thumbnailKey, !loading,
+                   local.image == nil, retainedLocal == nil,
+                   (row.cloud != nil || row.match != nil) {
                     fallback?.cancel()
                     fallback = Task { await loadCloud(row.cloud, match: row.match) }
                 }
             }
-            .onDisappear {
+            .onChange(of: login.owner) { _ in
+                // Parent invalidation is asynchronous; fail closed even before
+                // a recycled SwiftUI tile is removed from the hierarchy.
+                loadGeneration = UUID()
                 fallback?.cancel()
+                fallback = nil
                 local.cancel()
+                retainedLocal = nil
                 remote = nil
+                retainedKey = nil
+            }
+            .onDisappear {
+                loadGeneration = UUID()
+                fallback?.cancel()
+                fallback = nil
+                if !displayActive, retainedKey == thumbnailKey,
+                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, presentingOwner) {
+                    retainedLocal = local.image ?? retainedLocal
+                    local.cancel()
+                } else {
+                    // Normal off-screen scrolling must not retain decoded
+                    // thumbnails for an unbounded number of lazy cells.
+                    local.cancel()
+                    retainedLocal = nil
+                    remote = nil
+                    retainedKey = nil
+                }
             }
     }
 
     private func loadCloud(_ item: XDriveIOSNativeMediaItem?, match: XDriveIOSNativeExactPhotoMatch?) async {
         let owner = presentingOwner
-        guard displayActive, XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+        let expectedKey = thumbnailKey
+        let ticket = loadGeneration
+        guard displayActive, retainedKey == expectedKey,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
               let auth = try? await login.verifiedAuthorization(),
               XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner),
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
@@ -424,7 +505,8 @@ struct XDriveIOSUnifiedPhotoTile: View {
             return try await reader.thumbnail(matched)
         }
         guard let image,
-              !Task.isCancelled,
+              !Task.isCancelled, loadGeneration == ticket,
+              displayActive, retainedKey == expectedKey,
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
         remote = image
     }
