@@ -138,7 +138,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
     let onShare: (XDrivePhotoKitScanCandidate, Bool) -> Void
     let onRead: (XDrivePhotoKitScanPage) -> Void
-    let onPageHidden: (Int, XDrivePhotoKitScanPage?) -> Void
+    let onPageHidden: (Int, UUID?, XDrivePhotoKitScanPage?) -> Void
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
     @State private var precedingCapturedAt: Date?
@@ -455,7 +455,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
             badgeReadEpoch = UUID()
             if let scanner { Task { await scanner.reset() } }
             scanner = nil
-            onPageHidden(offset, verifiedPage)
+            onPageHidden(offset, retainedGeneration, verifiedPage)
         }
     }
 }
@@ -752,9 +752,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                             }
                                         }
                                     },
-                                    onPageHidden: { hiddenOffset, verifiedPage in
+                                    onPageHidden: { hiddenOffset, pageEpoch, verifiedPage in
                                         dragLoadedPages.removeValue(forKey: hiddenOffset)
                                         guard let verifiedPage,
+                                              pageEpoch == generation,
                                               hiddenOffset == savedOffset,
                                               phase == .active && authorized,
                                               verifiedPage.startOffset == hiddenOffset,
