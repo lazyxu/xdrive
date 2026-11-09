@@ -29,18 +29,17 @@ var errIOSPhotoGrantDenied = errors.New("ios background photo grant denied")
 // encrypted APNs token and its fingerprint in the SAME transaction as the
 // grant's revocation, including a lost iPhone revoked by its Owner.
 func iosPhotoGrantRevokeUpdates(now time.Time) map[string]any {
-    return map[string]any{
-        "revoked_at": now,
-        "updated_at": now,
-        "apns_token_ciphertext": nil,
-        "apns_key_version": uint32(0),
-        "apns_token_digest": "",
-        "apns_environment": "",
-        "apns_registered_at": nil,
-        "apns_last_sent_at": nil,
-    }
+	return map[string]any{
+		"revoked_at":            now,
+		"updated_at":            now,
+		"apns_token_ciphertext": nil,
+		"apns_key_version":      uint32(0),
+		"apns_token_digest":     "",
+		"apns_environment":      "",
+		"apns_registered_at":    nil,
+		"apns_last_sent_at":     nil,
+	}
 }
-
 
 func newIOSPhotoGrantSecret() (raw, hash string, err error) {
 	var random [32]byte

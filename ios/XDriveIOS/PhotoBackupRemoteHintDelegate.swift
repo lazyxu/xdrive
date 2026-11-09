@@ -1,4 +1,3 @@
-import Security
 import UIKit
 
 /// An APNs background hint is advisory and untrusted input. It never starts a
@@ -12,6 +11,19 @@ final class XDriveIOSPhotoBackupRemoteHintDelegate: NSObject, UIApplicationDeleg
     @MainActor private static var expectedRegistration:
         (owner: XDriveNativeOwnerRoot, stopEpoch: UInt64)?
 
+    // Public iOS APIs cannot introspect the signed aps-environment.
+    // XcodeGen uses the same explicit environment in Info.plist and the
+    // signing entitlement. The OS APNs registration callback is also needed;
+    // unsigned or incorrectly provisioned builds cannot prove delivery.
+    private static func configuredAPNSEnvironment() -> String? {
+        guard let environment = Bundle.main.object(
+            forInfoDictionaryKey: "XDriveAPNSEnvironment"
+        ) as? String,
+              environment == "development" || environment == "production"
+        else { return nil }
+        return environment
+    }
+
     @MainActor
     static func invalidatePendingRegistration() {
         expectedRegistration = nil
@@ -21,7 +33,8 @@ final class XDriveIOSPhotoBackupRemoteHintDelegate: NSObject, UIApplicationDeleg
     static func requestRegistrationForApprovedBackgroundOwner(
         _ owner: XDriveNativeOwnerRoot, stopEpoch: UInt64
     ) {
-        guard UIApplication.shared.applicationState == .active else { return }
+        guard UIApplication.shared.applicationState == .active,
+              configuredAPNSEnvironment() != nil else { return }
         expectedRegistration = (owner: owner, stopEpoch: stopEpoch)
         UIApplication.shared.registerForRemoteNotifications()
     }
@@ -34,17 +47,11 @@ final class XDriveIOSPhotoBackupRemoteHintDelegate: NSObject, UIApplicationDeleg
                     XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration
             else { return }
             Self.expectedRegistration = nil
-            // The actual installed Apple provisioning entitlement controls
-            // sandbox vs production. Never infer it from DEBUG/Release:
-            // sideloaded or incorrectly signed builds must fail closed.
-            guard let task = SecTaskCreateFromSelf(nil),
-                  let entitlement = SecTaskCopyValueForEntitlement(
-                    task, "aps-environment" as CFString, nil
-                  ) as? String,
-                  entitlement == "development" || entitlement == "production"
-            else { return }
+            // iOS has accepted an APNs token for this installed application.
+            // The explicit build environment is never inferred from DEBUG.
+            guard let environment = Self.configuredAPNSEnvironment() else { return }
             try? await XDriveIOSPhotoBackgroundGrantManager.shared.registerAPNSToken(
-                deviceToken, environment: entitlement,
+                deviceToken, environment: environment,
                 expectedOwner: expected.owner
             )
         }

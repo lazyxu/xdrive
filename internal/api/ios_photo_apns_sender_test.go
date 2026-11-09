@@ -6,11 +6,11 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/asn1"
-	"math/big"
 	"io"
+	"math/big"
 	"net/http"
 	"strings"
 	"testing"
@@ -18,6 +18,7 @@ import (
 )
 
 type iosPhotoAPNSTestTransport func(*http.Request) (*http.Response, error)
+
 func (f iosPhotoAPNSTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestIOSPhotoAPNSEndpointAndUnsignedWakePayload(t *testing.T) {
@@ -34,16 +35,24 @@ func TestIOSPhotoAPNSEndpointAndUnsignedWakePayload(t *testing.T) {
 		t.Fatal("untrusted APNs endpoint accepted")
 	}
 	req, err := newIOSPhotoAPNSWakeRequest(context.Background(), production, "stub-jwt")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	for k, v := range map[string]string{
 		"apns-push-type": "background", "apns-priority": "5",
 		"apns-topic": iosPhotoAPNSTopic, "apns-expiration": "0",
 	} {
-		if req.Header.Get(k) != v { t.Fatalf("%s: got %q", k, req.Header.Get(k)) }
+		if req.Header.Get(k) != v {
+			t.Fatalf("%s: got %q", k, req.Header.Get(k))
+		}
 	}
 	data, err := io.ReadAll(req.Body)
-	if err != nil { t.Fatal(err) }
-	if string(data) != iosPhotoAPNSPayloadJSON { t.Fatal("unexpected silent push payload") }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != iosPhotoAPNSPayloadJSON {
+		t.Fatal("unexpected silent push payload")
+	}
 	for _, forbidden := range []string{"owner_id", "device_id", "grant_secret", "photo_local_id", "node_id", "access_token"} {
 		if strings.Contains(string(data), forbidden) {
 			t.Fatalf("sensitive or unauthorized field %q appeared in APNs payload", forbidden)
@@ -53,17 +62,27 @@ func TestIOSPhotoAPNSEndpointAndUnsignedWakePayload(t *testing.T) {
 
 func TestIOSPhotoAPNSJWTES256RawSignature(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil { t.Fatal(err) }
-	p := iosPhotoAPNSProvider{key: key, keyID:"A1B2C3D4E5",teamID:"Z9Y8X7W6V5"}
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := iosPhotoAPNSProvider{key: key, keyID: "A1B2C3D4E5", teamID: "Z9Y8X7W6V5"}
 	now := time.Unix(1780000000, 0)
 	jwt, err := p.authorizationJWT(now)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	parts := strings.Split(jwt, ".")
-	if len(parts) != 3 { t.Fatal("invalid three-part JWT") }
+	if len(parts) != 3 {
+		t.Fatal("invalid three-part JWT")
+	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil || len(sig) != 64 { t.Fatal("Apple ES256 requires a 64-byte raw signature") }
+	if err != nil || len(sig) != 64 {
+		t.Fatal("Apple ES256 requires a 64-byte raw signature")
+	}
 	header, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var parsedHeader struct {
 		Alg string `json:"alg"`
 		Kid string `json:"kid"`
@@ -73,10 +92,12 @@ func TestIOSPhotoAPNSJWTES256RawSignature(t *testing.T) {
 		t.Fatal("wrong JOSE header")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var claims struct {
 		Iss string `json:"iss"`
-		Iat int64 `json:"iat"`
+		Iat int64  `json:"iat"`
 	}
 	if json.Unmarshal(payload, &claims) != nil ||
 		claims.Iss != p.teamID || claims.Iat != now.Unix() {
@@ -100,14 +121,19 @@ func mustRawToDER(raw []byte) []byte {
 		R: new(big.Int).SetBytes(raw[:32]),
 		S: new(big.Int).SetBytes(raw[32:]),
 	})
-	if err != nil { panic(err) }
+	if err != nil {
+		panic(err)
+	}
 	return der
 }
 
 func TestIOSPhotoAPNSResponseRejectsRevokedTokenWithoutRetry(t *testing.T) {
 	token := strings.Repeat("ab", 32)
 	for _, sample := range []struct {
-		status int; reason string; invalid bool; err bool
+		status  int
+		reason  string
+		invalid bool
+		err     bool
 	}{
 		{200, "", false, false},
 		{410, "Unregistered", true, false},
@@ -123,11 +149,13 @@ func TestIOSPhotoAPNSResponseRejectsRevokedTokenWithoutRetry(t *testing.T) {
 					t.Fatal("wrong external APNs destination")
 				}
 				body := ""
-				if sample.status != 200 { body = `{"reason":"`+sample.reason+`"}` }
+				if sample.status != 200 {
+					body = `{"reason":"` + sample.reason + `"}`
+				}
 				return &http.Response{
 					StatusCode: sample.status,
-					Body: io.NopCloser(strings.NewReader(body)),
-					Header: make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(body)),
+					Header:     make(http.Header),
 				}, nil
 			})},
 		}

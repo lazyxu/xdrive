@@ -144,12 +144,12 @@ func (s *Server) putIOSPhotoAPNSToken(c *gin.Context) {
 			Where("id = ? AND owner_id = ? AND revoked_at IS NULL", live.ID, live.OwnerID).
 			Updates(map[string]any{
 				"apns_token_ciphertext": ciphertext,
-				"apns_key_version": version,
-				"apns_token_digest": hex.EncodeToString(digest[:]),
-				"apns_environment": request.Environment,
-				"apns_registered_at": now,
-				"apns_last_sent_at": lastSent,
-				"updated_at": now,
+				"apns_key_version":      version,
+				"apns_token_digest":     hex.EncodeToString(digest[:]),
+				"apns_environment":      request.Environment,
+				"apns_registered_at":    now,
+				"apns_last_sent_at":     lastSent,
+				"updated_at":            now,
 			}).Error
 	})
 	if err != nil {
@@ -180,12 +180,12 @@ func (s *Server) deleteIOSPhotoAPNSToken(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", live.ID, live.OwnerID).
 			Updates(map[string]any{
 				"apns_token_ciphertext": nil,
-				"apns_key_version": 0,
-				"apns_token_digest": "",
-				"apns_environment": "",
-				"apns_registered_at": nil,
-				"apns_last_sent_at": nil,
-				"updated_at": now,
+				"apns_key_version":      0,
+				"apns_token_digest":     "",
+				"apns_environment":      "",
+				"apns_registered_at":    nil,
+				"apns_last_sent_at":     nil,
+				"updated_at":            now,
 			}).Error
 	})
 	if err != nil {

@@ -8,8 +8,8 @@ import "gorm.io/gorm"
 // Each trigger uses indexed hold/ancestor lookups and fails closed even for a
 // future direct SQL writer bypassing the ordinary managed-Source guard.
 func InstallSchema(db *gorm.DB) error {
-    statements := []string{
-`CREATE OR REPLACE FUNCTION xd_ios_photo_hold_guard_v1()
+	statements := []string{
+		`CREATE OR REPLACE FUNCTION xd_ios_photo_hold_guard_v1()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE protected_node boolean;
 BEGIN
@@ -109,34 +109,34 @@ BEGIN
     RETURN OLD;
 END;
 $$`,
-`DROP TRIGGER IF EXISTS xd_ios_photo_guard_nodes ON xd_nodes`,
-`CREATE TRIGGER xd_ios_photo_guard_nodes BEFORE UPDATE OR DELETE ON xd_nodes
+		`DROP TRIGGER IF EXISTS xd_ios_photo_guard_nodes ON xd_nodes`,
+		`CREATE TRIGGER xd_ios_photo_guard_nodes BEFORE UPDATE OR DELETE ON xd_nodes
   FOR EACH ROW EXECUTE FUNCTION xd_ios_photo_hold_guard_v1()`,
-`DROP TRIGGER IF EXISTS xd_ios_photo_guard_files ON xd_files`,
-`CREATE TRIGGER xd_ios_photo_guard_files BEFORE UPDATE OR DELETE ON xd_files
+		`DROP TRIGGER IF EXISTS xd_ios_photo_guard_files ON xd_files`,
+		`CREATE TRIGGER xd_ios_photo_guard_files BEFORE UPDATE OR DELETE ON xd_files
   FOR EACH ROW EXECUTE FUNCTION xd_ios_photo_hold_guard_v1()`,
-`DROP TRIGGER IF EXISTS xd_ios_photo_guard_file_versions ON xd_file_versions`,
-`CREATE TRIGGER xd_ios_photo_guard_file_versions BEFORE UPDATE OR DELETE ON xd_file_versions
+		`DROP TRIGGER IF EXISTS xd_ios_photo_guard_file_versions ON xd_file_versions`,
+		`CREATE TRIGGER xd_ios_photo_guard_file_versions BEFORE UPDATE OR DELETE ON xd_file_versions
   FOR EACH ROW EXECUTE FUNCTION xd_ios_photo_hold_guard_v1()`,
-`DROP TRIGGER IF EXISTS xd_ios_photo_guard_blobs ON xd_content_blobs`,
-`CREATE TRIGGER xd_ios_photo_guard_blobs BEFORE UPDATE OR DELETE ON xd_content_blobs
+		`DROP TRIGGER IF EXISTS xd_ios_photo_guard_blobs ON xd_content_blobs`,
+		`CREATE TRIGGER xd_ios_photo_guard_blobs BEFORE UPDATE OR DELETE ON xd_content_blobs
   FOR EACH ROW EXECUTE FUNCTION xd_ios_photo_hold_guard_v1()`,
-`DROP TRIGGER IF EXISTS xd_ios_photo_guard_sources ON xd_sources`,
-`CREATE TRIGGER xd_ios_photo_guard_sources BEFORE UPDATE OR DELETE ON xd_sources
+		`DROP TRIGGER IF EXISTS xd_ios_photo_guard_sources ON xd_sources`,
+		`CREATE TRIGGER xd_ios_photo_guard_sources BEFORE UPDATE OR DELETE ON xd_sources
   FOR EACH ROW EXECUTE FUNCTION xd_ios_photo_hold_guard_v1()`,
-`DROP TRIGGER IF EXISTS xd_ios_photo_guard_holds ON xd_ios_photo_original_holds`,
-`CREATE TRIGGER xd_ios_photo_guard_holds BEFORE UPDATE OR DELETE ON xd_ios_photo_original_holds
+		`DROP TRIGGER IF EXISTS xd_ios_photo_guard_holds ON xd_ios_photo_original_holds`,
+		`CREATE TRIGGER xd_ios_photo_guard_holds BEFORE UPDATE OR DELETE ON xd_ios_photo_original_holds
   FOR EACH ROW EXECUTE FUNCTION xd_ios_photo_hold_guard_v1()`,
-`DROP TRIGGER IF EXISTS xd_ios_photo_guard_ancestors ON xd_ios_photo_original_hold_ancestors`,
-`CREATE TRIGGER xd_ios_photo_guard_ancestors BEFORE UPDATE OR DELETE ON xd_ios_photo_original_hold_ancestors
+		`DROP TRIGGER IF EXISTS xd_ios_photo_guard_ancestors ON xd_ios_photo_original_hold_ancestors`,
+		`CREATE TRIGGER xd_ios_photo_guard_ancestors BEFORE UPDATE OR DELETE ON xd_ios_photo_original_hold_ancestors
   FOR EACH ROW EXECUTE FUNCTION xd_ios_photo_hold_guard_v1()`,
-    }
-    return db.Transaction(func(tx *gorm.DB) error {
-        for _, stmt := range statements {
-            if err := tx.Exec(stmt).Error; err != nil {
-                return err
-            }
-        }
-        return nil
-    })
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, stmt := range statements {
+			if err := tx.Exec(stmt).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

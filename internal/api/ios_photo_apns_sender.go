@@ -88,9 +88,9 @@ func loadIOSPhotoAPNSProviderFromEnvironment() (*iosPhotoAPNSProvider, error) {
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 			Transport: &http.Transport{
-				ForceAttemptHTTP2: true,
-				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-				MaxIdleConns: 8,
+				ForceAttemptHTTP2:   true,
+				TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+				MaxIdleConns:        8,
 				MaxIdleConnsPerHost: 4,
 			},
 		},
@@ -112,7 +112,7 @@ func (p *iosPhotoAPNSProvider) authorizationJWT(now time.Time) (string, error) {
 	}
 	claims, err := json.Marshal(struct {
 		Iss string `json:"iss"`
-		Iat int64 `json:"iat"`
+		Iat int64  `json:"iat"`
 	}{Iss: p.teamID, Iat: now.Unix()})
 	if err != nil {
 		return "", err
@@ -188,7 +188,9 @@ func (p *iosPhotoAPNSProvider) sendWake(ctx context.Context,
 	if err != nil || len(body) > 4096 {
 		return false, errors.New("unavailable APNs provider response")
 	}
-	var failure struct { Reason string `json:"reason"` }
+	var failure struct {
+		Reason string `json:"reason"`
+	}
 	if json.Unmarshal(body, &failure) != nil {
 		return false, fmt.Errorf("APNs provider HTTP %d", res.StatusCode)
 	}

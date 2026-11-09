@@ -17,7 +17,7 @@ func TestIOSPhotoAPNSTokenValidation(t *testing.T) {
 	for _, token := range []string{
 		"", "token", strings.Repeat("a", 31), strings.Repeat("ab", 15),
 		strings.Repeat("ab", 257), strings.Repeat("AB", 32),
-		strings.Repeat("xx", 32), strings.Repeat("ab", 32)+"f",
+		strings.Repeat("xx", 32), strings.Repeat("ab", 32) + "f",
 	} {
 		if validIOSPhotoAPNSToken(token) {
 			t.Errorf("invalid APNs token accepted (length %d)", len(token))

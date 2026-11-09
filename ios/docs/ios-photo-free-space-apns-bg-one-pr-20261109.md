@@ -47,10 +47,15 @@ No second CAS writer, no Web bearer grant and no lower Keychain/file protection.
 
 ### APNs background hints
 
-- The signed App uses XcodeGen-generated `aps-environment` entitlement
-  (operator-selected `XDRIVE_APNS_ENVIRONMENT`, matching Apple provisioning)
-  and `remote-notification`. Runtime checks its actual signed entitlement
-  rather than inferring development vs production from a DEBUG define.
+- XcodeGen uses the same operator-selected `XDRIVE_APNS_ENVIRONMENT`
+  for both the signed `aps-environment` and the `XDriveAPNSEnvironment`
+  Info.plist value, with `remote-notification` enabled. iOS does not expose
+  the macOS `SecTaskCopyValueForEntitlement` API publicly. Registration
+  requires explicit development/production configuration and the OS
+  `didRegisterForRemoteNotificationsWithDeviceToken` callback. Runtime never
+  guesses from DEBUG. A signed entitlement + provisioning must be inspected
+  and tested with real Apple credentials and a real iPhone; unsigned builds
+  do not establish APNs delivery.
 - A native token callback is accepted only for the exact captured approved
   Owner and stop generation; Owner switching invalidates the pending
   registration. Encrypted Server token registration requires a separate

@@ -139,9 +139,13 @@ test('Free Up Space requires current Owner original, full Live ZIP and immutable
   assert.match(screen, /XDriveIOSNativePhotoFreeSpaceSection\(login: login, controller: controller\)/)
 })
 
-test('APNs environment derives from actual Apple entitlement, not debug compilation mode', () => {
+test('APNs environment explicitly matches Info.plist and signing settings, not DEBUG', () => {
   const native = read('ios/XDriveIOS/PhotoBackupRemoteHintDelegate.swift')
-  assert.match(native, /SecTaskCopyValueForEntitlement/)
-  assert.match(native, /aps-environment/)
-  assert.doesNotMatch(native, /#if DEBUG[\s\S]*?environment =/)
+  const project = read('ios/project.yml')
+  assert.ok(project.includes('aps-environment: $(XDRIVE_APNS_ENVIRONMENT)'))
+  assert.ok(project.includes('XDriveAPNSEnvironment: $(XDRIVE_APNS_ENVIRONMENT)'))
+  assert.match(native, /forInfoDictionaryKey: "XDriveAPNSEnvironment"/)
+  assert.match(native, /configuredAPNSEnvironment\(\) != nil/)
+  assert.match(native, /didRegisterForRemoteNotificationsWithDeviceToken/)
+  assert.doesNotMatch(native, /SecTaskCreateFromSelf|SecTaskCopyValueForEntitlement|#if DEBUG/)
 })
