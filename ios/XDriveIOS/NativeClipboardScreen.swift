@@ -115,6 +115,9 @@ struct XDriveIOSNativeClipboardScreen: View {
                         }
                         .pickerStyle(.segmented)
                         .disabled(busy)
+                        // Changing the authenticated media kind requires a fresh
+                        // Node choice; never reuse the last image/file reference.
+                        .onChange(of: referenceKind) { _ in referenceNodeID = "" }
                         if referenceKind != "text" {
                             TextField("已经完成上传的 CAS Node ID", text: $referenceNodeID)
                                 .keyboardType(.numberPad)
