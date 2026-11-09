@@ -322,6 +322,7 @@ declare global {
     state?: 'completed' | 'partial' | 'failed' | 'cancelled'
     error?: string
     skipped?: boolean
+    upload_transferred_bytes?: number
     children?: Array<{
       file_name: string
       path?: string
