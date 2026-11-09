@@ -119,8 +119,33 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -skip-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests \
             -only-testing:xDriveIOSNavigationUITests test \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
+      - name: Grant Full Photos and run real native MapKit Simulator suite
+        if: matrix.source == 'candidate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A previous Gallery/b9 test can leave Photos denied. The MapKit
+          # suite uses two *real* synthetic GPS files, never fake map rows.
+          # Xcode's first test invocation has installed the actual app, so
+          # grant the installed bundle's full read/write PhotoKit permission
+          # before the dedicated navigation test. A failure to grant fails CI.
+          # The Swift test independently requires a real MKMapView and the two
+          # PhotoKit-imported coordinates; no permission fallback or test skip.
+          xcrun simctl privacy "$SMOKE_SIM" grant photos com.lazyxu.xdrive.ios
+          xcrun simctl ui "$SMOKE_SIM" appearance light
+          xcodebuild test \
+            -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
+            -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SMOKE_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/native-navigation-results/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/native-navigation-results/MapNavigation.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests \
+            test 2>&1 | tee "$RUNNER_TEMP/native-navigation-results/map-navigation.log"
       - name: Verify native PhotoKit MapKit in dark mode
         if: matrix.source == 'candidate'
         shell: bash
@@ -128,6 +153,9 @@ jobs:
           set -euo pipefail
           # The primary candidate suite runs against the default light
           # appearance. Re-run the actual gesture + landscape route in dark.
+          # Reassert full read/write Photos permission for the second actual
+          # MapKit run; keep signed-in Owner scope out of the Simulator.
+          xcrun simctl privacy "$SMOKE_SIM" grant photos com.lazyxu.xdrive.ios
           xcrun simctl ui "$SMOKE_SIM" appearance dark
           xcodebuild test \
             -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
@@ -152,6 +180,11 @@ jobs:
               --path "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
               > "$RUNNER_TEMP/native-navigation-results/diagnostics/summary.json" 2>&1 || true
           fi
+          if [[ -d "$RUNNER_TEMP/native-navigation-results/MapNavigation.xcresult" ]]; then
+            xcrun xcresulttool get test-results summary \
+              --path "$RUNNER_TEMP/native-navigation-results/MapNavigation.xcresult" \
+              > "$RUNNER_TEMP/native-navigation-results/diagnostics/map-summary.json" 2>&1 || true
+          fi
       - name: Upload runtime logs and crash evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -159,6 +192,7 @@ jobs:
           name: native-navigation-${{ matrix.source }}-${{ github.sha }}
           path: |
             ${{ runner.temp }}/native-navigation-results/xcodebuild.log
+            ${{ runner.temp }}/native-navigation-results/map-navigation.log
             ${{ runner.temp }}/native-navigation-results/dark-map.log
             ${{ runner.temp }}/native-navigation-results/diagnostics/
           if-no-files-found: warn
