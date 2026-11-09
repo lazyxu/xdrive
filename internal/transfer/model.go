@@ -71,8 +71,8 @@ type Spec struct {
 // UploadContentReceipt is the owning CAS client's verified outcome. A resume
 // is not a fresh CAS hit, even when this attempt uploaded zero file bytes.
 type UploadContentReceipt struct {
-	TransferredBytes int64
-	CASReusedBytes int64
+	TransferredBytes  int64
+	CASReusedBytes    int64
 	ResumeReusedBytes int64
 }
 
@@ -108,9 +108,9 @@ type Task struct {
 	BytesDone             int64      `json:"bytes_done"`
 	BytesTotal            int64      `json:"bytes_total"`
 	// Nil means no verified CAS upload receipt; zero is a verified instant hit.
-	UploadSentBytes *int64     `json:"upload_transferred_bytes,omitempty"`
-	UploadCASReusedBytes   int64      `json:"upload_cas_reused_bytes,omitempty"`
-	UploadResumeBytes int64     `json:"upload_resume_reused_bytes,omitempty"`
+	UploadSentBytes       *int64     `json:"upload_transferred_bytes,omitempty"`
+	UploadCASReusedBytes  int64      `json:"upload_cas_reused_bytes,omitempty"`
+	UploadResumeBytes     int64      `json:"upload_resume_reused_bytes,omitempty"`
 	UploadSkipped         bool       `json:"upload_skipped,omitempty"`
 	Percent               float64    `json:"percent"`
 	ItemsTotal            int64      `json:"items_total"`
