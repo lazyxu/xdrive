@@ -5,12 +5,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 source scripts/ci/build-metadata.sh
-# Runtime/model cache writes are Registry-visible. Stable v* must complete
-# the exact-tag Final Gate before even a reusable runtime image is uploaded.
-if [[ -n "${CI_COMMIT_TAG:-}" && -n "${CI_REGISTRY_IMAGE:-}" ]]; then
-  bash scripts/ci/gitlab-stable-prestage-gate.sh
-fi
-
 artifact_dir="${1:-dist/photo-face-image}"
 final_image="xdrive/photo-face:test"
 analyzer_dir="$ROOT/services/photo-face-analyzer"
@@ -156,6 +150,9 @@ if [[ -n "$runtime_registry_tag" && "$runtime_registry_present" != 1 ]]; then
   else
     status=$?
     [[ "$status" == 10 ]] || exit 1
+    # Model runtime may be fetched/built before GitHub tag CI finishes.
+    # The first Registry *write* alone waits for the exact stable gate.
+    bash scripts/ci/gitlab-stable-prestage-gate.sh
     docker tag "$runtime_image" "$runtime_registry_tag"
     docker push "$runtime_registry_tag"
   fi
