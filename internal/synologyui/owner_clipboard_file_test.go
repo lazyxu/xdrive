@@ -36,7 +36,7 @@ func (*dsmClipboardFileFixture) OwnerClipboardCreate(context.Context, client.Cli
 	return client.ClipboardItem{}, nil
 }
 func (*dsmClipboardFileFixture) OwnerClipboardDelete(context.Context, uint64) error { return nil }
-func (*dsmClipboardFileFixture) OwnerClipboardClear(context.Context) error { return nil }
+func (*dsmClipboardFileFixture) OwnerClipboardClear(context.Context) error          { return nil }
 func (f *dsmClipboardFileFixture) ServerConnection(context.Context) (localbackupipc.ServerConnection, error) {
 	f.connections++
 	name := f.owner
@@ -80,8 +80,8 @@ func TestDSMClipboardFileReferenceRequiresAuthenticatedNarrowCGIAndOwner(t *test
 		t.Helper()
 		r := httptest.NewRequest(method, "https://nas.example:5001"+DSMCGIPath+query, nil)
 		if cookie {
-		r.Header.Set("Cookie", "id=dsm-session")
-	}
+			r.Header.Set("Cookie", "id=dsm-session")
+		}
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
 		return w
