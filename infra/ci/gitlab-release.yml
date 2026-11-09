@@ -21,16 +21,19 @@
     - docker info >/dev/null
 
 release-assets:
-  # The image/asset publisher must finish once its master pipeline starts.
-  interruptible: false
+  # Immutable source asset collection is safe to cancel on superseded master.
+  interruptible: true
   extends: .publish-only
   image: $XDRIVE_CI_GO_IMAGE
   tags:
     - linux
   stage: release-build
+  needs: []  # Source-only: do not wait for Photo Face / Media Worker builds.
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
+      interruptible: false
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: true
       when: on_success
     - when: never
   script:
@@ -71,10 +74,6 @@ publish-server-images:
           artifacts: true
         - job: caddy-image
           artifacts: true
-        - job: photo-face-image
-          artifacts: true
-        - job: media-worker-image
-          artifacts: true
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
       when: on_success
       needs:
@@ -82,13 +81,87 @@ publish-server-images:
           artifacts: true
         - job: caddy-image
           artifacts: true
-        - job: photo-face-image
-          artifacts: true
-        - job: media-worker-image
-          artifacts: true
     - when: never
   script:
     - bash scripts/ci/gitlab-server-images.sh
+  artifacts:
+    name: "xdrive-core-image-manifest-$CI_COMMIT_SHORT_SHA"
+    expire_in: 14 days
+    when: on_success
+    paths:
+      - dist/release-image/image-manifest.tsv
+
+publish-photo-face-image:
+  # Optional service images do not block rolling core Snapshots.
+  # Stable v* releases retain the complete exact-Commit image gate.
+  extends:
+    - .publish-only
+    - .release-linux-docker
+  stage: release-build
+  interruptible: false
+  resource_group: xdrive-gitlab-photo-face-publish
+  needs:
+    - job: photo-face-image
+      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      changes:
+        - services/photo-face-analyzer/**/*
+        - scripts/ci/test-photo-face-image.sh
+        - scripts/ci/photo-face-runtime-cache-key.sh
+        - scripts/ci/gitlab-registry-utils.sh
+        - scripts/ci/gitlab-stage-image.sh
+        - scripts/ci/gitlab-fetch-staged-image.sh
+        - scripts/ci/gitlab-server-images.sh
+        - scripts/ci/gitlab-promote-images.sh
+        - .gitlab-ci.yml
+        - infra/ci/gitlab-release.yml
+      allow_failure: true
+      when: on_success
+    - when: never
+  script:
+    - bash scripts/ci/gitlab-server-images.sh xdrive-photo-face dist/photo-face-image xdrive/photo-face:test
+    - bash scripts/ci/gitlab-promote-images.sh xdrive-photo-face
+
+publish-media-worker-image:
+  # Optional service images do not block rolling core Snapshots.
+  # Stable v* releases retain the complete exact-Commit image gate.
+  extends:
+    - .publish-only
+    - .release-linux-docker
+  stage: release-build
+  interruptible: false
+  resource_group: xdrive-gitlab-media-worker-publish
+  needs:
+    - job: media-worker-image
+      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      changes:
+        - cmd/server/**/*
+        - internal/**/*
+        - go.mod
+        - go.sum
+        - deploy/MediaWorker.Dockerfile
+        - deploy/install-media-worker-ffmpeg.sh
+        - scripts/ci/test-media-worker-image.sh
+        - scripts/ci/gitlab-registry-utils.sh
+        - scripts/ci/gitlab-stage-image.sh
+        - scripts/ci/gitlab-fetch-staged-image.sh
+        - scripts/ci/gitlab-server-images.sh
+        - scripts/ci/gitlab-promote-images.sh
+        - .gitlab-ci.yml
+        - infra/ci/gitlab-release.yml
+      allow_failure: true
+      when: on_success
+    - when: never
+  script:
+    - bash scripts/ci/gitlab-server-images.sh xdrive-media-worker dist/media-worker-image xdrive/media-worker:test
+    - bash scripts/ci/gitlab-promote-images.sh xdrive-media-worker
 
 promote-server-images:
   # The image/asset publisher must finish once its master pipeline starts.
@@ -128,6 +201,23 @@ publish-release:
   # A missing image/client artifact must still fail closed.
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
+      needs:
+        - job: build-client-core
+          artifacts: true
+        - job: package-linux-client
+          artifacts: true
+        - job: package-windows-client
+          artifacts: true
+        - job: release-assets
+          artifacts: true
+        - job: publish-server-images
+          artifacts: true
+        - job: promote-server-images
+          artifacts: false
+        - job: publish-photo-face-image
+          artifacts: false
+        - job: publish-media-worker-image
+          artifacts: false
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
       when: on_success
     - when: never
@@ -142,6 +232,8 @@ publish-release:
       artifacts: true
     - job: promote-server-images
       artifacts: false
+    - job: publish-server-images
+      artifacts: true
   script:
     - |
       set -eu
@@ -155,6 +247,10 @@ publish-release:
       }
       cp "$1" "$1.sha256" release/
       bash scripts/ci/verify-synology-spk-release.sh release --require-mui
+      # Validate both exact named Server+Caddy image refs, channel and SHA256
+      # digests, not merely the number of "image" records.
+      python3 scripts/ci/verify-gitlab-core-manifest.py dist/release-image/image-manifest.tsv
+      cp dist/release-image/image-manifest.tsv release/image-manifest.tsv
       # Stable glab release create expands release/*; never pass build/core
       # directories as Release assets or upload them by mistake.
       rm -rf release/core release/backup-cli release/synology

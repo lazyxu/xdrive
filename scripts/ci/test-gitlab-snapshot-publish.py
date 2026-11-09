@@ -31,7 +31,7 @@ FILES = (
     'server-restore.sh', 'server-verify.sh', 'server-doctor.sh',
     'server-migrate-user.sh', 'xdrive-server', 'xdrive-share-update.py', 'docker-compose.yml',
     'server-control.sh', 'release_bundle.py', 'caddy-env-config.py', 'caddy-admission.py',
-    'xdrive.env.example', 'SHA256SUMS.txt',
+    'xdrive.env.example', 'image-manifest.tsv', 'SHA256SUMS.txt',
 )
 
 MOCK_GLAB = r'''#!/usr/bin/python3
