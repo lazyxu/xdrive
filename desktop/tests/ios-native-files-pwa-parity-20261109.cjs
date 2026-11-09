@@ -21,6 +21,20 @@ test('P0 actual Simulator child recoveries are independent of the Files virtual 
   assert.match(ui, /testFilesHomeInlineEditKeepsBrowseShellAndRestoresDone/)
 })
 
+test('P0 native Files lifecycle is split into bounded SwiftUI view types', () => {
+  for (const method of [
+    'filesForegroundLifecycle',
+    'filesOwnerLifecycle',
+    'filesNavigationLifecycle',
+    'filesArrangementLifecycle',
+    'filesLoadingLifecycle',
+  ]) {
+    assert.match(files, new RegExp('private func ' + method + '\\(returnScroll: ScrollViewProxy\\) -> some View'))
+  }
+  assert.match(files, /var body: some View \{\s*ScrollViewReader \{ returnScroll in\s*filesLoadingLifecycle\(returnScroll: returnScroll\)/)
+  assert.doesNotMatch(files, /var body: some View \{\s*ScrollViewReader \{ returnScroll in\s*filesModals/)
+})
+
 test('P1 location menu is Owner-bound, exact-revision and reverified before navigation', () => {
   assert.match(location, /static func directoryBreadcrumbs\(/)
   assert.match(location, /parent\(of: selected, at: location, ownerRootID: ownerRootID\) != nil/)
