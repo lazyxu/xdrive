@@ -3648,6 +3648,13 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
       dom:document.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
       hasError:Boolean(document.querySelector(
         '[data-xdrive-places-photo-drawer-page-error]'))}))
+    // CI-only bounded synthetic resize evidence; no Owner IDs, GPS or URLs.
+    console.log('Places 100k resize '+mode+' '+JSON.stringify({
+      signedReads:afterRotate.reads-beforeRotate,
+      mountedTiles:afterRotate.dom,
+      pageError:afterRotate.hasError,
+      runtimeErrorCount:errors.length,
+    }))
     record(mode+': 100k resize anchors visible photo through fresh Owner range',
       afterRotate.reads-beforeRotate<=8 && afterRotate.dom>0 &&
       afterRotate.dom<160 && !afterRotate.hasError && errors.length===0)
