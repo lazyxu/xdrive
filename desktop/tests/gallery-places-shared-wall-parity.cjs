@@ -161,7 +161,10 @@ test('optional favorites stay authenticated; no cross-Owner bulk mutation is add
   assert.match(parent,/mapPhotoScope.filters.favorite!==undefined/)
   assert.match(parent,/!hasAcceptedCell\(state.selection\)/)
   assert.match(parent,/await onSetFavorite\(item, favorite\)/)
-  assert.match(drawer,/void onSetFavorite\(item, !item.favorite\)\.catch/)
+  assert.match(drawer,/await onSetFavorite\(item, !item.favorite\)/)
+  assert.match(drawer,/data-xdrive-places-photo-drawer-favorite/)
+  assert.match(drawer,/disabled=\{favoriteBusy\}/)
+  assert.doesNotMatch(drawer,/onSetFavorite=\{onSetFavorite\}/)
   assert.doesNotMatch(drawer,/<MediaGallerySelectionReviewDialog|onDeleteItems=|deleteSelectionSnapshot/)
 })
 
