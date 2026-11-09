@@ -7779,6 +7779,7 @@ export function XDriveMediaGallery({
             loadPhotoCoverThumbnail={loadThumbnail}
             loadPhotoCoverPreviewURL={loadPreviewURL}
             savePhotoCoverVideoPoster={saveVideoPoster}
+            onSetFavorite={onSetFavorite}
             getBaiduMapCoverage={getBaiduMapCoverage}
             getBaiduMapCoverageReasons={getBaiduMapCoverageReasons}
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
