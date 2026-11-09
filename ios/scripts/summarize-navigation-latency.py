@@ -24,6 +24,9 @@ PHOTO_PAGE_PATTERN = re.compile(
 VIDEO_FIRST_FRAME_PATTERN = re.compile(
     r"IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS stage=layer-ready value=(\d+)"
 )
+JUMP_VERIFIED_PATTERN = re.compile(
+    r"IOS_NATIVE_FILES_JUMP_VERIFIED_MS value=(\d+)"
+)
 
 
 def summarize(log: str) -> dict:
@@ -73,6 +76,19 @@ def summarize(log: str) -> dict:
         "zero_samples_means_not_measured": True,
         "is_physical_device_measurement": False,
     }
+    jump_values = sorted(
+        int(value) for value in JUMP_VERIFIED_PATTERN.findall(log)
+        if 0 <= int(value) <= 300_000
+    )
+    jump_metrics = {
+        "metric": "verified Server Range to authorized scroll command (NOT rendered FPS)",
+        "samples": len(jump_values),
+        "p50_ms": round(statistics.median(jump_values), 1) if jump_values else None,
+        "p95_ms": jump_values[math.ceil(0.95 * len(jump_values)) - 1]
+        if jump_values else None,
+        "max_ms": jump_values[-1] if jump_values else None,
+        "zero_samples_means_not_measured": True,
+    }
     return {
         "metric": "XCUITest navigation tap to visible native shell (includes AX/idling)",
         "is_physical_device_fps": False,
@@ -82,6 +98,7 @@ def summarize(log: str) -> dict:
         "local_photo_page_modes": page_modes,
         "local_photo_page_samples": sum(len(v) for v in page_times.values()),
         "video_first_displayed_frame": video_metrics,
+        "file_jump_verified": jump_metrics,
     }
 
 
