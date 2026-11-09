@@ -1165,12 +1165,17 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
 
     private func reload() {
         permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        invalidate()
         guard permission == .authorized || permission == .limited else {
+            // A denied page must be retired immediately. For an authorized
+            // refresh, load(offset:) owns the ONE invalidation and read.
+            invalidate()
             clearViewerTileAnchor()
             error = "本机相册访问权限已失效，请返回相册重新授权。"
             return
         }
+        // load(offset:) already invalidates the old PhotoKit scan. Calling
+        // invalidate() here as well clears the wall twice per refresh and
+        // amplifies empty-frame churn when an album is re-entered.
         load(offset: savedOffset)
     }
 
