@@ -70,20 +70,63 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
     }
 
     private func assertNoSessionSheetDenial(
-        _ id: String, message: String, in app: XCUIApplication, cycle: Int
+        _ id: String, message: String, pageID: String,
+        in app: XCUIApplication, cycle: Int
     ) {
-        // The smoke harness has a synthetic Owner identity but no actual
-        // authenticated Session. At source b9 its native sheets show an
-        // explicit "account changed" denial instead of an operation history.
-        // This is NOT a logged-in Owner success or a crash reproduction.
+        // This synthetic Owner has NO Session. A same-Owner read must display
+        // a verified-access failure, not the "account changed" path reserved
+        // for a *different* Owner. The original b9 baseline source is tested
+        // independently: do not transplant its old literal into this candidate.
+        let page = app.descendants(matching: .any)
+            .matching(identifier: pageID).firstMatch
+        XCTAssertTrue(page.waitForExistence(timeout: 15),
+            "The real native \(id) sheet did not mount")
         let denied = app.staticTexts[message].firstMatch
-        if !denied.waitForExistence(timeout: 8) {
-            record(app, "unexpected-\(id)-\(cycle)")
+        if !denied.waitForExistence(timeout: 12) {
+            record(app, "no-session-state-missing-\(id)-\(cycle)")
         }
         alive(app, "synthetic-owner-\(id)-\(cycle)")
         XCTAssertTrue(denied.exists,
-            "Missing expected fail-closed no-Session screen for \(id). " +
-            "Do not fake a successful authenticated Owner in Simulator.")
+            "The \(id) sheet must deny unverified Server data; " +
+            "a synthetic Owner identity is not an authenticated Session.")
+
+        if id == "history" {
+            // The history page must show the explicit failure and a way to
+            // recheck, never an unverified Undo/Redo operation or empty success.
+            XCTAssertTrue(app.buttons["刷新核对"].firstMatch.exists)
+            let undo = app.buttons.matching(
+                NSPredicate(format: "identifier BEGINSWITH %@",
+                            "native-ios-files-undo-")
+            ).firstMatch
+            let redo = app.buttons.matching(
+                NSPredicate(format: "identifier BEGINSWITH %@",
+                            "native-ios-files-redo-")
+            ).firstMatch
+            XCTAssertFalse(undo.exists || redo.exists,
+                "Unverified operation history exposed an actionable mutation")
+            XCTAssertFalse(app.staticTexts["暂无可显示的操作历史。"].exists,
+                "The failed Server history read must not masquerade as empty success")
+        } else {
+            // Fields may be visible for editing, but the Server write action
+            // is disabled until the actual current Owner is verified.
+            let save = app.buttons["保存为智能文件夹"].firstMatch
+            XCTAssertTrue(save.exists, "Saved Search editor is not mounted")
+            XCTAssertFalse(save.isEnabled,
+                "An unauthenticated synthetic Owner must not save to the Server")
+            XCTAssertFalse(app.staticTexts[
+                "尚无智能文件夹。可在下面按关键词或筛选条件新建。"
+            ].exists, "An unverified collection must not look like empty success")
+        }
+
+        let done = app.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 10))
+        done.tap()
+        alive(app, "return-from-\(id)-\(cycle)")
+        XCTAssertFalse(page.exists, "Dismiss failed to retire the denied \(id) sheet")
+        XCTAssertTrue(app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-section-browse")
+            .firstMatch.waitForExistence(timeout: 12),
+            "Files navigation disappeared after the denied \(id) sheet")
     }
 
     func testPublishedB9RealColdStartAndRestart() {
@@ -139,7 +182,9 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             homeButton("native-ios-files-open-operations", in: app).tap()
             alive(app, "history-open-\(cycle)")
             assertNoSessionSheetDenial(
-                "history", message: "账户已经变化，请关闭操作历史。",
+                "history",
+                message: "无法验证文件操作历史，请检查网络后重试。",
+                pageID: "native-ios-files-operation-history-page",
                 in: app, cycle: cycle)
             app.terminate()
         }
@@ -152,7 +197,9 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             homeButton("native-ios-files-open-saved-searches", in: app).tap()
             alive(app, "saved-search-open-\(cycle)")
             assertNoSessionSheetDenial(
-                "saved-search", message: "账户已经变化，请关闭智能文件夹。",
+                "saved-search",
+                message: "无法验证当前账户的智能文件夹，请检查网络后重试。",
+                pageID: "native-ios-files-saved-searches-page",
                 in: app, cycle: cycle)
             app.terminate()
         }
