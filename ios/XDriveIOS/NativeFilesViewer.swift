@@ -1,5 +1,6 @@
 import AVKit
 import Combine
+import OSLog
 import PDFKit
 import SwiftUI
 
@@ -400,8 +401,13 @@ struct XDriveIOSNativeFilesViewer: View {
                     .disabled(neighborBusy || !mayNavigate(1))
                 }
             }
-            .toolbar(chromeVisible ? .visible : .hidden,
-                     for: .navigationBar, .bottomBar)
+            // A video tap may hide its timeline and top chrome, but must
+            // never hide Next/Previous or Back-to-list navigation at bottom.
+            // This also avoids the abrupt bottom-bar layout switch after the
+            // media URL resolves and the first frame begins to render.
+            .toolbar(chromeVisible ? .visible : .hidden, for: .navigationBar)
+            .toolbar(isNativeVideo ? .visible :
+                     (chromeVisible ? .visible : .hidden), for: .bottomBar)
         }
         .statusBarHidden(!chromeVisible)
         .task(id: attempt) {
@@ -521,8 +527,13 @@ struct XDriveIOSNativeFilesViewer: View {
         videoFirstFrameRecorded = true
         let ms = max(0, Int((ProcessInfo.processInfo.systemUptime -
                               previewRequestedAt) * 1000))
+        // A real signed iPhone normally has no synthetic UI-smoke argument.
+        // Expose a privacy-safe device log as well as the CI-readable marker,
+        // so actual first-frame p50/p95 can be obtained from device Console.
+        // Never log the Node name, signed URL, Owner, or access token.
+        Logger(subsystem: "com.xdrive.ios", category: "FilesVideoFirstFrame")
+            .notice("IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS stage=layer-ready value=\(ms, privacy: .public)")
         if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
-            // Only latency and stage: never a Node, URL, token or account name.
             print("IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS stage=layer-ready value=\(ms)")
         }
     }
