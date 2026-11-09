@@ -91,7 +91,21 @@ release_bundle_enqueue() {
   fi
   pid_file="$STATE_DIR/release-bundle-worker.pid"
   pid="$(cat "$pid_file" 2>/dev/null || true)"
-  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then return 0; fi
+  # A stale pid file is not evidence that the release worker is alive:
+  # after SIGKILL/reboot, Linux may reuse that PID for an unrelated daemon.
+  # Never signal the reused PID. Require this exact Worker path AND Commit
+  # in /proc cmdline. If cmdline is unavailable, the exclusive worker flock
+  # remains the final guard against two concurrent downloads.
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null &&
+     [[ -r "/proc/$pid/cmdline" ]]; then
+    local cmdline
+    cmdline="$(tr '\\0' '\\n' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    if grep -Fxq -- "$worker" <<< "$cmdline" &&
+       grep -Fxq -- "$sha" <<< "$cmdline" &&
+       grep -Fxq -- '--commit' <<< "$cmdline"; then
+      return 0
+    fi
+  fi
   (
     exec 8>&- 9>&-
     exec python3 "$worker" --commit "$sha" --cache-dir "$cache" \
