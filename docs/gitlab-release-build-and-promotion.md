@@ -46,6 +46,20 @@ Their independent `edge` tags have the same descendant-only guard. Their
 Commit labels can be different from a newer Server Snapshot by design; do not
 treat an optional service image as proof of the Server's full commit.
 
+**Installer compatibility with independent optional images:** GitLab master
+upgrades retain existing immutable `XD_PHOTO_FACE_IMAGE` and
+`XD_MEDIA_WORKER_IMAGE` references (full manifest digest, 12-hex immutable
+Snapshot tag, or formal `v*` tag), instead of inventing the core
+`sha-<new-server-commit>` for these services. The core Server+Caddy and
+client artifacts **still must match the release Commit**. Mutable/unknown
+existing optional tags fail closed rather than being silently substituted.
+Existing optional services therefore stay on their explicit prior version
+until they are updated separately with compatibility checks; a fresh install
+with optional profiles enabled still needs an exact-Commit optional artifact.
+Stable releases and offline packages retain their existing exact-version
+behavior. This preserves active optional services without making a very
+large optional model download part of the Server's publication dependency.
+
 **Stable `v*` tags:** Every core and optional image must be independently
 rebuilt from the tag's exact commit, pass GitHub's exact-tag Final Gate before
 the public version tag is pushed, and finish all required publish jobs before
