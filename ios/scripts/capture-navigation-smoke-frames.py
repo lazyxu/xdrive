@@ -29,6 +29,10 @@ TARGETS = {
     "testCloudFolderNoSessionIsSmallNativeRecoveryInsteadOfFilesList",
     "testRecentlyDeletedNoSessionDoesNotMountDestructiveRows",
     "testAlternatingDeniedCloudAndTrashChildrenKeepsHomeRail",
+    "testRecentShortcutNoSessionShowsRecoverableNativeChild",
+    "testFavoritesShortcutNoSessionShowsRecoverableNativeChild",
+    "testRecentAfterTrashDeniedReturnKeepsGalleryAvailable",
+    "testFavoritesAfterCloudDeniedReturnKeepsGalleryAvailable",
 }
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 attempts = {}
