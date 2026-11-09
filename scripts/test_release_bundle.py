@@ -65,6 +65,41 @@ class BundleCacheTests(unittest.TestCase):
         self.manifest["artifacts"][0]["install_mode"] = "manual_test_only"
         validate(self.manifest, allow_local=True)
 
+
+    def test_independent_host_sigstore_fail_closed_and_pinned_identity(self):
+        from release_bundle import _verify_sigstore_manifest
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        raw = json.dumps(self.manifest).encode()
+        sha = self.manifest["commit"]
+        with patch("release_bundle.shutil.which", return_value=None):
+            with self.assertRaisesRegex(ValueError, "unavailable"):
+                _verify_sigstore_manifest(raw, sha, "master")
+        rejected = SimpleNamespace(returncode=1, stdout="", stderr="invalid")
+        with patch("release_bundle.shutil.which", return_value="/usr/bin/gh"), patch(
+            "release_bundle.subprocess.run", return_value=rejected
+        ) as run:
+            with self.assertRaisesRegex(ValueError, "rejected"):
+                _verify_sigstore_manifest(raw, sha, "master")
+            cmd = run.call_args.args[0]
+            self.assertEqual(cmd[cmd.index("--source-digest") + 1], sha)
+            self.assertEqual(cmd[cmd.index("--source-ref") + 1], "refs/heads/master")
+            self.assertIn("--deny-self-hosted-runners", cmd)
+        fake = {"verificationResult": {"signature": {"certificate": {
+            "sourceRepositoryIdentifier": "1382670236",
+        }}}}
+        with patch("release_bundle.shutil.which", return_value="/usr/bin/gh"), patch(
+            "release_bundle.subprocess.run",
+            return_value=SimpleNamespace(returncode=0, stdout=json.dumps([fake]), stderr=""),
+        ):
+            self.assertTrue(_verify_sigstore_manifest(raw, sha, "master"))
+            fake["verificationResult"]["signature"]["certificate"]["sourceRepositoryIdentifier"] = "123"
+            with patch("release_bundle.subprocess.run",
+                       return_value=SimpleNamespace(returncode=0, stdout=json.dumps([fake]), stderr="")):
+                with self.assertRaisesRegex(ValueError, "repository ID"):
+                    _verify_sigstore_manifest(raw, sha, "master")
+
+
     def test_short_sha_rejected(self):
         self.manifest["commit"] = "a" * 12
         with self.assertRaises(ValueError):

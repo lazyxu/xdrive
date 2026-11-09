@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from urllib.request import (
     HTTPRedirectHandler, Request, build_opener, urlopen,
 )
@@ -138,7 +138,7 @@ def check_server_listing(commit, manifest, listing):
         urls = item.get("download_urls")
         if not isinstance(urls, list):
             raise GateError("Server omitted download sources")
-        local = "/api/v1/release-bundles/current/artifacts/" + name
+        local = "/api/v1/release-bundles/current/artifacts/" + quote(name)
         if item.get("cached") and (not urls or urls[0] != local):
             raise GateError("verified local source not preferred")
         if not item.get("cached") and local in urls:

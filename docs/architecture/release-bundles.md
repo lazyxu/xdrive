@@ -68,7 +68,14 @@ checks remain authoritative.
   manifest and every artifact against the immutable GitHub Release asset
   digest/size inventory. Missing, duplicated, altered, or mismatched assets
   fail closed without affecting Server health. This uses GitHub HTTPS
-  provenance; it is **not** independent Sigstore verification.
+  provenance by default. To independently verify the signed Manifest before
+  **every Host cache promotion**, install a trusted GitHub CLI on the Host and
+  set `XD_RELEASE_BUNDLE_VERIFY_SIGSTORE=required` in its Host `.env`.
+  The Worker then pins the OIDC signer workflow, full source Commit, master
+  source ref (when applicable), and immutable GitHub repository ID 1382670236.
+  Missing tools or invalid attestations fail only the optional client cache,
+  never the Server upgrade. Without this setting Host Sigstore enforcement is
+  explicitly **not active**.
 
 
 ## Authenticated distribution
