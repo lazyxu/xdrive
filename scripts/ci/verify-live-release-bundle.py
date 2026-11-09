@@ -188,6 +188,55 @@ def check_remote_bytes(item, origin):
         raise GateError(origin + " does not contain exact Commit package: " + item["filename"])
 
 
+
+
+def check_authenticated_range_download(origin, token, artifact):
+    """Exercise *real* authenticated GET/206 and resume using two byte ranges.
+
+    This reads a public installer from the operator's own Server without
+    writing anything on Host or client. Every byte is SHA-256 checked.
+    """
+    parsed = urlsplit(origin)
+    if parsed.username or parsed.password or parsed.path not in ("", "/"):
+        raise GateError("invalid Server download origin")
+    if not token:
+        raise GateError("authenticated range check requires Owner token")
+    if not artifact.get("cached"):
+        return False
+    size = artifact["size"]
+    if not isinstance(size, int) or size <= 0:
+        raise GateError("invalid cached package size")
+    name = artifact["filename"]
+    url = origin.rstrip("/") + "/api/v1/release-bundles/current/artifacts/" + quote(name)
+    midpoint = max(1, size // 2)
+    spans = [(0, midpoint - 1)]
+    if midpoint < size:
+        spans.append((midpoint, size - 1))
+    h = hashlib.sha256()
+    opener = build_opener(NoRedirect)
+    for first, last in spans:
+        request = Request(url, headers={
+            "Authorization": "Bearer " + token,
+            "Accept-Encoding": "identity",
+            "Range": "bytes=" + str(first) + "-" + str(last),
+        })
+        with opener.open(request, timeout=60) as response:
+            if response.status != 206 or response.headers.get("Content-Range") != (
+                "bytes " + str(first) + "-" + str(last) + "/" + str(size)
+            ):
+                raise GateError("authenticated Server did not honor exact resumable Range")
+            received = 0
+            while block := response.read(1024 * 1024):
+                received += len(block)
+                if received > last - first + 1:
+                    raise GateError("Server streamed oversized Range")
+                h.update(block)
+            if received != last - first + 1:
+                raise GateError("Server streamed incomplete Range")
+    if h.hexdigest() != artifact["sha256"]:
+        raise GateError("authenticated resumed Server download changed SHA-256: " + name)
+    return True
+
 def check_sigstore(commit, raw):
     """Independent GitHub OIDC/Sigstore verifier, using gh (no Host credentials)."""
     gh = shutil.which("gh")
@@ -227,6 +276,8 @@ def main(argv=None):
     parser.add_argument("--allow-loopback-http", action="store_true")
     parser.add_argument("--require-sigstore", action="store_true",
                         help="verify signed manifest with pinned CI identity and Git Commit")
+    parser.add_argument("--check-server-download", action="store_true",
+                        help="two authenticated Range requests per cached package; full SHA-256")
     parser.add_argument("--check-package-bytes", action="store_true",
                         help="download and SHA-256 verify every GitLab/GitHub package; expensive")
     args = parser.parse_args(argv)
@@ -242,6 +293,12 @@ def main(argv=None):
             api = server_listing(args.server_url, os.environ.get("XD_BUNDLE_OWNER_TOKEN", ""),
                                  allow_loopback_http=args.allow_loopback_http)
             api_count = check_server_listing(args.commit, manifest, api)
+        if args.check_server_download:
+            if not args.server_url:
+                raise GateError("--check-server-download requires --server-url")
+            for item in api["artifacts"]:
+                check_authenticated_range_download(args.server_url,
+                    os.environ.get("XD_BUNDLE_OWNER_TOKEN", ""), item)
         if args.check_package_bytes:
             for item in manifest["artifacts"]:
                 for origin in ("gitlab", "github"):
@@ -254,6 +311,7 @@ def main(argv=None):
             "host_packages": len(verified_host) if verified_host is not None else None,
             "api_packages": api_count,
             "remote_bytes": "verified" if args.check_package_bytes else "not_checked",
+            "server_download": "verified" if args.check_server_download else "not_checked",
         }, sort_keys=True))
         return 0
     except (ValueError, HTTPError, URLError, OSError, json.JSONDecodeError) as exc:

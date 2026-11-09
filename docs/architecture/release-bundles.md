@@ -139,6 +139,11 @@ Commit, signer workflow and GitHub repository ID 1382670236, and **fails
 closed** if unavailable. No Owner credentials are sent to GitHub. It is an
 explicit acceptance gate, not proof that every installed Host has the CLI.
 
+For a real authenticated download and resume SHA-256 check add
+`--check-server-download` (requires `--server-url` and Owner token). This
+performs two actual HTTP `Range` transfers per cached artifact, recombines the
+bytes in order and compares the full hash. It never installs a package.
+
 For an intentional, expensive end-to-end mirror-byte audit add
 `--check-package-bytes`. This verifies actual package bytes from both GitLab
 and GitHub; inaccessible GitLab or a missing optional upstream fails that

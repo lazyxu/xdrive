@@ -1,5 +1,7 @@
 """Deterministic acceptance-gate tests; no production GitHub/Host mutation."""
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import threading
 import importlib.util
 import json
 from pathlib import Path
@@ -109,6 +111,51 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
         with patch.object(audit.shutil, "which", return_value=None):
             with self.assertRaisesRegex(audit.GateError, "gh CLI"):
                 audit.check_sigstore(COMMIT, self.raw)
+
+
+    def test_authenticated_resume_download_requires_exact_ranges_and_digest(self):
+        payload = self.payload
+        commit = COMMIT
+        calls = []
+        class Server(BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                return
+            def do_GET(self):
+                calls.append((self.path, self.headers.get("Range"),
+                              self.headers.get("Authorization")))
+                if self.headers.get("Authorization") != "Bearer live-test-owner":
+                    self.send_error(401)
+                    return
+                if not self.path.endswith("xdrive-linux-amd64.deb"):
+                    self.send_error(404)
+                    return
+                requested = self.headers["Range"]
+                first, last = (int(x) for x in requested.removeprefix("bytes=").split("-"))
+                chunk = payload[first:last + 1]
+                self.send_response(206)
+                self.send_header("Content-Range",
+                                 "bytes %d-%d/%d" % (first, last, len(payload)))
+                self.send_header("Content-Length", str(len(chunk)))
+                self.end_headers()
+                self.wfile.write(chunk)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            item = dict(self.item, cached=True)
+            origin = "http://127.0.0.1:" + str(server.server_port)
+            self.assertTrue(audit.check_authenticated_range_download(
+                origin, "live-test-owner", item))
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0][1], "bytes=0-" + str(len(payload)//2-1))
+            self.assertEqual(calls[1][1], "bytes=" + str(len(payload)//2) + "-" +
+                             str(len(payload)-1))
+            item["sha256"] = "0" * 64
+            with self.assertRaisesRegex(audit.GateError, "SHA-256"):
+                audit.check_authenticated_range_download(origin, "live-test-owner", item)
+        finally:
+            server.shutdown()
+            server.server_close()
 
     def test_unsigned_ipa_never_an_auto_install_admission(self):
         item = dict(self.item, platform="ios", filename="xDrive-unsigned.ipa",
