@@ -28,3 +28,15 @@ test('the file-scoped initializer does not bypass reauthorization or Owner fence
   assert.match(child, /retryEpoch == ticket, isVisible,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expectedOwner\)/)
   assert.match(browser, /self\.folder = folder/)
 })
+
+
+const uiTests = fs.readFileSync(path.resolve(__dirname, '../../ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'), 'utf8')
+test('dynamic Files route IDs interpolate Swift variables rather than literal escaped text', () => {
+  // Previously the CI compiler warned that 'section' was unused.
+  // The malformed route matched no real SwiftUI element, so the test failed.
+  assert.equal(uiTests.includes("\\\\("), false, 'do not double-escape Swift interpolations')
+  assert.ok(uiTests.includes("\"native-ios-files-section-\\(section)\""))
+  assert.ok(uiTests.includes("\"Missing native route: \\(id)\""))
+  assert.ok(uiTests.includes("\"App exited after \\(id)\""))
+  assert.ok(uiTests.includes("\"Expected small native no-Session surface \\(id)\""))
+})

@@ -22,9 +22,9 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
 
     private func tap(_ id: String, _ app: XCUIApplication) {
         let target = element(id, app)
-        XCTAssertTrue(target.waitForExistence(timeout: 15), "Missing native route: \\(id)")
+        XCTAssertTrue(target.waitForExistence(timeout: 15), "Missing native route: \(id)")
         target.tap()
-        XCTAssertEqual(app.state, .runningForeground, "App exited after \\(id)")
+        XCTAssertEqual(app.state, .runningForeground, "App exited after \(id)")
     }
 
     private func files(_ app: XCUIApplication) {
@@ -35,7 +35,7 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
 
     private func expect(_ id: String, _ app: XCUIApplication) {
         XCTAssertTrue(element(id, app).waitForExistence(timeout: 12),
-                      "Expected small native no-Session surface \\(id)")
+                      "Expected small native no-Session surface \(id)")
         XCTAssertEqual(app.state, .runningForeground)
     }
 
@@ -374,7 +374,7 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         expect("native-ios-files-recent-error-page", app)
         tap("native-ios-files-recent-error-return", app)
         for section in ["recent", "favorites", "browse"] {
-            tap("native-ios-files-section-\\(section)", app)
+            tap("native-ios-files-section-\(section)", app)
             expect("native-ios-files-section-browse", app)
         }
         openHomeShortcut("native-ios-files-open-favorites", app)
