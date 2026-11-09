@@ -303,6 +303,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             search.typeText("\n")
         }
         checkFilesHome(app)
+        assertNotSolidScreen(app, "Files after Search submit and rail restoration")
         select("native-ios-tab-gallery", in: app)
         checkGallery(app)
         select("native-ios-tab-files", in: app)
@@ -455,6 +456,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         } else {
             search.typeText("\n")
         }
+        checkFilesHome(app)
+        assertNotSolidScreen(app, "Files after Search before Gallery filter")
         select("native-ios-tab-gallery", in: app)
         checkGallery(app)
         select("native-ios-gallery-open-filters", in: app)
