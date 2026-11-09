@@ -134,8 +134,8 @@ async function withFrame({ width, coarse, video }, check) {
 
 test('iPhone Safari routed video Viewer preserves Back, filmstrip and Next after slow buffering', async () => {
   // The routed Web/PWA Viewer is SEPARATE from Desktop MediaGalleryViewer.
-  assert.ok(routed.includes("keepChromeVisible={previewKind === 'video' ||"),
-    'never assume the separate Desktop Viewer fix covers iPhone Safari')
+  assert.ok(routed.includes("keepChromeVisible={viewer.loading || viewer.navigationLoading || previewKind === 'video' ||"),
+    'Safari routed Viewer must preserve Back during slow metadata and video buffering')
   for (const config of [
     {width: 390, coarse: true, video: true},
     {width: 430, coarse: false, video: true},
@@ -182,5 +182,28 @@ test('ordinary photo Viewer still auto-hides its chrome after 2.2 seconds', asyn
     assert.equal(chrome(state.view,'header').props.sx.visibility,'hidden')
     assert.equal(chrome(state.view,'filmstrip').props.sx.visibility,'hidden')
     assert.equal(chrome(state.view,'actions').props.sx.pointerEvents,'none')
+  })
+})
+
+
+test('iPhone Safari retains Back before metadata identifies the video and while navigating', async () => {
+  await withFrame({width:390, coarse:true, video:true}, async state => {
+    await state.change({
+      title:'媒体查看器', positionLabel:undefined,
+      canPrevious:false, canNext:false, filmstrip:undefined,
+      keepChromeVisible:true, presentationState:'loading', navigationLoading:true,
+    })
+    assert.equal(findButton(state.view,'返回')?.props.disabled,undefined,
+      'Back must remain enabled even when the media identity is not yet available')
+    assert.equal(chrome(state.view,'header')?.props.sx.visibility,'visible')
+    assert.equal([...state.timers.values()].some(t => t.delay === 2200),false,
+      'slow metadata must not hide the only available navigation')
+    assert.equal(chrome(state.view,'actions'),undefined)
+    await state.change({presentationState:'ready', navigationLoading:false,
+      canNext:true, canPrevious:true, filmstrip:React.createElement('filmstrip'),
+      keepChromeVisible:true})
+    assert.equal(chrome(state.view,'header')?.props.sx.visibility,'visible')
+    assert.ok(findButton(state.view,'下一个项目'),
+      'adjacent navigation must be restored without remounting the Viewer')
   })
 })
