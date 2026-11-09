@@ -1,0 +1,142 @@
+name: iOS b9 published-source real Simulator crash reproduction
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/ios-b9-release-crash-repro.yml'
+      - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
+      - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
+      - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
+      - 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'
+      - 'ios/XDriveIOS/NativePhotosDashboard.swift'
+      - 'ios/XDriveIOS/XDriveIOSApp.swift'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-b9-crash-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  b9-runtime:
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [release-b9, candidate]
+    continue-on-error: ${{ matrix.source == 'release-b9' }}
+    steps:
+      - name: Checkout merge candidate and exact published history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare original b9 and candidate real native SwiftUI tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_16.4.app ]]; then
+            sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          fi
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          original=b9d5f9695826c144913810240fb8ddba7b584d74
+          if [[ "${{ matrix.source }}" == "release-b9" ]]; then
+            work="$RUNNER_TEMP/ios-release-b9"
+            mkdir -p "$work"
+            git cat-file -e "$original^{commit}"
+            git archive "$original" | tar -xf - -C "$work"
+            mkdir -p "$work/ios/UITests"
+            cp "$GITHUB_WORKSPACE/ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift" "$work/ios/UITests/"
+            source_sha="$original"
+          else
+            work="$GITHUB_WORKSPACE"
+            source_sha="$(git rev-parse HEAD)"
+          fi
+          echo "SMOKE_ROOT=$work" >> "$GITHUB_ENV"
+          echo "B9_SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "B9_SOURCE_KIND=${{ matrix.source }}" >> "$GITHUB_ENV"
+          python3 "$work/ios/scripts/prepare-navigation-runtime-smoke.py" "$work"
+          bash "$work/ios/scripts/prepare-assets.sh"
+          (cd "$work/ios" && xcodegen generate --spec project.yml)
+      - name: Boot Xcode 16.4-compatible real iPhone Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          devices=json.loads(subprocess.check_output(
+            ["xcrun","simctl","list","devices","available","-j"]))["devices"]
+          candidates=[d for runtime,rows in devices.items() if runtime.endswith("iOS-18-5")
+                      for d in rows if d.get("isAvailable",True) and d["name"].startswith("iPhone")]
+          if not candidates: raise SystemExit("Xcode 16.4 iOS 18.5 Simulator missing")
+          phone=next((p for p in candidates if p["name"]=="iPhone 16"),candidates[0])
+          with open(os.environ["GITHUB_ENV"],"a") as f:
+              f.write("SMOKE_SIM="+phone["udid"]+"\n")
+          print("B9 simulator",phone["name"],phone["udid"])
+          PY
+          SIM="$(sed -n 's/^SMOKE_SIM=//p' "$GITHUB_ENV" | tail -1)"
+          test -n "$SIM"
+          xcrun simctl boot "$SIM"
+          python3 - "$SIM" <<'PY'
+          import subprocess,sys
+          subprocess.run(["xcrun","simctl","bootstatus",sys.argv[1],"-b"],
+                         timeout=240,check=True)
+          PY
+      - name: Run exact-source native cold launch and Files/Gallery crash checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/b9-runtime"
+          xcodebuild test \
+            -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
+            -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SMOKE_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/b9-runtime/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/b9-runtime/Navigation.xcresult" \
+            -parallel-testing-enabled NO \
+            "XDRIVE_SOURCE_COMMIT=$B9_SOURCE_SHA" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests \
+            2>&1 | tee "$RUNNER_TEMP/b9-runtime/xcodebuild.log"
+      - name: Collect process crashes separately from missing UI elements
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          dest="$RUNNER_TEMP/b9-runtime/diagnostics"
+          mkdir -p "$dest" "$RUNNER_TEMP/b9-runtime/attachments"
+          printf 'source=%s\nkind=%s\nsim=%s\n' \
+            "$B9_SOURCE_SHA" "$B9_SOURCE_KIND" "$SMOKE_SIM" > "$dest/source.txt"
+          if [[ -d "$RUNNER_TEMP/b9-runtime/Navigation.xcresult" ]]; then
+            xcrun xcresulttool get test-results summary \
+              --path "$RUNNER_TEMP/b9-runtime/Navigation.xcresult" > "$dest/summary.json" 2>&1
+            xcrun xcresulttool export attachments \
+              --path "$RUNNER_TEMP/b9-runtime/Navigation.xcresult" \
+              --output-path "$RUNNER_TEMP/b9-runtime/attachments" --only-failures \
+              > "$dest/attachments-export.log" 2>&1
+          fi
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 3 -type f \
+            \( -iname '*xDrive*.ips' -o -iname '*xDrive*.crash' \) -mmin -50 \
+            -exec cp {} "$dest/" \; 2>/dev/null
+          simcrash="$HOME/Library/Developer/CoreSimulator/Devices/$SMOKE_SIM/data/Library/Logs/CrashReporter"
+          if [[ -d "$simcrash" ]]; then
+            find "$simcrash" -type f \( -iname '*xDrive*.ips' -o -iname '*xDrive*.crash' \) \
+              -mmin -50 -exec cp {} "$dest/" \; 2>/dev/null
+          fi
+          # No Simulator containers, Keychain, tokens or user photos are uploaded.
+      - name: Upload separate b9 source and candidate crash evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-b9-runtime-${{ matrix.source }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/b9-runtime/diagnostics/
+            ${{ runner.temp }}/b9-runtime/attachments/
+            ${{ runner.temp }}/b9-runtime/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 7
