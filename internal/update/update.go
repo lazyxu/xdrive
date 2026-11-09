@@ -41,17 +41,17 @@ type Asset struct {
 }
 
 type BundlePreference struct {
-	Commit string
+	Commit   string
 	Filename string
 	Platform string
-	SHA256 string
-	Size int64
+	SHA256   string
+	Size     int64
 }
 
 type Result struct {
 	// An optional matching current-Server cache never changes update target
 	// selection. Absent/outdated bundles preserve the channel's updater.
-	Bundle *BundlePreference
+	Bundle          *BundlePreference
 	Current         string
 	Latest          string
 	Channel         string
