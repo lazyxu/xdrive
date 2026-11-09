@@ -1426,7 +1426,7 @@ const scenarios = [
     "checks": [
       {
         "file": "f",
-        "pattern": "if login\\.hasSameOwnerSessionForNavigation \\{\\s*XDriveIOSNativeFilesBrowser\\(",
+        "pattern": "if XDriveIOSNativeFilesNavigationPolicy\\.canEnterProtectedChild\\([\\s\\S]*?sessionMatches: login\\.hasSameOwnerSessionForNavigation,[\\s\\S]*?sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope\\.matches\\(\\s*login\\.owner, owner\\s*\\)[\\s\\S]*?\\) \\{\\s*XDriveIOSNativeFilesBrowser\\(",
         "flags": ""
       }
     ]
@@ -1446,7 +1446,7 @@ const scenarios = [
     "checks": [
       {
         "file": "f",
-        "pattern": "if login\\.hasSameOwnerSessionForNavigation \\{\\s*XDriveIOSNativeFilesTrashScreen\\(login: login\\)",
+        "pattern": "if XDriveIOSNativeFilesNavigationPolicy\\.canEnterProtectedChild\\([\\s\\S]*?sessionMatches: login\\.hasSameOwnerSessionForNavigation,[\\s\\S]*?sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope\\.matches\\(\\s*login\\.owner, expected\\s*\\)[\\s\\S]*?\\) \\{\\s*XDriveIOSNativeFilesTrashScreen\\(login: login\\)",
         "flags": ""
       }
     ]
@@ -1486,7 +1486,7 @@ const scenarios = [
     "checks": [
       {
         "file": "f",
-        "pattern": "self == \\.cloud \\? \"native-ios-files-error-page\"",
+        "pattern": "case \\.cloud: return \"native-ios-files-error-page\"",
         "flags": ""
       }
     ]
@@ -1787,6 +1787,196 @@ const scenarios = [
       {
         "file": "z",
         "pattern": "let colors = Set\\(stride\\(from: 0, to: pixels\\.count, by: 4\\)[\\s\\S]*?XCTAssertGreaterThan\\(colors\\.count, 8",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "163 Home child admission requires live Session and captured Owner",
+    "checks": [
+      {
+        "file": "n",
+        "pattern": "static func canEnterProtectedChild\\([\\s\\S]*?sessionMatches && sourceOwnerMatches",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "164 Root cloud admission verifies captured Owner",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope\\.matches\\(\\s*login\\.owner, owner\\s*\\)[\\s\\S]*?\\) \\{\\s*XDriveIOSNativeFilesBrowser\\(",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "165 Trash admission verifies current Session",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope\\.matches\\(\\s*login\\.owner, expected\\s*\\)[\\s\\S]*?\\) \\{\\s*XDriveIOSNativeFilesTrashScreen",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "166 No-Session Favorites has distinct error page",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "case \\.favorites: return \"native-ios-files-favorites-error-page\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "167 No-Session Recent has distinct error page",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "case \\.recent: return \"native-ios-files-recent-error-page\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "168 No-Session retries keep distinct Favorites actions",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "case \\.favorites: return \"native-ios-files-favorites-retry\"[\\s\\S]*?case \\.recent: return \"native-ios-files-recent-retry\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "169 Favorites shortcut refuses full collection without Session",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "NavigationLink \\{\\s*if let expectedOwner = login\\.owner \\{\\s*if XDriveIOSNativeFilesNavigationPolicy\\.canEnterProtectedChild\\([\\s\\S]*?XDriveIOSNativeFilesCollectionScreen\\(login: login, kind: \\.favorites\\)[\\s\\S]*?kind: \\.favorites",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "170 Recent shortcut refuses full collection without Session",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "XDriveIOSNativeFilesCollectionScreen\\(login: login, kind: \\.recent\\)[\\s\\S]*?kind: \\.recent",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "171 Favorite folder navigation freezes verified origin Owner",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if let expectedOwner = favoriteShortcutsOwner \\{\\s*ForEach\\(verifiedFavoriteFolders\\) \\{ item in",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "172 Pinned folder navigation freezes current verified Owner",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "if let expectedOwner = login\\.owner,\\s*quickAccess\\.matches\\(expectedOwner\\) \\{\\s*ForEach\\(quickAccess\\.items\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "173 Folder destinations refuse stale protected list",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "\\.navigationDestination\\(for: XDriveIOSNativeFilesFolder\\.self\\) \\{ next in\\s*protectedFolderDestination\\(next\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "174 Folder retry keeps only a hint and needs reauthorization",
+    "checks": [
+      {
+        "file": "f",
+        "pattern": "var targetFolder: XDriveIOSNativeFilesFolder\\? = nil[\\s\\S]*?if verifiedForOpen && login\\.hasSameOwnerSessionForNavigation",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "175 Recent shortcut UI denial without protected grid",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testRecentShortcutNoSessionShowsRecoverableNativeChild\\(\\)[\\s\\S]*?native-ios-files-recent-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "176 Favorites shortcut UI denial without protected grid",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testFavoritesShortcutNoSessionShowsRecoverableNativeChild\\(\\)[\\s\\S]*?native-ios-files-favorites-error-page",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "177 Recent retry/back UI remains clean",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testRecentRetryBackCannotLeaveStaleOwnerProjection\\(\\)[\\s\\S]*?native-ios-files-recent-error-return",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "178 Favorites retry/back UI remains clean",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testFavoritesRetryBackCannotLeaveStaleOwnerProjection\\(\\)[\\s\\S]*?native-ios-files-favorites-error-return",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "179 Cross-child Trash to Recent to Gallery remains tested",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testRecentAfterTrashDeniedReturnKeepsGalleryAvailable\\(\\)[\\s\\S]*?native-ios-gallery-source-unified",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "180 Cross-child Cloud to Favorites to Gallery remains tested",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testFavoritesAfterCloudDeniedReturnKeepsGalleryAvailable\\(\\)[\\s\\S]*?native-ios-gallery-source-unified",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "181 Collection rail and Albums route remain tested",
+    "checks": [
+      {
+        "file": "z",
+        "pattern": "func testDeniedCollectionsAcrossFilesRailAndAlbumsNeverExposeRows\\(\\)[\\s\\S]*?native-ios-gallery-source-albums",
         "flags": ""
       }
     ]
