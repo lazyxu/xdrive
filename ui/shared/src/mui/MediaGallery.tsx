@@ -215,19 +215,8 @@ import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
 import { xDriveMediaGalleryAnchorScrollDelta } from './MediaGalleryScrollAnchor'
-import {
-  xDriveMediaGalleryPinchColumnCount,
-  XDRIVE_MEDIA_GALLERY_GRID_GAP,
-  xDriveMediaGalleryGridMetrics,
-  xDriveMediaGalleryGridWindow,
-} from './MediaGalleryVirtualGrid'
-import {
-  XDRIVE_MEDIA_GALLERY_TIMELINE_HEADER_GAP,
-  xDriveMediaGalleryTimelineGroupLabel,
-  xDriveMediaGalleryTimelineIndexVisible,
-  xDriveMediaGalleryTimelineLayout,
-  xDriveMediaGalleryTimelineWindow,
-} from './MediaGalleryVirtualTimeline'
+import { xDriveMediaGalleryPinchColumnCount } from './MediaGalleryVirtualGrid'
+import { xDriveMediaGalleryTimelineGroupLabel } from './MediaGalleryVirtualTimeline'
 import {
   xDriveMediaGalleryTimelineGroupAtIndex,
   xDriveMediaGalleryTimelineNearestDay,
@@ -235,11 +224,8 @@ import {
 import {
   XDriveMediaThumbnailScheduler,
 } from './MediaGalleryThumbnailScheduler'
-import type {
-  XDriveMediaThumbnailPriority,
-} from './MediaGalleryThumbnailScheduler'
 
-import { keyboardActivate, MediaTile, MediaTileGrid, MediaVirtualTileGrid, mediaGalleryScrollParent, scrollMediaGalleryHostToOffset } from './MediaGallerySharedTiles'
+import { keyboardActivate, MediaTileGrid, MediaVirtualTileGrid, mediaGalleryScrollParent } from './MediaGallerySharedTiles'
 import type { MediaSelectionModifiers, MediaGalleryReturnViewport, XDriveMediaGalleryVirtualCollection } from './MediaGallerySharedTiles'
 // Compatibility exports for existing Gallery and Owner-based map adapters.
 export { MediaTile, MediaVirtualTileGrid } from './MediaGallerySharedTiles'
