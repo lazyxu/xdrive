@@ -76,7 +76,11 @@ func loadSourceCloudCleanupTreeTx(tx *gorm.DB, ownerID, sourceID uint64, lock bo
 		return out, err
 	}
 	src := out.source
-	if src.Status != meta.SourceStatusArchived || !src.TargetManaged ||
+	// Only archived, server-managed Yike Pull sources are currently eligible.
+	// A Web capability guard is not sufficient: callers can invoke this Owner
+	// endpoint directly, including for native Push or dormant Synology Pull.
+	if src.Kind != yikeSourceKind || src.Direction != meta.SourceDirectionPull ||
+		src.Status != meta.SourceStatusArchived || !src.TargetManaged ||
 		src.TargetNodeID == nil || *src.TargetNodeID == 0 || src.RunRequestedAt != nil {
 		return out, errSourceCloudCleanupBlocked
 	}
