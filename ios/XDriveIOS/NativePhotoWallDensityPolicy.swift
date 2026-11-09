@@ -83,13 +83,26 @@ enum XDriveIOSNativePhotoWallWindowPolicy {
     /// Older windows are re-fetched by the caller before becoming eligible.
     static func canRestore<T: Equatable>(_ anchor: T?, in verifiedIDs: [T],
                                          scopeActive: Bool) -> Bool {
-        scopeActive && anchor.map { verifiedIDs.contains($0) } == true
+        guard scopeActive, let anchor else { return false }
+        // A duplicate tile identifier has no deterministic scroll/focus target.
+        var found = false
+        for item in verifiedIDs where item == anchor {
+            if found { return false }
+            found = true
+        }
+        return found
     }
 
     static func canRestore<T>(_ anchor: T?, in verifiedItems: [T],
                               scopeActive: Bool,
                               matches: (T, T) -> Bool) -> Bool {
         guard scopeActive, let anchor else { return false }
-        return verifiedItems.contains { matches($0, anchor) }
+        // The same ID and revision must identify one unique verified tile.
+        var found = false
+        for item in verifiedItems where matches(item, anchor) {
+            if found { return false }
+            found = true
+        }
+        return found
     }
 }

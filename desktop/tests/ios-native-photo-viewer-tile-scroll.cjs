@@ -46,10 +46,10 @@ for (const [name, view, tile] of [['PhotoKit full wall', local, 'candidate'], ['
     assert.match(view, /clearViewerTileAnchor\(\)/);
     if (name === 'PhotoKit album wall') {
       // Both MapKit and Viewer are authorized transient child pages.
-      assert.match(view, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
-      assert.match(view, /else \{ libraryMonitor\.stop\(\); invalidate\(\) \}/)
+      assert.match(view, /if selected != nil \|\| showingAlbumMap \|\|[\s\S]*?phase == \.active && albumAuthorized[\s\S]*?suspendForViewer\(\)/)
+      assert.match(view, /else \{\s*libraryMonitor\.stop\(\)\s*invalidate\(\)/)
     } else {
-      assert.match(view, /if selected != nil \{ suspendForViewer\(\) \}/)
+      assert.match(view, /if selected != nil \{\s*suspendForViewer\(\)/)
     }
     assert.match(view, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
     assert.doesNotMatch(view, /UserDefaults|@AppStorage|WKWebView/);
@@ -123,13 +123,13 @@ for (const [name, view, permission] of [
     assert.match(phase, /if (?:new|state) != \.active \{\s*if selected != nil \{[\s\S]*?accessibilityFocusedTileID = nil[\s\S]*?suspendForViewer\(\)\s*page = nil\s*(?:errorMessage|error) = nil/);
     assert.match(phase, /\} else \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)\s*\}\s*\} else if selected != nil \{/);
     assert.match(phase, /if (?:authorization|permission) != \.authorized && (?:authorization|permission) != \.limited \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)/);
-    assert.match(phase, /\} else \{\s*(?:refresh\(at: savedOffset\)|reload\(\))\s*\}/);
+    assert.match(phase, /\} else if is(?:Visible|ContentVisible) \{\s*(?:refresh\(at: savedOffset\)|reload\(\))\s*\}/);
     // The Viewer revalidates its own PhotoKit asset on foreground return.
     // The source wall must not re-scan or dismiss the modal while covered.
     const inactiveViewer = phase.slice(phase.indexOf('if selected != nil {'),
       phase.indexOf('} else {', phase.indexOf('if selected != nil {')));
     const foregroundViewer = phase.slice(phase.indexOf('} else if selected != nil {'),
-      phase.lastIndexOf('} else {'));
+      phase.lastIndexOf('} else if is'));
     assert.doesNotMatch(inactiveViewer, /selected = nil|viewerReturnID = nil|clearViewerTileAnchor\(\)|invalidate\(\)|load\(offset:/);
     assert.doesNotMatch(foregroundViewer, /refresh\(at: savedOffset\)|reload\(\)|load\(offset:/);
     assert.match(view, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
@@ -155,7 +155,7 @@ test('PhotoKit album L3 Viewer navigates only a verified 64-item page at a time 
   assert.match(contents, /\} else \{\s*pendingAlbumMapJump = nil[\s\S]*?clearViewerTileAnchor\(\)\s*invalidate\(\)/)
   assert.match(contents, /private func restoreViewerTile\(using scroll: ScrollViewProxy\)[\s\S]*?XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
   assert.match(contents, /onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?clearViewerTileAnchor\(\)[\s\S]*?else if selected != nil \|\| showingAlbumMap \{[\s\S]*?viewerPageInvalidated = true[\s\S]*?suspendForViewer\(\)[\s\S]*?else \{\s*invalidate\(\)/)
-  assert.match(contents, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
-  assert.match(contents, /else \{ libraryMonitor\.stop\(\); invalidate\(\) \}/)
+  assert.match(contents, /if selected != nil \|\| showingAlbumMap \|\|[\s\S]*?phase == \.active && albumAuthorized[\s\S]*?suspendForViewer\(\)/)
+  assert.match(contents, /else \{\s*libraryMonitor\.stop\(\)\s*invalidate\(\)/)
   assert.doesNotMatch(contents, /UserDefaults|@AppStorage|CloudKit|UploadSession|isNetworkAccessAllowed = true/)
 });

@@ -109,7 +109,12 @@ test('scene, source/page changes cancel batch tasks and forget selected photo id
   assert.match(source, /private func invalidate\(\) \{\s*cancelAlbumOperations\(\)/)
   assert.match(source, /\.onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?invalidate\(\)/)
   assert.match(source, /\.onChange\(of: phase\) \{ state in[\s\S]*?if state != \.active/)
-  assert.match(source, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/)
+  // Ordinary foreground tab switches retain a same-grant, same-revision
+  // verified album page. A revoked/background grant still invalidates it.
+  assert.match(source, /if selected != nil \|\| showingAlbumMap \|\|[\s\S]*?phase == \.active && albumAuthorized\) \{\s*suspendForViewer\(\)/)
+  assert.match(source, /else \{\s*libraryMonitor\.stop\(\)\s*invalidate\(\)/)
+  assert.match(source, /pageRevision == libraryMonitor\.revision/)
+  assert.match(source, /if state != \.active \{[\s\S]*?invalidate\(\)/)
   assert.match(source, /onCrossPage: \{ oldPage, anchor, direction in/)
   assert.match(source, /viewerReturnID = next\.id/)
 })
