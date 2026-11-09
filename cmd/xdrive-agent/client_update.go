@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -50,6 +51,9 @@ type clientUpdateState struct {
 	UpdateAvailable  bool    `json:"update_available"`
 	Downloaded       bool    `json:"downloaded"`
 	InstallSupported bool    `json:"install_supported"`
+	// A Linux desktop may prompt through PolicyKit only for explicit installs.
+	// Background auto-install remains disabled without a privileged service.
+	ManualInstallSupported bool `json:"manual_install_supported"`
 	LastCheckedAt    string  `json:"last_checked_at,omitempty"`
 	Message          string  `json:"message,omitempty"`
 	LastError        string  `json:"last_error,omitempty"`
@@ -217,9 +221,18 @@ func newClientUpdateManagerWithBackend(ctx context.Context, backend clientUpdate
 	mode := userconfig.UpdateModeManual
 	source := userconfig.UpdateSourceGitHub
 	lastError := ""
-	installSupported := runtime.GOOS == "windows"
+	installSupported := runtime.GOOS == "windows" ||
+		(runtime.GOOS == "linux" && os.Geteuid() == 0)
+	manualInstallSupported := installSupported
+	if runtime.GOOS == "linux" && !manualInstallSupported &&
+		(os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "") {
+		if _, err := exec.LookPath("pkexec"); err == nil {
+			manualInstallSupported = true
+		}
+	}
 	if len(installCapability) > 0 {
 		installSupported = installCapability[0]
+		manualInstallSupported = installSupported
 	}
 	if prefs, err := userconfig.LoadUpdatePreferences(); err == nil {
 		mode = prefs.Mode
@@ -242,6 +255,7 @@ func newClientUpdateManagerWithBackend(ctx context.Context, backend clientUpdate
 			Status:           clientUpdateStatusIdle,
 			CurrentVersion:   version.String(),
 			InstallSupported: installSupported,
+			ManualInstallSupported: manualInstallSupported,
 			LastError:        lastError,
 		},
 		wake:    make(chan struct{}, 1),
