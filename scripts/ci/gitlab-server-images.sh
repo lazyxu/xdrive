@@ -17,11 +17,11 @@ core=0
 if [[ $# == 0 ]]; then
   core=1
   images=(
-    "xdrive-server:dist/server-image:xdrive/server:test"
-    "xdrive-caddy:dist/caddy-image:xdrive/caddy:test"
+    "xdrive-server|dist/server-image|xdrive/server:test"
+    "xdrive-caddy|dist/caddy-image|xdrive/caddy:test"
   )
 elif [[ $# == 3 ]]; then
-  images=("$1:$2:$3")
+  images=("$1|$2|$3")
 else
   echo "usage: gitlab-server-images.sh [image-name artifact-dir local-ref]" >&2
   exit 2
@@ -34,7 +34,7 @@ if [[ "$core" == 1 ]]; then
 fi
 
 for row in "${images[@]}"; do
-  IFS=: read -r name artifact_dir local_image tail <<< "$row"
+  IFS='|' read -r name artifact_dir local_image tail <<< "$row"
   [[ -z "${tail:-}" ]] || { echo "unexpected image row: $row" >&2; exit 2; }
   case "$name" in
     xdrive-server|xdrive-caddy|xdrive-photo-face|xdrive-media-worker) ;;
