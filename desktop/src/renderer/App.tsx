@@ -853,7 +853,7 @@ export default function App({
         const result = await window.xdriveDesktop.agent.saveReleaseBundle(manifest.commit, filename)
         if (!result.ok) throw new Error(result.error.message)
       },
-      installCurrent: platform && clientUpdate?.install_supported === true ? async (commit, filename) => {
+      installCurrent: platform && clientUpdate?.manual_install_supported === true ? async (commit, filename) => {
         const result = await window.xdriveDesktop.agent.installReleaseBundle(commit, filename, true)
         if (!result.ok) throw new Error(result.error.message)
         setClientUpdate(result.data)
