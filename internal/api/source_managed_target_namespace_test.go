@@ -20,8 +20,8 @@ func TestManagedSourceTargetRenameAcceptsCanonicalOnly(t *testing.T) {
 	legacyPull := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, "远程拉取")
 	type renameCase struct {
 		name, kind, direction, connector string
-		parentID uint64
-		managed, allow bool
+		parentID                         uint64
+		managed, allow                   bool
 	}
 	cases := []renameCase{
 		{"local Push", meta.SourceKindLocalFolder, meta.SourceDirectionPush, "", pushRoot.ID, true, true},
