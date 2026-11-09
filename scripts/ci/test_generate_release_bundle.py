@@ -55,6 +55,17 @@ class GenerateBundleTests(unittest.TestCase):
         self.assertEqual(result["commit"], SHA)
         self.assertEqual(result["schema_version"], 1)
 
+    def test_android_build_suffix_source_is_percent_encoded(self):
+        name = "xdrive-android-12-0.1.3+build.apk"
+        (self.directory / name).write_bytes(b"approved-signed-package-fixture")
+        manifest = module.build(self.directory, SHA, "master")
+        android, = [item for item in manifest["artifacts"] if item["platform"] == "android"]
+        self.assertEqual(android["filename"], name)
+        self.assertTrue(android["sources"]["github"].endswith(
+            "/xdrive-android-12-0.1.3%2Bbuild.apk"))
+        self.assertTrue(android["sources"]["gitlab"].endswith(
+            "/xdrive-android-12-0.1.3%2Bbuild.apk"))
+
     def test_reject_short_sha(self):
         with self.assertRaises(ValueError):
             module.build(self.directory, "a" * 12, "master")
