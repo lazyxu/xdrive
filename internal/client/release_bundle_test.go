@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -285,7 +286,7 @@ func TestCurrentServerBundleGitHubAssetRedirectOnly(t *testing.T) {
 }
 
 func TestCurrentServerBundleMetadataCannotRedirectOwnerBearer(t *testing.T) {
-	var privatePathRequested bool
+	var privatePathRequested atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/release-bundles/current":
@@ -295,7 +296,7 @@ func TestCurrentServerBundleMetadataCannotRedirectOwnerBearer(t *testing.T) {
 			w.Header().Set("Location", "/private-redirected-metadata")
 			w.WriteHeader(http.StatusTemporaryRedirect)
 		case "/private-redirected-metadata":
-			privatePathRequested = true
+			privatePathRequested.Store(true)
 			t.Error("metadata API followed a bearer-authenticated redirect")
 		default:
 			http.NotFound(w, r)
@@ -306,7 +307,7 @@ func TestCurrentServerBundleMetadataCannotRedirectOwnerBearer(t *testing.T) {
 	if _, err := c.CurrentReleaseBundle(context.Background()); err == nil {
 		t.Fatal("metadata redirect was incorrectly accepted")
 	}
-	if privatePathRequested {
+	if privatePathRequested.Load() {
 		t.Fatal("metadata redirect leaked Owner request")
 	}
 }
