@@ -473,6 +473,12 @@ struct XDriveIOSNativeFilesTrashScreen: View {
             // an asynchronous auth failure can mount its AX subtree.
             if !login.hasLocalOwnerSession {
                 XDriveIOSNativeFilesNoSessionRoute(kind: .trash)
+                    .onAppear {
+                        model.invalidate()
+                        mutation.invalidate()
+                        pendingDelete = nil
+                        showingDeleteConfirmation = false
+                    }
             } else
             // Do not ask SwiftUI/VoiceOver to enumerate the entire paged
             // destructive-action List after the current Owner is unreadable.
