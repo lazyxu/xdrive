@@ -883,6 +883,33 @@ private enum XDriveIOSNativeFilesQuickSection: String, CaseIterable, Identifiabl
     }
 }
 
+/// Keep the search presentation separate from its committed Server filter.
+/// SwiftUI's active searchable presentation can cover the feature-local rail
+/// even after pressing the keyboard Search key. The iOS 17+ presentation
+/// binding closes the overlay without clearing the committed query; earlier
+/// iOS versions keep the original searchable fallback.
+private struct XDriveIOSNativeFilesSearchPresentation: ViewModifier {
+    @Binding var text: String
+    @Binding var presented: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.searchable(
+                text: $text, isPresented: $presented,
+                placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: "搜索全部文件"
+            )
+        } else {
+            content.searchable(
+                text: $text,
+                placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: "搜索全部文件"
+            )
+        }
+    }
+}
+
 /// iOS fixed Files tab: genuine native bounded Owner directory navigation
 /// and whole-library search. File previews use the separate native L3 Viewer;
 /// Owner-bound creation, transfers and mutations live in the native action sheet.
@@ -983,6 +1010,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var pendingDrop: XDriveIOSNativeFilesDropIntent?
     @State private var offset = 0
     @State private var queryDraft = ""
+    // Presentation state is not a Server search query. Dismiss the focused
+    // search UI after Submit/tab exit without discarding activeQuery or its
+    // verified return anchor.
+    @State private var searchPresented = false
     @State private var activeQuery = ""
     @State private var searchFilters = XDriveIOSNativeFilesSearchFilterState()
     @State private var searchReturnOffset: Int?
@@ -2554,12 +2585,22 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .overlay(alignment: .bottom) { filesQuickFeedback }
             }
         }
-        .searchable(
-            text: $queryDraft,
-            placement: .navigationBarDrawer(displayMode: .automatic),
-            prompt: "搜索全部文件"
-        )
-        .onSubmit(of: .search) { submitSearch() }
+        .modifier(XDriveIOSNativeFilesSearchPresentation(
+            text: $queryDraft, presented: $searchPresented
+        ))
+        .onSubmit(of: .search) {
+            submitSearch()
+            // Closing the native search presentation must reveal Recent /
+            // Browse / Favorites again. Do NOT call dismissSearch(): it
+            // clears the search text and can silently clear activeQuery.
+            searchPresented = false
+        }
+        .onDisappear {
+            // Changing the app-wide tab or opening another native child must
+            // not leave SwiftUI's search overlay covering the Files rail when
+            // the user comes back. Keep the Server result and query intact.
+            searchPresented = false
+        }
         .task(id: queryDraft) {
             // System Files-style progressive search, but only for a valid
             // Server query. Task identity cancels superseded keyboard drafts
@@ -3571,6 +3612,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 operationShortcuts.load(login: login)
             }
             isHomeEditing = false
+            searchPresented = false
             ancestorCrumbs = []
             ancestorStatus = nil
             browseReturnAnchor = nil
@@ -4754,6 +4796,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func clearSearch() {
+        searchPresented = false
         guard !activeQuery.isEmpty || !queryDraft.isEmpty ||
               searchFilters.hasActiveFilters || searchReturnOffset != nil else { return }
         let restoredOffset = searchReturnOffset ?? 0
