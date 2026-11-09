@@ -190,6 +190,10 @@ func backupOnlyAllowedClipboardRequest(method, path string) bool {
 			(method == http.MethodPost || method == http.MethodDelete))
 	case "/v1/cloud/clipboard/check":
 		return method == http.MethodPut
+	case "/v1/cloud/clipboard-file":
+		// Narrow Owner Files identity projection; no general node-location
+		// permission or arbitrary URL/Path is granted to Backup-only.
+		return method == http.MethodGet
 	}
 	const prefix = "/v1/cloud/clipboard/items/"
 	if !strings.HasPrefix(path, prefix) || method != http.MethodDelete {
