@@ -36,7 +36,16 @@ private struct XDriveIOSNativeNavigationSmokeRoot: View {
     @StateObject private var backup = XDriveIOSNativePhotoBackupController()
     var body: some View {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-files-direct") {
+            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-photo-backup-direct") {
+                // CI-only real Backup UI; no synthetic upload receipts, Server
+                // tokens, PhotoKit authorization or modified production build.
+                NavigationStack {
+                    XDriveIOSNativePhotoBackupScreen(
+                        login: login, controller: backup,
+                        onShowCloudOriginals: {}
+                    )
+                }
+            } else if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-files-direct") {
                 NavigationStack {
                     XDriveIOSNativeFilesBrowser(login: login)
                         .navigationTitle("文件")

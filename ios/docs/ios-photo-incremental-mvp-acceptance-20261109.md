@@ -12,6 +12,9 @@ remaining regression and optional original-retention/APNs features.
   readback and failure/Owner/Device/Target cases.
 - **C — simulator:** real Xcode/iPhone Simulator app launch, Gallery/Files
   navigation, backup UI/offline failure, background/foreground lifecycle.
+  Candidate runs `XDriveIOSPhotoBackupMVPScenarioUITests` in the disposable CI-only
+  smoke harness, opening actual native Backup overview/task list/settings
+  without a signed-in Server or fabricated cloud receipts.
 - **D — physical iPhone:** signed App + real Photos permission, real PhotoKit,
   true iCloud-only assets, APNs sender, sleep/lock and production NAS.
 - Only **D** confirms physical-platform behavior. A/B/C must never be described
