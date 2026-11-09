@@ -152,10 +152,11 @@ def check_server_listing(commit, manifest, listing):
         if not isinstance(urls, list):
             raise GateError("Server omitted download sources")
         local = "/api/v1/release-bundles/current/artifacts/" + quote(name)
-        if item.get("cached") and (not urls or urls[0] != local):
-            raise GateError("verified local source not preferred")
-        if not item.get("cached") and local in urls:
-            raise GateError("Server exposed unverified local package")
+        expected_urls = ([local] if item.get("cached") else []) + [
+            expected["sources"]["gitlab"], expected["sources"]["github"],
+        ]
+        if urls != expected_urls:
+            raise GateError("Server source order, origin or cache admission mismatch: " + name)
     return len(seen)
 
 

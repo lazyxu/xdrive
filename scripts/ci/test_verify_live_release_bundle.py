@@ -80,6 +80,22 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
         item["sha256"] = "0" * 64
         with self.assertRaises(audit.GateError):
             audit.check_server_listing(COMMIT, self.manifest, listing)
+        item["sha256"] = self.sha
+        item["download_urls"] = [
+            self.item["sources"]["github"], self.item["sources"]["gitlab"],
+        ]
+        with self.assertRaisesRegex(audit.GateError, "source order"):
+            audit.check_server_listing(COMMIT, self.manifest, listing)
+        item["download_urls"] = ["https://untrusted.example.invalid/swap"]
+        with self.assertRaisesRegex(audit.GateError, "source order"):
+            audit.check_server_listing(COMMIT, self.manifest, listing)
+        item["cached"] = False
+        item["download_urls"] = [self.item["sources"]["gitlab"],
+                                  self.item["sources"]["github"]]
+        self.assertEqual(audit.check_server_listing(COMMIT, self.manifest, listing), 1)
+        item["cached"] = True
+        with self.assertRaisesRegex(audit.GateError, "source order"):
+            audit.check_server_listing(COMMIT, self.manifest, listing)
 
     def test_host_ready_requires_actual_bytes_and_install_commit(self):
         with tempfile.TemporaryDirectory() as tmp:
