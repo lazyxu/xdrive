@@ -101,7 +101,8 @@ if bash scripts/ci/gitlab-server-images.sh xdrive-media-worker dist/media-worker
   echo 'immutable tag conflict was not rejected' >&2; exit 1
 fi
 grep -Fq 'DIFFERENT bytes' "$TMP/conflict.log"
-unset MOCK_RELEASE_EXISTS MOCK_CONFLICT
+unset MOCK_CONFLICT
+export MOCK_RELEASE_EXISTS=1
 
 # A newer (non-ancestor) edge cannot be overwritten, not even partially.
 export MOCK_REMOTE_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb MOCK_STALE=1
