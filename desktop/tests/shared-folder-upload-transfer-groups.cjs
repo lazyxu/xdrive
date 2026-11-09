@@ -945,7 +945,7 @@ test('upload result byte counts flow through both Web and Desktop child lifecycl
   assert.ok(agentCloud.includes('handle.CompleteUploadReceipt(transfer.UploadContentReceipt{'),
     'Desktop standalone uploads must persist the Agent verified CAS result')
   const model = read('internal', 'transfer', 'model.go')
-  assert.ok(/UploadSentBytes\\s+\\*int64/.test(model), 'Go task must retain optional verified bytes')
+  assert.ok(/UploadSentBytes\s+\*int64/.test(model), 'Go task must retain optional verified bytes')
   assert.ok(model.includes('UploadCASReusedBytes'), 'Go task must retain explicit CAS proof')
   assert.ok(webApi.includes('instant_cas_reused') && webApi.includes('existing.reused'),
     'Web must obtain server-confirmed full CAS and partial staged-chunk provenance')
