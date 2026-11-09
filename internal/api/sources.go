@@ -601,6 +601,12 @@ func (s *Server) updateSource(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid request")
 		return
 	}
+	// Source.TargetNodeID is immutable. Even an unmanaged, historical Source
+	// may not be rebound to an ordinary Owner folder through generic PATCH.
+	if req.TargetNodeID != nil {
+		fail(c, http.StatusBadRequest, "Source target is server-managed and cannot be selected or rebound")
+		return
+	}
 
 	var updated meta.Source
 	var currentRevision uint64
@@ -646,9 +652,6 @@ func (s *Server) updateSource(c *gin.Context) {
 				return errSourceNameTaken
 			}
 			if name != current.Name {
-				if req.TargetNodeID != nil && (current.TargetNodeID == nil || *req.TargetNodeID != *current.TargetNodeID) {
-					return errSourceTargetMigrationRequired
-				}
 				if err := renameManagedSourceTargetTx(tx, current, name); err != nil {
 					return err
 				}
@@ -714,26 +717,6 @@ func (s *Server) updateSource(c *gin.Context) {
 			updates["schedule_expression"] = schedule.Expression
 			updates["schedule_timezone"] = schedule.Timezone
 		}
-		if req.TargetNodeID != nil {
-			if current.Kind == yikeSourceKind || (current.TargetManaged && (current.TargetNodeID == nil || *current.TargetNodeID != *req.TargetNodeID)) {
-				return errManagedSourceTarget
-			}
-			if *req.TargetNodeID == 0 {
-				return errInvalidSourceTarget
-			}
-			var target meta.Node
-			if err := tx.Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-				*req.TargetNodeID, userID(c), meta.NodeTypeDir).First(&target).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return errInvalidSourceTarget
-				}
-				return err
-			}
-			if current.TargetNodeID == nil || *current.TargetNodeID != target.ID {
-				resetMirrorEvidence = true
-			}
-			updates["target_node_id"] = target.ID
-		}
 		if req.IgnoreRules != nil {
 			if _, err := sourcepkg.CompileIgnoreRules(*req.IgnoreRules); err != nil {
 				return errInvalidSourceConfig
@@ -785,7 +768,7 @@ func (s *Server) updateSource(c *gin.Context) {
 		case errors.Is(err, errSourceTargetNameConflict):
 			fail(c, http.StatusConflict, "managed target folder name already exists")
 		case errors.Is(err, errSourceTargetMigrationRequired):
-			fail(c, http.StatusConflict, "source target migration required before rename")
+			fail(c, http.StatusConflict, "source target is not a current server-managed destination")
 		case errors.Is(err, errSourceTargetRenameActive):
 			fail(c, http.StatusConflict, "source has an active run or unsettled upload; retry after it finishes")
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
