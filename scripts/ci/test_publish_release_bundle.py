@@ -56,9 +56,13 @@ if args[:2] == ["release", "create"]:
     save()
     sys.exit(0)
 if args[:1] == ["api"]:
-    endpoint = args[1] if len(args) > 1 else ""
+    endpoint = next((arg for arg in args[1:] if arg.startswith("repos/")), "")
     if endpoint == "repos/lazyxu/xdrive/git/ref/tags/" + tag:
         if not state["tag"]:
+            if state.get("tag_probe_error"):
+                print("gh: request timed out (network unavailable)", file=sys.stderr)
+            else:
+                print("gh: Not Found (HTTP 404)", file=sys.stderr)
             sys.exit(22)
         if "--jq" in args:
             print(state["ref"])
@@ -77,7 +81,8 @@ sys.exit("unexpected release mutation/query: " + " ".join(args))
 
 
 class PublishCurrentCommitBundleTests(unittest.TestCase):
-    def run_case(self, mode, with_package=True, wrong_manifest=False):
+    def run_case(self, mode, with_package=True, wrong_manifest=False,
+                 bad_source=False, corrupt_file=False, malformed_filename=False):
         with tempfile.TemporaryDirectory(prefix="xdrive-bundle-publish-") as tmp:
             root = Path(tmp)
             (root / "bin").mkdir()
@@ -88,11 +93,21 @@ class PublishCurrentCommitBundleTests(unittest.TestCase):
             packages = []
             if with_package:
                 data = b"exact-commit-package" * 37
-                (root / "release" / "installer.pkg").write_bytes(data)
-                packages.append({"filename":"installer.pkg", "platform":"linux",
+                (root / "release" / "installer.pkg").write_bytes(
+                    b"X" * len(data) if corrupt_file else data
+                )
+                filename = "../installer.pkg" if malformed_filename else "installer.pkg"
+                packages.append({"filename":filename, "platform":"linux",
                     "build_commit":COMMIT,"sha256":hashlib.sha256(data).hexdigest(),
                     "size":len(data),"install_mode":"manual",
-                    "sources":{"gitlab":"ignored","github":"ignored"}})
+                    "sources":{
+                        "gitlab":("http://gitlab.t-fluid.com:1080/api/v4/projects/"
+                                  "xuliang%2Fxdrive/packages/generic/"
+                                  "xdrive-build-packages/sha-" + COMMIT + "/installer.pkg"),
+                        "github":("https://github.com/lazyxu/xdrive/releases/"
+                                  "download/bundle-" + COMMIT + "/installer.pkg"
+                                  if not bad_source else "https://evil.example/installer.pkg")
+                    }})
             manifest = {"schema_version":1, "commit":OTHER if wrong_manifest else COMMIT,
                         "channel":"master", "artifacts":packages}
             body = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode() + b"\n"
@@ -107,9 +122,10 @@ class PublishCurrentCommitBundleTests(unittest.TestCase):
             if mode == "missing-asset":
                 assets.pop()
             state = {
-                "tag": mode != "new",
-                "release": mode not in ("new", "orphan"),
+                "tag": mode not in ("new", "tag-probe-failure"),
+                "release": mode not in ("new", "orphan", "tag-probe-failure"),
                 "ref": OTHER if mode == "wrong-ref" else COMMIT,
+                "tag_probe_error": mode == "tag-probe-failure",
                 "assets": assets,
                 "create_count": 0,
             }
@@ -143,7 +159,7 @@ class PublishCurrentCommitBundleTests(unittest.TestCase):
         result, state = self.run_case("existing")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(state["create_count"], 0)
-        for mode in ("tampered", "missing-asset", "wrong-ref", "orphan"):
+        for mode in ("tampered", "missing-asset", "wrong-ref", "orphan", "tag-probe-failure"):
             bad, state = self.run_case(mode)
             self.assertNotEqual(bad.returncode, 0, (mode, bad.stdout, bad.stderr))
             self.assertEqual(state["create_count"], 0, mode)
@@ -153,6 +169,13 @@ class PublishCurrentCommitBundleTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(state["release"])
         self.assertEqual(state["create_count"], 0)
+
+    def test_malformed_manifest_never_masquerades_as_server_only(self):
+        for detail in ("bad_source", "corrupt_file", "malformed_filename"):
+            result, state = self.run_case("new", **{detail: True})
+            self.assertNotEqual(result.returncode, 0, (detail, result.stdout, result.stderr))
+            self.assertEqual(state["create_count"], 0, detail)
+            self.assertFalse(state["release"], detail)
 
 
 if __name__ == "__main__":

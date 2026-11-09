@@ -141,7 +141,13 @@ func TestCurrentServerBundleFallbackOnUnavailableLocalAndCorruptGitLab(t *testin
 			_ = json.NewEncoder(w).Encode(listing)
 		case "/api/v1/release-bundles/current/artifacts/xDriveSetup-amd64.exe":
 			localCalls++
-			http.NotFound(w, r)
+			// An authenticated 307 must never forward an Owner bearer to an
+			// unlisted endpoint, even within the same Server origin.
+			w.Header().Set("Location", "/untrusted-installer-redirect")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		case "/untrusted-installer-redirect":
+			t.Error("authenticated cache request followed an unapproved redirect")
+			http.Error(w, "unexpected redirect", http.StatusForbidden)
 		default:
 			http.NotFound(w, r)
 		}
@@ -187,5 +193,120 @@ func TestCurrentServerBundleFallbackOnUnavailableLocalAndCorruptGitLab(t *testin
 	}
 	if _, err := os.Stat(target + ".part"); !os.IsNotExist(err) {
 		t.Fatalf("corrupt GitLab partial was not discarded: %v", err)
+	}
+}
+
+func TestCurrentServerBundleGitHubAssetRedirectOnly(t *testing.T) {
+	payload := bytes.Repeat([]byte("signed-release-cdn"), 41)
+	for _, scenario := range []struct {
+		name        string
+		redirect    string
+		wantSuccess bool
+	}{
+		{"github asset CDN", "https://release-assets.githubusercontent.com/1234/signed-asset?token=short", true},
+		{"foreign CDN forbidden", "https://attacker.example/download/installer", false},
+		{"http downgrade forbidden", "http://release-assets.githubusercontent.com/1234/installer", false},
+		{"private link forbidden", "http://127.0.0.1/internal", false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			listing, artifact := bundleClientFixture(t, payload)
+			artifact.Cached = false
+			artifact.DownloadURLs = []string{artifact.Sources.GitLab, artifact.Sources.GitHub}
+			listing.Artifacts = []ReleaseBundleArtifact{artifact}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer owner-test" {
+					t.Error("authenticated listing missing bearer")
+				}
+				_ = json.NewEncoder(w).Encode(listing)
+			}))
+			defer server.Close()
+			target := filepath.Join(t.TempDir(), artifact.Filename)
+			var visited []string
+			oldDefault := http.DefaultClient
+			http.DefaultClient = &http.Client{Transport: releaseBundleTestTransport(
+				func(req *http.Request) (*http.Response, error) {
+					visited = append(visited, req.URL.String())
+					if req.Header.Get("Authorization") != "" ||
+						req.Header.Get("Cookie") != "" ||
+						req.Header.Get("X-XDrive-Device-Token") != "" {
+						t.Error("mirror request leaked private headers")
+					}
+					status := http.StatusOK
+					body := payload
+					headers := make(http.Header)
+					switch req.URL.String() {
+					case artifact.Sources.GitLab:
+						status, body = http.StatusNotFound, nil
+					case artifact.Sources.GitHub:
+						status, body = http.StatusFound, nil
+						headers.Set("Location", scenario.redirect)
+					case scenario.redirect:
+						if !scenario.wantSuccess {
+							t.Error("unapproved redirect was followed")
+						}
+					default:
+						t.Errorf("unexpected URL followed: %s", req.URL)
+						return nil, context.Canceled
+					}
+					return &http.Response{
+						StatusCode: status,
+						Header:     headers,
+						Body:       io.NopCloser(bytes.NewReader(body)),
+						Request:    req,
+					}, nil
+				})}
+			func() {
+				defer func() { http.DefaultClient = oldDefault }()
+				c := New(server.URL, "owner-test")
+				err := c.DownloadCurrentReleaseArtifact(
+					context.Background(), listing.Commit, artifact, target,
+				)
+				if scenario.wantSuccess {
+					if err != nil {
+						t.Fatalf("approved GitHub CDN redirect did not download: %v", err)
+					}
+					if bytesRead, readErr := os.ReadFile(target); readErr != nil ||
+						!bytes.Equal(bytesRead, payload) {
+						t.Fatalf("verified GitHub CDN did not provide exact bytes: %v", readErr)
+					}
+				} else if err == nil {
+					t.Fatal("unapproved external redirect returned successful installer")
+				}
+				wantCalls := 2
+				if scenario.wantSuccess {
+					wantCalls = 3
+				}
+				if len(visited) != wantCalls {
+					t.Fatalf("wrong mirror redirect path: %v", visited)
+				}
+			}()
+		})
+	}
+}
+
+func TestCurrentServerBundleMetadataCannotRedirectOwnerBearer(t *testing.T) {
+	var privatePathRequested bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/release-bundles/current":
+			if r.Header.Get("Authorization") != "Bearer owner-test" {
+				t.Error("authenticated metadata omitted bearer")
+			}
+			w.Header().Set("Location", "/private-redirected-metadata")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		case "/private-redirected-metadata":
+			privatePathRequested = true
+			t.Error("metadata API followed a bearer-authenticated redirect")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	c := New(server.URL, "owner-test")
+	if _, err := c.CurrentReleaseBundle(context.Background()); err == nil {
+		t.Fatal("metadata redirect was incorrectly accepted")
+	}
+	if privatePathRequested {
+		t.Fatal("metadata redirect leaked Owner request")
 	}
 }

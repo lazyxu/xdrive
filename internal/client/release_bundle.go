@@ -51,7 +51,18 @@ func (c *Client) CurrentReleaseBundle(ctx context.Context) (ReleaseBundleListing
 	if err != nil {
 		return ReleaseBundleListing{}, err
 	}
-	resp, err := c.do(req)
+	// Bundle metadata is Owner-authenticated. Never let a 301/302/307
+	// move its bearer to a different URL, including a subdomain or a
+	// cross-origin CDN. No redirect is part of this API contract.
+	httpClient := c.HTTP
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	noRedirect := *httpClient
+	noRedirect.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := noRedirect.Do(req)
 	if err != nil {
 		return ReleaseBundleListing{}, err
 	}
@@ -158,6 +169,39 @@ func releaseBundleDownloadResponse(ctx context.Context, response *http.Response,
 	return os.Rename(tmp, destination)
 }
 
+// Client package mirrors are not generic HTTP redirects. Authenticated
+// Server cache must never redirect, and public release origins may only
+// redirect to their own explicitly recognized asset delivery hosts. No
+// credentials or cookies are forwarded. The final package still must match
+// the exact independent SHA-256 and expected file size.
+func releaseBundleRedirectAllowed(source string, req *http.Request, via []*http.Request) bool {
+	if len(via) == 0 || len(via) > 3 || strings.HasPrefix(source, "/api/v1/") {
+		return false
+	}
+	original, err := url.Parse(source)
+	if err != nil || original.User != nil || req.URL.User != nil {
+		return false
+	}
+	target := req.URL
+	host := strings.ToLower(target.Hostname())
+	if original.Scheme == "https" && original.Hostname() == "github.com" {
+		if target.Scheme != "https" || target.Port() != "" && target.Port() != "443" {
+			return false
+		}
+		switch host {
+		case "release-assets.githubusercontent.com", "objects.githubusercontent.com", "github.com":
+			return true
+		}
+		return false
+	}
+	if original.Scheme == "http" && original.Hostname() == "gitlab.t-fluid.com" && original.Port() == "1080" {
+		// GitLab's same-origin release/download redirects are allowed, but
+		// no downgrade or jump to LAN, loopback, or another package authority.
+		return target.Scheme == "http" && host == "gitlab.t-fluid.com" && target.Port() == "1080"
+	}
+	return false
+}
+
 // DownloadCurrentReleaseArtifact prefers verified Server cache, then attempts
 // the exact-commit GitLab package and immutable GitHub Bundle asset. Missing
 // cache or any failed mirror is noncritical to the Server. The local session
@@ -210,14 +254,31 @@ func (c *Client) DownloadCurrentReleaseArtifact(
 		}
 		request.Header.Set("Accept-Encoding", "identity")
 		request.Header.Set("User-Agent", "xdrive-client-bundle/1")
-		var response *http.Response
-		if strings.HasPrefix(source, "/api/v1/") {
-			response, err = c.do(request)
-		} else {
-			// External CDN mirror must never receive the Owner bearer or
-			// device credentials; compare against immutable expected digest.
-			response, err = http.DefaultClient.Do(request)
+		// The local authenticated Server may never redirect. GitHub release
+		// asset delivery legitimately redirects to release-assets hosts; allow
+		// ONLY exact approved mirror destinations, never an arbitrary target.
+		h := http.DefaultClient
+		if strings.HasPrefix(source, "/api/v1/") && c.HTTP != nil {
+			h = c.HTTP
 		}
+		downloadClient := *h
+		downloadClient.Jar = nil // never attach browser/session cookies to a CDN
+		downloadClient.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			if !releaseBundleRedirectAllowed(source, next, via) {
+				return http.ErrUseLastResponse
+			}
+			for _, key := range []string{
+				"Authorization", "Cookie", "X-XDrive-Device-ID",
+				"X-XDrive-Device-Token", "Proxy-Authorization",
+			} {
+				next.Header.Del(key)
+			}
+			return nil
+		}
+		// Installer streams can be large; cancellation remains context-owned.
+		// Transport dial/TLS/header timeouts still apply.
+		downloadClient.Timeout = 0
+		response, err := downloadClient.Do(request)
 		if err != nil {
 			lastErr = err
 			continue

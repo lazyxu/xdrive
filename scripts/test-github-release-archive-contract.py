@@ -37,8 +37,9 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
 
     assert "name: xdrive-caddy-image" in bundle
     assert "cp caddy-image/image.tar.gz release/xdrive-caddy-image.tar.gz" in bundle
-    # Both Caddy artifacts must remain mandatory SHA-256 inputs even when
-    # their shell continuation shares a line. Match the command, not layout.
+    # Retain successor #4144's stronger test: both mandatory Caddy assets
+    # must each occur exactly once in the signed SHA256SUMS command regardless
+    # of YAML continuation layout. Optional clients must remain optional.
     checksums = bundle.split("      - name: Generate checksums", 1)[1].split(
         "      - name: Attest release installer", 1
     )[0]
@@ -46,7 +47,8 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
     checksum_command = checksums.split("sha256sum ", 1)[1].split("> SHA256SUMS.txt", 1)[0]
     checksum_tokens = checksum_command.split()
     for artifact in ("xdrive-caddy-image.tar.gz", "xdrive-caddy-image.id"):
-        assert checksum_tokens.count(artifact) == 1, f"{artifact} missing from mandatory signed checksum input"
+        assert checksum_tokens.count(artifact) == 1, f"{artifact} must appear exactly once in the signed checksum"
+    assert 'sha256sum "${optional[@]}"' in checksums
     verify(True, "two CLI archives and exact signed Caddy image archive")
     for name in ("other.zip", "other.tar.gz", "other.tgz", ".hidden.zip", "xdrive-desktop-amd64.zip"):
         extra = release / name
@@ -55,14 +57,15 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
         extra.unlink()
         verify(True, f"restore after {name}")
     linux.unlink()
-    verify(False, "reject missing CLI package")
+    verify(True, "omit absent optional Linux CLI package")
+    windows.unlink()
+    verify(True, "valid Server-only archive without either CLI platform")
     linux.write_bytes(b"")
-    verify(False, "reject empty CLI package")
+    verify(False, "reject present but empty optional CLI package")
     linux.write_bytes(b"fixture-linux-cli")
     verify(True, "restore Linux CLI")
-    windows.unlink()
     windows.symlink_to(linux)
-    verify(False, "reject linked CLI package")
+    verify(False, "reject symlinked optional CLI package")
     windows.unlink()
     windows.write_bytes(b"fixture-windows-cli")
     verify(True, "restore Windows CLI")
@@ -77,4 +80,4 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
     image_id.write_bytes(("sha256:" + "0" * 64 + "\n").encode())
     verify(True, "final valid distribution")
 
-print("GitHub Snapshot exact Backup CLI archive allowlist: passed")
+print("GitHub Snapshot required Caddy plus optional verified client archive allowlist: passed")

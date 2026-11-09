@@ -5,6 +5,8 @@ param(
     [Parameter(Mandatory = $true)][string]$LegacyCleanupScript,
     [Parameter(Mandatory = $true)][string]$StatusPath,
     [Parameter(Mandatory = $true)][string]$LogPath,
+    [string]$ExpectedSHA256 = "",
+    [long]$ExpectedSize = 0,
     [ValidateRange(30, 1800)][int]$InstallerTimeoutSeconds = 300
 )
 
@@ -72,6 +74,52 @@ function Get-XDriveAppDir {
         }
     }
     return (Join-Path $env:LOCALAPPDATA "Programs\xDrive")
+}
+
+# The detached Windows installer revalidates the download identity and
+# Authenticode publisher rather than trusting a no-longer-running Go Agent.
+# An unsigned or different-publisher EXE never reaches Start-Process.
+function Assert-VerifiedInstaller([string]$PackagePath, [string]$InstalledDir) {
+    $package = Get-Item -LiteralPath $PackagePath -ErrorAction Stop
+    if (-not ($package -is [System.IO.FileInfo])) {
+        throw "installer path is not a regular file"
+    }
+    if (($package.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "installer cannot be a symlink/reparse point"
+    }
+    if ($ExpectedSize -gt 0 -and $package.Length -ne $ExpectedSize) {
+        throw "installer size changed after download"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedSHA256)) {
+        if ($ExpectedSHA256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "expected installer SHA-256 is invalid"
+        }
+        $actualHash = (Get-FileHash -LiteralPath $PackagePath -Algorithm SHA256).Hash
+        if (-not [string]::Equals($actualHash, $ExpectedSHA256,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "installer SHA-256 changed after verified download"
+        }
+    }
+    $candidate = Get-AuthenticodeSignature -LiteralPath $PackagePath
+    if ($null -eq $candidate.SignerCertificate -or $candidate.Status -eq 'NotSigned' -or
+        $candidate.Status -eq 'HashMismatch') {
+        throw "installer Authenticode signature missing or damaged"
+    }
+    $installedBinary = Join-Path $InstalledDir "xd.exe"
+    if (Test-Path -LiteralPath $installedBinary -PathType Leaf) {
+        $existing = Get-AuthenticodeSignature -LiteralPath $installedBinary
+        if ($null -eq $existing.SignerCertificate) {
+            throw "current client is unsigned; automatic publisher trust is unavailable"
+        }
+        if (-not [string]::Equals($candidate.SignerCertificate.Thumbprint,
+            $existing.SignerCertificate.Thumbprint,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "installer publisher differs from the trusted installed xDrive client"
+        }
+    } elseif ($candidate.Status -ne 'Valid') {
+        # Without an installed signer to pin, Windows OS trust is required.
+        throw "installer publisher has no trusted signing chain"
+    }
 }
 
 function Stop-XDriveProcesses {
@@ -314,6 +362,8 @@ $startMenuGroup = Get-XDriveStartMenuGroup
 
 try {
     Write-Log "begin update $CurrentVersion -> $TargetVersion"
+    Write-Status "preparing" "Verifying downloaded installer and publisher."
+    Assert-VerifiedInstaller $Installer $appDir
     Write-Status "preparing" "Creating last-known-good client backup."
 
     Stop-XDriveProcesses
@@ -337,6 +387,8 @@ try {
         "/NOSTARTDESKTOP",
         "/DEFERLEGACYCLEANUP"
     )
+    # Reverify just before launching the detached executable.
+    Assert-VerifiedInstaller $Installer $appDir
     $process = Start-Process -FilePath $Installer -ArgumentList $installerArgs -PassThru
     if (-not $process.WaitForExit($InstallerTimeoutSeconds * 1000)) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
