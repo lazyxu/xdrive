@@ -99,6 +99,9 @@ type Task struct {
 	State                 string     `json:"state"`
 	BytesDone             int64      `json:"bytes_done"`
 	BytesTotal            int64      `json:"bytes_total"`
+	// Nil means no verified CAS upload receipt; zero is a verified instant hit.
+	UploadTransferredBytes *int64     `json:"upload_transferred_bytes,omitempty"`
+	UploadSkipped         bool       `json:"upload_skipped,omitempty"`
 	Percent               float64    `json:"percent"`
 	ItemsTotal            int64      `json:"items_total"`
 	ItemsCompleted        int64      `json:"items_completed"`
@@ -453,6 +456,12 @@ func (h *Handle) Complete() {
 	h.manager.finish(h.id, nil)
 }
 
+// CompleteUploadBytes publishes the verified content-byte count with success.
+func (h *Handle) CompleteUploadBytes(transferred int64) {
+	if h == nil || h.manager == nil { return }
+	h.manager.finishWithUpload(h.id, nil, &transferred)
+}
+
 func (h *Handle) CompleteSkipped() {
 	if h == nil || h.manager == nil {
 		return
@@ -465,6 +474,13 @@ func (h *Handle) Finish(state string, err error) error {
 		return errors.New("transfer handle is unavailable")
 	}
 	return h.manager.finishState(h.id, state, err)
+}
+
+// FinishUploadBytes completes an externally managed child using its CAS receipt.
+func (h *Handle) FinishUploadBytes(state string, err error, transferred *int64) error {
+	if h == nil || h.manager == nil { return errors.New("transfer handle is unavailable") }
+	_, finishErr := h.manager.finishStateResultWithUpload(h.id, state, err, transferred)
+	return finishErr
 }
 
 func (h *Handle) Fail(err error) {
@@ -848,6 +864,8 @@ func (m *Manager) Retry(ctx context.Context, id string) error {
 	e.task.Error = ""
 	e.task.RetryCount++
 	e.task.BytesDone = 0
+	e.task.UploadTransferredBytes = nil
+	e.task.UploadSkipped = false
 	e.task.Percent = 0
 	if e.task.Scope == ScopeItem {
 		e.task.ItemsCompleted = 0
@@ -1158,6 +1176,8 @@ func (m *Manager) finishSkipped(id string) {
 	e.task.Phase = PhaseFinalizing
 	e.task.Error = ""
 	e.task.BytesDone = 0
+	e.task.UploadTransferredBytes = nil
+	e.task.UploadSkipped = e.task.Direction == KindUpload && e.task.Scope == ScopeItem
 	e.task.Percent = 100
 	if e.task.Scope == ScopeItem {
 		e.task.ItemsCompleted = 1
@@ -1187,6 +1207,10 @@ func (m *Manager) finishState(id, state string, err error) error {
 // finishStateResult reports atomically whether this call committed the first
 // terminal outcome, so late Retry callbacks cannot revise a settled result.
 func (m *Manager) finishStateResult(id, state string, err error) (bool, error) {
+	return m.finishStateResultWithUpload(id, state, err, nil)
+}
+
+func (m *Manager) finishStateResultWithUpload(id, state string, err error, transferred *int64) (bool, error) {
 	switch state {
 	case StateCompleted, StatePartial, StateFailed, StateCancelled:
 	default:
@@ -1220,6 +1244,12 @@ func (m *Manager) finishStateResult(id, state string, err error) (bool, error) {
 		}
 	}
 	e.task.Cancelable = false
+	if state == StateCompleted && e.task.Direction == KindUpload && e.task.Scope == ScopeItem &&
+		transferred != nil && *transferred >= 0 && *transferred <= e.task.BytesTotal {
+		count := *transferred
+		e.task.UploadTransferredBytes = &count
+		e.task.UploadSkipped = false
+	}
 	e.task.State = state
 	e.task.Phase = PhaseFinalizing
 	e.task.ItemsRunning = 0
@@ -1283,6 +1313,10 @@ func (m *Manager) finishStateResult(id, state string, err error) (bool, error) {
 }
 
 func (m *Manager) finish(id string, err error) {
+	m.finishWithUpload(id, err, nil)
+}
+
+func (m *Manager) finishWithUpload(id string, err error, transferred *int64) {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1300,6 +1334,12 @@ func (m *Manager) finish(id string, err error) {
 		e.task.State = StateCompleted
 		e.task.Phase = PhaseFinalizing
 		e.task.Error = ""
+		if e.task.Direction == KindUpload && e.task.Scope == ScopeItem && transferred != nil &&
+			*transferred >= 0 && *transferred <= e.task.BytesTotal {
+			count := *transferred
+			e.task.UploadTransferredBytes = &count
+			e.task.UploadSkipped = false
+		}
 		if e.task.BytesTotal > 0 {
 			e.task.BytesDone = e.task.BytesTotal
 			e.task.Percent = 100
