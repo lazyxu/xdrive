@@ -220,7 +220,7 @@ function TransferLeafItem({
           <Typography variant="caption" color="text.secondary">
             {withoutUpload ? uploadSummary : `${active ? speedLabel : item.speed_source === 'server' ? '平均服务端发送速度' : '平均速度'} ${formatBytes(active ? instantSpeed : Math.max(0, item.average_bytes_per_second || 0))}/s`}
           </Typography>
-          {uploadOutcome === 'partially_reused' || uploadOutcome === 'resumed' ? (
+          {(uploadOutcome === 'partially_reused' || uploadOutcome === 'resumed') && !withoutUpload ? (
             <Typography variant="caption" color="text.secondary">{uploadSummary}</Typography>
           ) : null}
           <Typography variant="caption" color="text.secondary">
