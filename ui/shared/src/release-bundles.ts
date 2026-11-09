@@ -15,6 +15,8 @@ export interface XDriveReleaseBundleState {
   state: 'unavailable' | 'syncing' | 'paused_for_server' | 'retry_needed' | 'ready'
   commit?: string
   channel?: 'master' | 'stable'
+  /** Installed binary/package version, separate from full Commit identity. */
+  server_version?: string
   cached_commit?: string
   artifacts: XDriveReleaseBundleArtifact[]
   message?: string
@@ -24,6 +26,9 @@ export interface XDriveReleaseBundlePort {
   getState: () => Promise<XDriveReleaseBundleState>
   retry: () => Promise<unknown>
   downloadCached?: (filename: string) => Promise<void>
+  /** Explicit opt-in install on a trusted native Desktop, never an auto-push. */
+  platform?: 'windows' | 'linux'
+  installCurrent?: (commit: string, filename: string) => Promise<void>
 }
 
 /** Ordered URLs are advisory sources, never permission to install unverified bytes.
