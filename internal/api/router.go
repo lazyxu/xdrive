@@ -184,6 +184,10 @@ func (s *Server) Router() *gin.Engine {
 	iosPhotoManagedBG.POST("/uploads/:id/finalize", s.iosPhotoManagedFinalize)
 	iosPhotoManagedBG.POST("/uploads/resume-lookup", s.iosPhotoManagedResumeLookup)
 	iosPhotoManagedBG.GET("/receipts/nodes/:id", s.iosPhotoManagedReceipt)
+	// Independently revocable APNs token registration: the current native
+	// device credential AND the precise managed Photo background grant.
+	iosPhotoManagedBG.PUT("/apns-token", s.putIOSPhotoAPNSToken)
+	iosPhotoManagedBG.DELETE("/apns-token", s.deleteIOSPhotoAPNSToken)
 	// BGProcessingTask reports aggregate run history through the same
 	// SourceRun handlers, but only with the separately revocable Photo Grant.
 	iosPhotoManagedBG.POST("/sources/:id/runs", s.requireIOSPhotoBackgroundSourceRunExecutor(), s.beginSourceRun)

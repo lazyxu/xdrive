@@ -343,6 +343,7 @@ func main() {
 	srv.StartMediaCreativeGenerations(serverCtx)
 	srv.StartMediaIndexer(serverCtx)
 	srv.StartFileOperationWorker(serverCtx)
+	srv.StartIOSPhotoAPNSWakeWorker(serverCtx) // Optional signed APNs hints; no tokens or key => no egress.
 	srv.StartMediaSelectionJobWorker(serverCtx)
 	slog.Info("server_listening", "address", cfg.ListenAddr)
 	if err := srv.Router().Run(cfg.ListenAddr); err != nil {
