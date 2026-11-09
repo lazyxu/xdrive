@@ -632,7 +632,7 @@ export function MediaVirtualTileGrid({
   restoreAnchorRevision?: number
   restoreAnchorViewportOffset?: number
   returnViewport?: MediaGalleryReturnViewport
-  onVisibleAnchorChange?: (index: number, viewportOffset: number) => void
+  onVisibleAnchorChange?: (index: number, viewportOffset: number, gridWidth: number) => void
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef<number | null>(null)
@@ -726,6 +726,7 @@ export function MediaVirtualTileGrid({
           // to this scroll port, independent of any old CSS scroll height.
           onVisibleAnchorChange?.(
             visibleWindow.start, visibleWindow.startRow * metrics.rowStep - visibleTop,
+            currentHost.clientWidth,
           )
         }
         setLayout((current) => (

@@ -226,6 +226,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // This holds numeric geometry only; it never authorizes a photo.
   const latestDrawerVisibleAnchor = useRef<{
     key:string;nodeID:number;revision:number;index:number;viewportOffset:number
+    /** Capture the column geometry before a layout-changing viewport resize. */
+    gridWidth:number
   } | null>(null)
   const pendingResizeDrawer = useRef<{
     owner:string; key:string; hint:XDrivePlacesDrawerReturn
@@ -256,7 +258,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     drawerFetch.current=controller
     const cell={...selection,bounds:{...selection.bounds}}
     const key=approved.key
-    if (latestDrawerVisibleAnchor.current?.key!==key ||
+    // A fresh signed Cell on Viewer Back or after rotation starts a new
+    // geometry epoch. Its presentation already holds the old numeric anchor;
+    // never keep the previous Grid's column width after fresh authorization.
+    if (presentation ||
+        latestDrawerVisibleAnchor.current?.key!==key ||
         latestDrawerVisibleAnchor.current?.nodeID!==cell.node_id ||
         latestDrawerVisibleAnchor.current?.revision!==cell.node_revision)
       latestDrawerVisibleAnchor.current=null
@@ -1384,18 +1390,26 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             onOpenAll={openDrawerAll} onOpenPhoto={openDrawerPhoto}
             onLoadMore={loadDrawerMore}
             onWindowRange={loadDrawerWindow}
-            onVisibleAnchorChange={(index,viewportOffset) => {
-              // Ignore callbacks from revoked/older scopes and never copy
-              // Node identities or original media into the return hint.
+            onVisibleAnchorChange={(index,viewportOffset,gridWidth) => {
+              // Ignore revoked scopes and snapshots produced after a resize
+              // reflows the old Grid's column count. Without this width fence,
+              // old scrollTop can turn index 87,976 into index 96,432 before
+              // the SDK cancellation captures the true pre-rotation anchor.
               const state=activeDrawer
               if (!state || state.phase!=='ready' ||
                   state.key!==acceptedScope.current?.key ||
                   !hasAcceptedCell(state.selection) ||
                   !Number.isSafeInteger(index) || index<0 ||
-                  index>=state.total || !Number.isFinite(viewportOffset)) return
+                  index>=state.total || !Number.isFinite(viewportOffset) ||
+                  !Number.isFinite(gridWidth) || gridWidth<=0) return
+              const previous=latestDrawerVisibleAnchor.current
+              if (previous && previous.key===state.key &&
+                  previous.nodeID===state.selection.node_id &&
+                  previous.revision===state.selection.node_revision &&
+                  previous.gridWidth!==gridWidth) return
               latestDrawerVisibleAnchor.current={
                 key:state.key,nodeID:state.selection.node_id,
-                revision:state.selection.node_revision,index,
+                revision:state.selection.node_revision,index,gridWidth,
                 viewportOffset:Math.max(-10_000,Math.min(10_000,
                   Math.round(viewportOffset)))}
             }}

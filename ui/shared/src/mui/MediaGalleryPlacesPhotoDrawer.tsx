@@ -40,7 +40,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   onWindowRange?: (startIndex: number, endIndex: number) => void
   onRetryWindow?: () => void
   /** Numeric viewport intent only; Owner/Cell admission stays with Parent. */
-  onVisibleAnchorChange?: (index: number, viewportOffset: number) => void
+  onVisibleAnchorChange?: (index: number, viewportOffset: number, gridWidth: number) => void
   onOpenPhoto: (item: MediaItem, presentation: XDrivePlacesDrawerPresentation) => void
   onOpenAll: () => void
   /** Same signed Owner camera viewport as the map's original camera wall. */
@@ -114,10 +114,11 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   // lifetime when Parent's authorized page state changes.
   const anchorPort = useRef(onVisibleAnchorChange)
   anchorPort.current = onVisibleAnchorChange
-  const captureVisibleAnchor = useCallback((index:number,viewportOffset:number) => {
-    visibleAnchor.current={index,viewportOffset:Math.round(viewportOffset)}
-    anchorPort.current?.(index,viewportOffset)
-  }, [])
+  const captureVisibleAnchor = useCallback(
+    (index:number,viewportOffset:number,gridWidth:number) => {
+      visibleAnchor.current={index,viewportOffset:Math.round(viewportOffset)}
+      anchorPort.current?.(index,viewportOffset,gridWidth)
+    }, [])
   const tileItem = (target: EventTarget | null) => {
     const tile = target instanceof Element
       ? target.closest('[data-xdrive-places-photo-drawer-item]') : null
