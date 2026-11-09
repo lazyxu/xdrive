@@ -217,8 +217,8 @@ export function xDrivePlacesPhotoTimelineGroups(
         groups.length > page.total_count) return null
     const accepted: MediaTimelineGroupIndex[] = []
     let count = 0
-    const datePattern = scale === 'year' ? /^\\d{4}$/ :
-      scale === 'month' ? /^\\d{4}-\\d{2}$/ : /^\\d{4}-\\d{2}-\\d{2}$/
+    const datePattern = scale === 'year' ? /^\d{4}$/ :
+      scale === 'month' ? /^\d{4}-\d{2}$/ : /^\d{4}-\d{2}-\d{2}$/
     for (const group of groups) {
       if (!group || typeof group.key !== 'string' ||
           !(group.key === 'unknown' || datePattern.test(group.key)) ||
