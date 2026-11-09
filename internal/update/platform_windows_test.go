@@ -42,6 +42,8 @@ func TestWriteWindowsUpdateScripts(t *testing.T) {
 		"Assert-VerifiedInstaller",
 		"Get-AuthenticodeSignature",
 		"Get-FileHash",
+		"windowsPowerShellModules",
+		"$env:PSModulePath",
 		"ExpectedSHA256",
 		"ExpectedSize",
 		"HashMismatch",
@@ -49,6 +51,18 @@ func TestWriteWindowsUpdateScripts(t *testing.T) {
 		if !strings.Contains(string(transactionBody), marker) {
 			t.Fatalf("transaction script missing %q", marker)
 		}
+	}
+	// The first Security/Utility cmdlet may otherwise autoload pwsh 7's
+	// incompatible module in a detached Windows PowerShell 5.1 child.
+	// This bootstrap MUST run before the signing and rollback transaction.
+	bootstrap := strings.Index(string(transactionBody), "$env:PSModulePath = $windowsPowerShellModules")
+	transactionStart := strings.Index(string(transactionBody), "Write-Log \"begin update")
+	if bootstrap < 0 || transactionStart < 0 || bootstrap >= transactionStart {
+		t.Fatal("WindowsPowerShell built-in module path must be prioritized before installer verification")
+	}
+	if strings.Count(string(transactionBody), "function Assert-VerifiedInstaller") != 1 ||
+		strings.Count(string(transactionBody), "Write-Log \"begin update") != 1 {
+		t.Fatal("invalid duplicate Windows installer transaction or signature verifier")
 	}
 	cleanupBody, err := os.ReadFile(cleanup)
 	if err != nil {
