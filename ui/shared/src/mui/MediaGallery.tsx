@@ -168,6 +168,7 @@ import { XDriveMobileGalleryChrome } from './MobileGalleryChrome'
 import { xDriveMobileGalleryDockBottom, xDriveMobileGalleryGlobalInset } from './MobileGalleryDockLayout'
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
+import { XDriveMediaGalleryPhotoWall } from './MediaGalleryPhotoWall'
 import { xDrivePlacesVisiblePanels } from '../media-gallery-places-presentation'
 import { XDriveMediaGalleryPlacesHierarchy } from './MediaGalleryPlacesHierarchy'
 import { xDriveKeepMediaPlaceHierarchyQuery } from '../media-gallery-places-hierarchy-query'
@@ -8765,6 +8766,7 @@ export function XDriveMediaGallery({
           onTouchEndCapture={handleGalleryTouchEnd}
           onTouchCancelCapture={() => finishGalleryPinch(false)}
           sx={{ touchAction: compactGallery ? 'pan-y' : undefined }}>
+        <XDriveMediaGalleryPhotoWall surface="gallery">
         {blockingCollectionError ? (
           <Paper
             variant="outlined"
@@ -8941,6 +8943,7 @@ export function XDriveMediaGallery({
             recommendedNodeID={cleanupRecommendedNodeID}
           />
         )}
+        </XDriveMediaGalleryPhotoWall>
         </Box>
       ) : null}
 
