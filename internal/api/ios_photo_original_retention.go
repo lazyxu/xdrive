@@ -222,32 +222,36 @@ func (s *Server) verifyIOSPhotoHoldTx(ctx context.Context, tx *gorm.DB,
         file.Size != request.ByteSize || file.StorageKey != key {
         return node, file, errIOSPhotoHoldDenied
     }
-    // A durable finalized session with the exact current managed Source and
-    // same byte identity is mandatory; no historical root / Share / unknown ACK.
-    var session meta.UploadSession
-    if err := tx.Clauses(clause.Locking{Strength:"SHARE"}).
-        Where("id = ? AND owner_id = ? AND status = ?", request.SessionID,
-            scope.ownerID, meta.UploadStatusFinalized).Take(&session).Error; err != nil {
-        return node, file, errIOSPhotoHoldDenied
-    }
-    if session.ResultNodeID == nil || *session.ResultNodeID != node.ID ||
-        session.NodeID != nil || session.ParentID == nil || *session.ParentID != scope.targetID ||
-        session.SourceID != scope.sourceID || session.SourceRevision != scope.sourceRevision ||
-        session.SourceDeviceID != scope.deviceID || session.SourceTargetID != scope.targetID ||
-        session.SourceRunID != "" || session.ShareID != nil ||
-        session.Name != node.Name || session.RequestedName != node.Name ||
-        session.TotalSize != file.Size || session.SHA256 != file.SHA256 ||
-        !validIOSUploadResumeLookupKey(session.ResumeKey) ||
-        (session.ConflictPolicy != meta.UploadConflictPolicyFail && session.ConflictPolicy != "") {
-        return node, file, errIOSPhotoHoldDenied
-    }
-    if existing != nil && (existing.OwnerID != scope.ownerID ||
+    // A permanent Hold is independent from expired UploadSession history.
+    // At FIRST issuance the finalized, exact Owner/Device/Source/Node receipt
+    // must exist; a local ACK or missing session can never mint a Hold.
+    // Afterwards an immutable Hold, current Node and physical CAS content
+    // are authoritative even after normal upload-session janitor cleanup.
+    if existing == nil {
+        var session meta.UploadSession
+        if err := tx.Clauses(clause.Locking{Strength:"SHARE"}).
+            Where("id = ? AND owner_id = ? AND status = ?", request.SessionID,
+                scope.ownerID, meta.UploadStatusFinalized).Take(&session).Error; err != nil {
+            return node, file, errIOSPhotoHoldDenied
+        }
+        if session.ResultNodeID == nil || *session.ResultNodeID != node.ID ||
+            session.NodeID != nil || session.ParentID == nil || *session.ParentID != scope.targetID ||
+            session.SourceID != scope.sourceID || session.SourceRevision != scope.sourceRevision ||
+            session.SourceDeviceID != scope.deviceID || session.SourceTargetID != scope.targetID ||
+            session.SourceRunID != "" || session.ShareID != nil ||
+            session.Name != node.Name || session.RequestedName != node.Name ||
+            session.TotalSize != file.Size || session.SHA256 != file.SHA256 ||
+            !validIOSUploadResumeLookupKey(session.ResumeKey) ||
+            (session.ConflictPolicy != meta.UploadConflictPolicyFail && session.ConflictPolicy != "") {
+            return node, file, errIOSPhotoHoldDenied
+        }
+    } else if existing.OwnerID != scope.ownerID ||
         existing.DeviceID != scope.deviceID || existing.SourceID != scope.sourceID ||
         existing.SourceRevision != scope.sourceRevision || existing.TargetNodeID != scope.targetID ||
         existing.NodeID != node.ID || existing.NodeRevision != node.Revision ||
         existing.Kind != request.Kind || existing.SHA256 != file.SHA256 ||
         existing.ByteSize != file.Size || existing.StorageKey != file.StorageKey ||
-        existing.SessionID != session.ID) {
+        existing.SessionID != request.SessionID {
         return node, file, errIOSPhotoHoldDenied
     }
     if err := lockContentHash(tx, file.SHA256); err != nil { return node, file, err }
@@ -305,17 +309,20 @@ func (s *Server) prepareIOSPhotoOriginalHold(c *gin.Context) {
     var held meta.IOSPhotoOriginalHold
     created := false
     err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-        node, currentFile, err := s.verifyIOSPhotoHoldTx(c.Request.Context(), tx, c, scope, request, nil)
-        if err != nil { return err }
+        // Check for an existing immutable Hold FIRST. A finalized upload
+        // session is short-lived and may have been pruned by the janitor;
+        // an existing durable Hold remains independently verifiable.
         var old meta.IOSPhotoOriginalHold
-        lookup := tx.Where("node_id = ?", node.ID).Take(&old).Error
+        lookup := tx.Where("node_id = ?", request.NodeID).Take(&old).Error
         if lookup == nil {
-            _, _, err = s.verifyIOSPhotoHoldTx(c.Request.Context(), tx, c, scope, request, &old)
+            _, _, err := s.verifyIOSPhotoHoldTx(c.Request.Context(), tx, c, scope, request, &old)
             if err != nil { return err }
             held = old
             return nil
         }
         if !errors.Is(lookup, gorm.ErrRecordNotFound) { return lookup }
+        node, currentFile, err := s.verifyIOSPhotoHoldTx(c.Request.Context(), tx, c, scope, request, nil)
+        if err != nil { return err }
         ancestors, err := iosPhotoHoldAncestorIDsTx(tx, scope.ownerID, node.ID,
             scopeOwnerRootIDTx(tx, scope.ownerID), scope.targetID)
         if err != nil { return err }

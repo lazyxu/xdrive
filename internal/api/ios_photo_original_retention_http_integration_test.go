@@ -83,6 +83,9 @@ func TestIOSPhotoOriginalHoldPositiveHTTPPhysicalCASAndImmutability(t *testing.T
         ConflictPolicy:meta.UploadConflictPolicyFail,
         Status:meta.UploadStatusFinalized,ExpiresAt:time.Now().Add(time.Hour),
     }
+    // Active/uncertain UploadSession alone must NEVER mint a permanent
+    // Hold, even if physical CAS bytes exist under the expected name.
+    upload.Status = meta.UploadStatusActive
     if err:=db.Create(&upload).Error;err!=nil{t.Fatal(err)}
     body,err:=json.Marshal(iosPhotoHoldRequest{
         NodeID:node.ID,NodeRevision:node.Revision,SessionID:sessionID,
@@ -90,6 +93,12 @@ func TestIOSPhotoOriginalHoldPositiveHTTPPhysicalCASAndImmutability(t *testing.T
     })
     if err!=nil{t.Fatal(err)}
     path:="/api/v1/ios/photos/managed/original-retention"
+    requestWithHeaders(t,router,http.MethodPost,path,ownerJWT,
+        bytes.NewReader(body),http.StatusConflict,headers)
+    if err := db.Model(&meta.UploadSession{}).Where("id = ?", sessionID).
+        Update("status", meta.UploadStatusFinalized).Error; err != nil {
+        t.Fatal(err)
+    }
     first:=requestWithHeaders(t,router,http.MethodPost,path,ownerJWT,
         bytes.NewReader(body),http.StatusCreated,headers)
     var receipt struct {
@@ -111,6 +120,36 @@ func TestIOSPhotoOriginalHoldPositiveHTTPPhysicalCASAndImmutability(t *testing.T
     proofURL:=path+"/"+receipt.HoldID
     requestWithHeaders(t,router,http.MethodGet,proofURL,ownerJWT,
         nil,http.StatusOK,headers)
+
+    // A finalized UploadSession is ordinary short-lived transport history,
+    // NOT a durable original: the real janitor deletes it on expiry. A
+    // permanent held original must remain physically verifiable after that
+    // cleanup, and re-preparing the same Hold must remain idempotent.
+    if err := db.Model(&meta.UploadSession{}).Where("id = ?", sessionID).
+        Update("expires_at", time.Now().Add(-time.Minute)).Error; err != nil {
+        t.Fatal(err)
+    }
+    if err := server.cleanupExpiredUploads(context.Background(), owner.ID); err != nil {
+        t.Fatalf("normal expired UploadSession cleanup failed: %v", err)
+    }
+    var oldSessionCount int64
+    if err := db.Model(&meta.UploadSession{}).Where("id = ?", sessionID).
+        Count(&oldSessionCount).Error; err != nil || oldSessionCount != 0 {
+        t.Fatalf("finalized upload session not pruned: count=%d err=%v",
+            oldSessionCount, err)
+    }
+    requestWithHeaders(t,router,http.MethodGet,proofURL,ownerJWT,
+        nil,http.StatusOK,headers)
+    retained := requestWithHeaders(t,router,http.MethodPost,path,ownerJWT,
+        bytes.NewReader(body),http.StatusOK,headers)
+    var retainedProof struct { HoldID string `json:"hold_id"` }
+    if err := json.Unmarshal(retained.Body.Bytes(), &retainedProof); err != nil {
+        t.Fatal(err)
+    }
+    if retainedProof.HoldID != receipt.HoldID {
+        t.Fatal("re-preparing an immutable Hold changed its identity after session cleanup")
+    }
+
     if err:=db.Delete(&meta.File{},"node_id = ?",node.ID).Error;err==nil{
         t.Fatal("a confirmed held original File was deleted")
     }

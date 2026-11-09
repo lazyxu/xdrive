@@ -21,6 +21,12 @@ No second CAS writer, no Web bearer grant and no lower Keychain/file protection.
   original still+motion members plus the JSON manifest, byte counts and CRC.
   A backend without pinned CAS support fails closed; a historical ACK alone
   cannot establish retention. No per-photo local identifier is sent to Server.
+- The initial Hold can only be issued against a real finalized, Source/Device-
+  bound UploadSession. Once the immutable Hold is recorded, normal upload
+  history expiry/cleanup cannot revoke it. Re-checks validate the durable
+  Hold/Node/Source and physical CAS (including Live pair) without requiring
+  the pruned UploadSession. Re-preparing a matching Hold stays idempotent,
+  while a missing/active session can never mint the initial Hold.
 - PostgreSQL stores immutable `IOSPhotoOriginalHold` and indexed ancestors.
   The transactional migration installs guards on held Node/ancestor,
   File/FileVersion, Source, ContentBlob and hold records, protecting against
