@@ -3465,9 +3465,9 @@ struct XDriveIOSNativeFilesBrowser: View {
         model.suspendForNavigation()
     }
 
-    var body: some View {
-        ScrollViewReader { returnScroll in
-            filesModals
+    // Keep the SwiftUI type-checker's work in separate opaque view segments.
+    private func filesForegroundLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        filesModals
         .onAppear {
             restoreFilesSectionIfNeeded()
             if phase == .active, let owner = login.owner,
@@ -3550,6 +3550,10 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedSnapshots.removeAll()
             showingBatchTrashConfirmation = false
         }
+    }
+
+    private func filesOwnerLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        filesForegroundLifecycle(returnScroll: returnScroll)
         .onChange(of: login.owner) { _ in
             quickHistoryReadAttempted = false
             showingAncestorsSheet = false
@@ -3654,6 +3658,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 reload()
             }
         }
+    }
+
+    private func filesNavigationLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        filesOwnerLifecycle(returnScroll: returnScroll)
         .onChange(of: quickSection) { next in
             guard next == .browse, !isHome, !isGlobalSearch,
                   let folderID = parentID, let owner = login.owner,
