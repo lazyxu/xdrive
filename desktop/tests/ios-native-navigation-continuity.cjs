@@ -121,7 +121,7 @@ const scenarios = [
       },
       {
         "file": "l",
-        "pattern": "onRead\\(cached\\)\\s*await refreshVisibleBackupQueueStatuses\\(\\)",
+        "pattern": "onRead\\(cached\\)\\s*reportPhotoPageReady\\(\"mounted\", started: pageStarted\\)\\s*await refreshVisibleBackupQueueStatuses\\(\\)",
         "flags": ""
       }
     ]
@@ -1586,7 +1586,7 @@ const scenarios = [
     "checks": [
       {
         "file": "p",
-        "pattern": "\"testSyntheticOwnerRecentlyDeletedReturnKeepsFilesHomeMounted\"[\\s\\S]*?time\\.monotonic\\(\\) \\+ 12",
+        "pattern": "FRAME_OFFSETS_SECONDS = \\(0\\.5, 1\\.5, 3\\.5\\)[\\s\\S]*?\"testSyntheticOwnerRecentlyDeletedReturnKeepsFilesHomeMounted\"[\\s\\S]*?scheduled\\.append\\(\\(began \\+ delay, key, index, delay\\)\\)[\\s\\S]*?if key not in active:[\\s\\S]*?\"screenshot\", str\\(destination\\)",
         "flags": ""
       }
     ]
