@@ -14,6 +14,7 @@ func TestClientUpdateOnlyPrefersExactMatchingCurrentServerCommit(t *testing.T) {
 	artifact := client.ReleaseBundleArtifact{
 		Platform: "windows", Filename: "xDriveSetup-amd64.exe",
 		BuildCommit: sha, SHA256: digest, Size: 1234, Cached: true,
+		InstallMode: "manual",
 	}
 	listing := client.ReleaseBundleListing{
 		Commit: sha, Channel: "master",
@@ -64,5 +65,11 @@ func TestClientUpdateOnlyPrefersExactMatchingCurrentServerCommit(t *testing.T) {
 	}
 	if actual := matchCurrentServerBundle(target, listing, "linux"); actual.Bundle != nil {
 		t.Fatal("cross-platform Server installer was substituted")
+	}
+	testingOnly := listing
+	testingOnly.Artifacts = append([]client.ReleaseBundleArtifact(nil), listing.Artifacts...)
+	testingOnly.Artifacts[0].InstallMode = "manual_test_only"
+	if actual := matchCurrentServerBundle(target, testingOnly, "windows"); actual.Bundle != nil {
+		t.Fatal("testing-only installer was selected by normal channel auto-update")
 	}
 }

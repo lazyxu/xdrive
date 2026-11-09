@@ -110,7 +110,7 @@ func matchCurrentServerBundle(result xupdate.Result, listing client.ReleaseBundl
 	}
 	for _, artifact := range listing.Artifacts {
 		if artifact.Platform != platform || artifact.Filename != result.Asset.Name ||
-			artifact.BuildCommit != result.Commit {
+			artifact.BuildCommit != result.Commit || artifact.InstallMode != "manual" {
 			continue
 		}
 		// The independent, selected update channel must already supply a

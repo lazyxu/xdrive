@@ -20,7 +20,52 @@ import (
 
 var bundleFullCommit = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var bundleFullDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
-var bundlePackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$`)
+var bundlePackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}package client
+
+// An authenticated current-Server Bundle is an optional download origin, never
+// permission to force a client to match the Server or to install unsigned bytes.
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+var bundleFullCommit = regexp.MustCompile(`^[a-f0-9]{40}$`)
+var bundleFullDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
+var bundleSignedAndroidPackageName = regexp.MustCompile(`^xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apkpackage client
+
+// An authenticated current-Server Bundle is an optional download origin, never
+// permission to force a client to match the Server or to install unsigned bytes.
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+var bundleFullCommit = regexp.MustCompile(`^[a-f0-9]{40}$`)
+var bundleFullDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
 
 type ReleaseBundleArtifact struct {
 	Platform    string `json:"platform"`
@@ -124,6 +169,22 @@ func validCurrentBundleArtifact(commit string, artifact ReleaseBundleArtifact) b
 	if artifact.BuildCommit != commit || !bundlePackageName.MatchString(artifact.Filename) ||
 		!bundleFullDigest.MatchString(artifact.SHA256) || artifact.Size <= 0 ||
 		artifact.Size > 8*1024*1024*1024 {
+		return false
+	}
+	switch artifact.Platform {
+	case "ios", "android", "windows", "linux", "dsm", "cli":
+	default:
+		return false
+	}
+	if artifact.InstallMode != "manual" && artifact.InstallMode != "manual_test_only" {
+		return false
+	}
+	if artifact.Platform == "ios" && artifact.Filename == "xDrive-unsigned.ipa" &&
+		artifact.InstallMode != "manual_test_only" {
+		return false
+	}
+	if artifact.Platform == "android" && (artifact.InstallMode != "manual" ||
+		!bundleSignedAndroidPackageName.MatchString(artifact.Filename)) {
 		return false
 	}
 	// Python's immutable manifest generator percent-encodes '+' as %2B.

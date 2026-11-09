@@ -24,6 +24,7 @@ func bundleClientFixture(t *testing.T, payload []byte) (ReleaseBundleListing, Re
 	artifact := ReleaseBundleArtifact{
 		Platform: "windows", Filename: name, BuildCommit: commit,
 		Size: int64(len(payload)), SHA256: hex.EncodeToString(hash[:]), Cached: true,
+		InstallMode: "manual",
 	}
 	artifact.Sources.GitLab = "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-" + commit + "/" + name
 	artifact.Sources.GitHub = "https://github.com/lazyxu/xdrive/releases/download/bundle-" + commit + "/" + name
@@ -93,6 +94,50 @@ func TestCurrentServerBundleRejectsCrossCommitAndHostInjection(t *testing.T) {
 	artifact.Filename = "../escape"
 	if validCurrentBundleArtifact(listing.Commit, artifact) {
 		t.Fatal("path traversal accepted")
+	}
+}
+
+func TestCurrentServerBundleRejectsUnapprovedInstallModes(t *testing.T) {
+	_, fixture := bundleClientFixture(t, []byte("package"))
+	if !validCurrentBundleArtifact(fixture.BuildCommit, fixture) {
+		t.Fatal("known signed Windows package was rejected")
+	}
+	invalid := fixture
+	invalid.InstallMode = "manual_test_only"
+	// Testing-only is allowed as read-only Bundle metadata, but never an
+	// automatic update source; see Agent independent channel admission.
+	if !validCurrentBundleArtifact(invalid.BuildCommit, invalid) {
+		t.Fatal("testing-only metadata should remain readable")
+	}
+	invalid.InstallMode = "automatic"
+	if validCurrentBundleArtifact(invalid.BuildCommit, invalid) {
+		t.Fatal("unknown installation mode accepted")
+	}
+	invalid = fixture
+	invalid.Platform = "unknown"
+	if validCurrentBundleArtifact(invalid.BuildCommit, invalid) {
+		t.Fatal("unknown platform accepted")
+	}
+	invalid = fixture
+	invalid.Platform = "ios"
+	invalid.Filename = "xDrive-unsigned.ipa"
+	invalid.Sources.GitLab = strings.Replace(fixture.Sources.GitLab, fixture.Filename, invalid.Filename, 1)
+	invalid.Sources.GitHub = strings.Replace(fixture.Sources.GitHub, fixture.Filename, invalid.Filename, 1)
+	invalid.DownloadURLs = []string{
+		"/api/v1/release-bundles/current/artifacts/" + invalid.Filename,
+		invalid.Sources.GitLab, invalid.Sources.GitHub,
+	}
+	if validCurrentBundleArtifact(invalid.BuildCommit, invalid) {
+		t.Fatal("unsigned IPA accepted as regular installer")
+	}
+	invalid.InstallMode = "manual_test_only"
+	if !validCurrentBundleArtifact(invalid.BuildCommit, invalid) {
+		t.Fatal("unsigned IPA should be allowed for testing-only download")
+	}
+	invalid = fixture
+	invalid.Platform = "android"
+	if validCurrentBundleArtifact(invalid.BuildCommit, invalid) {
+		t.Fatal("wrongly named Android APK or executable accepted")
 	}
 }
 
@@ -316,6 +361,7 @@ func TestReleaseBundleClientRecognizesEncodedPlus(t *testing.T) {
 	payload := []byte("approved signed APK")
 	listing, artifact := bundleClientFixture(t, payload)
 	artifact.Platform = "android"
+	artifact.InstallMode = "manual"
 	artifact.Filename = "xdrive-android-12-0.1.3+build.apk"
 	artifact.Cached = false
 	artifact.Sources.GitLab = "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-" + listing.Commit + "/xdrive-android-12-0.1.3%2Bbuild.apk"
