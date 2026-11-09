@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography } from '@mui/material'
+import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography, useMediaQuery } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
-import type { MediaItem } from '../models'
+import type { MediaItem, MediaTimelineGroupSets } from '../models'
 import {
   XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
   XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT,
@@ -12,13 +12,16 @@ import {
 import type { XDrivePlacesDrawerPresentation } from '../media-gallery-places-photo-drawer'
 import { MediaTile, MediaVirtualTileGrid } from './MediaGallerySharedTiles'
 import type { XDriveMediaGalleryVirtualCollection } from './MediaGallerySharedTiles'
-import type { MediaThumbnailLoader } from './MediaGallery'
+import type { MediaThumbnailLoader, MediaPreviewURLLoader, MediaVideoPosterSaver } from './MediaGallery'
+import { XDriveMediaGalleryPhotoWall } from './MediaGalleryPhotoWall'
+import { XDriveMediaGalleryVirtualTimeline } from './MediaGallerySharedTimeline'
 import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
 
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
 export function XDriveMediaGalleryPlacesPhotoDrawer({
   items, total, windowStart = 0, loadedDepth = items.length,
-  phase, expanded, loadingMore, pageError, pageErrorKind, loadThumbnail, photoTileMinWidth = 108, onExpand,
+  phase, expanded, loadingMore, pageError, pageErrorKind, loadThumbnail, loadPreviewURL, saveVideoPoster,
+  timelineGroups, onSetFavorite, photoTileMinWidth = 108, onExpand,
   onClose, onRetry, onRefreshMap, onLoadMore, onWindowRange, onRetryWindow, onVisibleAnchorChange, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
@@ -31,6 +34,11 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   pageError: boolean
   pageErrorKind?: 'append' | 'window'
   loadThumbnail: MediaThumbnailLoader
+  loadPreviewURL?: MediaPreviewURLLoader
+  saveVideoPoster?: MediaVideoPosterSaver
+  /** Complete date groups from a freshly authenticated first Owner Cell Range. */
+  timelineGroups?: MediaTimelineGroupSets
+  onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   photoTileMinWidth?: number
   onExpand: (expanded: boolean) => void
   onClose: () => void
@@ -79,6 +87,29 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   }, [loadThumbnail])
   const thumbnailScheduler = thumbnailSession?.owner === loadThumbnail
     ? thumbnailSession.scheduler : null
+  type TimeScale = 'all' | 'year' | 'month' | 'day'
+  const mobile = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const [timeScale, setTimeScale] = useState<TimeScale>('all')
+  const [columnsByScale, setColumnsByScale] = useState<Record<TimeScale, number>>({
+    all: 3, year: 6, month: 5, day: 3,
+  })
+  const baselineColumns: Record<TimeScale, number> = {
+    all: 3, year: 6, month: 5, day: 3,
+  }
+  const [layoutRestore, setLayoutRestore] = useState<{
+    index: number; offset: number; revision: number
+  } | null>(null)
+  const layoutRevision = useRef(1)
+  const [actionError, setActionError] = useState('')
+  const toggleFavorite = useCallback((item: MediaItem) => {
+    if (!onSetFavorite) return
+    setActionError('')
+    void onSetFavorite(item, !item.favorite).catch(() =>
+      setActionError('收藏操作失败，照片权限或版本可能已变化，请重试'))
+  }, [onSetFavorite])
+  useEffect(() => {
+    if (!timelineGroups) setTimeScale('all')
+  }, [timelineGroups])
   // Only Owner-validated /cell-items pages enter this collection. The
   // full Gallery viewport engine virtualizes *mounted tiles*; existing
   // Parent pagination/abort/freshness guards continue to own all I/O.
@@ -119,6 +150,27 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       visibleAnchor.current={index,viewportOffset:Math.round(viewportOffset)}
       anchorPort.current?.(index,viewportOffset,gridWidth)
     }, [])
+  const captureTimelineAnchor = useCallback((index:number) => {
+    const list=listRef.current
+    const tile=list?.querySelector<HTMLElement>(
+      `[data-xdrive-media-index="${index}"]`)
+    const offset=tile && list ? tile.getBoundingClientRect().top-
+      list.getBoundingClientRect().top : visibleAnchor.current?.viewportOffset ?? 0
+    captureVisibleAnchor(index,offset,list?.clientWidth ?? 0)
+  }, [captureVisibleAnchor])
+  const restoreLayout = useCallback((index:number,offset:number) => {
+    setLayoutRestore({index,offset,revision:++layoutRevision.current})
+  }, [])
+  const changeTimeScale = (next:TimeScale) => {
+    if (next===timeScale || (next!=='all' && !timelineGroups)) return
+    const anchor=visibleAnchor.current
+    if (anchor) restoreLayout(anchor.index,anchor.viewportOffset)
+    setTimeScale(next)
+  }
+  const pinchChange = useCallback((columns:number,index:number,viewportOffset:number) => {
+    setColumnsByScale(current=>({...current,[timeScale]:columns}))
+    restoreLayout(index,viewportOffset)
+  }, [timeScale,restoreLayout])
   const tileItem = (target: EventTarget | null) => {
     const tile = target instanceof Element
       ? target.closest('[data-xdrive-places-photo-drawer-item]') : null
@@ -128,6 +180,15 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       ? items.find(item => item.node.id === id) ?? null : null
   }
   const openTile = (item: MediaItem) => onOpenPhoto(item, position(item))
+  // A small Cell still loads real 48-item pages, but does so continuously.
+  // If its first page is shorter than the viewport, fill it without requiring
+  // a synthetic scroll event; all request/Owner/revision guards remain in Parent.
+  useLayoutEffect(() => {
+    if (sparse || phase!=='ready' || !expanded || loadingMore ||
+        pageError || loadedDepth>=total) return
+    const list=listRef.current
+    if (list && list.scrollHeight-list.clientHeight < 180) onLoadMore()
+  }, [sparse,phase,expanded,loadingMore,pageError,loadedDepth,total,items.length,onLoadMore])
   // Restore only when this trusted Parent Dialog actually finished entering
   // and a NEW authenticated Owner Cell Range has populated its grid. Never
   // replay old image bytes, reset the camera, or borrow SDK Child state.
@@ -310,6 +371,24 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             <CloseRoundedIcon />
           </IconButton>
         </Stack>
+        <Stack direction="row" role="group" aria-label="地点照片时间分组"
+          spacing={0.25} sx={{px:1.25,pb:0.5,flexWrap:'wrap',rowGap:0.25}}>
+          {(['all','year','month','day'] as const).map(scale => (
+            <Button key={scale} size="small" variant={timeScale===scale ? 'contained' : 'text'}
+              disabled={phase!=='ready' || (scale!=='all' && !timelineGroups)}
+              aria-pressed={timeScale===scale}
+              data-xdrive-places-photo-time-scale={scale}
+              onClick={() => changeTimeScale(scale)}
+              sx={{minHeight:44,minWidth:44,px:1.25,textTransform:'none'}}>
+              {scale==='all' ? '全部' : scale==='year' ? '年' : scale==='month' ? '月' : '日'}
+            </Button>
+          ))}
+          {!timelineGroups && phase==='ready' ? (
+            <Typography variant="caption" color="text.secondary">
+              当前服务端未返回完整日期索引，可在图库中按日期浏览
+            </Typography>
+          ) : null}
+        </Stack>
       </Box>
       {phase==='loading' ? (
         <Stack role="status" direction="row" spacing={1} alignItems="center"
@@ -401,30 +480,74 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               flex:expanded?'1 1 auto':'0 1 auto',
               overscrollBehavior:'contain',touchAction:'auto'}}>
             {thumbnailScheduler ? expanded ? (
-              <MediaVirtualTileGrid
-                placesDrawer
-                collection={collection}
-                minTileWidth={photoTileMinWidth}
-                selectionMode={false}
-                selectedContentKeys={new Set<string>()}
-                onSelect={() => undefined}
-                loadThumbnail={loadThumbnail}
-                thumbnailScheduler={thumbnailScheduler}
-                onVisibleAnchorChange={captureVisibleAnchor}
-                restoreAnchorIndex={sparse && portalEntered && expanded &&
-                  (initialPresentation?.anchorIndex ?? -1) < total
-                    ? initialPresentation?.anchorIndex : undefined}
-                restoreAnchorRevision={sparse && portalEntered && expanded &&
-                  initialPresentation?.anchorIndex !== undefined ? 1 : 0}
-                restoreAnchorViewportOffset={
-                  initialPresentation?.anchorViewportOffset}
-                onOpen={openTile}
-                onPreview={openTile}
-                onToggleFavorite={() => undefined}
-              />
+              <XDriveMediaGalleryPhotoWall surface="places"
+                pinch={mobile ? {
+                  columns: columnsByScale[timeScale],
+                  minColumns: 2,
+                  maxColumns: 10,
+                  onChange: pinchChange,
+                } : undefined}>
+                {timeScale !== 'all' && timelineGroups ? (
+                  <XDriveMediaGalleryVirtualTimeline
+                    placesDrawer
+                    groups={timelineGroups[timeScale]}
+                    collection={collection}
+                    minTileWidth={photoTileMinWidth}
+                    minColumns={mobile ? columnsByScale[timeScale] : undefined}
+                    baselineColumns={mobile ? baselineColumns[timeScale] : undefined}
+                    referenceColumnWidth={144}
+                    selectionMode={false}
+                    selectedContentKeys={new Set<string>()}
+                    onSelect={() => undefined}
+                    loadThumbnail={loadThumbnail}
+                    thumbnailScheduler={thumbnailScheduler}
+                    loadPreviewURL={loadPreviewURL}
+                    saveVideoPoster={saveVideoPoster}
+                    onSetFavorite={onSetFavorite}
+                    onVisibleAnchorChange={captureTimelineAnchor}
+                    restoreAnchorIndex={layoutRestore?.index ?? initialPresentation?.anchorIndex}
+                    restoreAnchorRevision={layoutRestore?.revision ??
+                      (initialPresentation?.anchorIndex !== undefined && portalEntered ? 1 : 0)}
+                    restoreAnchorViewportOffset={layoutRestore?.offset ??
+                      initialPresentation?.anchorViewportOffset}
+                    onOpen={openTile}
+                    onPreview={openTile}
+                    onToggleFavorite={toggleFavorite}
+                  />
+                ) : (
+                  <MediaVirtualTileGrid
+                    placesDrawer
+                    collection={collection}
+                    minTileWidth={photoTileMinWidth}
+                    minColumns={mobile ? columnsByScale[timeScale] : undefined}
+                    baselineColumns={mobile ? baselineColumns[timeScale] : undefined}
+                    referenceColumnWidth={144}
+                    selectionMode={false}
+                    selectedContentKeys={new Set<string>()}
+                    onSelect={() => undefined}
+                    loadThumbnail={loadThumbnail}
+                    thumbnailScheduler={thumbnailScheduler}
+                    loadPreviewURL={loadPreviewURL}
+                    saveVideoPoster={saveVideoPoster}
+                    onSetFavorite={onSetFavorite}
+                    onVisibleAnchorChange={captureVisibleAnchor}
+                    restoreAnchorIndex={layoutRestore?.index ?? (sparse && portalEntered && expanded &&
+                      (initialPresentation?.anchorIndex ?? -1) < total
+                        ? initialPresentation?.anchorIndex : undefined)}
+                    restoreAnchorRevision={layoutRestore?.revision ?? (sparse && portalEntered && expanded &&
+                      initialPresentation?.anchorIndex !== undefined ? 1 : 0)}
+                    restoreAnchorViewportOffset={layoutRestore?.offset ??
+                      initialPresentation?.anchorViewportOffset}
+                    onOpen={openTile}
+                    onPreview={openTile}
+                    onToggleFavorite={toggleFavorite}
+                  />
+                )}
+              </XDriveMediaGalleryPhotoWall>
             ) : (
               // The collapsed grip is a *preview*, not a second full list.
               // Its tiles still use Gallery's exact MediaTile component.
+              <XDriveMediaGalleryPhotoWall surface="places">
               <Stack direction="row" spacing={1} sx={{width:'max-content'}}>
                 {items.slice(0,8).map((item,index) => (
                   <Box key={item.node.id} sx={{width:92,flex:'0 0 92px'}}>
@@ -439,13 +562,17 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                       // The full virtual grid retires its viewport requests on
                       // collapse. Preview tiles own their disposable requests
                       // so that cleanup cannot cancel a newly mounted strip.
+                      loadPreviewURL={loadPreviewURL}
+                      saveVideoPoster={saveVideoPoster}
+                      onSetFavorite={onSetFavorite}
                       onOpen={openTile}
                       onPreview={openTile}
-                      onToggleFavorite={() => undefined}
+                      onToggleFavorite={toggleFavorite}
                     />
                   </Box>
                 ))}
               </Stack>
+              </XDriveMediaGalleryPhotoWall>
             ) : (
               <Box data-xdrive-places-photo-grid-initializing
                 sx={{minHeight:108,bgcolor:'action.hover'}} />
@@ -461,13 +588,11 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
                   : '此地点全部照片'}
             </Typography>
             <Stack direction="row" alignItems="center" spacing={0.25}>
-              {!sparse && loadedDepth < total ? (
-                <Button data-xdrive-places-photo-drawer-load-more
-                  variant="outlined" onClick={onLoadMore} disabled={loadingMore}
-                  aria-label="继续加载此地点的照片"
-                  sx={{minHeight:44,textTransform:'none'}}>
-                  {loadingMore ? '正在加载…' : '加载更多'}
-                </Button>
+              {!sparse && loadedDepth < total && loadingMore ? (
+                <Typography variant="caption" color="text.secondary"
+                  role="status" data-xdrive-places-photo-drawer-auto-more>
+                  正在连续加载…
+                </Typography>
               ) : null}
               {onOpenNearby ? (
                 <Button data-xdrive-places-photo-drawer-nearby
@@ -484,6 +609,10 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               </Button>
             </Stack>
           </Stack>
+          {actionError ? (
+            <Typography role="alert" variant="caption" color="error.main"
+              sx={{px:1.25,pb:1}}>{actionError}</Typography>
+          ) : null}
           {pageError ? (
             <Stack direction="row" alignItems="center" spacing={1}
               sx={{px:1.25,pb:1,flexWrap:'wrap'}}>
