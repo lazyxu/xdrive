@@ -29,7 +29,10 @@ test('stale asynchronous badge results never cross Owners, pages or inactive sce
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(backupBadgeOwner, owner\)/)
   assert.match(wall, /\.onChange\(of: backupBadgeOwner\) \{ _ in[\s\S]*?badgeReadEpoch = UUID\(\)/)
   assert.match(wall, /\.onChange\(of: photoQueueScenePhase\) \{ state in/)
-  assert.match(wall, /\.onDisappear \{\s*if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*\}[\s\S]*?queueHistoryCurrent = false\s*visibleBackupQueueStates = \[:\]\s*badgeReadEpoch = UUID\(\)/)
+  // Handoff is generation/offset/total checked BEFORE local page cleanup.
+  // Backup state must always retire, even if a 64-item page is offered to parent.
+  assert.match(wall, /\.onDisappear \{[\s\S]*?let verifiedEpoch = retainedGeneration\s*let verifiedPage = \([\s\S]*?verifiedEpoch == generation &&\s*page\?\.startOffset == offset &&\s*page\?\.totalAccessibleAssets == expectedTotal\s*\) \? page : nil\s*if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil\s*retainedGeneration = nil\s*\}\s*queueHistoryCurrent = false\s*visibleBackupQueueStates = \[:\]\s*badgeReadEpoch = UUID\(\)/)
+  assert.match(wall, /onPageHidden\(offset, verifiedEpoch, verifiedPage\)/)
   assert.match(wall, /badgeReadEpoch = UUID\(\)\s*if let scanner \{ Task \{ await scanner\.reset\(\) \} \}\s*scanner = nil/)
   assert.match(wall, /visibleBackupQueueStates = \[:\]/)
   assert.doesNotMatch(wall, /UploadSessionTransport|uploadPrepared\(|\.finalize\(|deleteNode\(/)
