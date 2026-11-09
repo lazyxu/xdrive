@@ -362,7 +362,12 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         app.launch()
         XCTAssertEqual(app.state, .runningForeground)
         files(app)
-        XCTAssertFalse(element("native-ios-files-open-recent", app).exists)
+        // Files Home keeps the shortcut visible after logout, but the
+        // now-missing Owner makes it non-interactive; stale rows stay retired.
+        let recent = element("native-ios-files-open-recent", app)
+        XCTAssertTrue(recent.waitForExistence(timeout: 15))
+        XCTAssertFalse(recent.isEnabled,
+                       "Signed-out Files Home must not enter Recent")
     }
 
     func testRecentFavoritesErrorScreensHaveActualSimulatorEvidence() {
