@@ -245,7 +245,7 @@ publish-release:
       }
       cp "$1" "$1.sha256" release/
       bash scripts/ci/verify-synology-spk-release.sh release --require-mui
-      grep -Fqx "$(printf 'commit\\t%s' "$CI_COMMIT_SHA")" dist/release-image/image-manifest.tsv
+      grep -Eq "^commit[[:space:]]+$CI_COMMIT_SHA$" dist/release-image/image-manifest.tsv
       test "$(grep -c '^image' dist/release-image/image-manifest.tsv)" = 2
       cp dist/release-image/image-manifest.tsv release/image-manifest.tsv
       # Stable glab release create expands release/*; never pass build/core
