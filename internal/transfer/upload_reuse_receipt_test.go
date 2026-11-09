@@ -20,10 +20,10 @@ func TestUploadReceiptDistinguishesCASReuseFromOrdinaryAndLegacy(t *testing.T) {
 				t.Fatalf("%s has wrong terminal status: %+v", label, task)
 			}
 			if transferred == nil {
-				if task.UploadTransferredBytes != nil {
+				if task.UploadSentBytes != nil {
 					t.Fatalf("%s must not invent a verified byte receipt: %+v", label, task)
 				}
-			} else if task.UploadTransferredBytes == nil || *task.UploadTransferredBytes != *transferred {
+			} else if task.UploadSentBytes == nil || *task.UploadSentBytes != *transferred {
 				t.Fatalf("%s missing true byte receipt: %+v", label, task)
 			}
 			return
@@ -37,7 +37,7 @@ func TestUploadReceiptDistinguishesCASReuseFromOrdinaryAndLegacy(t *testing.T) {
 	instant.CompleteUploadReceipt(UploadContentReceipt{TransferredBytes: zero, CASReusedBytes: total})
 	check("instant", &zero, false)
 	_, initial := manager.Snapshot()
-	if initial[0].UploadCASReusedBytes != total || initial[0].UploadResumeReusedBytes != 0 {
+	if initial[0].UploadCASReusedBytes != total || initial[0].UploadResumeBytes != 0 {
 		t.Fatalf("instant CAS provenance is wrong: %+v", initial[0])
 	}
 	partialUpload := manager.Start(Spec{FileName: "partial", Kind: KindUpload, Direction: "upload", TotalBytes: total})
@@ -70,7 +70,7 @@ func TestUploadReceiptDistinguishesCASReuseFromOrdinaryAndLegacy(t *testing.T) {
 	_, tasks := restored.Snapshot()
 	for _, task := range tasks {
 		if task.FileName == "instant" {
-			if task.UploadTransferredBytes == nil || *task.UploadTransferredBytes != 0 {
+			if task.UploadSentBytes == nil || *task.UploadSentBytes != 0 {
 				t.Fatalf("restored history lost CAS receipt: %+v", task)
 			}
 			encoded, err := json.Marshal(task)
@@ -81,7 +81,7 @@ func TestUploadReceiptDistinguishesCASReuseFromOrdinaryAndLegacy(t *testing.T) {
 			if err := json.Unmarshal(encoded, &decoded); err != nil {
 				t.Fatal(err)
 			}
-			if decoded.UploadTransferredBytes == nil || *decoded.UploadTransferredBytes != 0 {
+			if decoded.UploadSentBytes == nil || *decoded.UploadSentBytes != 0 {
 				t.Fatalf("wire serialization lost explicit zero: %+v", decoded)
 			}
 		}
@@ -101,10 +101,10 @@ func TestManagedUploadReceiptHonorsFirstTerminalOutcomeAndCancellation(t *testin
 	group.Complete()
 	_, tasks := manager.Snapshot()
 	for _, item := range tasks {
-		if item.ID == child.ID() && (item.State != StateCompleted || item.UploadTransferredBytes == nil || *item.UploadTransferredBytes != 0) {
+		if item.ID == child.ID() && (item.State != StateCompleted || item.UploadSentBytes == nil || *item.UploadSentBytes != 0) {
 			t.Fatalf("late terminal callback overwrote verified receipt: %+v", item)
 		}
-		if item.ID == group.ID() && item.UploadTransferredBytes != nil {
+		if item.ID == group.ID() && item.UploadSentBytes != nil {
 			t.Fatalf("parent must not masquerade as a single instant upload: %+v", item)
 		}
 	}
@@ -115,7 +115,7 @@ func TestManagedUploadReceiptHonorsFirstTerminalOutcomeAndCancellation(t *testin
 	cancelled.CompleteUploadReceipt(UploadContentReceipt{CASReusedBytes: 100})
 	_, tasks = manager.Snapshot()
 	for _, item := range tasks {
-		if item.ID == cancelled.ID() && (item.State != StateCancelled || item.UploadTransferredBytes != nil) {
+		if item.ID == cancelled.ID() && (item.State != StateCancelled || item.UploadSentBytes != nil) {
 			t.Fatalf("cancelled task acquired a false instant receipt: %+v", item)
 		}
 	}
