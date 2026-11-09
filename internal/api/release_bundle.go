@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -105,12 +106,17 @@ func validReleaseBundleManifest(m releaseBundleManifest) bool {
 		if a.Platform == "android" && (a.InstallMode != "manual" || !releaseBundleAndroidNamePattern.MatchString(a.Filename)) {
 			return false
 		}
+		// Filename admission permits '+', but the Python Bundle generator
+		// uses urllib.parse.quote and encodes it as %2B. QueryEscape yields
+		// the same path-safe spelling for this restricted filename alphabet.
+		// Never accept a second, unescaped interpretation of immutable URLs.
+		escapedName := url.QueryEscape(a.Filename)
 		if a.Sources.GitHub != "https://github.com/lazyxu/xdrive/releases/download/bundle-"+
-			m.Commit+"/"+a.Filename {
+			m.Commit+"/"+escapedName {
 			return false
 		}
 		if a.Sources.GitLab != "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive"+
-			"/packages/generic/xdrive-build-packages/sha-"+m.Commit+"/"+a.Filename {
+			"/packages/generic/xdrive-build-packages/sha-"+m.Commit+"/"+escapedName {
 			return false
 		}
 	}
