@@ -122,5 +122,13 @@ fix/ios-lan-pinned-trust-test-contract-20261109	513f92fb56759e123a8a40f52b09e716
 fix/ios-lan-stage3-strict-tls-diagnostics-20261109	6b0c5a48bd7da8159cd30c167abda417e9509516	exact ancestor of open iOS LAN successor PR #4142 (ahead=4 behind=0)
 fix/sync-mixed-yike-foreign-owner-direct-child-20261109	a2c522892c242cb7869300eb5ece3bbee5472bce	ancestor of closed superseded #4143 (ahead=2 behind=0); Owner explicitly cancelled historical migration work, no production migration
 fix/yike-migration-gofmt-gate-20261109	aaed35d221fa455f6764e48a9022d23c063a574d	ancestor of closed superseded #4143 (ahead=1 behind=0); Owner explicitly cancelled historical migration work, no production migration
+
+# 2026-11-09 second orphan pass: strict duplicate/ancestor refs only; preserve divergent work and open PR heads.
+feat/release-bundle-4152-url-encoding-20261109	7a454764341f16e4a1b836fec99626be34d6fb5e	exact duplicate of open Release Bundle PR #4152 HEAD; only alias, actual PR protected
+fix/gitlab-release-monotonic-independent-images-20261109	266b65a9528516143e9d5ff514fc1f92ec19f717	strict ancestor of latest GitLab release successor #4163 branch: ahead=12 behind=0
+fix/ios-map-4125-ci-repair-staging-20261109	d41b3a004d08f685edb3540411e1e9772699a025	exact duplicate of retained fix/ios-exact-trip-map-view-lease-region-fit-20261108, preserve retained source
+fix/ios-files-no-session-destination-simulator-20261109	763705abe266cb28ff54a56cb9443768116c8aac	exact duplicate of open Gallery/Files PR #4158 HEAD; open PR source remains protected
+
+# 2026-11-09: accepted Clipboard #4124 historical branch source audit (exact-tip leases; cleanup action only).
 dev/clipboard-4124-seven-scope-20261108	4aa57535ea2c6df9fa9ca9b32846a52a194321de	2026-11-09 audited all 41 Clipboard #4124 source paths: merged master has byte-identical or newer sender receiver tests including Go device crypto Android iOS Desktop DSM Web; old-only lines are obsolete MIME presentation older test fixtures and unrelated previous Map guards; canonical merged exact-head #4124 (6daa64e); no open PR uses branch; retire only immutable tip
 dev/clipboard-local-image-cas-upload-20261108	de32227948a3b7505df57c9afc3d4c36a3c928e2	2026-11-09 3-path audit against merged #4124: Web import uses stronger cancellable uploadWithConflictPolicy API and explicit receipt plus user confirm; shared Clipboard UI has newer Owner kind and unknown ACK guards; test 221 vs old 155 lines includes same cases and additional negatives; no open PR uses branch; exact SHA only
