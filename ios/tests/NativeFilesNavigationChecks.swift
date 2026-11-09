@@ -30,6 +30,18 @@ struct XDriveIOSNativeFilesNavigationChecks {
         require(!allowed(filters: false), "different tag/source/date/kind scope invalidates")
         require(!allowed(sort: false), "changed ordering invalidates")
         require(!allowed(order: false), "changed ascending/descending invalidates")
-        print("native Files navigation resume policy passed")
+        require(XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+            sessionMatches: true, sourceOwnerMatches: true
+        ), "current session and captured Owner can enter protected child")
+        require(!XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+            sessionMatches: false, sourceOwnerMatches: true
+        ), "session expiry must keep protected child unmounted")
+        require(!XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+            sessionMatches: true, sourceOwnerMatches: false
+        ), "stale Owner row cannot enter after account switch")
+        require(!XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+            sessionMatches: false, sourceOwnerMatches: false
+        ), "signed-out stale route never creates a heavy child")
+        print("native Files navigation resume and child admission passed")
     }
 }
