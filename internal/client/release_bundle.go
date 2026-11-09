@@ -51,7 +51,18 @@ func (c *Client) CurrentReleaseBundle(ctx context.Context) (ReleaseBundleListing
 	if err != nil {
 		return ReleaseBundleListing{}, err
 	}
-	resp, err := c.do(req)
+	// Bundle metadata is Owner-authenticated. Never let a 301/302/307
+	// move its bearer to a different URL, including a subdomain or a
+	// cross-origin CDN. No redirect is part of this API contract.
+	httpClient := c.HTTP
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	noRedirect := *httpClient
+	noRedirect.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := noRedirect.Do(req)
 	if err != nil {
 		return ReleaseBundleListing{}, err
 	}
