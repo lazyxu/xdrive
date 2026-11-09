@@ -80,8 +80,8 @@ func TestDSMClipboardFileReferenceRequiresAuthenticatedNarrowCGIAndOwner(t *test
 		t.Helper()
 		r := httptest.NewRequest(method, "https://nas.example:5001"+DSMCGIPath+query, nil)
 		if cookie {
-		r.Header.Set("Cookie", "id=dsm-session")
-	}
+			r.Header.Set("Cookie", "id=dsm-session")
+		}
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
 		return w
