@@ -859,7 +859,7 @@ export default function App({
         setClientUpdate(result.data)
       } : undefined,
     }
-  }, [agent.hello?.capabilities, info?.platform, clientUpdate?.install_supported])
+  }, [agent.hello?.capabilities, info?.platform, clientUpdate?.manual_install_supported])
   const offlineImportPort = useMemo<import('../../../ui/shared/src/offline-update').XDriveOfflineImportPort>(() => {
     async function call<T>(
       action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',

@@ -8901,7 +8901,10 @@ function registerIPCHandlers() {
       const current = await client.currentReleaseBundle()
       if (current.commit !== commitValue ||
           !current.artifacts.some(item => item.filename === fileValue &&
-            item.build_commit === commitValue && item.install_mode === 'manual')) {
+            item.build_commit === commitValue &&
+            (item.install_mode === 'manual' ||
+             (item.install_mode === 'manual_test_only' && item.platform === 'ios' &&
+              item.filename === 'xDrive-unsigned.ipa')))) {
         throw new AgentIPCError('stale_release_bundle', 409, 'Server Bundle changed before save.')
       }
       const options = {
