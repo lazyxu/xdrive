@@ -112,7 +112,7 @@ if ! gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
     echo "Existing Bundle tag without a verified Release" >&2
     exit 1
   fi
-  if ! grep -Eq '(\\(HTTP 404\\)|HTTP/[0-9.]+[[:space:]]404)' <<< "$tag_probe"; then
+  if ! grep -Eq '(HTTP 404|HTTP/[0-9.]+[[:space:]]404)' <<< "$tag_probe"; then
     echo "Cannot verify absent Bundle tag; refusing to create Release" >&2
     exit 1
   fi
