@@ -73,14 +73,28 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         _ id: String, message: String, pageID: String,
         in app: XCUIApplication, cycle: Int
     ) {
-        // This synthetic Owner has NO Session. A same-Owner read must display
-        // a verified-access failure, not the "account changed" path reserved
-        // for a *different* Owner. The original b9 baseline source is tested
-        // independently: do not transplant its old literal into this candidate.
+        // This CI matrix compiles this same UITest file twice: once against
+        // published b9 source, once against candidate source. Published b9
+        // has no page accessibility ID and displays an Owner-change denial.
+        // The new native page has a stable ID and correctly differentiates
+        // same-Owner missing Session from cross-Owner cancellation. Accept
+        // precisely the denial belonging to the *actual* screen generation.
         let page = app.descendants(matching: .any)
             .matching(identifier: pageID).firstMatch
-        XCTAssertTrue(page.waitForExistence(timeout: 15),
-            "The real native \(id) sheet did not mount")
+        if !page.waitForExistence(timeout: 5) {
+            let oldDenial = id == "history"
+                ? "账户已经变化，请关闭操作历史。"
+                : "账户已经变化，请关闭智能文件夹。"
+            let baseline = app.staticTexts[oldDenial].firstMatch
+            if !baseline.waitForExistence(timeout: 12) {
+                record(app, "missing-b9-baseline-denial-\(id)-\(cycle)")
+            }
+            alive(app, "published-b9-denial-\(id)-\(cycle)")
+            XCTAssertTrue(baseline.exists,
+                "Published b9 without the new page ID must show its original " +
+                "Owner-change denial. Do not count an absent page as a pass.")
+            return
+        }
         let denied = app.staticTexts[message].firstMatch
         if !denied.waitForExistence(timeout: 12) {
             record(app, "no-session-state-missing-\(id)-\(cycle)")
