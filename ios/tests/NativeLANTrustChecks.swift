@@ -38,16 +38,22 @@ enum NativeLANTrustChecks {
         }
 
         let valid = try trust("ip")
+        // Build throwable SecTrust fixtures before any non-throwing precondition autoclosure.
+        // Each trust is fresh so negative diagnostics cannot reuse a mutated evaluation.
+        let matchedPolicyTrust = try trust("ip")
+        let changedIPTrust = try trust("ip")
+        let changedCATrust = try trust("ip")
+        let dnsSANTrust = try trust("dns")
         precondition(XDriveIOSServerTLSDelegate.verify(valid, target: ip, rootDER: root), "correct CA and IP SAN")
-        precondition(XDriveIOSServerTLSDelegate.inspect(try trust("ip"),
+        precondition(XDriveIOSServerTLSDelegate.inspect(matchedPolicyTrust,
             target: ip, rootDER: root) == .trusted, "strict CA + literal IP SAN succeeds")
-        precondition(XDriveIOSServerTLSDelegate.inspect(try trust("ip"),
+        precondition(XDriveIOSServerTLSDelegate.inspect(changedIPTrust,
             target: otherIP, rootDER: root) == .ipIdentityOrServerUsageMismatch,
             "basic X.509 chain passes but strict IP identity fails")
-        precondition(XDriveIOSServerTLSDelegate.inspect(try trust("ip"),
+        precondition(XDriveIOSServerTLSDelegate.inspect(changedCATrust,
             target: ip, rootDER: otherRoot) == .chainOrValidityMismatch,
             "wrong pinned CA cannot be reported as a mere IP SAN mismatch")
-        precondition(XDriveIOSServerTLSDelegate.inspect(try trust("dns"),
+        precondition(XDriveIOSServerTLSDelegate.inspect(dnsSANTrust,
             target: ip, rootDER: root) == .ipIdentityOrServerUsageMismatch,
             "DNS SAN must not authenticate a private-IP literal")
         // Real Caddy 'tls internal' chains include an intermediate CA.
