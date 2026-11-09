@@ -85,6 +85,11 @@ assert "image-manifest.tsv" in core_publisher
 stable = release_jobs["publish-release"]
 assert "publish-photo-face-image" in stable and "publish-media-worker-image" in stable
 assert "image-manifest.tsv" in stable
+assert "python3 scripts/ci/verify-gitlab-core-manifest.py" in stable
+core_manifest_verifier = (ROOT / "scripts/ci/verify-gitlab-core-manifest.py").read_text(encoding="utf-8")
+for token in ("CI_COMMIT_SHA", "CI_COMMIT_TAG", "CI_REGISTRY_IMAGE",
+              "xdrive-server", "xdrive-caddy", "sha256:"):
+    assert token in core_manifest_verifier, token
 assert "build-client-core" in stable and "package-linux-client" in stable
 assert "package-windows-client" in stable and "release-assets" in stable
 assert "promote-server-images" in stable
