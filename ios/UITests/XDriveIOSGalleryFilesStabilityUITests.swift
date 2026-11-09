@@ -455,6 +455,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         select("native-ios-files-open-root-location", in: app)
         XCTAssertTrue(target("native-ios-files-error-page", in: app)
             .waitForExistence(timeout: 15))
+        XCTAssertFalse(target("native-ios-files-retry", in: app).exists,
+                       "No-Session Cloud route must not retry a missing login")
         select("native-ios-files-error-return", in: app)
         checkFilesHome(app)
         select("native-ios-tab-gallery", in: app)
@@ -471,15 +473,17 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         assertNotSolidScreen(app, "Gallery after cloud denial and album filter")
     }
 
-    func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels() {
+    func testTrashDeniedNoSessionThenFilesRailAndGalleryReturnKeepsPixels() {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
         select("native-ios-files-open-trash", in: app)
         XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
             .waitForExistence(timeout: 15))
-        select("native-ios-files-trash-retry", in: app)
-        XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
-            .waitForExistence(timeout: 15))
+        // A missing local Session must NOT expose Retry or destructive
+        // actions. The native fail-closed route only allows returning Home.
+        XCTAssertFalse(target("native-ios-files-trash-retry", in: app).exists,
+                       "No-Session route must not issue an unauthenticated retry")
+        XCTAssertFalse(target("native-ios-files-trash-delete-0", in: app).exists)
         select("native-ios-files-trash-error-return", in: app)
         for section in ["recent", "favorites", "browse"] {
             select("native-ios-files-section-\(section)", in: app)
