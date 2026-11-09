@@ -64,6 +64,9 @@ TARGETS = {
     "testRecentFavoritesQuickRailDeniedThenAlbumsRemainUsable",
     "testRecentFavoritesRepeatedDenialsNeverRetainOldScope",
     "testRecentFavoritesErrorScreensHaveActualSimulatorEvidence",
+    "testNoSessionCloudAndTrashErrorPagesAreNotSolidBlankScreens",
+    "testNoSessionRecentFavoritesDeniedPagesAreNotSolidBlankScreens",
+    "testNoSessionCloudTrashRapidBackDoesNotRepushOldChild",
     "testTrashDenialAcrossRepeatedForegroundActivationsStaysReadOnly",
     "testFilesQuickRailThenCloudDenialKeepsProtectedGridAbsent",
     "testCloudDenialGalleryFilterFilesReturnCanReenterDeniedChild",
@@ -84,6 +87,9 @@ NAV_TARGETS = {
     "testRecentFavoritesQuickRailDeniedThenAlbumsRemainUsable",
     "testRecentFavoritesRepeatedDenialsNeverRetainOldScope",
     "testRecentFavoritesErrorScreensHaveActualSimulatorEvidence",
+    "testNoSessionCloudAndTrashErrorPagesAreNotSolidBlankScreens",
+    "testNoSessionRecentFavoritesDeniedPagesAreNotSolidBlankScreens",
+    "testNoSessionCloudTrashRapidBackDoesNotRepushOldChild",
     "testRapidGalleryFilesTabOscillationPreservesBothShells",
 }
 TARGETS.update(NAV_TARGETS)
