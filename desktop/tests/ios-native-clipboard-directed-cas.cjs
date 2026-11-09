@@ -41,6 +41,8 @@ test('iOS manual document enters the existing CAS writer and exact Node/SHA veri
   assert.match(screen,/referenceNodeID = String\(receipt\.nodeID\)/)
   assert.match(screen,/再次点击定向加密发送/)
   assert.match(screen,/uploadTask\?\.cancel\(\)/)
+  // No stale CAS Node may cross the image/file authenticated-kind boundary.
+  assert.match(screen,/\.onChange\(of: referenceKind\) \{ _ in referenceNodeID = "" \}/)
 })
 test('iOS original v1 send cannot fall back from directed or replay changed unknown ACK',()=>{
   assert.match(screen,/draft\.isEmpty \|\| !targetID\.isEmpty/)
