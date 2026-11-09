@@ -494,6 +494,8 @@ class WebTransferStore {
       error?: string
       skipped?: boolean
       transferredBytes?: number
+      casReusedBytes?: number
+      resumeReusedBytes?: number
     },
   ) {
     const now = Date.now()
@@ -520,6 +522,10 @@ class WebTransferStore {
         upload_transferred_bytes: completed && !skipped && item.direction === 'upload' && item.scope === 'item' &&
           Number.isSafeInteger(input.transferredBytes) && input.transferredBytes! >= 0 &&
           input.transferredBytes! <= item.bytes_total ? input.transferredBytes : undefined,
+        upload_cas_reused_bytes: completed && !skipped && item.direction === 'upload' && item.scope === 'item' &&
+          Number.isSafeInteger(input.casReusedBytes) ? input.casReusedBytes : undefined,
+        upload_resume_reused_bytes: completed && !skipped && item.direction === 'upload' && item.scope === 'item' &&
+          Number.isSafeInteger(input.resumeReusedBytes) ? input.resumeReusedBytes : undefined,
         percent: completed ? 100 : item.percent,
         items_completed: item.scope === 'item' && completed ? 1 : item.items_completed,
         items_failed: item.scope === 'item' && input.state === 'failed' ? 1 : item.items_failed,
@@ -559,7 +565,8 @@ class WebTransferStore {
     })
   }
 
-  complete(id: string, bytesDone?: number, bytesTotal?: number, uploadTransferredBytes?: number) {
+  complete(id: string, bytesDone?: number, bytesTotal?: number, uploadTransferredBytes?: number,
+    casReusedBytes?: number, resumeReusedBytes?: number) {
     const now = Date.now()
     this.patch(id, (item) => {
       const done = Math.max(0, bytesDone ?? item.bytes_done)
@@ -579,6 +586,10 @@ class WebTransferStore {
         bytes_total: total,
         upload_transferred_bytes: item.direction === 'upload' && Number.isSafeInteger(uploadTransferredBytes) &&
           uploadTransferredBytes! >= 0 && uploadTransferredBytes! <= total ? uploadTransferredBytes : undefined,
+        upload_cas_reused_bytes: item.direction === 'upload' && Number.isSafeInteger(casReusedBytes)
+          ? casReusedBytes : undefined,
+        upload_resume_reused_bytes: item.direction === 'upload' && Number.isSafeInteger(resumeReusedBytes)
+          ? resumeReusedBytes : undefined,
         upload_skipped: false,
         percent: total > 0 ? 100 : item.percent,
         instant_bytes_per_second: 0,
@@ -607,6 +618,8 @@ class WebTransferStore {
         bytes_total: total,
         upload_skipped: item.direction === 'upload',
         upload_transferred_bytes: undefined,
+        upload_cas_reused_bytes: undefined,
+        upload_resume_reused_bytes: undefined,
         percent: 100,
         instant_bytes_per_second: 0,
         average_bytes_per_second: 0,
