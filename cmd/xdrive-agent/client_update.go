@@ -114,7 +114,11 @@ func matchCurrentServerBundle(result xupdate.Result, listing client.ReleaseBundl
 		// package source. Never let a compromised/old Server mint the first
 		// "trusted" digest for an independently chosen client update.
 		if !strings.EqualFold(strings.TrimSpace(result.Asset.Digest),
-			"sha256:"+artifact.SHA256) {
+			"sha256:"+artifact.SHA256) ||
+			(result.Asset.Size > 0 && result.Asset.Size != artifact.Size) {
+			// Both the independently selected release digest and any
+			// independently supplied size must agree with this Server
+			// cache entry. Never replace conflicting release metadata.
 			break
 		}
 		result.Asset.Size = artifact.Size
