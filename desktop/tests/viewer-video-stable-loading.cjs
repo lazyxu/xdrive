@@ -42,8 +42,9 @@ const progressCode = ts.transpileModule(
 const progressModule = { exports:{} }
 new Function('exports','module','require',progressCode)(
   progressModule.exports,progressModule,name=>{
-    assert.equal(name,'@mui/material','real buffer label must not have unknown mocks')
-    return mui
+    if (name === '@mui/material') return mui
+    if (name === 'react/jsx-runtime') return require('react/jsx-runtime')
+    throw Error('unexpected real media progress dependency: ' + name)
   },
 )
 assert.equal(progressModule.exports.xDriveMediaBufferProgressLabel(0),'正在缓冲…')
