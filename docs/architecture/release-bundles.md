@@ -107,6 +107,39 @@ The bundled `cli` artifacts are currently **Backup-only CLI** archives; a separa
 standalone `xd`/Agent installation is not represented until its independent
 source-exact package build exists. Do not advertise these as all CLI variants.
 
+## Read-only live release and Host acceptance gate
+
+After a *real* `bundle-<40-hex>` GitHub Release exists, run:
+
+```bash
+python3 scripts/ci/verify-live-release-bundle.py --commit FULL_SERVER_SHA
+```
+
+For a **real installed Host** (the command checks actual cached bytes and the
+running authenticated Server API, not a mock):
+
+```bash
+XD_BUNDLE_OWNER_TOKEN='...' python3 scripts/ci/verify-live-release-bundle.py \
+  --commit FULL_SERVER_SHA --host-home "$HOME/.xd" \
+  --server-url https://your-server.example --require-sigstore
+```
+
+`--require-sigstore` needs an independently installed and trusted GitHub CLI
+(`gh attestation verify`), validates the signed manifest digest, full source
+Commit, signer workflow and GitHub repository ID 1382670236, and **fails
+closed** if unavailable. No Owner credentials are sent to GitHub. It is an
+explicit acceptance gate, not proof that every installed Host has the CLI.
+
+For an intentional, expensive end-to-end mirror-byte audit add
+`--check-package-bytes`. This verifies actual package bytes from both GitLab
+and GitHub; inaccessible GitLab or a missing optional upstream fails that
+**optional strict mirror check**, not an existing Server upgrade. Use the
+authenticated API check only over HTTPS (or `--allow-loopback-http` for local
+loopback testing). The gate never installs software or asserts physical-device
+success. Actual Windows transaction, Linux PolicyKit authorization, DSM package
+install, Apple signing and Android production signing still need device-specific
+acceptance evidence. Missing client platforms remain allowed.
+
 **Constraints:** This is not an automatic native app installer, IPA signing
 service, or Android production signing system. Native updates must still use
 their platform's own verified installation flow. The fallback addresses can
