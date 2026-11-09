@@ -33,12 +33,12 @@ func TestDSMClipboardV2StrictDeviceTargetAndNodeValidation(t *testing.T) {
 		t.Fatalf("valid Owner directed Node envelope rejected: %v", err)
 	}
 	invalid := map[string]string{
-		"missing-target": strings.Replace(base, target, "", 1),
-		"short-wrapped-key": strings.Replace(base, wrapped, encoded(59), 1),
-		"bad-ephemeral-key": strings.Replace(base, ephemeral, "plaintext", 1),
-		"media-without-node": strings.Replace(base, `"node_id":118`, `"node_id":0`, 1),
-		"bad-kind": strings.Replace(base, "image/x-xdrive-node-ref", "image/png", 1),
-		"cross-purpose-text": strings.Replace(base, "image/x-xdrive-node-ref", "text/plain", 1),
+		"missing-target":        strings.Replace(base, target, "", 1),
+		"short-wrapped-key":     strings.Replace(base, wrapped, encoded(59), 1),
+		"bad-ephemeral-key":     strings.Replace(base, ephemeral, "plaintext", 1),
+		"media-without-node":    strings.Replace(base, `"node_id":118`, `"node_id":0`, 1),
+		"bad-kind":              strings.Replace(base, "image/x-xdrive-node-ref", "image/png", 1),
+		"cross-purpose-text":    strings.Replace(base, "image/x-xdrive-node-ref", "text/plain", 1),
 		"extra-Owner-authority": strings.TrimSuffix(base, "}") + `,"client_device_token":"secret"}`,
 	}
 	for name, raw := range invalid {
