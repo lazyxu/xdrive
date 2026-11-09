@@ -23,7 +23,9 @@ const sources = {
   "e": "ios/XDriveIOS/NativeFilesSavedSearches.swift",
   "o": "ios/XDriveIOS/NativeFilesOperationHistory.swift",
   "x": "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift",
-  "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift"
+  "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift",
+  "p": "ios/scripts/capture-navigation-smoke-frames.py",
+  "m": "ios/scripts/summarize-navigation-latency.py"
 }
 const scenarios = [
   {
@@ -116,7 +118,7 @@ const scenarios = [
       },
       {
         "file": "l",
-        "pattern": "onRead\\(cached\\)\\s*await refreshVisibleBackupQueueStatuses\\(\\)",
+        "pattern": "onRead\\(cached\\)\\s*reportPhotoPageReady\\(\"mounted\", started: pageStarted\\)\\s*await refreshVisibleBackupQueueStatuses\\(\\)",
         "flags": ""
       }
     ]
@@ -126,7 +128,7 @@ const scenarios = [
     "checks": [
       {
         "file": "l",
-        "pattern": "if selected != nil \\|\\| showingMap \\{[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
+        "pattern": "if selected != nil \\|\\| showingMap \\|\\|\\s*\\(phase == \\.active && authorized\\) \\{[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
         "flags": ""
       }
     ]
@@ -937,6 +939,226 @@ const scenarios = [
       {
         "file": "x",
         "pattern": "func testAlternatingGalleryFilesSettledFramesAcrossThreeTabs\\(\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Files\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Mine\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "79 Twenty additional Gallery Files XCUITest routes",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testAlbumSourceReturnThroughFilesAndMineKeepsGalleryMounted\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testFilesRecentAndFavoritesRemainAvailableAfterForegroundReturn\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleAfterFilesQuickRailReturnKeepsUnifiedWall\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryFilterCancelAfterRecentFavoritesToggle\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testNativeLocalGalleryMenuRouteReturnsToUnifiedSource\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryAlbumSourceWithLandscapeAndTabReturn\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testFilesHomeAfterRepeatedNativeGallerySourceChanges\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testCloudFilesRepeatedOfflineRetryRetainsRecoverableChildPage\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testRecentlyDeletedRepeatedOfflineRetryRetainsRecoverableChildPage\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryAlbumsAndOriginalsAfterForegroundResumeKeepSourceRail\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testNativeFilesQuickRailAfterLandscapeGalleryReturnNoBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testLocalPhotoSourceRetainsGalleryAfterFilesForegroundRoundtrip\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testSyntheticOwnerFilesAndGalleryRelaunchDoesNotRetainOldScope\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testLocalPhotosSourceSurvivesFilesMineAndGalleryRoundTrip\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "80 Native tap and shell readiness telemetry",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "IOS_NATIVE_NAV_TAP_START route=",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "IOS_NATIVE_NAVIGATION_READY_MS route=",
+        "flags": ""
+      },
+      {
+        "file": "x",
+        "pattern": "navigationStarted = Date\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "81 Tap-adjacent and case-start frame samples stay bounded",
+    "checks": [
+      {
+        "file": "p",
+        "pattern": "FRAME_OFFSETS_SECONDS = \\(0\\.5, 1\\.5, 3\\.5\\)",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "TAP_FRAME_OFFSETS_SECONDS = \\(0\\.15, 0\\.55\\)",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "TARGETS.update\\(NAV_TARGETS\\)",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "scheduled_after_tap_seconds",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "capture_mode",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "82 Finished cases cannot capture frames of subsequent navigation",
+    "checks": [
+      {
+        "file": "p",
+        "pattern": "if key not in active:",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "current_case == key",
+        "flags": ""
+      },
+      {
+        "file": "p",
+        "pattern": "tap_counts.get\\(current_case, 0\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "83 Video first frame and file jump remain separate from FPS",
+    "checks": [
+      {
+        "file": "m",
+        "pattern": "VIDEO_FIRST_FRAME_PATTERN",
+        "flags": ""
+      },
+      {
+        "file": "m",
+        "pattern": "JUMP_VERIFIED_PATTERN",
+        "flags": ""
+      },
+      {
+        "file": "m",
+        "pattern": "zero_samples_means_not_measured",
+        "flags": ""
+      },
+      {
+        "file": "m",
+        "pattern": "is_physical_device_fps",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "84 Local PhotoKit tab-return uses current verified page",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "navigationRetainedPage.startOffset == offset",
+        "flags": ""
+      },
+      {
+        "file": "l",
+        "pattern": "page = navigationRetainedPage",
+        "flags": ""
+      },
+      {
+        "file": "l",
+        "pattern": "reportPhotoPageReady\\(\"tab-return\", started: pageStarted\\)",
         "flags": ""
       }
     ]
