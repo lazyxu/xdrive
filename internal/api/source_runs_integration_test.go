@@ -60,20 +60,9 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	target := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID),
 		token, strings.NewReader(`{"name":"Synology"}`), http.StatusCreated)
 
-	createBody := fmt.Sprintf(`{
-		"name":"Synology Photos",
-		"kind":"test",
-		"direction":"push",
-		"sync_mode":"backup",
-		"run_mode":"scan",
-		"target_node_id":%d,
-		"ignore_rules":"@eaDir/\n"
-	}`, target.ID)
-	createdRes := request(t, router, http.MethodPost, "/api/v1/sources", token, strings.NewReader(createBody), http.StatusCreated)
-	var source sourceDTO
-	if err := json.Unmarshal(createdRes.Body.Bytes(), &source); err != nil {
-		t.Fatal(err)
-	}
+	source := seedSyntheticSourceForProtocolTest(t, db, target.ID,
+		"Synology Photos", meta.SourceDirectionPush, meta.SourceSyncModeBackup,
+		meta.SourceRunModeScan, "@eaDir/\\n")
 
 	base := time.Date(2026, 9, 26, 1, 2, 3, 0, time.UTC)
 	var owner meta.User
@@ -432,19 +421,9 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	target := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID),
 		token, strings.NewReader(`{"name":"Synology"}`), http.StatusCreated)
 
-	createBody := fmt.Sprintf(`{
-		"name":"Synology Photos",
-		"kind":"test",
-		"direction":"push",
-		"sync_mode":"backup",
-		"run_mode":"sync",
-		"target_node_id":%d
-	}`, target.ID)
-	createdRes := request(t, router, http.MethodPost, "/api/v1/sources", token, strings.NewReader(createBody), http.StatusCreated)
-	var source sourceDTO
-	if err := json.Unmarshal(createdRes.Body.Bytes(), &source); err != nil {
-		t.Fatal(err)
-	}
+	source := seedSyntheticSourceForProtocolTest(t, db, target.ID,
+		"Synology Photos", meta.SourceDirectionPush, meta.SourceSyncModeBackup,
+		meta.SourceRunModeSync, "")
 
 	var owner meta.User
 	if err := db.Where("username = ?", "source-commit-user").First(&owner).Error; err != nil {
