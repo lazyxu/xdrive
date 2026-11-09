@@ -255,7 +255,7 @@ test('Web and Desktop Gallery share persisted-first poster adapter with revision
 })
 
 test('All three Gallery tile render paths forward persisted poster writes', () => {
-  const source = (fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8') + '\n' + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallerySharedTiles.tsx'), 'utf8'))
+  const source = (fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8') + '\n' + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallerySharedTiles.tsx'), 'utf8') + '\n' + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGallerySharedTimeline.tsx'), 'utf8'))
   const tiles = [...source.matchAll(/<MediaTile\b([\s\S]*?)\/>/g)]
   assert.equal(tiles.length, 3, 'grid, virtual grid and timeline must all use the shared tile')
   for (const [, content] of tiles) {
