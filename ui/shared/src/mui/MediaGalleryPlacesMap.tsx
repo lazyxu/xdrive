@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Autocomplete, Box, Button, CircularProgress, ClickAwayListener, IconButton, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds, MediaAlbum, MediaGalleryQuery } from '../models'
+import type { MediaPlaceFacet, MediaBaiduNativeCellSelection, MediaPlacesViewportBounds, MediaAlbum, MediaGalleryQuery, MediaItem } from '../models'
 import {
   xDriveNormalizeBaiduMapPhotoScope, xDriveEmptyBaiduMapPhotoScope,
   xDriveBaiduMapScopeSurvivesFullReload, xDriveBaiduMapPhotoScopeKey,
@@ -32,7 +32,7 @@ import {
  * silently downgrades the isolated Child to the legacy direct prototype. */
 export function XDriveMediaGalleryPlacesMap({
   places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
-  listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, loadPhotoCoverPreviewURL, savePhotoCoverVideoPoster, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
+  listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, loadPhotoCoverPreviewURL, savePhotoCoverVideoPoster, onSetFavorite, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeCellPhoto, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, desktopEmbeddedPlacesURL, onPrepareDesktopPlaces, onOpenDesktopReauthentication, diagnosticScope, onOpenDiagnostics, onCloseMap,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
@@ -51,6 +51,7 @@ export function XDriveMediaGalleryPlacesMap({
   loadPhotoCoverThumbnail?: import('./MediaGallery').MediaThumbnailLoader
   loadPhotoCoverPreviewURL?: import('./MediaGallery').MediaPreviewURLLoader
   savePhotoCoverVideoPoster?: import('./MediaGallery').MediaVideoPosterSaver
+  onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   getBaiduMapCoverage?: import('./MediaGallery').MediaGalleryDataSource['getBaiduMapCoverage']
   getBaiduMapCoverageReasons?: import('./MediaGallery').MediaGalleryDataSource['getBaiduMapCoverageReasons']
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
@@ -990,6 +991,7 @@ export function XDriveMediaGalleryPlacesMap({
           photoTileMinWidth={photoTileMinWidth}
           loadPreviewURL={loadPhotoCoverPreviewURL}
           saveVideoPoster={savePhotoCoverVideoPoster}
+          onSetFavorite={onSetFavorite}
           edgeToEdge={compact} onOpenCell={onOpenBaiduNativeCell}
           onOpenCellPhoto={onOpenBaiduNativeCellPhoto}
           onOpenViewport={onOpenBaiduNativeViewport}
