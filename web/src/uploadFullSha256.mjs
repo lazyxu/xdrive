@@ -101,3 +101,17 @@ export class IncrementalSHA256 {
     return Array.from(this.state, v => v.toString(16).padStart(8, '0')).join('');
   }
 }
+
+// Keep upload-file hashing bounded to a small view and yield to the event
+// loop between views. The caller's Owner/cancel check runs before every view.
+export async function feedFullUploadHash(fullFileHasher, bytes, check) {
+  const windowSize = 1024 * 1024;
+  for (let offset = 0; offset < bytes.byteLength; offset += windowSize) {
+    check?.();
+    fullFileHasher.update(bytes.subarray(offset, Math.min(offset + windowSize, bytes.byteLength)));
+    if (offset + windowSize < bytes.byteLength) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  check?.();
+}
