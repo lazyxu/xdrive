@@ -9,7 +9,7 @@ const { act } = renderer
 
 const root = path.resolve(__dirname, '../..')
 const read = name => fs.readFileSync(path.join(root, name), 'utf8')
-const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx'))
+const gallery = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTimeline.tsx'))
 const labelStart = gallery.indexOf('function mediaAssetChipLabel(')
 const labelEnd = gallery.indexOf('\nexport type XDriveMediaGalleryVirtualCollection', labelStart)
 const tileStart = gallery.indexOf('type MediaTileProps = {')
