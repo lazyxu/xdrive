@@ -198,7 +198,8 @@ test('iPhone Safari retains Back before metadata identifies the video and while 
     assert.equal(chrome(state.view,'header')?.props.sx.visibility,'visible')
     assert.equal([...state.timers.values()].some(t => t.delay === 2200),false,
       'slow metadata must not hide the only available navigation')
-    assert.equal(chrome(state.view,'actions'),undefined)
+    assert.equal(chrome(state.view,'actions')?.props.sx.visibility,'visible',
+      'existing supported actions remain accessible during a slow Owner lookup')
     await state.change({presentationState:'ready', navigationLoading:false,
       canNext:true, canPrevious:true, filmstrip:React.createElement('filmstrip'),
       keepChromeVisible:true})
