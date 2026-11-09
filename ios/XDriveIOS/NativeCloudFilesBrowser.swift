@@ -884,26 +884,47 @@ private enum XDriveIOSNativeFilesQuickSection: String, CaseIterable, Identifiabl
 /// The real Files/Trash readers still verify the Server on every access.
 private struct XDriveIOSNativeFilesNoSessionChild: View {
     enum Kind: Equatable {
-        case cloud, trash
+        case cloud, trash, favorites, recent
 
-        var title: String { self == .cloud ? "xDrive 云端" : "最近删除" }
+        var title: String {
+            switch self {
+            case .cloud: return "xDrive 云端"
+            case .trash: return "最近删除"
+            case .favorites: return "收藏夹"
+            case .recent: return "最近使用"
+            }
+        }
         var errorPageID: String {
-            self == .cloud ? "native-ios-files-error-page" :
-                "native-ios-files-trash-error-page"
+            switch self {
+            case .cloud: return "native-ios-files-error-page"
+            case .trash: return "native-ios-files-trash-error-page"
+            case .favorites: return "native-ios-files-favorites-error-page"
+            case .recent: return "native-ios-files-recent-error-page"
+            }
         }
         var retryID: String {
-            self == .cloud ? "native-ios-files-retry" :
-                "native-ios-files-trash-retry"
+            switch self {
+            case .cloud: return "native-ios-files-retry"
+            case .trash: return "native-ios-files-trash-retry"
+            case .favorites: return "native-ios-files-favorites-retry"
+            case .recent: return "native-ios-files-recent-retry"
+            }
         }
         var returnID: String {
-            self == .cloud ? "native-ios-files-error-return" :
-                "native-ios-files-trash-error-return"
+            switch self {
+            case .cloud: return "native-ios-files-error-return"
+            case .trash: return "native-ios-files-trash-error-return"
+            case .favorites: return "native-ios-files-favorites-error-return"
+            case .recent: return "native-ios-files-recent-error-return"
+            }
         }
     }
 
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let expectedOwner: XDriveNativeOwnerRoot
     let kind: Kind
+    // A route hint, never an authorization. Re-read the Server after retry.
+    var targetFolder: XDriveIOSNativeFilesFolder? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var checking = false
     @State private var verifiedForOpen = false
@@ -920,12 +941,20 @@ private struct XDriveIOSNativeFilesNoSessionChild: View {
                 // full protected reader after explicitly pressing Retry.
                 switch kind {
                 case .cloud:
-                    XDriveIOSNativeFilesBrowser(
-                        login: login, folderID: expectedOwner.rootNodeID,
-                        folderName: "xDrive 云端"
-                    )
+                    if let targetFolder {
+                        XDriveIOSNativeFilesBrowser(login: login, folder: targetFolder)
+                    } else {
+                        XDriveIOSNativeFilesBrowser(
+                            login: login, folderID: expectedOwner.rootNodeID,
+                            folderName: "xDrive 云端"
+                        )
+                    }
                 case .trash:
                     XDriveIOSNativeFilesTrashScreen(login: login)
+                case .favorites:
+                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+                case .recent:
+                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 18) {
@@ -1426,7 +1455,12 @@ struct XDriveIOSNativeFilesBrowser: View {
         Section("位置") {
             if let owner = login.owner {
                 NavigationLink {
-                    if login.hasSameOwnerSessionForNavigation {
+                    if XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+                        sessionMatches: login.hasSameOwnerSessionForNavigation,
+                        sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope.matches(
+                            login.owner, owner
+                        )
+                    ) {
                         XDriveIOSNativeFilesBrowser(
                             login: login, folderID: owner.rootNodeID,
                             folderName: "xDrive 云端"
@@ -1452,7 +1486,12 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             NavigationLink {
                 if let expected = login.owner {
-                    if login.hasSameOwnerSessionForNavigation {
+                    if XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+                        sessionMatches: login.hasSameOwnerSessionForNavigation,
+                        sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope.matches(
+                            login.owner, expected
+                        )
+                    ) {
                         XDriveIOSNativeFilesTrashScreen(login: login)
                     } else {
                         XDriveIOSNativeFilesNoSessionChild(
