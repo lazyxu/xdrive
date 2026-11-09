@@ -133,13 +133,20 @@ assert "go run scripts/ci/verify-github-stable-final-gate.go" in stage_gate
 assert "CI_COMMIT_TAG" in stage_gate and "CI_COMMIT_SHA" in stage_gate
 assert "bash scripts/ci/gitlab-stable-prestage-gate.sh" in stage
 assert stage.index("bash scripts/ci/gitlab-stable-prestage-gate.sh") < stage.index("xdrive_registry_login")
+# Local GitLab compilation is safe before GitHub tag CI has finished.
+# The mandatory approval belongs to the first Registry write, NOT the build
+# before_script, otherwise stable tags fail merely because CI is pending.
 for name in ("server-image", "caddy-image", "photo-face-image", "media-worker-image"):
     job = ci_jobs[name]
-    assert "bash scripts/ci/gitlab-stable-prestage-gate.sh" in job, name
-    assert job.index("bash scripts/ci/gitlab-stable-prestage-gate.sh") < job.index("*install_docker_cli_only"), name
+    assert "bash scripts/ci/gitlab-stable-prestage-gate.sh" not in job, name
+    assert "bash scripts/ci/gitlab-stage-image.sh" in job, name
+assert 'has not completed with successful Final Gate and OCR smoke' in stage_gate
+assert "XDRIVE_STABLE_GATE_MAX_WAIT_SECONDS" in stage_gate
+assert "XDRIVE_STABLE_GATE_POLL_SECONDS" in stage_gate
 photo_build = (ROOT / "scripts/ci/test-photo-face-image.sh").read_text(encoding="utf-8")
 assert "bash scripts/ci/gitlab-stable-prestage-gate.sh" in photo_build
-assert photo_build.index("bash scripts/ci/gitlab-stable-prestage-gate.sh") < photo_build.index("runtime_registry_tag=\"$CI_REGISTRY_IMAGE"), "photo runtime cache published before gate"
+assert photo_build.index('runtime_registry_tag="$CI_REGISTRY_IMAGE') < photo_build.index("bash scripts/ci/gitlab-stable-prestage-gate.sh") < photo_build.index('docker push "$runtime_registry_tag"'), "Photo Face must gate the actual Registry runtime write"
+
 assert "xdrive_assert_image_identity" in promote and "xdrive_assert_image_identity" in publish
 
 gate = (ROOT / "scripts/ci/verify-github-stable-final-gate.go").read_text()
