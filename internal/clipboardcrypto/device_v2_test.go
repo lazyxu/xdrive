@@ -19,21 +19,21 @@ func TestWebCryptoFixtureDecryptAndRejectsTampering(t *testing.T) {
 	scope := "https://nas.example:12"
 	target := "a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2"
 	fixture := Envelope{
-		ClientEventID: "12d922e2-7cca-4315-9c98-bd83e679cb90",
+		ClientEventID:  "12d922e2-7cca-4315-9c98-bd83e679cb90",
 		TargetDeviceID: target,
-		Kind: "application/x-xdrive-node-ref",
-		NodeID: 118,
-		Nonce: "+fyvZcCVJT9O9uyL",
-		Ciphertext: "e3g43zd96HkSPwOLQrU8NtUrN6dIJkXQ6Q==",
-		EphemeralKey: "LVkKQcvSXWnWgbHgLWCEPLGTWrd8cJNBEncrkUketwY=",
-		WrappedKey: "1y/y0nl6NKA1L6J8lLxTZMZHEtmjjZ0y6SYIwTDZl27EHatdWkCZJNTDUt8J4GiJVT+Fc0Oqi940uisS",
+		Kind:           "application/x-xdrive-node-ref",
+		NodeID:         118,
+		Nonce:          "+fyvZcCVJT9O9uyL",
+		Ciphertext:     "e3g43zd96HkSPwOLQrU8NtUrN6dIJkXQ6Q==",
+		EphemeralKey:   "LVkKQcvSXWnWgbHgLWCEPLGTWrd8cJNBEncrkUketwY=",
+		WrappedKey:     "1y/y0nl6NKA1L6J8lLxTZMZHEtmjjZ0y6SYIwTDZl27EHatdWkCZJNTDUt8J4GiJVT+Fc0Oqi940uisS",
 	}
 	got, err := Decrypt(scope, target, private, fixture)
 	if err != nil || got != "asset:118" {
 		t.Fatalf("WebCrypto fixture refused or wrong plaintext: %v, %q", err, got)
 	}
 	tests := []struct {
-		name string
+		name   string
 		mutate func(*Envelope)
 	}{
 		{"node substitution", func(x *Envelope) { x.NodeID = 119 }},
