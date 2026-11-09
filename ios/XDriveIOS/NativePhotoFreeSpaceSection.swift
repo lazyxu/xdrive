@@ -56,6 +56,7 @@ private struct XDriveIOSPhotoRetentionCandidate {
     let owner: XDriveNativeOwnerRoot
     let original: XDriveIOSNativeVerifiedOriginal
     let hold: XDriveIOSPhotoRetentionResponse
+    let allowICloudOriginals: Bool
 }
 
 private enum XDriveIOSPhotoRetentionFailure: Error {
@@ -137,7 +138,10 @@ final class XDriveIOSNativePhotoFreeSpaceModel: ObservableObject {
                       UIApplication.shared.applicationState == .active,
                       XDriveIOSNativePhotoProofStamp.current(localIdentifier) == original.stamp
                 else { throw XDriveIOSPhotoRetentionFailure.invalidProof }
-                self.selected = .init(owner: owner, original: original, hold: proof)
+                self.selected = .init(
+                    owner: owner, original: original, hold: proof,
+                    allowICloudOriginals: allowICloudOriginals
+                )
                 self.prepared = true
                 self.message = "服务器已永久保留这一版原件的实际字节、完整 Live 双资源（如适用）、受管 Node 和 CAS。可以单独确认删除这张照片的 iPhone 原件；iCloud Photos 删除会同步到其他设备。"
             } catch is CancellationError {
@@ -179,6 +183,17 @@ final class XDriveIOSNativePhotoFreeSpaceModel: ObservableObject {
                     path: "/api/v1/ios/photos/managed/original-retention/" +
                         chosen.hold.hold_id, body: nil
                 )
+                try Task.checkCancellation()
+                // The definitive delete gate recalculates the current source
+                // original SHA and Live pair a second time, not just its
+                // modificationDate. PhotoKit can change while the Server is
+                // hashing CAS or issuing its retention proof.
+                guard await self.currentProof.verifyAndWait(
+                    localIdentifier: original.localIdentifier, login: login,
+                    allowICloudOriginals: chosen.allowICloudOriginals
+                ), self.currentProof.verifiedOriginal == original else {
+                    throw XDriveIOSPhotoRetentionFailure.invalidProof
+                }
                 try Task.checkCancellation()
                 let currentStamp = XDriveIOSNativePhotoProofStamp.current(
                     original.localIdentifier)
