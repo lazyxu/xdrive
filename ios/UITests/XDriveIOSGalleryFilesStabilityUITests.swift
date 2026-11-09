@@ -446,4 +446,130 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         }
     }
 
+    func testCloudFilesRepeatedOfflineRetryRetainsRecoverableChildPage() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-root-location", in: app)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 15), "Offline cloud child did not fail closed")
+        let first = XCTAttachment(screenshot: app.screenshot())
+        first.name = "cloud-failed-first-read"
+        first.lifetime = .keepAlways
+        add(first)
+        select("native-ios-files-retry", in: app)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 15), "Offline retry lost the recovery surface")
+        select("native-ios-files-error-return", in: app)
+        checkFilesHome(app)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testRecentlyDeletedRepeatedOfflineRetryRetainsRecoverableChildPage() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-trash", in: app)
+        XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
+            .waitForExistence(timeout: 15), "Offline Trash did not fail closed")
+        let first = XCTAttachment(screenshot: app.screenshot())
+        first.name = "trash-failed-first-read"
+        first.lifetime = .keepAlways
+        add(first)
+        select("native-ios-files-trash-retry", in: app)
+        XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
+            .waitForExistence(timeout: 15), "Offline Trash retry removed the recovery surface")
+        select("native-ios-files-trash-error-return", in: app)
+        checkFilesHome(app)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-root-location", in: app)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-files-error-return", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        select("native-ios-gallery-people", in: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
+            .waitForExistence(timeout: 15))
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery after offline Files and People")
+    }
+
+    func testGalleryAlbumsAndOriginalsAfterForegroundResumeKeepSourceRail() {
+        let app = launch()
+        select("native-ios-gallery-source-albums", in: app)
+        checkGallery(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        checkGallery(app)
+        select("native-ios-gallery-source-originals", in: app)
+        checkGallery(app)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        select("native-ios-gallery-source-unified", in: app)
+        assertNotSolidScreen(app, "Gallery after Albums/Originals foreground")
+    }
+
+    func testNativeFilesQuickRailAfterLandscapeGalleryReturnNoBlank() {
+        let app = launch(syntheticOwner: true)
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        select("native-ios-tab-files", in: app)
+        for section in ["recent", "favorites", "browse"] {
+            select("native-ios-files-section-\(section)", in: app)
+        }
+        device.orientation = .landscapeLeft
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        device.orientation = .portrait
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        assertNotSolidScreen(app, "Files quick rail after rotation")
+    }
+
+    func testLocalPhotoSourceRetainsGalleryAfterFilesForegroundRoundtrip() {
+        let app = launch()
+        select("native-ios-gallery-source-menu", in: app)
+        let local = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(local.waitForExistence(timeout: 15))
+        local.tap()
+        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+            .waitForExistence(timeout: 15))
+        assertNotSolidScreen(app, "Local PhotoKit source on resume")
+    }
+
+    func testSyntheticOwnerFilesAndGalleryRelaunchDoesNotRetainOldScope() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        XCTAssertTrue(target("native-ios-files-open-root-location", in: app)
+            .waitForExistence(timeout: 15))
+        app.terminate()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        XCTAssertFalse(target("native-ios-files-open-root-location", in: app).exists,
+                       "A synthetic Owner root survived a signed-out launch")
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+    }
+
 }

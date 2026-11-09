@@ -1142,6 +1142,146 @@ const scenarios = [
         "flags": ""
       }
     ]
+  },
+  {
+    "name": "99 Local PhotoKit Viewer first appearance validates grant before reusing a page",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "if freshGrant != authorization \\{\\s*refresh\\(at: savedOffset\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "100 Local PhotoKit Viewer restores only a matching library revision",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "page == nil \\|\\| retainedLibraryRevision != libraryChanges\\.revision",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "101 Local PhotoKit Viewer tab switch suspends but does not clear a live page",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "if selected != nil \\{\\s*suspendForViewer\\(\\)\\s*\\} else if phase == \\.active &&[\\s\\S]*?suspendForViewer\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "102 Local album same-page reentry verifies PhotoKit permission and revision",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "pageRevision == libraryMonitor\\.revision &&\\s*freshGrant == permission",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "103 Local album foreground tab switch keeps bounded page only while authorized",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "if selected != nil \\|\\| showingAlbumMap \\|\\|[\\s\\S]*?phase == \\.active && albumAuthorized\\) \\{\\s*suspendForViewer\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "104 Continuous local PhotoKit empty library does not reload on every tab return",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if authorized && selected == nil && !loading &&\\s*!hasCompletedInitialRead \\{ reload\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "105 Continuous local PhotoKit observer does not scan an invisible tab",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if selected == nil && authorized && phase == \\.active &&\\s*isVisible \\{ reload\\(\\) \\}\\s*else \\{ invalidate\\(with: nil\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "106 Recent Favorites failure does not automatically restart auth read",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if !model\\.loading && model\\.error == nil \\{ reload\\(\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "107 Offline Cloud Files retry is simulated and still returns to native Home",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testCloudFilesRepeatedOfflineRetryRetainsRecoverableChildPage\\(\\)[\\s\\S]*?native-ios-files-retry[\\s\\S]*?native-ios-files-error-return",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "108 Offline Trash retry is simulated without stale destructive rows",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testRecentlyDeletedRepeatedOfflineRetryRetainsRecoverableChildPage\\(\\)[\\s\\S]*?native-ios-files-trash-retry[\\s\\S]*?native-ios-files-trash-error-return",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "109 Gallery People navigation after offline Files captures the settled frame",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank\\(\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after offline Files and People\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "110 Gallery Albums Originals foreground and source rail roundtrip is simulated",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryAlbumsAndOriginalsAfterForegroundResumeKeepSourceRail\\(\\)[\\s\\S]*?XCUIDevice\\.shared\\.press\\(\\.home\\)[\\s\\S]*?native-ios-gallery-source-unified",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "111 Native Files quick rail is rechecked after device rotation and Gallery return",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testNativeFilesQuickRailAfterLandscapeGalleryReturnNoBlank\\(\\)[\\s\\S]*?\\.landscapeLeft[\\s\\S]*?assertNotSolidScreen\\(app, \"Files quick rail after rotation\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "112 Synthetic Owner root cannot persist across signed-out process relaunch",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testSyntheticOwnerFilesAndGalleryRelaunchDoesNotRetainOldScope\\(\\)[\\s\\S]*?app\\.launchArguments = \\[\"-xdrive-ui-navigation-smoke\"\\][\\s\\S]*?XCTAssertFalse\\(target\\(\"native-ios-files-open-root-location\"",
+        "flags": ""
+      }
+    ]
   }
 ]
 const cache = new Map()
