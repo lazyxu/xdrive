@@ -132,7 +132,9 @@ test('Files audio and video expose initial KVO loading failure, scoped retry and
   assert.match(modal, /accessibilityIdentifier\("native-ios-files-player-reload"\)/);
   assert.match(modal, /Button\("重试"\) \{ reloadCurrent\(\) \}/);
   assert.match(modal, /private func reloadCurrent\(\)[\s\S]*?guard authorized, !isClosing else \{ return \}[\s\S]*?retire\(\)[\s\S]*?failure = nil[\s\S]*?loading = true[\s\S]*?attempt = UUID\(\)/);
-  assert.match(modal, /private func openCurrent\(\) async[\s\S]*?retire\(\)\s*failure = nil\s*loading = true/);
+  assert.match(modal, /private func openCurrent\(\) async[\s\S]*?retire\(\)\s*previewRequestedAt = ProcessInfo\.processInfo\.systemUptime\s*failure = nil\s*loading = true/);
+  assert.match(modal, /private func recordVideoFirstFrame\(_ renderedPlayer: AVPlayer\)/);
+  assert.match(modal, /current === renderedPlayer/);
   assert.match(modal, /\.onChange\(of: phase\)[\s\S]*?retire\(\)/);
 });
 
