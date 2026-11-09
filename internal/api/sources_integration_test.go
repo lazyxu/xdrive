@@ -184,7 +184,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	// synthetic provider; unknown kinds can no longer provision HTTP targets.
 	created := seedSyntheticSourceForProtocolTest(t, db, targetA.ID,
 		"Synology Photos", meta.SourceDirectionPush, meta.SourceSyncModeBackup,
-		meta.SourceRunModeScan, "@eaDir/\\n\\\\#recycle/\\n*.tmp\\n")
+		meta.SourceRunModeScan, "@eaDir/\n\\#recycle/\n*.tmp\n")
 	if created.ID == 0 || created.Revision != 1 || created.RunMode != meta.SourceRunModeScan ||
 		created.SyncMode != meta.SourceSyncModeBackup || created.Status != meta.SourceStatusActive ||
 		created.TargetNodeID == nil || *created.TargetNodeID != targetA.ID || created.TargetPath != "Synology" ||
