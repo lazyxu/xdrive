@@ -1510,18 +1510,48 @@ struct XDriveIOSNativeFilesBrowser: View {
         Section("个人收藏") {
             DisclosureGroup("收藏夹和常用收藏", isExpanded: $favoriteFoldersExpanded) {
                 NavigationLink {
-                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+                    if let expectedOwner = login.owner {
+                        if XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+                        sessionMatches: login.hasSameOwnerSessionForNavigation,
+                        sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope.matches(
+                            login.owner, expectedOwner
+                        )
+                    ) {
+                            XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+                        } else {
+                            XDriveIOSNativeFilesNoSessionChild(
+                                login: login, expectedOwner: expectedOwner, kind: .favorites
+                            )
+                        }
+                    } else {
+                        Text("请先登录 xDrive 服务器")
+                    }
                 } label: {
                     Label("收藏夹", systemImage: "star")
                 }
                 .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
                 .accessibilityIdentifier("native-ios-files-open-favorites")
-                ForEach(verifiedFavoriteFolders) { item in
+                if let expectedOwner = favoriteShortcutsOwner {
+                    ForEach(verifiedFavoriteFolders) { item in
                 NavigationLink {
-                    XDriveIOSNativeFilesBrowser(
-                        login: login, folderID: item.node.id,
-                        folderName: item.node.name
-                    )
+                    if XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+                        sessionMatches: login.hasSameOwnerSessionForNavigation,
+                        sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope.matches(
+                            login.owner, expectedOwner
+                        )
+                    ) {
+                        XDriveIOSNativeFilesBrowser(
+                            login: login, folderID: item.node.id,
+                            folderName: item.node.name
+                        )
+                    } else {
+                        XDriveIOSNativeFilesNoSessionChild(
+                            login: login, expectedOwner: expectedOwner, kind: .cloud,
+                            targetFolder: XDriveIOSNativeFilesFolder(
+                                id: item.node.id, name: item.node.name
+                            )
+                        )
+                    }
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "folder.fill")
@@ -1537,7 +1567,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                 }
                 .accessibilityIdentifier("native-ios-files-favorite-folder-\(item.id)")
-            }
+                    }
+                }
                 if favoriteShortcuts.loading {
                     ProgressView("正在读取收藏文件夹…")
                 } else if let error = favoriteShortcuts.error, login.owner != nil {
@@ -1552,14 +1583,29 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         Section("快捷目录") {
             DisclosureGroup("固定的文件夹", isExpanded: $quickAccessExpanded) {
-                if quickAccess.matches(login.owner) {
+                if let expectedOwner = login.owner,
+                   quickAccess.matches(expectedOwner) {
                     ForEach(quickAccess.items) { item in
                         HStack(spacing: 8) {
                             NavigationLink {
-                                XDriveIOSNativeFilesBrowser(
-                                    login: login, folderID: item.node.id,
-                                    folderName: item.node.name
-                                )
+                                if XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+                        sessionMatches: login.hasSameOwnerSessionForNavigation,
+                        sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope.matches(
+                            login.owner, expectedOwner
+                        )
+                    ) {
+                                    XDriveIOSNativeFilesBrowser(
+                                        login: login, folderID: item.node.id,
+                                        folderName: item.node.name
+                                    )
+                                } else {
+                                    XDriveIOSNativeFilesNoSessionChild(
+                                        login: login, expectedOwner: expectedOwner, kind: .cloud,
+                                        targetFolder: XDriveIOSNativeFilesFolder(
+                                            id: item.node.id, name: item.node.name
+                                        )
+                                    )
+                                }
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Label(item.node.name, systemImage: "pin.fill")
@@ -1610,7 +1656,22 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         Section("快捷访问") {
             NavigationLink {
-                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
+                if let expectedOwner = login.owner {
+                    if XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+                        sessionMatches: login.hasSameOwnerSessionForNavigation,
+                        sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope.matches(
+                            login.owner, expectedOwner
+                        )
+                    ) {
+                        XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
+                    } else {
+                        XDriveIOSNativeFilesNoSessionChild(
+                            login: login, expectedOwner: expectedOwner, kind: .recent
+                        )
+                    }
+                } else {
+                    Text("请先登录 xDrive 服务器")
+                }
             } label: {
                 Label("最近使用", systemImage: "clock")
             }
@@ -1888,6 +1949,30 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 96)
             }
+    }
+
+    /// Session loss between a verified row and its NavigationDestination must
+    /// not construct a large unauthenticated Files List/thumbnail AX tree.
+    @ViewBuilder private func protectedFolderDestination(
+        _ destination: XDriveIOSNativeFilesFolder
+    ) -> some View {
+        if let expectedOwner = login.owner {
+            if XDriveIOSNativeFilesNavigationPolicy.canEnterProtectedChild(
+                        sessionMatches: login.hasSameOwnerSessionForNavigation,
+                        sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope.matches(
+                            login.owner, expectedOwner
+                        )
+                    ) {
+                XDriveIOSNativeFilesBrowser(login: login, folder: destination)
+            } else {
+                XDriveIOSNativeFilesNoSessionChild(
+                    login: login, expectedOwner: expectedOwner, kind: .cloud,
+                    targetFolder: destination
+                )
+            }
+        } else {
+            Text("请先登录 xDrive 服务器")
+        }
     }
 
     /// System long-press gesture starts a native drag. Never publish an
@@ -2683,11 +2768,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             set: { if !$0 { pathDestination = nil } }
         )) {
             if let destination = pathDestination {
-                XDriveIOSNativeFilesBrowser(login: login, folder: destination)
+                protectedFolderDestination(destination)
             }
         }
         .navigationDestination(for: XDriveIOSNativeFilesFolder.self) { next in
-            XDriveIOSNativeFilesBrowser(login: login, folder: next)
+            protectedFolderDestination(next)
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
