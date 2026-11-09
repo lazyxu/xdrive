@@ -1,3 +1,11 @@
+## Viewer VFF-20261109 · signed H.264 first-frame A/B (PR #4192, pending)
+
+- **Status: protocol and probe committed; n=0 completed paired runs.** No accepted before/after first-frame latency, P50 gain, or Windows/iPhone Safari performance claim. Source: [PR #4192](https://github.com/lazyxu/xdrive/pull/4192), [exact-HEAD paired H.264 workflow](https://github.com/lazyxu/xdrive/actions/workflows/viewer-first-frame-paired-h264.yml).
+- Baseline is the PR merge-base (`6ada2b168108ce39c0df82c4e3094e5bfb0f7ecc` at PR creation), candidate is the **actual immutable run HEAD**, not an earlier CI SHA. Workflow compiles both real production Web/PWA Viewer bundles, reuses one Go/Gin/PostgreSQL17/local-CAS H.264 signed-Range fixture and the same Electron Chromium runner, and runs three independent Owner-authenticated 100k logical Gallery sessions for each arm.
+- Actual `requestVideoFrameCallback` compositor first frame is the primary metric, measured from the real Gallery tile click; `loadedmetadata`, `loadeddata`, signed URL-ready and optional browser-exposed Range TTFB are secondary. Every row must prove authenticated Owner-signed H.264, nonzero frame dimensions and presented frame count. Browser-absent TTFB is `null`, not zero; no simulated events or arbitrary fetches.
+- Evidence path once a real run completes: `desktop/viewer-first-frame-paired-results/{baseline,candidate}/sample-{1,2,3}.json`, each `summary.json`, and `paired-comparison.json` with baseline/candidate SHA, P50, delta, direction and failure detail. The paired comparison is **observational n=3** and cannot establish causal or statistically significant speedup.
+- **Not covered:** installed Windows Desktop Agent/loopback proxy, production WAN/server, real iPhone Safari/WebKit decoder, HEVC, diverse video codecs or long-lived 4K playback. The mobile Safari UI fixes are separate presentation changes; still require their actual applicable CI and real-device acceptance (跳过（未验收）).
+
 ## Photo content identity · first map page bounded by exact timeline (2026-11-07)
 
 - Exact HEAD `1ae552ad7722111ae10257d4c7c56171de29ce1f` failed the

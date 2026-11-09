@@ -960,19 +960,78 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     presentationCallbackRef.current?.(presentationState)
   }, [presentationState, previewKind, sourceIdentity])
 
+  // Keep a readable, stable first-frame affordance on iPhone Safari as well
+  // as Desktop. A small black spinner over an empty black viewport looked like
+  // a frozen page, especially after the routed Web chrome auto-hid. The card
+  // remains inside the SAME media shell and never captures native play/seek,
+  // Back, or adjacent-item pointer events.
+  const videoLoadingCard = (phase: 'url' | 'first-frame') => (
+    <Stack
+      data-xdrive-preview-video-loading-card={phase}
+      role="status"
+      aria-label={phase === 'url' ? '正在获取视频播放地址' : '正在加载视频画面'}
+      spacing={1.25}
+      alignItems="center"
+      justifyContent="center"
+      sx={{
+        width: 'min(280px, calc(100vw - 56px))',
+        maxWidth: '100%',
+        px: 3, py: 2.75,
+        borderRadius: 3,
+        border: '1px solid rgba(255,255,255,0.14)',
+        bgcolor: 'rgba(18,24,34,0.92)',
+        color: 'common.white',
+        boxShadow: '0 14px 40px rgba(0,0,0,0.24)',
+        backdropFilter: 'blur(12px)',
+        pointerEvents: 'none',
+      }}
+    >
+      <CircularProgress size={30} thickness={4} sx={{ color: '#9dc8ff' }} />
+      <Typography variant="body2" sx={{ fontWeight: 600, color: 'inherit', textAlign: 'center' }}>
+        {phase === 'url' ? '正在打开视频' : '正在准备视频画面'}
+      </Typography>
+      <Typography variant="caption" sx={{
+        color: 'rgba(255,255,255,0.72)', textAlign: 'center', lineHeight: 1.55,
+      }}>
+        {phase === 'url' ? '正在连接播放资源，可以随时返回' : '正在等待首帧，仍可返回或切换'}
+      </Typography>
+    </Stack>
+  )
   const mediaLoadingOverlay = mediaPending ? (
     <Box
       data-xdrive-preview-media-loading
+      data-xdrive-preview-video-loading-stage={previewKind === 'video'
+        ? mediaReady ? 'rebuffer' : 'first-frame' : undefined}
       sx={{
         position: 'absolute',
         inset: 0,
         display: 'grid',
-        placeItems: 'center',
+        placeItems: previewKind === 'video' && mediaReady ? 'start center' : 'center',
         pointerEvents: 'none',
-        bgcolor: previewKind === 'audio' ? 'transparent' : 'rgba(0,0,0,.12)',
+        zIndex: 1,
+        bgcolor: previewKind === 'video'
+          ? mediaReady ? 'transparent' : 'rgba(0,0,0,.12)'
+          : previewKind === 'audio' ? 'transparent' : 'rgba(0,0,0,.12)',
       }}
     >
-      {previewKind === 'video' || previewKind === 'audio' ? (
+      {previewKind === 'video' ? (
+        mediaReady ? (
+          <Stack data-xdrive-preview-video-rebuffer-status direction="row" spacing={1}
+            alignItems="center" role="status" aria-label="视频正在缓冲"
+            sx={{
+              mt: 'max(72px, env(safe-area-inset-top))',
+              px: 1.75, py: 1,
+              borderRadius: 9,
+              bgcolor: 'rgba(18,24,34,0.88)',
+              color: 'common.white',
+              boxShadow: '0 4px 18px rgba(0,0,0,0.18)',
+              pointerEvents: 'none',
+            }}>
+            <CircularProgress size={16} thickness={5} sx={{ color: 'inherit' }} />
+            <Typography variant="caption" sx={{ color: 'inherit' }}>正在缓冲，播放即将继续</Typography>
+          </Stack>
+        ) : videoLoadingCard('first-frame')
+      ) : previewKind === 'audio' ? (
         <XDriveMediaLoadingProgress stage="buffering" {...bufferProgress} />
       ) : <CircularProgress size={26} aria-label="正在加载媒体" />}
     </Box>
@@ -983,17 +1042,37 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   // Do not expose a stale revision or late Owner's URL for a render.
   const activeVideoPosterURL = videoPoster?.identity === sourceIdentity &&
     videoPoster.loader === loadImagePreview ? videoPoster.url : ''
+  // Keep the same physical video viewport (including native controls safe
+  // area) before the signed URL, during buffering and after the first decoded
+  // frame. Previously the poster/loading branch had a different height and no
+  // clearance; the browser replaced it with a padded player mid-interaction.
+  const videoShellSx = {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    minHeight,
+    boxSizing: 'border-box',
+    bgcolor: 'black',
+    pb: videoControlsSafeArea === 'actions-filmstrip'
+      ? 'var(--xdrive-viewer-video-actions-filmstrip-clearance, calc(128px + env(safe-area-inset-bottom)))'
+      : videoControlsSafeArea === 'actions'
+        ? 'var(--xdrive-viewer-video-actions-clearance, calc(56px + env(safe-area-inset-bottom)))'
+        : undefined,
+  } as const
   const videoPlaceholder = (overlay: ReactNode) => {
-    if (previewKind !== 'video' || !activeVideoPosterURL) return overlay
+    if (previewKind !== 'video') return overlay
     return (
-      <Box data-xdrive-preview-video-poster sx={{
-        position: 'relative', width: '100%', height: '100%', minHeight: 96,
-        display: 'grid', placeItems: 'center', bgcolor: 'black',
-      }}>
-        <Box component="img" src={activeVideoPosterURL} alt="" aria-hidden
-          sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
-        <Box sx={{ position: 'relative', zIndex: 1, display: 'grid', placeItems: 'center',
-          bgcolor: 'rgba(0,0,0,.35)', color: 'common.white', p: 1 }}>
+      <Box data-xdrive-preview-video-poster data-xdrive-preview-media-state="video"
+        sx={videoShellSx}>
+        {activeVideoPosterURL ? (
+          <Box component="img" src={activeVideoPosterURL} alt="" aria-hidden
+            sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
+        ) : null}
+        <Box sx={{
+          position: 'relative', zIndex: 1, width: '100%', height: '100%',
+          display: 'grid', placeItems: 'center',
+          ...(activeVideoPosterURL ? { bgcolor: 'rgba(0,0,0,.35)', color: 'common.white' } : {}),
+        }}>
           {overlay}
         </Box>
       </Box>
@@ -1143,8 +1222,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (loading || acquiredIdentityRef.current !== sourceIdentity ||
         staleVideoStreamOwner || staleAudioOwner || stalePDFOwner || staleTextOwner) {
       return videoPlaceholder(
-        <Box sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
-          <CircularProgress size={26} />
+        <Box sx={{ position: 'relative', width: '100%', height: '100%', minHeight: 96,
+          display: 'grid', placeItems: 'center' }}>
+          {previewKind === 'video'
+            ? videoLoadingCard('url') : <CircularProgress size={26} />}
         </Box>,
       )
     }
@@ -1189,23 +1270,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (!previewURL) return videoPlaceholder(fallback)
     if (previewKind === 'video') {
       return (
-        <Box data-xdrive-preview-media-state="video" sx={{
-          position: 'relative',
-          width: '100%',
-          height: '100%',
-          minHeight,
-          boxSizing: 'border-box',
-          // Both original and edited video share the existing media player.
-          // Native controls must clear the 56px Gallery actions and optional
-          // ~72px filmstrip. Consume the shared Viewer chrome visibility
-          // variable: hidden chrome releases the reserved strip without
-          // restarting a video or adding a second native-media renderer.
-          pb: videoControlsSafeArea === 'actions-filmstrip'
-            ? 'var(--xdrive-viewer-video-actions-filmstrip-clearance, calc(128px + env(safe-area-inset-bottom)))'
-            : videoControlsSafeArea === 'actions'
-              ? 'var(--xdrive-viewer-video-actions-clearance, calc(56px + env(safe-area-inset-bottom)))'
-              : undefined,
-        }}>
+        <Box data-xdrive-preview-media-state="video" sx={videoShellSx}>
           {mediaTransform ? (
             <XDriveTransformedVideoPreview
               key={`${target?.id}:${target?.revision ?? ''}:${previewURL}`}
