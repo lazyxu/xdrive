@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -29,7 +30,7 @@ func isDSMClipboardRoute(path string) bool {
 	case "/v1/cloud-clipboard-capability", "/v1/cloud-clipboard-vault",
 		"/v1/cloud-clipboard-check", "/v1/cloud-clipboard-list",
 		"/v1/cloud-clipboard-devices", "/v1/cloud-clipboard-enable-device",
-		"/v1/cloud-clipboard-decrypt", "/v1/cloud-clipboard-create", "/v1/cloud-clipboard-delete",
+		"/v1/cloud-clipboard-decrypt", "/v1/cloud-clipboard-file", "/v1/cloud-clipboard-create", "/v1/cloud-clipboard-delete",
 		"/v1/cloud-clipboard-clear", "/v1/cloud-clipboard-revoke-device":
 		return true
 	}
@@ -251,6 +252,34 @@ func serveDSMOwnerClipboard(w http.ResponseWriter, r *http.Request, ctx context.
 		if err == nil {
 			output = map[string]string{"text": clear}
 		}
+	case "/v1/cloud-clipboard-file":
+        // One current Owner Files node is read using the same authenticated
+        // Agent and independent Files ACL. No Clipboard item grants access.
+        params, parseErr := url.ParseQuery(r.URL.RawQuery)
+        if parseErr != nil || len(params) != 1 || len(params["node_id"]) != 1 {
+            http.Error(w, "invalid Clipboard file selector", http.StatusBadRequest)
+            return
+        }
+        raw := params.Get("node_id")
+        id, idErr := strconv.ParseUint(raw, 10, 64)
+        if idErr != nil || !localbackupipc.ValidOwnerFileID(id) ||
+            strconv.FormatUint(id, 10) != raw {
+            http.Error(w, "invalid Clipboard file selector", http.StatusBadRequest)
+            return
+        }
+        reader, supported := agent.(interface {
+            OwnerClipboardFileReference(context.Context, uint64) (localbackupipc.OwnerClipboardFileReference, error)
+        })
+        if !supported {
+            http.Error(w, "Owner Files reference unavailable", http.StatusNotImplemented)
+            return
+        }
+        file, fileErr := reader.OwnerClipboardFileReference(ctx, id)
+        if fileErr != nil || !localbackupipc.ValidateOwnerClipboardFileReference(file, id) {
+            http.Error(w, "current Owner Files permission unavailable", http.StatusForbidden)
+            return
+        }
+        output = file
 	case "/v1/cloud-clipboard-revoke-device":
 		lifecycle, supported := agent.(interface {
 			OwnerClipboardRevokeDevice(context.Context, string) error
