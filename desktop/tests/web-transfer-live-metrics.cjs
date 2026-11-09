@@ -85,7 +85,10 @@ function createBrowser(fetchResponse = () => { throw new Error('Unexpected fetch
     const execute = vm.runInContext(`(function(require, module, exports) { ${compiled}\n})`, context, { filename })
     execute((specifier) => {
       if (specifier === '../../ui/shared/src') return load(path.join(repo, 'ui/shared/src/transfers.ts'))
-      return load(path.resolve(path.dirname(filename), specifier + '.ts'))
+      // Preserve explicit .mjs/.js module specifiers (e.g. the incremental
+      // SHA-256 implementation); only extensionless TS imports receive .ts.
+      const resolved = path.extname(specifier) ? specifier : `${specifier}.ts`
+      return load(path.resolve(path.dirname(filename), resolved))
     }, module, module.exports)
     return module.exports
   }
