@@ -47,7 +47,14 @@ test('iPhone original deletion remains disabled until a durable independent Serv
   }
   assert.doesNotMatch(bg, /PHAssetChangeRequest\.deleteAssets/)
   assert.doesNotMatch(screen, /PHAssetChangeRequest\.deleteAssets/)
-  assert.match(screen, /thumbnail|缩略图/i)
+  const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
+  const cache = read('ios/XDriveIOS/NativePhotoThumbnailCacheScreen.swift')
+  // The backup route is only an audit view. The safe cache cleanup lives
+  // in the Photos dashboard and must not delete any Apple Photos originals.
+  assert.match(dashboard, /释放本机缓存空间（不删除照片原件）/)
+  assert.match(dashboard, /XDriveIOSNativePhotoThumbnailCacheScreen\(login: login\)/)
+  assert.match(cache, /清理只会移除 App 缩略图/)
+  assert.doesNotMatch(cache, /PHAssetChangeRequest\.deleteAssets/)
 })
 
 test('APNs token is encrypted and bound to exact Owner/Device/Source/Target without a second uploader', () => {
