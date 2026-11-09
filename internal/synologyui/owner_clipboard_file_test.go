@@ -15,10 +15,11 @@ import (
 
 type dsmClipboardFileFixture struct {
 	*fakeAgent
-	reads    int
-	owner    string
-	malformed bool
+	reads       int
+	owner       string
+	malformed   bool
 	switchOwner bool
+	connections int
 }
 
 func (*dsmClipboardFileFixture) OwnerClipboardAvailable() bool { return true }
@@ -37,8 +38,9 @@ func (*dsmClipboardFileFixture) OwnerClipboardCreate(context.Context, client.Cli
 func (*dsmClipboardFileFixture) OwnerClipboardDelete(context.Context, uint64) error { return nil }
 func (*dsmClipboardFileFixture) OwnerClipboardClear(context.Context) error { return nil }
 func (f *dsmClipboardFileFixture) ServerConnection(context.Context) (localbackupipc.ServerConnection, error) {
+	f.connections++
 	name := f.owner
-	if f.switchOwner && f.reads > 0 {
+	if f.switchOwner && f.connections%2 == 0 {
 		name = "other-owner"
 	}
 	return localbackupipc.ServerConnection{
@@ -53,7 +55,9 @@ func (f *dsmClipboardFileFixture) OwnerClipboardFileReference(_ context.Context,
 	parent := uint64(17)
 	now := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
 	rev := uint64(4)
-	if f.malformed { rev = 0 }
+	if f.malformed {
+		rev = 0
+	}
 	return localbackupipc.OwnerClipboardFileReference{
 		Node: localbackupipc.OwnerFileNode{
 			ID: id, ParentID: &parent, Name: "photo.jpg", Type: "file",
@@ -75,7 +79,9 @@ func TestDSMClipboardFileReferenceRequiresAuthenticatedNarrowCGIAndOwner(t *test
 	request := func(method, query string, cookie bool) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRequest(method, "https://nas.example:5001"+DSMCGIPath+query, nil)
-		if cookie { r.Header.Set("Cookie", "id=dsm-session") }
+		if cookie {
+		r.Header.Set("Cookie", "id=dsm-session")
+	}
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
 		return w
@@ -105,13 +111,16 @@ func TestDSMClipboardFileReferenceRequiresAuthenticatedNarrowCGIAndOwner(t *test
 	if response := request(http.MethodPost, "?op=cloud-clipboard-file&node_id=118", true); response.Code == http.StatusOK {
 		t.Fatal("Clipboard Files read unexpectedly allowed POST")
 	}
-	if f.reads != 1 { t.Fatalf("invalid callers reached Agent %d times", f.reads) }
+	if f.reads != 1 {
+		t.Fatalf("invalid callers reached Agent %d times", f.reads)
+	}
 	f.malformed = true
 	if response := request(http.MethodGet, "?op=cloud-clipboard-file&node_id=118", true); response.Code == http.StatusOK {
 		t.Fatal("malformed file revision was admitted")
 	}
 	f.malformed = false
 	f.switchOwner = true
+	f.connections = 0
 	if response := request(http.MethodGet, "?op=cloud-clipboard-file&node_id=118", true); response.Code == http.StatusOK {
 		t.Fatal("Owner switch returned the old Owner's file")
 	}
