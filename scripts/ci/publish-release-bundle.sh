@@ -57,7 +57,7 @@ for item in items:
     require(mode in ("manual", "manual_test_only"), "invalid install mode")
     if item["platform"] == "android":
         require(mode == "manual" and re.fullmatch(
-            r"xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\\.apk",
+            r"xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apk",
             name
         ), "Android debug or unsigned APK cannot be published")
     origins = item.get("sources")
