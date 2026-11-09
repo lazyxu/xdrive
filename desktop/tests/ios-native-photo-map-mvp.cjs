@@ -537,7 +537,7 @@ test('PhotoKit map pages always advance until the real terminal cursor and rejec
 })
 
 
-test('native Map Done restores the current Owner Gallery source and rejects a stale one', () => {
+test('native Map Done works without cloud login while restored Owner Gallery source stays scoped', () => {
   assert.match(dashboard, /@State private var mapReturnGallerySource: XDriveIOSNativeGallerySource\?/)
   assert.match(dashboard, /@State private var mapReturnOwnerScopeKey: String\?/)
   const start = dashboard.indexOf('private func openGallery(')
@@ -548,7 +548,12 @@ test('native Map Done restores the current Owner Gallery source and rejects a st
   assert.match(routing, /mapReturnGallerySource = tab == \.gallery && login\.owner != nil[\s\S]*?\? gallerySource : nil/)
   assert.match(routing, /mapReturnOwnerScopeKey = mapReturnGallerySource != nil[\s\S]*?\? ownerScopeKey : nil/)
   assert.match(routing, /else \{\s*mapReturnGallerySource = nil\s*mapReturnOwnerScopeKey = nil/)
-  assert.match(routing, /private func closeGalleryMap\(\) \{[\s\S]*?guard gallerySource == \.map, login\.owner != nil else \{ return \}/)
+  const close = routing.slice(routing.indexOf('private func closeGalleryMap()'))
+  assert.match(close, /guard gallerySource == \.map else \{ return \}/)
+  // Local PhotoKit maps require Photos Full Access, not a Server Owner login.
+  // The separate cloud-Owner selector still requires verified session state.
+  assert.doesNotMatch(close, /guard gallerySource == \.map, login\.owner != nil/)
+  assert.match(close, /mapReturnOwnerScopeKey == ownerScopeKey[\s\S]*?\? mapReturnGallerySource : nil/)
   assert.match(routing, /let fallback = XDriveIOSNativeGallerySource\(rawValue: "unified"\) \?\? \.local/)
   assert.match(routing, /mapReturnOwnerScopeKey == ownerScopeKey[\s\S]*?\? mapReturnGallerySource : nil[\s\S]*?openGallery\(prior \?\? fallback\)/)
   assert.match(dashboard, /onClose: \{ closeGalleryMap\(\) \}/)
