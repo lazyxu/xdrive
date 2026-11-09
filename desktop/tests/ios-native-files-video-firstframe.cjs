@@ -52,7 +52,7 @@ test('P0 video stays black while signed ticket is loading; first-frame overlay n
   assert.ok(layer.includes('onNavigateSwipe(direction)'))
   assert.ok(viewer.includes('Label("上一项", systemImage: "chevron.left")'))
   assert.ok(viewer.includes('Label("下一项", systemImage: "chevron.right")'))
-  assert.match(viewer, /\\.toolbar\\(isNativeVideo \\? \\.visible :[\\s\\S]*?for: \\.bottomBar\\)/)
+  assert.match(viewer, /\.toolbar\(isNativeVideo \? \.visible :[\s\S]*?for: \.bottomBar\)/)
 })
 
 test('P0 first-frame timing includes authentication and ticket, not a preplay-only synthetic metric', () => {
