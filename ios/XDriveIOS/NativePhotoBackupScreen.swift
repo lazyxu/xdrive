@@ -1273,6 +1273,15 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             XDriveIOSNativePhotoWholeLibraryAuditSection(login: login)
                 .id(Detail.audit)
             Section("可选系统后台原件备份") {
+                if let owner = login.owner,
+                   let event = XDriveIOSBGAttemptStatus.last(owner: owner) {
+                    Text("最近一次后台状态（\(event.at.formatted(date: .abbreviated, time: .shortened))）：\(event.reason.userMessage)")
+                        .font(.footnote)
+                        .accessibilityIdentifier("native-ios-photo-background-last-attempt")
+                } else {
+                    Text("尚无本机系统后台尝试记录；不能据此判断系统是否已调度。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Text("前台自动备份与系统 BGProcessing 相互独立。必须先保存并核验受管备份目的地，后台再单独授权当前 iPhone、Owner 和对应 Source/Node；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if background.checking {

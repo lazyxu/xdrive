@@ -78,7 +78,8 @@ test('Owner, Node revision, exact MIME and ticket are checked before payload use
   assert.match(reader, /selected.size > XDriveIOSNativeFilesViewerPolicy.maximumImageBytes/);
   assert.match(reader, /selected.size > XDriveIOSNativeFilesViewerPolicy.maximumPDFBytes/);
   assert.match(reader, /throw XDriveIOSNativeFilesPreviewError.tooLarge/);
-  assert.match(view, /导出上限 1 GiB/);
+  assert.match(view, /在本机空间足够时下载原件/);
+  assert.match(view, /XDriveIOSNativeFilesExportCapacityPolicy\.maximumSingleFileBytes/);
   assert.match(reader, /PDFDocument\(data: bytes\), document\.pageCount > 0/);
   assert.match(policy, /static let maximumLoadedRows = 4 \* 64/);
   assert.match(policy, /Set\(loaded\.map\(\\\.id\)\)\.count == loaded\.count/);
@@ -115,7 +116,8 @@ test('indexed low-res Files still keeps the native zoom swipe navigation and ori
   assert.match(view, /viewed\.size > XDriveIOSNativeFilesExportCapacityPolicy\.maximumSingleFileBytes/);
   assert.match(view, /native-ios-files-viewer-export-over-limit/);
   assert.match(view, /case \.noThumbnail:/);
-  assert.match(view, /导出上限 1 GiB/);
+  assert.match(view, /在本机空间足够时下载原件/);
+  assert.match(view, /XDriveIOSNativeFilesExportCapacityPolicy\.maximumSingleFileBytes/);
   assert.match(reader, /fallbackThumbnail\(selected\)/);
 });
 
@@ -231,7 +233,10 @@ test('Files video uses Gallery native timeline and Owner-gated canvas paging wit
   assert.match(modal, /\.statusBarHidden\(!chromeVisible\)/);
   assert.match(modal, /private func retire\(\) \{[\s\S]*?showImageChrome = true\s*showVideoChrome = true/);
   assert.match(modal, /XDriveIOSNativeFilesViewerPolicy\.neighbor\(/);
-  assert.match(modal, /guard !isClosing, let next = neighbor\(direction\), onNavigate\(next\) else \{ return \}/);
+  assert.match(modal, /private func move\(_ direction: Int\) \{\s*guard !isClosing, authorized, !neighborBusy else \{ return \}/)
+  assert.match(modal, /private func commitNeighbor\(_ next: XDriveIOSNativeFilesNode\) \{\s*guard !isClosing, authorized, onNavigate\(next\) else \{ return \}/)
+  assert.match(modal, /let batch = try await read\(source, direction\)/)
+  assert.match(modal, /guard neighborEpoch == ticket, !isClosing, authorized/);
   assert.match(modal, /if let item = player\.currentItem \{/);
   assert.match(modal, /item\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
   assert.match(modal, /case \.audio:[\s\S]*?XDriveIOSNativeFileAudioSurface/);

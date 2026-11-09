@@ -427,9 +427,19 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         throws -> XDriveIOSPhotoBackupChangeQueueStore.Counts? {
         try verifyOwner(owner)
         let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
-        guard let baseline = try store.baseline() else { return nil }
-        guard baseline.authorization == epoch.authorization else {
-            throw Failure.unauthorizedOrChanged
+        guard let baseline = try store.baseline(),
+              XDrivePhotoCursorEpochPolicy.canShowChangeQueueSnapshot(
+                hasBaseline: true,
+                tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch.matches(
+                    baseline.token, as: epoch.token
+                ),
+                previousAuthorization: baseline.authorization,
+                currentAuthorization: epoch.authorization
+              ) else {
+            // A new imported/edited/deleted asset can arrive before the
+            // bounded replay catches up. Hide stale counts rather than
+            // showing an obsolete "0 pending" or "confirmed" summary.
+            return nil
         }
         try verifyAuthorization(stillMatches: epoch)
         let totals = try store.counts()

@@ -12,14 +12,15 @@ struct NativeFilesExportCapacityPolicyChecks {
         typealias Policy = XDriveIOSNativeFilesExportCapacityPolicy
         let max = Policy.maximumSingleFileBytes
         let reserve = Policy.freeSpaceReserveBytes
-        check(max == 1_073_741_824, "1 GiB single-file upper bound")
+        check(max == Int64.max - reserve, "single-file bound is integer-safe, not a fixed 1 GiB")
+        check(max > 8 * 1_073_741_824, "large signed originals may stream to disk")
         check(reserve == 128 * 1_048_576, "128 MiB device reserve")
         check(Policy.mayStage(size: 0, availableFreeBytes: reserve),
               "empty original with exact reserve")
         check(Policy.mayStage(size: max, availableFreeBytes: max + reserve),
               "exact size and free-capacity limits")
         check(!Policy.mayStage(size: max + 1, availableFreeBytes: Int64.max),
-              "oversized original rejected before signed download")
+              "integer-overflow sized original rejected before signed download")
         check(!Policy.mayStage(size: max, availableFreeBytes: max + reserve - 1),
               "insufficient remaining disk space")
         check(!Policy.mayStage(size: -1, availableFreeBytes: max + reserve),
@@ -57,6 +58,6 @@ struct NativeFilesExportCapacityPolicyChecks {
         check(Policy.receivedPercent(
             bytesWritten: 1, nodeBytes: max + 1, httpExpectedBytes: -1
         ) == nil, "oversized original cannot display percent")
-        print("iOS Files 1 GiB single-original export capacity and real byte progress: PASS")
+        print("iOS Files disk-admitted streaming single-original export and real byte progress: PASS")
     }
 }

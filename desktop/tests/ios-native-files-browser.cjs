@@ -79,7 +79,7 @@ test('native Browse home uses a verified cloud location rather than automaticall
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
   assert.match(view, /XDriveIOSNativeFilesTrashScreen\(login: login\)/)
-  assert.match(view, /List \{\s*filesHeader\s*if isHome \{\s*filesHome\s*\} else \{/)
+  assert.match(view, /List \{\s*filesHeader\s*if !isHome && !isGlobalSearch \{[\s\S]*?native-ios-files-arrangement-status[\s\S]*?if isHome \{\s*filesHome\s*\} else \{/)
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return\s*\}/)
   assert.match(view, /queryDraft = ""\s*activeQuery = ""\s*searchReturnOffset = nil/)
 });

@@ -250,6 +250,28 @@ FROM tree ORDER BY depth, id LIMIT ?`, target.ID, maxSourceLegacyPreviewNodes+2)
 				break
 			}
 		}
+		// The current Source may have perfectly synced SourceItems while
+		// another same-Owner Source still claims the very same live Nodes.
+		// Only inspecting this Source's own items can therefore incorrectly
+		// classify a contested subtree as apparently exclusive. Count the
+		// distinct contested NodeIDs using the exact bounded snapshot, not
+		// path/name similarity. Archived and pending claims remain evidence
+		// of a conflict until explicitly reconciled.
+		inventoryNodeIDs := make([]uint64, 0, len(nodes))
+		for _, node := range nodes {
+			inventoryNodeIDs = append(inventoryNodeIDs, node.ID)
+		}
+		var crossSourceItemClaims int64
+		if err := tx.Raw(`
+SELECT COUNT(DISTINCT item.node_id) FROM xd_source_items AS item
+JOIN xd_sources AS other ON other.id = item.source_id
+WHERE other.owner_id = ? AND other.id <> ?
+	AND item.node_id IN ?`,
+			source.OwnerID, source.ID, inventoryNodeIDs).
+			Scan(&crossSourceItemClaims).Error; err != nil {
+			return err
+		}
+		preview.UnverifiedClaims += int(crossSourceItemClaims)
 		if preview.ForeignOwnerNodes != 0 {
 			preview.Blockers = append(preview.Blockers, "foreign_owner_descendants")
 		}
@@ -321,7 +343,7 @@ WHERE other.owner_id = ? AND other.id <> ?
 		if preview.OtherSourceClaims != 0 {
 			preview.Blockers = append(preview.Blockers, "target_bound_to_other_source")
 		}
-		if !ancestryValid {
+		if !ancestryValid || crossSourceItemClaims != 0 {
 			preview.Classification = "blocked"
 		} else if source.TargetManaged {
 			preview.Classification = "already_managed"
