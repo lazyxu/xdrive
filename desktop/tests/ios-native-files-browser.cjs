@@ -79,7 +79,15 @@ test('native Browse home uses a verified cloud location rather than automaticall
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
   assert.match(view, /XDriveIOSNativeFilesTrashScreen\(login: login\)/)
-  assert.match(view, /List \{\s*filesHeader\s*if isHome \{\s*filesHome\s*\} else \{/)
+  // The verified Files List contains arrangement feedback before Browse content;
+  // unverified cloud children use a separate bounded error page instead.
+  const filesList = view.slice(view.indexOf('private var filesList:'), view.indexOf('private var filesChrome:'))
+  assert.match(filesList, /List \{\s*filesHeader/)
+  assert.match(filesList, /if !isHome && !isGlobalSearch \{[\s\S]*?native-ios-files-arrangement-status/)
+  assert.match(filesList, /if isHome \{\s*filesHome\s*\} else \{\s*filesLoadStatus/)
+  const filesChrome = view.slice(view.indexOf('private var filesChrome:'), view.indexOf('private var filesModals:'))
+  assert.match(filesChrome, /if !isHome && !isGlobalSearch && parentID != nil &&[\s\S]*?!model\.loading && !model\.verifiedPage,[\s\S]*?let failure = model\.errorMessage/)
+  assert.match(filesChrome, /native-ios-files-error-page[\s\S]*?\} else \{\s*filesList/)
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return\s*\}/)
   assert.match(view, /queryDraft = ""\s*activeQuery = ""\s*searchReturnOffset = nil/)
 });
@@ -136,7 +144,12 @@ test('Browse home displays only verified favorite folders as native direct navig
   assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?if isHome, let current = login\.owner,[\s\S]*?favoriteShortcuts\.suspendForNavigation\(\)/)
   assert.match(view, /if !sameOwner \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = owner/)
   assert.match(view, /else \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil/)
-  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*homeReadAttempted = false\s*if isHome && phase == \.active \{\s*homeReadAttempted = true\s*reload\(\)/)
+  // Owner rotation clears route, search, Viewer and favorite state first;
+  // retain these actual safety predicates without assuming contiguous lines.
+  const ownerChange = view.slice(view.indexOf('.onChange(of: login.owner) { _ in'), view.indexOf('.onChange(of: quickSection)'))
+  assert.match(ownerChange, /quickSection = \.browse/)
+  assert.match(ownerChange, /model\.invalidate\(\)[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*homeReadAttempted = false/)
+  assert.match(ownerChange, /if isHome && phase == \.active \{[\s\S]*?homeReadAttempted = true\s*reload\(\)/)
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return/)
   assert.doesNotMatch(home, /XDriveIOSNativeFilesCollectionsTransport\(|URLSession|\/api\/v1\/file-favorites/)
 })
