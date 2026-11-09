@@ -259,7 +259,10 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     private func openHomeShortcut(_ id: String, _ app: XCUIApplication) {
         let item = element(id, app)
         if !item.exists {
-            let list = app.collectionViews.firstMatch
+            // SwiftUI List is exposed as a table or collection depending
+            // on Simulator/iOS version; do not assume the AX container type.
+            let collection = app.collectionViews.firstMatch
+            let list = collection.exists ? collection : app.tables.firstMatch
             if list.exists {
                 // A prior child can leave the Home list below Recent.
                 // Search in both directions with a bounded swipe budget.
