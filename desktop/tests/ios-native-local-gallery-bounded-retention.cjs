@@ -102,3 +102,29 @@ test('the page cache is transient, not UserDefaults or a global 100k-photo index
   assert.doesNotMatch(parentDeclaration, /navigationReturnPage.*UserDefaults/)
   assert.doesNotMatch(parentDeclaration, /\[String: PHAsset\]/)
 })
+
+test('CI-only local photo readiness distinguishes retained tab pages from fresh PhotoKit scans', () => {
+  assert.match(child, /ProcessInfo\.processInfo\.arguments\.contains/)
+  assert.ok(child.includes('"-xdrive-ui-navigation-smoke"'))
+  for (const mode of ['mounted', 'tab-return', 'photokit']) {
+    assert.ok(child.includes('reportPhotoPageReady("' + mode + '", started: pageStarted)'),
+      'missing page-ready timing for ' + mode)
+  }
+  assert.ok(child.includes('IOS_NATIVE_LOCAL_PHOTO_PAGE_READY_MS mode='))
+  const report = child.slice(child.indexOf('private func reportPhotoPageReady('),
+    child.indexOf('    private var placeholderTile:'))
+  assert.doesNotMatch(report, /candidate\.id|localIdentifier|fileURL|ownerID|login\.token/)
+})
+
+test('CI report exposes separate per-page P50/P95 instead of treating tab rail as loaded photos', () => {
+  const summarize = fs.readFileSync(
+    path.join(root, 'ios/scripts/summarize-navigation-latency.py'), 'utf8'
+  )
+  assert.ok(summarize.includes('PHOTO_PAGE_PATTERN'))
+  assert.ok(summarize.includes('local_photo_page_modes'))
+  assert.ok(summarize.includes('local_photo_page_samples'))
+  assert.ok(summarize.includes('"p50_ms"'))
+  assert.ok(summarize.includes('"p95_ms"'))
+  assert.ok(summarize.includes('"is_physical_device_fps": False'))
+  assert.ok(summarize.includes('"proves_zero_transient_flicker": False'))
+})
