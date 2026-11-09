@@ -148,7 +148,7 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/native-navigation-results/Navigation.xcresult" \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
-            "${native_test_args[@]}" test \
+            "${native_test_args[@]}" \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
       - name: Capture crash diagnostics and XCTest summary
         if: always()
