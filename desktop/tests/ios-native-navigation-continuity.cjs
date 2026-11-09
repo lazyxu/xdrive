@@ -958,12 +958,12 @@ const scenarios = [
     ]
   },
   {
-    "name": "80 Trash denial retry then Files rail and Gallery return",
+    "name": "80 No-session Trash denial stays fail-closed then Files rail and Gallery restore",
     "checks": [
       {
         "file": "x",
-        "pattern": "func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels\\(\\)[\\s\\S]*?native-ios-files-trash-error-page[\\s\\S]*?native-ios-files-trash-retry[\\s\\S]*?native-ios-files-section-\\\\\\(section\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after Trash retry and Files rail\"\\)",
-        "flags": ""
+        "flags": "",
+        "pattern": "func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels\\(\\)[\\s\\S]*?native-ios-files-trash-error-page[\\s\\S]*?native-ios-files-trash-no-session[\\s\\S]*?XCTAssertFalse\\(target\\(\"native-ios-files-trash-retry\"[\\s\\S]*?native-ios-files-trash-error-return[\\s\\S]*?native-ios-files-section-\\\\\\(section\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery after Trash retry and Files rail\"\\)"
       }
     ]
   },
