@@ -58,5 +58,49 @@ replace_once(
         }
         .onAppear {""",
 )
+
+# CI-only app-container breadcrumbs, independent of XCTest AX queries.
+# Never include Owner IDs, file names, credentials or real media paths.
+replace_once(
+    r'    @Environment(\.dismiss) private var xdriveTestAutoDismiss',
+    r'''    @Environment(\.dismiss) private var xdriveTestAutoDismiss
+
+    private func xdriveCITrace(_ stage: String) {
+        guard ProcessInfo.processInfo.arguments.contains("-xdrive-ci-native-autopop") else { return }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("native-autopop-trace.txt")
+        let previous = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        try? (previous + stage + "\n").write(to: url, atomically: true, encoding: .utf8)
+    }'''
+)
+replace_once(
+    '        .task {\n            guard ProcessInfo.processInfo.arguments.contains("-xdrive-ci-native-autopop"),',
+    '        .task {\n            if ProcessInfo.processInfo.arguments.contains("-xdrive-ci-native-autopop") {\n'
+    '                xdriveCITrace("task-enter:isHome=\\(isHome)")\n'
+    '            }\n'
+    '            guard ProcessInfo.processInfo.arguments.contains("-xdrive-ci-native-autopop"),'
+)
+replace_once(
+    '            print("NATIVE_AUTOPOP_STAGE mounted-child")',
+    '            xdriveCITrace("guard-passed:mounted-child")'
+)
+replace_once(
+    '            print("NATIVE_AUTOPOP_STAGE before-dismiss")',
+    '            xdriveCITrace("before-dismiss")'
+)
+replace_once(
+    '            print("NATIVE_AUTOPOP_STAGE after-dismiss")',
+    '            xdriveCITrace("after-dismiss")'
+)
+replace_once(
+    '        .onAppear {\n            // Returning from a child must keep the same verified rows',
+    '        .onDisappear {\n'
+    '            if ProcessInfo.processInfo.arguments.contains("-xdrive-ci-native-autopop") {\n'
+    '                xdriveCITrace("browser-disappeared")\n'
+    '            }\n'
+    '        }\n'
+    '        .onAppear {\n'
+    '            // Returning from a child must keep the same verified rows'
+)
+
 browser.write_text(s, encoding="utf-8")
 print("CI-only native pop fixture installed:", browser)
