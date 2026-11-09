@@ -65,6 +65,17 @@ rebuilt from the tag's exact commit, pass GitHub's exact-tag Final Gate before
 the public version tag is pushed, and finish all required publish jobs before
 the final Release appears. No partial stable Release is allowed.
 
+## Stable pre-stage publication gate
+
+The Registry may expose even temporary `ci-<pipeline>-<job>` image tags to
+readers. Thus `v*` stable image **builders**, including Photo Face's
+long-lived model runtime cache uploads, first require the exact tag/Commit
+GitHub Final Gate to succeed. The staging helper checks again immediately
+before the first upload, and immutable tag publishing/promoting repeats
+the gate before public stable tags. No Release job depends on GitHub binary
+artifact downloads; these are CI verdict checks only. Master CI stays
+independent of stable-tag preflight.
+
 ## Cache and Runner queue policy
 
 Normal master builders are interruptible, so superseded builds may be cancelled
