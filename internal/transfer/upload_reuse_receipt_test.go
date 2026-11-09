@@ -92,7 +92,6 @@ func TestManagedUploadReceiptHonorsFirstTerminalOutcomeAndCancellation(t *testin
 	manager := NewManager(20)
 	group := manager.StartGroup(Spec{FileName: "folder", Kind: KindUpload, Direction: "upload"})
 	child := manager.StartChild(group, Spec{FileName: "child", Kind: KindUpload, Direction: "upload", TotalBytes: 4096})
-	zero := int64(0)
 	if err := child.FinishUploadReceipt(StateCompleted, nil, &UploadContentReceipt{CASReusedBytes: 4096}); err != nil {
 		t.Fatal(err)
 	}
