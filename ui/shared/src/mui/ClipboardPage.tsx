@@ -564,19 +564,23 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                               />
                             </>
                           ) : null}
-                          {port.uploadLocalFile ? (
+                          {(port.uploadLocalFile || port.importImageFromClipboard) ? (
                             <>
-                              <input ref={localUploadInput} type="file" hidden
-                                accept={referenceKind === 'image' ? 'image/*' : undefined}
-                                onChange={event => {
-                                  const file = event.currentTarget.files?.[0]
-                                  event.currentTarget.value = ''
-                                  if (file) void importToOwnerFiles(signal => port.uploadLocalFile!(file, signal))
-                                }} />
-                              <Button variant="outlined" size="small" disabled={busy}
-                                onClick={() => localUploadInput.current?.click()}>
-                                选择本机文件并上传到云端
-                              </Button>
+                              {port.uploadLocalFile ? (
+                                <>
+                                  <input ref={localUploadInput} type="file" hidden
+                                    accept={referenceKind === 'image' ? 'image/*' : undefined}
+                                    onChange={event => {
+                                      const file = event.currentTarget.files?.[0]
+                                      event.currentTarget.value = ''
+                                      if (file) void importToOwnerFiles(signal => port.uploadLocalFile!(file, signal))
+                                    }} />
+                                  <Button variant="outlined" size="small" disabled={busy}
+                                    onClick={() => localUploadInput.current?.click()}>
+                                    选择本机文件并上传到云端
+                                  </Button>
+                                </>
+                              ) : null}
                               {referenceKind === 'image' && port.importImageFromClipboard ? (
                                 <Button variant="outlined" size="small" disabled={busy}
                                   onClick={() => {
