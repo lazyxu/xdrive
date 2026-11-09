@@ -55,15 +55,17 @@ assert "github.ref == 'refs/heads/master'" in body
 assert "needs:" in body
 needed = set(re.findall(r"(?m)^      - ([a-zA-Z0-9_-]+)$", body))
 required_builds = {
-    "package-linux-client",
-    "package-windows-client",
-    "server-image",
-    "caddy-image",
-    "photo-face-image",
-    "media-worker-image",
+    "server-image", "caddy-image", "photo-face-image", "media-worker-image",
 }
-assert required_builds <= needed, f"required publishable artifacts missing: {required_builds - needed}"
-assert "build-client-core" in needed, "Snapshot release must retain exact client-core artifact provenance"
+assert required_builds == needed, (
+    f"Server Snapshot must depend only on authoritative Server image inputs: "
+    f"required={required_builds} actual={needed}"
+)
+assert "always()" in body and all(
+    f"needs.{name}.result == 'success'" in body for name in required_builds
+), "Server publication must run after required image success, independent of optional client failures"
+for optional in ("build-client-core", "package-linux-client", "package-windows-client"):
+    assert optional not in needed, f"optional client build blocked Server publication: {optional}"
 assert "final-gate" not in needed, "Master Snapshot must not await unrelated full CI Final Gate; stable still must"
 assert "photo-ocr-master-smoke" not in needed, "snapshot must not wait for OCR model acceptance"
 
