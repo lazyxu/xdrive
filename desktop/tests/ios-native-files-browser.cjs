@@ -271,9 +271,9 @@ test('synthetic Owner without a Session uses a bounded native recovery child, ne
   assert.match(login, /var hasSameOwnerSessionForNavigation: Bool \{\s*guard let active, let owner else \{ return false \}\s*return sameScope\(active\.verifiedOwner, owner\)/)
   const home = view.slice(view.indexOf('@ViewBuilder private var filesHome:'),
     view.indexOf('@ViewBuilder private var filesHeader:'))
-  assert.match(home, /if login\.hasSameOwnerSessionForNavigation \{\s*XDriveIOSNativeFilesBrowser\(/)
+  assert.match(home, /if XDriveIOSNativeFilesNavigationPolicy\.canEnterProtectedChild\([\s\S]*?sessionMatches: login\.hasSameOwnerSessionForNavigation,[\s\S]*?sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, owner\s*\)[\s\S]*?\) \{\s*XDriveIOSNativeFilesBrowser\(/)
   assert.match(home, /else \{\s*XDriveIOSNativeFilesNoSessionChild\(\s*login: login, expectedOwner: owner, kind: \.cloud/)
-  assert.match(home, /if login\.hasSameOwnerSessionForNavigation \{\s*XDriveIOSNativeFilesTrashScreen\(login: login\)/)
+  assert.match(home, /if XDriveIOSNativeFilesNavigationPolicy\.canEnterProtectedChild\([\s\S]*?sessionMatches: login\.hasSameOwnerSessionForNavigation,[\s\S]*?sourceOwnerMatches: XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, expected\s*\)[\s\S]*?\) \{\s*XDriveIOSNativeFilesTrashScreen\(login: login\)/)
   assert.match(home, /else \{\s*XDriveIOSNativeFilesNoSessionChild\(\s*login: login, expectedOwner: expected, kind: \.trash/)
   assert.match(view, /guard !checking else \{ return \}[\s\S]*?let auth = try await login\.verifiedAuthorization\(\)/)
   assert.match(view, /verifiedForOpen && login\.hasSameOwnerSessionForNavigation &&[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\)/)
