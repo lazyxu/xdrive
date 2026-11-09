@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Ensure GitLab publishing cannot be cancelled after its release inputs start.
-
-Master builds and publication are required. All duplicated tests were moved
-to GitHub Actions; this check runs from GitHub's exact-HEAD CI.
-"""
+"""Exact GitLab release DAG and cancellation contract; GitHub CI owns tests."""
 import re
 from pathlib import Path
 
@@ -27,10 +23,11 @@ assert re.search(r"(?m)^  auto_cancel:\n    on_new_commit: interruptible$", CI)
 assert re.search(r"(?m)^default:\n  interruptible: true$", CI)
 
 
-def master_needs(job):
+def needs(job, channel):
     lines = jobs[job].splitlines()
+    cond = '$CI_COMMIT_TAG =~ /^v.+/' if channel == "stable" else '$CI_COMMIT_BRANCH == "master"'
     for i, line in enumerate(lines):
-        if line.startswith("    - if:") and '$CI_COMMIT_BRANCH == "master"' in line:
+        if line.startswith("    - if:") and cond in line:
             rule = []
             for subline in lines[i + 1:]:
                 if subline.startswith(("    - if:", "    - when:")):
@@ -49,58 +46,61 @@ def master_needs(job):
     return []
 
 
-def is_master_protected(job):
-    block = jobs[job]
-    if re.search(r"(?m)^  interruptible: false$", block):
-        return True
-    lines = block.splitlines()
-    for i, line in enumerate(lines):
-        if line.startswith("    - if:") and '$CI_COMMIT_BRANCH == "master"' in line:
-            if i + 1 < len(lines) and lines[i + 1] == "      interruptible: false":
-                return True
-    return False
+def closure(channel):
+    visited = set()
+    stack = ["publish-release"]
+    while stack:
+        name = stack.pop()
+        assert name in jobs, f"missing release prerequisite: {name}"
+        if name in visited:
+            continue
+        visited.add(name)
+        stack.extend(needs(name, channel))
+    return visited
 
 
-visited = set()
-stack = ["publish-release"]
-while stack:
-    name = stack.pop()
-    assert name in jobs, f"missing release prerequisite: {name}"
-    if name in visited:
-        continue
-    visited.add(name)
-    stack.extend(master_needs(name))
-
-required = {
+core = {
     "publish-release", "promote-server-images", "publish-server-images",
-    "release-assets", "server-image", "caddy-image",
-    "photo-face-image", "media-worker-image", "web", "package-linux-client",
-    "package-windows-client", "desktop-linux", "desktop-windows",
-    "build-client-core", "build-synology-ui",
+    "release-assets", "server-image", "caddy-image", "web",
+    "package-linux-client", "package-windows-client",
+    "desktop-linux", "desktop-windows", "build-client-core",
 }
-assert visited == required, f"review new/missing master prerequisites: {visited ^ required}"
-for job in sorted(visited):
-    assert is_master_protected(job), f"{job}: running master publisher can be cancelled"
-    assert "      allow_failure: true" not in jobs[job], f"{job}: required job cannot allow failure"
+optional = {
+    "photo-face-image", "media-worker-image",
+    "publish-photo-face-image", "publish-media-worker-image",
+}
+assert closure("master") == core, closure("master") ^ core
+assert closure("stable") == core | optional, closure("stable") ^ (core | optional)
+assert "build-synology-ui" not in jobs
+assert "npm run build:synology" in jobs["web"]
+assert "node scripts/verify-synology-ui.mjs" in jobs["web"]
+assert "web/dist-synology/" in jobs["web"]
 
-assert 'XDRIVE_GITLAB_PACKAGE_ONLY: "1"' in jobs["variables"]
+# Only the non-mutating master build/packaging phases can be cancelled when
+# superseded. A running publisher/promotion must finish and guard monotonicity.
+for name in core - {"publish-release", "promote-server-images", "publish-server-images"}:
+    lines = jobs[name].splitlines()
+    master_rule = next(i for i, line in enumerate(lines)
+                       if line.startswith("    - if:") and '$CI_COMMIT_BRANCH == "master"' in line)
+    assert "      interruptible: true" in lines[master_rule + 1:master_rule + 4], name
+for name in ("publish-release", "promote-server-images", "publish-server-images"):
+    assert re.search(r"(?m)^  interruptible: false$", jobs[name]), name
+for name in core - {"publish-release", "promote-server-images", "publish-server-images"}:
+    assert "      allow_failure: true" not in jobs[name], name
+
+for name in optional:
+    assert "      allow_failure: true" in jobs[name], name
+    assert "      changes:" in jobs[name], name
+    assert '$CI_COMMIT_TAG =~ /^v.+/' in jobs[name], name
+    assert "      allow_failure: true" not in jobs[name].split("    - if: '$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_TAG")[1].split("    - if:")[0]
+assert "resource_group: xdrive-gitlab-release-publish" in jobs["publish-release"]
+assert "resource_group: xdrive-gitlab-server-images" in jobs["promote-server-images"]
+assert "resource_group:" not in jobs["photo-face-image"]
+assert "resource_group:" not in jobs["media-worker-image"]
+assert "resource_group:" not in jobs["server-image"]
+assert "resource_group:" not in jobs["caddy-image"]
+assert "GOCACHE:" in jobs[".go-linux-cache"]
+assert ".cache/go-build/" in jobs[".go-linux-cache"]
+assert "XDRIVE_GITLAB_PACKAGE_ONLY: \"1\"" in jobs["variables"]
 assert "final-gate" not in jobs
-assert "master-desktop-tests" not in jobs
-assert "master-release-image-smoke" not in jobs
-assert "master-release-web-lint" not in jobs
-assert re.search(
-    r"(?m)^  resource_group: xdrive-gitlab-release-publish$",
-    jobs["publish-release"],
-)
-core = jobs["build-client-core"]
-assert re.search(
-    r"(?m)^  before_script:\n    - \*ensure_linux_fetch_tools\n    - \*install_node22$",
-    core,
-), "release package needs XZ/Node even though GitHub owns tests"
-assert "bash scripts/ci/install-linux-fetch-tools.sh" in jobs[".ci-linux-helpers"]
-fetch_tools = (ROOT / "scripts/ci/install-linux-fetch-tools.sh").read_text()
-assert re.search(r"apt-get [^\n]*install[^\n]*\bxz-utils\b", fetch_tools)
-assert "  image: $XDRIVE_CI_GO_IMAGE\n" in core
-assert "web/dist-synology" in core
-
-print("GitLab master publish dependency closure preserved without duplicate tests")
+print("GitLab master core-only and stable complete-image DAG / cancellation contracts passed")
