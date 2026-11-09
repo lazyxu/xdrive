@@ -95,11 +95,15 @@ func validCurrentBundleArtifact(commit string, artifact ReleaseBundleArtifact) b
 		artifact.Size > 8*1024*1024*1024 {
 		return false
 	}
+	// Python's immutable manifest generator percent-encodes '+' as %2B.
+	// Unlike PathEscape, QueryEscape matches it for our admitted filename
+	// alphabet (letters, digits, dot, underscore, hyphen, plus).
+	escapedName := url.QueryEscape(artifact.Filename)
 	github := "https://github.com/lazyxu/xdrive/releases/download/bundle-" +
-		commit + "/" + url.PathEscape(artifact.Filename)
+		commit + "/" + escapedName
 	gitlab := "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive" +
 		"/packages/generic/xdrive-build-packages/sha-" +
-		commit + "/" + url.PathEscape(artifact.Filename)
+		commit + "/" + escapedName
 	if artifact.Sources.GitHub != github || artifact.Sources.GitLab != gitlab {
 		return false
 	}
