@@ -42,11 +42,47 @@ class NoRedirect(HTTPRedirectHandler):
         raise GateError("authenticated Server metadata/download redirected")
 
 
+
+class PinnedPublicRedirect(HTTPRedirectHandler):
+    """Allow only GitHub's signed asset CDN or the same fixed GitLab origin."""
+    def __init__(self, provider):
+        self.provider = provider
+        super().__init__()
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urlsplit(newurl)
+        previous = urlsplit(req.full_url)
+        if target.username or target.password or target.fragment:
+            raise GateError("public mirror redirected to a credentialed or fragment URL")
+        if self.provider == "github":
+            approved = {"github.com", "release-assets.githubusercontent.com",
+                        "objects.githubusercontent.com"}
+            safe = (previous.scheme == "https" and target.scheme == "https" and
+                    previous.hostname in approved and target.hostname in approved and
+                    previous.port in (None, 443) and target.port in (None, 443))
+        elif self.provider == "gitlab":
+            safe = (previous.scheme == target.scheme == "http" and
+                    previous.hostname == target.hostname == "gitlab.t-fluid.com" and
+                    previous.port == target.port == 1080)
+        else:
+            safe = False
+        if not safe:
+            raise GateError("public mirror attempted an unapproved redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def public_bytes(url, *, max_bytes=2 * 1024 * 1024):
     # Never attach Owner/Host credentials to public GitHub requests.
-    if urlsplit(url).scheme != "https":
-        raise GateError("public Release metadata must use HTTPS")
-    with urlopen(Request(url, headers={
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443):
+        raise GateError("public Release metadata must use clean HTTPS")
+    if parsed.hostname == "api.github.com":
+        opener = build_opener(NoRedirect)
+    elif parsed.hostname == "github.com":
+        opener = build_opener(PinnedPublicRedirect("github"))
+    else:
+        raise GateError("unexpected public Release metadata origin")
+    with opener.open(Request(url, headers={
         "Accept": "application/vnd.github+json",
         "User-Agent": "xDrive-live-release-bundle-audit/1",
     }), timeout=30) as response:
@@ -187,12 +223,29 @@ def check_remote_bytes(item, origin):
     """Optional expensive check of *actual* bytes at each advertised origin."""
     url = item["sources"][origin]
     parsed = urlsplit(url)
-    if origin == "github" and parsed.scheme != "https":
-        raise GateError("GitHub package source is not HTTPS")
+    if item.get("build_commit") is None or not COMMIT.fullmatch(item["build_commit"]):
+        raise GateError("public package does not identify full Git Commit")
+    name = item.get("filename")
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,180}", name):
+        raise GateError("invalid public package filename")
+    encoded = quote(name)
+    if origin == "github":
+        required = ("https://github.com/lazyxu/xdrive/releases/download/bundle-" +
+                    item["build_commit"] + "/" + encoded)
+    elif origin == "gitlab":
+        required = ("http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/"
+                    "packages/generic/xdrive-build-packages/sha-" +
+                    item["build_commit"] + "/" + encoded)
+    else:
+        raise GateError("unknown package origin")
+    if url != required or parsed.username or parsed.password or parsed.fragment:
+        raise GateError("public package source differs from pinned Commit/filename")
     h = hashlib.sha256()
     length = 0
-    with urlopen(Request(url, headers={"User-Agent": "xDrive-live-release-bundle-audit/1"}),
-                 timeout=60) as response:
+    opener = build_opener(PinnedPublicRedirect(origin))
+    with opener.open(Request(url, headers={"User-Agent": "xDrive-live-release-bundle-audit/1",
+                                          "Accept-Encoding": "identity"}),
+                     timeout=60) as response:
         while data := response.read(1024 * 1024):
             length += len(data)
             if length > item["size"]:

@@ -226,6 +226,35 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
             self.assertEqual(command[command.index("--source-digest") + 1], COMMIT)
             self.assertNotIn("XD_BUNDLE_OWNER_TOKEN", run.call_args.kwargs["env"])
 
+
+    def test_mirror_origin_guards_block_private_redirect_and_unpinned_sources(self):
+        from urllib.request import Request
+        github = audit.PinnedPublicRedirect("github")
+        good = Request("https://github.com/lazyxu/xdrive/releases/download/bundle-" +
+                       COMMIT + "/xdrive-linux-amd64.deb")
+        self.assertIsNotNone(github.redirect_request(
+            good, None, 302, "Found", {}, "https://release-assets.githubusercontent.com/object?sig=a"))
+        with self.assertRaisesRegex(audit.GateError, "unapproved redirect"):
+            github.redirect_request(good, None, 302, "Found", {},
+                                    "http://127.0.0.1:8888/private")
+        with self.assertRaisesRegex(audit.GateError, "unapproved redirect"):
+            github.redirect_request(good, None, 302, "Found", {},
+                                    "https://attacker.example.invalid/x")
+        gitlab = audit.PinnedPublicRedirect("gitlab")
+        start = Request(self.item["sources"]["gitlab"])
+        self.assertIsNotNone(gitlab.redirect_request(
+            start, None, 302, "Found", {}, "http://gitlab.t-fluid.com:1080/asset"))
+        with self.assertRaisesRegex(audit.GateError, "unapproved redirect"):
+            gitlab.redirect_request(start, None, 302, "Found", {}, "http://localhost:9999/x")
+        forged = dict(self.item, sources={
+            "gitlab": "http://127.0.0.1:88/private",
+            "github": "https://attacker.example.invalid/asset",
+        })
+        with self.assertRaisesRegex(audit.GateError, "pinned Commit"):
+            audit.check_remote_bytes(forged, "github")
+        with self.assertRaisesRegex(audit.GateError, "pinned Commit"):
+            audit.check_remote_bytes(forged, "gitlab")
+
     def test_unsigned_ipa_never_an_auto_install_admission(self):
         item = dict(self.item, platform="ios", filename="xDrive-unsigned.ipa",
                     install_mode="manual")
