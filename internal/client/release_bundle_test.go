@@ -199,8 +199,8 @@ func TestCurrentServerBundleFallbackOnUnavailableLocalAndCorruptGitLab(t *testin
 func TestCurrentServerBundleGitHubAssetRedirectOnly(t *testing.T) {
 	payload := bytes.Repeat([]byte("signed-release-cdn"), 41)
 	for _, scenario := range []struct {
-		name string
-		redirect string
+		name        string
+		redirect    string
 		wantSuccess bool
 	}{
 		{"github asset CDN", "https://release-assets.githubusercontent.com/1234/signed-asset?token=short", true},
@@ -250,9 +250,9 @@ func TestCurrentServerBundleGitHubAssetRedirectOnly(t *testing.T) {
 					}
 					return &http.Response{
 						StatusCode: status,
-						Header: headers,
-						Body: io.NopCloser(bytes.NewReader(body)),
-						Request: req,
+						Header:     headers,
+						Body:       io.NopCloser(bytes.NewReader(body)),
+						Request:    req,
 					}, nil
 				})}
 			func() {
