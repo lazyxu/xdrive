@@ -3710,6 +3710,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 selectedSnapshots.removeValue(forKey: id)
             }
         }
+    }
+
+    private func filesArrangementLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        filesNavigationLifecycle(returnScroll: returnScroll)
         .onChange(of: sort) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: order) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: viewMode) { next in
@@ -3733,6 +3737,10 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onChange(of: grouping) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: foldersFirst) { _ in reloadKeepingArrangementAnchor() }
+    }
+
+    private func filesLoadingLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        filesArrangementLifecycle(returnScroll: returnScroll)
         .onChange(of: model.loading) { loading in
             if !loading, model.verifiedPage, let target = pendingJumpIndex,
                target >= model.startOffset,
@@ -3786,6 +3794,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             lastViewedFile = nil
             returnOwner = nil
         }
+    }
+
+    var body: some View {
+        ScrollViewReader { returnScroll in
+            filesLoadingLifecycle(returnScroll: returnScroll)
         }
     }
 
