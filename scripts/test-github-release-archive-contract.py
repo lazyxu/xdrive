@@ -37,8 +37,16 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
 
     assert "name: xdrive-caddy-image" in bundle
     assert "cp caddy-image/image.tar.gz release/xdrive-caddy-image.tar.gz" in bundle
-    assert "xdrive-caddy-image.tar.gz \\" in bundle
-    assert "xdrive-caddy-image.id \\" in bundle
+    # Both Caddy artifacts must remain mandatory SHA-256 inputs even when
+    # their shell continuation shares a line. Match the command, not layout.
+    checksums = bundle.split("      - name: Generate checksums", 1)[1].split(
+        "      - name: Attest release installer", 1
+    )[0]
+    assert "sha256sum " in checksums and "> SHA256SUMS.txt" in checksums
+    checksum_command = checksums.split("sha256sum ", 1)[1].split("> SHA256SUMS.txt", 1)[0]
+    checksum_tokens = checksum_command.split()
+    for artifact in ("xdrive-caddy-image.tar.gz", "xdrive-caddy-image.id"):
+        assert checksum_tokens.count(artifact) == 1, f"{artifact} missing from mandatory signed checksum input"
     verify(True, "two CLI archives and exact signed Caddy image archive")
     for name in ("other.zip", "other.tar.gz", "other.tgz", ".hidden.zip", "xdrive-desktop-amd64.zip"):
         extra = release / name
