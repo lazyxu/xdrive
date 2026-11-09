@@ -2595,12 +2595,6 @@ struct XDriveIOSNativeFilesBrowser: View {
             // clears the search text and can silently clear activeQuery.
             searchPresented = false
         }
-        .onDisappear {
-            // Changing the app-wide tab or opening another native child must
-            // not leave SwiftUI's search overlay covering the Files rail when
-            // the user comes back. Keep the Server result and query intact.
-            searchPresented = false
-        }
         .task(id: queryDraft) {
             // System Files-style progressive search, but only for a valid
             // Server query. Task identity cancels superseded keyboard drafts
@@ -2917,6 +2911,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                                !isHome && !isGlobalSearch {
                                 // Capture before SwiftUI unmounts the Browse List.
                                 browseReturnAnchor = lastAppearedNodeID
+                            }
+                            if quickSection == .browse && option != .browse {
+                                searchPresented = false
                             }
                             quickSection = option
                             if let owner = login.owner {
@@ -3566,6 +3563,10 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
+            // This is the Files root leaving the TabView/NavigationStack, not
+            // the search results subtree being temporarily covered by the
+            // native keyboard. Do not dismiss search as soon as it activates.
+            searchPresented = false
             chunked.invalidate()
             searchOptions.suspendForNavigation()
             if isHome, let current = login.owner,
