@@ -279,42 +279,42 @@ func (c *agentController) CloudClipboardDecrypt(ctx context.Context, itemID uint
 // Owner's ordinary Files read APIs. The Clipboard Node ID is only a locator;
 // Files ACL, live revision and location are independently rechecked by Server.
 func (c *agentController) CloudClipboardFileReference(
- ctx context.Context, nodeID uint64,
+	ctx context.Context, nodeID uint64,
 ) (localbackupipc.OwnerClipboardFileReference, error) {
- empty := localbackupipc.OwnerClipboardFileReference{}
- if !localbackupipc.ValidOwnerFileID(nodeID) {
-  return empty, errors.New("invalid Clipboard reference Node")
- }
- cli, cfg, err := c.cloudClient()
- if err != nil || !clipboardCurrentAgentSession(cfg) {
-  return empty, errors.New("Clipboard Files Owner session unavailable")
- }
- node, err := cli.Node(ctx, nodeID)
- if err != nil || node.ID != nodeID || node.Type != "file" ||
-  node.DeletedAt != nil || node.ParentID == nil {
-  return empty, errors.New("current Owner file not readable")
- }
- loc, err := cli.NodeLocation(ctx, nodeID)
- if err != nil || loc.NodeID != nodeID || loc.NodeType != "file" ||
-  loc.ParentID == nil || *loc.ParentID != *node.ParentID ||
-  loc.Revision != node.Revision {
-  return empty, errors.New("current Owner file location changed")
- }
- crumbs := make([]localbackupipc.OwnerSearchCrumb,0,len(loc.Breadcrumbs))
- for _, part := range loc.Breadcrumbs {
-  crumbs = append(crumbs,localbackupipc.OwnerSearchCrumb{ID:part.ID,Name:part.Name})
- }
- ref := localbackupipc.OwnerClipboardFileReference{
-  Node: localbackupipc.OwnerFileNode{
-   ID:node.ID, ParentID:node.ParentID, Name:node.Name, Type:node.Type,
-   Size:node.Size, Revision:node.Revision, CreatedAt:node.CreatedAt,
-   UpdatedAt:node.UpdatedAt,
-  },
-  Crumbs:crumbs,
- }
- if !localbackupipc.ValidateOwnerClipboardFileReference(ref,nodeID) ||
-  !clipboardCurrentAgentSession(cfg) {
-  return empty, errors.New("current Owner file reference no longer valid")
- }
- return ref,nil
+	empty := localbackupipc.OwnerClipboardFileReference{}
+	if !localbackupipc.ValidOwnerFileID(nodeID) {
+		return empty, errors.New("invalid Clipboard reference Node")
+	}
+	cli, cfg, err := c.cloudClient()
+	if err != nil || !clipboardCurrentAgentSession(cfg) {
+		return empty, errors.New("Clipboard Files Owner session unavailable")
+	}
+	node, err := cli.Node(ctx, nodeID)
+	if err != nil || node.ID != nodeID || node.Type != "file" ||
+		node.DeletedAt != nil || node.ParentID == nil {
+		return empty, errors.New("current Owner file not readable")
+	}
+	loc, err := cli.NodeLocation(ctx, nodeID)
+	if err != nil || loc.NodeID != nodeID || loc.NodeType != "file" ||
+		loc.ParentID == nil || *loc.ParentID != *node.ParentID ||
+		loc.Revision != node.Revision {
+		return empty, errors.New("current Owner file location changed")
+	}
+	crumbs := make([]localbackupipc.OwnerSearchCrumb, 0, len(loc.Breadcrumbs))
+	for _, part := range loc.Breadcrumbs {
+		crumbs = append(crumbs, localbackupipc.OwnerSearchCrumb{ID: part.ID, Name: part.Name})
+	}
+	ref := localbackupipc.OwnerClipboardFileReference{
+		Node: localbackupipc.OwnerFileNode{
+			ID: node.ID, ParentID: node.ParentID, Name: node.Name, Type: node.Type,
+			Size: node.Size, Revision: node.Revision, CreatedAt: node.CreatedAt,
+			UpdatedAt: node.UpdatedAt,
+		},
+		Crumbs: crumbs,
+	}
+	if !localbackupipc.ValidateOwnerClipboardFileReference(ref, nodeID) ||
+		!clipboardCurrentAgentSession(cfg) {
+		return empty, errors.New("current Owner file reference no longer valid")
+	}
+	return ref, nil
 }
