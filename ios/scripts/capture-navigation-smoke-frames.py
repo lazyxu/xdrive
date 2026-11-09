@@ -50,8 +50,8 @@ TARGETS = {
     "testRecentAfterTrashDeniedReturnKeepsGalleryAvailable",
     "testFavoritesAfterCloudDeniedReturnKeepsGalleryAvailable",
 }
-start = re.compile(r"Test Case '-\\[[^\\]]+\\s+(test\\w+)\\]' started\\.")
-finish = re.compile(r"Test Case '-\\[[^\\]]+\\s+(test\\w+)\\]' (?:passed|failed)\\b")
+start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
+finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
 attempts = {}
 active = set()
 scheduled = []
@@ -113,5 +113,5 @@ while True:
                 "test": name, "attempt": count, "frame": index + 1,
                 "scheduled_after_start_seconds": delay,
                 "captured": ok, "file": destination.name if ok else None,
-            }, ensure_ascii=False) + "\\n")
+            }, ensure_ascii=False) + "\n")
     time.sleep(0.3)
