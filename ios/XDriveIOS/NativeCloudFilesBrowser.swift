@@ -915,6 +915,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var ancestorCrumbs: [XDriveIOSNativeFilesLocationCrumb] = []
     @State private var ancestorStatus: String?
     @State private var showingOrganizeHome = false
+    @State private var isHomeEditing = false
     @State private var organizeHomeOwner: XDriveNativeOwnerRoot?
     @State private var viewerAdmitted = [UInt64: XDriveIOSNativeFilesNode]()
     @State private var viewerAdmissionOrder: [UInt64] = []
@@ -1370,6 +1371,13 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
             .accessibilityIdentifier("native-ios-files-open-trash")
+            NavigationLink {
+                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
+            } label: {
+                Label("最近使用", systemImage: "clock")
+            }
+            .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
+            .accessibilityIdentifier("native-ios-files-open-recent")
         }
         Section("个人收藏") {
             DisclosureGroup("收藏夹和常用收藏", isExpanded: $favoriteFoldersExpanded) {
@@ -1380,7 +1388,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
                 .accessibilityIdentifier("native-ios-files-open-favorites")
-                ForEach(verifiedFavoriteFolders) { item in
+                ForEach(isHomeEditing ? verifiedFavoriteFolders : Array(verifiedFavoriteFolders.prefix(4))) { item in
                 NavigationLink {
                     XDriveIOSNativeFilesBrowser(
                         login: login, folderID: item.node.id,
@@ -1417,7 +1425,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         Section("快捷目录") {
             DisclosureGroup("固定的文件夹", isExpanded: $quickAccessExpanded) {
                 if quickAccess.matches(login.owner) {
-                    ForEach(quickAccess.items) { item in
+                    ForEach(Array(quickAccess.items.prefix(isHomeEditing ? quickAccess.items.count : 5))) { item in
                         HStack(spacing: 8) {
                             NavigationLink {
                                 XDriveIOSNativeFilesBrowser(
@@ -1434,23 +1442,46 @@ struct XDriveIOSNativeFilesBrowser: View {
                                 }
                             }
                             .accessibilityIdentifier("native-ios-files-pinned-folder-\(item.id)")
-                            Menu {
-                                Button("上移") {
-                                    reorderQuickAccess(item, delta: -1)
+                            if isHomeEditing {
+                                Button { reorderQuickAccess(item, delta: -1) } label: {
+                                    Image(systemName: "arrow.up")
+                                        .frame(minWidth: 44, minHeight: 44)
                                 }
-                                Button("下移") {
-                                    reorderQuickAccess(item, delta: 1)
+                                .disabled(quickAccess.busy || quickAccess.loading)
+                                Button { reorderQuickAccess(item, delta: 1) } label: {
+                                    Image(systemName: "arrow.down")
+                                        .frame(minWidth: 44, minHeight: 44)
                                 }
-                                Button("取消固定", role: .destructive) {
+                                .disabled(quickAccess.busy || quickAccess.loading)
+                                Button(role: .destructive) {
                                     quickAccess.unpin(item.id, login: login)
+                                } label: {
+                                    Image(systemName: "pin.slash")
+                                        .frame(minWidth: 44, minHeight: 44)
                                 }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .frame(minWidth: 44, minHeight: 44)
+                                .disabled(quickAccess.busy || quickAccess.loading)
+                                .accessibilityIdentifier("native-ios-files-pinned-inline-unpin-\(item.id)")
+                            } else {
+                                Menu {
+                                    Button("上移") { reorderQuickAccess(item, delta: -1) }
+                                    Button("下移") { reorderQuickAccess(item, delta: 1) }
+                                    Button("取消固定", role: .destructive) {
+                                        quickAccess.unpin(item.id, login: login)
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                        .frame(minWidth: 44, minHeight: 44)
+                                }
+                                .disabled(quickAccess.busy || quickAccess.loading)
+                                .accessibilityIdentifier("native-ios-files-pinned-more-\(item.id)")
                             }
-                            .disabled(quickAccess.busy || quickAccess.loading)
-                            .accessibilityIdentifier("native-ios-files-pinned-more-\(item.id)")
                         }
+                    }
+                    if quickAccess.items.count > 5 && !isHomeEditing {
+                        Button("查看全部 \(quickAccess.items.count) 个固定目录") {
+                            isHomeEditing = true
+                        }
+                        .accessibilityIdentifier("native-ios-files-home-show-all-pins")
                     }
                     if quickAccess.items.isEmpty {
                         Text("还没有固定文件夹。打开云端目录，长按文件夹即可固定。")
@@ -1472,16 +1503,16 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
             }
         }
-        Section("快捷访问") {
-            NavigationLink {
-                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
-            } label: {
-                Label("最近使用", systemImage: "clock")
+        Section("整理") {
+            if isHomeEditing {
+                Label("可直接调整固定文件夹顺序并取消固定", systemImage: "hand.draw")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
-            .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
-            .accessibilityIdentifier("native-ios-files-open-recent")
-        }
-        Section("标签") {
+            Button { isHomeEditing.toggle() } label: {
+                Label(isHomeEditing ? "完成首页整理" : "直接编辑浏览首页",
+                      systemImage: isHomeEditing ? "checkmark" : "pencil")
+            }
+            .accessibilityIdentifier("native-ios-files-home-edit-inline")
             Button { openTagManager() } label: {
                 Label("管理标签", systemImage: "tag.circle")
             }
@@ -1515,8 +1546,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Button("重试") { searchOptions.load(login: login) }
                 }
             }
-        }
-        Section("整理") {
+            Divider()
             Button { presentOrganizeHome() } label: {
                 Label("整理浏览首页", systemImage: "square.grid.2x2")
             }
@@ -2558,6 +2588,14 @@ struct XDriveIOSNativeFilesBrowser: View {
             XDriveIOSNativeFilesBrowser(login: login, folder: next)
         }
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                if isHome {
+                    Button(isHomeEditing ? "完成" : "编辑") {
+                        isHomeEditing.toggle()
+                    }
+                    .accessibilityIdentifier("native-ios-files-home-edit-toggle")
+                }
+            }
             ToolbarItem(placement: .principal) {
                 if let folder, !isGlobalSearch {
                     Menu {
@@ -3337,6 +3375,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: login.owner) { _ in
+            isHomeEditing = false
             ancestorCrumbs = []
             ancestorStatus = nil
             browseReturnAnchor = nil
