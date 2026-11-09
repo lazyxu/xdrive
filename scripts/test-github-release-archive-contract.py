@@ -37,8 +37,10 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
 
     assert "name: xdrive-caddy-image" in bundle
     assert "cp caddy-image/image.tar.gz release/xdrive-caddy-image.tar.gz" in bundle
-    assert "xdrive-caddy-image.tar.gz \\" in bundle
-    assert "xdrive-caddy-image.id \\" in bundle
+    # Mandatory Server archive bytes and identity remain part of the signed
+    # checksum manifest even when no optional client packages were built.
+    assert "xdrive-caddy-image.tar.gz xdrive-caddy-image.id \\" in bundle
+    assert 'sha256sum "${optional[@]}"' in bundle
     verify(True, "two CLI archives and exact signed Caddy image archive")
     for name in ("other.zip", "other.tar.gz", "other.tgz", ".hidden.zip", "xdrive-desktop-amd64.zip"):
         extra = release / name
@@ -47,14 +49,15 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
         extra.unlink()
         verify(True, f"restore after {name}")
     linux.unlink()
-    verify(False, "reject missing CLI package")
+    verify(True, "omit absent optional Linux CLI package")
+    windows.unlink()
+    verify(True, "valid Server-only archive without either CLI platform")
     linux.write_bytes(b"")
-    verify(False, "reject empty CLI package")
+    verify(False, "reject present but empty optional CLI package")
     linux.write_bytes(b"fixture-linux-cli")
     verify(True, "restore Linux CLI")
-    windows.unlink()
     windows.symlink_to(linux)
-    verify(False, "reject linked CLI package")
+    verify(False, "reject symlinked optional CLI package")
     windows.unlink()
     windows.write_bytes(b"fixture-windows-cli")
     verify(True, "restore Windows CLI")
@@ -69,4 +72,4 @@ with tempfile.TemporaryDirectory(prefix="xdrive-release-archive-") as directory:
     image_id.write_bytes(("sha256:" + "0" * 64 + "\n").encode())
     verify(True, "final valid distribution")
 
-print("GitHub Snapshot exact Backup CLI archive allowlist: passed")
+print("GitHub Snapshot required Caddy plus optional verified client archive allowlist: passed")
