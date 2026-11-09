@@ -141,7 +141,13 @@ func TestCurrentServerBundleFallbackOnUnavailableLocalAndCorruptGitLab(t *testin
 			_ = json.NewEncoder(w).Encode(listing)
 		case "/api/v1/release-bundles/current/artifacts/xDriveSetup-amd64.exe":
 			localCalls++
-			http.NotFound(w, r)
+			// An authenticated 307 must never forward an Owner bearer to an
+			// unlisted endpoint, even within the same Server origin.
+			w.Header().Set("Location", "/untrusted-installer-redirect")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		case "/untrusted-installer-redirect":
+			t.Error("authenticated cache request followed an unapproved redirect")
+			http.Error(w, "unexpected redirect", http.StatusForbidden)
 		default:
 			http.NotFound(w, r)
 		}
