@@ -3739,7 +3739,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: foldersFirst) { _ in reloadKeepingArrangementAnchor() }
     }
 
-    private func filesLoadingLifecycle(returnScroll: ScrollViewProxy) -> some View {
+    @ViewBuilder private func filesLoadingLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        // A synthetic/expired local Owner without a Session must never mount
+        // the paged Files List at all. In XCUITest its nested accessibility
+        // snapshot could hang for >100s even though no Server data was read.
+        // Leave all real authentication in verifiedAuthorization() below.
+        if !isHome && !login.hasLocalOwnerSession {
+            XDriveIOSNativeFilesNoSessionRoute(kind: .cloud)
+        } else {
         filesArrangementLifecycle(returnScroll: returnScroll)
         .onChange(of: model.loading) { loading in
             if !loading, model.verifiedPage, let target = pendingJumpIndex,
@@ -3795,6 +3802,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             lastViewedFile = nil
             returnOwner = nil
+        }
         }
     }
 
@@ -4878,5 +4886,49 @@ struct XDriveIOSNativeFilesBrowser: View {
         model.load(login: login, folderID: parentID, offset: offset,
                    query: activeQuery, filters: searchFilters, sort: sort, order: order,
                    grouping: grouping, foldersFirst: foldersFirst)
+    }
+}
+
+    
+/// A bounded, read-only route for a locally missing Session. It bypasses
+/// *display construction* only; it never grants a token or replaces the
+/// server's authoritative Owner check after a real sign-in.
+struct XDriveIOSNativeFilesNoSessionRoute: View {
+    enum Kind { case cloud, trash }
+
+    let kind: Kind
+    @Environment(\.dismiss) private var dismiss
+
+    private var isTrash: Bool {
+        if case .trash = kind { return true }
+        return false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label(isTrash ? "无法读取最近删除" : "无法读取当前目录",
+                  systemImage: "lock.shield")
+                .font(.headline)
+            Text("当前没有有效的原生登录会话。请返回并登录 xDrive 后重试。")
+                .font(.subheadline).foregroundStyle(.secondary)
+            Button {
+                dismiss()
+            } label: {
+                Label("返回文件", systemImage: "chevron.left")
+            }
+            .accessibilityIdentifier(isTrash
+                ? "native-ios-files-trash-error-return"
+                : "native-ios-files-error-return")
+            .buttonStyle(.bordered)
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(isTrash
+            ? "native-ios-files-trash-error-page"
+            : "native-ios-files-error-page")
+        .navigationTitle(isTrash ? "最近删除" : "xDrive 云端")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

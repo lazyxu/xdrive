@@ -468,6 +468,12 @@ struct XDriveIOSNativeFilesTrashScreen: View {
 
     var body: some View {
         Group {
+            // No local Session means there can be no verified Trash items.
+            // Render the bounded denial before the large destructive List or
+            // an asynchronous auth failure can mount its AX subtree.
+            if !login.hasLocalOwnerSession {
+                XDriveIOSNativeFilesNoSessionRoute(kind: .trash)
+            } else
             // Do not ask SwiftUI/VoiceOver to enumerate the entire paged
             // destructive-action List after the current Owner is unreadable.
             // This stable native recovery page has no stale Node actions.
