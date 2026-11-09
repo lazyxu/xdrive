@@ -8,7 +8,7 @@ import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaAsyncVideoPoster } from './MediaGalleryPreviewMedia'
 import type { MediaThumbnailLoader } from './MediaGallery'
 import type { XDriveTrustedProjectedMapCells } from '../media-gallery-baidu-isolated-frame-host'
-import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaItem } from '../models'
+import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaItem, MediaTimelineGroupSets } from '../models'
 import { xDriveMountBaiduIsolatedFrame } from '../media-gallery-baidu-isolated-frame-host'
 import { xDriveMountBaiduInlineMap } from '../media-gallery-baidu-inline-map-host'
 import type { XDriveBaiduJSAPIPrototypeConfig } from '../models'
@@ -31,7 +31,7 @@ import { xDriveAppendPlacesDrawerPage } from '../media-gallery-places-photo-pagi
 import {
   xDrivePlacesPhotoWindowBound, xDrivePlacesPhotoWindowAppend,
   xDrivePlacesPhotoWindowMissingOffset, xDrivePlacesPhotoWindowRehydrate,
-  xDrivePlacesPhotoWindowSeek,
+  xDrivePlacesPhotoWindowSeek, xDrivePlacesPhotoTimelineGroups,
 } from '../media-gallery-places-photo-window'
 import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDrawer'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
@@ -67,6 +67,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   photoTileMinWidth = 108,
   loadPreviewURL,
   saveVideoPoster,
+  onSetFavorite,
   edgeToEdge = false,
   onOpenCell,
   onOpenCellPhoto,
@@ -97,6 +98,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   photoTileMinWidth?: number
   loadPreviewURL?: import('./MediaGallery').MediaPreviewURLLoader
   saveVideoPoster?: import('./MediaGallery').MediaVideoPosterSaver
+  onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   edgeToEdge?: boolean
   onOpenCell: (selection: MediaBaiduNativeCellSelection, scope: XDriveBaiduMapPhotoScope) => void
   onOpenCellPhoto?: (selection: MediaBaiduNativeCellSelection,
@@ -205,6 +207,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     key: string
     phase: 'loading' | 'ready' | 'error'
     items: MediaItem[]
+    timelineGroups?: MediaTimelineGroupSets
     windowStart: number
     loadedDepth: number
     total: number
@@ -280,7 +283,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       setDrawer(current => current && current.key===key &&
         xDriveBaiduCellReturnMatchesFreshSelection(current.selection,cell)
         ? { ...current,phase:valid?'ready':'error',
-            items:valid?[...range.items]:[], windowStart:0,
+            items:valid?[...range.items]:[],
+            timelineGroups:valid ? xDrivePlacesPhotoTimelineGroups(range) ?? undefined : undefined,
+            windowStart:0,
             // Restoring a deep virtual extent is visual-only and is gated by
             // this fresh signed Owner Cell Range. Unloaded rows stay inert.
             loadedDepth:valid
@@ -461,6 +466,28 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     if (!state || state.pageErrorKind!=='window' ||
         !state.failedWindowRange) return
     loadDrawerWindow(state.failedWindowRange.start,state.failedWindowRange.end,true)
+  }
+  const setDrawerFavorite = async (item: MediaItem, favorite: boolean) => {
+    const state=activeDrawer,approved=acceptedScope.current
+    // Never issue an action from a stale map Cell, a filtered Favorite range,
+    // or a no-longer-authorized current Owner. The Server is authoritative.
+    if (!onSetFavorite || !state || state.phase!=='ready' || !approved ||
+        approved.key!==filterRef.current.key ||
+        mapPhotoScope.filters.favorite!==undefined ||
+        !hasAcceptedCell(state.selection) ||
+        !state.items.some(source=>source.node.id===item.node.id &&
+          source.node.revision===item.node.revision)) {
+      throw new Error('当前地点照片状态已变化，请重新打开')
+    }
+    await onSetFavorite(item, favorite)
+    if (acceptedScope.current?.key!==approved.key ||
+        !hasAcceptedCell(state.selection)) return
+    setDrawer(current => current && current.key===state.key &&
+      xDriveBaiduCellReturnMatchesFreshSelection(current.selection,state.selection)
+      ? {...current,items:current.items.map(value=>
+          value.node.id===item.node.id && value.node.revision===item.node.revision
+            ? {...value,favorite} : value)}
+      : current)
   }
   const openDrawerPhoto = (item: MediaItem,
     presentation: XDrivePlacesDrawerPresentation) => {
@@ -1381,6 +1408,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             pageErrorKind={activeDrawer.pageErrorKind}
             initialPresentation={activeDrawer.returnPresentation}
             loadThumbnail={loadThumbnail}
+            loadPreviewURL={loadPreviewURL}
+            saveVideoPoster={saveVideoPoster}
+            timelineGroups={activeDrawer.timelineGroups}
+            onSetFavorite={onSetFavorite && mapPhotoScope.filters.favorite===undefined
+              ? setDrawerFavorite : undefined}
             photoTileMinWidth={photoTileMinWidth}
             onClose={() => { pendingResizeDrawer.current=null;closeDrawer() }}
             onExpand={expanded => setDrawer(current => current
