@@ -322,6 +322,7 @@ import {
   type AgentUpdateSource,
   type AgentUpdateState,
   type AgentServerUpdateState,
+  type AgentReleaseBundleState,
   type AgentStatus,
   type AgentTransferLifecycleInput,
   type AgentTransfers,
@@ -8876,6 +8877,58 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().startServerUpdate(sourceValue, channelValue, backupFileDataValue === true)
   }, false))
+  ipcMain.handle('agent:get-release-bundle', () =>
+    runAgentAction<AgentReleaseBundleState>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'release-bundle-current')
+      return requireAgentClient().currentReleaseBundle()
+    }, false))
+  ipcMain.handle('agent:retry-release-bundle', () =>
+    runAgentAction<{ state: 'queued' }>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'release-bundle-current')
+      return requireAgentClient().retryReleaseBundle()
+    }, false))
+  ipcMain.handle('agent:save-release-bundle', async (_event, commitValue: unknown, fileValue: unknown) => {
+    try {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'release-bundle-current')
+      if (typeof commitValue !== 'string' || !/^[0-9a-f]{40}$/.test(commitValue) ||
+          typeof fileValue !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(fileValue)) {
+        throw new AgentIPCError('invalid_input', 0, 'Current Bundle Commit and filename are required.')
+      }
+      const client = requireAgentClient()
+      const current = await client.currentReleaseBundle()
+      if (current.commit !== commitValue ||
+          !current.artifacts.some(item => item.filename === fileValue &&
+            item.build_commit === commitValue && item.install_mode === 'manual')) {
+        throw new AgentIPCError('stale_release_bundle', 409, 'Server Bundle changed before save.')
+      }
+      const options = {
+        title: '保存当前 Server Commit 的已验证安装包',
+        defaultPath: path.join(app.getPath('downloads'), fileValue),
+      }
+      const chosen = mainWindow ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options)
+      if (chosen.canceled || !chosen.filePath) return { ok: true, data: { saved: false } }
+      await client.downloadReleaseBundle(commitValue, fileValue, chosen.filePath)
+      return { ok: true, data: { saved: true } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+  ipcMain.handle('agent:install-release-bundle', (_event, commitValue: unknown,
+    fileValue: unknown, confirmed: unknown) =>
+    runAgentAction<AgentUpdateState>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'release-bundle-current')
+      if (confirmed !== true || typeof commitValue !== 'string' ||
+          !/^[0-9a-f]{40}$/.test(commitValue) || typeof fileValue !== 'string' ||
+          !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(fileValue)) {
+        throw new AgentIPCError('invalid_input', 0, 'Explicit user confirmation and exact Bundle identity are required.')
+      }
+      return requireAgentClient().installCurrentServerCommit(commitValue, fileValue)
+    }, false))
   ipcMain.handle('agent:cloud-storage-stats', (event, requestID: unknown = undefined) =>
     runAgentAction<AgentCloudStorageStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
       const hello = await requireAgentLifecycle().ensureRunning()
