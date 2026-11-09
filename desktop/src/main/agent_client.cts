@@ -310,6 +310,7 @@ export type AgentUpdateState = {
   update_available: boolean
   downloaded: boolean
   install_supported: boolean
+  manual_install_supported?: boolean
   last_checked_at?: string
   message?: string
   last_error?: string
