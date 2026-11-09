@@ -11,6 +11,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# The detached Windows PowerShell 5.1 process may be a grandchild of pwsh 7
+# (CI: pwsh -> Start-Process -> powershell.exe). It then inherits the pwsh
+# PSModulePath and autoloads incompatible 7.x Security/Utility modules first.
+# Prepend THIS interpreter's trusted, built-in WindowsPowerShell modules.
+# Failure to locate them is fail-closed: never skip signature/hash admission.
+$windowsPowerShellModules = [System.IO.Path]::Combine($PSHOME, "Modules")
+if (-not [System.IO.Directory]::Exists($windowsPowerShellModules)) {
+    throw "Windows PowerShell built-in security modules are unavailable"
+}
+$env:PSModulePath = $windowsPowerShellModules + ";" + $env:PSModulePath
+
 . (Join-Path $PSScriptRoot "windows_process_scope.ps1")
 
 function Get-XDriveStartMenuProgramPaths {
