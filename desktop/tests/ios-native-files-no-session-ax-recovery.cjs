@@ -35,6 +35,11 @@ test('both denial surfaces have stable accessibility IDs and an explicit dismiss
     assert.ok(browser.includes(id), 'missing shared no-Session AX ID: ' + id)
   }
   assert.match(browser, /Button \{\s*dismiss\(\)\s*\} label: \{\s*Label\("返回文件"/)
+  const denied = browser.slice(browser.indexOf('struct XDriveIOSNativeFilesNoSessionRoute: View'))
+  assert.match(denied, /native-ios-files-trash-no-session/)
+  assert.match(denied, /native-ios-files-cloud-no-session/)
+  assert.doesNotMatch(denied, /accessibilityIdentifier\("native-ios-files-trash-retry"\)/)
+  assert.match(gallery, /testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels\(\)[\s\S]*?native-ios-files-trash-no-session[\s\S]*?XCTAssertFalse\(target\("native-ios-files-trash-retry"/)
   assert.doesNotMatch(browser.slice(browser.indexOf('struct XDriveIOSNativeFilesNoSessionRoute: View')), /verifiedAuthorization\(\)|accessToken|URLSession|model\.items|ForEach\(/)
 })
 test('real XCUITests continue checking actual child error pages and returns', () => {
