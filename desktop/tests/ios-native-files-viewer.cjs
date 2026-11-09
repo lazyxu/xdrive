@@ -229,7 +229,10 @@ test('Files video uses Gallery native timeline and Owner-gated canvas paging wit
   assert.match(modal, /\.id\(viewed\.id\)/);
   assert.match(modal, /\.onAppear \{ if authorized \{ player\.play\(\) \} \}/);
   assert.match(modal, /\.onDisappear \{ player\.pause\(\) \}/);
-  assert.match(modal, /\.toolbar\(chromeVisible \? \.visible : \.hidden,/);
+  assert.match(modal, /\\.toolbar\\(chromeVisible \\? \\.visible : \\.hidden, for: \\.navigationBar\\)/);
+  // Hiding video playback chrome must not hide Next/Previous or cause a
+  // bottom-bar reflow when the first frame becomes ready.
+  assert.match(modal, /\\.toolbar\\(isNativeVideo \\? \\.visible :[\\s\\S]*?for: \\.bottomBar\\)/);
   assert.match(modal, /\.statusBarHidden\(!chromeVisible\)/);
   assert.match(modal, /private func retire\(\) \{[\s\S]*?showImageChrome = true\s*showVideoChrome = true/);
   assert.match(modal, /XDriveIOSNativeFilesViewerPolicy\.neighbor\(/);
