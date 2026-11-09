@@ -32,6 +32,10 @@ export type XDriveFileExplorerUploadBatchResult = {
 
 export type XDriveFileExplorerUploadResult = {
   skipped: boolean
+  // Actual content bytes returned by the owning CAS transport; optional for legacy hosts.
+  transferred_bytes?: number
+  cas_reused_bytes?: number
+  resume_reused_bytes?: number
 }
 
 export type XDriveFileExplorerUploadTransferTerminalState =
@@ -80,6 +84,9 @@ export type XDriveFileExplorerUploadTransferLifecycle = {
     state: XDriveFileExplorerUploadTransferTerminalState
     error?: string
     skipped?: boolean
+    transferredBytes?: number
+    casReusedBytes?: number
+    resumeReusedBytes?: number
   }) => void | Promise<void>
   // Optional: Web group cancellation is owned by its transport context.
   // Existing Desktop Agents do not falsely advertise group cancellation.
@@ -689,7 +696,12 @@ export function useXDriveFileExplorerUploadController<TFile>({
             groupBytesDone += childSizes[index] - childBytesDone
             childBytesDone = childSizes[index]
             await transferLifecycle.progress(childID, childBytesDone, childSizes[index])
-            await transferLifecycle.finish(childID, { state: 'completed' })
+            await transferLifecycle.finish(childID, {
+              state: 'completed',
+              transferredBytes: result.transferred_bytes,
+              casReusedBytes: result.cas_reused_bytes,
+              resumeReusedBytes: result.resume_reused_bytes,
+            })
           }
           terminalChildren.add(childID)
           fileUploadStarted = false

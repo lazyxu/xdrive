@@ -830,6 +830,9 @@ export default function DesktopFileExplorer({
           state: input.state,
           error: input.error,
           skipped: input.skipped,
+          upload_transferred_bytes: input.transferredBytes,
+          upload_cas_reused_bytes: input.casReusedBytes,
+          upload_resume_reused_bytes: input.resumeReusedBytes,
         })
         if (!result.ok) throw new Error(result.error.message)
       },

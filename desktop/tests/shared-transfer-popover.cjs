@@ -138,3 +138,102 @@ test('terminal compact items show stored average speed rather than a frozen curr
   assert.match(visible, /平均速度\s+5 KiB\/s/)
   assert.doesNotMatch(visible, /当前速度\s+0 B\/s/)
 })
+
+test('upload history cards display verified instant, partial reuse, normal, and explicit skip', () => {
+  const completed = { kind: 'upload', direction: 'upload', state: 'completed',
+    phase: 'finalizing', bytes_done: 4096, bytes_total: 4096, percent: 100,
+    instant_bytes_per_second: 0, average_bytes_per_second: 0 }
+  const items = [
+    task('instant', { ...completed, upload_transferred_bytes: 0, upload_cas_reused_bytes: 4096 }),
+    task('partial', { ...completed, upload_transferred_bytes: 1024, upload_cas_reused_bytes: 3072, average_bytes_per_second: 1024 }),
+    task('normal', { ...completed, upload_transferred_bytes: 4096, average_bytes_per_second: 2048 }),
+    task('resume', { ...completed, upload_transferred_bytes: 0, upload_resume_reused_bytes: 4096 }),
+    task('skipped', { ...completed, upload_skipped: true, bytes_done: 0 }),
+    task('unknown', { ...completed }),
+  ]
+  const text = visibleText(render(XDriveTransferCenter, { transfers: items }))
+  assert.match(text, /秒传/)
+  assert.match(text, /无需上传文件内容/)
+  assert.match(text, /CAS 复用 4 KiB/)
+  assert.match(text, /部分复用/)
+  assert.match(text, /实际上传 1 KiB/)
+  assert.match(text, /CAS 复用 3 KiB/)
+  assert.match(text, /普通上传/)
+  assert.match(text, /断点续传/)
+  assert.match(text, /断点复用 4 KiB/)
+  assert.match(text, /已跳过/)
+  assert.match(text, /因冲突跳过/)
+  const instant = visibleText(render(XDriveTransferTreeItem, {
+    node: xDriveTransferTree([items[0]])[0], compact: true,
+    retryDisabled: false, retryingID: '',
+  }))
+  assert.match(instant, /秒传/)
+  assert.doesNotMatch(instant, /平均速度\s+0 B\/s/)
+  const unknown = visibleText(render(XDriveTransferTreeItem, {
+    node: xDriveTransferTree([items[5]])[0], compact: true,
+    retryDisabled: false, retryingID: '',
+  }))
+  assert.doesNotMatch(unknown, /秒传|部分复用|普通上传/)
+  assert.match(unknown, /方式未记录/, 'legacy task must explicitly show that upload method is unknown')
+  assert.match(unknown, /平均速度\s+0 B\/s/, 'legacy missing metadata is unknown rather than inferred instant')
+})
+
+test('folder history counts verified reused children without relabeling skipped or active work', () => {
+  const terminal = { kind: 'upload', direction: 'upload', state: 'completed',
+    phase: 'finalizing', percent: 100, bytes_done: 4096, bytes_total: 4096 }
+  const items = [
+    task('folder', { scope: 'group', kind: 'upload', direction: 'upload',
+      state: 'completed', bytes_done: 8192, bytes_total: 8192 }),
+    task('instant-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 0, upload_cas_reused_bytes: 4096 }),
+    task('partial-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 2048, upload_cas_reused_bytes: 2048 }),
+    task('skipped-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_skipped: true }),
+    task('resumed-child', { ...terminal, parent_id: 'folder', root_id: 'folder', upload_transferred_bytes: 0, upload_resume_reused_bytes: 4096 }),
+  ]
+  const text = visibleText(render(XDriveTransferCenter, { transfers: items }))
+  assert.match(text, /秒传\s+1/)
+  assert.match(text, /部分复用\s+1/)
+  assert.match(text, /断点续传\s+1/)
+})
+
+test('truncated folder history must never claim every upload was instant', () => {
+  const folder = (count) => task('folder', {
+    scope: 'group', kind: 'upload', direction: 'upload', state: 'completed',
+    phase: 'finalizing', scan_complete: true, items_total: count,
+    items_completed: count, bytes_done: count * 4096, bytes_total: count * 4096,
+    percent: 100,
+  })
+  const child = (id) => task(id, {
+    kind: 'upload', direction: 'upload', state: 'completed',
+    phase: 'finalizing', parent_id: 'folder', root_id: 'folder',
+    bytes_done: 4096, bytes_total: 4096, percent: 100,
+    upload_transferred_bytes: 0, upload_cas_reused_bytes: 4096,
+  })
+  const children = [child('one'), child('two')]
+
+  const complete = visibleText(render(XDriveTransferCenter, { transfers: [folder(2), ...children] }))
+  assert.match(complete, /全部秒传/)
+  const truncated = visibleText(render(XDriveTransferCenter, { transfers: [folder(3), ...children] }))
+  assert.doesNotMatch(truncated, /全部秒传/,
+    'bounded persisted history cannot prove an unretained child had a CAS hit')
+  assert.match(truncated, /秒传\s+2/, 'only retained verified child receipts may be counted')
+
+  const unknownInventory = visibleText(render(XDriveTransferCenter, {
+    transfers: [task('folder', { ...folder(2), scan_complete: false }), ...children],
+  }))
+  assert.doesNotMatch(unknownInventory, /全部秒传/,
+    'an incomplete folder scan cannot establish a complete instant result')
+})
+
+test('a resumed-only zero-byte upload cannot be labeled CAS instant', () => {
+  const item = task('resumed-only', {
+    kind: 'upload', direction: 'upload', state: 'completed', phase: 'finalizing',
+    percent: 100, bytes_done: 4096, bytes_total: 4096,
+    upload_transferred_bytes: 0, upload_resume_reused_bytes: 4096,
+  })
+  const text = visibleText(render(XDriveTransferTreeItem, {
+    node: xDriveTransferTree([item])[0],
+    compact: true, retryDisabled: false, retryingID: '',
+  }))
+  assert.match(text, /断点续传/)
+  assert.doesNotMatch(text, /秒传|CAS 复用/)
+})
