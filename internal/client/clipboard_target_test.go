@@ -16,14 +16,14 @@ func TestClipboardClientV2TargetEnvelopeIsAuthenticatedAndBoundToRecipient(t *te
 		return base64.StdEncoding.EncodeToString(raw)
 	}
 	item := ClipboardWrite{
-		ClientEventID: uuid.NewString(),
-		Kind: "image/x-xdrive-node-ref",
-		Nonce: encoded(12),
-		Ciphertext: encoded(40),
+		ClientEventID:  uuid.NewString(),
+		Kind:           "image/x-xdrive-node-ref",
+		Nonce:          encoded(12),
+		Ciphertext:     encoded(40),
 		TargetDeviceID: uuid.NewString(),
-		EphemeralKey: encoded(32),
-		WrappedKey: encoded(60),
-		NodeID: 118,
+		EphemeralKey:   encoded(32),
+		WrappedKey:     encoded(60),
+		NodeID:         118,
 	}
 	if !validClipboardWrite(item) {
 		t.Fatal("valid per-device file Node reference rejected")
