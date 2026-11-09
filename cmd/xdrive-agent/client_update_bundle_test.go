@@ -46,6 +46,11 @@ func TestClientUpdateOnlyPrefersExactMatchingCurrentServerCommit(t *testing.T) {
 			v.Asset.Name = "another.exe"
 			return v
 		}(),
+		"conflicting source size": func() xupdate.Result {
+			v := target
+			v.Asset.Size = artifact.Size + 1
+			return v
+		}(),
 		"conflicting signed digest": func() xupdate.Result {
 			v := target
 			v.Asset.Digest = "sha256:" + strings.Repeat("d", 64)
