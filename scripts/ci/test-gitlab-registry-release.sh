@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/scripts/ci" "$TMP/bin" "$TMP/dist/media-worker-image"
-for name in gitlab-release-version.sh gitlab-registry-utils.sh \
+for name in gitlab-release-version.sh gitlab-registry-utils.sh gitlab-stable-prestage-gate.sh \
             gitlab-stage-image.sh gitlab-fetch-staged-image.sh \
             gitlab-server-images.sh gitlab-promote-images.sh; do
   cp "$ROOT/scripts/ci/$name" "$TMP/scripts/ci/$name"
