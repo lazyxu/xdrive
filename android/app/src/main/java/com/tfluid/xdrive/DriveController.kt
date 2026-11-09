@@ -4971,6 +4971,16 @@ class DriveController(
                     uploaded.size == original.bytes && uploaded.name == name) {
                     "Clipboard UploadSession returned an unverified Node receipt"
                 }
+                // Finalize ACK alone is not a current File permission proof:
+                // reread the exact Owner Node and its live parent, just like
+                // the existing Files Viewer. Do not send before both agree.
+                val located = service.nodeLocation(token, uploaded.id)
+                currentCoroutineContext().ensureActive()
+                check(sameOwner() && located.nodeId == uploaded.id &&
+                    located.parentId == root.id && located.revision >= uploaded.revision &&
+                    located.parentDirectories.lastOrNull()?.id == root.id) {
+                    "Clipboard Node moved, disappeared or changed after CAS commit"
+                }
                 uploaded
             }
         }
