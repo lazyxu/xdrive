@@ -664,6 +664,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
              state.key===approved.key && latestAcceptedViewport.current) {
             const list=node.ownerDocument.querySelector<HTMLElement>(
               '[data-xdrive-places-album-dialog] [data-xdrive-places-photo-drawer-items]')
+            const wall=node.ownerDocument.querySelector<HTMLElement>(
+              '[data-xdrive-places-album-dialog] [data-xdrive-places-photo-drawer]')
+            const rawScale=wall?.getAttribute('data-xdrive-places-photo-scale')
+            const timeScale=rawScale==='year'||rawScale==='month'||rawScale==='day'
+              ? rawScale : 'all'
+            const rawColumns=Number(wall?.getAttribute('data-xdrive-places-photo-columns'))
+            const columns=Number.isSafeInteger(rawColumns) && rawColumns>=2 &&
+              rawColumns<=10 ? rawColumns : 3
             const bounded=(value:number,max=10_000)=>Number.isFinite(value)
               ? Math.max(0,Math.min(max,Math.floor(value))) : 0
             // The current visible tile belongs to the trusted Parent's
@@ -672,7 +680,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             const bounds=list?.getBoundingClientRect()
             const visibleTile=list && bounds ? Array.from(
               list.querySelectorAll<HTMLElement>(
-                '[data-xdrive-media-gallery-virtual-grid] [data-xdrive-media-index]'),
+                '[data-xdrive-media-gallery-virtual-grid] [data-xdrive-media-index], [data-xdrive-media-gallery-virtual-timeline] [data-xdrive-media-index]'),
             ).find(tile=>{
               const rect=tile.getBoundingClientRect()
               return rect.bottom>bounds.top && rect.top<bounds.bottom &&
@@ -701,7 +709,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             pendingResizeDrawer.current={owner:scope??'',key:approved.key,
               hint:{selection:{...state.selection,
                 bounds:{...state.selection.bounds}},photoScope,
-                presentation:{expanded:state.expanded,
+                presentation:{expanded:state.expanded,timeScale,columns,
                   scrollTop:bounded(list?.scrollTop??0,
                     XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT),
                   scrollLeft:bounded(list?.scrollLeft??0),
