@@ -25,6 +25,23 @@ const iosPhotoGrantTTL = 14 * 24 * time.Hour
 
 var errIOSPhotoGrantDenied = errors.New("ios background photo grant denied")
 
+// A revoked/rotated grant may no longer send background hints. Clear the
+// encrypted APNs token and its fingerprint in the SAME transaction as the
+// grant's revocation, including a lost iPhone revoked by its Owner.
+func iosPhotoGrantRevokeUpdates(now time.Time) map[string]any {
+    return map[string]any{
+        "revoked_at": now,
+        "updated_at": now,
+        "apns_token_ciphertext": nil,
+        "apns_key_version": uint32(0),
+        "apns_token_digest": "",
+        "apns_environment": "",
+        "apns_registered_at": nil,
+        "apns_last_sent_at": nil,
+    }
+}
+
+
 func newIOSPhotoGrantSecret() (raw, hash string, err error) {
 	var random [32]byte
 	if _, err = rand.Read(random[:]); err != nil {
@@ -152,7 +169,7 @@ func (s *Server) createIOSPhotoBackgroundGrant(c *gin.Context) {
 		if err := tx.Model(&meta.IOSPhotoBackgroundGrant{}).
 			Where("owner_id = ? AND device_id = ? AND revoked_at IS NULL",
 				user.ID, device.ID).
-			Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
+			Updates(iosPhotoGrantRevokeUpdates(now)).Error; err != nil {
 			return err
 		}
 		return tx.Create(&grant).Error
@@ -308,7 +325,7 @@ func (s *Server) rotateIOSPhotoBackgroundGrant(c *gin.Context) {
 		result := tx.Model(&meta.IOSPhotoBackgroundGrant{}).
 			Where("id = ? AND owner_id = ? AND revoked_at IS NULL AND expires_at > ?",
 				previous.ID, previous.OwnerID, now).
-			Updates(map[string]any{"revoked_at": now, "updated_at": now})
+			Updates(iosPhotoGrantRevokeUpdates(now))
 		if result.Error != nil {
 			return result.Error
 		}
@@ -339,7 +356,7 @@ func (s *Server) revokeIOSPhotoBackgroundGrant(c *gin.Context) {
 	result := s.DB.WithContext(c.Request.Context()).
 		Model(&meta.IOSPhotoBackgroundGrant{}).
 		Where("id = ? AND owner_id = ? AND revoked_at IS NULL", id.String(), userID(c)).
-		Updates(map[string]any{"revoked_at": now, "updated_at": now})
+		Updates(iosPhotoGrantRevokeUpdates(now))
 	if result.Error != nil {
 		fail(c, http.StatusInternalServerError, "revoke ios photo grant failed")
 		return
