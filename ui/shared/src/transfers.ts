@@ -44,6 +44,11 @@ export type XDriveTransferTask = {
   state: XDriveTransferState
   bytes_done: number
   bytes_total: number
+  // Only set after a successful upload using verified transport/CAS receipt.
+  // This is actual file-content upload, not logical progress or measured speed.
+  upload_transferred_bytes?: number
+  // Conflict-policy skip is distinct from a full CAS hit (instant upload).
+  upload_skipped?: boolean
   percent: number
   items_total?: number
   items_completed?: number
@@ -452,6 +457,20 @@ export function xDriveTransferEtaMs(task: XDriveTransferTask) {
     : task.average_bytes_per_second
   if (speed <= 0) return undefined
   return Math.max(0, Math.round(((task.bytes_total - task.bytes_done) / speed) * 1000))
+}
+
+export type XDriveUploadTransferOutcome = 'instant' | 'partially_reused' | 'uploaded' | 'skipped'
+
+/** Do not guess a CAS hit from 0 B/s, 0 seconds, or completed logical bytes. */
+export function xDriveTransferUploadOutcome(task: XDriveTransferTask): XDriveUploadTransferOutcome | null {
+  if (task.direction !== 'upload' || task.scope === 'group' || task.state !== 'completed') return null
+  if (task.upload_skipped === true) return 'skipped'
+  const transferred = task.upload_transferred_bytes
+  if (transferred === undefined || !Number.isSafeInteger(transferred) ||
+      transferred < 0 || transferred > task.bytes_total) return null
+  if (task.bytes_total > 0 && transferred === 0) return 'instant'
+  if (transferred < task.bytes_total) return 'partially_reused'
+  return 'uploaded'
 }
 
 export function xDriveTransferPercent(task: XDriveTransferTask) {
