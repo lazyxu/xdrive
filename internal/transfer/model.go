@@ -108,9 +108,9 @@ type Task struct {
 	BytesDone             int64      `json:"bytes_done"`
 	BytesTotal            int64      `json:"bytes_total"`
 	// Nil means no verified CAS upload receipt; zero is a verified instant hit.
-	UploadTransferredBytes *int64     `json:"upload_transferred_bytes,omitempty"`
+	UploadSentBytes *int64     `json:"upload_transferred_bytes,omitempty"`
 	UploadCASReusedBytes   int64      `json:"upload_cas_reused_bytes,omitempty"`
-	UploadResumeReusedBytes int64     `json:"upload_resume_reused_bytes,omitempty"`
+	UploadResumeBytes int64     `json:"upload_resume_reused_bytes,omitempty"`
 	UploadSkipped         bool       `json:"upload_skipped,omitempty"`
 	Percent               float64    `json:"percent"`
 	ItemsTotal            int64      `json:"items_total"`
@@ -878,9 +878,9 @@ func (m *Manager) Retry(ctx context.Context, id string) error {
 	e.task.Error = ""
 	e.task.RetryCount++
 	e.task.BytesDone = 0
-	e.task.UploadTransferredBytes = nil
+	e.task.UploadSentBytes = nil
 	e.task.UploadCASReusedBytes = 0
-	e.task.UploadResumeReusedBytes = 0
+	e.task.UploadResumeBytes = 0
 	e.task.UploadSkipped = false
 	e.task.Percent = 0
 	if e.task.Scope == ScopeItem {
@@ -1192,9 +1192,9 @@ func (m *Manager) finishSkipped(id string) {
 	e.task.Phase = PhaseFinalizing
 	e.task.Error = ""
 	e.task.BytesDone = 0
-	e.task.UploadTransferredBytes = nil
+	e.task.UploadSentBytes = nil
 	e.task.UploadCASReusedBytes = 0
-	e.task.UploadResumeReusedBytes = 0
+	e.task.UploadResumeBytes = 0
 	e.task.UploadSkipped = e.task.Direction == KindUpload && e.task.Scope == ScopeItem
 	e.task.Percent = 100
 	if e.task.Scope == ScopeItem {
@@ -1339,9 +1339,9 @@ func (e *entry) applyUploadReceipt(receipt *UploadContentReceipt) {
 		return
 	}
 	actual := u
-	e.task.UploadTransferredBytes = &actual
+	e.task.UploadSentBytes = &actual
 	e.task.UploadCASReusedBytes = c
-	e.task.UploadResumeReusedBytes = r
+	e.task.UploadResumeBytes = r
 	e.task.UploadSkipped = false
 }
 
