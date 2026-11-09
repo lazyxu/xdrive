@@ -3574,6 +3574,10 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
     }
     await dialog.locator('[data-xdrive-places-photo-time-scale="all"]').click()
     await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
+    // The last date-mode gesture restores its anchor in up to two frames.
+    // Exhaust that one-shot intent before deliberate far-range scroll tests.
+    await page.evaluate(()=>new Promise(resolve=>
+      requestAnimationFrame(()=>requestAnimationFrame(resolve))))
     record(mode+': 100k signed Owner date views reuse full Gallery timeline',
       grouped.length===3 && grouped.every(x=>x.virtual && x.tiles<160) &&
       errors.length===0)
