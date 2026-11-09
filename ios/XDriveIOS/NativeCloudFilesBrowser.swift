@@ -4992,6 +4992,11 @@ struct XDriveIOSNativeFilesNoSessionRoute: View {
                 .font(.headline)
             Text("当前没有有效的原生登录会话。请返回并登录 xDrive 后重试。")
                 .font(.subheadline).foregroundStyle(.secondary)
+                // A no-token denial must not offer the normal network Retry:
+                // authentication can only resume after a real login.
+                .accessibilityIdentifier(isTrash
+                    ? "native-ios-files-trash-no-session"
+                    : "native-ios-files-cloud-no-session")
             Button {
                 dismiss()
             } label: {
