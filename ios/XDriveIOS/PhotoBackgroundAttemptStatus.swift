@@ -6,6 +6,7 @@ import Foundation
 enum XDriveIOSBGAttemptReason: String, Codable {
     case scheduled
     case scheduledAfterUnlock
+    case scheduledAfterPush
     case started
     case protectedDataUnavailable
     case photosPermissionUnavailable
@@ -25,6 +26,7 @@ enum XDriveIOSBGAttemptReason: String, Codable {
         switch self {
         case .scheduled: return "已提交系统任务请求，具体启动时间由 iOS 决定"
         case .scheduledAfterUnlock: return "设备解锁后已重新申请系统任务，尚未证明执行"
+        case .scheduledAfterPush: return "收到静默唤醒提示后已申请系统任务，未证明上传"
         case .started: return "系统已启动本次受限后台任务，尚无上传结果"
         case .protectedDataUnavailable: return "锁屏时原件或加密账本不可读取，安全退出，未上传"
         case .photosPermissionUnavailable: return "照片授权不足，未读取原件，需在系统设置中恢复权限"
@@ -65,6 +67,19 @@ enum XDriveIOSBGAttemptStatus {
         let value = XDriveIOSBGAttemptSnapshot(reason: reason, at: at)
         guard let encoded = try? JSONEncoder().encode(value) else { return }
         UserDefaults.standard.set(encoded, forKey: key(owner: owner))
+    }
+
+    /// Only non-secret wake admission timestamps are persisted. A push must
+    /// never carry an Owner credential, upload authority or PhotoKit ID.
+    static func lastRemoteWake(owner: XDriveNativeOwnerRoot) -> Date? {
+        guard let last = UserDefaults.standard.object(forKey: key(owner: owner) + ".apns-wake") as? Date,
+              last.timeIntervalSince1970.isFinite,
+              last <= Date().addingTimeInterval(120) else { return nil }
+        return last
+    }
+
+    static func recordRemoteWake(owner: XDriveNativeOwnerRoot, at: Date) {
+        UserDefaults.standard.set(at, forKey: key(owner: owner) + ".apns-wake")
     }
 
     static func last(owner: XDriveNativeOwnerRoot) -> XDriveIOSBGAttemptSnapshot? {
