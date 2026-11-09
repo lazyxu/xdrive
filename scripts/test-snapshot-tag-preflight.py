@@ -50,9 +50,17 @@ assert 'permissions:{contents:"write",workflows:"write"}' in issuer
 assert 'select([.repositories[]?.full_name] == [$repo])' in issuer
 token = "GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}"
 assert release.count(token) == 4, "preflight, ref probe, publish and post-publish dispatch must share the scoped token"
-assert release.count("GH_TOKEN: ${{ github.token }}") == 4, (
-    "attestation, stable publish and both exact-run client inventory steps must use read-only caller token"
+assert release.count("GH_TOKEN: ${{ github.token }}") == 5, (
+    "attestation, stable publish, both exact-run client inventory steps, and independent Bundle verification must use the read-only caller token"
 )
+# The fifth token is used by an independent post-publish verifier with
+# read-only permissions; never silently grant it channel-publisher privileges.
+verify_job = release.split("  verify-immutable-bundle:\n", 1)[-1]
+assert "  verify-immutable-bundle:\n" in release
+assert "contents: read" in verify_job and "attestations: read" in verify_job
+assert "contents: write" not in verify_job and "packages: write" not in verify_job
+assert 'run: python3 scripts/ci/verify-live-release-bundle.py --commit "$GITHUB_SHA" --require-sigstore' in verify_job
+
 assert release.index(token) < release.index(marker)
 assert token in release.split(marker, 1)[1].split("      - name: Log in to GHCR for channel promotion", 1)[0]
 assert token in release.split("      - name: Publish rolling snapshot prerelease", 1)[1].split("      - name: Assert distribution assets", 1)[0]

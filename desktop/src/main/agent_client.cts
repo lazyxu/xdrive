@@ -274,8 +274,27 @@ export type AgentOfflineHostPlanStatus = {
   }
 }
 
-export type AgentReleaseBundleState =
-  import('../../../ui/shared/src/release-bundles').XDriveReleaseBundleState
+// Mirror the authenticated IPC DTO structurally in the CJS main process.
+// Importing ESM UI source here violates Node16 resolution and desktop rootDir.
+export type AgentReleaseBundleState = {
+  state: 'unavailable' | 'syncing' | 'paused_for_server' | 'retry_needed' | 'ready'
+  commit?: string
+  channel?: 'master' | 'stable'
+  server_version?: string
+  cached_commit?: string
+  message?: string
+  artifacts: Array<{
+    platform: 'ios' | 'android' | 'windows' | 'linux' | 'dsm' | 'cli'
+    filename: string
+    build_commit: string
+    sha256: string
+    size: number
+    install_mode: 'manual' | 'manual_test_only'
+    cached: boolean
+    cache_status: 'pending' | 'verified' | 'missing_upstream' | 'verification_failed' | 'retry_needed' | 'unavailable'
+    download_urls: string[]
+  }>
+}
 
 export type AgentServerUpdateState = {
   supported: boolean
