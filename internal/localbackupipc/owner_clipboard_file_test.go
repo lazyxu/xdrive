@@ -82,7 +82,7 @@ func TestOwnerClipboardFilesIPCRequiresAllCapabilitiesAndRejectsStaleRead(t *tes
 
 	client := &Client{baseURL: server.URL, token: strings.Repeat("a", 64), http: server.Client()}
 	for _, missing := range [][]string{
-		{}, {"cloud-clipboard"}, {"cloud-clipboard", "cloud-files-read"},
+		{}, {"cloud-clipboard"}, {"cloud-files-read"},
 	} {
 		client.capabilities = missing
 		if _, err := client.OwnerClipboardFileReference(context.Background(), 118); err == nil {
@@ -92,7 +92,7 @@ func TestOwnerClipboardFilesIPCRequiresAllCapabilitiesAndRejectsStaleRead(t *tes
 	if n != 0 {
 		t.Fatal("missing capability must not contact owning Agent")
 	}
-	client.capabilities = []string{"cloud-clipboard", "cloud-files-read", "node-location"}
+	client.capabilities = []string{"cloud-clipboard", "cloud-files-read"}
 	for _, id := range []uint64{0, MaxSafeSourceID + 1} {
 		if _, err := client.OwnerClipboardFileReference(context.Background(), id); err == nil {
 			t.Fatal("invalid Node ID was admitted")
