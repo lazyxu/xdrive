@@ -221,4 +221,3 @@ func sanitizeManagedTargetSegment(value string) string {
 	}
 	return strings.TrimRight(strings.TrimSpace(b.String()), " .")
 }
-
