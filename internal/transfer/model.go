@@ -88,6 +88,8 @@ type GroupProgress struct {
 	QueuedItems    int64
 }
 
+// An absent UploadSentBytes receipt means unknown; a present zero can indicate
+// genuine CAS reuse only when reconciled against the separate CAS byte count.
 type Task struct {
 	ID                    string     `json:"id"`
 	ParentID              string     `json:"parent_id,omitempty"`
@@ -107,7 +109,6 @@ type Task struct {
 	State                 string     `json:"state"`
 	BytesDone             int64      `json:"bytes_done"`
 	BytesTotal            int64      `json:"bytes_total"`
-	// Nil means no verified CAS upload receipt; zero is a verified instant hit.
 	UploadSentBytes       *int64     `json:"upload_transferred_bytes,omitempty"`
 	UploadCASReusedBytes  int64      `json:"upload_cas_reused_bytes,omitempty"`
 	UploadResumeBytes     int64      `json:"upload_resume_reused_bytes,omitempty"`
