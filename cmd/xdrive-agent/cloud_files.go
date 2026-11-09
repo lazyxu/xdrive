@@ -55,6 +55,8 @@ type agentCloudUploadResult struct {
 	Node             client.Node `json:"node"`
 	Skipped          bool        `json:"skipped"`
 	TransferredBytes int64       `json:"transferred_bytes"`
+	CASReusedBytes   int64       `json:"cas_reused_bytes"`
+	ResumeReusedBytes int64      `json:"resume_reused_bytes"`
 }
 
 type agentCloudArchiveDownloadResult struct {
@@ -1210,7 +1212,11 @@ func (c *agentController) cloudUploadWithConflictPolicyTracked(
 		if result.Skipped {
 			handle.CompleteSkipped()
 		} else {
-			handle.CompleteUploadBytes(result.TransferredBytes)
+			handle.CompleteUploadReceipt(transfer.UploadContentReceipt{
+				TransferredBytes: result.TransferredBytes,
+				CASReusedBytes: result.CASReusedBytes,
+				ResumeReusedBytes: result.ResumeReusedBytes,
+			})
 		}
 	}
 	if !result.Skipped {
@@ -1218,6 +1224,7 @@ func (c *agentController) cloudUploadWithConflictPolicyTracked(
 	}
 	return agentCloudUploadResult{
 		Node: result.Node, Skipped: result.Skipped, TransferredBytes: result.TransferredBytes,
+		CASReusedBytes: result.CASReusedBytes, ResumeReusedBytes: result.ResumeReusedBytes,
 	}, nil
 }
 
