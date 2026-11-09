@@ -62,7 +62,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 
 	source := seedSyntheticSourceForProtocolTest(t, db, target.ID,
 		"Synology Photos", meta.SourceDirectionPush, meta.SourceSyncModeBackup,
-		meta.SourceRunModeScan, "@eaDir/\\n")
+		meta.SourceRunModeScan, "@eaDir/\n")
 
 	base := time.Date(2026, 9, 26, 1, 2, 3, 0, time.UTC)
 	var owner meta.User
