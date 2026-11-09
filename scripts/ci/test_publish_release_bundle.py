@@ -56,7 +56,7 @@ if args[:2] == ["release", "create"]:
     save()
     sys.exit(0)
 if args[:1] == ["api"]:
-    endpoint = args[1] if len(args) > 1 else ""
+    endpoint = next((arg for arg in args[1:] if arg.startswith("repos/")), "")
     if endpoint == "repos/lazyxu/xdrive/git/ref/tags/" + tag:
         if not state["tag"]:
             if state.get("tag_probe_error"):
