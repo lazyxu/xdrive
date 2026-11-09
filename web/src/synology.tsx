@@ -6,10 +6,11 @@ import {
   XDriveApp, XDriveSettingsDialog,
   xDriveWorkspaceHostSections,
   useXDriveWorkspaceNavigationState,
+  XDriveSynologyClipboardReferenceViewer,
+  type XDriveDSMClipboardViewerSelection,
 } from '@xdrive/ui/mui'
 import { XDriveDSMLoginNoCommitError } from '@xdrive/ui/mui'
 import type { XDriveSynologyBackupLocalClient, XDriveSynologyClipboardFileReference } from '@xdrive/ui/mui'
-import { XDriveSynologyClipboardReferenceViewer, type XDriveDSMClipboardViewerSelection } from '../../ui/shared/src/mui/SynologyClipboardReferenceViewer'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
 import { createXDriveDSMNotesPort } from './synologyNotesPort'
