@@ -601,13 +601,6 @@ func (s *Server) updateSource(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid request")
 		return
 	}
-	// Source.TargetNodeID is immutable. Even an unmanaged, historical Source
-	// may not be rebound to an ordinary Owner folder through generic PATCH.
-	if req.TargetNodeID != nil {
-		fail(c, http.StatusBadRequest, "Source target is server-managed and cannot be selected or rebound")
-		return
-	}
-
 	var updated meta.Source
 	var currentRevision uint64
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
@@ -633,6 +626,12 @@ func (s *Server) updateSource(c *gin.Context) {
 		}
 		if current.Status == meta.SourceStatusArchived {
 			return errSourceArchived
+		}
+		// TargetNodeID is server-owned and immutable, including for historical
+		// unmanaged Sources. Check Owner/Device/Root and revision first:
+		// unauthorized callers must still be rejected before policy errors.
+		if req.TargetNodeID != nil {
+			return errManagedSourceTarget
 		}
 		updates := map[string]any{}
 		resetMirrorEvidence := false

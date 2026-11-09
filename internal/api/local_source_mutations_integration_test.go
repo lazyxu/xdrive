@@ -114,8 +114,9 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 			}
 		})
 	}
-	// The target-only mutation uses the same credential/Root transaction
-	// fencing, validates owner and directory type, and retains Source identity.
+	// TargetNodeID is immutable, even for an owning Device with a verified
+	// local Root. The earlier test's successful retargeting was a retired
+	// arbitrary-destination compatibility path and must never be restored.
 	newTarget := meta.Node{
 		OwnerID: owner.ID, ParentID: &root.ID, Name: "backup-new-target",
 		Type: meta.NodeTypeDir, Revision: 1,
@@ -131,26 +132,43 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	targetURL := fmt.Sprintf("/api/v1/sources/%d", sourceD.ID)
-	validTargetBody := fmt.Sprintf(`{"target_node_id":%d}`, newTarget.ID)
-	foreignTargetBody := fmt.Sprintf(`{"target_node_id":%d}`, foreignTarget.ID)
-	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusForbidden,
+	validTargetBody := fmt.Sprintf("{\"target_node_id\":%d}", newTarget.ID)
+	foreignTargetBody := fmt.Sprintf("{\"target_node_id\":%d}", foreignTarget.ID)
+	// Authentication and device/root rights must be checked before the
+	// immutable-target rejection. Do not turn an unauthorized 403 into 400.
+	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT,
+		strings.NewReader(validTargetBody), http.StatusForbidden,
 		map[string]string{"If-Match": "\"1\""})
 	badDevice := copyHeaders()
 	badDevice["X-XDrive-Device-ID"] = deviceB.ID
 	badDevice["X-XDrive-Device-Token"] = deviceBSecret
-	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusForbidden, badDevice)
-	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(foreignTargetBody), http.StatusBadRequest, own)
-	retargetResponse := requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusOK, own)
-	var retargeted sourceDTO
-	if err := json.Unmarshal(retargetResponse.Body.Bytes(), &retargeted); err != nil {
+	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT,
+		strings.NewReader(validTargetBody), http.StatusForbidden, badDevice)
+	// Neither an Owner-owned leaf nor a foreign Owner leaf may be selected,
+	// even with the correct Device/Root and current Source revision.
+	for _, body := range []string{foreignTargetBody, validTargetBody} {
+		requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT,
+			strings.NewReader(body), http.StatusBadRequest, own)
+	}
+	var retargeted meta.Source
+	if err := db.First(&retargeted, sourceD.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if retargeted.ID != sourceD.ID || retargeted.Revision != 2 ||
-		retargeted.TargetNodeID == nil || *retargeted.TargetNodeID != newTarget.ID ||
-		retargeted.SyncMode != meta.SourceSyncModeBackup || retargeted.Status != meta.SourceStatusPaused {
-		t.Fatalf("own local target update changed protected Source semantics: %+v", retargeted)
+	if retargeted.Revision != 1 || retargeted.TargetNodeID == nil ||
+		*retargeted.TargetNodeID != targetID ||
+		retargeted.SyncMode != meta.SourceSyncModeBackup ||
+		retargeted.Status != meta.SourceStatusPaused {
+		t.Fatalf("rejected retarget changed Source identity/state: %+v", retargeted)
 	}
-	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusConflict, own)
+	var unchangedTarget meta.Node
+	if err := db.First(&unchangedTarget, newTarget.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchangedTarget.OwnerID != owner.ID || unchangedTarget.Revision != 1 ||
+		unchangedTarget.ParentID == nil || *unchangedTarget.ParentID != root.ID ||
+		unchangedTarget.Name != "backup-new-target" {
+		t.Fatalf("rejected retarget changed ordinary directory: %+v", unchangedTarget)
+	}
 
 	// A mode-only PATCH is protected by the same transaction fence and
 	// clears any prior Mirror deletion evidence before future scans.
