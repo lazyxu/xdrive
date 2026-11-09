@@ -463,7 +463,7 @@ function desktopPlacesWebOwnerStillCurrent(identity: DesktopPlacesWebIdentity) {
   return agentState.connected && status?.configured === true &&
     status.username === identity.owner &&
     xDriveResolveSecureBaiduMapTarget(status.server)?.origin === identity.origin &&
-    status.auth_status !== '登录已过期' && status.auth_status !== '账户已禁用'
+    status.auth_status === '已登录' && status.must_change_password !== true
 }
 
 // The isolated guest network stack does not inherit the Agent's app-local CA.
@@ -2289,6 +2289,11 @@ function createMainWindow(showOnReady = true) {
         pending.owner!==owner || pending.origin!==target.origin) {
       guest.close();return
     }
+    // A prepared one-use guest must not attach after native auth loss,
+    // even when Owner/Server/partition have not moved.
+    if (!desktopPlacesWebOwnerStillCurrent({owner,origin:target.origin})) {
+      guest.close();return
+    }
     const identity={owner,origin:target.origin,scope:pending.scope}
     desktopPlacesGuests.set(guest.id,identity)
     guest.setWindowOpenHandler(()=>({action:'deny'}))
@@ -2635,16 +2640,16 @@ function publishAgentState(next: AgentConnectionState) {
       next.status.server!==previous.status?.server ||
       next.status.username!==previous.status?.username ||
       connectionIPChanged ||
-      next.status.auth_status==='登录已过期' ||
-      next.status.auth_status==='账户已禁用'
+      next.status.auth_status!=='已登录' ||
+      next.status.must_change_password===true
   )) closeDesktopPlacesGuests()
   if (secureBaiduMapWindow && (
       !next.connected || !next.status?.configured ||
       next.status.server !== previous.status?.server ||
       next.status.username !== previous.status?.username ||
       connectionIPChanged ||
-      next.status.auth_status === '登录已过期' ||
-      next.status.auth_status === '账户已禁用'
+      next.status.auth_status !== '已登录' ||
+      next.status.must_change_password === true
   )) closeSecureBaiduMapWindow()
   const changed = JSON.stringify(previous) !== JSON.stringify(next)
   if (
