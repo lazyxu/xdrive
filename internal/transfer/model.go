@@ -68,6 +68,14 @@ type Spec struct {
 	Retry           RetryFunc
 }
 
+// UploadContentReceipt is the owning CAS client's verified outcome. A resume
+// is not a fresh CAS hit, even when this attempt uploaded zero file bytes.
+type UploadContentReceipt struct {
+	TransferredBytes int64
+	CASReusedBytes int64
+	ResumeReusedBytes int64
+}
+
 type GroupProgress struct {
 	Phase          string
 	ScanComplete   bool
@@ -101,6 +109,8 @@ type Task struct {
 	BytesTotal            int64      `json:"bytes_total"`
 	// Nil means no verified CAS upload receipt; zero is a verified instant hit.
 	UploadTransferredBytes *int64     `json:"upload_transferred_bytes,omitempty"`
+	UploadCASReusedBytes   int64      `json:"upload_cas_reused_bytes,omitempty"`
+	UploadResumeReusedBytes int64     `json:"upload_resume_reused_bytes,omitempty"`
 	UploadSkipped         bool       `json:"upload_skipped,omitempty"`
 	Percent               float64    `json:"percent"`
 	ItemsTotal            int64      `json:"items_total"`
@@ -456,10 +466,12 @@ func (h *Handle) Complete() {
 	h.manager.finish(h.id, nil)
 }
 
-// CompleteUploadBytes publishes the verified content-byte count with success.
-func (h *Handle) CompleteUploadBytes(transferred int64) {
-	if h == nil || h.manager == nil { return }
-	h.manager.finishWithUpload(h.id, nil, &transferred)
+// CompleteUploadReceipt commits all verified CAS and resume byte counts with success.
+func (h *Handle) CompleteUploadReceipt(receipt UploadContentReceipt) {
+	if h == nil || h.manager == nil {
+		return
+	}
+	h.manager.finishWithUpload(h.id, nil, &receipt)
 }
 
 func (h *Handle) CompleteSkipped() {
@@ -476,10 +488,12 @@ func (h *Handle) Finish(state string, err error) error {
 	return h.manager.finishState(h.id, state, err)
 }
 
-// FinishUploadBytes completes an externally managed child using its CAS receipt.
-func (h *Handle) FinishUploadBytes(state string, err error, transferred *int64) error {
-	if h == nil || h.manager == nil { return errors.New("transfer handle is unavailable") }
-	_, finishErr := h.manager.finishStateResultWithUpload(h.id, state, err, transferred)
+// FinishUploadReceipt completes an externally managed child using verified counts.
+func (h *Handle) FinishUploadReceipt(state string, err error, receipt *UploadContentReceipt) error {
+	if h == nil || h.manager == nil {
+		return errors.New("transfer handle is unavailable")
+	}
+	_, finishErr := h.manager.finishStateResultWithUpload(h.id, state, err, receipt)
 	return finishErr
 }
 
@@ -865,6 +879,8 @@ func (m *Manager) Retry(ctx context.Context, id string) error {
 	e.task.RetryCount++
 	e.task.BytesDone = 0
 	e.task.UploadTransferredBytes = nil
+	e.task.UploadCASReusedBytes = 0
+	e.task.UploadResumeReusedBytes = 0
 	e.task.UploadSkipped = false
 	e.task.Percent = 0
 	if e.task.Scope == ScopeItem {
@@ -1177,6 +1193,8 @@ func (m *Manager) finishSkipped(id string) {
 	e.task.Error = ""
 	e.task.BytesDone = 0
 	e.task.UploadTransferredBytes = nil
+	e.task.UploadCASReusedBytes = 0
+	e.task.UploadResumeReusedBytes = 0
 	e.task.UploadSkipped = e.task.Direction == KindUpload && e.task.Scope == ScopeItem
 	e.task.Percent = 100
 	if e.task.Scope == ScopeItem {
@@ -1210,7 +1228,7 @@ func (m *Manager) finishStateResult(id, state string, err error) (bool, error) {
 	return m.finishStateResultWithUpload(id, state, err, nil)
 }
 
-func (m *Manager) finishStateResultWithUpload(id, state string, err error, transferred *int64) (bool, error) {
+func (m *Manager) finishStateResultWithUpload(id, state string, err error, receipt *UploadContentReceipt) (bool, error) {
 	switch state {
 	case StateCompleted, StatePartial, StateFailed, StateCancelled:
 	default:
@@ -1244,11 +1262,8 @@ func (m *Manager) finishStateResultWithUpload(id, state string, err error, trans
 		}
 	}
 	e.task.Cancelable = false
-	if state == StateCompleted && e.task.Direction == KindUpload && e.task.Scope == ScopeItem &&
-		transferred != nil && *transferred >= 0 && *transferred <= e.task.BytesTotal {
-		count := *transferred
-		e.task.UploadTransferredBytes = &count
-		e.task.UploadSkipped = false
+	if state == StateCompleted && err == nil {
+		e.applyUploadReceipt(receipt)
 	}
 	e.task.State = state
 	e.task.Phase = PhaseFinalizing
@@ -1312,11 +1327,29 @@ func (m *Manager) finishStateResultWithUpload(id, state string, err error, trans
 	return true, nil
 }
 
+// applyUploadReceipt is called with Manager.mu held, only for a first
+// successful terminal update. All three byte buckets must reconcile exactly.
+func (e *entry) applyUploadReceipt(receipt *UploadContentReceipt) {
+	if receipt == nil || e.task.Direction != KindUpload || e.task.Scope != ScopeItem {
+		return
+	}
+	u, c, r, total := receipt.TransferredBytes, receipt.CASReusedBytes, receipt.ResumeReusedBytes, e.task.BytesTotal
+	if u < 0 || c < 0 || r < 0 || total < 0 || u > total || c > total-u || r > total-u-c ||
+		u+c+r != total {
+		return
+	}
+	actual := u
+	e.task.UploadTransferredBytes = &actual
+	e.task.UploadCASReusedBytes = c
+	e.task.UploadResumeReusedBytes = r
+	e.task.UploadSkipped = false
+}
+
 func (m *Manager) finish(id string, err error) {
 	m.finishWithUpload(id, err, nil)
 }
 
-func (m *Manager) finishWithUpload(id string, err error, transferred *int64) {
+func (m *Manager) finishWithUpload(id string, err error, receipt *UploadContentReceipt) {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1334,12 +1367,7 @@ func (m *Manager) finishWithUpload(id string, err error, transferred *int64) {
 		e.task.State = StateCompleted
 		e.task.Phase = PhaseFinalizing
 		e.task.Error = ""
-		if e.task.Direction == KindUpload && e.task.Scope == ScopeItem && transferred != nil &&
-			*transferred >= 0 && *transferred <= e.task.BytesTotal {
-			count := *transferred
-			e.task.UploadTransferredBytes = &count
-			e.task.UploadSkipped = false
-		}
+		e.applyUploadReceipt(receipt)
 		if e.task.BytesTotal > 0 {
 			e.task.BytesDone = e.task.BytesTotal
 			e.task.Percent = 100
