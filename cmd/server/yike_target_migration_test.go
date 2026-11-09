@@ -24,6 +24,15 @@ func openYikeMigrationTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	basePool, err := baseDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	basePool.SetMaxOpenConns(2)
+	basePool.SetMaxIdleConns(1)
+	// Cleanup runs in reverse registration order: first close the scoped
+	// schema pool, then drop the schema, then retire this base pool.
+	t.Cleanup(func() { _ = basePool.Close() })
 	schema := "yike_target_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -43,6 +52,13 @@ func openYikeMigrationTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	schemaPool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaPool.SetMaxOpenConns(4)
+	schemaPool.SetMaxIdleConns(1)
+	t.Cleanup(func() { _ = schemaPool.Close() })
 	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.Share{}, &meta.UploadSession{}, &meta.FileOperation{}); err != nil {
 		t.Fatal(err)
 	}
