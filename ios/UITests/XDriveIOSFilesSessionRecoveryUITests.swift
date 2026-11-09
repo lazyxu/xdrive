@@ -41,6 +41,39 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    /// A cheap settled-frame guard: fails a uniform native screenshot, not a
+    /// claim that every intermediate 60/120 Hz frame was captured.
+    private func assertNonuniformFrame(_ app: XCUIApplication, _ route: String) {
+        let shot = app.screenshot()
+        guard let image = shot.image.cgImage else {
+            XCTFail("No native frame after " + route)
+            return
+        }
+        let width = 24, height = 32
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let rendered = rgba.withUnsafeMutableBytes { bytes -> Bool in
+            guard let base = bytes.baseAddress,
+                  let context = CGContext(
+                      data: base, width: width, height: height,
+                      bitsPerComponent: 8, bytesPerRow: width * 4,
+                      space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  ) else { return false }
+            context.interpolationQuality = .low
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        XCTAssertTrue(rendered, "Unable to sample actual screen after " + route)
+        guard rendered else { return }
+        let colors = Set(stride(from: 0, to: rgba.count, by: 4).map { index in
+            (Int(rgba[index]) << 16) |
+            (Int(rgba[index + 1]) << 8) |
+            Int(rgba[index + 2])
+        })
+        XCTAssertGreaterThan(colors.count, 8,
+                             "Native recovery page was visually uniform after " + route)
+    }
+
     func testCloudFolderNoSessionIsSmallNativeRecoveryInsteadOfFilesList() {
         let app = launch()
         files(app)
@@ -391,6 +424,67 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
             tap(route.2, app)
             expect("native-ios-files-section-browse", app)
         }
+    }
+
+
+    func testNoSessionCloudAndTrashErrorPagesAreNotSolidBlankScreens() {
+        let app = launch()
+        files(app)
+        for _ in 0..<2 {
+            tap("native-ios-files-open-root-location", app)
+            expect("native-ios-files-error-page", app)
+            assertNonuniformFrame(app, "Cloud denied child")
+            XCTAssertFalse(element("native-ios-files-retry", app).exists)
+            tap("native-ios-files-error-return", app)
+            expect("native-ios-files-section-browse", app)
+            tap("native-ios-files-open-trash", app)
+            expect("native-ios-files-trash-error-page", app)
+            assertNonuniformFrame(app, "Trash denied child")
+            XCTAssertFalse(element("native-ios-files-trash-retry", app).exists)
+            tap("native-ios-files-trash-error-return", app)
+            expect("native-ios-files-section-browse", app)
+        }
+    }
+
+    func testNoSessionRecentFavoritesDeniedPagesAreNotSolidBlankScreens() {
+        let app = launch()
+        files(app)
+        for route in [
+            ("native-ios-files-open-recent", "native-ios-files-recent-error-page",
+             "native-ios-files-recent-error-return"),
+            ("native-ios-files-open-favorites", "native-ios-files-favorites-error-page",
+             "native-ios-files-favorites-error-return"),
+        ] {
+            openHomeShortcut(route.0, app)
+            expect(route.1, app)
+            assertNonuniformFrame(app, route.1)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists)
+            tap(route.2, app)
+            expect("native-ios-files-section-browse", app)
+        }
+    }
+
+    func testNoSessionCloudTrashRapidBackDoesNotRepushOldChild() {
+        let app = launch()
+        files(app)
+        for _ in 0..<3 {
+            tap("native-ios-files-open-root-location", app)
+            expect("native-ios-files-error-page", app)
+            tap("native-ios-files-error-return", app)
+            expect("native-ios-files-section-browse", app)
+            XCTAssertFalse(element("native-ios-files-error-page", app).exists)
+            tap("native-ios-files-open-trash", app)
+            expect("native-ios-files-trash-error-page", app)
+            tap("native-ios-files-trash-error-return", app)
+            expect("native-ios-files-section-browse", app)
+            XCTAssertFalse(element("native-ios-files-trash-error-page", app).exists)
+        }
+        tap("native-ios-tab-gallery", app)
+        expect("native-ios-gallery-source-unified", app)
+        tap("native-ios-tab-files", app)
+        expect("native-ios-files-section-browse", app)
+        XCTAssertFalse(element("native-ios-files-error-page", app).exists)
+        XCTAssertFalse(element("native-ios-files-trash-error-page", app).exists)
     }
 
 }
