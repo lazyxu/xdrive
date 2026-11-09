@@ -134,4 +134,37 @@ test('actual Electron Guest navigation AND redirects use the same strict scope a
     /guest\.on\('will-redirect',\(event,url\)=>\{if\(!authorized\(url\)\)event\.preventDefault\(\)\}\)/)
   assert.match(main, /desktopPlacesGuestFrameAllowed\(event.senderFrame.url,guest.origin\)/,
     'scope consume and navigation must share the same narrow frame allowlist')
+  assert.match(wiring,/guest\.on\('did-start-navigation',details=>\{/,
+    'React hash/history navigation requires a main-frame early revocation fence')
+  assert.match(wiring,/if\(details\.isMainFrame && details\.isSameDocument\)/)
+  assert.match(wiring,/guest\.on\('did-navigate-in-page',\(_event,url,isMainFrame\)=>\{/)
+  assert.match(wiring,/if\(isMainFrame\)revokeInPageNavigation\(url\)/)
+  assert.match(wiring,/if\(desktopPlacesGuests\.get\(guest\.id\)===identity\)closeDesktopPlacesGuests\(\)/,
+    'revoke Cookie partition only for the matching current Guest')
+  assert.match(wiring,/if\(!guest\.isDestroyed\(\)\)guest\.close\(\{waitForBeforeUnload:false\}\)/,
+    'force-close unauthorized in-page document, ignoring beforeunload')
+})
+
+test('hash and history.pushState cannot escape map-only routes',()=>{
+  const {navigate}=fixture()
+  const identity={owner,origin}
+  const urls=[
+    simple,
+    origin+'/?desktop_places_embed=1&places_map_mode=isolated'+route,
+    origin+'/index.html?desktop_places_embed=1'+route,
+  ]
+  for(const url of urls)assert.equal(navigate(url,identity),true)
+  const escaped=[
+    origin+'/?desktop_places_embed=1#/app/files',
+    origin+'/?desktop_places_embed=1#/app/notes',
+    origin+'/?desktop_places_embed=1#/app/media-viewer?node=42',
+    origin+'/?desktop_places_embed=1#/app/gallery?section=library',
+    origin+'/?desktop_places_embed=1#/app/gallery?section=places&owner=foreign',
+    origin+'/?desktop_places_embed=1&new_route=1'+route,
+    origin+'/?places_map_mode=isolated'+route,
+  ]
+  for(const url of escaped)assert.equal(navigate(url,identity),false,url)
+  const {state,navigate:stale}=fixture()
+  state.status.username='other-owner'
+  assert.equal(stale(simple,identity),false,'stale Owner cannot navigate history')
 })
