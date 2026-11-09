@@ -54,7 +54,7 @@ TARGETS = {
 }
 NAV_TARGETS = {
     "testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells",
-    "testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels",
+    "testTrashDeniedNoSessionThenFilesRailAndGalleryReturnKeepsPixels",
     "testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank",
     "testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank",
     "testLocalPhotosSourceSurvivesFilesMineAndGalleryRoundTrip",
