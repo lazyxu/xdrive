@@ -887,6 +887,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private static let internalDragType = "com.lazyxu.xdrive.files.internal-node"
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
     @StateObject private var inlineFolders = XDriveIOSNativeFilesInlineFolderStore()
     @StateObject private var favoriteShortcuts = XDriveIOSNativeFilesCollectionPageModel()
@@ -897,6 +898,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var favoriteFoldersExpanded = true
     @StateObject private var searchOptions = XDriveIOSNativeFilesSearchOptionsModel()
     @State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot?
+    // Failed/offline Home reads must not restart on every tab or child return.
+    @State private var homeReadAttempted = false
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
     @StateObject private var chunked = XDriveIOSNativeFilesChunkedMutationModel()
@@ -1679,6 +1682,15 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Text(error).foregroundStyle(.orange)
                 Button("重试当前页") { reload() }
                     .accessibilityIdentifier("native-ios-files-retry")
+                // Cloud-folder readers can fail before a protected Node is
+                // readable. Provide a stable native escape route instead of
+                // relying solely on a potentially inaccessible back toolbar.
+                if folder != nil {
+                    Button { dismiss() } label: {
+                        Label("返回文件", systemImage: "chevron.left")
+                    }
+                    .accessibilityIdentifier("native-ios-files-error-return")
+                }
             } else if model.entries.isEmpty {
                 Label("当前目录或搜索结果为空。", systemImage: "folder")
                     .foregroundStyle(.secondary)
@@ -2383,9 +2395,39 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private var filesChrome: some View {
-        filesList
-        .listStyle(.plain)
-        .overlay(alignment: .bottom) { filesQuickFeedback }
+        Group {
+            // An unreadable Owner folder has no verified rows to enumerate.
+            // Build a small native error surface instead of keeping the entire
+            // virtual List/thumbnail/navigation AX tree alive under a failed
+            // authorization. This also gives XCTest a bounded accessibility
+            // hierarchy on the recoverable child route.
+            if !isHome && !model.loading && !model.verifiedPage,
+               let failure = model.errorMessage {
+                VStack(alignment: .leading, spacing: 18) {
+                    Label("无法读取当前目录", systemImage: "exclamationmark.triangle")
+                        .font(.headline)
+                    Text(failure).font(.subheadline).foregroundStyle(.secondary)
+                    HStack {
+                        Button("重试当前页") { reload() }
+                            .accessibilityIdentifier("native-ios-files-retry")
+                        Button { dismiss() } label: {
+                            Label("返回文件", systemImage: "chevron.left")
+                        }
+                        .accessibilityIdentifier("native-ios-files-error-return")
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer(minLength: 0)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("native-ios-files-error-page")
+            } else {
+                filesList
+                    .listStyle(.plain)
+                    .overlay(alignment: .bottom) { filesQuickFeedback }
+            }
+        }
         .searchable(
             text: $queryDraft,
             placement: .navigationBarDrawer(displayMode: .automatic),
@@ -3132,14 +3174,21 @@ struct XDriveIOSNativeFilesBrowser: View {
             // SwiftUI NavigationLinks and scroll position. Do not refetch on
             // every stack pop; explicit refresh and Owner change still do.
             if isHome {
-                if !favoriteShortcuts.matches(login.owner, kind: .favorites) ||
-                    !quickAccess.matches(login.owner) {
+                if !homeReadAttempted {
+                    homeReadAttempted = true
                     reload()
-                } else {
-                    // On return, silently revalidate Favorites that may have
-                    // changed in a child without removing source links.
+                } else if favoriteShortcuts.matches(login.owner, kind: .favorites) &&
+                          quickAccess.matches(login.owner) {
+                    // A successful same-Owner return can revalidate favorites
+                    // without clearing the Home navigation links. Offline/error
+                    // states await explicit Retry instead of another full fetch.
                     loadFavoriteShortcuts()
                 }
+            } else if !isHome && !model.verifiedPage &&
+                      model.errorMessage != nil {
+                // Re-entering an unreadable child must not spin an auth GET or
+                // remount the List every time SwiftUI delivers onAppear.
+                // Explicit Retry remains the only re-entry after a denial.
             } else if let folderID = parentID,
                       model.canResume(
                         owner: login.owner, folderID: folderID,
@@ -3278,7 +3327,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             if isHome { restoreFilesSectionIfNeeded() }
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
-            if isHome { loadFavoriteShortcuts() }
+            homeReadAttempted = false
+            if isHome && phase == .active {
+                homeReadAttempted = true
+                reload()
+            }
         }
         .onChange(of: quickSection) { next in
             guard next == .browse, !isHome, !isGlobalSearch,

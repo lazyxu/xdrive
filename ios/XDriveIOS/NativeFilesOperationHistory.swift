@@ -386,6 +386,8 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
         }
         .navigationTitle("操作历史")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("native-ios-files-operation-history-page")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("刷新") {

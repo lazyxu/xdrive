@@ -455,6 +455,7 @@ private final class XDriveIOSNativeFilesTrashMutationModel: ObservableObject {
 struct XDriveIOSNativeFilesTrashScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var model = XDriveIOSNativeFilesTrashPageModel()
     @StateObject private var mutation = XDriveIOSNativeFilesTrashMutationModel()
     @State private var pendingDelete: XDriveIOSNativeFilesTrashNode?
@@ -466,13 +467,43 @@ struct XDriveIOSNativeFilesTrashScreen: View {
     @State private var sortRefreshTask: Task<Void, Never>?
 
     var body: some View {
-        List {
+        Group {
+            // Do not ask SwiftUI/VoiceOver to enumerate the entire paged
+            // destructive-action List after the current Owner is unreadable.
+            // This stable native recovery page has no stale Node actions.
+            if let failure = model.error, !model.loading,
+               !model.canDisplay(owner: login.owner) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Label("无法读取最近删除", systemImage: "exclamationmark.triangle")
+                        .font(.headline)
+                    Text(failure).font(.subheadline).foregroundStyle(.secondary)
+                    HStack {
+                        Button("重试") { reload() }
+                            .accessibilityIdentifier("native-ios-files-trash-retry")
+                        Button { dismiss() } label: {
+                            Label("返回文件", systemImage: "chevron.left")
+                        }
+                        .accessibilityIdentifier("native-ios-files-trash-error-return")
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer(minLength: 0)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("native-ios-files-trash-error-page")
+            } else {
+                List {
             if model.loading && !model.canDisplay(owner: login.owner) {
                 HStack { ProgressView(); Text("正在读取回收站…") }
             } else if let error = model.error {
                 Text(error).foregroundStyle(.orange)
                 Button("重试") { reload() }
                     .accessibilityIdentifier("native-ios-files-trash-retry")
+                Button { dismiss() } label: {
+                    Label("返回文件", systemImage: "chevron.left")
+                }
+                .accessibilityIdentifier("native-ios-files-trash-error-return")
             } else if !model.canDisplay(owner: login.owner) {
                 Text(login.owner == nil ? "请先登录 xDrive 服务器" :
                      "正在核验当前账户的回收站…")
@@ -562,6 +593,8 @@ struct XDriveIOSNativeFilesTrashScreen: View {
                 Text(status).font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-files-trash-status")
             }
+                }
+            }
         }
         .navigationTitle("最近删除")
         .navigationBarTitleDisplayMode(.inline)
@@ -608,7 +641,9 @@ struct XDriveIOSNativeFilesTrashScreen: View {
         }
         .onAppear {
             isVisible = true
-            if phase == .active && !model.loading {
+            if phase == .active && !model.loading && model.error == nil {
+                // Denial/failure is a terminal automatic read state. Avoid
+                // a SwiftUI onAppear/revalidation loop; Retry stays explicit.
                 reload(preserveVisibleRows: true)
             }
         }
