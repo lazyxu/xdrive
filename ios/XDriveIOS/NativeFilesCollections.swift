@@ -763,7 +763,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 // A Viewer owns the return until its onDismiss callback.
                 guard phase == .active, !viewerRefreshPending else { return }
                 if !model.matches(login.owner, kind: kind) {
-                    if !model.loading { reload() }
+                    // A denied/network read is terminal until explicit Retry.
+                    // Do not loop through authorization on native tab returns.
+                    if !model.loading && model.error == nil { reload() }
                 } else if !model.loading &&
                           selectedFile == nil && locateIntent == nil &&
                           managementIntent == nil {
@@ -790,10 +792,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     model.suspendForNavigation()
                 } else if isVisible && !model.loading &&
                           selectedFile == nil && !viewerRefreshPending {
-                    // A screen that appeared while inactive must still load
-                    // when foregrounded. Revalidate an old same-scope page
-                    // silently, never revive a previous Owner or collection.
-                    reload(preserveVerifiedRows: model.matches(login.owner, kind: kind))
+                    // Preserve the verified Owner projection after waking.
+                    // A previous failed GET requires a deliberate Retry.
+                    if model.matches(login.owner, kind: kind) {
+                        reload(preserveVerifiedRows: true)
+                    } else if model.error == nil {
+                        reload()
+                    }
                 }
             }
             .onChange(of: kind) { _ in
@@ -826,6 +831,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 model.invalidate()
                 favorites.invalidate()
                 recentClear.invalidate()
+                // Login/Owner rotation invalidates all old rows. If the
+                // screen stays visible, start a new current-Owner read.
+                if isVisible && phase == .active && login.owner != nil {
+                    reload()
+                }
             }
             .onChange(of: model.loading) { now in
                 guard !now, selectedFile == nil, let target = returnFile else { return }

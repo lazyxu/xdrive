@@ -1200,6 +1200,35 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     }
 }
 
+/// A retained local PhotoKit page must be invalidated if the library changes
+/// while its Gallery tab is hidden. This monitor never retains asset IDs.
+private final class XDriveIOSNativeLocalPageChanges: NSObject, ObservableObject,
+    PHPhotoLibraryChangeObserver {
+    @Published private(set) var revision = 0
+    private var registered = false
+
+    func start() {
+        guard !registered else { return }
+        PHPhotoLibrary.shared().register(self)
+        registered = true
+    }
+
+    func stop() {
+        guard registered else { return }
+        PHPhotoLibrary.shared().unregisterChangeObserver(self)
+        registered = false
+    }
+
+    func photoLibraryDidChange(_ change: PHChange) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.registered else { return }
+            self.revision &+= 1
+        }
+    }
+
+    deinit { stop() }
+}
+
 /// Read-only, 64-at-a-time PhotoKit grid. No 100k-sized Swift arrays.
 struct XDriveIOSNativeLocalGalleryScreen: View {
     // Gallery shell retains only the coarse cursor across source/tab switches.
@@ -1210,6 +1239,9 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     @State private var showingGalleryHelp = false
     @State private var scanner: XDrivePhotoKitBoundedSnapshotScanner?
     @State private var page: XDrivePhotoKitScanPage?
+    @StateObject private var libraryChanges = XDriveIOSNativeLocalPageChanges()
+    @State private var retainedLibraryRevision = 0
+    @State private var isVisible = false
     @State private var selected: XDrivePhotoKitScanCandidate?
     @State private var busy = false
     @State private var generation = UUID()
@@ -1332,8 +1364,25 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             )
         }
         .onAppear {
-            // Returning from a full-screen Viewer must not discard its source.
-            if selected == nil && page == nil && !busy { refresh(at: savedOffset) }
+            isVisible = true
+            libraryChanges.start()
+            // Keep a verified page after ordinary Gallery/Files tab switching.
+            // Never display a retained page after PhotoKit grant or library
+            // changes: re-read the actual currently authorized bounded range.
+            let freshGrant = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if freshGrant != authorization {
+                refresh(at: savedOffset)
+            } else if selected == nil && !busy &&
+                      (page == nil || retainedLibraryRevision != libraryChanges.revision) {
+                refresh(at: savedOffset)
+            }
+        }
+        .onChange(of: libraryChanges.revision) { _ in
+            // On a hidden tab clear potentially stale tiles immediately;
+            // the active tab safely re-reads after the change notification.
+            guard selected == nil else { return }
+            if isVisible && phase == .active { refresh(at: savedOffset) }
+            else { invalidate() }
         }
         .onChange(of: phase) { new in
             authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -1358,15 +1407,25 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                     clearViewerTileAnchor()
                     invalidate()
                 }
-            } else {
+            } else if isVisible {
                 refresh(at: savedOffset)
             }
         }
         .onDisappear {
-            // fullScreenCover may hide its presenter before the Viewer closes.
-            // Suspend disposable reads, not the presentation's selected identity.
-            if selected != nil { suspendForViewer() }
-            else { invalidate() }
+            isVisible = false
+            // Both a Viewer and an ordinary foreground tab change may hide
+            // this page. Suspend work, but keep a verified 64-item snapshot
+            // only while the current PhotoKit grant remains valid.
+            if selected != nil {
+                suspendForViewer()
+            } else if phase == .active &&
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) {
+                suspendForViewer()
+            } else {
+                invalidate()
+            }
         }
     }
 
@@ -1435,6 +1494,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 try Task.checkCancellation()
                 guard generation == token, phase == .active else { return }
                 page = next
+                retainedLibraryRevision = libraryChanges.revision
                 savedOffset = next.startOffset
                 authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                 pageRenderRevision &+= 1

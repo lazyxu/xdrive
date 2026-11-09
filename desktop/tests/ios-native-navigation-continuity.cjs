@@ -23,7 +23,9 @@ const sources = {
   "e": "ios/XDriveIOS/NativeFilesSavedSearches.swift",
   "o": "ios/XDriveIOS/NativeFilesOperationHistory.swift",
   "x": "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift",
-  "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift"
+  "y": "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift",
+  "b": "ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift",
+  "j": ".github/workflows/ios-native-navigation-runtime.yml"
 }
 const scenarios = [
   {
@@ -126,7 +128,7 @@ const scenarios = [
     "checks": [
       {
         "file": "l",
-        "pattern": "if selected != nil \\|\\| showingMap \\{[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
+        "pattern": "if selected != nil \\|\\| showingMap \\|\\|[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
         "flags": ""
       }
     ]
@@ -937,6 +939,206 @@ const scenarios = [
       {
         "file": "x",
         "pattern": "func testAlternatingGalleryFilesSettledFramesAcrossThreeTabs\\(\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Files\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Mine\"\\)[\\s\\S]*?assertNotSolidScreen\\(app, \"Gallery\"\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "79 Local PhotoKit tab leave retains verified window rather than resetting total",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if selected != nil \\|\\| showingMap \\|\\|[\\s\\S]*?phase == \\.active && authorized[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "80 Local PhotoKit empty library avoids repeated scans on tab return",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if authorized && selected == nil && !loading &&\\s*!hasCompletedInitialRead \\{ reload\\(\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "81 Local PhotoKit revision while hidden retires stale IDs without hidden scans",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if selected == nil && authorized && phase == \\.active &&\\s*isVisible \\{ reload\\(\\) \\}\\s*else \\{ invalidate\\(with: nil\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "82 Local PhotoKit permission change invalidates old page before reuse",
+    "checks": [
+      {
+        "file": "l",
+        "pattern": "if freshGrant != permission \\{ invalidate\\(with: nil\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "83 Native album contents retains verified page on foreground tab transition",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "if selected != nil \\|\\| showingAlbumMap \\|\\|[\\s\\S]*?phase == \\.active && albumAuthorized[\\s\\S]*?suspendForViewer\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "84 Native album contents validates current library revision and grant",
+    "checks": [
+      {
+        "file": "a",
+        "pattern": "pageRevision == libraryMonitor\\.revision &&\\s*freshGrant == permission",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "85 Legacy local PhotoKit 64-page tab retention observes library revisions",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "@StateObject private var libraryChanges = XDriveIOSNativeLocalPageChanges\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "86 Legacy local PhotoKit page suspends instead of wiping valid foreground tab",
+    "checks": [
+      {
+        "file": "s",
+        "pattern": "if selected != nil \\{\\s*suspendForViewer\\(\\)\\s*\\} else if phase == \\.active[\\s\\S]*?suspendForViewer\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "87 Native Recent Favorites error requires explicit Retry on reentry",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if !model\\.loading && model\\.error == nil \\{ reload\\(\\) \\}",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "88 Native Recent Favorites scene resume retains verified data",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if model\\.matches\\(login\\.owner, kind: kind\\) \\{\\s*reload\\(preserveVerifiedRows: true\\)\\s*\\} else if model\\.error == nil \\{\\s*reload\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "89 Native Recent Favorites Owner rotation starts current verified read",
+    "checks": [
+      {
+        "file": "c",
+        "pattern": "if isVisible && phase == \\.active && login\\.owner != nil \\{\\s*reload\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "90 Simulator covers local source Menu then Files tab return",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testNativeLocalGalleryMenuRouteReturnsToUnifiedSource\\(\\)[\\s\\S]*?native-ios-gallery-source-local[\\s\\S]*?native-ios-tab-files",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "91 Simulator covers PhotoKit gallery and Files foreground activation",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testFilesRecentAndFavoritesRemainAvailableAfterForegroundReturn\\(\\)[\\s\\S]*?XCUIDevice\\.shared\\.press\\(\\.home\\)[\\s\\S]*?app\\.activate\\(\\)",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "92 Simulator covers local album landscape and Files return",
+    "checks": [
+      {
+        "file": "x",
+        "pattern": "func testGalleryAlbumSourceWithLandscapeAndTabReturn\\(\\)[\\s\\S]*?device\\.orientation = \\.landscapeLeft",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "93 B9 no-token operation history uses the actual verified GET error",
+    "checks": [
+      {
+        "file": "b",
+        "pattern": "\"history\", message: \"无法验证文件操作历史，请检查网络后重试。\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "94 B9 no-token Saved Searches uses the actual verified GET error",
+    "checks": [
+      {
+        "file": "b",
+        "pattern": "\"saved-search\", message: \"无法验证当前账户的智能文件夹，请检查网络后重试。\"",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "95 B9 force-stop recovery offers safe login without classifying it as crash",
+    "checks": [
+      {
+        "file": "b",
+        "pattern": "let rescue = app\\.buttons\\[\"native-ios-startup-safe-entry\"\\]\\.firstMatch",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "96 Native Simulator shards all live Gallery Files and B9 child suites",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files\\]",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "97 Native navigation candidate runs B9 and Files child tests",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "candidate-navigation\\)[\\s\\S]*?XDriveIOSNavigationRuntimeUITests[\\s\\S]*?XDriveIOSB9ReleaseCrashUITests",
+        "flags": ""
+      }
+    ]
+  },
+  {
+    "name": "98 Native Gallery candidate exercises real framebuffer/return suite",
+    "checks": [
+      {
+        "file": "j",
+        "pattern": "candidate-gallery-files\\)[\\s\\S]*?XDriveIOSGalleryFilesStabilityUITests",
         "flags": ""
       }
     ]
