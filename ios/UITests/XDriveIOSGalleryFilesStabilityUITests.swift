@@ -333,5 +333,225 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             assertNotSolidScreen(app, "Gallery")
         }
     }
+    func testAlbumSourceReturnThroughFilesAndMineKeepsGalleryMounted() {
+        let app = launch()
+        for _ in 0..<3 {
+            select("native-ios-gallery-source-albums", in: app)
+            checkGallery(app)
+            select("native-ios-tab-files", in: app)
+            checkFilesHome(app)
+            select("native-ios-tab-mine", in: app)
+            XCTAssertEqual(app.state, .runningForeground)
+            select("native-ios-tab-gallery", in: app)
+            checkGallery(app)
+            assertNotSolidScreen(app, "Albums after Files and Mine")
+        }
+    }
 
+    func testFilesRecentAndFavoritesRemainAvailableAfterForegroundReturn() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-section-recent", in: app)
+        select("native-ios-files-section-favorites", in: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        checkFilesHome(app)
+        select("native-ios-files-section-browse", in: app)
+        select("native-ios-files-section-recent", in: app)
+        checkFilesHome(app)
+        assertNotSolidScreen(app, "Files quick rail after background")
+    }
+
+    func testGalleryPeopleAfterFilesQuickRailReturnKeepsUnifiedWall() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        for part in ["recent", "favorites", "browse"] {
+            select("native-ios-files-section-\(part)", in: app)
+        }
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        select("native-ios-gallery-people", in: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
+            .waitForExistence(timeout: 15), "People child missing after Files rail")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        checkGallery(app)
+        assertNotSolidScreen(app, "Unified wall after People and Files")
+    }
+
+    func testGalleryFilterCancelAfterRecentFavoritesToggle() {
+        let app = launch(syntheticOwner: true)
+        for _ in 0..<2 {
+            select("native-ios-tab-files", in: app)
+            select("native-ios-files-section-recent", in: app)
+            select("native-ios-files-section-favorites", in: app)
+            select("native-ios-files-section-browse", in: app)
+            select("native-ios-tab-gallery", in: app)
+            select("native-ios-gallery-open-filters", in: app)
+            let cancel = app.buttons["取消"].firstMatch
+            XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+            cancel.tap()
+            checkGallery(app)
+        }
+    }
+
+    func testNativeLocalGalleryMenuRouteReturnsToUnifiedSource() {
+        let app = launch()
+        select("native-ios-gallery-source-menu", in: app)
+        let local = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(local.waitForExistence(timeout: 15),
+                      "Native local Photos source is missing from source Menu")
+        local.tap()
+        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+            .waitForExistence(timeout: 15),
+                      "Native local PhotoKit source did not become selected")
+        assertNotSolidScreen(app, "Local PhotoKit source")
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-gallery-source-unified", in: app)
+        checkGallery(app)
+    }
+
+    func testGalleryAlbumSourceWithLandscapeAndTabReturn() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        select("native-ios-gallery-source-albums", in: app)
+        device.orientation = .landscapeLeft
+        checkGallery(app)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        device.orientation = .portrait
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        assertNotSolidScreen(app, "Albums after orientation and Files")
+    }
+
+    func testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-root-location", in: app)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-files-error-return", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        select("native-ios-gallery-source-albums", in: app)
+        select("native-ios-gallery-source-unified", in: app)
+        select("native-ios-gallery-open-filters", in: app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery after cloud denial and album filter")
+    }
+
+    func testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-trash", in: app)
+        XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-files-trash-retry", in: app)
+        XCTAssertTrue(target("native-ios-files-trash-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-files-trash-error-return", in: app)
+        for section in ["recent", "favorites", "browse"] {
+            select("native-ios-files-section-\(section)", in: app)
+            checkFilesHome(app)
+        }
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery after Trash retry and Files rail")
+    }
+
+    func testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-gallery-people", in: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
+            .waitForExistence(timeout: 15))
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        checkGallery(app)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-root-location", in: app)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-files-error-return", in: app)
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery after People and denied Cloud Files")
+    }
+
+    func testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank() {
+        let app = launch()
+        for _ in 0..<3 {
+            select("native-ios-tab-files", in: app)
+            checkFilesHome(app)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            checkFilesHome(app)
+            assertNotSolidScreen(app, "Files after foreground activation")
+            select("native-ios-tab-gallery", in: app)
+            checkGallery(app)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            checkGallery(app)
+            assertNotSolidScreen(app, "Gallery after foreground activation")
+        }
+    }
+
+    func testLocalPhotosSourceSurvivesFilesMineAndGalleryRoundTrip() {
+        let app = launch()
+        select("native-ios-gallery-source-menu", in: app)
+        let local = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(local.waitForExistence(timeout: 15))
+        local.tap()
+        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-mine", in: app)
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+            .waitForExistence(timeout: 15))
+        assertNotSolidScreen(app, "Local PhotoKit route after Files and Mine")
+        select("native-ios-gallery-source-unified", in: app)
+        checkGallery(app)
+    }
+
+    func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes() {
+        let app = launch()
+        select("native-ios-tab-files", in: app)
+        let search = app.searchFields["搜索全部文件"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        search.tap()
+        search.typeText("ab")
+        XCTAssertEqual(app.state, .runningForeground)
+        // Dismiss the actual search keyboard before tapping the native tab bar.
+        if app.keyboards.buttons["Search"].exists {
+            app.keyboards.buttons["Search"].tap()
+        } else if app.keyboards.buttons["完成"].exists {
+            app.keyboards.buttons["完成"].tap()
+        } else {
+            search.typeText("\n")
+        }
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        select("native-ios-gallery-open-filters", in: app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        assertNotSolidScreen(app, "Files after search and Gallery filter")
+    }
 }
