@@ -77,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y xvfb openssl
           # Desktop deliberately has no package-lock.json. Match the proven
           # existing signed H264 Electron/Go benchmark workflows: npm install.
           # Web (including the SHA-pinned baseline worktree) does have locks
@@ -85,10 +85,11 @@ jobs:
           npm --prefix desktop install --no-audit --no-fund
           npm --prefix web ci --no-audit --no-fund
           npm --prefix "$VIEWER_BASE_DIR/web" ci --no-audit --no-fund
+          node --check desktop/scripts/viewer-first-frame-https-proxy.cjs
           node --check desktop/scripts/viewer-first-frame-probe.cjs
           node --check desktop/scripts/viewer-first-frame-compare.cjs
           node --check desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
-          node --test desktop/tests/viewer-first-frame-benchmark-contract.cjs
+          node --test desktop/tests/viewer-first-frame-benchmark-contract.cjs desktop/tests/viewer-first-frame-https-proxy.cjs desktop/tests/viewer-video-stable-loading.cjs
           VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix web run build -- --config vite.config.ts
           VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix "$VIEWER_BASE_DIR/web" run build -- --config vite.config.ts
           mkdir -p desktop/viewer-first-frame-go

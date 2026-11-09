@@ -61,6 +61,7 @@ test('actual Chromium probe is injected before original H264 viewer click, witho
   const probe = read('desktop/scripts/viewer-first-frame-probe.cjs')
   const runner = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
   const fixture = read('internal/api/gallery_real_web_cold_performance_integration_test.go')
+  const tlsProxy = read('desktop/scripts/viewer-first-frame-https-proxy.cjs')
   const h264 = read('internal/api/pwa_p1_viewer_video_range_cancel_fixture_test.go')
   for (const marker of [
     'requestVideoFrameCallback',
@@ -80,11 +81,19 @@ test('actual Chromium probe is injected before original H264 viewer click, witho
     'row.p1H264Frames.firstFrame.firstFrameMs',
     'videoFirstFrameMode',
     'XD_VIEWER_FF_DIST',
+    'startViewerFirstFrameHTTPSProxy',
+    'installPinnedViewerFixtureCertificate',
+    'httpsFixture ? httpsFixture.origin : fixture.config.url',
   ]) assert.ok(runner.includes(marker), 'runtime benchmark not integrated: ' + marker)
   assert.ok(runner.indexOf('xDriveStartViewerFirstFrameProbe.toString()') <
     runner.indexOf('sendActualPointer(win,tile)'), 'probe must mount BEFORE the genuine Viewer click')
   assert.match(fixture, /galleryFirstVisibleSeedObjects/)
   assert.match(h264, /galleryFirstVisibleVideoMP4Base64/)
+  assert.ok(tlsProxy.includes('setCertificateVerifyProc') &&
+    tlsProxy.includes('request.hostname === url.hostname') &&
+    tlsProxy.includes("fingerprint === fixture.fingerprint") &&
+    !tlsProxy.includes('ignore-certificate-errors'),
+    'test HTTPS cert trust must be pinned, never globally disabled')
   assert.ok(!probe.includes('fetch('), 'timing must not open a duplicate signed media download')
   assert.ok(!probe.includes('console.log('), 'never log signed original URLs from Renderer')
   assert.ok(!probe.includes('currentSrc:'), 'a private signed URL must not be serialized in results')
@@ -98,6 +107,8 @@ test('paired workflow compiles both real production builds against the same Go/P
     'git merge-base',
     'git worktree add --detach',
     'npm --prefix desktop install --no-audit --no-fund',
+    'node --test desktop/tests/viewer-first-frame-benchmark-contract.cjs desktop/tests/viewer-first-frame-https-proxy.cjs desktop/tests/viewer-video-stable-loading.cjs',
+    'sudo apt-get install -y xvfb openssl',
     'npm --prefix web ci',
     'npm --prefix "$VIEWER_BASE_DIR/web" ci',
     'VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1',

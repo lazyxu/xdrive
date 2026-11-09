@@ -12,6 +12,11 @@ const {
   xDriveStopViewerFirstFrameProbe,
 } = require('./viewer-first-frame-probe.cjs')
 
+const {
+  startViewerFirstFrameHTTPSProxy,
+  installPinnedViewerFixtureCertificate,
+} = require('./viewer-first-frame-https-proxy.cjs')
+
 const root = path.resolve(__dirname, '..', '..')
 // Same signed Go fixture, same Electron runner; CI swaps only the genuine
 // production before/after Web bundle for paired first-frame measurements.
@@ -197,16 +202,16 @@ async function switchActualApp(win, name, target) {
       ' | '+String(error))
   }
 }
-async function bootOriginalAuthenticatedApp(win, base) {
+async function bootOriginalAuthenticatedApp(win, base, fixtureControlURL = base) {
   // The token is created by the native Go fixture. It is used only in the
   // isolated Chromium session; do not log or write it to CI artifacts.
-  const response = await fetch(base + '/__perf/config', {cache:'no-store'})
+  const response = await fetch(fixtureControlURL + '/__perf/config', {cache:'no-store'})
   assert.equal(response.status, 200)
   const config = await response.json()
   assert.equal(config.logical_assets, 100000)
   assert.equal(config.physical_nodes, 115000)
   assert(typeof config.token === 'string' && config.token.length > 20)
-  const ownerResponse = await fetch(base + '/api/v1/me', {
+  const ownerResponse = await fetch(fixtureControlURL + '/api/v1/me', {
     headers: {Authorization:'Bearer '+config.token}, cache:'no-store',
   })
   assert.equal(ownerResponse.status, 200,
@@ -1067,11 +1072,16 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
 }
 
 async function sampleOnce(sample, ready) {
-  let fixture = null, win = null, resourceSampler = null
+  let fixture = null, win = null, resourceSampler = null, httpsFixture = null
   try {
     fixture = await startFixture(sample, ready)
     assert.equal(fixture.config.logical_assets, 100000)
     assert.equal(fixture.config.physical_nodes, 115000)
+    if (videoFirstFrameMode) {
+      // HTTPS is mandatory for Web Owner credential restoration; never change
+      // that product invariant to make a benchmark with HTTP pass.
+      httpsFixture = await startViewerFirstFrameHTTPSProxy(fixture.config.url)
+    }
     win = new BrowserWindow({
       show: true, width: 390, height: 844,
       webPreferences: {
@@ -1080,13 +1090,17 @@ async function sampleOnce(sample, ready) {
         backgroundThrottling: false,
       },
     })
+    if (httpsFixture) {
+      installPinnedViewerFixtureCertificate(win.webContents.session, httpsFixture)
+    }
     const failures = []
     win.webContents.on('render-process-gone', (_ev, state) =>
       failures.push('renderer gone: ' + JSON.stringify(state)))
     win.webContents.on('did-fail-load', (_ev, code, message) =>
       failures.push('did-fail-load ' + code + ': ' + message))
     if (p0c2SPAMode) {
-      await bootOriginalAuthenticatedApp(win, fixture.config.url)
+      await bootOriginalAuthenticatedApp(win,
+        httpsFixture ? httpsFixture.origin : fixture.config.url, fixture.config.url)
     } else {
       await win.loadURL(fixture.config.url +
         '/?xdriveGalleryRealCold=1&xdriveRealViewportCancel=1&xdriveMediaProgress=off')
@@ -1361,6 +1375,7 @@ async function sampleOnce(sample, ready) {
   } finally {
     if (resourceSampler) clearInterval(resourceSampler)
     if (win && !win.isDestroyed()) win.destroy()
+    if (httpsFixture) await httpsFixture.close()
     if (fixture) await stopFixture(fixture)
   }
 }

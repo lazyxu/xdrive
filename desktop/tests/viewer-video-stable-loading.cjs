@@ -31,6 +31,22 @@ const mui = Object.fromEntries(
     .map(name => [name, name.toLowerCase()]),
 )
 mui.useMediaQuery = () => false
+// Compile the ACTUAL media-buffer formatter used by FilePreviewSurface.
+const progressCode = ts.transpileModule(
+  fs.readFileSync(path.join(root,'ui/shared/src/mui/MediaLoadProgress.tsx'),'utf8'),
+  { fileName:'MediaLoadProgress.tsx', compilerOptions: {
+    target:ts.ScriptTarget.ES2022, module:ts.ModuleKind.CommonJS,
+    jsx:ts.JsxEmit.ReactJSX, esModuleInterop:true,
+  } },
+).outputText
+const progressModule = { exports:{} }
+new Function('exports','module','require',progressCode)(
+  progressModule.exports,progressModule,name=>{
+    assert.equal(name,'@mui/material','real buffer label must not have unknown mocks')
+    return mui
+  },
+)
+assert.equal(progressModule.exports.xDriveMediaBufferProgressLabel(0),'正在缓冲…')
 const mocks = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
@@ -48,7 +64,10 @@ const mocks = {
     xDrivePhotoPageTurn: () => null,
   },
   './LivePhotoSurface': { XDriveLivePhotoSurface: 'live-photo' },
-  './MediaLoadProgress': { XDriveMediaLoadingProgress: 'media-loading-progress' },
+  './MediaLoadProgress': {
+    XDriveMediaLoadingProgress: 'media-loading-progress',
+    xDriveMediaBufferProgressLabel: progressModule.exports.xDriveMediaBufferProgressLabel,
+  },
   './mediaPreviewStreamTeardown': { xDriveAbortHTMLMediaElement: () => undefined },
   './FilePreviewImage': { XDriveDecodedImagePreview: 'decoded-image-preview' },
   './FilePreviewTransformedMedia': { XDriveTransformedVideoPreview: 'transformed-video' },
