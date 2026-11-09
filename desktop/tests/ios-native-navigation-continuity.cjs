@@ -116,7 +116,12 @@ const scenarios = [
       },
       {
         "file": "l",
-        "pattern": "onRead\\(cached\\)\\s*await refreshVisibleBackupQueueStatuses\\(\\)",
+        "pattern": "onRead\\(cached\\)\\s*reportPhotoPageReady\\(\"mounted\", started: pageStarted\\)\\s*await refreshVisibleBackupQueueStatuses\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "l",
+        "pattern": "onRead\\(navigationRetainedPage\\)\\s*reportPhotoPageReady\\(\"tab-return\", started: pageStarted\\)\\s*await refreshVisibleBackupQueueStatuses\\(\\)",
         "flags": ""
       }
     ]
@@ -126,7 +131,7 @@ const scenarios = [
     "checks": [
       {
         "file": "l",
-        "pattern": "if selected != nil \\|\\| showingMap \\{[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
+        "pattern": "if selected != nil \\|\\| showingMap \\|\\|\\s*\\(phase == \\.active && authorized\\) \\{[\\s\\S]*?suspendForCoveredNavigation\\(\\)",
         "flags": ""
       }
     ]
