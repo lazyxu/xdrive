@@ -311,3 +311,23 @@ func TestCurrentServerBundleMetadataCannotRedirectOwnerBearer(t *testing.T) {
 		t.Fatal("metadata redirect leaked Owner request")
 	}
 }
+
+func TestReleaseBundleClientRecognizesEncodedPlus(t *testing.T) {
+	payload := []byte("approved signed APK")
+	listing, artifact := bundleClientFixture(t, payload)
+	artifact.Platform = "android"
+	artifact.Filename = "xdrive-android-12-0.1.3+build.apk"
+	artifact.Cached = false
+	artifact.Sources.GitLab = "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive/packages/generic/xdrive-build-packages/sha-" + listing.Commit + "/xdrive-android-12-0.1.3%2Bbuild.apk"
+	artifact.Sources.GitHub = "https://github.com/lazyxu/xdrive/releases/download/bundle-" + listing.Commit + "/xdrive-android-12-0.1.3%2Bbuild.apk"
+	artifact.DownloadURLs = []string{artifact.Sources.GitLab, artifact.Sources.GitHub}
+	if !validCurrentBundleArtifact(listing.Commit, artifact) {
+		t.Fatal("client rejected immutable manifest's percent-encoded APK source")
+	}
+	artifact.DownloadURLs = []string{
+		artifact.Sources.GitLab, strings.Replace(artifact.Sources.GitHub, "%2B", "+", 1),
+	}
+	if validCurrentBundleArtifact(listing.Commit, artifact) {
+		t.Fatal("client accepted mismatched alternate source URL")
+	}
+}
