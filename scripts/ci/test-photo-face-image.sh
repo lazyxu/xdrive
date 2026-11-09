@@ -5,6 +5,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 source scripts/ci/build-metadata.sh
+# Runtime/model cache writes are Registry-visible. Stable v* must complete
+# the exact-tag Final Gate before even a reusable runtime image is uploaded.
+if [[ -n "${CI_COMMIT_TAG:-}" && -n "${CI_REGISTRY_IMAGE:-}" ]]; then
+  bash scripts/ci/gitlab-stable-prestage-gate.sh
+fi
 
 artifact_dir="${1:-dist/photo-face-image}"
 final_image="xdrive/photo-face:test"
