@@ -22,8 +22,33 @@ def execute(cmd, timeout):
         return None
 
 
+
+def collect_app_trace(sim, output):
+    """Read only CI-generated stage labels from this test app's Simulator tmp."""
+    result = execute(
+        ["xcrun", "simctl", "get_app_container", sim, "com.lazyxu.xdrive.ios", "data"], 12
+    )
+    if result is None or result.returncode != 0:
+        return
+    root = pathlib.Path(result.stdout.decode(errors="replace").strip())
+    source = root / "tmp" / "native-autopop-trace.txt"
+    output.mkdir(parents=True, exist_ok=True)
+    destination = output / "native-autopop-trace.txt"
+    if source.is_file():
+        try:
+            destination.write_bytes(source.read_bytes())
+        except OSError:
+            pass
+    elif not destination.exists():
+        destination.write_text(
+            "App-container trace absent: test .task may not have mounted.\n",
+            encoding="utf-8"
+        )
+
+
 def capture(sim, output):
     output.mkdir(parents=True, exist_ok=True)
+    collect_app_trace(sim, output)
     (output / "capture-reason.txt").write_text(
         "Native auto-pop UI test exceeded 25 seconds. "
         "A delayed XCTest query does NOT prove an app crash.\n",
@@ -109,6 +134,7 @@ def main():
                 capture(opts.sim, out / "diagnostics")
             time.sleep(0.5)
         worker.join(timeout=8)
+        collect_app_trace(opts.sim, out / "diagnostics")
         return proc.returncode if proc.returncode is not None else 1
 
 
