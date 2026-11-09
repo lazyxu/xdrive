@@ -118,6 +118,18 @@ for script in (publish, promote):
     assert "go run scripts/ci/verify-github-stable-final-gate.go" in script
     assert script.index("verify-github-stable-final-gate.go") < script.index("xdrive_registry_login")
 assert "xdrive_assert_promotion_ancestry" in promote
+stage_gate = (ROOT / "scripts/ci/gitlab-stable-prestage-gate.sh").read_text(encoding="utf-8")
+assert "go run scripts/ci/verify-github-stable-final-gate.go" in stage_gate
+assert "CI_COMMIT_TAG" in stage_gate and "CI_COMMIT_SHA" in stage_gate
+assert "bash scripts/ci/gitlab-stable-prestage-gate.sh" in stage
+assert stage.index("bash scripts/ci/gitlab-stable-prestage-gate.sh") < stage.index("xdrive_registry_login")
+for name in ("server-image", "caddy-image", "photo-face-image", "media-worker-image"):
+    job = ci_jobs[name]
+    assert "bash scripts/ci/gitlab-stable-prestage-gate.sh" in job, name
+    assert job.index("bash scripts/ci/gitlab-stable-prestage-gate.sh") < job.index("*install_docker_cli_only"), name
+photo_build = (ROOT / "scripts/ci/test-photo-face-image.sh").read_text(encoding="utf-8")
+assert "bash scripts/ci/gitlab-stable-prestage-gate.sh" in photo_build
+assert photo_build.index("bash scripts/ci/gitlab-stable-prestage-gate.sh") < photo_build.index("runtime_registry_tag=\"$CI_REGISTRY_IMAGE"), "photo runtime cache published before gate"
 assert "xdrive_assert_image_identity" in promote and "xdrive_assert_image_identity" in publish
 
 gate = (ROOT / "scripts/ci/verify-github-stable-final-gate.go").read_text()
