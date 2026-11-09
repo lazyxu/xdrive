@@ -1022,6 +1022,19 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"server-image", "caddy-image"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"server-image", "caddy-image"})
 
+	// The rolling core Snapshot has no optional-service hard dependency,
+	// while stable v* publishing retains both optional image gates.
+	assertGitLabJobNeeds(t, gitlabReleaseYAML, "publish-photo-face-image", []string{"photo-face-image"})
+	assertGitLabJobNeeds(t, gitlabReleaseYAML, "publish-media-worker-image", []string{"media-worker-image"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-release", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{
+		"build-client-core", "package-linux-client", "package-windows-client",
+		"release-assets", "publish-server-images", "promote-server-images",
+		"publish-photo-face-image", "publish-media-worker-image",
+	})
+	requireRaw(t, "GitLab source-only release assets bypass optional stage",
+		gitlabRelease, "needs: []  # Source-only: do not wait for Photo Face / Media Worker builds.")
+
+
 	requireRaw(t, "GitLab release pipeline", gitlabRelease,
 		`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`,
 		"release-assets:",
