@@ -57,6 +57,11 @@ TARGETS = {
     "testNoSessionTrashReturnAfterGalleryFilterDismissal",
     "testRepeatedDeniedCloudDoesNotRenderProtectedRowsOrRetry",
     "testRepeatedDeniedTrashDoesNotRenderDestructiveRowsOrRetry",
+    "testTrashDenialAcrossRepeatedForegroundActivationsStaysReadOnly",
+    "testFilesQuickRailThenCloudDenialKeepsProtectedGridAbsent",
+    "testCloudDenialGalleryFilterFilesReturnCanReenterDeniedChild",
+    "testTrashDenialPeopleBackThenTrashDenialDoesNotLeakRows",
+    "testCloudAndTrashDenialsCaptureVisibleNativeRecoveryScreens",
 }
 NAV_TARGETS = {
     "testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells",
