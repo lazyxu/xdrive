@@ -95,4 +95,40 @@ func TestSourceCreateRejectsUnknownKindAndArbitraryCloudTarget(t *testing.T) {
 		source.TargetPath != "同步文件夹/Pull/Yike Photos/合法一刻拉取" {
 		t.Fatalf("canonical Source provisioning regressed: %+v", source)
 	}
+
+	// Even re-supplying the current target through PATCH is forbidden: the
+	// caller is never the owner of TargetNodeID assignment.
+	for _, candidate := range []uint64{*source.TargetNodeID, ordinary.ID} {
+		body := fmt.Sprintf(`{"target_node_id":%d}`, candidate)
+		requestWithHeaders(t, router, http.MethodPatch,
+			fmt.Sprintf("/api/v1/sources/%d", source.ID), token,
+			strings.NewReader(body), http.StatusBadRequest,
+			map[string]string{"If-Match": `"1"`})
+	}
+	var unchangedYike meta.Source
+	if err := db.First(&unchangedYike, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchangedYike.Revision != source.Revision || unchangedYike.TargetNodeID == nil ||
+		*unchangedYike.TargetNodeID != *source.TargetNodeID {
+		t.Fatalf("rejected target PATCH mutated Yike Source: %+v", unchangedYike)
+	}
+
+	// Legacy arbitrary-kind sources may exist in fixtures, but cannot be
+	// rebound to another Owner directory through the public PATCH endpoint.
+	legacy := seedSyntheticSourceForProtocolTest(t, db, ordinary.ID,
+		"只读历史测试", meta.SourceDirectionPush, meta.SourceSyncModeBackup,
+		meta.SourceRunModeScan, "")
+	requestWithHeaders(t, router, http.MethodPatch,
+		fmt.Sprintf("/api/v1/sources/%d", legacy.ID), token,
+		strings.NewReader(fmt.Sprintf(`{"target_node_id":%d}`, root.ID)),
+		http.StatusBadRequest, map[string]string{"If-Match": `"1"`})
+	var unchangedLegacy meta.Source
+	if err := db.First(&unchangedLegacy, legacy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchangedLegacy.Revision != legacy.Revision || unchangedLegacy.TargetNodeID == nil ||
+		*unchangedLegacy.TargetNodeID != ordinary.ID {
+		t.Fatalf("rejected target PATCH rebound historical Source: %+v", unchangedLegacy)
+	}
 }
