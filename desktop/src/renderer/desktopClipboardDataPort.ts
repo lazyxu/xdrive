@@ -54,7 +54,11 @@ export function createDesktopClipboardDataPort(
         throw new Error('invalid Clipboard file reference')
       verify(signal)
       await openVerifiedFile(nodeID, signal)
-      verify(signal)
+      // A successful, explicit Clipboard -> Files route transition unmounts
+      // Clipboard and cancels its page-scoped action signal. Keep the Owner
+      // check, but never mistake this expected disposal for an authorization
+      // failure after the verified Files handoff has already been admitted.
+      verify()
     } : undefined,
     decryptTarget: async (id, signal) => {
       if (!Number.isSafeInteger(id) || id <= 0) throw Error('Invalid Clipboard item ID')
