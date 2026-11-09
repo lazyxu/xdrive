@@ -28,7 +28,10 @@ test('local PhotoKit Gallery always mounts continuous lazy virtual pages without
   assert.match(source, /let count = try await reader\.start\(atOffset: offset, mediaFilter: mediaFilter\)/)
   assert.match(source, /loaded\.startOffset == offset/)
   assert.match(source, /count == expectedTotal/)
-  assert.match(source, /\.onDisappear \{\s*if !retainWhileCovered \{\s*page = nil/)
+  // First take the current verified-page snapshot; then release the lazy
+  // child. No general-purpose retained 100k-photo array is allowed.
+  assert.match(source, /\.onDisappear \{[\s\S]*?let verifiedEpoch = retainedGeneration\s*let verifiedPage = \([\s\S]*?verifiedEpoch == generation &&\s*page\?\.startOffset == offset &&\s*page\?\.totalAccessibleAssets == expectedTotal\s*\) \? page : nil\s*if !retainWhileCovered \{\s*page = nil/)
+  assert.match(source, /onPageHidden\(offset, verifiedEpoch, verifiedPage\)/)
   assert.doesNotMatch(source, /\[PHAsset\]|\[String: PHAsset\]|fetchAssets\(withLocalIdentifiers: \w+\.map/)
   assert.match(policy, /static let pageSize = 64/)
 })
@@ -243,8 +246,9 @@ test('native local photo selection paints contiguous authorized visible ranges a
   assert.match(source, /@State private var dragTileFrames: \[String: CGRect\] = \[:\]/)
   assert.match(source, /@State private var dragVisitedIDs: Set<String>/)
   assert.match(source, /onRead: \{ page in\s*dragLoadedPages\[page\.startOffset\] = page/)
-  assert.match(source, /onPageHidden: \{ hiddenOffset in\s*dragLoadedPages\.removeValue\(forKey: hiddenOffset\)/)
-  assert.match(source, /onPageHidden\(offset\)/)
+  assert.match(source, /onPageHidden: \{ hiddenOffset, pageEpoch, verifiedPage in\s*dragLoadedPages\.removeValue\(forKey: hiddenOffset\)/)
+  assert.match(source, /guard let verifiedPage,\s*pageEpoch == generation,\s*hiddenOffset == savedOffset,\s*phase == \.active && authorized,[\s\S]*?verifiedPage\.items\.count <= 64\s*else \{ return \}/)
+  assert.match(source, /onPageHidden\(offset, verifiedEpoch, verifiedPage\)/)
   assert.match(source, /\.onPreferenceChange\(XDriveIOSNativePhotoDragTileFrames\.self\)/)
   assert.match(source, /dragTileFrames = selectionMode \? frames : \[:\]/)
   assert.match(source, /LongPressGesture\(minimumDuration: 0\.28, maximumDistance: 16\)/)
