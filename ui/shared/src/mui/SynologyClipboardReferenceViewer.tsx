@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import type { XDriveFileExplorerItem } from './FileExplorer'
-import { xDriveClassifyFilePreview, xDriveFileSupportsTextPreview } from '../file-preview'
+import { xDriveFileSupportsTextPreview } from '../file-preview'
 import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
 import { xDriveSynologyLoadViewerPreview, xDriveSynologyViewerNeedsDerived } from '../synology-viewer-preview'
 import { xDriveSynologyLoadBoundedMediaPreview, xDriveSynologyPreviewMIME, XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES } from '../synology-media-preview'
