@@ -3553,6 +3553,30 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
     await dialog.getByText('100,000 张照片和视频',{exact:true}).waitFor()
     await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor()
     await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor()
+    // A real mounted 100k Owner Cell supplies a COMPLETE signed date index.
+    // Switching the Parent's shared Timeline must never materialize 100k cards
+    // or hand photo identity to either isolated third-party SDK Host.
+    const grouped=[]
+    for(const scale of ['year','month','day']){
+      const control=dialog.locator('[data-xdrive-places-photo-time-scale="'+scale+'"]')
+      await control.click()
+      await dialog.locator('[data-xdrive-media-gallery-virtual-timeline]').waitFor({state:'visible'})
+      const state=await dialog.evaluate(el=>({
+        tiles:el.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+        headers:el.querySelectorAll('[data-xdrive-gallery-sticky-date]').length,
+        placeholders:el.querySelectorAll('[data-xdrive-media-gallery-timeline-placeholder]').length,
+        virtual:!!el.querySelector('[data-xdrive-media-gallery-virtual-timeline]'),
+      }))
+      grouped.push(state)
+      record(mode+': 100k signed '+scale+' virtual date view stays viewport-bounded',
+        state.virtual && state.headers===1 && state.tiles>0 &&
+        state.tiles<160 && state.placeholders<160 && errors.length===0)
+    }
+    await dialog.locator('[data-xdrive-places-photo-time-scale="all"]').click()
+    await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
+    record(mode+': 100k signed Owner date views reuse full Gallery timeline',
+      grouped.length===3 && grouped.every(x=>x.virtual && x.tiles<160) &&
+      errors.length===0)
     const samples=[]
     for(const ratio of [0.25,0.61,0.88]){
       const started=Date.now()
