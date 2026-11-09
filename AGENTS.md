@@ -70,6 +70,7 @@ A later explicit owner decision supersedes older instructions.
 - Transfers expose real state, speed and control only when supported; do not invent Web browser download bytes.
 
 ## Push/Pull, media identity, backup and storage
+- Owner decision 2026-11-09: no production historical Push/Pull targets exist. Do not implement old-directory migration, mixed-root split, legacy preview API, uid_* Yike target adoption or old-path rename compatibility. New Sources use canonical Server-provisioned targets. Keep DB schema/index maintenance, Owner/Device/Root checks and the sole UploadSession/CAS writer.
 - Device Push is local-owner managed; cloud Pull and foreign-device backup views are read-only. Web does not remotely control device backups.
 - Reuse one owning xdrive-agent and UploadSession/chunks/finalize → PostgreSQL/CAS durable original receipt. No duplicate NAS uploader or separate write protocol.
 - Protect account/Device/Root ownership, CAS idempotency, schema migrations, retries, source rate limits and conservative Mirror deletion.
