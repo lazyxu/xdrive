@@ -31,7 +31,10 @@ async function startViewerFirstFrameHTTPSProxy(upstreamURL) {
     ], { stdio: 'ignore' })
     assert.equal(generated.status, 0, 'one-use test TLS certificate required')
     const certificate = fs.readFileSync(certPath)
-    const fingerprint = new X509Certificate(certificate).fingerprint.toLowerCase()
+    // Electron's certificate fingerprint representation is not guaranteed
+    // to be the same digest/format as Node's SHA-1 fingerprint. Pin the
+    // exact ephemeral leaf certificate by its SHA-256 of DER bytes instead.
+    const fingerprint = new X509Certificate(certificate).fingerprint256.toLowerCase()
     server = https.createServer({
       cert: certificate, key: fs.readFileSync(keyPath),
     }, (req, res) => {
@@ -81,6 +84,7 @@ async function startViewerFirstFrameHTTPSProxy(upstreamURL) {
     return {
       origin: 'https://127.0.0.1:' + address.port,
       fingerprint,
+      certificatePEM: certificate.toString('utf8'),
       async close() {
         server.closeAllConnections()
         await new Promise(resolve => server.close(resolve))
@@ -105,9 +109,21 @@ function installPinnedViewerFixtureCertificate(electronSession, fixture) {
   // Isolated Electron session per sample; never change global TLS settings.
   // -3 means use Chromium's usual verification for any other certificate.
   electronSession.setCertificateVerifyProc((request, callback) => {
-    const fingerprint = (request.certificate?.fingerprint || '').toLowerCase()
-    callback(request.hostname === url.hostname &&
-      fingerprint === fixture.fingerprint ? 0 : -3)
+    let fingerprint = null
+    try {
+      // Electron provides the actual PEM leaf. Compute the identical SHA-256
+      // digest on both sides, independent of Chromium's display fingerprint.
+      // Never accept a missing/malformed certificate or another TLS identity.
+      fingerprint = new X509Certificate(request.certificate?.data || '')
+        .fingerprint256.toLowerCase()
+    } catch { /* Fail closed for absent or invalid leaf PEM. */ }
+    if (request.hostname === url.hostname && fingerprint === fixture.fingerprint) {
+      callback(0)
+    } else {
+      // A different certificate on the loopback benchmark host is denied.
+      // All non-fixture hosts keep Chromium's standard verification result.
+      callback(request.hostname === url.hostname ? -2 : -3)
+    }
   })
 }
 module.exports = { startViewerFirstFrameHTTPSProxy, installPinnedViewerFixtureCertificate }
