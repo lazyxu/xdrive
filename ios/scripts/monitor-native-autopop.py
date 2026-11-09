@@ -12,7 +12,13 @@ import sys
 import threading
 import time
 
-CASE = "testNativeAutoPopReturnsHomeWithoutXCUISwipe"
+# The real candidate exercises its production no-Session Back controls; only
+# historical builds use the separate CI-only SwiftUI AutoPop fixture.
+WATCHED_CASES = (
+    "testNativeAutoPopReturnsHomeWithoutXCUISwipe",
+    "testCloudFolderNoSessionIsSmallNativeRecoveryInsteadOfFilesList",
+    "testRecentlyDeletedNoSessionDoesNotMountDestructiveRows",
+)
 
 
 def execute(cmd, timeout):
@@ -41,7 +47,7 @@ def collect_app_trace(sim, output):
             pass
     elif not destination.exists():
         destination.write_text(
-            "App-container trace absent: test .task may not have mounted.\n",
+            "No AutoPop trace: candidate is uninstrumented or historic fixture never mounted.\n",
             encoding="utf-8"
         )
 
@@ -50,7 +56,7 @@ def capture(sim, output):
     output.mkdir(parents=True, exist_ok=True)
     collect_app_trace(sim, output)
     (output / "capture-reason.txt").write_text(
-        "Native auto-pop UI test exceeded 25 seconds. "
+        "Native Files navigation UI test exceeded 25 seconds. "
         "A delayed XCTest query does NOT prove an app crash.\n",
         encoding="utf-8"
     )
@@ -109,17 +115,20 @@ def main():
         )
 
         def stream():
-            nonlocal target_started, target_finished
+            nonlocal target_started, target_finished, seen_capture
             assert proc.stdout is not None
             for line in proc.stdout:
                 log.write(line)
                 log.flush()
                 sys.stdout.write(line)
                 sys.stdout.flush()
-                if "Test Case " in line and CASE in line:
+                if "Test Case " in line and any(
+                    case in line for case in WATCHED_CASES
+                ):
                     if " started." in line:
                         target_started = time.monotonic()
                         target_finished = False
+                        seen_capture = False
                     elif " passed (" in line or " failed (" in line:
                         target_finished = True
 
