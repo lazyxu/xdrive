@@ -178,7 +178,13 @@ function TransferLeafItem({
                 onOpen={onOpenTask && canOpenTask?.(item) !== false ? () => onOpenTask(item) : undefined}
               />
               <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
-              {uploadOutcome ? <XDriveStatusBadge tone={uploadOutcomeTone(item)} label={uploadOutcomeLabel(item)!} variant="outlined" /> : null}
+              {item.direction === 'upload' && item.state === 'completed' ? (
+                <XDriveStatusBadge
+                  tone={uploadOutcome ? uploadOutcomeTone(item) : 'neutral'}
+                  label={uploadOutcomeLabel(item) ?? '方式未记录'}
+                  variant="outlined"
+                />
+              ) : null}
               <Typography variant="caption" color="text.secondary">
                 {xDriveTransferKindLabel(item.kind || item.direction)}
               </Typography>
@@ -256,7 +262,13 @@ function TransferLeafItem({
               onOpen={onOpenTask && canOpenTask?.(item) !== false ? () => onOpenTask(item) : undefined}
             />
             <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
-            {uploadOutcome ? <XDriveStatusBadge tone={uploadOutcomeTone(item)} label={uploadOutcomeLabel(item)!} variant="outlined" /> : null}
+            {item.direction === 'upload' && item.state === 'completed' ? (
+                <XDriveStatusBadge
+                  tone={uploadOutcome ? uploadOutcomeTone(item) : 'neutral'}
+                  label={uploadOutcomeLabel(item) ?? '方式未记录'}
+                  variant="outlined"
+                />
+              ) : null}
             <Typography variant="caption" color="text.secondary">
               {xDriveTransferKindLabel(item.kind || item.direction)}
             </Typography>
