@@ -13,7 +13,7 @@ import statistics
 import sys
 
 PATTERN = re.compile(
-    r"IOS_NATIVE_NAVIGATION_READY_MS route=(\\S+) page=(\\S+) value=(\\d+)"
+    r"IOS_NATIVE_NAVIGATION_READY_MS route=(\S+) page=(\S+) value=(\d+)"
 )
 
 
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     payload = summarize(log_name.read_text(encoding="utf-8", errors="replace"))
     output_name.parent.mkdir(parents=True, exist_ok=True)
     output_name.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\\n",
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     print("IOS_NAV_LATENCY_SUMMARY samples=" + str(payload["total_samples"]))
