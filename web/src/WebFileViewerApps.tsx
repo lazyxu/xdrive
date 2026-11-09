@@ -1663,10 +1663,10 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         navigationLoading={viewer.loading || viewer.navigationLoading}
         // iPhone Safari/PWA uses this routed Viewer instead of Desktop's
         // MediaGalleryViewer. Keep Back, next/previous and the filmstrip
-        // discoverable while an original video starts or buffers; otherwise
+        // discoverable while source metadata is still loading and while an original video starts or buffers; otherwise
         // the 2.2s chrome timer leaves only a black screen and tiny spinner.
         // Still photos retain immersive auto-hide and tap-to-reveal behavior.
-        keepChromeVisible={previewKind === 'video' || shareVisible || tagsVisible || infoVisible || editOpen || creativeOpen || deleteOpen || locationVisible || (ownsModal && Boolean(moreAnchor))}
+        keepChromeVisible={viewer.loading || viewer.navigationLoading || previewKind === 'video' || shareVisible || tagsVisible || infoVisible || editOpen || creativeOpen || deleteOpen || locationVisible || (ownsModal && Boolean(moreAnchor))}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
         onPrevious={viewer.goPrevious}
