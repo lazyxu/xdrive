@@ -46,7 +46,7 @@ export function createDesktopClipboardDataPort(
       // failure after the verified Files handoff has already been admitted.
       verify()
     } : undefined,
-    create: (value, signal) => {
+    create: async (value, signal) => {
       const media = value.kind === 'image/x-xdrive-node-ref' ||
         value.kind === 'application/x-xdrive-node-ref'
       if ((media && (!value.target_device_id || !value.node_id ||

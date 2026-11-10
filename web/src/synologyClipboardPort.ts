@@ -55,7 +55,7 @@ export function createXDriveDSMClipboardPort(
       signal.throwIfAborted()
       await openVerifiedFile(reference, signal)
     } : undefined,
-    create: (item, signal) => {
+    create: async (item, signal) => {
       const media = item.kind === 'image/x-xdrive-node-ref' ||
         item.kind === 'application/x-xdrive-node-ref'
       if ((media && (!item.target_device_id || !item.node_id ||
