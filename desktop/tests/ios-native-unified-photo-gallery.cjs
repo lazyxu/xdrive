@@ -20,7 +20,7 @@ test('unified gallery defaults to all sources and keeps unknown evidence distinc
   assert.match(timeline, /matches\[key\]\?\.matches\(photo\) == true/)
   assert.match(timeline, /cloudAnchorRevision[\s\S]*?slice\.items\.first\?\.node\.revision == cursor\.cloudAnchorRevision/)
   assert.match(viewer, /row\.local == nil \? row\.cloud : nil/)
-  assert.match(ui, /local\.load\(asset\.id,[^\n]*allowICloud: false\)/)
+  assert.match(ui, /if local\.image == nil && retainedLocal == nil\s*\{[\s\S]*?local\.load\(asset\.id,\s*size: CGSize\(width: 280, height: 280\),\s*allowICloud: false\)/)
   assert.match(ui, /displayActive: selected == nil && phase == \.active/)
   assert.match(ui, /local\.cancel\(\)[\s\S]*?fallback\?\.cancel\(\)[\s\S]*?guard displayActive else \{ return \}/)
   assert.doesNotMatch(ui, /UploadSession|WKWebView|requestImageDataAndOrientation/)
