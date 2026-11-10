@@ -18,7 +18,7 @@ const part = (from, to) => {
 }
 
 test('unchanged foreground activation calls a verified policy instead of blindly resetting the wall', () => {
-  const phase = part('.onChange(of: phase) { state in', '.sheet(isPresented: $showFilters)')
+  const phase = part('.onChange(of: phase) { state in', '.sheet(isPresented: $showFilters, onDismiss:')
   assert.match(phase, /if state == \.active \{\s*[\s\S]*?validateForegroundWall\(\)/)
   assert.doesNotMatch(phase, /timeline\.reset\(\)|wall\.reset\(\)/)
   const appear = part('.onAppear {', '.onDisappear {')
@@ -54,12 +54,12 @@ test('same denied PhotoKit grant leaves safe cloud-only wall mounted', () => {
 })
 
 test('Owner switch and true PhotoKit mutations still immediately retire the wall', () => {
-  assert.match(gallery, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?sourceFilter = nil; query = \.init\(\); draft = \.init\(\); reset\(\)/)
+  assert.match(gallery, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?sourceFilter = nil; query = \.init\(\); draft = \.init\(\)[\s\S]*?openMapAfterFilterDismiss = false[\s\S]*?pendingMapCaptureRange = nil[\s\S]*?reset\(\)/)
   assert.match(gallery, /\.onChange\(of: photoObserver\.change\) \{ _ in reset\(\) \}/)
 })
 
 test('leaving foreground cancels old audits and Viewer but never replaces the wall generation', () => {
-  const phase = part('.onChange(of: phase) { state in', '.sheet(isPresented: $showFilters)')
+  const phase = part('.onChange(of: phase) { state in', '.sheet(isPresented: $showFilters, onDismiss:')
   assert.match(phase, /explicitOriginalAudit = false\s*selected = nil\s*indexRequest = UUID\(\)/)
   assert.doesNotMatch(phase, /wall\.reset\(\)|timeline\.reset\(\)/)
 })
