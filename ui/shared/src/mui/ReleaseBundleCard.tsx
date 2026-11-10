@@ -93,7 +93,8 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
         {(state?.artifacts ?? []).map((artifact) => {
           const sources = xDriveReleaseBundleDownloadSources(artifact)
           const personalUnsigned = port.platform === 'windows' && artifact.platform === 'windows' &&
-            state?.channel === 'master' && artifact.install_mode === 'manual_test_only'
+            artifact.filename === 'xDriveSetup-amd64.exe' && state?.channel === 'master' &&
+            artifact.install_mode === 'manual_test_only'
           return <Box key={artifact.filename} sx={{ borderTop: 1, borderColor: 'divider', pt: 1 }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1}>
               <Typography variant="body2">{labels[artifact.platform] || artifact.platform} · {artifact.filename}</Typography>
