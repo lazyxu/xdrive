@@ -28,15 +28,22 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - name: Install Android SDK 35
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Verify bounded dependency retry rules
+        run: node --test scripts/ci/retry-transient-download.test.mjs
       - name: Build Android APK without emulator or full CI
         working-directory: android
-        run: bash gradlew --no-daemon :app:assembleDebug
+        env:
+          XDRIVE_CI_RETRY_GRADLE_PLUGIN_RESOLUTION: '1'
+        run: node ../scripts/ci/retry-transient-download.mjs bash gradlew --no-daemon :app:assembleDebug
       - name: Verify exact APK and prepare downloadable artifact
         shell: bash
         run: |
