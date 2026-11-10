@@ -143,20 +143,31 @@ async function visibleButtonCenter(win, label) {
   return win.webContents.executeJavaScript(`(() => {
     const label = ${JSON.stringify(label)}
     const selector = '[data-xdrive-mobile-five-slot] button'
-    const candidates = [...document.querySelectorAll(selector)].filter(button => {
+    const buttons = [...document.querySelectorAll(selector)]
+    const matching = buttons.filter(button => {
+      const accessible = button.getAttribute('aria-label') || ''
+      const text = (button.textContent || '').trim()
+      return accessible === label || text === label
+    })
+    let withinViewport = 0
+    const candidates = matching.filter(button => {
       const bounds = button.getBoundingClientRect()
       const style = getComputedStyle(button)
       if (bounds.width < 2 || bounds.height < 2 || bounds.left < 0 ||
           bounds.top < 0 || bounds.right > innerWidth || bounds.bottom > innerHeight ||
           style.visibility === 'hidden' || style.pointerEvents === 'none') return false
-      const accessible = button.getAttribute('aria-label') || ''
-      const text = (button.textContent || '').trim()
-      if (accessible !== label && text !== label) return false
+      withinViewport++
       const x = bounds.left + bounds.width / 2, y = bounds.top + bounds.height / 2
       const hit = document.elementFromPoint(x, y)
       return hit === button || button.contains(hit)
     })
-    if (candidates.length !== 1) return {error:'expected one visible five-slot destination '+label+'; got '+candidates.length}
+    if (candidates.length !== 1) return {
+      error:'expected one visible five-slot destination '+label+'; got '+candidates.length,
+      // Anonymous counts diagnose wrong label, geometry, or a genuine
+      // overlapping UI. Never bypass the real hit test or expose DOM text.
+      counts:{buttons:buttons.length,matching:matching.length,
+        withinViewport,unobscured:candidates.length},
+    }
     const rect = candidates[0].getBoundingClientRect()
     return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}
   })()`, true)
