@@ -63,6 +63,29 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         reportNavigationReady("gallery")
     }
 
+
+    /// The real native Gallery exposes only its DEBUG page-generation UUID,
+    /// never the Owner, PhotoKit identifiers or pixels.
+    private func verifiedUnifiedGeneration(_ app: XCUIApplication) -> String {
+        let shell = target("native-ios-unified-photo-gallery", in: app)
+        XCTAssertTrue(shell.waitForExistence(timeout: 15),
+                      "Unified Gallery did not mount for a return-lifetime check")
+        guard let value = shell.value as? String,
+              UUID(uuidString: value) != nil else {
+            XCTFail("The live native Gallery did not expose a valid DEBUG generation")
+            return ""
+        }
+        return value
+    }
+
+    private func assertUnchangedUnifiedWall(_ app: XCUIApplication,
+                                            before: String, label: String) {
+        checkGallery(app)
+        XCTAssertEqual(verifiedUnifiedGeneration(app), before,
+                       "The verified Gallery wall was needlessly rebuilt: " + label)
+        assertNotSolidScreen(app, label)
+    }
+
     func testRapidGalleryFilesTabOscillationPreservesBothShells() {
         let app = launch()
         for _ in 0..<8 {
@@ -749,4 +772,107 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         checkFilesHome(app)
         assertNotSolidScreen(app, "Files after search and Gallery filter")
     }
+    // Independent real Simulator routes on the *same unchanged* Gallery
+    // source. No fake cloud token, seeded private photos, or FPS claims.
+    func testUnifiedWallGenerationPersistsThroughSixFilesTabRoundTrips() {
+        let app = launch()
+        let before = verifiedUnifiedGeneration(app)
+        for cycle in 0..<6 {
+            select("native-ios-tab-files", in: app)
+            checkFilesHome(app)
+            select("native-ios-tab-gallery", in: app)
+            assertUnchangedUnifiedWall(app, before: before, label: "Files return \(cycle)")
+        }
+    }
+
+    func testUnifiedWallGenerationPersistsAfterRecentFavoritesBrowseNavigation() {
+        let app = launch(syntheticOwner: true)
+        let before = verifiedUnifiedGeneration(app)
+        select("native-ios-tab-files", in: app)
+        for section in ["recent", "favorites", "browse", "recent", "browse"] {
+            select("native-ios-files-section-\(section)", in: app)
+            checkFilesHome(app)
+        }
+        select("native-ios-tab-gallery", in: app)
+        assertUnchangedUnifiedWall(app, before: before, label: "Files quick rail")
+    }
+
+    func testUnifiedWallGenerationPersistsAfterFilterCancelAndFilesReturn() {
+        let app = launch()
+        let before = verifiedUnifiedGeneration(app)
+        select("native-ios-gallery-open-filters", in: app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        assertUnchangedUnifiedWall(app, before: before, label: "Filter cancel then Files")
+    }
+
+    func testUnifiedWallGenerationPersistsAfterPeopleChildAndFilesReturn() {
+        let app = launch(syntheticOwner: true)
+        let before = verifiedUnifiedGeneration(app)
+        select("native-ios-gallery-people", in: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
+            .waitForExistence(timeout: 15))
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        checkGallery(app)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        assertUnchangedUnifiedWall(app, before: before, label: "People then Files")
+    }
+
+    func testUnifiedWallGenerationPersistsAfterBackgroundAndFilesReturn() {
+        let app = launch()
+        let before = verifiedUnifiedGeneration(app)
+        for cycle in 0..<3 {
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertEqual(app.state, .runningForeground)
+            select("native-ios-tab-files", in: app)
+            checkFilesHome(app)
+            select("native-ios-tab-gallery", in: app)
+            assertUnchangedUnifiedWall(app, before: before,
+                                       label: "Foreground and Files \(cycle)")
+        }
+    }
+
+    func testUnifiedWallGenerationPersistsAfterFilesSearchSubmitAndReturn() {
+        let app = launch()
+        let before = verifiedUnifiedGeneration(app)
+        select("native-ios-tab-files", in: app)
+        let search = app.searchFields["搜索全部文件"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        search.tap()
+        search.typeText("ab")
+        if app.keyboards.buttons["Search"].exists {
+            app.keyboards.buttons["Search"].tap()
+        } else if app.keyboards.buttons["完成"].exists {
+            app.keyboards.buttons["完成"].tap()
+        } else {
+            search.typeText("\n")
+        }
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        assertUnchangedUnifiedWall(app, before: before, label: "Files Search return")
+    }
+
+    func testUnifiedWallGenerationPersistsAfterDeniedCloudChildAndReturn() {
+        let app = launch(syntheticOwner: true)
+        let before = verifiedUnifiedGeneration(app)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-root-location", in: app)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 15),
+            "Denied cloud child must render native error instead of a private list")
+        select("native-ios-files-error-return", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        assertUnchangedUnifiedWall(app, before: before, label: "Denied Cloud return")
+    }
+
 }

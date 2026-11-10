@@ -733,7 +733,10 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .unified:
                     XDriveIOSNativeUnifiedPhotoGallery(
                         login: login, openBackup: { openBackup(.overview) },
-                        priorityBackup: { id in requestPriorityBackup(id: id, failed: false) }
+                        priorityBackup: { id in requestPriorityBackup(id: id, failed: false) },
+                        // A different tab covers, but does not scroll-evict,
+                        // this bounded verified Gallery wall.
+                        isTabActive: tab == .gallery
                     )
                 case .local:
                     XDriveIOSNativeLocalPhotoTimelineContainer(
