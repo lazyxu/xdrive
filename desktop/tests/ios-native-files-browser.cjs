@@ -94,7 +94,8 @@ test('native SwiftUI search collapses in the toolbar and restores directory on c
   assert.match(view, /\.modifier\(XDriveIOSNativeFilesSearchPresentation\(\s*text: \$queryDraft, presented: \$searchPresented/)
   assert.match(view, /placement: \.navigationBarDrawer\(displayMode: \.automatic\)/)
   assert.match(view, /prompt: "搜索全部文件"/)
-  assert.match(view, /\.onSubmit\(of: \.search\) \{\s*submitSearch\(\)[\s\S]*?searchPresented = false\s*\}/)
+  assert.match(view, /\.onSubmit\(of: \.search\) \{\s*let submitted = queryDraft\s*submitSearch\(\)[\s\S]*?submittedSearchRestoreQuery = submitted\s*dismissSearch\(\)\s*searchPresented = false\s*Task \{ @MainActor in[\s\S]*?guard submittedSearchRestoreQuery == submitted else \{ return \}\s*queryDraft = submitted\s*submittedSearchRestoreQuery = nil\s*\}\s*\}/)
+  assert.match(view, /\.onChange\(of: queryDraft\) \{ value in[\s\S]*?if submittedSearchRestoreQuery != nil \{ return \}/)
   assert.match(view, /\.onDisappear \{[\s\S]*?searchPresented = false\s*chunked\.invalidate\(\)/)
   // Committing a query must retain the Server-scoped search and return anchor.
   assert.match(view, /activeQuery = query\s*reload\(resetOffset: true\)/)
@@ -154,7 +155,8 @@ test('Browse home displays only verified favorite folders as native direct navig
 test('native Files full-library search debounces valid keyboard drafts and cancels superseded searches', () => {
   const chrome = view.slice(view.indexOf('private var filesChrome:'), view.indexOf('private var filesModals:'))
   assert.match(chrome, /\.modifier\(XDriveIOSNativeFilesSearchPresentation\(\s*text: \$queryDraft, presented: \$searchPresented/)
-  assert.match(chrome, /\.onSubmit\(of: \.search\) \{\s*submitSearch\(\)[\s\S]*?searchPresented = false\s*\}/)
+  assert.match(chrome, /\.onSubmit\(of: \.search\) \{\s*let submitted = queryDraft\s*submitSearch\(\)[\s\S]*?submittedSearchRestoreQuery = submitted\s*dismissSearch\(\)\s*searchPresented = false\s*Task \{ @MainActor in[\s\S]*?guard submittedSearchRestoreQuery == submitted else \{ return \}\s*queryDraft = submitted\s*submittedSearchRestoreQuery = nil\s*\}\s*\}/)
+  assert.match(chrome, /\.onChange\(of: queryDraft\) \{ value in[\s\S]*?if submittedSearchRestoreQuery != nil \{ return \}/)
   assert.match(chrome, /\.task\(id: queryDraft\) \{/)
   assert.match(chrome, /let query = queryDraft\.trimmingCharacters\(in: \.whitespacesAndNewlines\)/)
   assert.match(chrome, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)

@@ -40,7 +40,11 @@ test('delete confirmation rejects vanished or old Owner items',()=>{
 })
 test('write gate prevents swiping away a pending unknown commit',()=>{
   match(/\.interactiveDismissDisabled\(model\.busy\)/)
-  match(/Button\("完成"\) \{ dismiss\(\) \}\s*\.disabled\(model\.busy\)/)
+  // The Files sheet owner must dismiss its own presentation; a nested
+  // NavigationStack's environment dismiss did not retire the modal in XCTest.
+  // The Done action remains unavailable while a Server write is unresolved.
+  match(/Button\("完成"\) \{\s*if let onClose \{ onClose\(\) \} else \{ dismiss\(\) \}\s*\}\s*\.accessibilityIdentifier\("native-ios-files-saved-searches-done"\)\s*\.disabled\(model\.busy\)/)
+  match(/onClose: \(\(\) -> Void\)\? = nil/)
 })
 test('explicit Refresh clears stale edit/delete intent and refuses hidden GET',()=>{
   match(/Button\("刷新"\) \{\s*guard isVisible, phase == \.active,\s*!model\.loading, !model\.busy else \{ return \}\s*clearPresentationIntents\(\)\s*model\.load\(login: login\)/)
