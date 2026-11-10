@@ -20,6 +20,19 @@ import (
 // Trust: current authenticated Owner -> immutable GitHub tag/source+asset
 // digest verification -> exact size and SHA-256 -> OS-specific admission.
 // Only an explicitly confirmed Windows master Snapshot may omit Authenticode. Never execute an arbitrary Server-supplied URL or download path.
+// currentServerInstallAllowed is the last local policy check after the
+// authenticated Server listing. Explicit private unsigned consent must never
+// leak into stable, Linux or background/channel update flows.
+func currentServerInstallAllowed(artifact client.ReleaseBundleArtifact, platform, channel, commit, filename string, personalUnsigned bool) bool {
+	if artifact.Platform != platform || artifact.Filename != filename || artifact.BuildCommit != commit {
+		return false
+	}
+	if personalUnsigned {
+		return platform == "windows" && channel == xupdate.ChannelMaster && artifact.InstallMode == "manual_test_only"
+	}
+	return artifact.InstallMode == "manual"
+}
+
 func (m *clientUpdateManager) InstallCurrentServerCommit(
 	ctx context.Context, cli *client.Client, expectedCommit, filename string, personalUnsigned bool,
 ) (clientUpdateState, error) {
@@ -76,9 +89,7 @@ func (m *clientUpdateManager) InstallCurrentServerCommit(
 	var item *client.ReleaseBundleArtifact
 	for i := range listing.Artifacts {
 		artifact := &listing.Artifacts[i]
-		if artifact.Filename == filename && artifact.Platform == runtime.GOOS &&
-			artifact.BuildCommit == expectedCommit &&
-			(artifact.InstallMode == "manual" || (personalUnsigned && artifact.InstallMode == "manual_test_only")) {
+		if currentServerInstallAllowed(*artifact, runtime.GOOS, listing.Channel, expectedCommit, filename, personalUnsigned) {
 			item = artifact
 			break
 		}
