@@ -159,6 +159,8 @@ export type XDriveCaddyHTTPSRollbackInput = { revision: number; target_revision:
 // AliDNS DNS-01 pair is staged encrypted for the administrator, not applied to Caddy.
 export type XDriveCaddyAliDNSConfig = {
   configured: boolean
+  access_key_id_length?: number
+  access_key_secret_length?: number
   revision: number
   source: 'unset' | 'saved' | 'host-import' | 'host-env'
   host_env_sha256?: string
@@ -627,6 +629,7 @@ export type XDriveBaiduJSAPIConfig = {
   provider: 'baidu-jsapi-4.0'
   desired_enabled: boolean
   configured: boolean
+  browser_ak_length?: number
   editable: boolean
   revision: number
   updated_at?: string
@@ -682,6 +685,7 @@ export type XDriveBaiduJSAPIUpdate = {
 export type XDriveBaiduMapAdminConfig = {
   enabled: boolean
   configured: boolean
+  ak_length?: number
   source: 'environment' | 'saved'
   editable: boolean
   requires_restart: boolean

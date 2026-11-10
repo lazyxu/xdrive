@@ -52,6 +52,9 @@ class TestCaddyHostEnv(unittest.TestCase):
 
     def test_save_and_restore_only_four_keys(self):
         _, original = self.run_command("snapshot")
+        self.assertEqual(original["alidns_id_length"], len("someinitialid"))
+        self.assertEqual(original["alidns_secret_length"], len("someinitialsecret"))
+        self.assertNotIn("someinitialsecret", json.dumps(original))
         req = self.request(original, https={
             "enabled": True, "domain": "next.example.com",
             "lan_enabled": True, "lan_ip": "192.168.1.10",

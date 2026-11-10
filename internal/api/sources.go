@@ -290,6 +290,7 @@ func (s *Server) listSourceOverview(c *gin.Context) {
 				status.Configured = true
 				status.KeyVersion = credential.KeyVersion
 				status.UpdatedAt = &updated
+				status.ValueLength = s.sourceCredentialMaskLength(source, credential)
 			}
 			row.Credential = &status
 		}

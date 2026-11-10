@@ -244,6 +244,7 @@ export function XDriveSourceSettingsDialog({
                   <XDriveSectionHeader level="h3" title="一刻相册凭据" />
                   <XDriveSensitiveField label="一刻相册 Cookie"
                     configured={Boolean(setting.credential?.configured)}
+                    configuredLength={setting.credential?.value_length}
                     revealedValue={credentialReveal?.field === 'cookie' ? credentialReveal.value : ''}
                     revealLoading={revealingCredential}
                     onReveal={onRevealCredential} onHide={onHideCredential}
@@ -292,6 +293,7 @@ export function XDriveSourceSettingsDialog({
                   <XDriveSynologyDsmCredentialFields
                     mode="update"
                     configured={Boolean(setting.credential?.configured)}
+                    configuredLength={setting.credential?.value_length}
                     revealedPassword={credentialReveal?.field === 'password' ? credentialReveal.value : ''}
                     passwordRevealLoading={revealingCredential}
                     onRevealPassword={onRevealCredential}

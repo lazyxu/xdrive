@@ -375,7 +375,7 @@ export function XDriveBaiduJSAPIDesiredPanel({
               control={<Switch checked={enabled} onChange={(_event, value) => setEnabled(value)}
                 disabled={busy || refreshing} />} />
             <XDriveSensitiveField label="Browser AK" value={newAK}
-              configured={config.configured}
+              configured={config.configured} configuredLength={config.browser_ak_length}
               revealedValue={shownAK?.field === 'browser_ak' ? shownAK.value : ''}
               onReveal={() => { void revealAK() }} onHide={hideAK}
               revealLoading={revealingAK}
