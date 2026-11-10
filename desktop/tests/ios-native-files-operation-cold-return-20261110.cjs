@@ -96,7 +96,9 @@ test('14 completed short XCUITest may not silently drop scheduled screenshot evi
 })
 test('15 screenshot capture lag is separately reported rather than misrepresented as 60/120 Hz FPS', () => {
   const audit = read('ios/scripts/audit_navigation_frames.py')
-  assert.equal((watcher.match(/"capture_request_lag_seconds":/g) || []).length, 2)
+  assert.equal((watcher.match(/"capture_request_lag_seconds":/g) || []).length, 4)
+  assert.equal((watcher.match(/"reason": "capture_deadline_missed"/g) || []).length, 2)
+  assert.match(watcher, /MAX_CAPTURE_LAG_SECONDS = 0\.75/)
   assert.equal((watcher.match(/"capture_duration_seconds":/g) || []).length, 2)
   assert.match(audit, /'capture_request_lag': \{/)
   assert.match(audit, /'p50_ms': percentile\(lags, \.50\)/)
