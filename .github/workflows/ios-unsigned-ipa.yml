@@ -105,6 +105,9 @@ jobs:
           node --test desktop/tests/ios-native-unified-photo-gallery.cjs
           # Navigation regressions guard bounded Gallery/Files native returns.
           node --test desktop/tests/ios-native-navigation-continuity.cjs
+          # A fast first-load tab switch must never latch an unfinished
+          # PhotoKit/Files Home read or skip real Simulator frame coverage.
+          node --test desktop/tests/ios-native-gallery-files-cold-return-20261110.cjs
 
       - name: Verify cold launch recovery and BG registration safety
         run: |
