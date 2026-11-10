@@ -62,7 +62,9 @@ func clipboardItemDTO(item meta.ClipboardItem) clipboardItemResponse {
 func validateClipboardWrite(req clipboardWriteRequest) error {
 	if uuid.Validate(req.ClientEventID) != nil ||
 		len(req.Content) == 0 || len(req.Content) > clipboardMaxText ||
-		!utf8.ValidString(req.Content) { return errClipboardInvalid }
+		!utf8.ValidString(req.Content) {
+		return errClipboardInvalid
+	}
 	switch req.Kind {
 	case "text/plain", "text/uri-list":
 		if req.NodeID != 0 {
@@ -70,7 +72,9 @@ func validateClipboardWrite(req clipboardWriteRequest) error {
 		}
 	case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
 		if req.NodeID == 0 || req.TargetDeviceID == "" ||
-			req.Content != fmt.Sprintf("asset:%d", req.NodeID) { return errClipboardInvalid }
+			req.Content != fmt.Sprintf("asset:%d", req.NodeID) {
+			return errClipboardInvalid
+		}
 	default:
 		return errClipboardInvalid
 	}
@@ -267,7 +271,9 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 		// Lock the authenticated Owner row; no encrypted vault is required.
 		var owner meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", uid).First(&owner).Error; err != nil { return err }
+			Where("id = ?", uid).First(&owner).Error; err != nil {
+			return err
+		}
 		if err := s.clipboardValidateTargetAndNode(tx, uid, req); err != nil {
 			return err
 		}
@@ -366,7 +372,7 @@ func (s *Server) listClipboardItems(c *gin.Context) {
 	}
 	hasMore := len(items) > clipboardPageSize
 	if hasMore {
-		items = items[: clipboardPageSize]
+		items = items[:clipboardPageSize]
 	}
 	result := make([]clipboardItemResponse, 0, len(items))
 	for _, item := range items {
@@ -401,7 +407,9 @@ func (s *Server) deleteClipboardItem(c *gin.Context) {
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var owner meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", uid).First(&owner).Error; err != nil { return err }
+			Where("id = ?", uid).First(&owner).Error; err != nil {
+			return err
+		}
 		var victim meta.ClipboardItem
 		if err := tx.Where("owner_id = ? AND id = ?", uid, id).Take(&victim).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -447,7 +455,9 @@ func (s *Server) clearClipboardItems(c *gin.Context) {
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var owner meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", uid).First(&owner).Error; err != nil { return err }
+			Where("id = ?", uid).First(&owner).Error; err != nil {
+			return err
+		}
 		result := tx.Where("owner_id = ?", uid).Delete(&meta.ClipboardItem{})
 		if result.Error != nil {
 			return result.Error

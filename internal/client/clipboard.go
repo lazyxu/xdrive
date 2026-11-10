@@ -46,7 +46,9 @@ type ClipboardPage struct {
 }
 func validClipboardWrite(v ClipboardWrite) bool {
 	if uuid.Validate(v.ClientEventID) != nil || len(v.Content) < 1 ||
-		len(v.Content) > 65536 || !utf8.ValidString(v.Content) { return false }
+		len(v.Content) > 65536 || !utf8.ValidString(v.Content) {
+		return false
+	}
 	switch v.Kind {
 	case "text/plain", "text/uri-list":
 		if v.NodeID != 0 {
@@ -54,7 +56,9 @@ func validClipboardWrite(v ClipboardWrite) bool {
 		}
 	case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
 		if v.NodeID == 0 || v.TargetDeviceID == "" ||
-			v.Content != fmt.Sprintf("asset:%d", v.NodeID) { return false }
+			v.Content != fmt.Sprintf("asset:%d", v.NodeID) {
+			return false
+		}
 	default:
 		return false
 	}
