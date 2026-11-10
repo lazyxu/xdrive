@@ -16,6 +16,22 @@ test('mobile five-slot Files nav stays above Gallery tiles but below real modal 
   assert.ok(ui.includes('data-xdrive-mobile-five-slot'))
 })
 
+test('mobile feedback stays above the genuine Files dock and cannot create an invisible 1400-z-index hit blocker', () => {
+  const toast = read('ui/shared/src/mui/FeedbackSnackbar.tsx')
+  assert.ok(toast.includes("bottom: { xs: 'calc(64px + env(safe-area-inset-bottom))', sm: '24px' }"))
+  assert.ok(toast.includes("bottom: 'calc(52px + env(safe-area-inset-bottom))'"),
+    'landscape compact docks must also keep feedback above real navigation')
+  assert.ok(toast.includes("pointerEvents: 'none'"),
+    'fixed snackbar root may not steal hit-testing outside visible feedback')
+  assert.ok(toast.includes("'& > div': { pointerEvents: 'auto' }"),
+    'actual dismissible feedback content must remain interactive')
+  assert.ok(toast.includes('autoHideDuration={autoHideDuration}'),
+    'keep original toast lifecycle rather than disabling user feedback')
+  const harness = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
+  assert.ok(harness.includes("hit.closest('.MuiSnackbar-root') ? 'snackbar'"),
+    'real signed H264 gate must classify a remaining Snackbar obstruction')
+})
+
 test('real signed H264 fixture only clicks an unobscured actual button and diagnoses hidden cases', () => {
   const harness = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
   assert.ok(harness.includes("const selector = '[data-xdrive-mobile-five-slot] button'"))

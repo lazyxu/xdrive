@@ -168,6 +168,7 @@ async function visibleButtonCenter(win, label) {
       // DOM text, class strings, private Owner labels or source URLs.
       blockerKind = !hit ? 'no-hit' :
         hit.closest('[data-xdrive-mobile-five-slot]') ? 'inside-navigation' :
+        hit.closest('.MuiSnackbar-root') ? 'snackbar' :
         hit.closest('.MuiBackdrop-root') ? 'modal-backdrop' :
         hit.closest('.MuiModal-root') ? 'modal-layer' :
         hit.closest('[role="dialog"]') ? 'dialog' :
