@@ -57,7 +57,7 @@ test('Owner change immediately revokes local and remote retained media', () => {
   for (const field of ['retainedLocal', 'remote', 'retainedKey']) {
     assert.ok(change.includes(field + ' = nil'), 'Old Owner media not retired: ' + field);
   }
-  assert.match(tile, /if XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, presentingOwner\),\s*retainedKey == thumbnailKey/);
+  assert.match(tile, /if displayActive,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, presentingOwner\),\s*retainedKey == thumbnailKey/);
 });
 
 test('stale asynchronous thumbnail completion cannot repopulate a hidden or replaced tile', () => {

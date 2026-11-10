@@ -60,6 +60,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         galleryContent
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("native-ios-unified-photo-gallery")
+            .accessibilityValue(galleryWallGenerationDiagnostic)
             .task(id: indexRequest) {
                 // Viewing thumbnails must never start a whole-library SHA-256
                 // job. A user explicitly starts the optional read-only audit.
@@ -70,8 +71,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             .onAppear {
                 photoObserver.start()
-                if !started { started = true; wall.reset() }
-                else if let library = wall.library, !XDriveIOSNativePhotoFingerprintIndex.isCurrent(library) { reset() }
+                if !started {
+                    started = true
+                    wall.reset()
+                } else {
+                    validateForegroundWall()
+                }
             }
             .onDisappear {
                 photoObserver.stop()
@@ -98,13 +103,17 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 indexRequest = UUID()
             }
             .onChange(of: phase) { state in
-                if state == .active { reset() }
-                else {
+                if state == .active {
+                    // Same Owner, PhotoKit authorization and epoch: the
+                    // visible 48-row pages and thumbnails are still valid.
+                    validateForegroundWall()
+                } else {
                     explicitOriginalAudit = false
                     selected = nil
-                    timeline.reset()
-                    wall.reset()
                     indexRequest = UUID()
+                    // Keep the bounded verified page state for a same-grant
+                    // foreground return. Tiles hide pixels while inactive;
+                    // any changed Owner/PhotoKit grant/epoch resets on return.
                 }
             }
             .sheet(isPresented: $showFilters) { filterEditor }
@@ -165,7 +174,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                     filter: sourceFilter, query: query, density: wallDensity,
                                     displayActive: selected == nil && phase == .active,
                                      retainWhileCovered: selected != nil ||
-                                         showingPeople || showingThumbnailCache,
+                                         showingPeople || showingThumbnailCache ||
+                                         phase != .active,
                                     open: { payload, position in
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
                                         selected = .init(owner: owner, page: payload, position: position)
@@ -294,6 +304,36 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     }
 
     private func applyQuery() { guard draft.isValid else { return }; query = draft; showFilters = false }
+    // Diagnostic identity for the real native foreground-return XCTest.
+    // It reveals no PhotoKit IDs, credentials, or media content.
+    private var galleryWallGenerationDiagnostic: String {
+        #if DEBUG
+        return wall.generation.uuidString
+        #else
+        return ""
+        #endif
+    }
+
+    private func validateForegroundWall() {
+        let currentGrant = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        let grantChanged = currentGrant != permission
+        let localReadAllowed = currentGrant == .authorized || currentGrant == .limited
+        let epoch = wall.library
+        let currentEpoch = epoch.map {
+            XDriveIOSNativePhotoFingerprintIndex.isCurrent($0)
+        } ?? false
+        if XDriveIOSUnifiedGalleryScenePolicy.requiresResetOnReturn(
+            permissionChanged: grantChanged,
+            localAccessGranted: localReadAllowed,
+            hasEpoch: epoch != nil,
+            epochCurrent: currentEpoch
+        ) {
+            reset()
+        } else {
+            permission = currentGrant
+        }
+    }
+
     private func resetWall() { selected = nil; viewerReturnAnchor = nil; wall.reset() }
     private func requestOriginalAudit(retryUnavailable: Bool) {
         // An explicit diagnostic is independent from upload scheduling.
@@ -397,7 +437,8 @@ struct XDriveIOSUnifiedPhotoTile: View {
         Rectangle().fill(.quaternary)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if XDriveIOSNativePhotoOwnerScope.matches(login.owner, presentingOwner),
+                if displayActive,
+                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, presentingOwner),
                    retainedKey == thumbnailKey,
                    let image = local.image ?? retainedLocal ?? remote {
                     Image(uiImage: image).resizable().scaledToFill()

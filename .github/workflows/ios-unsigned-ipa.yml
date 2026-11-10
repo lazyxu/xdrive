@@ -559,6 +559,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
           node --test desktop/tests/ios-native-photo-wall-density.cjs desktop/tests/ios-native-photo-wall-shared.cjs
 
+      - name: Verify native unified Gallery foreground page retention
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeUnifiedGalleryScenePolicy.swift \
+            ios/tests/NativeUnifiedGalleryScenePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-gallery-scene-continuity"
+          "$RUNNER_TEMP/xdrive-ios-gallery-scene-continuity"
+          node --test desktop/tests/ios-native-gallery-scene-continuity.cjs
+
       - name: Verify native PhotoKit actual-day group boundaries
         run: |
           set -euo pipefail
