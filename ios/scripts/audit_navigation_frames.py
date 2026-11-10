@@ -107,6 +107,7 @@ def score_png(path):
 def analyze(directory):
     directory = pathlib.Path(directory)
     trace = directory / 'frame-trace.jsonl'
+    missing_capture_trace = not trace.exists()
     entries = []
     if trace.exists():
         for line in trace.read_text(encoding='utf-8').splitlines():
@@ -142,6 +143,7 @@ def analyze(directory):
         'note': 'Diagnostic content-region snapshots only; no FPS or zero-flicker conclusion',
         'is_fps_measurement': False, 'proves_zero_transient_flicker': False,
         'total_frames': len(results),
+        'missing_capture_trace': missing_capture_trace,
         'counts': dict(collections.Counter(r['quality'] for r in results)),
         'frames': results,
     }
