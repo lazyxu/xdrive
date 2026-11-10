@@ -3618,6 +3618,89 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
         sample.lastOffset>20_000 && sample.lastOffset<100_000 &&
         sample.errors===0 && errors.length===0)
     }
+    // Exercise the shipped Date input after a real signed sparse seek near
+    // 88k. The date is absent, so the Gallery's shared nearest-day policy
+    // targets the authenticated first group; Back must recover the deep row.
+    const beforeDateJump=await dialog.locator('[data-xdrive-places-photo-drawer-items]')
+      .evaluate(el=>{
+        const rect=el.getBoundingClientRect()
+        const tile=Array.from(el.querySelectorAll('[data-xdrive-places-photo-drawer-item]'))
+          .find(node=>{
+            const box=node.getBoundingClientRect()
+            return box.top>=rect.top && box.bottom<=rect.bottom
+          })
+        return {index:tile?Number(tile.getAttribute('data-xdrive-media-index')):-1,
+          reads:window.__mapProbe.photoPreviewRanges.length}
+      })
+    assert(beforeDateJump.index>80_000,
+      'date jump must begin at a real deep, currently signed visible row')
+    await dialog.locator('[data-xdrive-places-photo-time-scale="day"]').click()
+    await dialog.locator('[data-xdrive-media-gallery-virtual-timeline]')
+      .waitFor({state:'visible'})
+    await page.waitForFunction(index=>{
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const rect=list?.getBoundingClientRect()
+      return !!rect && Array.from(list.querySelectorAll('[data-xdrive-places-photo-drawer-item]'))
+        .some(tile=>{
+          const box=tile.getBoundingClientRect()
+          return Number(tile.getAttribute('data-xdrive-media-index'))>=index-20 &&
+            box.bottom>rect.top && box.top<rect.bottom
+        })
+    },beforeDateJump.index)
+    const dayInput=dialog.locator('[data-xdrive-places-photo-timeline-day-jump] input')
+    await dayInput.fill('2026-01-02')
+    const dateReturn=dialog.locator('[data-xdrive-places-photo-timeline-return]')
+    await dateReturn.waitFor({state:'visible'})
+    await page.waitForFunction(()=>{
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const tile=list?.querySelector('[data-xdrive-media-index="0"]')
+      const rect=list?.getBoundingClientRect(),box=tile?.getBoundingClientRect()
+      return !!(rect&&box&&box.bottom>rect.top&&box.top<rect.bottom)
+    })
+    const nearDate=await dialog.evaluate(el=>({
+      label:el.querySelector('[data-xdrive-places-photo-timeline-current-date]')?.textContent,
+      notice:el.querySelector('[data-xdrive-places-photo-timeline-day-feedback]')?.textContent,
+      reads:window.__mapProbe.photoPreviewRanges.length,
+      dateInput:el.querySelector('[data-xdrive-places-photo-timeline-day-jump] input')?.value,
+    }))
+    record(mode+': 100k deep date jump chooses nearest real signed day',
+      nearDate.label?.includes('2026年1月1日') &&
+      nearDate.notice?.includes('所选日期没有照片') &&
+      nearDate.dateInput==='2026-01-01' &&
+      nearDate.reads-beforeDateJump.reads<=12 && errors.length===0)
+    await dateReturn.click()
+    await page.waitForFunction(index=>{
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const rect=list?.getBoundingClientRect()
+      return !!rect && Array.from(list.querySelectorAll('[data-xdrive-places-photo-drawer-item]'))
+        .some(tile=>{
+          const box=tile.getBoundingClientRect()
+          return Number(tile.getAttribute('data-xdrive-media-index'))>=index-20 &&
+            box.bottom>rect.top && box.top<rect.bottom
+        })
+    },beforeDateJump.index)
+    const afterDateReturn=await dialog.evaluate(el=>({
+      visible:el.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+      returnButton:el.querySelector('[data-xdrive-places-photo-timeline-return]')!==null,
+      reads:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    record(mode+': 100k date return restores deep signed row with bounded residency',
+      afterDateReturn.visible>0 && afterDateReturn.visible<160 &&
+      !afterDateReturn.returnButton &&
+      afterDateReturn.reads-nearDate.reads<=12 && errors.length===0)
+    await dialog.locator('[data-xdrive-places-photo-time-scale="all"]').click()
+    await dialog.locator('[data-xdrive-media-gallery-virtual-grid]')
+      .waitFor({state:'visible'})
+    await page.waitForFunction(index=>{
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const rect=list?.getBoundingClientRect()
+      return !!rect && Array.from(list.querySelectorAll('[data-xdrive-places-photo-drawer-item]'))
+        .some(tile=>{
+          const box=tile.getBoundingClientRect()
+          return Number(tile.getAttribute('data-xdrive-media-index'))>=index-20 &&
+            box.bottom>rect.top && box.top<rect.bottom
+        })
+    },beforeDateJump.index)
     const clicked=await dialog.locator('[data-xdrive-places-photo-drawer-items]')
       .evaluate(el=>{
         const rect=el.getBoundingClientRect()
