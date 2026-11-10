@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"unicode/utf8"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -65,7 +65,9 @@ func validateClipboardWrite(req clipboardWriteRequest) error {
 		!utf8.ValidString(req.Content) { return errClipboardInvalid }
 	switch req.Kind {
 	case "text/plain", "text/uri-list":
-		if req.NodeID != 0 { return errClipboardInvalid }
+		if req.NodeID != 0 {
+			return errClipboardInvalid
+		}
 	case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
 		if req.NodeID == 0 || req.TargetDeviceID == "" ||
 			req.Content != fmt.Sprintf("asset:%d", req.NodeID) { return errClipboardInvalid }
@@ -74,7 +76,9 @@ func validateClipboardWrite(req clipboardWriteRequest) error {
 	}
 	if req.TargetDeviceID != "" {
 		id, err := uuid.Parse(req.TargetDeviceID)
-		if err != nil || id.String() != req.TargetDeviceID { return errClipboardInvalid }
+		if err != nil || id.String() != req.TargetDeviceID {
+			return errClipboardInvalid
+		}
 	}
 	return nil
 }
@@ -362,7 +366,7 @@ func (s *Server) listClipboardItems(c *gin.Context) {
 	}
 	hasMore := len(items) > clipboardPageSize
 	if hasMore {
-		items = items[:clipboardPageSize]
+		items = items[: clipboardPageSize]
 	}
 	result := make([]clipboardItemResponse, 0, len(items))
 	for _, item := range items {

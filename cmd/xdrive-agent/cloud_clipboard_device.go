@@ -56,35 +56,65 @@ func (c *agentController) clipboardOwnerDevice(ctx context.Context) (
 func (c *agentController) CloudClipboardEnableDevice(ctx context.Context) (client.ClipboardDevice, error) {
 	clipboardDeviceEnrollmentMu.Lock()
 	defer clipboardDeviceEnrollmentMu.Unlock()
-	cli,cfg,_,deviceID,token,err:=c.clipboardOwnerDevice(ctx)
-	if err!=nil {return client.ClipboardDevice{},err}
-	if !clipboardCurrentAgentSession(cfg) {return client.ClipboardDevice{},errors.New("Owner changed before enrollment")}
-	if err=cli.ClipboardEnrollSelf(ctx,deviceID,token);err!=nil{return client.ClipboardDevice{},err}
-	if !clipboardCurrentAgentSession(cfg) {return client.ClipboardDevice{},errors.New("Owner changed after enrollment")}
-	return client.ClipboardDevice{DeviceID:deviceID,Name:"This installation",Platform:"desktop"},nil
+	cli, cfg, _, deviceID, token, err := c.clipboardOwnerDevice(ctx)
+	if err != nil {
+		return client.ClipboardDevice{}, err
+	}
+	if !clipboardCurrentAgentSession(cfg) {
+		return client.ClipboardDevice{}, errors.New("Owner changed before enrollment")
+	}
+	if err = cli.ClipboardEnrollSelf(ctx, deviceID, token); err != nil {
+		return client.ClipboardDevice{}, err
+	}
+	if !clipboardCurrentAgentSession(cfg) {
+		return client.ClipboardDevice{}, errors.New("Owner changed after enrollment")
+	}
+	return client.ClipboardDevice{DeviceID: deviceID, Name: "This installation", Platform: "desktop"}, nil
 }
-func clipboardDeviceActive(ctx context.Context,cli *client.Client,deviceID string)(bool,error){
-	dir,err:=cli.ClipboardDevices(ctx)
-	if err!=nil{return false,err}
-	for _,d:=range dir.Devices{if d.DeviceID==deviceID{return true,nil}}
-	return false,nil
+
+func clipboardDeviceActive(ctx context.Context, cli *client.Client, deviceID string) (bool, error) {
+	dir, err := cli.ClipboardDevices(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, d := range dir.Devices {
+		if d.DeviceID == deviceID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
+
 func (c *agentController) clipboardListWithLocalRecipient(
-	ctx context.Context,cli *client.Client,cfg userconfig.Config,before uint64,
-)(client.ClipboardPage,error){
-	configDir,err:=userconfig.Dir()
-	if err!=nil{return client.ClipboardPage{},err}
-	deviceID,err:=localpush.LoadDeviceRegistration(configDir,cfg.Server,cfg.Username)
-	if errors.Is(err,localpush.ErrDeviceNotRegistered){return cli.ClipboardList(ctx,before)}
-	if err!=nil{return client.ClipboardPage{},err}
-	active,err:=clipboardDeviceActive(ctx,cli,deviceID)
-	if err!=nil{return client.ClipboardPage{},err}
-	if !active{return cli.ClipboardList(ctx,before)}
-	_,_,_,verifiedID,token,err:=c.clipboardOwnerDevice(ctx)
-	if err!=nil||verifiedID!=deviceID{return client.ClipboardPage{},errors.New("Clipboard installation proof unavailable")}
-	page,err:=cli.ClipboardListForDevice(ctx,before,deviceID,token)
-	if err!=nil||!clipboardCurrentAgentSession(cfg){return client.ClipboardPage{},errors.New("Clipboard Owner/device changed")}
-	return page,nil
+	ctx context.Context, cli *client.Client, cfg userconfig.Config, before uint64,
+) (client.ClipboardPage, error) {
+	configDir, err := userconfig.Dir()
+	if err != nil {
+		return client.ClipboardPage{}, err
+	}
+	deviceID, err := localpush.LoadDeviceRegistration(configDir, cfg.Server, cfg.Username)
+	if errors.Is(err, localpush.ErrDeviceNotRegistered) {
+		return cli.ClipboardList(ctx, before)
+	}
+	if err != nil {
+		return client.ClipboardPage{}, err
+	}
+	active, err := clipboardDeviceActive(ctx, cli, deviceID)
+	if err != nil {
+		return client.ClipboardPage{}, err
+	}
+	if !active {
+		return cli.ClipboardList(ctx, before)
+	}
+	_, _, _, verifiedID, token, err := c.clipboardOwnerDevice(ctx)
+	if err != nil || verifiedID != deviceID {
+		return client.ClipboardPage{}, errors.New("Clipboard installation proof unavailable")
+	}
+	page, err := cli.ClipboardListForDevice(ctx, before, deviceID, token)
+	if err != nil || !clipboardCurrentAgentSession(cfg) {
+		return client.ClipboardPage{}, errors.New("Clipboard Owner/device changed")
+	}
+	return page, nil
 }
 
 // CloudClipboardFileReference is a strictly bounded bridge to the CURRENT

@@ -5,64 +5,71 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"unicode/utf8"
-	"fmt"
 
 	"github.com/google/uuid"
 )
 
 // Clipboard is a plaintext, Owner-scoped short-lived mailbox.
 type ClipboardWrite struct {
-	ClientEventID string `json:"client_event_id"`
-	Kind string `json:"kind"`
-	Content string `json:"content"`
+	ClientEventID  string `json:"client_event_id"`
+	Kind           string `json:"kind"`
+	Content        string `json:"content"`
 	TargetDeviceID string `json:"target_device_id,omitempty"`
-	NodeID uint64 `json:"node_id,omitempty"`
+	NodeID         uint64 `json:"node_id,omitempty"`
 }
 type ClipboardItem struct {
-	ID uint64 `json:"id"`
-	ClientEventID string `json:"client_event_id"`
-	Kind string `json:"kind"`
-	Content string `json:"content"`
+	ID             uint64 `json:"id"`
+	ClientEventID  string `json:"client_event_id"`
+	Kind           string `json:"kind"`
+	Content        string `json:"content"`
 	TargetDeviceID string `json:"target_device_id,omitempty"`
-	NodeID uint64 `json:"node_id,omitempty"`
-	CreatedAt string `json:"created_at"`
-	ExpiresAt string `json:"expires_at"`
+	NodeID         uint64 `json:"node_id,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	ExpiresAt      string `json:"expires_at"`
 }
 type ClipboardDevice struct {
-	DeviceID string `json:"device_id"`
-	Name string `json:"name"`
+	DeviceID  string `json:"device_id"`
+	Name     string `json:"name"`
 	Platform string `json:"platform"`
 }
-type ClipboardDevices struct { Devices []ClipboardDevice `json:"devices"` }
+type ClipboardDevices struct {
+	Devices []ClipboardDevice `json:"devices"`
+}
 type ClipboardPage struct {
-	Items []ClipboardItem `json:"items"`
-	NextBefore *uint64 `json:"next_before"`
+	Items      []ClipboardItem `json:"items"`
+	NextBefore *uint64         `json:"next_before"`
 }
 func validClipboardWrite(v ClipboardWrite) bool {
 	if uuid.Validate(v.ClientEventID) != nil || len(v.Content) < 1 ||
 		len(v.Content) > 65536 || !utf8.ValidString(v.Content) { return false }
 	switch v.Kind {
 	case "text/plain", "text/uri-list":
-		if v.NodeID != 0 { return false }
+		if v.NodeID != 0 {
+			return false
+		}
 	case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
 		if v.NodeID == 0 || v.TargetDeviceID == "" ||
 			v.Content != fmt.Sprintf("asset:%d", v.NodeID) { return false }
-	default: return false
+	default:
+		return false
 	}
 	if v.TargetDeviceID != "" {
 		id, err := uuid.Parse(v.TargetDeviceID)
-		if err != nil || id.String() != v.TargetDeviceID { return false }
+		if err != nil || id.String() != v.TargetDeviceID {
+			return false
+		}
 	}
 	return true
 }
 func validClipboardItem(v ClipboardItem) bool {
 	return v.ID > 0 && validClipboardWrite(ClipboardWrite{
-		ClientEventID:v.ClientEventID, Kind:v.Kind, Content:v.Content,
-		TargetDeviceID:v.TargetDeviceID, NodeID:v.NodeID,
+		ClientEventID: v.ClientEventID, Kind: v.Kind, Content: v.Content,
+		TargetDeviceID: v.TargetDeviceID, NodeID: v.NodeID,
 	}) && v.CreatedAt != "" && v.ExpiresAt != ""
 }
 
@@ -129,7 +136,7 @@ func (c *Client) ClipboardDelete(ctx context.Context, id uint64) error {
 	if id == 0 {
 		return errors.New("invalid clipboard item ID")
 	}
-	return c.json(ctx, http.MethodDelete, "/api/v1/clipboard/items/"+url.PathEscape(strconv.FormatUint(id, 10)), nil, nil)
+	return c.json(ctx, http.MethodDelete, "/api/v1/clipboard/items/" + url.PathEscape(strconv.FormatUint(id, 10)), nil, nil)
 }
 func (c *Client) ClipboardClear(ctx context.Context) error {
 	return c.json(ctx, http.MethodDelete, "/api/v1/clipboard/items", nil, nil)
@@ -160,7 +167,7 @@ func (c *Client) ClipboardEnrollSelf(ctx context.Context, deviceID, token string
 	}
 	defer resp.Body.Close()
 	var reply struct {
-		DeviceID  string `json:"device_id"`
+		DeviceID string `json:"device_id"`
 	}
 	if err := decodeResponse(resp, &reply); err != nil {
 		return err
@@ -218,5 +225,5 @@ func (c *Client) ClipboardRevokeDevice(ctx context.Context, id string) error {
 	if err != nil || parsed.String() != id {
 		return errors.New("invalid Clipboard recipient")
 	}
-	return c.json(ctx, http.MethodPost, "/api/v1/clipboard/devices/"+url.PathEscape(id)+"/revoke", nil, nil)
+	return c.json(ctx, http.MethodPost, "/api/v1/clipboard/devices/" + url.PathEscape(id) + "/revoke", nil, nil)
 }

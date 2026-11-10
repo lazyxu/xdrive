@@ -24,18 +24,22 @@ import (
 
 func TestClipboardValidationAcceptsPlaintextAndRejectsInvalidShapes(t *testing.T) {
 	good := clipboardWriteRequest{ClientEventID: uuid.NewString(), Kind: "text/plain", Content: "Hello from Clipboard"}
-	if err := validateClipboardWrite(good); err != nil { t.Fatal(err) }
+	if err := validateClipboardWrite(good); err != nil {
+		t.Fatal(err)
+	}
 	bad := []clipboardWriteRequest{
 		{ClientEventID: "not-an-event", Kind: good.Kind, Content: good.Content},
 		{ClientEventID: good.ClientEventID, Kind: "application/json", Content: good.Content},
 		{ClientEventID: good.ClientEventID, Kind: good.Kind},
-		{ClientEventID: good.ClientEventID, Kind: good.Kind, Content: strings.Repeat("x", clipboardMaxText+1)},
+		{ClientEventID: good.ClientEventID, Kind: good.Kind, Content: strings.Repeat("x", clipboardMaxText + 1)},
 		{ClientEventID: good.ClientEventID, Kind: good.Kind, Content: string([]byte{0xff})},
 		{ClientEventID: good.ClientEventID, Kind: good.Kind, Content: "asset:42", NodeID: 42},
 		{ClientEventID: good.ClientEventID, Kind: "image/x-xdrive-node-ref", Content: "asset:42", NodeID: 42},
 	}
 	for i, item := range bad {
-		if validateClipboardWrite(item) == nil { t.Fatalf("invalid plaintext case %d accepted", i) }
+		if validateClipboardWrite(item) == nil {
+			t.Fatalf("invalid plaintext case %d accepted", i)
+		}
 	}
 }
 
@@ -146,11 +150,11 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-			streamServer.URL+"/api/v1/clipboard/events?after=0", nil)
+			streamServer.URL + "/api/v1/clipboard/events?after=0", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		req.Header.Set("Authorization", "Bearer "+a)
+		req.Header.Set("Authorization", "Bearer " + a)
 		req.Header.Set("Accept", "text/event-stream")
 		response, err := streamServer.Client().Do(req)
 		if err != nil {
@@ -257,7 +261,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 			defer wg.Done()
 			body := payload(uuid.NewString(), content)
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/clipboard/items", strings.NewReader(body))
-			req.Header.Set("Authorization", "Bearer "+a)
+			req.Header.Set("Authorization", "Bearer " + a)
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
@@ -315,7 +319,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Model(&meta.User{}).Where("id = ?", ownerB.ID).
-		Update("session_version", ownerB.SessionVersion+1).Error; err != nil {
+		Update("session_version", ownerB.SessionVersion + 1).Error; err != nil {
 		t.Fatal(err)
 	}
 	request(t, router, http.MethodGet, "/api/v1/clipboard/items", b, nil, http.StatusUnauthorized)
@@ -336,7 +340,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		req.Header.Set("Authorization", "Bearer "+a)
+		req.Header.Set("Authorization", "Bearer " + a)
 		response, err := streamServer.Client().Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -357,7 +361,7 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 			t.Fatalf("Owner SSE handshake failed (sync=%v): %v", sawSync, err)
 		}
 		if err := db.Model(&meta.User{}).Where("id = ?", ownerA.ID).
-			Update("session_version", ownerA.SessionVersion+1).Error; err != nil {
+			Update("session_version", ownerA.SessionVersion + 1).Error; err != nil {
 			t.Fatal(err)
 		}
 		for scanner.Scan() {
