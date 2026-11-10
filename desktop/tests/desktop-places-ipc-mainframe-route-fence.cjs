@@ -58,6 +58,9 @@ function harness(){
     isDestroyed:()=>false}
   let opened=0
   const env={
+    // transpileModule emits a CommonJS module prologue in strict mode;
+    // supply its module-local exports rather than changing real IPC logic.
+    exports:{},
     desktopPlacesGuests:guests,agentState:state,
     xDriveResolveSecureBaiduMapTarget:server=>
       server===origin?{origin}:null,
