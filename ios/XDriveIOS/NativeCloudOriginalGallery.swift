@@ -1662,6 +1662,7 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
     let node: XDriveIOSNativeCloudOriginal
     // A full-screen Viewer must outrank even an already-composed tile.
     let viewerActive: Bool
+    let isTabActive: Bool
     @ObservedObject var model: XDriveIOSNativeCloudOriginalModel
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @State private var thumb: UIImage?
@@ -1698,10 +1699,12 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
         .accessibilityLabel(node.isLiveArchive
             ? "已备份的 Live ZIP：\(node.name)" : node.isVideo
             ? "已备份视频：\(node.name)" : "已备份照片：\(node.name)")
-        .task(id: "\(node.id)-\(node.revision)-\(viewerActive)") {
-            // Task-ID transition cancels this request even when fullScreenCover
-            // keeps the underlying LazyVGrid mounted.
-            guard !viewerActive, thumb == nil,
+        .task(id: "\(node.id)-\(node.revision)-\(viewerActive)-\(isTabActive)-\(model.thumbnailEpoch)") {
+            // Never fetch while another Tab is visible, nor reuse a reader
+            // retired on tab leave. A successful Owner recheck advances the
+            // thumbnailEpoch, retrying only still-missing thumbnails.
+            guard isTabActive, !viewerActive,
+                  model.matchesOwner(login.owner), thumb == nil,
                   node.isImage || node.isVideo else { return }
             do {
                 let image = try await model.thumbnail(node, login: login)
@@ -1713,9 +1716,10 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
             }
         }
         .onDisappear {
-            // Preserve an already decoded <=280px tile under Viewer; discard
-            // it on real navigation, while owner changes rebuild the wall.
-            if !viewerActive { thumb = nil }
+            // Preserve verified decoded pixels under Viewer or a Files tab
+            // cover; genuine active-tab scroll eviction still releases them.
+            // Node revision/Owner changes separately rebuild tile identity.
+            if !viewerActive && isTabActive { thumb = nil }
         }
     }
 }
@@ -1725,6 +1729,7 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
 struct XDriveIOSNativeCloudOriginalGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let confirmedOriginalUpdate: XDriveIOSNativePhotoBackupController.ConfirmedOriginalUpdate?
+    var isTabActive: Bool = true
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingGalleryHelp = false
@@ -1739,6 +1744,8 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
     // An OS BGTask can commit a new original without a foreground writer
     // notification. Revalidate once after returning from an inactive scene.
     @State private var needsForegroundReload = false
+    @State private var needsTabRevalidation = false
+    @State private var hasActivated = false
     @State private var scanTailVisible = false
     @State private var lastAutoScanOffset: Int?
     @State private var lastObservedOriginalCount = 0
@@ -1801,6 +1808,25 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
         return (target, window)
     }
 
+    // Only the first active source mount loads cold. When the Files tab covers
+    // a previously verified Original wall, revalidate its bounded first range
+    // instead of invalidating all rows before the Server replies.
+    private func activateIfNeeded() {
+        guard phase == .active, isTabActive, selected == nil else { return }
+        if needsForegroundReload {
+            needsForegroundReload = false
+            needsTabRevalidation = false
+            hasActivated = true
+            model.reload(login: login)
+        } else if !hasActivated {
+            hasActivated = true
+            model.reload(login: login)
+        } else if needsTabRevalidation {
+            needsTabRevalidation = false
+            model.revalidateCoveredTab(login: login)
+        }
+    }
+
     var body: some View {
         ScrollViewReader { returnScroll in
         GeometryReader { viewport in
@@ -1820,10 +1846,12 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 5)],
                     spacing: 9
                 ) {
+                    if model.matchesOwner(login.owner) {
                     ForEach(model.nodes) { node in
                         Button { openViewer(node) } label: {
                             XDriveIOSNativeCloudOriginalTile(
                                 node: node, viewerActive: selected != nil,
+                                isTabActive: isTabActive,
                                 model: model, login: login
                             )
                             // Reset @State thumbnail pixels if an in-place
@@ -1843,6 +1871,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                             }
                         }
                     }
+                    }
                 }
                 if !compactGallery {
                     Text("仅可见项目请求 Server 缩略图；若尚未生成则保留文件图标，不下载大体积原件填充缩略图。")
@@ -1851,7 +1880,13 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                 if model.busy { ProgressView("正在验证并读取云端目录…") }
                 if let error = model.error {
                     Text(error).foregroundStyle(.red)
-                    Button("重试") { model.loadNext(login: login) }
+                    Button("重试") {
+                        if model.coveredRetryRequired {
+                            model.revalidateCoveredTab(login: login)
+                        } else {
+                            model.loadNext(login: login)
+                        }
+                    }
                         .buttonStyle(.bordered)
                 }
                 if model.scanned < model.total && model.error == nil {
