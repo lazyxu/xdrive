@@ -39,7 +39,7 @@ for (const id of accepted) {
       // Preserve the four original mandatory arms AND forbid duplicate
       // entries; do not mistake additional real tests for a regression.
       if ((id === 96 || id === 141) && check.file === 'j') {
-        const matrix = [...source.matchAll(/^\\s*source:\\s*\\[([^\\]\\r\\n]+)\\]\\s*$/gm)]
+        const matrix = [...source.matchAll(/^\s*source:\s*\[([^\r\n\]]+)\]\s*$/gm)]
         assert.equal(matrix.length, 1, 'exactly one native Simulator source matrix')
         const arms = matrix[0][1].split(',').map(name => name.trim())
         const required = [
