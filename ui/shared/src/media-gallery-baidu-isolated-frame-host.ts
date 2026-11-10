@@ -49,6 +49,9 @@ export interface XDriveBaiduIsolatedFrameOptions<T> {
   onViewport?: (bounds: XDriveBaiduIsolatedBounds) => void
   onReady?: () => void
   onMapReady?: () => void
+  /** A once-ready Child navigated; revoke Parent presentation until a new
+   * exact-nonce ready + authenticated Owner Range completes. */
+  onMapReset?: () => void
   onMapFailure?: (reason?: XDriveBaiduIsolatedFrameFailureReason) => void
   /** Gallery-only callback: anonymous keys are rebound to fresh authorized
    * Owner selections, without giving the Child thumbnails or Node IDs. */
@@ -247,6 +250,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
   }
   const onLoad = () => {
     if (!alive || !boundary) return
+    const previouslyReady = ready
     // Reload MUST rotate the challenge, not merely clear selections: a child
     // script may have recorded the old nonce and try replaying old messages.
     const freshNonce = randomHex(browser.crypto, 32)
@@ -264,6 +268,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     gestureCounts.clear()
     if (!published) { detach(); return }
     post(published) // bounded session nonce bootstrap, ZERO Owner data
+    if (previouslyReady) options.onMapReset?.()
     armHandshakeTimer()
   }
   const onMessage = (raw: MessageEvent) => {

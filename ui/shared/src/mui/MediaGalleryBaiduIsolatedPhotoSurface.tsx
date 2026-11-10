@@ -582,6 +582,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     // is still converting the Owner's GPS. Preserve worldwide discovery until
     // the first real derived cell appears, unless a user has changed the SDK
     // camera or this map is restoring an explicit Viewer camera.
+    let lastKnownCamera = returnCamera
     let cameraTouched = Boolean(returnCamera)
     let initialWorldEmpty = false
     setPhase('loading')
@@ -740,7 +741,23 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         // the two SDK Hosts' bounded gesture-only projections.
         cancel(Boolean(keepVisual))
       },
-      onCamera:(camera:XDriveBaiduNativeCameraSnapshot) => { if(!lifetime.signal.aborted) cameraUpdate.current?.(camera) },
+      onCamera:(camera:XDriveBaiduNativeCameraSnapshot) => {
+        if (lifetime.signal.aborted) return
+        // Retain only a validated, already-BD09 camera hint across a Child
+        // document reload. The new Owner /cells still reauthorizes all pins.
+        if (xDriveValidBaiduNativeCameraSnapshot(camera)) {
+          lastKnownCamera = {coordinate_space:'bd09ll',
+            latitude:camera.latitude,longitude:camera.longitude,zoom:camera.zoom}
+        }
+        cameraUpdate.current?.(camera)
+      },
+      onMapReset:() => {
+        if (lifetime.signal.aborted || failed) return
+        returnCamera = lastKnownCamera ? {...lastKnownCamera} : null
+        cancel()
+        setPhase('loading')
+        onReady(false)
+      },
       onMapReady:() => {
         if(lifetime.signal.aborted)return
         if (returnCamera) {

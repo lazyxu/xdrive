@@ -487,3 +487,35 @@ test('missing trusted Child handshake expires once; repeated reload, stale packe
   }
   assert.equal(tasks.size, 0, 'disposing all Host generations clears all timers')
 })
+
+test('Child document reload revokes already-ready Parent photo authority until a fresh handshake', () => {
+  const f = fixture()
+  const resets = []
+  const ready = []
+  f.options.onMapReset = () => resets.push('reset')
+  f.options.onReady = () => ready.push('ready')
+  const frame = xDriveMountBaiduIsolatedFrame(f.options)
+  assert.ok(frame)
+  f.childListeners.get('load')()
+  assert.deepEqual(resets, [], 'initial Child load is not a session reset')
+  f.emit('ready')
+  f.emit('map-ready')
+  assert.deepEqual(ready, ['ready'])
+  f.childListeners.get('load')()
+  assert.deepEqual(resets, ['reset'], 'authenticated Child reload revokes prior map pixels')
+  f.emit('ready')
+  assert.deepEqual(ready, ['ready'], 'old nonce cannot reactivate a reloaded Child')
+  const freshChallenge = f.seen.at(-1).payload
+  f.listeners.get('message')({
+    origin:f.options.childOrigin,source:f.frame.contentWindow,
+    data:{version:1,generation:freshChallenge.generation,
+      nonce:freshChallenge.nonce,kind:'ready'},
+  })
+  assert.deepEqual(ready, ['ready','ready'], 'only fresh exact-generation ready can reenter')
+  frame.dispose()
+  const photoSurface = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  assert.match(photoSurface, /onMapReset:\(\) => \{[\s\S]*?cancel\(\)[\s\S]*?setPhase\('loading'\)[\s\S]*?onReady\(false\)/)
+  assert.match(photoSurface, /xDriveValidBaiduNativeCameraSnapshot\(camera\)/)
+  assert.match(photoSurface, /returnCamera = lastKnownCamera \? \{\.\.\.lastKnownCamera\} : null/)
+})
