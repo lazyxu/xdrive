@@ -14,7 +14,8 @@ import (
 // check before a *user-requested* same-Server-Commit native installation. An
 // authenticated Server may offer cache bytes but cannot invent the SHA-256
 // trust root. The published immutable Release must agree on ref, size,
-// filename, and digest before any package may become executable.
+// filename, digest, actual manifest bytes and the full published asset inventory
+// before any package may become executable.
 func VerifyCurrentBundlePublisher(ctx context.Context, commit string, item ReleaseBundleArtifact) error {
 	httpClient := &http.Client{
 		Timeout: 15 * time.Second,
@@ -82,11 +83,7 @@ func verifyCurrentBundlePublisher(
 		Draft      bool   `json:"draft"`
 		Prerelease bool   `json:"prerelease"`
 		Immutable  bool   `json:"immutable"`
-		Assets     []struct {
-			Name   string `json:"name"`
-			Size   int64  `json:"size"`
-			Digest string `json:"digest"`
-		} `json:"assets"`
+		Assets     []publishedBundleAsset `json:"assets"`
 	}
 	if err := fetch("/repos/lazyxu/xdrive/releases/tags/"+tag, &release); err != nil {
 		return err
@@ -96,9 +93,11 @@ func verifyCurrentBundlePublisher(
 		return fmt.Errorf("Bundle Release is unpublished, mutable or has invalid identity")
 	}
 	matches, manifestCount := 0, 0
+	var manifestAsset publishedBundleAsset
 	for _, asset := range release.Assets {
 		if asset.Name == "release-bundle.json" {
 			manifestCount++
+			manifestAsset = asset
 		}
 		if asset.Name == item.Filename {
 			matches++
@@ -110,5 +109,6 @@ func verifyCurrentBundlePublisher(
 	if matches != 1 || manifestCount != 1 {
 		return fmt.Errorf("immutable Release is missing exactly one requested package or manifest")
 	}
-	return nil
+	return verifyPublishedCurrentBundleManifest(ctx, apiBase, httpClient, commit,
+		item, manifestAsset, release.Assets)
 }
