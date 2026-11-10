@@ -105,10 +105,19 @@ test('private-mode denial and malformed storage are safe; framing controls only 
   })
   const contain=f.xDriveMediaGalleryFramingStyles('contain')
   const crop=f.xDriveMediaGalleryFramingStyles('crop')
+  const pinchContain=f.xDriveMediaGalleryFramingStyles('contain',true)
+  const pinchCrop=f.xDriveMediaGalleryFramingStyles('crop',true)
   const tiles='& [data-xdrive-media-tile] img'
   const progress='& [data-xdrive-media-tile] [data-xdrive-media-loading-progress]'
   assert.equal(contain[tiles].objectFit,'contain')
   assert.equal(crop[tiles].objectFit,'cover')
+  // On mobile the pinch preview must coexist with object-fit and the
+  // independent progress mask. Prior shallow MUI sx spreads erased this.
+  assert.equal(pinchContain[tiles].objectFit,'contain')
+  assert.equal(pinchCrop[tiles].objectFit,'cover')
+  assert.equal(pinchContain[tiles].transform,
+    'scale(var(--xdrive-gallery-pinch-preview, 1))')
+  assert.equal(pinchContain[progress].maskSize,'contain')
   assert.equal(contain[progress].maskSize,'contain')
   assert.equal(crop[progress].WebkitMaskSize,'cover')
   assert.deepEqual(Object.keys(contain).sort(),[tiles,progress].sort())
@@ -128,7 +137,8 @@ test('Gallery and Places share responsive crop/contain controls and visual host'
   assert.match(gallery,/<XDriveMediaGalleryPhotoWall surface="gallery"\s+framing=\{aspectMode\}/)
   assert.match(places,/<XDriveMediaGalleryPhotoWall surface="places"\s+framing=\{framing\}/)
   assert.match(places,/<XDriveMediaGalleryPhotoWall surface="places" framing=\{framing\}>/)
-  assert.match(host,/framing \? xDriveMediaGalleryFramingStyles\(framing\) : \{\}/)
+  assert.match(host,/framing \? xDriveMediaGalleryFramingStyles\(framing, Boolean\(pinch\)\)/)
+  assert.doesNotMatch(host,/\.\.\.\(pinch \? \{\s*'& \[data-xdrive-media-tile\] img'/)
   assert.match(host,/data-xdrive-shared-photo-wall-framing=\{framing\}/)
 })
 
