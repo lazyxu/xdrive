@@ -53,6 +53,17 @@ A/B/C must pass exact-HEAD CI and final-gate, but **none proves D**. A missing D
 4. Include HEIC, larger video, paired Live Photo, iCloud-only and real locked/unlocked BG windows. No assumed background execution; mark OS-not-admitted as observation, not a successful run.
 5. Fetch from the actual NAS/target and independently hash, decode and play originals, then report measured library scan and Focused behavior at 10k and 100k sizes if a device fixture is available.
 
+### Mandatory candidate native UI admission
+
+`.github/workflows/ios-b9-release-crash-repro.yml` must be triggered by
+changes to the MVP policy acceptance fixture, native backup screen, its PhotoKit
+queue/focused policies, and the native backup scenario tests themselves. The
+`candidate` matrix executes both real Xcode Simulator backup scenarios; the
+historic `release-b9` baseline is informational only. Do not treat successful
+unsigned IPA compilation or pure Swift policy assertions as passing native
+navigation. **Neither Simulator nor unsigned IPA can replace signed-device
+PhotoKit/iCloud/NAS acceptance.**
+
 ### Final-gate rule
 
 Keep the PR Draft until **the new exact HEAD** passes all applicable CI, unsigned IPA build, native Simulator and Final Gate. Real signed iPhone / NAS D evidence must remain `NOT RUN` in #4249 until performed; do not close #4249 on A/B/C alone.

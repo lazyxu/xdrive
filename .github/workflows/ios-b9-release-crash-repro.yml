@@ -6,6 +6,15 @@ on:
     paths:
       - '.github/workflows/ios-b9-release-crash-repro.yml'
       - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
+      # Changes to the Photos incremental MVP policy or native backup UI
+      # must run real candidate iPhone Simulator navigation, not only IPA.
+      - 'ios/UITests/XDriveIOSPhotoBackupMVPScenarioUITests.swift'
+      - 'ios/tests/PhotoBackupMVPAcceptanceChecks.swift'
+      - 'ios/XDriveIOS/PhotoAutoSchedulePolicy.swift'
+      - 'ios/XDriveIOS/PhotoBackupChangeQueueStore.swift'
+      - 'ios/XDriveIOS/PhotoFocusedBackupPolicy.swift'
+      - 'ios/XDriveIOS/NativePhotoBackupScreen.swift'
+      - 'ios/XDriveIOS/ForegroundPhotoBackupMVP.swift'
       - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
       - 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'
