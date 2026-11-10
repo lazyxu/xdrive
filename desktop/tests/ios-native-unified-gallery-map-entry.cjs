@@ -9,6 +9,7 @@ const gallery = read('ios/XDriveIOS/NativeUnifiedPhotoGallery.swift')
 const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 const map = read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
 const mapPolicy = read('ios/XDriveIOS/NativePhotoMapPolicy.swift')
+const nativeUITests = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
 
 test('default unified Gallery filter sheet exposes actual existing native map entry', () => {
   assert.match(gallery, /var onShowMap: \(\(XDriveIOSNativePhotoMapCaptureRange\?\) -> Void\)\? = nil/)
@@ -79,4 +80,15 @@ test('late map requests are rejected after source change, Owner switch or scene 
   assert.match(gallery, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?openMapAfterFilterDismiss = false/)
   assert.match(dashboard, /unifiedMapCaptureRange = nil/)
   assert.match(map, /guard source == \.cloud, let expectedOwner/)
+})
+
+test('real Simulator Gallery↔Map route is covered without assuming synthetic PhotoKit authorization', () => {
+  assert.match(nativeUITests, /func testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank\(/)
+  assert.match(nativeUITests, /func testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership\(/)
+  assert.match(nativeUITests, /target\("native-ios-unified-gallery-show-map", in: app\)/)
+  assert.match(nativeUITests, /target\("native-ios-map-source-selector", in: app\)/)
+  assert.match(nativeUITests, /target\("native-ios-map-dismiss", in: app\)/)
+  assert.match(nativeUITests, /assertNotSolidScreen\(app, "Unified Gallery after modal MapKit return"\)/)
+  assert.match(nativeUITests, /XCTAssertFalse\(open\.isEnabled/)
+  assert.match(nativeUITests, /never pretend this UI-navigation smoke proves PhotoKit Full Access/)
 })
