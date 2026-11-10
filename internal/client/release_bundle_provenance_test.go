@@ -117,7 +117,7 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 						refSHA = strings.Repeat("c", 40)
 					}
 					_ = json.NewEncoder(w).Encode(map[string]any{
-						"ref": "refs/tags/" + tag,
+						"ref":    "refs/tags/" + tag,
 						"object": map[string]string{"type": "commit", "sha": refSHA},
 					})
 				case "/repos/lazyxu/xdrive/releases/tags/" + tag:
@@ -185,9 +185,9 @@ func TestPublishedBundleManifestRedirectPinsOnlyPublicGitHubAssetCDN(t *testing.
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		name string
+		name   string
 		target string
-		ok bool
+		ok     bool
 	}{
 		{"GitHub release asset CDN", "https://release-assets.githubusercontent.com/asset", true},
 		{"GitHub object CDN", "https://objects.githubusercontent.com/asset", true},
