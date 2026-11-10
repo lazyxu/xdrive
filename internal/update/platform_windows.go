@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,6 +103,15 @@ func installDownloaded(_ context.Context, path string, result Result) (string, e
 		return "", fmt.Errorf("installer changed size during verification")
 	}
 	digest := hex.EncodeToString(h.Sum(nil))
+	if result.PersonalUnsigned {
+		if result.Channel != ChannelMaster || result.Asset.Name != platformAssetName() ||
+			len(result.Commit) != 40 || strings.ToLower(result.Commit) != result.Commit {
+			return "", fmt.Errorf("personal unsigned installer requires explicit exact-Commit Windows master selection")
+		}
+		if _, err := hex.DecodeString(result.Commit); err != nil {
+			return "", fmt.Errorf("invalid personal unsigned source Commit: %w", err)
+		}
+	}
 	if expected, has := assetSHA256(result.Asset); has && expected != digest {
 		return "", fmt.Errorf("installer differs from trusted release SHA-256")
 	}
@@ -116,8 +126,7 @@ func installDownloaded(_ context.Context, path string, result Result) (string, e
 		return "", fmt.Errorf("prepare Windows update transaction: %w", err)
 	}
 
-	cmd := exec.Command(
-		"powershell.exe",
+	args := []string{
 		"-NoProfile",
 		"-NonInteractive",
 		"-ExecutionPolicy", "Bypass",
@@ -131,7 +140,14 @@ func installDownloaded(_ context.Context, path string, result Result) (string, e
 		"-LegacyCleanupScript", cleanupPath,
 		"-StatusPath", statusPath,
 		"-LogPath", logPath,
-	)
+	}
+	if len(result.Commit) == 40 {
+		args = append(args, "-ExpectedCommit", result.Commit)
+	}
+	if result.PersonalUnsigned {
+		args = append(args, "-PersonalUnsigned")
+	}
+	cmd := exec.Command("powershell.exe", args...)
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("start Windows update transaction: %w", err)
 	}
