@@ -81,6 +81,7 @@ func verifyCurrentBundlePublisher(
 		TagName    string `json:"tag_name"`
 		Draft      bool   `json:"draft"`
 		Prerelease bool   `json:"prerelease"`
+		Immutable  bool   `json:"immutable"`
 		Assets     []struct {
 			Name   string `json:"name"`
 			Size   int64  `json:"size"`
@@ -90,9 +91,9 @@ func verifyCurrentBundlePublisher(
 	if err := fetch("/repos/lazyxu/xdrive/releases/tags/"+tag, &release); err != nil {
 		return err
 	}
-	if release.TagName != tag || release.Draft || !release.Prerelease ||
+	if release.TagName != tag || release.Draft || !release.Prerelease || !release.Immutable ||
 		len(release.Assets) < 1 || len(release.Assets) > 31 {
-		return fmt.Errorf("invalid immutable Bundle Release identity")
+		return fmt.Errorf("Bundle Release is unpublished, mutable or has invalid identity")
 	}
 	matches, manifestCount := 0, 0
 	for _, asset := range release.Assets {
