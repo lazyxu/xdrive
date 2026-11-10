@@ -326,6 +326,7 @@ struct XDriveIOSNativeFilesViewer: View {
                     ProgressView("正在读取当前文件…")
                         .tint(expectsVideoCanvas ? .white : .accentColor)
                         .foregroundStyle(expectsVideoCanvas ? Color.white : Color.secondary)
+                        .accessibilityIdentifier("native-ios-files-viewer-pending")
                 } else {
                     Text("文件预览不可用").foregroundStyle(.secondary)
                 }
@@ -435,6 +436,11 @@ struct XDriveIOSNativeFilesViewer: View {
                 retire()
             } else if !isClosing &&
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner) {
+                // .task(id: attempt) starts on a subsequent SwiftUI update.
+                // Clear stale failures now, so foreground return never paints
+                // the old error or the "preview unavailable" fallback.
+                failure = nil
+                loading = true
                 attempt = UUID()
             } else {
                 close()
@@ -645,6 +651,11 @@ struct XDriveIOSNativeFilesViewer: View {
         guard !isClosing, authorized, onNavigate(next) else { return }
         retire()
         active = next
+        // .task(id: attempt) runs after this synchronous view transaction.
+        // Never expose a "preview unavailable" frame or the old file's error
+        // between authenticated Next/Previous and the new preview attempt.
+        failure = nil
+        loading = true
         attempt = UUID()
     }
 
