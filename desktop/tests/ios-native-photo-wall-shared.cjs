@@ -28,6 +28,26 @@ test('one adaptive SwiftUI photo grid is wired into local, album, location and c
   assert.doesNotMatch(shared, /PHAsset|URLSession|UploadSession|UserDefaults|fetchAssets|verifiedAuthorization|accessToken|PHPhotoLibrary/)
 })
 
+test('one SwiftUI gesture policy handles Owner cloud Gallery and map clusters', () => {
+  assert.match(shared, /struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier/)
+  assert.match(shared, /@Binding var density: XDriveIOSNativePhotoWallDensity/)
+  assert.match(shared, /let enabled: Bool/)
+  assert.match(shared, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)
+  assert.match(shared, /guard enabled else \{ return \}/)
+  assert.match(shared, /density = density\.applyingPinch\(scale\)/)
+  assert.match(shared, /func xdrivePhotoWallPinch\(/)
+  assert.match(cluster, /\.xdrivePhotoWallPinch\(\s*density: \$wallDensity,\s*enabled: activeOwner && !busy && viewing == nil/)
+  assert.match(cloud, /\.xdrivePhotoWallPinch\(\s*density: \$wallDensity,[\s\S]*?enabled: phase == \.active && selected == nil && !model\.busy &&\s*login\.owner != nil/)
+  assert.doesNotMatch(cluster, /MagnificationGesture\(minimumScaleDelta:/)
+  const cloudWall = cloud.slice(cloud.indexOf('struct XDriveIOSNativeServerMediaWall: View'))
+  assert.doesNotMatch(cloudWall, /MagnificationGesture\(minimumScaleDelta:/)
+  // Geometry-only code cannot own photo membership, permissions or transfers.
+  const modifier = shared.slice(shared.indexOf('struct XDriveIOSNativePhotoWallPinchModifier'))
+  assert.doesNotMatch(modifier, /URLSession|PHAsset|PHPhotoLibrary|UploadSession|verifiedAuthorization|\.task\(/)
+  assert.match(cluster, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selection\.owner\)/)
+  assert.match(cloud, /model\.suspendForViewer\(\)/)
+})
+
 test('local GPS photos reuse the canonical album square thumbnail without changing data source', () => {
   const localPage = map.slice(map.indexOf('private struct XDriveIOSMapPhotoAlbum: View'),
     map.indexOf('enum XDriveIOSNativeLocalMapScope'))
