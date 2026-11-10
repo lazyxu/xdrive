@@ -70,6 +70,51 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         XCTAssertGreaterThan(unique.count, 8, "Uniform/blank screen at \(route)")
     }
 
+    private func openLocalPhotoSource(_ app: XCUIApplication) {
+        tap("native-ios-gallery-source-menu", app: app)
+        let local = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(local.waitForExistence(timeout: 15),
+                      "Native PhotoKit source was missing from the Gallery menu")
+        local.tap()
+        XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
+            .waitForExistence(timeout: 15), "Local PhotoKit source did not mount")
+    }
+
+    func testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels() {
+        let app = launch()
+        openLocalPhotoSource(app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Local PhotoKit initial")
+        for index in 0..<3 {
+            tap("native-ios-tab-files", app: app)
+            assertFiles(app)
+            assertVisiblePixels(app, route: "Files after local Photos \\(index)")
+            tap("native-ios-tab-gallery", app: app)
+            assertGallery(app)
+            XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
+                .waitForExistence(timeout: 15), "Local source was reset by Files")
+            assertVisiblePixels(app, route: "Local Photos after Files \\(index)")
+        }
+    }
+
+    func testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank() {
+        let app = launch()
+        openLocalPhotoSource(app)
+        assertVisiblePixels(app, route: "Local Photos before background")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Local Photos after foreground")
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
+            .waitForExistence(timeout: 15))
+        assertVisiblePixels(app, route: "Local Photos after foreground and Files")
+    }
+
     func testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels() {
         let app = launch()
         for index in 0..<4 {
