@@ -30,7 +30,7 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
   const [error, setError] = useState('')
   const [retrying, setRetrying] = useState(false)
   const [installing, setInstalling] = useState(false)
-  const [pendingInstall, setPendingInstall] = useState<{ commit: string; filename: string } | null>(null)
+  const [pendingInstall, setPendingInstall] = useState<{ commit: string; filename: string; personalUnsigned: boolean } | null>(null)
   const refresh = useCallback(async () => {
     if (!port) return
     try {
@@ -48,7 +48,7 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
     return () => clearInterval(ticker)
   }, [port, refresh])
   const retry = async () => {
-    if (!port || retrying) return
+    if (!port?.retry || retrying) return
     setRetrying(true)
     try {
       await port.retry()
@@ -70,8 +70,8 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
               {states[state?.state || 'unavailable']}。客户端可独立升级，不需要与服务端保持同一版本。
             </Typography>
           </Box>
-          <XDriveActionButton disabled={retrying || state?.state === 'syncing' || state?.state === 'paused_for_server'}
-            loading={retrying} onClick={() => { void retry() }}>重试缓存</XDriveActionButton>
+          {port.retry ? <XDriveActionButton disabled={retrying || state?.state === 'syncing' || state?.state === 'paused_for_server'}
+            loading={retrying} onClick={() => { void retry() }}>重试缓存</XDriveActionButton> : null}
         </Stack>
         {state?.commit ? <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
           完整 Git Commit：{state.commit}
@@ -92,6 +92,8 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
         ) : null}
         {(state?.artifacts ?? []).map((artifact) => {
           const sources = xDriveReleaseBundleDownloadSources(artifact)
+          const personalUnsigned = port.platform === 'windows' && artifact.platform === 'windows' &&
+            state?.channel === 'master' && artifact.install_mode === 'manual_test_only'
           return <Box key={artifact.filename} sx={{ borderTop: 1, borderColor: 'divider', pt: 1 }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1}>
               <Typography variant="body2">{labels[artifact.platform] || artifact.platform} · {artifact.filename}</Typography>
@@ -105,16 +107,18 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
             </Typography>
             {artifact.install_mode === 'manual_test_only' ? (
               <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
-                未签名测试包：不能直接安装或作为原生升级包；请使用平台签名流程完成测试。
+                {personalUnsigned
+                  ? '私人 Windows Snapshot：没有 Authenticode 签名。只在本人确认后使用完整 Commit 和 SHA-256 校验执行，Windows 可能提示未知发布者。'
+                  : '未签名测试包：不能直接安装或作为原生升级包；请使用平台签名流程完成测试。'}
               </Typography>
             ) : null}
             <Stack direction="row" spacing={2} flexWrap="wrap">
               {port.installCurrent && port.platform === artifact.platform &&
                 state?.commit === artifact.build_commit &&
-                artifact.install_mode === 'manual' && sources.length > 0 ? (
+                (artifact.install_mode === 'manual' || personalUnsigned) && sources.length > 0 ? (
                 <XDriveActionButton intent="primary" compact disabled={installing}
-                  onClick={() => setPendingInstall({ commit: artifact.build_commit, filename: artifact.filename })}>
-                  自愿升级此设备到当前 Server Commit
+                  onClick={() => setPendingInstall({ commit: artifact.build_commit, filename: artifact.filename, personalUnsigned })}>
+                  {personalUnsigned ? '安装私人未签名 Windows 版本（自愿）' : '自愿升级此设备到当前 Server Commit'}
                 </XDriveActionButton>
               ) : null}
               {artifact.cached && port.downloadCached ? (
@@ -141,8 +145,10 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
       </Stack>
       <XDriveConfirmDialog
         open={pendingInstall !== null}
-        title="确认将本机客户端升级到 Server 当前 Commit？"
-        description={`仅升级当前设备，不会强制其他客户端升级。目标 Commit：${pendingInstall?.commit ?? '—'}。将独立校验公开发布的 Commit、SHA-256 与操作系统安装包签名。`}
+        title={pendingInstall?.personalUnsigned ? '确认安装未经签名的个人 Windows 构建？' : '确认将本机客户端升级到 Server 当前 Commit？'}
+        description={pendingInstall?.personalUnsigned
+          ? `仅供个人使用：没有 Authenticode 发布者签名，风险高于正式签名发行。目标 Commit：${pendingInstall.commit}。将独立核对 GitHub Bundle、完整 Commit、文件大小、SHA-256，安装后核对实际 Commit；仅更新本机。`
+          : `仅升级当前设备，不会强制其他客户端升级。目标 Commit：${pendingInstall?.commit ?? '—'}。将独立校验公开发布的 Commit、SHA-256 与操作系统安装包签名。`}
         confirmLabel="验证并安装"
         confirmIntent="warning"
         loading={installing}
@@ -155,7 +161,7 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
             return
           }
           setInstalling(true)
-          void port.installCurrent(pendingInstall.commit, pendingInstall.filename)
+          void port.installCurrent(pendingInstall.commit, pendingInstall.filename, pendingInstall.personalUnsigned)
             .then(() => { setPendingInstall(null); setError('已提交本机更新，等待安装器完成版本与健康检查。') })
             .catch((reason: unknown) => {
               setError(reason instanceof Error ? reason.message : '当前 Server 版本安装失败。')
