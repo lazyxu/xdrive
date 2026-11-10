@@ -59,7 +59,7 @@ func TestIOSPhotoManagedOriginalHTTPResumeFinalizeCASReadback(t *testing.T) {
 		t.Fatal(err)
 	}
 	headers := map[string]string{
-		"X-XDrive-Device-ID": device.ID,
+		"X-XDrive-Device-ID":    device.ID,
 		"X-XDrive-Device-Token": secret,
 	}
 	encode := func(value any) *bytes.Reader {
@@ -75,7 +75,7 @@ func TestIOSPhotoManagedOriginalHTTPResumeFinalizeCASReadback(t *testing.T) {
 		encode(map[string]any{"name": "iPhone 原件"}),
 		http.StatusCreated, headers)
 	var target struct {
-		SourceID uint64 `json:"source_id"`
+		SourceID     uint64 `json:"source_id"`
 		TargetNodeID uint64 `json:"target_node_id"`
 	}
 	if err := json.Unmarshal(destination.Body.Bytes(), &target); err != nil {
@@ -101,20 +101,20 @@ func TestIOSPhotoManagedOriginalHTTPResumeFinalizeCASReadback(t *testing.T) {
 	name := "IMG-xios-0123456789abcdef01234567-0123456789ab.heic"
 	resumeKey := "ios_" + strings.Repeat("c", 64)
 	identity := map[string]any{
-		"parent_id": target.TargetNodeID,
-		"name": name,
-		"size": len(content),
+		"parent_id":  target.TargetNodeID,
+		"name":       name,
+		"size":       len(content),
 		"chunk_size": defaultUploadChunkSize,
-		"sha256": fullHash,
+		"sha256":     fullHash,
 		"resume_key": resumeKey,
 	}
 	createBody := map[string]any{
-		"parent_id": target.TargetNodeID,
-		"name": name,
-		"size": len(content),
-		"chunk_size": defaultUploadChunkSize,
-		"sha256": fullHash,
-		"resume_key": resumeKey,
+		"parent_id":       target.TargetNodeID,
+		"name":            name,
+		"size":            len(content),
+		"chunk_size":      defaultUploadChunkSize,
+		"sha256":          fullHash,
+		"resume_key":      resumeKey,
 		"conflict_policy": meta.UploadConflictPolicyFail,
 	}
 	path := "/api/v1/ios/photos/managed/uploads"
@@ -160,10 +160,10 @@ func TestIOSPhotoManagedOriginalHTTPResumeFinalizeCASReadback(t *testing.T) {
 	chunk := func(index int, data []byte, expected int) {
 		t.Helper()
 		h := map[string]string{
-			"X-XDrive-Device-ID": device.ID,
+			"X-XDrive-Device-ID":    device.ID,
 			"X-XDrive-Device-Token": secret,
-			"Content-Type": "application/octet-stream",
-			"X-Chunk-SHA256": digest(data),
+			"Content-Type":          "application/octet-stream",
+			"X-Chunk-SHA256":        digest(data),
 		}
 		requestWithHeaders(t, router, http.MethodPut,
 			fmt.Sprintf("%s/%s/chunks/%d", path, session.ID, index),
@@ -195,11 +195,11 @@ func TestIOSPhotoManagedOriginalHTTPResumeFinalizeCASReadback(t *testing.T) {
 	receipt := requestWithHeaders(t, router, http.MethodGet,
 		receiptPath, ownerToken, nil, http.StatusOK, headers)
 	var current struct {
-		ID uint64 `json:"id"`
+		ID       uint64 `json:"id"`
 		ParentID uint64 `json:"parent_id"`
-		Name string `json:"name"`
-		Size int64 `json:"size"`
-		SHA256 string `json:"sha256"`
+		Name     string `json:"name"`
+		Size     int64  `json:"size"`
+		SHA256   string `json:"sha256"`
 		Revision uint64 `json:"revision"`
 	}
 	if err := json.Unmarshal(receipt.Body.Bytes(), &current); err != nil {
