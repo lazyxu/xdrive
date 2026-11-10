@@ -91,7 +91,7 @@ test('seven real XCUITest denial and return cases are included, not only source 
 test('frame watcher remains bounded to active test case and tap, not stale next test', () => {
   assert.match(watcher, /TAP_FRAME_OFFSETS_SECONDS = \(0\.15, 0\.55\)/)
   assert.match(watcher, /if key not in active:\s*continue/)
-  assert.match(watcher, /if count < 3:/)
+  assert.match(watcher, /if \(minimal and count == 1\) or \(not minimal and count in TAP_CAPTURE_NUMBERS\):/)
   assert.match(watcher, /"capture_mode": "tap-adjacent"/)
 })
 
@@ -132,7 +132,7 @@ test('case-scoped denial screenshots never outlive their XCTest or fabricate FPS
   assert.match(watcher, /FRAME_OFFSETS_SECONDS = \(0\.5, 1\.5, 3\.5\)/)
   assert.match(watcher, /TAP_FRAME_OFFSETS_SECONDS = \(0\.15, 0\.55\)/)
   assert.match(watcher, /if key not in active:\s*continue/)
-  assert.match(watcher, /if count < 3:/)
+  assert.match(watcher, /if \(minimal and count == 1\) or \(not minimal and count in TAP_CAPTURE_NUMBERS\):/)
   assert.match(watcher, /"capture_mode": "tap-adjacent"/)
   assert.doesNotMatch(ui, /IOS_NATIVE_.*FPS=60|IOS_NATIVE_.*ZERO_FLICKER_PASS/)
 })

@@ -83,7 +83,7 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   const originals = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
   assert.match(app, /case local, albums, cloud, originals, map/)
   assert.match(app, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil,\s*onFocusChange:/)
-  assert.match(app, /XDriveIOSNativeCloudOriginalGallery\(\s*login: login,\s*confirmedOriginalUpdate: backup\.confirmedOriginalUpdate\s*\)/)
+  assert.match(app, /XDriveIOSNativeCloudOriginalGallery\(\s*login: login,\s*confirmedOriginalUpdate: backup\.confirmedOriginalUpdate,\s*isTabActive: tab == \.gallery\s*\)/)
   assert.match(originals, /\.onChange\(of: confirmedOriginalUpdate\) \{ update in/)
   assert.match(originals, /XDriveIOSNativePhotoOwnerScope\.matches\(login.owner, update.owner\)/)
   assert.match(app, /case \.originals:\s*openGallery\(\.originals\)/)

@@ -55,7 +55,7 @@ test('changing density never changes PhotoKit identity, backup scans or UI item 
   assert.doesNotMatch(page, /task\(id:.*density/)
   assert.match(page, /let count = try await reader\.start\(atOffset: offset, mediaFilter: mediaFilter\)/)
   assert.match(page, /loaded\.startOffset == offset/)
-  assert.match(page, /\.onDisappear \{[\s\S]*?let verifiedEpoch = retainedGeneration[\s\S]*?if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*\}/)
+  assert.match(page, /\.onDisappear \{[\s\S]*?let verifiedEpoch = retainedGeneration[\s\S]*?if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*clearBadgeProof\(\)\s*\}/)
   // Page cache is metadata-only, one 64-slot window, and cannot be reused
   // after a changed PhotoKit generation/permission/total.
   assert.match(page, /page\?\.totalAccessibleAssets == expectedTotal/)
