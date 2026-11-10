@@ -17,10 +17,12 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 		wrongCommit bool
 		wrongDigest bool
 		missingFile bool
+		mutableRelease bool
 		redirect    bool
 		wantError   bool
 	}{
 		{name: "exact verified package"},
+		{name: "mutable release must fail closed", mutableRelease: true, wantError: true},
 		{name: "cross commit ref", wrongCommit: true, wantError: true},
 		{name: "altered asset hash", wrongDigest: true, wantError: true},
 		{name: "missing package", missingFile: true, wantError: true},
@@ -58,7 +60,8 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 						})
 					}
 					_ = json.NewEncoder(w).Encode(map[string]any{
-						"tag_name": tag, "draft": false, "prerelease": true, "assets": assets,
+						"tag_name": tag, "draft": false, "prerelease": true,
+						"immutable": !tc.mutableRelease, "assets": assets,
 					})
 				default:
 					http.NotFound(w, r)
