@@ -43,3 +43,8 @@ test('a covered or resumed page never starts an unbounded backlog scan', () => {
   assert.match(wall, /\.task\(id: .*visible.*displayActive.*retry/)
   assert.match(wall, /await readVisibleQueueBadges\(\)/)
 })
+
+test('cancelled queue reads preserve covered verified badges but never cross a revoked Owner', () => {
+  assert.match(read, /catch is CancellationError \{[\s\S]*?badgeReadEpoch == epoch &&[\s\S]*?!retainWhileCovered[\s\S]*?matches\(login.owner, owner\)/)
+  assert.match(read, /\} catch \{\s*if badgeReadEpoch == epoch \{\s*queueBadges = \[:\]\s*queueHistoryCurrent = false/)
+})
