@@ -25,7 +25,9 @@ The standalone Child sends one of the following finite reasons through the exist
 
 | Safe stage | Meaning |
 | --- | --- |
-| `session_unavailable` | Child session POST/receipt rejected or not reachable, before SDK |
+| `session_denied` | Child session POST explicitly rejected authentication (HTTP 401/403), before SDK |
+| `session_rate_limited` | Child session POST rate limited (HTTP 429), before SDK |
+| `session_unavailable` | Child session POST/receipt unavailable, malformed or unreachable, before SDK |
 | `sdk_script_failed` | Fixed same-origin bootstrap's `script.onerror` |
 | `sdk_script_timeout` | Script did not finish before the bounded deadline |
 | `sdk_namespace_missing` | Bootstrap loaded but required BMap capabilities did not appear |

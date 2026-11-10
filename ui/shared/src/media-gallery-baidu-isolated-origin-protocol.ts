@@ -35,6 +35,8 @@ export type XDriveBaiduIsolatedCellProjections = Readonly<{
  * No response bodies, URLs, AKs, tickets, Owner or provider exceptions. */
 export type XDriveBaiduIsolatedFailureReason =
   | 'session_unavailable'
+  | 'session_denied'
+  | 'session_rate_limited'
   | 'sdk_load_failed'
   | 'sdk_script_failed'
   | 'sdk_script_timeout'
@@ -204,7 +206,8 @@ export function xDriveParseBaiduIsolatedChildEvent(
           nonce: boundary.nonce, kind: 'map-failed'}
       if (!exactKeys(data, ['version','generation','nonce','kind','reason']) ||
           typeof data.reason !== 'string' ||
-          !['session_unavailable','sdk_load_failed','sdk_script_failed',
+          !['session_unavailable','session_denied','session_rate_limited',
+            'sdk_load_failed','sdk_script_failed',
             'sdk_script_timeout','sdk_namespace_missing',
             'sdk_map_initialization_failed'].includes(data.reason)) return null
       return {version: 1, generation: boundary.generation,

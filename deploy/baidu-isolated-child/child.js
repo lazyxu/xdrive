@@ -468,7 +468,15 @@
         body:JSON.stringify({ticket}),
       })
       ticket=''
-      if (!response.ok || disposed || !active) throw Error('unavailable')
+      if (disposed || !active) throw Error('unavailable')
+      // Only the numeric HTTP class is trusted. Never forward response text,
+      // URLs, provider details, tickets, map Cookies or authorization headers.
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403)
+          throw Error('session_denied')
+        if (response.status === 429) throw Error('session_rate_limited')
+        throw Error('unavailable')
+      }
       const receipt=await response.json()
       if (!exact(receipt,['provider','runtime_enabled']) ||
           receipt.provider!=='baidu-jsapi-4.0' || receipt.runtime_enabled!==true) throw Error('unavailable')
@@ -497,7 +505,10 @@
         if(status)status.textContent='隔离地图会话或 SDK 不可用；地点列表和照片墙仍可使用。'
         // The untrusted provider's exception MUST NOT cross to Gallery.
         // Emit a single code-owned, bounded stage, not a URL, response or AK.
-        const reason = phase === 'session' ? 'session_unavailable'
+        const reason = phase === 'session'
+          ? (error instanceof Error &&
+              ['session_denied','session_rate_limited'].includes(error.message)
+            ? error.message : 'session_unavailable')
           : phase === 'bind' ? 'sdk_map_initialization_failed'
           : error instanceof Error &&
             ['sdk_script_failed','sdk_script_timeout','sdk_namespace_missing',

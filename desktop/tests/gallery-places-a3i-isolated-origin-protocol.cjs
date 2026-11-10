@@ -268,7 +268,8 @@ test('isolated gesture projection is bounded visual-only data, never private aut
 
 test('isolated SDK failure diagnostics accept only finite stage and exact Child identity',()=>{
   for(const reason of [
-    'session_unavailable','sdk_script_failed','sdk_script_timeout',
+    'session_unavailable','session_denied','session_rate_limited',
+    'sdk_script_failed','sdk_script_timeout',
     'sdk_namespace_missing','sdk_map_initialization_failed','sdk_load_failed',
   ]){
     const incoming=input('map-failed',{reason})

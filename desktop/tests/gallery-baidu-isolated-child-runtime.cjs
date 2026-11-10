@@ -61,7 +61,8 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
       fetch:async()=>{
         redeems.push(true)
         if(options.sessionNetworkFailure)throw Error('controlled-session-failure')
-        return {ok:!options.sessionDenied,
+        const status=options.sessionStatus ?? (options.sessionDenied ? 403 : 200)
+        return {status,ok:status>=200 && status<300,
           json:async()=>options.sessionReceipt ?? {provider:'baidu-jsapi-4.0',runtime_enabled:true}}
       },
       setTimeout:(fn,ms)=>setTimeout(fn,
@@ -255,7 +256,8 @@ async function waitForChild(condition, reason) {
 }
 
 test('failed Child Session/SDK denies map rendering without Static fallback or ticket disclosure',async()=>{
-  for(const options of [{sessionDenied:true},{sessionNetworkFailure:true},{sdkScriptError:true}]) {
+  for(const options of [{sessionDenied:true},{sessionStatus:401},{sessionStatus:429},
+    {sessionNetworkFailure:true},{sdkScriptError:true}]) {
     const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true,options)
     f.sendObject(f.parent,'https://gallery.example.net',init)
     f.sendObject(f.parent,'https://gallery.example.net',{
@@ -264,10 +266,12 @@ test('failed Child Session/SDK denies map rendering without Static fallback or t
     assert.equal(f.moves.length,0,'failed Session/SDK cannot mount an active map')
     assert.equal(f.sent.filter(e=>e.message.kind==='map-failed').length,1)
     assert.equal(f.sent.find(e=>e.message.kind==='map-failed').message.reason,
-      options.sdkScriptError ? 'sdk_script_failed' : 'session_unavailable')
+      options.sdkScriptError ? 'sdk_script_failed' : options.sessionStatus===429
+        ? 'session_rate_limited' : options.sessionDenied || options.sessionStatus===401
+          ? 'session_denied' : 'session_unavailable')
     assert.match(f.messageTarget.textContent,/地点列表和照片墙仍可使用/)
     assert.doesNotMatch(f.messageTarget.textContent,/静态地图|静态底图/)
-    if(options.sessionDenied||options.sessionNetworkFailure)
+    if(options.sessionDenied||options.sessionNetworkFailure || options.sessionStatus===401 || options.sessionStatus===429)
       assert.equal(f.scripts.length,0,'SDK must never load before map-session redemption')
     else assert.equal(f.scripts.length,1,'SDK failure follows a valid Session')
     assert(!JSON.stringify(f.sent).includes('b'.repeat(64)),'ticket never echoes to Parent')
