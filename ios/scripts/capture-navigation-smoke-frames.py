@@ -173,6 +173,10 @@ MINIMAL_TARGETS = {
     "testNativeMineGalleryFilesSwitchAfterSourceChanges",
     "testOfflineOwnerGalleryPeopleChildBackRestoresSource",
     "testSyntheticOwnerFilesAndGalleryRelaunchDoesNotRetainOldScope",
+    # Native MapKit Gallery route introduced on master. Both must be seen
+    # by the same bounded Simulator frame observer after branch integration.
+    "testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank",
+    "testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership",
 }
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
