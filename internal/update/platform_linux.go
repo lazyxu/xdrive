@@ -90,6 +90,22 @@ func installDownloaded(ctx context.Context, path string, result Result) (string,
 		if err := json.Unmarshal(buildOutput, &build); err != nil || build.Commit != result.Commit {
 			return "", fmt.Errorf("post-install health check failed: xd source Commit=%q want=%q: %v", build.Commit, result.Commit, err)
 		}
+		agentOutput, err := exec.CommandContext(ctx, "/usr/bin/xdrive-agent", "--build-info-json").Output()
+		if err != nil {
+			return "", fmt.Errorf("post-install health check failed: Agent build metadata: %w", err)
+		}
+		var agentBuild struct { Commit string `json:"commit"` }
+		if err := json.Unmarshal(agentOutput, &agentBuild); err != nil || agentBuild.Commit != result.Commit {
+			return "", fmt.Errorf("post-install health check failed: Agent source Commit=%q want=%q: %v", agentBuild.Commit, result.Commit, err)
+		}
+		desktopOutput, err := os.ReadFile("/opt/xdrive-desktop/resources/xdrive-build-info.json")
+		if err != nil {
+			return "", fmt.Errorf("post-install health check failed: Desktop build metadata: %w", err)
+		}
+		var desktopBuild struct { Commit string `json:"commit"` }
+		if err := json.Unmarshal(desktopOutput, &desktopBuild); err != nil || desktopBuild.Commit != result.Commit {
+			return "", fmt.Errorf("post-install health check failed: Desktop source Commit=%q want=%q: %v", desktopBuild.Commit, result.Commit, err)
+		}
 	}
 	return "verified Linux unified client package installed with authorized apt and post-install health check passed", nil
 }
