@@ -15,24 +15,24 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 	listing, item := bundleClientFixture(t, []byte("exact-current-server-package"))
 	tag := "bundle-" + listing.Commit
 	for _, tc := range []struct {
-		name                 string
-		wrongRef             bool
-		wrongDigest          bool
-		missingFile          bool
-		mutableRelease       bool
-		redirect             bool
-		wrongManifestDigest  bool
-		wrongManifestBytes   bool
-		wrongManifestCommit  bool
-		wrongManifestMode    bool
-		wrongManifestSource  bool
-		missingManifestItem  bool
-		extraReleaseAsset    bool
-		redirectManifest     bool
-		missingManifestID    bool
-		oversizedManifest    bool
-		invalidManifestJSON  bool
-		wantError            bool
+		name                string
+		wrongRef            bool
+		wrongDigest         bool
+		missingFile         bool
+		mutableRelease      bool
+		redirect            bool
+		wrongManifestDigest bool
+		wrongManifestBytes  bool
+		wrongManifestCommit bool
+		wrongManifestMode   bool
+		wrongManifestSource bool
+		missingManifestItem bool
+		extraReleaseAsset   bool
+		redirectManifest    bool
+		missingManifestID   bool
+		oversizedManifest   bool
+		invalidManifestJSON bool
+		wantError           bool
 	}{
 		{name: "exact immutable verified manifest and package"},
 		{name: "mutable release must fail closed", mutableRelease: true, wantError: true},
