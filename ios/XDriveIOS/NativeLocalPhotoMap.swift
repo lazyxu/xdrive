@@ -1594,6 +1594,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         }
                     }
                     Button("按指定日期") { datePickerOpen = true }
+                        .accessibilityIdentifier("native-ios-local-map-select-date")
                 } label: {
                     Label("地图日期", systemImage: "calendar")
                 }

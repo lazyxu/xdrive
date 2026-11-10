@@ -89,6 +89,8 @@ jobs:
           bash "$work/ios/scripts/prepare-assets.sh"
           (cd "$work/ios" && xcodegen generate --spec project.yml)
       - name: Boot available iPhone simulator
+        env:
+          MAPKIT_FRESH: ${{ matrix.source == 'candidate-mapkit' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -106,9 +108,26 @@ jobs:
               raise SystemExit("Xcode 16.4 requires installed iOS 18.5 simulator")
           runtime,d=next(((r,x) for r,x in compatible if x["name"]=="iPhone 16"),
                          compatible[0])
+          sim_id=d["udid"]
+          if os.environ.get("MAPKIT_FRESH") == "true":
+              # A preinstalled iPhone may contain earlier UI-test media.
+              # "simctl privacy reset" does NOT erase Photos: one prior run
+              # counted 7 GPS photos instead of the two EXIF fixtures.
+              # Create a genuinely empty iOS 18.5 device for this one job.
+              device_type=d.get("deviceTypeIdentifier")
+              if not device_type:
+                  raise SystemExit("iOS 18.5 device type identifier missing")
+              name="xdrive-mapkit-"+os.environ["GITHUB_RUN_ID"]+"-"+os.environ.get("GITHUB_RUN_ATTEMPT","1")
+              sim_id=subprocess.check_output(
+                  ["xcrun","simctl","create",name,device_type,runtime],text=True).strip()
+              if not sim_id or sim_id == d["udid"]:
+                  raise SystemExit("Isolated MapKit simulator creation did not return a new UDID")
+              with open(os.environ["GITHUB_ENV"],"a") as out:
+                  out.write("MAPKIT_CREATED_SIM="+sim_id+"\n")
+              print("MAPKIT_FRESH_PHOTOS_LIBRARY runtime=",runtime,"device=",device_type,"new_udid=",sim_id)
           with open(os.environ["GITHUB_ENV"],"a") as out:
-              out.write("SMOKE_SIM="+d["udid"]+"\n")
-          print("Simulator",runtime,d["name"],d["udid"])
+              out.write("SMOKE_SIM="+sim_id+"\n")
+          print("Simulator",runtime,d["name"],sim_id)
           PY
           # GITHUB_ENV applies to subsequent steps, not this shell. Reuse
           # the exact selected simulator locally before attempting to boot.
@@ -128,8 +147,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Real geotagged JPEGs are imported into the actual Simulator Photos
-          # library; neither MapKit nor PhotoKit authority is mocked.
+          # Only the isolated, newly created Simulator Photos library may
+          # receive the two EXIF-GPS fixtures. Do not seed the shared device.
+          test -n "${MAPKIT_CREATED_SIM:-}"
+          test "$SMOKE_SIM" = "$MAPKIT_CREATED_SIM"
+          echo "MAPKIT_SEED_ONLY_TWO_REAL_GPS_PHOTOS simulator=$SMOKE_SIM"
           xcrun simctl addmedia "$SMOKE_SIM" \
             "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map.jpg" \
             "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map-second.jpg"
@@ -273,3 +295,14 @@ jobs:
             ${{ runner.temp }}/native-navigation-results/diagnostics/
           if-no-files-found: warn
           retention-days: 7
+      - name: Retire freshly created candidate MapKit simulator
+        if: ${{ always() && matrix.source == 'candidate-mapkit' }}
+        shell: bash
+        run: |
+          # Only delete the simulator that THIS job created, not the hosted
+          # preinstalled iPhone or any other matrix shard.
+          if [[ -n "${MAPKIT_CREATED_SIM:-}" && "${MAPKIT_CREATED_SIM:-}" == "${SMOKE_SIM:-}" ]]; then
+            xcrun simctl shutdown "$MAPKIT_CREATED_SIM" >/dev/null 2>&1 || true
+            xcrun simctl delete "$MAPKIT_CREATED_SIM" >/dev/null 2>&1 || true
+            echo "MAPKIT_RETIRED_FRESH_SIMULATOR $MAPKIT_CREATED_SIM"
+          fi

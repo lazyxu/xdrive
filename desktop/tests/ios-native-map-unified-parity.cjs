@@ -227,3 +227,31 @@ test('real iOS first-use Photo Library system prompt cannot be default-denied by
   assert.doesNotMatch(simulator, /buttons\["Don[’']t Allow"\]\.tap\(\)/)
   assert.match(simulator, /Expected actual user-granted Full Access; still denied or Limited/)
 })
+
+
+test('candidate MapKit uses a newly created Simulator Photos library and checks actual date menu types', () => {
+  // PR real run 42780034855 admitted actual Full Access, yet scanned 7 GPS
+  // photos / 6 places after importing only two fixtures into the runner's
+  // preinstalled simulator. TCC reset does not erase PhotoKit assets.
+  assert.match(runtimeWorkflow, /MAPKIT_FRESH: /)
+  assert.match(runtimeWorkflow, /if os\.environ\.get\("MAPKIT_FRESH"\) == "true":/)
+  assert.match(runtimeWorkflow, /device_type=d\.get\("deviceTypeIdentifier"\)/)
+  assert.match(runtimeWorkflow, /"xcrun","simctl","create",name,device_type,runtime/)
+  assert.match(runtimeWorkflow, /MAPKIT_FRESH_PHOTOS_LIBRARY/)
+  assert.match(runtimeWorkflow, /MAPKIT_CREATED_SIM/)
+  assert.match(runtimeWorkflow, /MAPKIT_SEED_ONLY_TWO_REAL_GPS_PHOTOS/)
+  assert.match(runtimeWorkflow, /test "\$SMOKE_SIM" = "\$MAPKIT_CREATED_SIM"/)
+  assert.match(runtimeWorkflow, /xcrun simctl addmedia "\$SMOKE_SIM"/)
+  assert.match(runtimeWorkflow, /Retire freshly created candidate MapKit simulator/)
+  assert.match(runtimeWorkflow, /xcrun simctl delete "\$MAPKIT_CREATED_SIM"/)
+  assert.match(runtimeWorkflow, /candidate-gallery-files, candidate-no-session, candidate-mapkit/)
+  // Actual SwiftUI Menu children may have XCUIElementTypeMenuItem rather
+  // than Button, but absence of the real action remains a hard test failure.
+  assert.match(local, /Button\("按指定日期"\) \{ datePickerOpen = true \}[\s\S]*?accessibilityIdentifier\("native-ios-local-map-select-date"\)/)
+  assert.match(simulator, /element\("native-ios-local-map-select-date", in: app\)/)
+  assert.match(simulator, /app\.descendants\(matching: \.any\)/)
+  assert.match(simulator, /MAP_DATE_MENU_MISSING AX tree/)
+  assert.match(simulator, /MapKit actual capture-date menu item is not accessible/)
+  assert.match(simulator, /MAP_FRESH_PHOTOS_VERIFIED_COUNT/)
+  assert.match(simulator, /verified\.label\.contains\("2 张"\)/)
+})

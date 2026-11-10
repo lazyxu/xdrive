@@ -408,8 +408,19 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         // UI date → month selection exists on the real MapKit route, and
         // cancelling it does not destroy the previously verified photo scope.
         element("native-ios-local-map-capture-menu", in: app).tap()
-        let chooseDate = app.buttons["按指定日期"].firstMatch
-        XCTAssertTrue(chooseDate.waitForExistence(timeout: 10))
+        // SwiftUI Menu children are menuItems on some iOS 18.5 builds,
+        // not XCUIElementTypeButton. Query the real app's stable item ID,
+        // then its label across AX types; never pretend a missing menu passed.
+        let byID = element("native-ios-local-map-select-date", in: app)
+        let byLabel = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "按指定日期")).firstMatch
+        if !byID.waitForExistence(timeout: 6) &&
+            !byLabel.waitForExistence(timeout: 6) {
+            print("MAP_DATE_MENU_MISSING AX tree:\n\(app.debugDescription)")
+            diagnose("MapKit actual capture-date menu item is not accessible", in: app)
+        }
+        let chooseDate = byID.exists ? byID : byLabel
+        XCTAssertTrue(chooseDate.exists, "Real native map date selection is absent")
         chooseDate.tap()
         XCTAssertTrue(element("native-ios-map-selected-month", in: app)
             .waitForExistence(timeout: 10))
@@ -448,6 +459,10 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
         XCTAssertTrue(verified.exists,
                       "Synthetic GPS images were not indexed by real PhotoKit")
+        // This assertion is valid only on the newly created, empty Simulator
+        // with exactly TWO imported real EXIF-GPS photos. Do not weaken it to
+        // a broad >=2 count that silently includes older unrelated photos.
+        print("MAP_FRESH_PHOTOS_VERIFIED_COUNT \(verified.label)")
         XCTAssertTrue(verified.label.contains("2 张"), verified.label)
 
         // The two real assets share one signed-in-memory spatial cell.
