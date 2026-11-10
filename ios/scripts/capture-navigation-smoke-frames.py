@@ -28,6 +28,9 @@ output.mkdir(parents=True, exist_ok=True)
 FRAME_OFFSETS_SECONDS = (0.5, 1.5, 3.5)
 # Short tap-adjacent samples, still not a video/FPS measurement.
 TAP_FRAME_OFFSETS_SECONDS = (0.15, 0.55)
+# Cover late repeated transitions, not just the first three taps.
+# Bounded per test to avoid exhausting storage on rapid 16-cycle suites.
+TAP_CAPTURE_NUMBERS = frozenset((1, 2, 4, 8, 12, 16))
 TARGETS = {
     # Tab/source/section/sheet/background: real production native SwiftUI.
     "testRapidGalleryFilesTabOscillationPreservesBothShells",
@@ -115,6 +118,10 @@ NAV_TARGETS = {
     "testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail",
     "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
+    # Native PhotoKit route tests were previously present in the XCTest class
+    # but were missing from the screenshot observer's target set.
+    "testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels",
+    "testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank",
     # Each new live Gallery generation test additionally captures nearby
     # Simulator frames; screenshots are diagnostic, not a measured FPS.
     "testUnifiedWallGenerationPersistsThroughSixFilesTabRoundTrips",
@@ -163,11 +170,11 @@ while True:
             tapped = tap_start.search(line)
             if (tapped and current_case in active
                     and current_case[0] in NAV_TARGETS):
-                count = tap_counts.get(current_case, 0)
-                # Avoid a large PNG archive for rapid 8-cycle tab oscillation.
-                if count < 3:
-                    count += 1
-                    tap_counts[current_case] = count
+                # Count ALL taps; otherwise late regression frames can never
+                # be captured after three navigations, including on 8 cycles.
+                count = tap_counts.get(current_case, 0) + 1
+                tap_counts[current_case] = count
+                if count in TAP_CAPTURE_NUMBERS:
                     now_tap = time.monotonic()
                     for frame, delay in enumerate(TAP_FRAME_OFFSETS_SECONDS):
                         tap_scheduled.append((
@@ -242,4 +249,6 @@ while True:
                 "capture_mode": "tap-adjacent",
                 "captured": ok, "file": destination.name if ok else None,
             }, ensure_ascii=False) + "\n")
-    time.sleep(0.3)
+    # 300ms log polling is too coarse for a scheduled +150ms tap sample.
+    # This improves diagnostic proximity, but simctl PNGs are NOT FPS video.
+    time.sleep(0.075)
