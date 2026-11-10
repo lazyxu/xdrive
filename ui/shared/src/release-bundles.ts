@@ -24,11 +24,11 @@ export interface XDriveReleaseBundleState {
 
 export interface XDriveReleaseBundlePort {
   getState: () => Promise<XDriveReleaseBundleState>
-  retry: () => Promise<unknown>
+  retry?: () => Promise<unknown>
   downloadCached?: (filename: string) => Promise<void>
   /** Explicit opt-in install on a trusted native Desktop, never an auto-push. */
   platform?: 'windows' | 'linux'
-  installCurrent?: (commit: string, filename: string) => Promise<void>
+  installCurrent?: (commit: string, filename: string, personalUnsigned?: boolean) => Promise<void>
 }
 
 /** Ordered URLs are advisory sources, never permission to install unverified bytes.

@@ -102,6 +102,9 @@ function Invoke-Transaction([string]$ExpectedVersion) {
         "-LogPath", $LogPath,
         "-InstallerTimeoutSeconds", "180"
     )
+    if ($ExpectedCommit -cmatch '^[0-9a-f]{40}$') {
+        $args += @("-ExpectedCommit", $ExpectedCommit)
+    }
     $process = Start-Process -FilePath "powershell.exe" -ArgumentList $args -PassThru
     if (-not $process.WaitForExit(240000)) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -185,6 +188,34 @@ if ($baselineVersion -ne $TargetVersion) {
     throw "baseline version mismatch: $baselineVersion != $TargetVersion"
 }
 
+# Test the actual CI-built source Commit, not only the broad "snapshot"
+# version. The signed Windows artifact must prove its current-source identity
+# before running either the rollback or successful upgrade transaction.
+$ExpectedCommit = ""
+$ciCommit = ""
+if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) {
+    if ($env:GITHUB_SHA -cnotmatch '^[0-9a-f]{40}$') {
+        throw "invalid GitHub exact workflow Commit"
+    }
+    $ciCommit = $env:GITHUB_SHA
+} elseif (-not [string]::IsNullOrWhiteSpace($env:CI_COMMIT_SHA)) {
+    if ($env:CI_COMMIT_SHA -cnotmatch '^[0-9a-f]{40}$') {
+        throw "invalid GitLab exact workflow Commit"
+    }
+    $ciCommit = $env:CI_COMMIT_SHA
+}
+if ($ciCommit) {
+    $buildJSON = (& $Xd version --json | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "packaged xd version --json failed"
+    }
+    $build = $buildJSON | ConvertFrom-Json
+    if ([string]$build.commit -cne $ciCommit) {
+        throw "packaged xd Commit=$($build.commit) differs from exact CI Commit $ciCommit"
+    }
+    $ExpectedCommit = $ciCommit
+}
+
 $AgentExe = Join-Path $AppDir "xdrive-agent.exe"
 $DesktopExe = Join-Path $AppDir "desktop\xdrive-desktop.exe"
 if (-not (Test-Path -LiteralPath $AgentExe)) {
@@ -244,6 +275,12 @@ if (Test-Path -LiteralPath $startMenuGroup) {
 $restoredVersion = (& $Xd version | Out-String).Trim()
 if ($restoredVersion -ne $TargetVersion) {
     throw "rollback restored wrong version: $restoredVersion"
+}
+if ($ExpectedCommit) {
+    $restoredBuild = (& $Xd version --json | Out-String).Trim() | ConvertFrom-Json
+    if ([string]$restoredBuild.commit -cne $ExpectedCommit) {
+        throw "rollback restored wrong Commit: $($restoredBuild.commit)"
+    }
 }
 Stop-XDriveProcesses
 
@@ -316,6 +353,20 @@ if (Test-Path -LiteralPath (Join-Path $AppDir "icons")) {
 $postVersion = (& $Xd version | Out-String).Trim()
 if ($postVersion -ne $TargetVersion) {
     throw "committed version mismatch: $postVersion != $TargetVersion"
+}
+if ($ExpectedCommit) {
+    $postBuild = (& $Xd version --json | Out-String).Trim() | ConvertFrom-Json
+    if ([string]$postBuild.commit -cne $ExpectedCommit) {
+        throw "committed xd source Commit mismatch: $($postBuild.commit)"
+    }
+    $desktopBuildPath = Join-Path $AppDir "desktop\resources\xdrive-build-info.json"
+    if (-not (Test-Path -LiteralPath $desktopBuildPath -PathType Leaf)) {
+        throw "committed Desktop source metadata missing"
+    }
+    $desktopBuild = Get-Content -LiteralPath $desktopBuildPath -Raw | ConvertFrom-Json
+    if ([string]$desktopBuild.commit -cne $ExpectedCommit) {
+        throw "committed Desktop source Commit mismatch: $($desktopBuild.commit)"
+    }
 }
 $postShortcut = $shortcutRoots |
     Where-Object { Test-Path $_ } |

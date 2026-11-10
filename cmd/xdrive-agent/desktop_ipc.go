@@ -59,6 +59,7 @@ type desktopIPCHello struct {
 	ProtocolMin      int      `json:"protocol_min"`
 	ProtocolMax      int      `json:"protocol_max"`
 	AgentVersion     string   `json:"agent_version"`
+	AgentCommit      string   `json:"agent_commit,omitempty"`
 	PID              int      `json:"pid"`
 	Platform         string   `json:"platform"`
 	Arch             string   `json:"arch"`
@@ -1063,6 +1064,7 @@ func (h *desktopIPCHandler) hello(w http.ResponseWriter, _ *http.Request) {
 		ProtocolMin:      desktopIPCProtocolMin,
 		ProtocolMax:      desktopIPCProtocolMax,
 		AgentVersion:     version.String(),
+		AgentCommit:      version.Metadata().Commit,
 		PID:              os.Getpid(),
 		Platform:         runtime.GOOS,
 		Arch:             runtime.GOARCH,

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
@@ -42,7 +43,13 @@ func main() {
 	case "cleanup":
 		err = cleanupCmd()
 	case "version":
-		fmt.Println(version.String())
+		if len(os.Args) == 2 {
+			fmt.Println(version.String())
+		} else if len(os.Args) == 3 && os.Args[2] == "--json" {
+			err = json.NewEncoder(os.Stdout).Encode(version.Metadata())
+		} else {
+			err = fmt.Errorf("usage: xd version [--json]")
+		}
 	case "update":
 		err = updateCmd(os.Args[2:])
 	case "doctor":
@@ -74,7 +81,7 @@ Usage:
   xd status
   xd config --mount PATH
   xd mount [PATH]    (configure the owning Agent; CLI exits without stopping mount)
-  xd version
+  xd version [--json]
   xd update [--source github|gitlab] [--channel stable|master] [--install] (Desktop only)
   xd update --cli-only [--download] [--source github|gitlab] [--channel stable|master]
   xd update --status

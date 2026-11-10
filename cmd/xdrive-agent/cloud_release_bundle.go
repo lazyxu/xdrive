@@ -59,12 +59,12 @@ func (c *agentController) CloudDownloadReleaseBundle(ctx context.Context, fullCo
 	return fmt.Errorf("current Server Commit does not contain the requested approved installer")
 }
 
-func (c *agentController) CloudInstallCurrentServerCommit(ctx context.Context, fullCommit, filename string) (clientUpdateState, error) {
+func (c *agentController) CloudInstallCurrentServerCommit(ctx context.Context, fullCommit, filename string, personalUnsigned bool) (clientUpdateState, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return c.updates.Snapshot(), err
 	}
-	return c.updates.InstallCurrentServerCommit(ctx, cli, fullCommit, filename)
+	return c.updates.InstallCurrentServerCommit(ctx, cli, fullCommit, filename, personalUnsigned)
 }
 
 func releaseBundleDownloadAllowed(item client.ReleaseBundleArtifact, fullCommit, filename string) bool {
@@ -74,8 +74,10 @@ func releaseBundleDownloadAllowed(item client.ReleaseBundleArtifact, fullCommit,
 	if item.InstallMode == "manual" {
 		return true
 	}
-	// Unsigned IPA remains available for developer-side signing and testing,
-	// but never participates in the native automatic installer.
+	// Save-only is less privileged than an installer transaction. Both the
+	// exact-source iOS testing IPA and personal Windows Snapshot may be saved;
+	// native execution still requires the separately confirmed installer gate.
 	return item.InstallMode == "manual_test_only" &&
-		item.Platform == "ios" && item.Filename == "xDrive-unsigned.ipa"
+		((item.Platform == "ios" && item.Filename == "xDrive-unsigned.ipa") ||
+			(item.Platform == "windows" && item.Filename == "xDriveSetup-amd64.exe"))
 }

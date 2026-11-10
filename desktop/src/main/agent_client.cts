@@ -4955,11 +4955,11 @@ export class AgentIPCClient {
       { commit, filename, destination }, 30 * 60_000)
   }
 
-  installCurrentServerCommit(commit: string, filename: string) {
+  installCurrentServerCommit(commit: string, filename: string, personalUnsigned = false) {
     // A lost ACK may follow a completed installation. NEVER automatically
     // replay a privilege-changing user-confirmed operation over Agent IPC.
     return this.request<AgentUpdateState>('POST', '/v1/release-bundle/install',
-      { commit, filename, confirm: true }, 15 * 60_000, undefined, false)
+      { commit, filename, confirm: true, personal_unsigned: personalUnsigned }, 15 * 60_000, undefined, false)
   }
 
   offlineImports() {

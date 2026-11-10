@@ -14,7 +14,7 @@ type desktopIPCReleaseBundleController interface {
 	CloudReleaseBundleState(context.Context) (client.ReleaseBundleListing, error)
 	CloudRetryReleaseBundle(context.Context) error
 	CloudDownloadReleaseBundle(context.Context, string, string, string) error
-	CloudInstallCurrentServerCommit(context.Context, string, string) (clientUpdateState, error)
+	CloudInstallCurrentServerCommit(context.Context, string, string, bool) (clientUpdateState, error)
 }
 
 var desktopReleaseBundleCommit = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -91,9 +91,10 @@ func (h *desktopIPCHandler) releaseBundleInstall(w http.ResponseWriter, r *http.
 		return
 	}
 	var input struct {
-		Commit   string `json:"commit"`
-		Filename string `json:"filename"`
-		Confirm  bool   `json:"confirm"`
+		Commit           string `json:"commit"`
+		Filename         string `json:"filename"`
+		Confirm          bool   `json:"confirm"`
+		PersonalUnsigned bool   `json:"personal_unsigned"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
@@ -104,7 +105,7 @@ func (h *desktopIPCHandler) releaseBundleInstall(w http.ResponseWriter, r *http.
 			"An explicit user confirmation and exact full Commit are required.")
 		return
 	}
-	state, err := ctrl.CloudInstallCurrentServerCommit(r.Context(), input.Commit, input.Filename)
+	state, err := ctrl.CloudInstallCurrentServerCommit(r.Context(), input.Commit, input.Filename, input.PersonalUnsigned)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

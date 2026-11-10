@@ -8,6 +8,8 @@ files:
   - dist/**/*
   - package.json
 extraResources:
+  - from: build-info.json
+    to: xdrive-build-info.json
   - from: ../assets/icon/tray
     to: tray-icons
     filter:

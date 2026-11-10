@@ -17,6 +17,19 @@ assert '"$actual_names" == "$expected_names"' in body
 assert '[.assets[] | select(.name == $n) | .digest]' in body
 assert 'expected_digest="sha256:' in body
 assert 'remote_complete=1' in body
+# Optional platforms are per-Commit. Old Snapshot installers may not be
+# inherited from a previous Commit when this source run omits that platform.
+for known_optional in (
+    r'xdrive-linux-amd64\.deb',
+    r'xDriveSetup-amd64\.exe',
+    r'xDrive-unsigned\.ipa',
+    r'xdrive-backup-linux-amd64\.tar\.gz',
+    r'xdrive-backup-windows-amd64\.zip',
+    r'xdrive-android-[1-9][0-9]{0,9}-',
+):
+    assert known_optional in body, known_optional
+assert body.index('if [[ "$digest_mismatch" == 0 ]]') < body.index('Removing superseded Snapshot asset')
+assert 'Observed remote Snapshot asset names:' in body
 assert 'Snapshot asset verification incomplete; preserving previous tag.' in body
 assert 'gh release edit snapshot --repo "$repo" --prerelease' in body
 upload = body.index('gh release upload snapshot')
