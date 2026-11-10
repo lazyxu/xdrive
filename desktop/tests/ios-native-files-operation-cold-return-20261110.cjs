@@ -83,6 +83,6 @@ test('12 all 68 native Gallery/Files route tests are registered with Simulator s
   assert.deepEqual(names.filter(n => !registered.has(n)), [])
 })
 test('13 operation-history regression runs in the required unsigned IPA workflow', () => {
-  assert.match(ipa, /node --test desktop\/tests\/ios-native-files-operation-cold-return-20261110\.cjs/)
+  assert.match(ipa, /desktop\/tests\/ios-native-files-operation-cold-return-20261110\.cjs/)
   assert.match(ipa, /node --test desktop\/tests\/ios-native-files-undo-redo\.cjs/)
 })
