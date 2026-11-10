@@ -501,7 +501,8 @@ test('production Child reproduces SDK namespace and constructor failures with no
       'https://map-isolated.example.org',true,options)
     f.sendObject(f.parent,'https://gallery.example.net',init)
     f.sendObject(f.parent,'https://gallery.example.net',{
-      ...init,kind:'map-session',ticket:'b'.repeat(64)})
+      version:1,generation:7,nonce:'a'.repeat(64),
+      kind:'map-session',ticket:'b'.repeat(64)})
     await waitForChild(()=>f.sent.some(e=>e.message.kind==='map-failed'),
       'safe '+reason+' failure from production child.js')
     const failure=f.sent.find(e=>e.message.kind==='map-failed')
