@@ -80,26 +80,78 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
             .waitForExistence(timeout: 15), "Local PhotoKit source did not mount")
     }
 
+    // A colorful tab bar does not prove that the local PhotoKit child has
+    // rendered. Verify the actual child controls AND one explicit permission
+    // state before accepting a nonblank whole-screen screenshot.
+    private func assertLocalPhotoContent(_ app: XCUIApplication) {
+        XCTAssertTrue(target("native-ios-local-timeline-open", app: app)
+            .waitForExistence(timeout: 15), "Local PhotoKit child was not mounted")
+        let authorized = target("native-ios-local-gallery-media-filter", app: app).exists
+        let requesting = app.buttons["允许查看本机相册"].firstMatch.exists
+        let denied = app.staticTexts["相册权限不可用，请在 iOS 设置中允许访问。"]
+            .firstMatch.exists
+        XCTAssertTrue(authorized || requesting || denied,
+                      "PhotoKit must render an authorized, request or denied state")
+    }
+
+    func testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent() {
+        let app = launch()
+        openLocalPhotoSource(app)
+        assertLocalPhotoContent(app)
+        tap("native-ios-local-timeline-open", app: app)
+        let done = app.navigationBars.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15),
+                      "Local PhotoKit timeline date Sheet was not presented")
+        done.tap()
+        assertLocalPhotoContent(app)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertLocalPhotoContent(app)
+        assertVisiblePixels(app, route: "Local dates dismissed after Files return")
+    }
+
+    func testLocalPhotoWithFilesQuickSectionsPreservesLocalChild() {
+        let app = launch(syntheticOwner: true)
+        openLocalPhotoSource(app)
+        assertLocalPhotoContent(app)
+        tap("native-ios-tab-files", app: app)
+        for section in ["recent", "favorites", "browse", "recent", "browse"] {
+            tap("native-ios-files-section-\(section)", app: app)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
+            .waitForExistence(timeout: 15))
+        assertLocalPhotoContent(app)
+        assertVisiblePixels(app, route: "Local Photos after Files sections")
+    }
+
     func testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels() {
         let app = launch()
         openLocalPhotoSource(app)
         assertGallery(app)
+        assertLocalPhotoContent(app)
         assertVisiblePixels(app, route: "Local PhotoKit initial")
         for index in 0..<3 {
             tap("native-ios-tab-files", app: app)
             assertFiles(app)
-            assertVisiblePixels(app, route: "Files after local Photos \\(index)")
+            assertVisiblePixels(app, route: "Files after local Photos \(index)")
             tap("native-ios-tab-gallery", app: app)
             assertGallery(app)
             XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
                 .waitForExistence(timeout: 15), "Local source was reset by Files")
-            assertVisiblePixels(app, route: "Local Photos after Files \\(index)")
+            assertLocalPhotoContent(app)
+            assertVisiblePixels(app, route: "Local Photos after Files \(index)")
         }
     }
 
     func testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank() {
         let app = launch()
         openLocalPhotoSource(app)
+        assertLocalPhotoContent(app)
         assertVisiblePixels(app, route: "Local Photos before background")
         XCUIDevice.shared.press(.home)
         app.activate()
@@ -112,6 +164,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         assertGallery(app)
         XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
             .waitForExistence(timeout: 15))
+        assertLocalPhotoContent(app)
         assertVisiblePixels(app, route: "Local Photos after foreground and Files")
     }
 
