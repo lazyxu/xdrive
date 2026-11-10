@@ -3650,6 +3650,9 @@ function registerIPCHandlers() {
     const stored=desktopPlacesGuests.get(event.sender.id)
     const status=agentState.status
     if (!stored || event.senderFrame!==event.sender.mainFrame ||
+        // Expected Owner is also private to the exact map-only main frame.
+        // A same-Owner off-route navigation cannot use this IPC as a probe.
+        !desktopPlacesGuestFrameAllowed(event.senderFrame?.url,stored.origin) ||
         !desktopPlacesWebOwnerStillCurrent(stored) ||
         stored.owner!==status?.username ||
         stored.origin!==xDriveResolveSecureBaiduMapTarget(status?.server)?.origin)
@@ -3657,7 +3660,9 @@ function registerIPCHandlers() {
     return stored.owner
   })
   ipcMain.handle('desktop:open-baidu-map-secure', (event, rawScope: unknown) => {
-    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    if (!mainWindow || mainWindow.isDestroyed() ||
+        event.sender !== mainWindow.webContents ||
+        event.senderFrame !== mainWindow.webContents.mainFrame) {
       return { ok: false, error: { code: 'map_owner_denied',
         message: '地图窗口仅允许当前 Desktop 主窗口打开。' } }
     }
