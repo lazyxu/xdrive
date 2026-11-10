@@ -17,6 +17,17 @@ const compiledQuery = ts.transpileModule(queryBody,{
 const refreshBody = source.slice(refreshStart,
   source.indexOf('    const acquireTicket=async()',refreshStart))
 
+const diagnosticSource = fs.readFileSync(path.join(__dirname,
+  '../../ui/shared/src/media-gallery-baidu-diagnostics.ts'),'utf8')
+// Execute the actual status classifier so the test does not duplicate its contract.
+const compiledDiagnostics = ts.transpileModule(diagnosticSource,{
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+}).outputText
+const diagnosticExports={}
+new Function('exports',compiledDiagnostics)(diagnosticExports)
+const classifyFailure=diagnosticExports.xDriveClassifyBaiduMapRequestFailure
+assert.equal(typeof classifyFailure,'function')
+
 test('map query failure is distinct from map SDK failure, has a safe shared Parent retry',()=>{
   assert.ok(queryStart>0 && refreshStart>queryStart)
   assert.match(source,/const \[failedCellsScope,setFailedCellsScope\] = useState<\{owner:string;key:string\} \| null>\(null\)/)
@@ -34,7 +45,7 @@ test('map query failure is distinct from map SDK failure, has a safe shared Pare
   assert.doesNotMatch(errorUI,/xDriveMount|loadThumbnail|listOwnerCellItems|bootstrapMapSession|Geoconv/)
 })
 
-function harness({badResponse=false,aborted=false}={}){
+function harness({badResponse=false,aborted=false,requestStatus=null}={}){
   const b={coordinate_space:'bd09ll',west:110,south:20,east:130,north:40}
   const failedCellsScopeRef={current:null}
   const acceptedScope={current:null},acceptedCells={current:[]}
@@ -49,7 +60,7 @@ function harness({badResponse=false,aborted=false}={}){
   }}
   const coverStatuses=[]
   const canceledVisual=[],clearedVisual=[]
-  const failed=[],summaries=[],published=[],accessible=[]
+  const failed=[],summaries=[],published=[],accessible=[],diagnostics=[]
   const controller=new AbortController()
   const deps={
     lifetime:{signal:controller.signal},
@@ -63,9 +74,18 @@ function harness({badResponse=false,aborted=false}={}){
     generation:0,activeQuery:null,
     listOwnerCells:async()=>{
       if(aborted)controller.abort()
+      if(requestStatus!==null){
+        const error=new Error('simulated protected Owner HTTP error')
+        error.status=requestStatus
+        throw error
+      }
       if(badResponse)return {cells:[{node_id:-1}]}
       throw new Error('bounded simulated Owner request failure')
     },
+    xDriveRecordBaiduMapDiagnostic:(ownerScope,code)=>{
+      diagnostics.push({scope:ownerScope,code});return true
+    },
+    xDriveClassifyBaiduMapRequestFailure:classifyFailure,
     xDriveValidBaiduNativeCellsPage:()=>false,
     xDriveSelectBaiduNativeCell:()=>null,
     acceptedScope,acceptedCells,restoreHint:{current:null},pendingResizeDrawer,
@@ -83,13 +103,14 @@ function harness({badResponse=false,aborted=false}={}){
   const query=new Function(...names,compiledQuery+'; return queryCells;')(...names.map(n=>deps[n]))
   return {run:()=>query(b,true),ref:failedCellsScopeRef,failed,summaries,published,
     accessible,bounds:b,pendingResizeDrawer,pendingCoverClick,coverStatuses,
-    canceledVisual,clearedVisual}
+    canceledVisual,clearedVisual,diagnostics}
 }
 
 test('rejected current Owner /cells cannot keep stale pins or silently show zero photos',async()=>{
   const f=harness()
   assert.equal(await f.run(),false)
   assert.deepEqual(f.ref.current,{owner:'fixture-owner-a',key:'owner:family'})
+  assert.deepEqual(f.diagnostics,[{scope:'fixture-owner-a',code:'viewport_unavailable'}])
   assert.deepEqual(f.failed,[{owner:'fixture-owner-a',key:'owner:family'}])
   assert.deepEqual(f.summaries,[null])
   assert.deepEqual(f.published,[[],[]])
@@ -106,6 +127,7 @@ test('invalid signed cells page takes the same fail-closed retry path',async()=>
   const f=harness({badResponse:true})
   assert.equal(await f.run(),false)
   assert.deepEqual(f.ref.current,{owner:'fixture-owner-a',key:'owner:family'})
+  assert.deepEqual(f.diagnostics,[{scope:'fixture-owner-a',code:'viewport_unavailable'}])
   assert.deepEqual(f.failed,[{owner:'fixture-owner-a',key:'owner:family'}])
   assert.deepEqual(f.published,[[],[]])
   assert.deepEqual(f.canceledVisual,[false], 'failed Owner read invalidates old query work')
@@ -121,6 +143,7 @@ test('aborted request never grants a retry scope or reports an error',async()=>{
   const f=harness({aborted:true})
   assert.equal(await f.run(),false)
   assert.equal(f.ref.current,null)
+  assert.deepEqual(f.diagnostics,[],'aborted requests cannot report failures')
   assert.deepEqual(f.failed,[])
   assert.deepEqual(f.published,[[]])
   assert.deepEqual(f.canceledVisual,[false], 'aborted query cancels old generation')
@@ -129,6 +152,14 @@ test('aborted request never grants a retry scope or reports an error',async()=>{
     'aborted Owner Cells must discard stale rotation intent')
   assert.deepEqual(f.coverStatuses,[],
     'an aborted request must not report a failed media reauthorization')
+})
+
+test('Owner 403 classifies viewport_denied and revokes unverified cells',async()=>{
+  const f=harness({requestStatus:403})
+  assert.equal(await f.run(),false)
+  assert.deepEqual(f.diagnostics,[{scope:'fixture-owner-a',code:'viewport_denied'}])
+  assert.deepEqual(f.published,[[],[]])
+  assert.deepEqual(f.failed,[{owner:'fixture-owner-a',key:'owner:family'}])
 })
 
 test('current failed Owner scope can retry once, in-flight and cross-scope cannot',()=>{
