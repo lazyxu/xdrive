@@ -67,6 +67,7 @@ test('unified Gallery wall density, query and return anchor survive modal map br
   assert.match(gallery, /@State private var viewerReturnAnchor: String\?/)
   assert.match(gallery, /\.onDisappear \{\s*photoObserver\.stop\(\)/)
   assert.match(dashboard, /presentingUnifiedMap = true/)
+  assert.match(dashboard, /localMapScope = \.library\s*localMapJump = nil\s*mapSource = \.local\s*presentingUnifiedMap = true/)
   assert.match(dashboard, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap/)
   assert.match(dashboard, /case \.unified:\s*XDriveIOSNativeUnifiedPhotoGallery\([\s\S]*?case \.map:/)
 })
