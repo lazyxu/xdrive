@@ -13,12 +13,12 @@ import (
 type releaseBundleIPCTestController struct {
 	*fakeDesktopIPCController
 	listing       client.ReleaseBundleListing
-	retryCount    int
-	downloadCount int
-	installCount  int
-	commit        string
-	filename      string
-	destination   string
+	retryCount       int
+	downloadCount    int
+	installCount     int
+	commit           string
+	filename         string
+	destination      string
 	personalUnsigned bool
 }
 
@@ -79,7 +79,6 @@ func TestDesktopCurrentBundleIPCRequiresFixedAuthenticatedRouteAndExplicitInstal
 	rr = desktopIPCRequest(t, handler, http.MethodPost, "/v1/release-bundle/install",
 		`{"commit":"`+commit+`","filename":"`+filename+`","confirm":true}`)
 	if rr.Code != http.StatusAccepted || f.installCount != 1 || f.commit != commit || f.filename != filename || f.personalUnsigned {
-
 		t.Fatalf("confirmed exact install failed: status=%d calls=%d", rr.Code, f.installCount)
 	}
 	rr = desktopIPCRequest(t, handler, http.MethodPost, "/v1/release-bundle/install",
