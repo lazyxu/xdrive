@@ -124,6 +124,10 @@ NAV_TARGETS = {
     "testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank",
     "testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent",
     "testLocalPhotoWithFilesQuickSectionsPreservesLocalChild",
+    "testCloudOriginalsFilesRapidReturnKeepsNativeChild",
+    "testCloudOriginalsBackgroundFilesReturnKeepsNativeChild",
+    "testCloudOriginalsHelpDismissFilesReturnKeepsChild",
+    "testCloudOriginalsFilesQuickSectionsReturnKeepsChild",
     # Each new live Gallery generation test additionally captures nearby
     # Simulator frames; screenshots are diagnostic, not a measured FPS.
     "testUnifiedWallGenerationPersistsThroughSixFilesTabRoundTrips",
