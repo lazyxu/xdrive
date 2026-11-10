@@ -491,6 +491,59 @@ enum XDriveIOSBackgroundPhotoTask {
         }
     }
 
+    /// APNs is advisory only: re-arm an OS-approved BGProcessing window, not a
+    /// writer. Owner, Source, Device, PhotoKit, encrypted pending receipts and
+    /// the explicit stop fence must all still match. Never move keys or original
+    /// staging files to a weaker data protection class to handle locked pushes.
+    @MainActor
+    static func rearmAfterRemoteWakeHint() async {
+        guard registeredAtLaunch, active == nil,
+              UIApplication.shared.isProtectedDataAvailable,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+        else { return }
+        let stop = localStopVersion
+        let now = Date()
+        do {
+            guard let grant = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
+                  let owner = try? grant.ownerScope(),
+                  grant.matches(owner), grant.hasManagedDestination,
+                  let plan = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
+                  plan.enabled, plan.historyRecoveryRequired != true,
+                  localStopVersion == stop,
+                  try !XDriveIOSBGOriginalWindowStore.shared.pausedForReview(owner: owner)
+            else { return }
+            // A pending task request must not be cancelled and postponed by
+            // every new remote hint. Exact requested intervals stay unchanged.
+            let pending: [BGTaskRequest] = await withCheckedContinuation { continuation in
+                BGTaskScheduler.shared.getPendingTaskRequests { requests in
+                    continuation.resume(returning: requests)
+                }
+            }
+            guard !pending.contains(where: { $0.identifier == identifier }),
+                  localStopVersion == stop, active == nil else { return }
+            let olderPending = try await XDriveIOSOriginalPendingReceiptPreflight
+                .pendingCount(owner: owner)
+            guard XDriveIOSPhotoBackupResiliencePolicy.canRequestSystemWindow(
+                protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable,
+                fullPhotosPermission: PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                managedGrantCurrent: grant.matches(owner) && grant.hasManagedDestination,
+                autoPlanEnabled: plan.enabled,
+                noActiveWriter: active == nil,
+                noPendingReceipts: olderPending == 0,
+                noUnresolvedPhotoKitHistory: plan.historyRecoveryRequired != true,
+                notPausedForReview: try !XDriveIOSBGOriginalWindowStore.shared.pausedForReview(owner: owner),
+                lastAcceptedWake: XDriveIOSBGAttemptStatus.lastRemoteWake(owner: owner),
+                now: now
+            ), localStopVersion == stop else { return }
+            try scheduleApprovedProbe(afterMinutes: grant.intervalMinutes)
+            XDriveIOSBGAttemptStatus.recordRemoteWake(owner: owner, at: now)
+            XDriveIOSBGAttemptStatus.record(.scheduledAfterPush, owner: owner)
+        } catch {
+            // No retry on uncertain receipt, revoked grant or unreadable vault.
+            // The OS or next unlocked foreground window remains authoritative.
+        }
+    }
+
     /// A background run must not continue with a copied, now-local-revoked
     /// secret after user disables the device. Server checks grant/Device
     /// status for every scoped request; native task cancellation adds a

@@ -87,11 +87,17 @@ jobs:
           subprocess.run(["xcrun","simctl","bootstatus",sys.argv[1],"-b"],
                          timeout=240,check=True)
           PY
-      - name: Run exact-source native cold launch and Files/Gallery crash checks
+      - name: Run exact-source native cold launch, Files/Gallery and backup crash checks
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/b9-runtime"
+          # Legacy b9 source is tested as published. Only the candidate has
+          # the isolated Photos Backup UI smoke cases introduced in this PR.
+          test_targets=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests")
+          if [[ "$B9_SOURCE_KIND" == "candidate" ]]; then
+            test_targets+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSPhotoBackupMVPScenarioUITests")
+          fi
           xcodebuild test \
             -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
             -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
@@ -101,7 +107,7 @@ jobs:
             -parallel-testing-enabled NO \
             "XDRIVE_SOURCE_COMMIT=$B9_SOURCE_SHA" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
-            -only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests \
+            "${test_targets[@]}" \
             2>&1 | tee "$RUNNER_TEMP/b9-runtime/xcodebuild.log"
       - name: Collect process crashes separately from missing UI elements
         if: always()

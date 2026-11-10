@@ -21,6 +21,14 @@ type IOSPhotoBackgroundGrant struct {
 	UpdatedAt      time.Time  `gorm:"not null"`
 	ExpiresAt      time.Time  `gorm:"not null;index"`
 	RevokedAt      *time.Time `gorm:"index"`
+	// Private APNs token, encrypted with the versioned Source keyring.
+	// A rotated/revoked grant cannot reuse a previous device registration.
+	APNSTokenCiphertext []byte `gorm:"type:bytea"`
+	APNSKeyVersion      uint32 `gorm:"not null;default:0"`
+	APNSTokenDigest     string `gorm:"size:64"`
+	APNSEnvironment     string `gorm:"size:16"`
+	APNSRegisteredAt    *time.Time
+	APNSLastSentAt      *time.Time
 }
 
 func (IOSPhotoBackgroundGrant) TableName() string {

@@ -216,6 +216,40 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-epoch-check"
           "$RUNNER_TEMP/xdrive-ios-epoch-check"
 
+      - name: Verify fail-closed iOS APNs wake and Free Up Space policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/PhotoBackupResiliencePolicy.swift \
+            ios/tests/PhotoBackupResiliencePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-resilience"
+          "$RUNNER_TEMP/xdrive-ios-photo-resilience"
+          node --test desktop/tests/ios-photo-apns-free-space-contract.cjs
+
+      # One cross-feature matrix makes the minimal iOS backup release
+      # invariants explicit. No simulator or test fixture is a real signed
+      # iPhone/iCloud/APNs acceptance; those remain a separate manual gate.
+      - name: Verify iOS incremental Photos MVP safety matrix
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/PhotoAutoSchedulePolicy.swift \
+            ios/XDriveIOS/PhotoBackupScanWindow.swift \
+            ios/XDriveIOS/PhotoFocusedBackupPolicy.swift \
+            ios/XDriveIOS/PhotoCursorEpochPolicy.swift \
+            ios/XDriveIOS/PhotoBackupResiliencePolicy.swift \
+            ios/XDriveIOS/NativePhotoCoveragePolicy.swift \
+            ios/tests/PhotoBackupMVPAcceptanceChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-mvp-matrix"
+          "$RUNNER_TEMP/xdrive-ios-photo-mvp-matrix"
+          node --test \
+            desktop/tests/ios-photo-backup-wifi-only.cjs \
+            desktop/tests/ios-photo-persistent-change-queue.cjs \
+            desktop/tests/ios-photo-icloud-permission-audit-integration.cjs \
+            desktop/tests/ios-photo-auto-disable-generation.cjs \
+            desktop/tests/ios-native-photoasset-live-original-restore.cjs \
+            desktop/tests/ios-native-photo-whole-audit-live-invalidation.cjs
+
       - name: Verify bounded stable PhotoKit equal-date backup boundaries
         run: |
           set -euo pipefail

@@ -23,6 +23,7 @@ func openNodeParentOwnerFenceMigrationDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "node_parent_owner_fence_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -41,6 +42,7 @@ func openNodeParentOwnerFenceMigrationDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	return db
 }
 

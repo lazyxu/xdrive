@@ -34,9 +34,20 @@ s += """
 private struct XDriveIOSNativeNavigationSmokeRoot: View {
     @StateObject private var login = XDriveIOSNativeOwnerLoginModel()
     @StateObject private var backup = XDriveIOSNativePhotoBackupController()
+    @State private var backupLaunchNonce = UUID()
     var body: some View {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-files-direct") {
+            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-photo-backup-direct") {
+                // CI-only real Backup UI; no synthetic upload receipts, Server
+                // tokens, PhotoKit authorization or modified production build.
+                NavigationStack {
+                    XDriveIOSNativePhotoBackupScreen(
+                        login: login, controller: backup,
+                        launchNonce: backupLaunchNonce,
+                        onShowCloudOriginals: {}
+                    )
+                }
+            } else if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-files-direct") {
                 NavigationStack {
                     XDriveIOSNativeFilesBrowser(login: login)
                         .navigationTitle("文件")
@@ -63,6 +74,15 @@ private struct XDriveIOSNativeNavigationSmokeRoot: View {
 }
 #endif
 """
+# Historical c83/b9 sources must compile using their ACTUAL Backup screen
+# initializer. Only current candidates have the explicit launchNonce API.
+# This adapts a disposable test harness; it does not rewrite release code.
+backup_api = (root / "ios/XDriveIOS/NativePhotoBackupScreen.swift").read_text()
+if "var launchNonce:" not in backup_api:
+    old_argument = "                        launchNonce: backupLaunchNonce,\n"
+    if s.count(old_argument) != 1:
+        raise SystemExit("Unexpected historical Backup constructor")
+    s = s.replace(old_argument, "")
 app.write_text(s)
 spec = project.read_text()
 if "xDriveIOSNavigationUITests" in spec or "\nschemes:" in spec:

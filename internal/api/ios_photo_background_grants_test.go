@@ -133,3 +133,23 @@ func TestIOSPhotoGrantRequiresExactManagedSourceAndNode(t *testing.T) {
 		t.Fatal("zero SourceID accepted")
 	}
 }
+
+func TestRevokingIOSPhotoGrantErasesPrivateAPNSToken(t *testing.T) {
+	now := time.Now().UTC()
+	changes := iosPhotoGrantRevokeUpdates(now)
+	if len(changes) != 8 || changes["revoked_at"] != now || changes["updated_at"] != now {
+		t.Fatal("grant revocation must update exactly the token lifecycle and revoke epoch")
+	}
+	for _, key := range []string{
+		"apns_token_ciphertext", "apns_registered_at", "apns_last_sent_at",
+	} {
+		if value, ok := changes[key]; !ok || value != nil {
+			t.Fatalf("revocation kept a private APNs token field: %s=%v", key, value)
+		}
+	}
+	if changes["apns_token_digest"] != "" ||
+		changes["apns_environment"] != "" ||
+		changes["apns_key_version"] != uint32(0) {
+		t.Fatal("revoked APNs metadata remained usable")
+	}
+}

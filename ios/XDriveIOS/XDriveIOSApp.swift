@@ -2,6 +2,9 @@ import SwiftUI
 
 @main
 struct XDriveIOSApp: App {
+    @UIApplicationDelegateAdaptor(XDriveIOSPhotoBackupRemoteHintDelegate.self)
+    private var photoWakeDelegate
+
     private let interruptedStage: XDriveIOSNativeLaunchCheckpoint.Phase?
 
     init() {
