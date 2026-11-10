@@ -1222,7 +1222,7 @@ const scenarios = [
     "checks": [
       {
         "file": "f",
-        "pattern": "if !isHome && !login.hasLocalOwnerSession",
+        "pattern": "if folder != nil && !login.hasLocalOwnerSession",
         "flags": ""
       },
       {

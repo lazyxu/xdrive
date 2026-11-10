@@ -3142,7 +3142,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) {
                 NavigationStack {
                     XDriveIOSNativeFilesOperationHistoryScreen(
-                        login: login, expectedOwner: owner
+                        login: login, expectedOwner: owner,
+                        onClose: { showingFileOperations = false }
                     ) {
                         operationWasAccepted = true
                     }
@@ -3160,7 +3161,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     XDriveIOSNativeFilesSavedSearchesScreen(
                         login: login, expectedOwner: owner,
                         proposedQuery: activeQuery,
-                        proposedFilters: searchFilters
+                        proposedFilters: searchFilters,
+                        onClose: { showingSavedSearches = false }
                     ) { saved in
                         applySavedSearch(saved, expectedOwner: owner)
                     }
@@ -3795,11 +3797,12 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     @ViewBuilder private func filesLoadingLifecycle(returnScroll: ScrollViewProxy) -> some View {
-        // A synthetic/expired local Owner without a Session must never mount
-        // the paged Files List at all. In XCUITest its nested accessibility
-        // snapshot could hang for >100s even though no Server data was read.
-        // Leave all real authentication in verifiedAuthorization() below.
-        if !isHome && !login.hasLocalOwnerSession {
+        // Only a pushed folder is a protected child route. Global Search also
+        // makes isHome false on the root; treating it as a child removed the
+        // entire Files rail after Search Submit on a no-Session Owner.
+        // Root search remains mounted, while all reads fail closed via the
+        // existing authorization gate. Actual folders deny before their List.
+        if folder != nil && !login.hasLocalOwnerSession {
             XDriveIOSNativeFilesNoSessionRoute(kind: .cloud)
                 .onAppear {
                     // A revoked/absent local Session must retire earlier

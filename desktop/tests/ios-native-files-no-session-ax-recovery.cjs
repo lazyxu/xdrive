@@ -17,7 +17,7 @@ test('a synthetic Owner with no active native Session is not authorized by local
   assert.match(owner, /func verifiedAuthorization\(\) async throws ->[\s\S]*?guard active != nil else \{ throw XDriveIOSNativeSessionError\.notSignedIn \}/)
 })
 test('unverified cloud folder bypasses full Files List before any AX enumeration', () => {
-  assert.match(browser, /@ViewBuilder private func filesLoadingLifecycle\(returnScroll: ScrollViewProxy\) -> some View \{[\s\S]*?if !isHome && !login\.hasLocalOwnerSession \{\s*XDriveIOSNativeFilesNoSessionRoute\(kind: \.cloud\)/)
+  assert.match(browser, /@ViewBuilder private func filesLoadingLifecycle\(returnScroll: ScrollViewProxy\) -> some View \{[\s\S]*?if folder != nil && !login\.hasLocalOwnerSession \{\s*XDriveIOSNativeFilesNoSessionRoute\(kind: \.cloud\)/)
   assert.match(browser, /else \{\s*filesArrangementLifecycle\(returnScroll: returnScroll\)/)
   assert.match(browser, /kind: \.cloud\)[\s\S]*?\.onAppear \{[\s\S]*?model\.invalidate\(\)[\s\S]*?selectedSnapshots\.removeAll\(\)/)
   assert.match(browser, /var body: some View \{\s*ScrollViewReader \{ returnScroll in\s*filesLoadingLifecycle\(returnScroll: returnScroll\)/)

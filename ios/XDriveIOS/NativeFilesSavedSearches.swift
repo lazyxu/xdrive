@@ -324,6 +324,9 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let expectedOwner: XDriveNativeOwnerRoot
     let onOpen: (XDriveIOSNativeFilesSavedSearch) -> Void
+    // The owning sheet closes explicitly, while pushed navigation can still
+    // fall back to environment dismiss.
+    let onClose: (() -> Void)?
     @StateObject private var model: XDriveIOSNativeFilesSavedSearchModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
@@ -339,10 +342,12 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
          expectedOwner: XDriveNativeOwnerRoot,
          proposedQuery: String,
          proposedFilters: XDriveIOSNativeFilesSearchFilterState,
+         onClose: (() -> Void)? = nil,
          onOpen: @escaping (XDriveIOSNativeFilesSavedSearch) -> Void) {
         self.login = login
         self.expectedOwner = expectedOwner
         self.onOpen = onOpen
+        self.onClose = onClose
         _model = StateObject(wrappedValue: XDriveIOSNativeFilesSavedSearchModel(owner: expectedOwner))
         _draftQuery = State(initialValue: proposedQuery)
         _draftFilters = State(initialValue: XDriveIOSNativeFilesSavedSearchFilters(from: proposedFilters))
@@ -484,8 +489,11 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
                           model.loading || model.busy)
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button("完成") { dismiss() }
-                    .disabled(model.busy)
+                Button("完成") {
+                    if let onClose { onClose() } else { dismiss() }
+                }
+                .accessibilityIdentifier("native-ios-files-saved-searches-done")
+                .disabled(model.busy)
             }
         }
         // A submitted write may be committed even if a modal closes mid-flight.

@@ -132,11 +132,19 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             ].exists, "An unverified collection must not look like empty success")
         }
 
-        let done = app.buttons["完成"].firstMatch
+        let doneID = id == "history"
+            ? "native-ios-files-operation-history-done"
+            : "native-ios-files-saved-searches-done"
+        let done = app.buttons.matching(identifier: doneID).firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 10))
         done.tap()
         alive(app, "return-from-\(id)-\(cycle)")
-        XCTAssertFalse(page.exists, "Dismiss failed to retire the denied \(id) sheet")
+        // Verify actual retirement, not an instantaneous assertion in the
+        // middle of the UIKit modal dismissal animation.
+        let retired = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: page)
+        XCTAssertEqual(XCTWaiter.wait(for: [retired], timeout: 8), .completed,
+                       "Dismiss failed to retire the denied \(id) sheet")
         XCTAssertTrue(app.descendants(matching: .any)
             .matching(identifier: "native-ios-files-section-browse")
             .firstMatch.waitForExistence(timeout: 12),

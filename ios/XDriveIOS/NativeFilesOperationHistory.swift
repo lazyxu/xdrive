@@ -282,6 +282,9 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let expectedOwner: XDriveNativeOwnerRoot
     let onAccepted: () -> Void
+    // The sheet owner retires its presentation; environment dismiss in a
+    // nested NavigationStack did not close the candidate sheet in XCTest.
+    let onClose: (() -> Void)?
 
     @StateObject private var model: XDriveIOSNativeFilesOperationsModel
     @Environment(\.dismiss) private var dismiss
@@ -296,10 +299,12 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
 
     init(login: XDriveIOSNativeOwnerLoginModel,
          expectedOwner: XDriveNativeOwnerRoot,
+         onClose: (() -> Void)? = nil,
          onAccepted: @escaping () -> Void) {
         self.login = login
         self.expectedOwner = expectedOwner
         self.onAccepted = onAccepted
+        self.onClose = onClose
         _model = StateObject(
             wrappedValue: XDriveIOSNativeFilesOperationsModel(owner: expectedOwner)
         )
@@ -402,8 +407,11 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
                           !XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner))
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button("完成") { dismiss() }
-                    .disabled(model.busy)
+                Button("完成") {
+                    if let onClose { onClose() } else { dismiss() }
+                }
+                .accessibilityIdentifier("native-ios-files-operation-history-done")
+                .disabled(model.busy)
             }
         }
         // A pending POST may have committed even if its receipt is delayed.

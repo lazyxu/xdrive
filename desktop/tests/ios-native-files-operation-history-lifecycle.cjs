@@ -38,7 +38,7 @@ test('confirm button rechecks action eligibility, item membership and Owner',()=
 })
 test('pending one-shot POST disables both Done and swipe dismissal',()=>{
   assert.match(source,/\.interactiveDismissDisabled\(model\.busy\)/)
-  assert.match(source,/Button\("完成"\) \{ dismiss\(\) \}\s*\.disabled\(model\.busy\)/)
+  assert.match(source,/Button\("完成"\) \{\s*if let onClose \{ onClose\(\) \} else \{ dismiss\(\) \}\s*\}\s*\.accessibilityIdentifier\("native-ios-files-operation-history-done"\)\s*\.disabled\(model\.busy\)/)
 })
 test('status panel is scoped to current active login, not previous account',()=>{
   assert.match(source,/if phase == \.active,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\),\s*let status = model\.status/)
