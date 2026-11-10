@@ -1833,6 +1833,30 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 invalidate()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.didBecomeActiveNotification
+        )) { _ in
+            // Returning from Settings is not guaranteed to deliver a new
+            // SwiftUI scenePhase edge to an already mounted child map.
+            // Always re-read the actual PhotoKit .readWrite authorization.
+            // A changed grant may resume the real scanner; a revoked/limited
+            // grant must revoke the displayed cells before another tap.
+            let live = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            print("IOS_MAP_PHOTO_AUTH_REENTRY cached=\(authorization.rawValue) live=\(live.rawValue) scene=\(phase)")
+            guard phase == .active, live != authorization else { return }
+            let returningCamera = globalCamera
+            authorization = live
+            onLibraryCameraChange?(nil)
+            clearReturnCamera()
+            invalidate()
+            guard live == .authorized else { return }
+            changes.start()
+            if mapScope == .page {
+                refresh(at: offset)
+            } else {
+                scanFullLibrary(returningCamera: returningCamera)
+            }
+        }
         .onDisappear {
             currentLocation.cancel()
             // A presented cluster sheet may hide its map presenter. Keep
