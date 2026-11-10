@@ -830,6 +830,10 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-operations"
           "$RUNNER_TEMP/xdrive-ios-files-operations"
           node --test desktop/tests/ios-native-files-undo-redo.cjs
+          # New cold read can be cancelled by an immediate Gallery tab
+          # switch; it must retry visibly, never cancel a queued write.
+          node --test desktop/tests/ios-native-files-operation-history-lifecycle.cjs \
+            desktop/tests/ios-native-files-operation-cold-return-20261110.cjs
 
       - name: Verify native Files inline folder 115k bounded bidirectional paging
         run: |
