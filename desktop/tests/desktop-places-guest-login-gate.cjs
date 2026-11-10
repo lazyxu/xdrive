@@ -94,6 +94,8 @@ test('actual guest DOM must be a map-only page, never HTTP 200 login or Owner-de
     'unavailable:session_denied')
   assert.equal(admission.xDriveDesktopPlacesGuestFailureCode('unavailable:session_denied'),
     'session_denied')
+  assert.equal(admission.xDriveDesktopPlacesGuestFailureCode('unavailable:child_handshake_timeout'),
+    'child_handshake_timeout')
   assert.equal(admission.xDriveDesktopPlacesGuestProbeState('unavailable:session_denied'),
     'unavailable')
   assert.equal(run(['#web-login-username']), 'login')
