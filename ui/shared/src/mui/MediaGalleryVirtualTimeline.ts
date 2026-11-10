@@ -149,6 +149,7 @@ export function xDriveMediaGalleryTimelineOffsetForIndex(
   layout: XDriveMediaGalleryTimelineLayout,
   logicalIndex: number,
 ): number | null {
+  if (!Number.isFinite(logicalIndex)) return null
   const index = Math.max(0, Math.trunc(logicalIndex))
   if (!Number.isSafeInteger(index)) return null
 
