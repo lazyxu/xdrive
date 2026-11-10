@@ -16,28 +16,28 @@ func TestCredentialMaskLengthMetadataSurvivesAgentJSON(t *testing.T) {
 		fields  []string
 	}{
 		{
-			name: "AliDNS independent fields",
+			name:    "AliDNS independent fields",
 			payload: `{"configured":true,"access_key_id_length":18,"access_key_secret_length":37}`,
-			target: &AdminCaddyAliDNSConfig{},
-			fields: []string{`"access_key_id_length":18`, `"access_key_secret_length":37`},
+			target:  &AdminCaddyAliDNSConfig{},
+			fields:  []string{`"access_key_id_length":18`, `"access_key_secret_length":37`},
 		},
 		{
-			name: "Baidu Server AK",
+			name:    "Baidu Server AK",
 			payload: `{"configured":true,"ak_length":23}`,
-			target: &AdminBaiduMapConfig{},
-			fields: []string{`"ak_length":23`},
+			target:  &AdminBaiduMapConfig{},
+			fields:  []string{`"ak_length":23`},
 		},
 		{
-			name: "Baidu Browser AK",
+			name:    "Baidu Browser AK",
 			payload: `{"configured":true,"browser_ak_length":29}`,
-			target: &AdminBaiduJSAPIConfig{},
-			fields: []string{`"browser_ak_length":29`},
+			target:  &AdminBaiduJSAPIConfig{},
+			fields:  []string{`"browser_ak_length":29`},
 		},
 		{
-			name: "Source Cookie and DSM password",
+			name:    "Source Cookie and DSM password",
 			payload: `{"source":{"id":10,"kind":"yike_photos"},"credential":{"configured":true,"value_length":53}}`,
-			target: &SourceOverview{},
-			fields: []string{`"value_length":53`},
+			target:  &SourceOverview{},
+			fields:  []string{`"value_length":53`},
 		},
 	}
 	for _, tc := range cases {

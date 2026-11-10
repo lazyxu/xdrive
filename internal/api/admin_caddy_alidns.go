@@ -126,7 +126,7 @@ func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, adminCaddyAliDNSConfigDTO{
 		Configured:        configured,
 		AccessKeyIDLength: idLength, AccessKeySecretLength: secretLength,
-		Revision:   row.Revision, Source: source,
+		Revision: row.Revision, Source: source,
 		UpdatedAt: func() *time.Time {
 			if exists {
 				return &row.UpdatedAt
