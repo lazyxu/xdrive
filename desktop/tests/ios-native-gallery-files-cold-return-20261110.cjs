@@ -63,7 +63,11 @@ test('07 all FOUR local PhotoKit native UI journeys produce tap-adjacent simulat
 })
 test('08 frame watcher samples LATE taps on repeated 8+ Gallery/Files switches', () => {
   assert.match(frame, /TAP_CAPTURE_NUMBERS = frozenset\(\(1, 2, 4, 8, 12, 16\)\)/)
-  assert.match(frame, /count = tap_counts\.get\(current_case, 0\) \+ 1\s*tap_counts\[current_case\] = count\s*if count in TAP_CAPTURE_NUMBERS/)
+  assert.match(frame, /count = tap_counts\.get\(current_case, 0\) \+ 1\s*tap_counts\[current_case\] = count\s*minimal = current_case\[0\] in MINIMAL_TARGETS/)
+  // The 21 short routes sample their first actual tap. Longer Gallery/Files
+  // round trips still sample late taps 4/8/12/16, not just the opening tab.
+  assert.match(frame, /if \(minimal and count == 1\) or \(not minimal and count in TAP_CAPTURE_NUMBERS\):/)
+  assert.match(frame, /delays = \(0\.55,\) if minimal else TAP_FRAME_OFFSETS_SECONDS/)
   assert.doesNotMatch(frame, /if count < 3:/)
 })
 test('09 sub-150ms tap capture has a fine-grained polling cadence', () => {
