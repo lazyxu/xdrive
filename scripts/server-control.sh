@@ -54,7 +54,8 @@ prepare_dir() {
 # An upgrade always owns install.lock and therefore preempts every package
 # transfer; a failed mirror job is never a server transaction error.
 release_bundle_enqueue() {
-  local force="${1:-false}" sha worker cache pid_file pid
+  local force="${1:-false}" sha worker cache pid_file pid verify_sigstore
+  local -a extra_bundle_args=()
   sha="$(env_value XD_RELEASE_COMMIT)"
   [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 0
   worker="$BIN_DIR/release_bundle.py"
@@ -63,6 +64,13 @@ release_bundle_enqueue() {
   cache="$(env_value XD_RELEASE_BUNDLE_HOST_DIR)"
   [[ -n "$cache" ]] || cache="$XDRIVE_HOME/data/release-bundles"
   [[ "$cache" == /* && ! -L "$cache" ]] || return 0
+  verify_sigstore="$(env_value XD_RELEASE_BUNDLE_VERIFY_SIGSTORE)"
+  if [[ "$verify_sigstore" == "required" ]]; then
+    extra_bundle_args+=(--require-sigstore)
+  elif [[ -n "$verify_sigstore" && "$verify_sigstore" != "off" ]]; then
+    echo "[xDrive] Unrecognized Bundle Sigstore policy; refusing client cache (server unaffected)" >&2
+    return 0
+  fi
   mkdir -p "$cache"
   chmod 0755 "$cache"
   # A SIGKILL or power cut can leave the shared marker behind. Remove it
@@ -110,7 +118,8 @@ release_bundle_enqueue() {
     exec 8>&- 9>&-
     exec python3 "$worker" --commit "$sha" --cache-dir "$cache" \
       --install-lock "$STATE_DIR/install.lock" --installed-env "$ENV_PATH" \
-      --dependency-busy-file "$cache/dependency-busy"
+      --dependency-busy-file "$cache/dependency-busy" \
+      "${extra_bundle_args[@]}"
   ) >>"$LOG_DIR/release-bundle.log" 2>&1 </dev/null &
   printf '%s\n' "$!" > "$pid_file"
   chmod 0600 "$pid_file"

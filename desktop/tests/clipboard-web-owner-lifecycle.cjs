@@ -666,3 +666,69 @@ test('Clipboard React Lock discards delayed device decrypt and A→B→A cannot 
     await app.unmount()
   }
 })
+
+test('Clipboard directed image/file opens only after exact decrypted Node and explicit Viewer click', async () => {
+  const item={id:45,client_event_id:'event-ref',kind:'image/x-xdrive-node-ref',node_id:118,
+    target_device_id:'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2',
+    nonce:'sealed',ciphertext:'sealed',ephemeral_key:'ephemeral',wrapped_key:'wrap',
+    created_at:new Date().toISOString(),expires_at:new Date(Date.now()+30000).toISOString()}
+  const opened=[]
+  const app=await mount(makeUI(),port('https://drive.example:viewer-owner',{
+    list:async()=>({items:[item],next_before:null}),
+    decryptTarget:async id=>{assert.equal(id,45);return 'asset:118'},
+    openReferencedFile:async (id,signal)=>{
+      assert.equal(signal.aborted,false)
+      opened.push(id)
+    },
+  }))
+  try {
+    await unlock(app)
+    await act(()=>{})
+    assert.ok(app.button('在文件 Viewer 中打开'))
+    assert.equal(opened.length,0)
+    await click(app,'在文件 Viewer 中打开')
+    assert.deepEqual(opened,[118])
+  } finally { await app.unmount() }
+})
+
+test('Clipboard mismatched decrypted Node, former Owner and abandoned async Viewer are fail closed', async () => {
+  const item={id:46,client_event_id:'event-wrong',kind:'application/x-xdrive-node-ref',node_id:119,
+    target_device_id:'a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2',
+    nonce:'sealed',ciphertext:'sealed',ephemeral_key:'ephemeral',wrapped_key:'wrap',
+    created_at:new Date().toISOString(),expires_at:new Date(Date.now()+30000).toISOString()}
+  const app=await mount(makeUI(),port('https://drive.example:wrong-node',{
+    list:async()=>({items:[item],next_before:null}),
+    decryptTarget:async()=> 'asset:118',
+    openReferencedFile:async()=>{throw new Error('must not open incorrect Node')},
+  }))
+  try {
+    await unlock(app)
+    await act(()=>{})
+    assert.equal(app.renderer.root.findAllByType('Button')
+      .filter(button=>button.props.children==='在文件 Viewer 中打开').length,0)
+  } finally { await app.unmount() }
+
+  const deferredOpen=deferred()
+  let starts=0
+  const source=port('https://drive.example:source-node',{
+    list:async()=>({items:[item],next_before:null}),
+    decryptTarget:async()=> 'asset:119',
+    openReferencedFile:async(id,signal)=>{
+      assert.equal(id,119);starts++;await deferredOpen.promise
+      if(signal.aborted)throw Error('Viewer cancelled')
+    },
+  })
+  const second=port('https://drive.example:other-owner')
+  const viewer=await mount(makeUI(),source)
+  try {
+    await unlock(viewer)
+    await act(()=>{})
+    await click(viewer,'在文件 Viewer 中打开')
+    assert.equal(starts,1)
+    await viewer.update(second)
+    deferredOpen.resolve()
+    await act(()=>{})
+    assert.doesNotMatch(viewer.snapshot(),/已转到经过授权的文件 Viewer/)
+    assert.ok(viewer.button('解锁'))
+  } finally { await viewer.unmount() }
+})

@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -74,6 +75,10 @@ def validate(manifest, expected_commit=None, allow_local=False):
             raise ValueError("artifact was built from another commit")
         if item.get("install_mode", "manual") not in ("manual", "manual_test_only"):
             raise ValueError("invalid installation mode")
+        if item["platform"] == "ios" and name == "xDrive-unsigned.ipa" and (
+            item.get("install_mode") != "manual_test_only"
+        ):
+            raise ValueError("unsigned iOS IPA is manual testing only")
         if item["platform"] == "android" and (
             item.get("install_mode") != "manual" or
             not re.fullmatch(r"xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apk", name)
@@ -268,7 +273,54 @@ def _verify_published_release(sha, raw, document, ref, release):
             raise ValueError("GitHub published asset size or SHA-256 mismatch: " + name)
 
 
-def _fetch_manifest(sha, lock_path, marker=None):
+
+def _verify_sigstore_manifest(raw, sha, channel):
+    """Require cryptographically verified GitHub Actions provenance on Host.
+
+    Uses GitHub CLI independently of Server metadata, pinned to source Commit,
+    workflow identity, and immutable repository ID. No Owner JWT is required.
+    If missing/unavailable, never silently downgrade to HTTPS-only provenance.
+    """
+    if not SHA.fullmatch(sha) or channel not in ("master", "stable"):
+        raise ValueError("Sigstore admission requires full Git Commit and channel")
+    gh = shutil.which("gh")
+    if not gh:
+        raise ValueError("independent Sigstore verifier (gh CLI) unavailable")
+    with tempfile.TemporaryDirectory(prefix="xdrive-release-sigstore-") as tmp:
+        manifest = Path(tmp) / "release-bundle.json"
+        manifest.write_bytes(raw)
+        cmd = [gh, "attestation", "verify", str(manifest),
+               "--repo", "lazyxu/xdrive",
+               "--signer-workflow", "lazyxu/xdrive/.github/workflows/release.yml",
+               "--source-digest", sha, "--deny-self-hosted-runners",
+               "--format", "json"]
+        if channel == "master":
+            cmd += ["--source-ref", "refs/heads/master"]
+        env = {key: value for key, value in os.environ.items()
+               if key not in ("XD_BUNDLE_OWNER_TOKEN", "XD_OWNER_TOKEN",
+                              "XD_ACCESS_TOKEN", "XDRIVE_API_TOKEN")}
+        try:
+            checked = subprocess.run(cmd, env=env, capture_output=True,
+                                     text=True, check=False, timeout=90)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("independent Sigstore verification unavailable") from exc
+        if checked.returncode:
+            raise ValueError("independent Sigstore verifier rejected manifest provenance")
+        try:
+            proofs = json.loads(checked.stdout)
+            accepted = isinstance(proofs, list) and any(
+                str(proof["verificationResult"]["signature"]["certificate"]
+                    ["sourceRepositoryIdentifier"]) == "1382670236"
+                for proof in proofs
+            )
+        except (ValueError, KeyError, TypeError):
+            accepted = False
+        if not accepted:
+            raise ValueError("Sigstore certificate did not match pinned GitHub repository ID")
+        return True
+
+
+def _fetch_manifest(sha, lock_path, marker=None, require_sigstore=False):
     if not SHA.fullmatch(sha):
         raise ValueError("invalid full source commit")
     prefix = "https://api.github.com/repos/lazyxu/xdrive/"
@@ -284,6 +336,8 @@ def _fetch_manifest(sha, lock_path, marker=None):
         raise ValueError("oversized manifest")
     document = validate(json.loads(raw.decode("utf-8")), sha)
     _verify_published_release(sha, raw, document, ref, release)
+    if require_sigstore:
+        _verify_sigstore_manifest(raw, sha, document["channel"])
     return document
 
 
@@ -476,6 +530,8 @@ def main():
     parser.add_argument("--installed-env", type=Path)
     parser.add_argument("--dependency-busy-file", type=Path)
     parser.add_argument("--retries", type=int, default=2)
+    parser.add_argument("--require-sigstore", action="store_true",
+                        help="fail closed unless Host independently verifies signed Manifest provenance")
     args = parser.parse_args()
     if not 1 <= args.retries <= 5:
         parser.error("retries must be 1..5")
@@ -484,8 +540,11 @@ def main():
             raise ValueError("invalid target commit")
         cache = args.cache_dir
         cache.mkdir(parents=True, exist_ok=True)
-        manifest = (_fetch_manifest(args.commit, args.install_lock, args.dependency_busy_file) if args.commit else
+        manifest = (_fetch_manifest(args.commit, args.install_lock, args.dependency_busy_file,
+                                    require_sigstore=args.require_sigstore) if args.commit else
                     json.loads(args.manifest.read_text(encoding="utf-8")))
+        if args.manifest and args.require_sigstore:
+            _verify_sigstore_manifest(args.manifest.read_bytes(), manifest["commit"], manifest["channel"])
         return sync(manifest, cache, args.install_lock, args.dependency_busy_file, args.retries, installed_env=args.installed_env)
     except Exception as exc:
         print("Release Bundle cache failed (noncritical): " + str(exc), file=sys.stderr)

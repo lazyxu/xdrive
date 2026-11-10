@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -37,25 +38,28 @@ var (
 )
 
 type clientUpdateState struct {
-	Mode             string  `json:"mode"`
-	Source           string  `json:"source"`
-	Status           string  `json:"status"`
-	CurrentVersion   string  `json:"current_version"`
-	LatestVersion    string  `json:"latest_version,omitempty"`
-	ReleaseName      string  `json:"release_name,omitempty"`
-	PublishedAt      string  `json:"published_at,omitempty"`
-	ReleaseNotes     string  `json:"release_notes,omitempty"`
-	ReleaseURL       string  `json:"release_url,omitempty"`
-	Channel          string  `json:"channel,omitempty"`
-	UpdateAvailable  bool    `json:"update_available"`
-	Downloaded       bool    `json:"downloaded"`
-	InstallSupported bool    `json:"install_supported"`
-	LastCheckedAt    string  `json:"last_checked_at,omitempty"`
-	Message          string  `json:"message,omitempty"`
-	LastError        string  `json:"last_error,omitempty"`
-	BytesDone        int64   `json:"bytes_done,omitempty"`
-	BytesTotal       int64   `json:"bytes_total,omitempty"`
-	BytesPerSecond   float64 `json:"bytes_per_second,omitempty"`
+	Mode             string `json:"mode"`
+	Source           string `json:"source"`
+	Status           string `json:"status"`
+	CurrentVersion   string `json:"current_version"`
+	LatestVersion    string `json:"latest_version,omitempty"`
+	ReleaseName      string `json:"release_name,omitempty"`
+	PublishedAt      string `json:"published_at,omitempty"`
+	ReleaseNotes     string `json:"release_notes,omitempty"`
+	ReleaseURL       string `json:"release_url,omitempty"`
+	Channel          string `json:"channel,omitempty"`
+	UpdateAvailable  bool   `json:"update_available"`
+	Downloaded       bool   `json:"downloaded"`
+	InstallSupported bool   `json:"install_supported"`
+	// A Linux desktop may prompt through PolicyKit only for explicit installs.
+	// Background auto-install remains disabled without a privileged service.
+	ManualInstallSupported bool    `json:"manual_install_supported"`
+	LastCheckedAt          string  `json:"last_checked_at,omitempty"`
+	Message                string  `json:"message,omitempty"`
+	LastError              string  `json:"last_error,omitempty"`
+	BytesDone              int64   `json:"bytes_done,omitempty"`
+	BytesTotal             int64   `json:"bytes_total,omitempty"`
+	BytesPerSecond         float64 `json:"bytes_per_second,omitempty"`
 }
 
 type clientUpdateBackend interface {
@@ -106,7 +110,7 @@ func matchCurrentServerBundle(result xupdate.Result, listing client.ReleaseBundl
 	}
 	for _, artifact := range listing.Artifacts {
 		if artifact.Platform != platform || artifact.Filename != result.Asset.Name ||
-			artifact.BuildCommit != result.Commit {
+			artifact.BuildCommit != result.Commit || artifact.InstallMode != "manual" {
 			continue
 		}
 		// The independent, selected update channel must already supply a
@@ -217,9 +221,18 @@ func newClientUpdateManagerWithBackend(ctx context.Context, backend clientUpdate
 	mode := userconfig.UpdateModeManual
 	source := userconfig.UpdateSourceGitHub
 	lastError := ""
-	installSupported := runtime.GOOS == "windows"
+	installSupported := runtime.GOOS == "windows" ||
+		(runtime.GOOS == "linux" && os.Geteuid() == 0)
+	manualInstallSupported := installSupported
+	if runtime.GOOS == "linux" && !manualInstallSupported &&
+		(os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "") {
+		if _, err := exec.LookPath("pkexec"); err == nil {
+			manualInstallSupported = true
+		}
+	}
 	if len(installCapability) > 0 {
 		installSupported = installCapability[0]
+		manualInstallSupported = installSupported
 	}
 	if prefs, err := userconfig.LoadUpdatePreferences(); err == nil {
 		mode = prefs.Mode
@@ -237,12 +250,13 @@ func newClientUpdateManagerWithBackend(ctx context.Context, backend clientUpdate
 		ctx:     ctx,
 		backend: backend,
 		state: clientUpdateState{
-			Mode:             mode,
-			Source:           source,
-			Status:           clientUpdateStatusIdle,
-			CurrentVersion:   version.String(),
-			InstallSupported: installSupported,
-			LastError:        lastError,
+			Mode:                   mode,
+			Source:                 source,
+			Status:                 clientUpdateStatusIdle,
+			CurrentVersion:         version.String(),
+			InstallSupported:       installSupported,
+			ManualInstallSupported: manualInstallSupported,
+			LastError:              lastError,
 		},
 		wake:    make(chan struct{}, 1),
 		op:      make(chan struct{}, 1),

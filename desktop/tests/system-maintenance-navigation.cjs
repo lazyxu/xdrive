@@ -161,3 +161,15 @@ test('administrator maintenance requires explicit confirmation before posting a 
   assert.equal(render(true).dialog.props.open, false)
   assert.deepEqual(effects, ['host-start'], 'disabled administrator control must not start another task')
 })
+
+test('Release Bundle Desktop save allows only explicit unsigned iOS testing, never privileged native install', () => {
+  const main = read('desktop', 'src', 'main', 'index.cts')
+  const backend = read('cmd', 'xdrive-agent', 'cloud_release_bundle.go')
+  const current = read('cmd', 'xdrive-agent', 'client_update_current_server.go')
+  assert.ok(main.includes("item.install_mode === 'manual_test_only' && item.platform === 'ios'"), 'test-only IPA must remain an explicitly labeled manual save')
+  assert.ok(main.includes("item.filename === 'xDrive-unsigned.ipa'"))
+  assert.ok(backend.includes('item.Platform == "ios" && item.Filename == "xDrive-unsigned.ipa"'))
+  assert.ok(current.includes('artifact.InstallMode == "manual"'), 'native install must refuse test-only packages')
+  assert.ok(desktop.includes('clientUpdate?.manual_install_supported])'),
+    'Desktop release controls must refresh when native manual-install capability arrives')
+})

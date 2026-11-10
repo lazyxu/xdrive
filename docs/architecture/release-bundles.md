@@ -7,17 +7,35 @@ checks remain authoritative.
 
 ## Identity and immutable publication
 
+**Platform immutability is separate from source-level no-clobber guards.**
+The first observed public `bundle-2f5787bef3e1c825f00ff912e8bcd820d6862326`
+Release has `immutable: false`, despite its exact source ref and Release
+asset digest inventory. It must not be represented as a GitHub-locked Release.
+GitHub repository **Settings → Releases → Enable release immutability** must
+be enabled by an authorized repository administrator; this applies to
+future Releases, not retroactively to that already published one.
+The independent parent CI `verify-published-bundle` job now requires
+`immutable: true` *and* the signed Manifest proof for subsequent Releases.
+It is intentionally not a dependency of the core Server/Snapshot publish job.
+
+
 - A Bundle is identified by the **complete lowercase 40-hex Git Commit**,
   not by a rolling `snapshot`, 12-character prefix, build number or
   platform version string.
 - An immutable GitHub Release `bundle-<full-sha>` publishes
   `release-bundle.json` and the exact same-commit client packages. Its
   publisher verifies the tag ref, every asset name and SHA-256 on retries.
-  CI also produces a Sigstore attestation for the manifest.
+  CI also produces a Sigstore attestation for the manifest. A **separate
+  top-level post-publish CI job** verifies the actual published Release and
+  independent Sigstore proof, without becoming a dependency or nested failure
+  of the Server's reusable release workflow. Real verification cannot pass
+  merely from publisher mocks.
 - Artifact records include `platform`, `filename`, `build_commit`,
   `sha256`, `size`, `install_mode` and ordered preferred origins.
   **Missing platforms are omitted**. Android Debug APKs are never mirrored. Only independently approved,
-  fixed-key signed public Android APKs may be included.
+  fixed-key signed public Android APKs may be included. The `xDrive-unsigned.ipa`
+  is explicitly `manual_test_only`: it can be downloaded for developer signing,
+  but MUST NOT be offered as a direct or automatic iOS installer.
 - Existing Linux/Windows/Backup CLI/DSM publish contracts remain in place;
   separately published iOS and signed Android outputs may enter a Bundle only when the
   exact-source Release is already present and verified at Bundle publication.
@@ -66,7 +84,14 @@ checks remain authoritative.
   manifest and every artifact against the immutable GitHub Release asset
   digest/size inventory. Missing, duplicated, altered, or mismatched assets
   fail closed without affecting Server health. This uses GitHub HTTPS
-  provenance; it is **not** independent Sigstore verification.
+  provenance by default. To independently verify the signed Manifest before
+  **every Host cache promotion**, install a trusted GitHub CLI on the Host and
+  set `XD_RELEASE_BUNDLE_VERIFY_SIGSTORE=required` in its Host `.env`.
+  The Worker then pins the OIDC signer workflow, full source Commit, master
+  source ref (when applicable), and immutable GitHub repository ID 1382670236.
+  Missing tools or invalid attestations fail only the optional client cache,
+  never the Server upgrade. Without this setting Host Sigstore enforcement is
+  explicitly **not active**.
 
 
 ## Authenticated distribution
@@ -100,6 +125,54 @@ Users should not confuse a Server upgrade success with an additional
 package-cache success. No client must update merely because the Server
 upgraded. Release Bundle publication needs its own exact-head CI/Final Gate
 before it is considered shipped.
+
+The bundled `cli` artifacts are currently **Backup-only CLI** archives; a separate
+standalone `xd`/Agent installation is not represented until its independent
+source-exact package build exists. Do not advertise these as all CLI variants.
+
+## Read-only live release and Host acceptance gate
+
+After a *real* `bundle-<40-hex>` GitHub Release exists, run:
+
+```bash
+python3 scripts/ci/verify-live-release-bundle.py --commit FULL_SERVER_SHA
+```
+
+For a **real installed Host** (the command checks actual cached bytes and the
+running authenticated Server API, not a mock):
+
+```bash
+XD_BUNDLE_OWNER_TOKEN='...' python3 scripts/ci/verify-live-release-bundle.py \
+  --commit FULL_SERVER_SHA --host-home "$HOME/.xd" \
+  --server-url https://your-server.example --require-sigstore
+```
+
+`--require-sigstore` needs an independently installed and trusted GitHub CLI
+(`gh attestation verify`), validates the signed manifest digest, full source
+Commit, signer workflow and GitHub repository ID 1382670236, and **fails
+closed** if unavailable. No Owner credentials are sent to GitHub. It is an
+explicit acceptance gate, not proof that every installed Host has the CLI.
+
+For a real authenticated download and resume SHA-256 check add
+`--check-server-download` (requires `--server-url` and Owner token). This
+performs two actual HTTP `Range` transfers per cached artifact, recombines the
+bytes in order and compares the full hash. It never installs a package.
+
+Host acceptance treats the documented `retry_needed` **partial verified cache**
+as usable when at least one package passed full disk SHA-256; unavailable
+platforms do not block the Server or verified packages. Use
+`--require-complete-cache` only when an operator explicitly requires every
+platform to be cached. A zero-verified partial cache still fails.
+
+For an intentional, expensive end-to-end mirror-byte audit add
+`--check-package-bytes`. This verifies actual package bytes from both GitLab
+and GitHub; inaccessible GitLab or a missing optional upstream fails that
+**optional strict mirror check**, not an existing Server upgrade. Use the
+authenticated API check only over HTTPS (or `--allow-loopback-http` for local
+loopback testing). The gate never installs software or asserts physical-device
+success. Actual Windows transaction, Linux PolicyKit authorization, DSM package
+install, Apple signing and Android production signing still need device-specific
+acceptance evidence. Missing client platforms remain allowed.
 
 **Constraints:** This is not an automatic native app installer, IPA signing
 service, or Android production signing system. Native updates must still use

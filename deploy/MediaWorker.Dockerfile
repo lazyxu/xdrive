@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # FFmpeg is isolated from the distroless Server and never mounts user data.
 ARG GO_IMAGE=golang:1.25-bookworm
 ARG RUNTIME_IMAGE=alpine:3.22

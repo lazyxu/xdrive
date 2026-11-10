@@ -61,12 +61,13 @@ type releaseBundleItem struct {
 }
 
 type releaseBundleListing struct {
-	State        string              `json:"state"`
-	Commit       string              `json:"commit,omitempty"`
-	Channel      string              `json:"channel,omitempty"`
-	CachedCommit string              `json:"cached_commit,omitempty"`
-	Artifacts    []releaseBundleItem `json:"artifacts"`
-	Message      string              `json:"message,omitempty"`
+	State         string              `json:"state"`
+	Commit        string              `json:"commit,omitempty"`
+	Channel       string              `json:"channel,omitempty"`
+	ServerVersion string              `json:"server_version,omitempty"`
+	CachedCommit  string              `json:"cached_commit,omitempty"`
+	Artifacts     []releaseBundleItem `json:"artifacts"`
+	Message       string              `json:"message,omitempty"`
 }
 
 func readBundleJSON(path string, limit int64, dest any) error {
@@ -103,6 +104,9 @@ func validReleaseBundleManifest(m releaseBundleManifest) bool {
 		if a.InstallMode != "manual" && a.InstallMode != "manual_test_only" {
 			return false
 		}
+		if a.Platform == "ios" && a.Filename == "xDrive-unsigned.ipa" && a.InstallMode != "manual_test_only" {
+			return false
+		}
 		if a.Platform == "android" && (a.InstallMode != "manual" || !releaseBundleAndroidNamePattern.MatchString(a.Filename)) {
 			return false
 		}
@@ -124,7 +128,12 @@ func validReleaseBundleManifest(m releaseBundleManifest) bool {
 }
 
 func readReleaseBundleListing(root string) releaseBundleListing {
-	return readReleaseBundleListingForServerCommit(root, version.Metadata().Commit)
+	running := version.Metadata()
+	listing := readReleaseBundleListingForServerCommit(root, running.Commit)
+	// Explicit, authoritative target installer version; never synthesize a
+	// version from the Commit prefix or from a stale Host cache.
+	listing.ServerVersion = running.Version
+	return listing
 }
 
 // The running Server binary, rather than stale Host cache pointers, decides
@@ -203,7 +212,7 @@ func readReleaseBundleListingForServerCommit(root, serverCommit string) releaseB
 		}
 		urls := []string{}
 		if cached {
-			urls = append(urls, "/api/v1/release-bundles/current/artifacts/"+artifact.Filename)
+			urls = append(urls, "/api/v1/release-bundles/current/artifacts/"+url.QueryEscape(artifact.Filename))
 		}
 		urls = append(urls, artifact.Sources.GitLab, artifact.Sources.GitHub)
 		result.Artifacts = append(result.Artifacts, releaseBundleItem{

@@ -21,6 +21,7 @@ import (
 var bundleFullCommit = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var bundleFullDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var bundlePackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$`)
+var bundleSignedAndroidPackageName = regexp.MustCompile(`^xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apk$`)
 
 type ReleaseBundleArtifact struct {
 	Platform    string `json:"platform"`
@@ -30,6 +31,7 @@ type ReleaseBundleArtifact struct {
 	Size        int64  `json:"size"`
 	Cached      bool   `json:"cached"`
 	CacheStatus string `json:"cache_status"`
+	InstallMode string `json:"install_mode"`
 	Sources     struct {
 		GitLab string `json:"gitlab"`
 		GitHub string `json:"github"`
@@ -38,10 +40,40 @@ type ReleaseBundleArtifact struct {
 }
 
 type ReleaseBundleListing struct {
-	State     string                  `json:"state"`
-	Commit    string                  `json:"commit"`
-	Channel   string                  `json:"channel"`
-	Artifacts []ReleaseBundleArtifact `json:"artifacts"`
+	State         string                  `json:"state"`
+	Commit        string                  `json:"commit"`
+	Channel       string                  `json:"channel"`
+	ServerVersion string                  `json:"server_version"`
+	Artifacts     []ReleaseBundleArtifact `json:"artifacts"`
+}
+
+// RetryCurrentReleaseBundle only requests an independent Host retry. The
+// authenticated admin Server endpoint may not redirect or move an Owner
+// credential to an unrelated host. A failed cache retry never alters Server.
+func (c *Client) RetryCurrentReleaseBundle(ctx context.Context) error {
+	req, err := c.request(ctx, http.MethodPost,
+		"/api/v1/admin/release-bundles/retry", strings.NewReader("{}"))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	httpClient := c.HTTP
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	noRedirect := *httpClient
+	noRedirect.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := noRedirect.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		return responseError(resp)
+	}
+	return nil
 }
 
 // CurrentReleaseBundle returns only the Server's current version. The
@@ -81,10 +113,15 @@ func (c *Client) CurrentReleaseBundle(ctx context.Context) (ReleaseBundleListing
 	if !bundleFullCommit.MatchString(listing.Commit) || len(listing.Artifacts) > 30 {
 		return ReleaseBundleListing{}, errors.New("invalid current Server Bundle identity")
 	}
+	seen := make(map[string]bool, len(listing.Artifacts))
 	for _, artifact := range listing.Artifacts {
 		if !validCurrentBundleArtifact(listing.Commit, artifact) {
 			return ReleaseBundleListing{}, errors.New("invalid current Server Bundle artifact or source")
 		}
+		if seen[artifact.Filename] {
+			return ReleaseBundleListing{}, errors.New("duplicate current Server Bundle installer filename")
+		}
+		seen[artifact.Filename] = true
 	}
 	return listing, nil
 }
@@ -93,6 +130,22 @@ func validCurrentBundleArtifact(commit string, artifact ReleaseBundleArtifact) b
 	if artifact.BuildCommit != commit || !bundlePackageName.MatchString(artifact.Filename) ||
 		!bundleFullDigest.MatchString(artifact.SHA256) || artifact.Size <= 0 ||
 		artifact.Size > 8*1024*1024*1024 {
+		return false
+	}
+	switch artifact.Platform {
+	case "ios", "android", "windows", "linux", "dsm", "cli":
+	default:
+		return false
+	}
+	if artifact.InstallMode != "manual" && artifact.InstallMode != "manual_test_only" {
+		return false
+	}
+	if artifact.Platform == "ios" && artifact.Filename == "xDrive-unsigned.ipa" &&
+		artifact.InstallMode != "manual_test_only" {
+		return false
+	}
+	if artifact.Platform == "android" && (artifact.InstallMode != "manual" ||
+		!bundleSignedAndroidPackageName.MatchString(artifact.Filename)) {
 		return false
 	}
 	// Python's immutable manifest generator percent-encodes '+' as %2B.
@@ -109,7 +162,7 @@ func validCurrentBundleArtifact(commit string, artifact ReleaseBundleArtifact) b
 	}
 	sources := []string{gitlab, github}
 	if artifact.Cached {
-		sources = append([]string{"/api/v1/release-bundles/current/artifacts/" + artifact.Filename}, sources...)
+		sources = append([]string{"/api/v1/release-bundles/current/artifacts/" + escapedName}, sources...)
 	}
 	if len(artifact.DownloadURLs) != len(sources) {
 		return false

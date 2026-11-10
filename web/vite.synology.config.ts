@@ -21,6 +21,15 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       filesize: path.join(webRoot, 'node_modules', 'filesize', 'dist', 'filesize.js'),
+      // Resolve ONLY declared shared-UI peer dependencies from this build's
+      // locked web/node_modules. Deep shared files otherwise resolve bare
+      // MUI/Emotion/React imports from outside the DSM package root.
+      '@mui/icons-material': path.join(webRoot, 'node_modules', '@mui', 'icons-material'),
+      '@mui/material': path.join(webRoot, 'node_modules', '@mui', 'material'),
+      '@emotion/react': path.join(webRoot, 'node_modules', '@emotion', 'react'),
+      '@emotion/styled': path.join(webRoot, 'node_modules', '@emotion', 'styled'),
+      'react-dom': path.join(webRoot, 'node_modules', 'react-dom'),
+      react: path.join(webRoot, 'node_modules', 'react'),
     },
   },
 })

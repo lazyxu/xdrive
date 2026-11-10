@@ -222,6 +222,8 @@ declare global {
   type AgentOfflineImportFinalize = { name: string; state: 'ready'; upload_sha256: string }
   type AgentOfflineHostPlanStatus = import('../../../ui/shared/src/offline-update').XDriveOfflineHostPlanStatus
 
+  type AgentReleaseBundleState = import('../../../ui/shared/src/release-bundles').XDriveReleaseBundleState
+
   type AgentServerUpdateState = {
     supported: boolean
     state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
@@ -255,6 +257,7 @@ declare global {
     update_available: boolean
     downloaded: boolean
     install_supported: boolean
+  manual_install_supported?: boolean
     last_checked_at?: string
     message?: string
     last_error?: string
@@ -1167,6 +1170,10 @@ declare global {
         cloudQuota: (requestID?: string) => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
+        getReleaseBundle: () => Promise<DesktopResult<AgentReleaseBundleState>>
+        retryReleaseBundle: () => Promise<DesktopResult<{ state: 'queued' }>>
+        saveReleaseBundle: (commit: string, filename: string) => Promise<DesktopResult<{ saved: boolean }>>
+        installReleaseBundle: (commit: string, filename: string, confirmed: boolean) => Promise<DesktopResult<AgentUpdateState>>
         offlineImport: <T>(action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',
           input?: Record<string, unknown>) => Promise<DesktopResult<T>>
         offlineImportChunk: (id: string, name: string, index: number, data: ArrayBuffer, sha256: string) =>

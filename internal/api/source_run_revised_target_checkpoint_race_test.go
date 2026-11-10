@@ -111,11 +111,28 @@ func TestOldCompletedSourceRunCannotPublishCheckpointAfterTargetRevisionChange(t
 		t.Fatalf("the running sync did not retain its original Source identity: %+v", running)
 	}
 
-	// The real owner HTTP PATCH commits a new Source revision and new target
-	// while the earlier SyncRun is still running (not a mocked DB update).
+	// A supported HTTP target edit is forbidden; exercise that guard first.
 	requestWithHeaders(t, router, http.MethodPatch, basePath, token,
 		strings.NewReader(fmt.Sprintf("{\"target_node_id\":%d,\"status\":\"paused\"}", newTarget.ID)),
-		http.StatusOK, map[string]string{"If-Match": "\"1\""})
+		http.StatusBadRequest, map[string]string{"If-Match": "\"1\""})
+	// The public API must reject arbitrary target rebinding, even for the
+	// owning user. It must not mutate Source revision or destination.
+	var denied meta.Source
+	if err := db.First(&denied, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if denied.Revision != 1 || denied.TargetNodeID == nil || *denied.TargetNodeID != oldTarget.ID {
+		t.Fatalf("denied target PATCH mutated Source: %+v", denied)
+	}
+
+	// Synthetic fixture only: emulate a newer persisted Source snapshot while
+	// the original SyncRun remains in flight. This is deliberately NOT a
+	// supported API operation; stale workers must still fail closed.
+	updated := db.Model(&meta.Source{}).Where("id = ? AND revision = ?", source.ID, 1).
+		Updates(map[string]any{"revision": 2, "status": meta.SourceStatusPaused, "target_node_id": newTarget.ID})
+	if updated.Error != nil || updated.RowsAffected != 1 {
+		t.Fatalf("prepare stale-run fixture: affected=%d err=%v", updated.RowsAffected, updated.Error)
+	}
 	var edited meta.Source
 	if err := db.First(&edited, source.ID).Error; err != nil {
 		t.Fatal(err)

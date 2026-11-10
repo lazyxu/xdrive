@@ -59,7 +59,10 @@ def build(directory: Path, commit: str, channel: str):
                 "size": size,
                 "sha256": digest.hexdigest(),
                 "build_commit": commit,
-                "install_mode": "manual",
+                # The published iOS IPA has no Apple developer signature. It is a
+                # testing input, not an installable native update.
+                "install_mode": ("manual_test_only" if platform == "ios" and
+                                 path.name == "xDrive-unsigned.ipa" else "manual"),
                 "sources": {
                     "gitlab": (
                         "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive"
