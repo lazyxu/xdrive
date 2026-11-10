@@ -109,15 +109,24 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     private func readVisibleQueueBadges() async {
         let epoch = UUID()
         badgeReadEpoch = epoch
-        queueHistoryCurrent = false
         // The unified wall holds at most 48 current rows; only read local IDs.
         let ids = model.rows.compactMap { $0.local?.id }
-        guard ids.count <= 48, visible, displayActive,
-              XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
-              !ids.isEmpty else {
-            queueBadges = [:]
+        let sameOwner = XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner) &&
+            XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+        guard ids.count <= 48, visible, displayActive, sameOwner, !ids.isEmpty else {
+            // A Viewer/People/tab cover must not remove verified badge pixels
+            // only to reinsert them after the asynchronous return read.
+            // True offscreen eviction, disabled backup, changed Owner or empty
+            // range still clears the old statuses before they can be displayed.
+            if !retainWhileCovered || !sameOwner || ids.isEmpty || ids.count > 48 {
+                queueBadges = [:]
+                queueHistoryCurrent = false
+            }
             return
         }
+        // A same-Owner visible refresh keeps its last verified badges until
+        // the current epoch finishes; the async result below atomically
+        // updates both the state and caught-up flag.
         do {
             let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
             let fetched = try await queue.visibleStatusDetails(
@@ -131,7 +140,10 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
             queueBadges = fetched
             queueHistoryCurrent = isCurrent
         } catch {
-            if badgeReadEpoch == epoch { queueBadges = [:] }
+            if badgeReadEpoch == epoch {
+                queueBadges = [:]
+                queueHistoryCurrent = false
+            }
         }
     }
 
