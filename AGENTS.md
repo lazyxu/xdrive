@@ -14,7 +14,7 @@ A later explicit owner decision supersedes older instructions.
 - Keep changes scoped and shared among platforms. Preserve unrelated changes and real ownership boundaries.
 - Distinguish implemented, tested, CI passed, built, published, deployed and physically validated.
 - Real production or unavailable device acceptance: say **跳过（未验收）** once and continue safe independent work. Never claim skipped checks passed.
-- **Actionable remaining-work lists only:** when the owner asks what is still unresolved or says “继续”, enumerate **only tasks the assistant can actually execute with the currently available repository, CI, connector and runtime tools**. Do not pad numbered gaps, Issues, PR checklists or status tables with real-device/browser hands-on acceptance, production deployment/upgrade checks, inaccessible third-party operations, or speculative future features the assistant cannot perform. Unless the owner explicitly requests those categories, omit them from the backlog entirely; when needed for accuracy, mention unavailable acceptance once as **跳过（未验收）** outside the actionable list, not as an open task. Be precise about access and evidence; proceed with executable fixes, automated tests, PR gates and merges.
+- **Actionable remaining-work lists only:** for “继续” or backlog requests, list **only tasks executable with the current repository, CI, connector and runtime tools**. Omit inaccessible device/browser/production acceptance, third-party actions and speculative future work unless explicitly requested. State unavailable acceptance once as **跳过（未验收）** outside the task list; ground status in evidence and pursue executable fixes, tests, PR gates and merges.
 
 ## Git, CI and merge discipline
 - GitHub master is canonical; merge on GitHub first, then fast-forward GitLab only if not diverged. Never force overwrite GitLab changes.
@@ -70,6 +70,7 @@ A later explicit owner decision supersedes older instructions.
 - Transfers expose real state, speed and control only when supported; do not invent Web browser download bytes.
 
 ## Push/Pull, media identity, backup and storage
+- Owner decision (2026-11-09): no production legacy Push/Pull data. Remove old-target migration, mixed-root splits, preview API, uid_* adoption and old-path rename. Only canonical managed targets are supported; keep DB schema/index upgrades, Owner/Device/Root ACL and one UploadSession/CAS writer.
 - Device Push is local-owner managed; cloud Pull and foreign-device backup views are read-only. Web does not remotely control device backups.
 - Reuse one owning xdrive-agent and UploadSession/chunks/finalize → PostgreSQL/CAS durable original receipt. No duplicate NAS uploader or separate write protocol.
 - Protect account/Device/Root ownership, CAS idempotency, schema migrations, retries, source rate limits and conservative Mirror deletion.

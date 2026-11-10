@@ -19,7 +19,13 @@ test('Own-only Desktop cloud target update cannot borrow Web or foreign mutation
   const web = read('web', 'src', 'App.tsx')
 
   assert.match(server, /requireLocalSourceMutationTx\(tx, c, id\)/)
-  assert.match(server, /owner_id = \? AND type = \? AND deleted_at IS NULL/)
+  // Generic Source creation and PATCH cannot select a cloud target. The
+  // Server provisions canonical targets; only the owning device may change
+  // its locally authorized Root through the dedicated native interface.
+  assert.match(server, /if req\.TargetNodeID != 0 \{\s*fail\(c, http\.StatusBadRequest, "managed Push\/Pull target is server-provisioned; target_node_id is not accepted"\)/)
+  assert.match(server, /if req\.TargetNodeID != nil \{\s*return errManagedSourceTarget\s*\}/)
+  assert.match(server, /provisionManagedSourceTargetTx\(c\.Request\.Context\(\), tx, source, devicePtr\)/)
+  assert.match(server, /Where\("id = \? AND owner_id = \?", id, userID\(c\)\)/)
   assert.match(server, /resetMirrorEvidence = true/)
   assert.match(auth, /clientDeviceCredentialMatches\(/)
   for (const header of ['X-XDrive-Device-ID', 'X-XDrive-Device-Token',

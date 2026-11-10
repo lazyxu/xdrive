@@ -114,8 +114,9 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 			}
 		})
 	}
-	// The target-only mutation uses the same credential/Root transaction
-	// fencing, validates owner and directory type, and retains Source identity.
+	// TargetNodeID is immutable, even for an owning Device with a verified
+	// local Root. The earlier test's successful retargeting was a retired
+	// arbitrary-destination compatibility path and must never be restored.
 	newTarget := meta.Node{
 		OwnerID: owner.ID, ParentID: &root.ID, Name: "backup-new-target",
 		Type: meta.NodeTypeDir, Revision: 1,
@@ -131,26 +132,43 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	targetURL := fmt.Sprintf("/api/v1/sources/%d", sourceD.ID)
-	validTargetBody := fmt.Sprintf(`{"target_node_id":%d}`, newTarget.ID)
-	foreignTargetBody := fmt.Sprintf(`{"target_node_id":%d}`, foreignTarget.ID)
-	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusForbidden,
+	validTargetBody := fmt.Sprintf("{\"target_node_id\":%d}", newTarget.ID)
+	foreignTargetBody := fmt.Sprintf("{\"target_node_id\":%d}", foreignTarget.ID)
+	// Authentication and device/root rights must be checked before the
+	// immutable-target rejection. Do not turn an unauthorized 403 into 400.
+	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT,
+		strings.NewReader(validTargetBody), http.StatusForbidden,
 		map[string]string{"If-Match": "\"1\""})
 	badDevice := copyHeaders()
 	badDevice["X-XDrive-Device-ID"] = deviceB.ID
 	badDevice["X-XDrive-Device-Token"] = deviceBSecret
-	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusForbidden, badDevice)
-	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(foreignTargetBody), http.StatusBadRequest, own)
-	retargetResponse := requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusOK, own)
-	var retargeted sourceDTO
-	if err := json.Unmarshal(retargetResponse.Body.Bytes(), &retargeted); err != nil {
+	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT,
+		strings.NewReader(validTargetBody), http.StatusForbidden, badDevice)
+	// Neither an Owner-owned leaf nor a foreign Owner leaf may be selected,
+	// even with the correct Device/Root and current Source revision.
+	for _, body := range []string{foreignTargetBody, validTargetBody} {
+		requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT,
+			strings.NewReader(body), http.StatusBadRequest, own)
+	}
+	var retargeted meta.Source
+	if err := db.First(&retargeted, sourceD.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if retargeted.ID != sourceD.ID || retargeted.Revision != 2 ||
-		retargeted.TargetNodeID == nil || *retargeted.TargetNodeID != newTarget.ID ||
-		retargeted.SyncMode != meta.SourceSyncModeBackup || retargeted.Status != meta.SourceStatusPaused {
-		t.Fatalf("own local target update changed protected Source semantics: %+v", retargeted)
+	if retargeted.Revision != 1 || retargeted.TargetNodeID == nil ||
+		*retargeted.TargetNodeID != targetID ||
+		retargeted.SyncMode != meta.SourceSyncModeBackup ||
+		retargeted.Status != meta.SourceStatusPaused {
+		t.Fatalf("rejected retarget changed Source identity/state: %+v", retargeted)
 	}
-	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusConflict, own)
+	var unchangedTarget meta.Node
+	if err := db.First(&unchangedTarget, newTarget.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchangedTarget.OwnerID != owner.ID || unchangedTarget.Revision != 1 ||
+		unchangedTarget.ParentID == nil || *unchangedTarget.ParentID != root.ID ||
+		unchangedTarget.Name != "backup-new-target" {
+		t.Fatalf("rejected retarget changed ordinary directory: %+v", unchangedTarget)
+	}
 
 	// A mode-only PATCH is protected by the same transaction fence and
 	// clears any prior Mirror deletion evidence before future scans.
@@ -524,10 +542,11 @@ func TestNonLocalSourceWritesPreserveOwnerJWTCompatibility(t *testing.T) {
 	// target. The Owner root is not a Source-owned directory and 5B must
 	// never rename it just because a synthetic Source points there.
 	syncRoot := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
-	connector := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, yikeTargetConnectorName)
-	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "uid_12345_Pull owner JWT")
+	pullRoot := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, yikePullTargetRootName)
+	connector := createFilePropertiesDir(t, db, owner.ID, pullRoot.ID, yikePullTargetConnectorName)
+	target := createFilePropertiesDir(t, db, owner.ID, connector.ID, "Pull owner JWT")
 	targetID := target.ID
-	source := meta.Source{OwnerID: owner.ID, Name: "Pull owner JWT", Kind: "yike_photos", Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1, TargetNodeID: &targetID}
+	source := meta.Source{OwnerID: owner.ID, Name: "Pull owner JWT", Kind: "yike_photos", Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1, TargetNodeID: &targetID, TargetManaged: true}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +556,7 @@ func TestNonLocalSourceWritesPreserveOwnerJWTCompatibility(t *testing.T) {
 	if err := db.First(&renamed, target.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if renamed.Name != "uid_12345_Pull updated" || renamed.Revision != target.Revision+1 {
+	if renamed.Name != "Pull updated" || renamed.Revision != target.Revision+1 {
 		t.Fatalf("Owner JWT Yike rename did not atomically update the real target: %+v", renamed)
 	}
 	request(t, router, http.MethodPost, url+"/trigger", ownerJWT, nil, http.StatusAccepted)

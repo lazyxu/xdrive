@@ -119,11 +119,28 @@ func TestOldSourceRunMutationEndpointsRejectRevisedActiveSource(t *testing.T) {
 		t.Fatalf("old run fixture invalid: %+v", beforeRun)
 	}
 
-	// Same active Source, but revision 2 and a distinct target. No new SyncRun
-	// begins; the old run is still recorded as running in the database.
+	// A supported HTTP target edit is forbidden; exercise that guard first.
 	requestWithHeaders(t, router, http.MethodPatch, root, token,
-		strings.NewReader(fmt.Sprintf(`{"target_node_id":%d}`, newTarget.ID)), http.StatusOK,
+		strings.NewReader(fmt.Sprintf(`{"target_node_id":%d}`, newTarget.ID)), http.StatusBadRequest,
 		map[string]string{"If-Match": `"1"`})
+	// The public API must reject arbitrary target rebinding, even for the
+	// owning user. It must not mutate Source revision or destination.
+	var denied meta.Source
+	if err := db.First(&denied, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if denied.Revision != 1 || denied.TargetNodeID == nil || *denied.TargetNodeID != oldTarget.ID {
+		t.Fatalf("denied target PATCH mutated Source: %+v", denied)
+	}
+
+	// Synthetic fixture only: emulate a newer persisted Source snapshot while
+	// the original SyncRun remains in flight. This is deliberately NOT a
+	// supported API operation; stale workers must still fail closed.
+	updated := db.Model(&meta.Source{}).Where("id = ? AND revision = ?", source.ID, 1).
+		Updates(map[string]any{"revision": 2, "target_node_id": newTarget.ID})
+	if updated.Error != nil || updated.RowsAffected != 1 {
+		t.Fatalf("prepare stale-run fixture: affected=%d err=%v", updated.RowsAffected, updated.Error)
+	}
 	var current meta.Source
 	if err := db.First(&current, source.ID).Error; err != nil {
 		t.Fatal(err)

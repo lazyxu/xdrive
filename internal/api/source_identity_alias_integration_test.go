@@ -67,15 +67,18 @@ func TestSourceIdentityAliasPromotionWorksForGenericFiles(t *testing.T) {
 		"run_mode":"sync",
 		"target_node_id":%d
 	}`, target.ID)
-	createdRes := request(t, router, http.MethodPost, "/api/v1/sources", token, strings.NewReader(createBody), http.StatusCreated)
-	var source sourceDTO
-	if err := json.Unmarshal(createdRes.Body.Bytes(), &source); err != nil {
-		t.Fatal(err)
-	}
+	// The public Source API cannot create arbitrary connector kinds or bind
+	// an ordinary cloud directory. Preserve alias protocol coverage with an
+	// isolated, synthetic PostgreSQL fixture instead.
+	request(t, router, http.MethodPost, "/api/v1/sources", token, strings.NewReader(createBody), http.StatusBadRequest)
 	var owner meta.User
 	if err := db.Where("username = ?", "source-identity-user").First(&owner).Error; err != nil {
 		t.Fatal(err)
 	}
+
+	source := seedSyntheticSourceForProtocolTest(t, db, target.ID,
+		"Generic Synology files", meta.SourceDirectionPush, meta.SourceSyncModeBackup,
+		meta.SourceRunModeSync, "")
 
 	const oldID = "fs:documents:11:22"
 	const canonicalID = "provider-file:documents:9001"

@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
@@ -18,8 +17,6 @@ const (
 	yikeTargetRootName          = "同步文件夹"
 	yikePullTargetRootName      = "Pull"
 	yikePullTargetConnectorName = "Yike Photos"
-	yikeLegacyTargetRootName    = "来源"
-	yikeTargetConnectorName     = "一刻相册"
 )
 
 func yikeManagedTargetInSubtreeDB(ctx context.Context, db *gorm.DB, ownerID, nodeID uint64) (bool, error) {
@@ -124,57 +121,6 @@ func yikeAccountID(identity sourceCredentialTestDTO) (int64, error) {
 	return accountID, nil
 }
 
-func yikeManagedTargetLeaf(accountID int64, accountName string) (string, error) {
-	name := sanitizeYikeTargetSegment(accountName)
-	if name == "" {
-		name = "用户"
-	}
-	leaf := fmt.Sprintf("uid_%d_%s", accountID, name)
-	leaf = truncateUTF8Bytes(leaf, 255)
-	if err := meta.ValidateName(leaf); err != nil {
-		return "", fmt.Errorf("invalid Yike target folder: %w", err)
-	}
-	return leaf, nil
-}
-
-func ensureYikeManagedParentTx(ctx context.Context, tx *gorm.DB, ownerID uint64) (meta.Node, error) {
-	if tx == nil || ownerID == 0 {
-		return meta.Node{}, fmt.Errorf("Yike target storage is unavailable")
-	}
-	var root meta.Node
-	if err := tx.WithContext(ctx).
-		Where("owner_id = ? AND parent_id IS NULL AND type = ? AND deleted_at IS NULL", ownerID, meta.NodeTypeDir).
-		First(&root).Error; err != nil {
-		return meta.Node{}, fmt.Errorf("load xDrive root: %w", err)
-	}
-
-	parent := root
-	var err error
-	for _, segment := range []string{yikeTargetRootName, yikePullTargetRootName, yikePullTargetConnectorName} {
-		parent, err = ensureOwnedChildDirectoryTx(ctx, tx, ownerID, parent.ID, segment)
-		if err != nil {
-			return meta.Node{}, err
-		}
-	}
-	return parent, nil
-}
-
-func ensureYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, ownerID uint64, identity sourceCredentialTestDTO) (meta.Node, error) {
-	accountID, err := yikeAccountID(identity)
-	if err != nil {
-		return meta.Node{}, err
-	}
-	leaf, err := yikeManagedTargetLeaf(accountID, identity.AccountName)
-	if err != nil {
-		return meta.Node{}, err
-	}
-	parent, err := ensureYikeManagedParentTx(ctx, tx, ownerID)
-	if err != nil {
-		return meta.Node{}, err
-	}
-	return ensureOwnedChildDirectoryTx(ctx, tx, ownerID, parent.ID, leaf)
-}
-
 func ensureOwnedChildDirectoryTx(ctx context.Context, tx *gorm.DB, ownerID, parentID uint64, name string) (meta.Node, error) {
 	var existing meta.Node
 	err := tx.WithContext(ctx).
@@ -208,9 +154,12 @@ func ensureOwnedChildDirectoryTx(ctx context.Context, tx *gorm.DB, ownerID, pare
 	return created, nil
 }
 
+// Yike credentials activate only the canonical Source target provisioned
+// atomically by POST /sources. Credential refresh never creates, adopts or
+// reparents an old uid_* folder.
 func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Source, identity sourceCredentialTestDTO) error {
 	if source == nil || source.ID == 0 || source.Kind != yikeSourceKind {
-		return nil
+		return errInvalidSourceConfig
 	}
 	if source.Status == meta.SourceStatusArchived {
 		return errSourceArchived
@@ -223,97 +172,26 @@ func bindYikeManagedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Sour
 	if source.ProviderAccountID != "" && source.ProviderAccountID != accountIDText {
 		return errYikeAccountMismatch
 	}
-
-	var target meta.Node
-	if source.TargetNodeID != nil {
-		if err := tx.WithContext(ctx).
-			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", *source.TargetNodeID, source.OwnerID).
-			Take(&target).Error; err != nil {
-			return err
-		}
-		if target.Type != meta.NodeTypeDir || target.ParentID == nil {
-			return errYikeTargetContainsData
-		}
-
-		// New Sources already own Pull/Yike Photos/<SourceName>. Bind the
-		// provider account identity without changing the Node ID or leaf.
-		if source.TargetManaged && target.Name == source.Name {
-			names, err := managedSourceTargetAncestorNamesTx(tx, *source, target)
-			if err != nil {
-				return errYikeTargetContainsData
-			}
-			if len(names) == 3 && names[0] == "Yike Photos" &&
-				names[1] == yikePullTargetRootName && names[2] == yikeTargetRootName {
-				return bindYikeProviderAccountTx(ctx, tx, source, accountIDText)
-			}
-		}
-
-		// Existing uid_* targets are legacy identities. Preserve their exact
-		// path and Node ID; never migrate or rename them as part of credential
-		// refresh. Unmarked targets are accepted only at the verified legacy
-		// location with the existing exclusive-subtree checks.
-		if currentAccountID, managed := managedYikeTargetAccountID(target.Name); managed {
-			if currentAccountID != accountID {
-				return errYikeAccountMismatch
-			}
-			if !source.TargetManaged {
-				proven, err := verifiedLegacyYikeTargetLocationTx(ctx, tx, *source, target)
-				if err != nil {
-					return err
-				}
-				if !proven {
-					return errYikeTargetContainsData
-				}
-				if err := verifyYikeTargetRelocationTx(ctx, tx, *source, target); err != nil {
-					return err
-				}
-			}
-			return bindYikeProviderAccountTx(ctx, tx, source, accountIDText)
-		}
-
-		// Never take over, detach, or silently replace an ordinary directory,
-		// even when it is empty. This is not a migration endpoint.
+	if source.Direction != meta.SourceDirectionPull || source.TargetNodeID == nil ||
+		*source.TargetNodeID == 0 || !source.TargetManaged {
 		return errYikeTargetContainsData
 	}
-
-	// Compatibility for a pre-existing Source that has never had a target.
-	// It keeps the historical UID-based layout; all newly created Sources use
-	// the new user-named leaf provisioned during POST /sources.
-	target, err = createExclusiveYikeManagedTargetTx(ctx, tx, *source, identity)
-	if err != nil {
+	var target meta.Node
+	if err := tx.WithContext(ctx).
+		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			*source.TargetNodeID, source.OwnerID, meta.NodeTypeDir).
+		Take(&target).Error; err != nil {
 		return err
 	}
-	return bindYikeLegacyCreatedTargetTx(ctx, tx, source, target, accountIDText)
-}
-
-func bindYikeLegacyCreatedTargetTx(ctx context.Context, tx *gorm.DB, source *meta.Source, target meta.Node, accountID string) error {
-	if err := requireYikeAccountNotClaimedTx(ctx, tx, *source, accountID); err != nil {
-		return err
+	if target.ParentID == nil || target.Name != source.Name {
+		return errYikeTargetContainsData
 	}
-	targetID := target.ID
-	updates := map[string]any{
-		"target_node_id":      target.ID,
-		"target_managed":      true,
-		"provider_account_id": accountID,
-		"updated_at":          time.Now().UTC(),
-		"status":              meta.SourceStatusActive,
-		"last_error":          "",
-		"revision":            gorm.Expr("revision + 1"),
+	names, err := managedSourceTargetAncestorNamesTx(tx, *source, target)
+	if err != nil || len(names) != 3 || names[0] != yikePullTargetConnectorName ||
+		names[1] != yikePullTargetRootName || names[2] != yikeTargetRootName {
+		return errYikeTargetContainsData
 	}
-	if err := tx.WithContext(ctx).Model(&meta.Source{}).
-		Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-		Updates(updates).Error; err != nil {
-		if isDuplicate(err) {
-			return errYikeAccountAlreadyConfigured
-		}
-		return err
-	}
-	source.TargetNodeID = &targetID
-	source.TargetManaged = true
-	source.ProviderAccountID = accountID
-	source.Status = meta.SourceStatusActive
-	source.Revision++
-	return nil
+	return bindYikeProviderAccountTx(ctx, tx, source, accountIDText)
 }
 
 func bindYikeProviderAccountTx(ctx context.Context, tx *gorm.DB, source *meta.Source, accountID string) error {
@@ -359,162 +237,20 @@ func bindYikeProviderAccountTx(ctx context.Context, tx *gorm.DB, source *meta.So
 	return nil
 }
 
-// A pre-S10 Source may still encode its remote UID in the old target leaf
-// instead of ProviderAccountID. Include both representations when preventing
-// two Sources from binding the same remote account; archived Sources count.
+// The provider account ID is the sole duplicate-account authority, including
+// archived Sources. A uid_* directory name is never adopted as an identity.
 func requireYikeAccountNotClaimedTx(
 	ctx context.Context, tx *gorm.DB, source meta.Source, accountID string,
 ) error {
-	var others []struct {
-		ProviderAccountID string
-		LeafName          string
-	}
-	if err := tx.WithContext(ctx).Table("xd_sources AS s").
-		Select("s.provider_account_id, COALESCE(n.name, '') AS leaf_name").
-		Joins("LEFT JOIN xd_nodes AS n ON n.id = s.target_node_id AND n.owner_id = s.owner_id").
-		Where("s.owner_id = ? AND s.id <> ? AND s.kind = ?",
-			source.OwnerID, source.ID, yikeSourceKind).
-		Scan(&others).Error; err != nil {
+	var count int64
+	if err := tx.WithContext(ctx).Model(&meta.Source{}).
+		Where("owner_id = ? AND id <> ? AND kind = ? AND provider_account_id = ?",
+			source.OwnerID, source.ID, yikeSourceKind, accountID).
+		Count(&count).Error; err != nil {
 		return err
 	}
-	for _, other := range others {
-		if other.ProviderAccountID == accountID {
-			return errYikeAccountAlreadyConfigured
-		}
-		if legacyID, ok := managedYikeTargetAccountID(other.LeafName); ok &&
-			strconv.FormatInt(legacyID, 10) == accountID {
-			return errYikeAccountAlreadyConfigured
-		}
+	if count != 0 {
+		return errYikeAccountAlreadyConfigured
 	}
 	return nil
-}
-
-func pruneLegacyYikeParentsTx(ctx context.Context, tx *gorm.DB, ownerID, connectorID uint64) error {
-	var connector meta.Node
-	if err := tx.WithContext(ctx).
-		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL", connectorID, ownerID, meta.NodeTypeDir).
-		First(&connector).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		return err
-	}
-	if connector.Name != yikeTargetConnectorName || connector.ParentID == nil {
-		return nil
-	}
-
-	var legacyRoot meta.Node
-	if err := tx.WithContext(ctx).
-		Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL", *connector.ParentID, ownerID, meta.NodeTypeDir).
-		First(&legacyRoot).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		return err
-	}
-	if legacyRoot.Name != yikeLegacyTargetRootName {
-		return nil
-	}
-
-	var childCount int64
-	if err := tx.WithContext(ctx).Model(&meta.Node{}).
-		Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", ownerID, connector.ID).
-		Count(&childCount).Error; err != nil {
-		return err
-	}
-	if childCount != 0 {
-		return nil
-	}
-	// Older/core-only test databases can omit the Share model entirely.
-	// In a real Server deployment Shares are always migrated before Sources.
-	hasShares := tx.Migrator().HasTable(&meta.Share{})
-	var directShares int64
-	if hasShares {
-		if err := tx.WithContext(ctx).Model(&meta.Share{}).
-			Where("owner_id = ? AND node_id = ?", ownerID, connector.ID).
-			Count(&directShares).Error; err != nil {
-			return err
-		}
-		if directShares != 0 {
-			return nil
-		}
-	}
-
-	now := time.Now().UTC()
-	if err := tx.WithContext(ctx).Model(&meta.Node{}).
-		Where("id = ? AND owner_id = ? AND deleted_at IS NULL", connector.ID, ownerID).
-		Updates(map[string]any{"deleted_at": now, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error; err != nil {
-		return err
-	}
-
-	if err := tx.WithContext(ctx).Model(&meta.Node{}).
-		Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", ownerID, legacyRoot.ID).
-		Count(&childCount).Error; err != nil {
-		return err
-	}
-	if childCount == 0 {
-		if hasShares {
-			if err := tx.WithContext(ctx).Model(&meta.Share{}).
-				Where("owner_id = ? AND node_id = ?", ownerID, legacyRoot.ID).
-				Count(&directShares).Error; err != nil {
-				return err
-			}
-			if directShares != 0 {
-				return nil
-			}
-		}
-		if err := tx.WithContext(ctx).Model(&meta.Node{}).
-			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", legacyRoot.ID, ownerID).
-			Updates(map[string]any{"deleted_at": now, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func managedYikeTargetAccountID(name string) (int64, bool) {
-	name = strings.TrimSpace(name)
-	if !strings.HasPrefix(name, "uid_") {
-		return 0, false
-	}
-	rest := strings.TrimPrefix(name, "uid_")
-	separator := strings.IndexByte(rest, '_')
-	if separator <= 0 {
-		return 0, false
-	}
-	accountID, err := strconv.ParseInt(rest[:separator], 10, 64)
-	if err != nil || accountID <= 0 {
-		return 0, false
-	}
-	return accountID, true
-}
-
-func sanitizeYikeTargetSegment(value string) string {
-	value = strings.TrimSpace(value)
-	var b strings.Builder
-	for _, r := range value {
-		switch {
-		case r < 32:
-			b.WriteRune('_')
-		case strings.ContainsRune(`<>:"/\\|?*`, r):
-			b.WriteRune('_')
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return strings.TrimRight(strings.TrimSpace(b.String()), " .")
-}
-
-func truncateUTF8Bytes(value string, max int) string {
-	if max <= 0 {
-		return ""
-	}
-	for len([]byte(value)) > max {
-		_, size := utf8.DecodeLastRuneInString(value)
-		if size == 0 {
-			return ""
-		}
-		value = value[:len(value)-size]
-	}
-	return value
 }

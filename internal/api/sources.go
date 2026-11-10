@@ -408,20 +408,20 @@ func (s *Server) createSource(c *gin.Context) {
 	}
 	managedPush := isLocalFolder || isSynologyPush
 	managedPull := isYike || isSynologyPull
-	if managedPush || managedPull {
-		if req.TargetNodeID != 0 {
-			fail(c, http.StatusBadRequest, "managed Push/Pull target is server-provisioned; target_node_id is not accepted")
-			return
-		}
-	} else {
-		if req.TargetNodeID == 0 {
-			fail(c, http.StatusBadRequest, "target_node_id is required")
-			return
-		}
-		if _, err := s.ownedDirectory(userID(c), req.TargetNodeID); err != nil {
-			fail(c, http.StatusBadRequest, "target directory not found")
-			return
-		}
+	// Reject every unknown or mismatched connector before it can create an
+	// ordinary-directory Source. New Push/Pull targets have one server-side
+	// provisioner; there is no supported arbitrary target selection path.
+	if isYike && req.Direction != meta.SourceDirectionPull {
+		fail(c, http.StatusBadRequest, "Yike Photos only supports pull direction")
+		return
+	}
+	if !managedPush && !managedPull {
+		fail(c, http.StatusBadRequest, "unsupported source kind or direction")
+		return
+	}
+	if req.TargetNodeID != 0 {
+		fail(c, http.StatusBadRequest, "managed Push/Pull target is server-provisioned; target_node_id is not accepted")
+		return
 	}
 	if _, err := sourcepkg.CompileIgnoreRules(req.IgnoreRules); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -601,7 +601,6 @@ func (s *Server) updateSource(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid request")
 		return
 	}
-
 	var updated meta.Source
 	var currentRevision uint64
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
@@ -628,6 +627,12 @@ func (s *Server) updateSource(c *gin.Context) {
 		if current.Status == meta.SourceStatusArchived {
 			return errSourceArchived
 		}
+		// TargetNodeID is server-owned and immutable, including for historical
+		// unmanaged Sources. Check Owner/Device/Root and revision first:
+		// unauthorized callers must still be rejected before policy errors.
+		if req.TargetNodeID != nil {
+			return errManagedSourceTarget
+		}
 		updates := map[string]any{}
 		resetMirrorEvidence := false
 		if req.Name != nil {
@@ -646,9 +651,6 @@ func (s *Server) updateSource(c *gin.Context) {
 				return errSourceNameTaken
 			}
 			if name != current.Name {
-				if req.TargetNodeID != nil && (current.TargetNodeID == nil || *req.TargetNodeID != *current.TargetNodeID) {
-					return errSourceTargetMigrationRequired
-				}
 				if err := renameManagedSourceTargetTx(tx, current, name); err != nil {
 					return err
 				}
@@ -714,26 +716,6 @@ func (s *Server) updateSource(c *gin.Context) {
 			updates["schedule_expression"] = schedule.Expression
 			updates["schedule_timezone"] = schedule.Timezone
 		}
-		if req.TargetNodeID != nil {
-			if current.Kind == yikeSourceKind || (current.TargetManaged && (current.TargetNodeID == nil || *current.TargetNodeID != *req.TargetNodeID)) {
-				return errManagedSourceTarget
-			}
-			if *req.TargetNodeID == 0 {
-				return errInvalidSourceTarget
-			}
-			var target meta.Node
-			if err := tx.Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-				*req.TargetNodeID, userID(c), meta.NodeTypeDir).First(&target).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return errInvalidSourceTarget
-				}
-				return err
-			}
-			if current.TargetNodeID == nil || *current.TargetNodeID != target.ID {
-				resetMirrorEvidence = true
-			}
-			updates["target_node_id"] = target.ID
-		}
 		if req.IgnoreRules != nil {
 			if _, err := sourcepkg.CompileIgnoreRules(*req.IgnoreRules); err != nil {
 				return errInvalidSourceConfig
@@ -785,7 +767,7 @@ func (s *Server) updateSource(c *gin.Context) {
 		case errors.Is(err, errSourceTargetNameConflict):
 			fail(c, http.StatusConflict, "managed target folder name already exists")
 		case errors.Is(err, errSourceTargetMigrationRequired):
-			fail(c, http.StatusConflict, "source target migration required before rename")
+			fail(c, http.StatusConflict, "source target is not a current server-managed destination")
 		case errors.Is(err, errSourceTargetRenameActive):
 			fail(c, http.StatusConflict, "source has an active run or unsettled upload; retry after it finishes")
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):

@@ -32,15 +32,11 @@ The Server remains the only durable cloud writer: **UploadSession → chunks →
 - Source archive/restore versus unsettled uploads and Files jobs, Yike Pull failure isolation and Source state regressions;
 - archived Yike Pull-only cloud cleanup via a separately confirmed preview, reversible Trash and preserved Source/Node/CAS history.
 
-The follow-up security review found two concrete server-only gaps in the **new cloud-cleanup endpoint**, not in the already verified one-writer Push/Pull upload protocol:
+### Accepted #4136 cross-Owner cloud-cleanup protection
 
-| Priority | Actionable change | Evidence |
-| --- | --- | --- |
-| P0 | Inspect all live descendants of an archived Yike target **without Owner filtering** before trashing it. Historical cross-Owner parent edges must fail closed rather than being skipped by the ordinary Owner-scoped subtree query. | Isolated PostgreSQL foreign direct-file and nested-directory regressions: preview and previously issued confirmation both reject, with all Nodes preserved. |
-| P0 | Block all foreign-Owner Source targets and active Share claims into the same tree, and apply the archived **Yike Pull-only** eligibility check on the server API, not only the Web UI. | PostgreSQL cross-Owner Source/Share negatives, plus valid canonical Push and dormant Synology Pull target paths forbidden. |
-| P1 | Ensure this document and the canonical architecture state the merged #4093 result accurately; keep the new security patch a separate PR until its exact HEAD CI/Final Gate passes. | No claim that unverified branch work is accepted master. |
+[#4136](https://github.com/lazyxu/xdrive/pull/4136) **merged** on 2026-11-09 after its exact-head GitHub CI and Final Gate. The archived, Server-managed **Yike Pull-only** preview/Trash endpoint now rejects anomalous foreign-Owner live descendants, competing Source target claims and active Shares regardless of Owner, including previously issued stale previews. PostgreSQL negative regressions cover direct/nested cross-Owner descendants, foreign Source/Share references and ineligible Push or dormant Synology Pull kinds. Do not reopen these merged changes as a migration backlog.
 
-These follow-ups are on `fix/sync-cleanup-cross-owner-fence-20261109` until reviewed and merged. They do **not** broaden cleanup beyond archived Yike Pull, move historical directories, change native backup execution or create a second CAS writer.
+For the canonical-only Source closeout, the consolidated candidate removes legacy target relocation/splitting/migration-preview and unsafe arbitrary-target Source creation or rebinding, while preserving explicit native/device grants, shared UploadSession/CAS receipts, SourceRun history and supported managed target namespaces. This candidate requires **its own exact-head CI and Final Gate** before master merge; historical CI results of the superseded PRs do not validate the consolidated tree.
 
 ## 3. Source/security regressions to maintain for subsequent changes
 
@@ -58,7 +54,7 @@ Relevant already-integrated automated coverage includes source_managed_flat_cont
 
 ## 4. Explicitly excluded or suspended — not backlog items
 
-- **No historical target migration**. Old Yike/mixed-root/nested 1A–5B migrations are tracked separately under historical Issue #3774, not this new-source MVP. Cloud cleanup is NOT a migration, does not delete provider data, and never rebinds Source/Node IDs.
+- **No historical target migration**. Per the 2026-11-09 no-production-data decision, the old Yike reparenting/splitters, read-only migration-preview API and uid_* target adoption have been removed; no new migration work is tracked. Cloud cleanup remains a separate confirmed reversible Trash action, not migration.
 - **No standalone DSM Synology Photos Push**; do not restore xdrive-source-agent, its upload routes or a parallel CAS writer.
 - **No re-enabling Synology Photos/Files Pull** until a separate Owner decision. Keep existing data/history readable and execution disabled.
 - **No remote device backup trigger from Web/Desktop/DSM** for PhotoKit/MediaStore or an unowned local Root.

@@ -162,13 +162,21 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	syncRootID := syncRoot.ID
-	connector := meta.Node{Name: "一刻相册", Type: meta.NodeTypeDir,
+	// Canonical Server-managed Pull ancestry; the old uid_* target was
+	// retired and must never be adopted by a SourceRun as a write authority.
+	pullRoot := meta.Node{Name: "Pull", Type: meta.NodeTypeDir,
 		OwnerID: owner.ID, Revision: 1, ParentID: &syncRootID}
+	if err := db.Create(&pullRoot).Error; err != nil {
+		t.Fatal(err)
+	}
+	pullRootID := pullRoot.ID
+	connector := meta.Node{Name: "Yike Photos", Type: meta.NodeTypeDir,
+		OwnerID: owner.ID, Revision: 1, ParentID: &pullRootID}
 	if err := db.Create(&connector).Error; err != nil {
 		t.Fatal(err)
 	}
 	connectorID := connector.ID
-	target := meta.Node{Name: "uid_123_Yike Photos", Type: meta.NodeTypeDir,
+	target := meta.Node{Name: "Yike Photos", Type: meta.NodeTypeDir,
 		OwnerID: owner.ID, Revision: 1, ParentID: &connectorID}
 	if err := db.Create(&target).Error; err != nil {
 		t.Fatal(err)
@@ -178,6 +186,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
 		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive,
 		Revision: 1, TargetNodeID: &target.ID, TargetManaged: true,
+		ProviderAccountID: "123",
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
@@ -399,11 +408,11 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootNode, ok := nodes["同步文件夹/一刻相册/uid_123_Yike Photos/root.jpg"]
+	rootNode, ok := nodes["同步文件夹/Pull/Yike Photos/Yike Photos/root.jpg"]
 	if !ok {
 		t.Fatalf("root media node missing after partial sync: %+v", nodes)
 	}
-	if _, exists := nodes["同步文件夹/一刻相册/uid_123_Yike Photos/shared.jpg"]; exists {
+	if _, exists := nodes["同步文件夹/Pull/Yike Photos/Yike Photos/shared.jpg"]; exists {
 		t.Fatalf("failed shared item unexpectedly materialized: %+v", nodes)
 	}
 
@@ -437,8 +446,8 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootNode = nodes["同步文件夹/一刻相册/uid_123_Yike Photos/root.jpg"]
-	sharedNode, ok := nodes["同步文件夹/一刻相册/uid_123_Yike Photos/shared.jpg"]
+	rootNode = nodes["同步文件夹/Pull/Yike Photos/Yike Photos/root.jpg"]
+	sharedNode, ok := nodes["同步文件夹/Pull/Yike Photos/Yike Photos/shared.jpg"]
 	if !ok {
 		t.Fatalf("shared media node missing after recovery: %+v", nodes)
 	}
@@ -485,7 +494,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node, ok := nodes["同步文件夹/一刻相册/uid_123_Yike Photos/shared.jpg"]; !ok || node.ID != sharedNodeID {
+	if node, ok := nodes["同步文件夹/Pull/Yike Photos/Yike Photos/shared.jpg"]; !ok || node.ID != sharedNodeID {
 		t.Fatalf("source-side deletion propagated to xDrive: %+v", nodes)
 	}
 	var remainingMemberships []meta.SourceCollectionItem
@@ -531,7 +540,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node, ok := nodes["同步文件夹/一刻相册/uid_123_Yike Photos/shared.jpg"]; !ok || node.ID != sharedNodeID {
+	if node, ok := nodes["同步文件夹/Pull/Yike Photos/Yike Photos/shared.jpg"]; !ok || node.ID != sharedNodeID {
 		t.Fatalf("album disappearance affected xDrive media: %+v", nodes)
 	}
 
