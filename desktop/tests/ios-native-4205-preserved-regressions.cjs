@@ -34,6 +34,26 @@ for (const id of accepted) {
       'historical case identity must not drift')
     for (const check of item.checks) {
       const source = readSource(check.file)
+      // The archive records the exact 2026-11-09 matrix, but current iOS
+      // routing adds independent candidate suites (e.g. candidate-mapkit).
+      // Preserve the four original mandatory arms AND forbid duplicate
+      // entries; do not mistake additional real tests for a regression.
+      if ((id === 96 || id === 141) && check.file === 'j') {
+        const matrix = [...source.matchAll(/^\\s*source:\\s*\\[([^\\]\\r\\n]+)\\]\\s*$/gm)]
+        assert.equal(matrix.length, 1, 'exactly one native Simulator source matrix')
+        const arms = matrix[0][1].split(',').map(name => name.trim())
+        const required = [
+          'release-c83', 'candidate-navigation',
+          'candidate-gallery-files', 'candidate-no-session',
+        ]
+        assert.deepEqual(arms.slice(0, required.length), required,
+          'all legacy candidate gates and real release baseline are mandatory')
+        assert.equal(new Set(arms).size, arms.length,
+          'native Simulator source matrix may not contain duplicate suites')
+        assert.ok(arms.every(name => /^[a-z][a-z0-9-]*$/.test(name)),
+          'native Simulator matrix admits only bounded named sources')
+        continue
+      }
       assert.match(source, new RegExp(check.pattern, check.flags || ''),
         'historical '+id+' fails on '+historical.sources[check.file])
     }
