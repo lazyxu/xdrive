@@ -1629,7 +1629,10 @@ test('Gallery time-scale preferences persist per scale and preserve the browsing
     'window.localStorage.setItem',
   ]) {
     const source = token === 'data-xdrive-gallery-timeline-jump'
-      ? sharedGalleryDateNavigation : sharedGalleryMain
+      ? sharedGalleryDateNavigation
+      : token === 'xdrive.gallery.view-preferences.v1'
+        ? read('ui', 'shared', 'src', 'mui', 'MediaGalleryPhotoWallFraming.ts')
+        : sharedGalleryMain
     assert.ok(source.includes(token), `Gallery date-browsing memory missing: ${token}`)
   }
   assert.ok(
