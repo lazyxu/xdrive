@@ -138,7 +138,33 @@ NAV_TARGETS = {
     "testUnifiedWallGenerationPersistsAfterFilesSearchSubmitAndReturn",
     "testUnifiedWallGenerationPersistsAfterDeniedCloudChildAndReturn",
 }
+MINIMAL_TARGETS = {
+    # One frame per previously uncovered UI journey. Tap-rich cases retain
+    # the dedicated multi-frame sampler; this bounds extra screenshot cost.
+    "testAlbumSourceReturnThroughFilesAndMineKeepsGalleryMounted",
+    "testAlternatingGalleryFilesSettledFramesAcrossThreeTabs",
+    "testFilesGalleryNativeRelaunchDoesNotLoseInitialPages",
+    "testFilesHomeAfterRepeatedNativeGallerySourceChanges",
+    "testFilesHomeDeepScrollTabReturnKeepsQuickNavigation",
+    "testFilesRecentAndFavoritesRemainAvailableAfterForegroundReturn",
+    "testFilesSearchFocusThenGalleryReturnPreservesShell",
+    "testGalleryAlbumSourceWithLandscapeAndTabReturn",
+    "testGalleryAlbumsAndOriginalsAfterForegroundResumeKeepSourceRail",
+    "testGalleryAlbumsSurviveBackgroundAndSourceRoundTrip",
+    "testGalleryFilesRotateLandscapeAndReturnPortrait",
+    "testGalleryFilterCancelAfterRecentFavoritesToggle",
+    "testGalleryFilterCancelAfterTabAndSourceRoundTrips",
+    "testGalleryPeopleAfterFilesQuickRailReturnKeepsUnifiedWall",
+    "testGalleryPeopleChildReturnRepeatsWithoutLosingGallerySource",
+    "testGalleryUnchangedForegroundRetainsVerifiedWallGeneration",
+    "testNativeFilesQuickRailAfterLandscapeGalleryReturnNoBlank",
+    "testNativeLocalGalleryMenuRouteReturnsToUnifiedSource",
+    "testNativeMineGalleryFilesSwitchAfterSourceChanges",
+    "testOfflineOwnerGalleryPeopleChildBackRestoresSource",
+    "testSyntheticOwnerFilesAndGalleryRelaunchDoesNotRetainOldScope",
+}
 TARGETS.update(NAV_TARGETS)
+TARGETS.update(MINIMAL_TARGETS)
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
@@ -170,7 +196,8 @@ while True:
                 active.add(key)
                 current_case = key
                 began = time.monotonic()
-                for index, delay in enumerate(FRAME_OFFSETS_SECONDS):
+                offsets = FRAME_OFFSETS_SECONDS[:1] if name in MINIMAL_TARGETS else FRAME_OFFSETS_SECONDS
+                for index, delay in enumerate(offsets):
                     scheduled.append((began + delay, key, index, delay))
                 continue
             tapped = tap_start.search(line)
