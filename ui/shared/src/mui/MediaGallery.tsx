@@ -169,6 +169,14 @@ import { xDriveMobileGalleryDockBottom, xDriveMobileGalleryGlobalInset } from '.
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { XDriveMediaGalleryPhotoWall } from './MediaGalleryPhotoWall'
+import {
+  XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
+  XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
+  XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
+  xDriveReadMobileGalleryColumns,
+  xDriveWriteMobileGalleryColumn,
+  xDriveObserveMobileGalleryColumns,
+} from './MediaGalleryPhotoWallPreferences'
 import { XDriveMediaGalleryVirtualTimeline as MediaVirtualTimeline } from './MediaGallerySharedTimeline'
 import { xDrivePlacesVisiblePanels } from '../media-gallery-places-presentation'
 import { XDriveMediaGalleryPlacesHierarchy } from './MediaGalleryPlacesHierarchy'
@@ -5149,35 +5157,7 @@ const mediaGalleryTimeScaleValues: readonly MediaGalleryTimeScale[] = [
 // 320px viewport still has >=44px targets (with the existing 4px gap).
 // iOS 27 physical-device screenshot comparison remains the final visual gate.
 type MobileGalleryColumns = Record<MediaGalleryTimeScale, number>
-const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY = 'xdrive.gallery.mobile.columns.v1'
-const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT: MobileGalleryColumns = {
-  year: 6, month: 5, day: 3, all: 3,
-}
 const XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH = 144
-const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN = 2
-const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX = 10
-
-function xDriveReadMobileGalleryColumns(): MobileGalleryColumns {
-  const fallback = { ...XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT }
-  if (typeof window === 'undefined') return fallback
-  try {
-    const raw = window.localStorage.getItem(XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY)
-    if (!raw) return fallback
-    const parsed = JSON.parse(raw) as Partial<MobileGalleryColumns>
-    for (const scale of mediaGalleryTimeScaleValues) {
-      const n = parsed[scale]
-      if (typeof n === 'number' && Number.isFinite(n)) {
-        fallback[scale] = Math.min(
-          XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
-          Math.max(XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN, Math.round(n)),
-        )
-      }
-    }
-  } catch {
-    // Storage can be denied in private browsing; keep the same media query.
-  }
-  return fallback
-}
 
 function mediaGalleryNormalizeDensity(value: unknown, fallback: number) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
@@ -5680,17 +5660,10 @@ export function XDriveMediaGallery({
   useEffect(() => {
     xDriveWriteMediaGalleryViewPreferences(viewPreferences)
   }, [viewPreferences])
-  useEffect(() => {
-    if (!mobileWebChrome || typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(
-        XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY,
-        JSON.stringify(mobileColumnsByScale),
-      )
-    } catch {
-      // Denied browser storage must not prevent photo browsing.
-    }
-  }, [mobileColumnsByScale, mobileWebChrome])
+  // Both an opened Places sheet and a mounted Gallery may change the same
+  // visual density. Listen for same-document and cross-tab preference edits;
+  // do not write a stale four-scale snapshot on every Gallery re-render.
+  useEffect(() => xDriveObserveMobileGalleryColumns(setMobileColumnsByScale), [])
 
   // The existing virtual Grid/Timeline anchor restoration supports an external
   // logical index; only a new sort generation should apply it.
@@ -5831,6 +5804,9 @@ export function XDriveMediaGallery({
       setMobileColumnsByScale((current) => ({
         ...current, [effectiveTimeScale]: columns,
       }))
+      if (mobileWebChrome) {
+        xDriveWriteMobileGalleryColumn(effectiveTimeScale, columns)
+      }
       return
     }
     const normalized = mediaGalleryNormalizeDensity(value, minTileWidth)
@@ -5843,7 +5819,7 @@ export function XDriveMediaGallery({
         [effectiveTimeScale]: normalized,
       },
     }))
-  }, [compactGallery, effectiveTimeScale, minTileWidth, mobileColumns, viewAnchorRevision])
+  }, [compactGallery, effectiveTimeScale, minTileWidth, mobileColumns, mobileWebChrome, viewAnchorRevision])
 
   const updateGalleryAspectMode = useCallback((nextMode: MediaGalleryAspectMode) => {
     if (nextMode === aspectMode) return
