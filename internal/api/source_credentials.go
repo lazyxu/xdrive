@@ -45,10 +45,10 @@ type sourceCredentialTestDTO struct {
 type sourceCredentialTester func(context.Context, string, json.RawMessage) (sourceCredentialTestDTO, error)
 
 type sourceCredentialStatusDTO struct {
-	ValueLength int `json:"value_length,omitempty"`
-	Configured bool       `json:"configured"`
-	KeyVersion uint32     `json:"key_version,omitempty"`
-	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
+	ValueLength int        `json:"value_length,omitempty"`
+	Configured  bool       `json:"configured"`
+	KeyVersion  uint32     `json:"key_version,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
 type sourceCredentialRevealDTO struct {

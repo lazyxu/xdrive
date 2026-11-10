@@ -14,7 +14,7 @@ func TestCredentialMaskLengthCountsUnicodeCharactersAndRejectsInvalid(t *testing
 		{"LTAIExample", 11},
 		{"a🔐密", 3},
 		{strings.Repeat("a", maxCredentialMaskLength), maxCredentialMaskLength},
-		{strings.Repeat("a", maxCredentialMaskLength+1), 0},
+		{strings.Repeat("a", maxCredentialMaskLength + 1), 0},
 	} {
 		if got := credentialMaskLength(tc.value); got != tc.want {
 			t.Fatalf("credentialMaskLength(%d bytes) = %d, want %d", len(tc.value), got, tc.want)

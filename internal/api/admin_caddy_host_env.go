@@ -26,17 +26,17 @@ var errCaddyHostEnvUnavailable = errors.New("host Caddy .env authority unavailab
 var errCaddyHostEnvConflict = errors.New("host Caddy .env changed or operation in progress")
 
 type caddyHostEnvSnapshot struct {
-	Protocol         string    `json:"protocol"`
-	Domain           string    `json:"domain"`
-	DomainEnabled    bool      `json:"domain_enabled"`
-	LANIP            string    `json:"lan_ip"`
-	LANEnabled       bool      `json:"lan_enabled"`
-	AliDNSConfigured bool      `json:"alidns_configured"`
-	AliDNSIDLength   int       `json:"alidns_id_length,omitempty"`
-	AliDNSSecretLength int     `json:"alidns_secret_length,omitempty"`
-	SHA256           string    `json:"sha256"`
-	PendingRedeploy  bool      `json:"pending_redeploy"`
-	ObservedAt       time.Time `json:"observed_at"`
+	Protocol           string    `json:"protocol"`
+	Domain             string    `json:"domain"`
+	DomainEnabled      bool      `json:"domain_enabled"`
+	LANIP              string    `json:"lan_ip"`
+	LANEnabled         bool      `json:"lan_enabled"`
+	AliDNSConfigured   bool      `json:"alidns_configured"`
+	AliDNSIDLength     int       `json:"alidns_id_length,omitempty"`
+	AliDNSSecretLength int       `json:"alidns_secret_length,omitempty"`
+	SHA256             string    `json:"sha256"`
+	PendingRedeploy    bool      `json:"pending_redeploy"`
+	ObservedAt         time.Time `json:"observed_at"`
 }
 
 type caddyHostEnvRequest struct {
@@ -96,7 +96,7 @@ func (s *Server) readCaddyHostEnv() (caddyHostEnvSnapshot, error) {
 		(snap.AliDNSIDLength != 0 && (snap.AliDNSIDLength < 8 || snap.AliDNSIDLength > 128)) ||
 		(snap.AliDNSSecretLength != 0 && (snap.AliDNSSecretLength < 8 || snap.AliDNSSecretLength > 256)) ||
 		((snap.AliDNSIDLength > 0 || snap.AliDNSSecretLength > 0) &&
-		 (!snap.AliDNSConfigured || snap.AliDNSIDLength == 0 || snap.AliDNSSecretLength == 0)) ||
+			(!snap.AliDNSConfigured || snap.AliDNSIDLength == 0 || snap.AliDNSSecretLength == 0)) ||
 		snap.ObservedAt.IsZero() || time.Since(snap.ObservedAt) > caddyHostEnvFreshness ||
 		time.Until(snap.ObservedAt) > 15*time.Second {
 		return caddyHostEnvSnapshot{}, errCaddyHostEnvUnavailable
