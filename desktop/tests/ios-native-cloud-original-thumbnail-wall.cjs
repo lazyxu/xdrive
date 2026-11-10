@@ -200,7 +200,7 @@ test('native cloud-original Gallery short landscape returns grid height while re
   assert.match(wall, /\.alert\("云端备份原件说明", isPresented: \$showingGalleryHelp\)/)
   assert.match(wall, /model\.matchesOwner\(login.owner\) \? model.scanned : 0/)
   assert.match(wall, /model\.matchesOwner\(login.owner\) \? model.total : 0/)
-  assert.match(wall, /if model\.busy \{ ProgressView\("正在验证并读取云端目录/)
+  assert.match(wall, /if model\.busy && !model\.matchesOwner\(login.owner\) \{\s*ProgressView\("正在验证并读取云端目录…"/)
   assert.match(wall, /if let error = model\.error \{/)
   assert.match(wall, /native-ios-cloud-original-continuous-tail/)
   assert.doesNotMatch(wall, /Button\("继续检查下一批"\)|native-ios-cloud-next/)
