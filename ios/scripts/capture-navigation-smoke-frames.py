@@ -128,6 +128,8 @@ NAV_TARGETS = {
     "testCloudOriginalsBackgroundFilesReturnKeepsNativeChild",
     "testCloudOriginalsHelpDismissFilesReturnKeepsChild",
     "testCloudOriginalsFilesQuickSectionsReturnKeepsChild",
+    "testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages",
+    "testFilesOperationHistoryBackgroundThenFilesGalleryReturn",
     # Each new live Gallery generation test additionally captures nearby
     # Simulator frames; screenshots are diagnostic, not a measured FPS.
     "testUnifiedWallGenerationPersistsThroughSixFilesTabRoundTrips",
