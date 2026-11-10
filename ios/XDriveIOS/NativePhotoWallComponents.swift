@@ -226,3 +226,32 @@ struct XDriveIOSNativePhotoWallSelectionIndicator: View {
         }
     }
 }
+
+
+/// One native pinch recognizer for bounded PhotoKit and signed Owner photo
+/// walls. The caller provides the current eligibility (scene/Owner/Viewer);
+/// this modifier never consults PhotoKit, reads media, or changes a cursor.
+struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier {
+    @Binding var density: XDriveIOSNativePhotoWallDensity
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
+                guard enabled else { return }
+                density = density.applyingPinch(scale)
+            }
+        )
+    }
+}
+
+extension View {
+    func xdrivePhotoWallPinch(
+        density: Binding<XDriveIOSNativePhotoWallDensity>,
+        enabled: Bool
+    ) -> some View {
+        modifier(XDriveIOSNativePhotoWallPinchModifier(
+            density: density, enabled: enabled
+        ))
+    }
+}
