@@ -139,8 +139,9 @@ NAV_TARGETS = {
     "testUnifiedWallGenerationPersistsAfterDeniedCloudChildAndReturn",
 }
 MINIMAL_TARGETS = {
-    # One frame per previously uncovered UI journey. Tap-rich cases retain
-    # the dedicated multi-frame sampler; this bounds extra screenshot cost.
+    # One late fallback frame and one first-tap frame per previously
+    # uncovered journey. This avoids sampling only launch animations while
+    # bounding work compared with the dedicated multi-tap route sampler.
     "testAlbumSourceReturnThroughFilesAndMineKeepsGalleryMounted",
     "testAlternatingGalleryFilesSettledFramesAcrossThreeTabs",
     "testFilesGalleryNativeRelaunchDoesNotLoseInitialPages",
@@ -196,20 +197,24 @@ while True:
                 active.add(key)
                 current_case = key
                 began = time.monotonic()
-                offsets = FRAME_OFFSETS_SECONDS[:1] if name in MINIMAL_TARGETS else FRAME_OFFSETS_SECONDS
+                offsets = FRAME_OFFSETS_SECONDS[-1:] if name in MINIMAL_TARGETS else FRAME_OFFSETS_SECONDS
                 for index, delay in enumerate(offsets):
                     scheduled.append((began + delay, key, index, delay))
                 continue
             tapped = tap_start.search(line)
             if (tapped and current_case in active
-                    and current_case[0] in NAV_TARGETS):
-                # Count ALL taps; otherwise late regression frames can never
-                # be captured after three navigations, including on 8 cycles.
+                    and (current_case[0] in NAV_TARGETS
+                         or current_case[0] in MINIMAL_TARGETS)):
+                # For the 21 minimally observed routes, capture the first
+                # actual navigation tap rather than a near-initial splash.
+                # Dedicated routes retain their original late-tap schedule.
                 count = tap_counts.get(current_case, 0) + 1
                 tap_counts[current_case] = count
-                if count in TAP_CAPTURE_NUMBERS:
+                minimal = current_case[0] in MINIMAL_TARGETS
+                if (minimal and count == 1) or (not minimal and count in TAP_CAPTURE_NUMBERS):
                     now_tap = time.monotonic()
-                    for frame, delay in enumerate(TAP_FRAME_OFFSETS_SECONDS):
+                    delays = (0.55,) if minimal else TAP_FRAME_OFFSETS_SECONDS
+                    for frame, delay in enumerate(delays):
                         tap_scheduled.append((
                             now_tap + delay, current_case, count,
                             frame, delay, tapped.group(1)
