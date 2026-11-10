@@ -139,6 +139,18 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                   model.rows.compactMap({ $0.local?.id }) == ids else { return }
             queueBadges = fetched
             queueHistoryCurrent = isCurrent
+        } catch is CancellationError {
+            // Covering a verified page cancels its in-flight queue read.
+            // Cancellation alone is not evidence that the last committed
+            // same-Owner badges expired; keep them until the next visible read.
+            // Revoked Owner or true offscreen eviction must still clear them.
+            if badgeReadEpoch == epoch &&
+                (!retainWhileCovered ||
+                 !XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner) ||
+                 !XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)) {
+                queueBadges = [:]
+                queueHistoryCurrent = false
+            }
         } catch {
             if badgeReadEpoch == epoch {
                 queueBadges = [:]
