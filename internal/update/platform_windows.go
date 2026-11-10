@@ -12,11 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 //go:embed windows_upgrade_transaction.ps1
