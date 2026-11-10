@@ -168,6 +168,75 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         assertVisiblePixels(app, route: "Local Photos after foreground and Files")
     }
 
+    private func assertCloudOriginalsChild(_ app: XCUIApplication) {
+        XCTAssertTrue(target("native-ios-cloud-original-layout-help", app: app)
+            .waitForExistence(timeout: 15), "Cloud Originals native child did not mount")
+        // These smoke runs intentionally have no authenticated Server token.
+        // They must never manufacture a protected cloud tile in the UI.
+        XCTAssertFalse(target("native-ios-cloud-original-tile", app: app).exists,
+                       "No-session test leaked cloud Original thumbnail rows")
+    }
+
+    func testCloudOriginalsFilesRapidReturnKeepsNativeChild() {
+        let app = launch()
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        assertVisiblePixels(app, route: "Originals initial child")
+        for index in 0..<3 {
+            tap("native-ios-tab-files", app: app)
+            assertFiles(app)
+            tap("native-ios-tab-gallery", app: app)
+            assertGallery(app)
+            assertCloudOriginalsChild(app)
+            assertVisiblePixels(app, route: "Originals after Files \(index)")
+        }
+    }
+
+    func testCloudOriginalsBackgroundFilesReturnKeepsNativeChild() {
+        let app = launch()
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertCloudOriginalsChild(app)
+        assertVisiblePixels(app, route: "Originals foreground Files return")
+    }
+
+    func testCloudOriginalsHelpDismissFilesReturnKeepsChild() {
+        let app = launch()
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-cloud-original-layout-help", app: app)
+        let info = app.alerts["云端备份原件说明"].firstMatch
+        XCTAssertTrue(info.waitForExistence(timeout: 15), "Originals help alert missing")
+        info.buttons["完成"].tap()
+        assertCloudOriginalsChild(app)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertCloudOriginalsChild(app)
+        assertVisiblePixels(app, route: "Originals after help and Files")
+    }
+
+    func testCloudOriginalsFilesQuickSectionsReturnKeepsChild() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-tab-files", app: app)
+        for section in ["recent", "favorites", "browse", "recent", "browse"] {
+            tap("native-ios-files-section-\(section)", app: app)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app: app)
+        assertCloudOriginalsChild(app)
+        assertVisiblePixels(app, route: "Originals after Files sections")
+    }
+
     func testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels() {
         let app = launch()
         for index in 0..<4 {
