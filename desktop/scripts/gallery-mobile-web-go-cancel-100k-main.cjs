@@ -153,6 +153,7 @@ async function visibleButtonCenter(win, label) {
     let blockerKind = 'none'
     let blockerTag = 'none'
     let blockerStack = null
+    let blockerAncestorLayers = []
     const candidates = matching.filter(button => {
       const bounds = button.getBoundingClientRect()
       const style = getComputedStyle(button)
@@ -168,6 +169,7 @@ async function visibleButtonCenter(win, label) {
       blockerKind = !hit ? 'no-hit' :
         hit.closest('[data-xdrive-mobile-five-slot]') ? 'inside-navigation' :
         hit.closest('.MuiBackdrop-root') ? 'modal-backdrop' :
+        hit.closest('.MuiModal-root') ? 'modal-layer' :
         hit.closest('[role="dialog"]') ? 'dialog' :
         hit.closest('.MuiDrawer-root') ? 'drawer' :
         hit.closest('.MuiTooltip-popper') ? 'tooltip' :
@@ -179,6 +181,23 @@ async function visibleButtonCenter(win, label) {
         ? hit.tagName : 'other'
       const layer = hit ? Number(getComputedStyle(hit).zIndex) : NaN
       blockerStack = Number.isFinite(layer) && Math.abs(layer) <= 10000 ? layer : null
+      blockerAncestorLayers = []
+      for (let ancestor = hit, depth = 0; ancestor && depth < 7;
+        ancestor = ancestor.parentElement, depth++) {
+        const css = getComputedStyle(ancestor)
+        const z = Number(css.zIndex)
+        const rect = ancestor.getBoundingClientRect()
+        blockerAncestorLayers.push({
+          // Fixed enums and numbers only. Never record class names, text,
+          // attributes, Owner identities, links, auth or query details.
+          tag: ['DIV','MAIN','NAV','SECTION','FOOTER','HEADER','ASIDE','BODY','HTML'].includes(ancestor.tagName)
+            ? ancestor.tagName : 'other',
+          position: ['static','relative','absolute','fixed','sticky'].includes(css.position)
+            ? css.position : 'other',
+          z: Number.isFinite(z) && Math.abs(z) <= 10000 ? z : null,
+          large: rect.width >= innerWidth * .75 && rect.height >= innerHeight * .75,
+        })
+      }
       return false
     })
     if (candidates.length !== 1) return {
@@ -186,7 +205,7 @@ async function visibleButtonCenter(win, label) {
       // Anonymous counts diagnose wrong label, geometry, or a genuine
       // overlapping UI. Never bypass the real hit test or expose DOM text.
       counts:{buttons:buttons.length,matching:matching.length,
-        withinViewport,unobscured:candidates.length,blockerKind,blockerTag,blockerStack},
+        withinViewport,unobscured:candidates.length,blockerKind,blockerTag,blockerStack,blockerAncestorLayers},
     }
     const rect = candidates[0].getBoundingClientRect()
     return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}
