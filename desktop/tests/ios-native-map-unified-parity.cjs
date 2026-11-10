@@ -217,11 +217,13 @@ test('real iOS first-use Photo Library system prompt cannot be default-denied by
   assert.match(simulator, /"Real initial Photos prompt must permit explicit Full Access"/)
   assert.match(simulator, /acceptPhotoLibraryFullAccess\(in: alert, stage: "interruption"\)/)
   const monitor = simulator.indexOf('addUIInterruptionMonitor(')
-  const launch = simulator.indexOf('app.launch()')
+  const openLocalMap = simulator.indexOf('private func openLocalMap()')
+  const launch = simulator.indexOf('app.launch()', openLocalMap)
   const proactive = simulator.indexOf('handleInitialPhotoLibraryPromptIfPresent()', launch)
   const launcher = simulator.indexOf('let launcher = element("native-ios-tab-launcher", in: app)', launch)
-  assert.ok(monitor >= 0 && monitor < launch && proactive > launch &&
-    proactive < launcher, 'Full Access handler must run before native launcher can trigger default denial')
+  assert.ok(monitor >= 0 && monitor < openLocalMap && openLocalMap < launch &&
+    proactive > launch && proactive < launcher,
+    'Full Access handler must run before native launcher can trigger default denial')
   assert.doesNotMatch(simulator, /buttons\["Don[’']t Allow"\]\.tap\(\)/)
   assert.match(simulator, /Expected actual user-granted Full Access; still denied or Limited/)
 })
