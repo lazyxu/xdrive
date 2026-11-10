@@ -367,3 +367,13 @@ test('local Gallery same-scope refresh does not synchronously erase status befor
   assert.doesNotMatch(refresh, /badgeReadEpoch = token\s*visibleBackupQueueStates = \[:\]/)
   assert.match(refresh, /if !sameWindow \{ clearBadgeProof\(\) \}/)
 })
+
+
+test('local PhotoKit Gallery/Files native Simulator tests cover repeated tab and scene returns', () => {
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift')
+  assert.match(ui, /func testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels\(\)/)
+  assert.match(ui, /func testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank\(\)/)
+  assert.match(ui, /native-ios-gallery-source-menu/)
+  assert.match(ui, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(ui, /assertVisiblePixels\(app, route: "Local Photos after foreground and Files"\)/)
+})
