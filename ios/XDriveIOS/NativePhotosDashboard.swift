@@ -772,7 +772,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .originals:
                     XDriveIOSNativeCloudOriginalGallery(
                         login: login,
-                        confirmedOriginalUpdate: backup.confirmedOriginalUpdate
+                        confirmedOriginalUpdate: backup.confirmedOriginalUpdate,
+                        isTabActive: tab == .gallery
                     )
                 case .map:
                     XDriveIOSNativePhotoMapsScreen(
