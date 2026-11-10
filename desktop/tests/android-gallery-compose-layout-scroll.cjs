@@ -22,7 +22,7 @@ test('Android Gallery initial index jump resumes after BoxWithConstraints layout
 test('Android Gallery Viewer return checks identity again after the next layout frame', () => {
   assert.match(body, /if \(gridState\.layoutInfo\.visibleItemsInfo\.none \{ it\.key == id \}\) \{[\s\S]*?awaitFrame\(\)\s*if \(gridState\.layoutInfo\.visibleItemsInfo\.none \{ it\.key == id \}\) \{\s*gridState\.scrollToItem\(returnIndex/)
   assert.match(body, /nativeCloudViewerReturnIndex\(/)
-  assert.match(body, /state\.gallerySelectedAlbum, state\.gallerySearchQuery/)
+  assert.match(body, /state\.gallerySelectedAlbum,\s*state\.gallerySearchQuery/)
 })
 
 test('real Android Compose kind-filter and sort UI tests still enforce verified Server state', () => {
