@@ -34,6 +34,6 @@ test('iOS active Owner and scene lifecycle still fence late results',()=>{
   assert.match(screen,/sessionGeneration == generation|generation == sessionGeneration/)
   // Comments may document that background access is forbidden: inspect only
   // executable Swift, rather than failing on the safety comment itself.
-  const executableScreen = screen.replace(/^\\s*\\/\\/.*$/gm, '')
+  const executableScreen = screen.replace(/^\s*\/\/.*$/gm, '')
   assert.doesNotMatch(executableScreen, /background pasteboard/i)
 })
