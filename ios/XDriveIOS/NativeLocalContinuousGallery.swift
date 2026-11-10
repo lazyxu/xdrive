@@ -1355,7 +1355,9 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         requestedOffset = returnPageOffset ?? savedOffset
         invalidate(with: nil)
         guard authorized, phase == .active else { return }
-        hasCompletedInitialRead = true
+        // Starting an async scan is not completing it. If this first
+        // count is cancelled by a fast Gallery -> Files tab switch, the
+        // next onAppear must retry rather than leave an empty wall forever.
         let epoch = generation
         loading = true
         scanTask = Task { @MainActor in
@@ -1368,6 +1370,9 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     return
                 }
                 total = count
+                // A genuine successful empty PhotoKit library is also a
+                // completed read. Only now may tab returns skip rescanning.
+                hasCompletedInitialRead = true
             } catch is CancellationError {
             } catch {
                 if epoch == generation { failure = "照片库发生变化，请重新读取。" }
