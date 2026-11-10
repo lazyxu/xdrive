@@ -103,6 +103,15 @@ NAV_TARGETS = {
     "testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail",
     "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
+    # Each new live Gallery generation test additionally captures nearby
+    # Simulator frames; screenshots are diagnostic, not a measured FPS.
+    "testUnifiedWallGenerationPersistsThroughSixFilesTabRoundTrips",
+    "testUnifiedWallGenerationPersistsAfterRecentFavoritesBrowseNavigation",
+    "testUnifiedWallGenerationPersistsAfterFilterCancelAndFilesReturn",
+    "testUnifiedWallGenerationPersistsAfterPeopleChildAndFilesReturn",
+    "testUnifiedWallGenerationPersistsAfterBackgroundAndFilesReturn",
+    "testUnifiedWallGenerationPersistsAfterFilesSearchSubmitAndReturn",
+    "testUnifiedWallGenerationPersistsAfterDeniedCloudChildAndReturn",
 }
 TARGETS.update(NAV_TARGETS)
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")

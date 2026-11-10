@@ -42,8 +42,14 @@ test('seven distinct real Gallery/Files journeys assert generation AND nonblank 
     'testUnifiedWallGenerationPersistsAfterFilesSearchSubmitAndReturn',
     'testUnifiedWallGenerationPersistsAfterDeniedCloudChildAndReturn'
   ]
+  const frameWatcher = fs.readFileSync(path.join(__dirname,
+    '../../ios/scripts/capture-navigation-smoke-frames.py'), 'utf8')
+  const tapTargets = frameWatcher.slice(frameWatcher.indexOf('NAV_TARGETS = {'),
+    frameWatcher.indexOf('TARGETS.update(NAV_TARGETS)'))
   for (const name of cases) {
     assert.match(ui, new RegExp('func ' + name + '\\(\\)'))
+    assert.ok(tapTargets.includes('"' + name + '"'),
+      'The real Simulator must capture tap-adjacent frames for ' + name)
   }
   assert.match(ui, /XCTAssertEqual\(verifiedUnifiedGeneration\(app\), before/)
   assert.match(ui, /assertNotSolidScreen\(app, label\)/)
