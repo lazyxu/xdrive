@@ -142,6 +142,12 @@ def analyze(directory):
             image = directory / name if name else None
             if not image or not image.is_file():
                 result['quality'] = 'capture_missing'
+            elif entry.get('capture_reliable') is False:
+                # The PNG exists, but screenshot completion took longer
+                # than its declared tap-adjacent window. Do not interpret
+                # it as the requested route's frame; retain the bytes.
+                result['quality'] = 'capture_unreliable'
+                result['reason'] = entry.get('capture_unreliable_reason') or 'slow_capture'
             else:
                 try:
                     inspect = image
