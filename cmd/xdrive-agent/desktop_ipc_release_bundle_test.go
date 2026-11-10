@@ -19,6 +19,7 @@ type releaseBundleIPCTestController struct {
 	commit        string
 	filename      string
 	destination   string
+	personalUnsigned bool
 }
 
 func (f *releaseBundleIPCTestController) CloudReleaseBundleState(context.Context) (client.ReleaseBundleListing, error) {
@@ -33,9 +34,9 @@ func (f *releaseBundleIPCTestController) CloudDownloadReleaseBundle(_ context.Co
 	f.commit, f.filename, f.destination = commit, filename, destination
 	return nil
 }
-func (f *releaseBundleIPCTestController) CloudInstallCurrentServerCommit(_ context.Context, commit, filename string) (clientUpdateState, error) {
+func (f *releaseBundleIPCTestController) CloudInstallCurrentServerCommit(_ context.Context, commit, filename string, personalUnsigned bool) (clientUpdateState, error) {
 	f.installCount++
-	f.commit, f.filename = commit, filename
+	f.commit, f.filename, f.personalUnsigned = commit, filename, personalUnsigned
 	return clientUpdateState{Status: clientUpdateStatusInstall, CurrentVersion: "snapshot"}, nil
 }
 
@@ -77,8 +78,14 @@ func TestDesktopCurrentBundleIPCRequiresFixedAuthenticatedRouteAndExplicitInstal
 	}
 	rr = desktopIPCRequest(t, handler, http.MethodPost, "/v1/release-bundle/install",
 		`{"commit":"`+commit+`","filename":"`+filename+`","confirm":true}`)
-	if rr.Code != http.StatusAccepted || f.installCount != 1 || f.commit != commit || f.filename != filename {
+	if rr.Code != http.StatusAccepted || f.installCount != 1 || f.commit != commit || f.filename != filename || f.personalUnsigned {
+
 		t.Fatalf("confirmed exact install failed: status=%d calls=%d", rr.Code, f.installCount)
+	}
+	rr = desktopIPCRequest(t, handler, http.MethodPost, "/v1/release-bundle/install",
+		`{"commit":"`+commit+`","filename":"`+filename+`","confirm":true,"personal_unsigned":true}`)
+	if rr.Code != http.StatusAccepted || !f.personalUnsigned {
+		t.Fatalf("confirmed personal Windows intent was dropped: status=%d personal=%v", rr.Code, f.personalUnsigned)
 	}
 }
 
