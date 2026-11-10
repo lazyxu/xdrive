@@ -213,12 +213,57 @@ assert sorted(event for event in state["events"] if event.startswith("delete:"))
 ]
 assert state["tag"] == NEW
 
+# Missing optional platforms must not leave older Commit packages on a
+# floating Snapshot. A same-Commit Bundle, not old Snapshot assets, is the
+# authoritative immutable download channel.
+old_optional_names = [
+    "xdrive-linux-amd64.deb",
+    "xDriveSetup-amd64.exe",
+    "xDrive-unsigned.ipa",
+    "xDrive-unsigned.ipa.sha256",
+    "xdrive-backup-linux-amd64.tar.gz",
+    "xdrive-backup-windows-amd64.zip",
+    "xdrive-android-12-release.apk",
+]
+stale_optional = {
+    name: "sha256:" + format(i + 1, "064x")
+    for i, name in enumerate(old_optional_names)
+}
+optional, state = run_case("stale-optional-platforms", prior_assets=stale_optional)
+assert optional.returncode == 0, (optional.stdout, optional.stderr)
+assert state["tag"] == NEW
+assert set(state["assets"]) == {"install.sh", "SHA256SUMS.txt"}
+assert sorted(event for event in state["events"] if event.startswith("delete:")) == [
+    "delete:" + name for name in sorted(old_optional_names)
+]
+assert state["events"].index("metadata") < state["events"].index("patch")
+
+# A bad exact-source upload is not authorization to delete last-good client
+# assets. The Git ref and old asset set must stay untouched on digest failure.
+corrupt, state = run_case(
+    "bad-new-digest-preserves-optional",
+    prior_assets=stale_optional,
+    TEST_WRONG_REMOTE_DIGEST="1",
+)
+assert corrupt.returncode != 0, (corrupt.stdout, corrupt.stderr)
+assert state["tag"] == OLD
+assert set(state["assets"]) == set(stale_optional) | {"install.sh", "SHA256SUMS.txt"}
+assert not any(event.startswith("delete:") for event in state["events"])
+
+# Similar-looking unapproved assets are never treated as known signed builds.
+unsafe, state = run_case("unknown-android-debug-asset", prior_assets={
+    "xdrive-android-debug.apk": "sha256:" + "7" * 64,
+})
+assert unsafe.returncode != 0
+assert "xdrive-android-debug.apk" in state["assets"]
+assert state["tag"] == OLD
+
 new_release, state = run_case("first-snapshot", existing=False)
 assert new_release.returncode == 0, new_release.stderr
 assert state["exists"] and state["tag"] == NEW
 assert "create" in state["events"] and "metadata" in state["events"]
 assert "patch" not in state["events"], "Initial Snapshot creates its own tag"
-print("snapshot publication E2E mock: retired Source Agent/SPK cleanup, unknown asset refusal, existing/new, upload/digest/delete failure, stale source and moved tag passed")
+print("snapshot publication E2E mock: Source Agent/SPK/old optional client cleanup, unknown asset refusal, digest/partial failure and exact tag guard passed")
 
 
 # GHCR source regression: execute the *actual* image-push shell without a
