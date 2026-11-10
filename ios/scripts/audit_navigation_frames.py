@@ -54,6 +54,7 @@ def decode_png(path):
         raise ValueError('bad PNG scanline length')
     prev = bytearray(scanlen)
     sample = []
+    app_chrome = []
     step_x = max(1, width // 40)
     step_y = max(1, height // 54)
     for y in range(height):
@@ -77,30 +78,48 @@ def decode_png(path):
                 pa, pb, pc = abs(p-left), abs(p-up), abs(p-upperleft)
                 predictor = left if pa <= pb and pa <= pc else up if pb <= pc else upperleft
                 line[j] = (line[j] + predictor) & 255
-        if height * .22 <= y < height * .78 and y % step_y == 0:
-            for x in range(0, width, step_x):
-                if not (width * .18 <= x < width * .82):
-                    continue
-                at = x * nchan
-                if nchan == 1:
-                    sample.append((line[at],) * 3)
-                else:
-                    sample.append(tuple(line[at:at+3]))
+        if y % step_y == 0:
+            content_band = height * .22 <= y < height * .78
+            # Exclude the OS clock/dynamic island and bottom Home indicator.
+            # A completely white list is not a blank page when native title,
+            # Search and Tab controls are visibly mounted above/below it.
+            chrome_band = (height * .08 <= y < height * .22 or
+                           height * .78 <= y < height * .95)
+            if content_band or chrome_band:
+                destination = sample if content_band else app_chrome
+                for x in range(0, width, step_x):
+                    if not (width * .18 <= x < width * .82):
+                        continue
+                    at = x * nchan
+                    if nchan == 1:
+                        destination.append((line[at],) * 3)
+                    else:
+                        destination.append(tuple(line[at:at+3]))
         prev = line
-    return width, height, sample
+    return width, height, sample, app_chrome
 
 
 def score_png(path):
-    width, height, pixels = decode_png(path)
-    if not pixels:
-        raise ValueError('no content-region samples')
+    width, height, pixels, chrome = decode_png(path)
+    if not pixels or not chrome:
+        raise ValueError('missing content/chrome-region samples')
     coarse = collections.Counter(tuple(c // 16 for c in p) for p in pixels)
+    chrome_coarse = collections.Counter(tuple(c // 16 for c in p) for p in chrome)
     major = coarse.most_common(1)[0][1] / len(pixels)
+    chrome_major = chrome_coarse.most_common(1)[0][1] / len(chrome)
+    flat_content = major >= .985 and len(coarse) <= 3
+    flat_chrome = chrome_major >= .985 and len(chrome_coarse) <= 3
     return {
         'size': [width, height], 'content_samples': len(pixels),
         'dominant_color_fraction': round(major, 4),
         'unique_color_bins': len(coarse),
-        'likely_uniform_content': major >= .985 and len(coarse) <= 3,
+        'likely_uniform_content': flat_content,
+        # A blank center is expected on a real empty/denied list. It is NOT
+        # equivalent to the absence of the native navigation chrome.
+        'app_chrome_present': not flat_chrome,
+        'chrome_dominant_color_fraction': round(chrome_major, 4),
+        'chrome_unique_color_bins': len(chrome_coarse),
+        'likely_blank_shell': flat_content and flat_chrome,
         'is_fps_measurement': False,
     }
 
@@ -133,9 +152,12 @@ def analyze(directory):
                                        stderr=subprocess.DEVNULL)
                         inspect = small
                     result['metrics'] = score_png(inspect)
-                    result['quality'] = ('uniform_content_candidate'
-                                         if result['metrics']['likely_uniform_content']
-                                         else 'content_nonuniform')
+                    result['quality'] = (
+                        'blank_shell_candidate' if result['metrics']['likely_blank_shell']
+                        else 'sparse_or_empty_content'
+                        if result['metrics']['likely_uniform_content']
+                        else 'content_nonuniform'
+                    )
                 except (OSError, ValueError, subprocess.SubprocessError) as exc:
                     result['quality'] = 'analysis_unavailable'
                     result['reason'] = type(exc).__name__
