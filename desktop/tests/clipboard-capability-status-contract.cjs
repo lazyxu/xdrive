@@ -28,7 +28,7 @@ test('all browser/Host ports accept content directly without a vault or decrypt 
   ]
   for (const filename of paths) {
     const src=read(filename)
-    assert.match(src,/content|\.create\(/)
+    assert.match(src,/content|clipboardCreate|create:/)
     assert.doesNotMatch(src,/decryptTarget:|initializeCheck:|\bvault:\s*|xDriveClipboardEncrypt\(/)
   }
   assert.match(read('web/src/clipboardDataPort.ts'),/uploadLocalFile:/)

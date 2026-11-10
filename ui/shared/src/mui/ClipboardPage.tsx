@@ -214,8 +214,8 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     try { xDriveClipboardValidateText(textAtStart) } catch (error) {
       setMessage(errorLabel(error)); return
     }
-    // Exact kind is authenticated AEAD metadata, not a display-only label.
-    // An unknown ACK for an image reference must not be reused as a file
+    // MIME kind is part of immutable idempotency identity, not merely a label.
+    // An unknown ACK for an image reference cannot be reused as a file
     // reference to the same Node/recipient (or vice versa).
     const expectedKind: XDriveClipboardKind = isRef
       ? (referenceKind === 'image' ? 'image/x-xdrive-node-ref' : 'application/x-xdrive-node-ref')

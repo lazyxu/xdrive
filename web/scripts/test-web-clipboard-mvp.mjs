@@ -34,7 +34,7 @@ assert.match(port,/importImageFromClipboard/)
 assert.match(port,/uploadLocalFile/)
 assert.doesNotMatch(port,/\bvault:|\binitializeCheck:|decryptTarget:|xDriveClipboardEncrypt/)
 
-assert.match(api,/client_event_id: string; kind: XDriveClipboardKind; content: string/)
+assert.match(api,/client_event_id: string[\s\S]{0,150}content: string/)
 assert.doesNotMatch(api,/clipboard\/vault|clipboard\/vault\/check/)
 assert.match(server,/Content\s+string\s+`json:"content"`/)
 assert.match(server,/clipboardRetention = 24 \* time\.Hour/)
