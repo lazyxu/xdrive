@@ -7,6 +7,7 @@ of flashes between captures. Never upload media/Owner details from a live user.
 import argparse
 import collections
 import json
+import math
 import pathlib
 import shutil
 import struct
@@ -139,11 +140,30 @@ def analyze(directory):
                     result['quality'] = 'analysis_unavailable'
                     result['reason'] = type(exc).__name__
             results.append(result)
+    lags = sorted(float(r['capture_request_lag_seconds']) for r in results
+                  if isinstance(r.get('capture_request_lag_seconds'), (int, float))
+                  and math.isfinite(float(r['capture_request_lag_seconds']))
+                  and r['capture_request_lag_seconds'] >= 0)
+
+    def percentile(values, fraction):
+        if not values:
+            return None
+        return round(values[min(len(values) - 1,
+                                max(0, math.ceil(len(values) * fraction) - 1))] * 1000, 1)
+
     return {
         'note': 'Diagnostic content-region snapshots only; no FPS or zero-flicker conclusion',
         'is_fps_measurement': False, 'proves_zero_transient_flicker': False,
         'total_frames': len(results),
         'missing_capture_trace': missing_capture_trace,
+        'finished_before_capture': sum(
+            r.get('reason') == 'test_finished_before_capture' for r in results),
+        'capture_request_lag': {
+            'samples': len(lags),
+            'p50_ms': percentile(lags, .50),
+            'p95_ms': percentile(lags, .95),
+            'over_150ms': sum(lag > .15 for lag in lags),
+        },
         'counts': dict(collections.Counter(r['quality'] for r in results)),
         'frames': results,
     }
