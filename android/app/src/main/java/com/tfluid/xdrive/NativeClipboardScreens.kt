@@ -22,6 +22,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.tfluid.xdrive.core.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -92,7 +94,7 @@ internal fun NativeClipboardScreen(
         clearConfirm = false
     }
     DisposableEffect(epoch) {
-        // Disposal must both invalidate late work and drop all decrypted
+        // Disposal must both invalidate late work and clear all Owner-scoped
         // UI state and Owner-scoped history, not just invalidate its callbacks.
         onDispose { lock() }
     }
@@ -117,7 +119,7 @@ internal fun NativeClipboardScreen(
         }
     }
     // Recipient discovery has no device token: only the current interactive
-    // Owner may read public keys. Discard late results on Lock or A→B→A.
+    // Owner may read enrolled recipient identities; discard stale results.
     // A single scoped recipient-directory GET on each visible foreground
     // entry. Lifecycle STOP cancels it; there is NO background polling.
     LaunchedEffect(epoch, lifecycleOwner) {
@@ -190,7 +192,7 @@ internal fun NativeClipboardScreen(
             onIncomingConsumed()
         }
     }
-    // A provider picker can return after Owner switch, Lock, or new target
+    // A provider picker can return after Owner switch or new target
     // selection. A callback is NEVER itself permission to send a message.
     val localFilePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -232,7 +234,7 @@ internal fun NativeClipboardScreen(
             style = MaterialTheme.typography.bodySmall)
         if (message != null) Text(message!!,color = MaterialTheme.colorScheme.error,
             modifier=Modifier.testTag("native-clipboard-status"))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { scope.launch { refresh() } },enabled=!busy && !refreshing) {
                     Text("刷新")
                 }
