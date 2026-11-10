@@ -6,6 +6,13 @@ on:
     paths:
       - internal/api/media_places_c1_baseline_linux_test.go
       - .github/workflows/places-c1-postgres-baseline.yml
+      # Session recovery changes must also prove genuine 10k/100k Owner map
+      # Count, signed range, cancellation and Go process RSS in PostgreSQL.
+      # This opt-in test does not claim real Baidu, physical CAS or iPhone.
+      - 'desktop/scripts/places-desktop-production-web-*.cjs'
+      - 'desktop/scripts/gallery-places-dual-host-chromium.*'
+      - 'desktop/tests/gallery-places-cells-error-retry.cjs'
+      - 'desktop/tests/desktop-places-mode-viewer-recovery.cjs'
   workflow_dispatch:
 
 permissions:
@@ -81,7 +88,12 @@ jobs:
           assert [r["owner_assets"] for r in data] == [10000, 100000], "wrong dataset sizes"
           for report in data:
               metrics = report["metrics"]
+              assert report["test_process_max_rss_kb"] > 0, "missing actual Go process MaxRSS"
               assert len(metrics) == 7, "missing real query measurements"
+              assert sum(m["operation"] == "world_map_64" for m in metrics) == 1
+              assert next(m for m in metrics if m["operation"] == "world_map_64")["count"] == report["owner_assets"]
+              for metric in metrics:
+                  assert metric["max_ms"] >= metric["p95_ms"] >= metric["p50_ms"] >= 0, metric["operation"]
               for sample in metrics:
                   assert sample["sample_count"] == 7
                   assert sample.get("explain_analyze_buffers"), sample["operation"]

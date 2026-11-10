@@ -67,13 +67,15 @@ test('actual guest DOM must be a map-only page, never HTTP 200 login or Owner-de
   const pageSelector = '[data-xdrive-desktop-places-web-page]'
   const sdkSelector = '[data-xdrive-baidu-isolated-photo-map]'
   const unavailableSelector = '[data-xdrive-baidu-map-unavailable]'
-  const run = (selectors, sdkPhase = null) => {
+  const run = (selectors, sdkPhase = null, errorCode = null) => {
     const set = new Set(selectors)
     const page = {querySelector: selector => {
       if (selector === sdkSelector && sdkPhase !== null)
         return {getAttribute: key =>
           key === 'data-xdrive-places-sdk-phase' ? sdkPhase : null}
-      if (selector === unavailableSelector && set.has(unavailableSelector)) return {}
+      if (selector === unavailableSelector && set.has(unavailableSelector))
+        return {getAttribute: key => key === 'data-xdrive-baidu-map-error-code'
+          ? errorCode : null}
       return null
     }}
     const document = {querySelector: selector =>
@@ -88,6 +90,14 @@ test('actual guest DOM must be a map-only page, never HTTP 200 login or Owner-de
   assert.equal(run([pageSelector], 'ready'), 'ready')
   assert.equal(run([pageSelector], 'unavailable'), 'unavailable')
   assert.equal(run([pageSelector, unavailableSelector], 'ready'), 'unavailable')
+  assert.equal(run([pageSelector, unavailableSelector], 'ready', 'session_denied'),
+    'unavailable:session_denied')
+  assert.equal(admission.xDriveDesktopPlacesGuestFailureCode('unavailable:session_denied'),
+    'session_denied')
+  assert.equal(admission.xDriveDesktopPlacesGuestFailureCode('unavailable:child_handshake_timeout'),
+    'child_handshake_timeout')
+  assert.equal(admission.xDriveDesktopPlacesGuestProbeState('unavailable:session_denied'),
+    'unavailable')
   assert.equal(run(['#web-login-username']), 'login')
   assert.equal(run(['#web-login-password']), 'login')
   assert.equal(run(['[data-xdrive-desktop-places-auth-denied]']), 'denied')

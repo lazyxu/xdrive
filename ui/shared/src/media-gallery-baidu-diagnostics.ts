@@ -91,6 +91,10 @@ export const xDriveBaiduMapDiagnosticDetails = {
     title: '读取 Server 动态地图状态失败',
     action: '检查 HTTPS 网关、Server 连通性和浏览器网络；不能把状态请求失败当作地图已授权。',
   },
+  child_handshake_timeout: {
+    title: '隔离地图 Child 未在 12 秒内完成可信握手',
+    action: '核对独立 Child HTTPS 文档、有效证书、CSP/frame-ancestors 和 Child 的精确 Parent Origin 配置。该阶段没有收到有效 ready 消息，不能据此断言百度 SDK 已加载或失败；不要关闭 Origin/nonce 校验。',
+  },
   isolated_origin_unavailable: {
     title: '安全隔离版缺少独立 HTTPS 地图子站',
     action: '签名地图运行时已经就绪，但 Server 没有提供独立可信的 Child Origin。配置不同注册站点的有效 HTTPS 地图子站；同一 IP、另一个端口或同一 Cookie 站点不构成隔离。',

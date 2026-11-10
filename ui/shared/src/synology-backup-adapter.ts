@@ -604,15 +604,6 @@ export type XDriveSynologyNotesImageReceipt = {
 
 export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommonBatchActions, XDriveLocalBackupScheduleActions {
   clipboardAvailable(signal?: AbortSignal): Promise<boolean>
-  clipboardVault(signal?: AbortSignal): Promise<{
-    owner_id: number; salt: string; kdf: string; iterations: number;
-    check_nonce: string; check_ciphertext: string; aad_scope: string
-  }>
-  clipboardCheck(ownerScope: string, value: { nonce: string; ciphertext: string; scope: string },
-    signal?: AbortSignal): Promise<{
-    owner_id: number; salt: string; kdf: string; iterations: number;
-    check_nonce: string; check_ciphertext: string; aad_scope: string
-  }>
   clipboardList(before?: number, signal?: AbortSignal): Promise<{
     items: import('./mui/ClipboardPage').XDriveClipboardItem[]; next_before: number | null
   }>
@@ -620,14 +611,13 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     devices: import('./mui/ClipboardPage').XDriveClipboardTargetDevice[]
   }>
   clipboardEnableDevice(ownerScope: string, signal?: AbortSignal): Promise<import('./mui/ClipboardPage').XDriveClipboardTargetDevice>
-  clipboardDecrypt(ownerScope: string, id: number, signal?: AbortSignal): Promise<{ text: string }>
   clipboardFileReference(id: number, signal?: AbortSignal): Promise<XDriveSynologyClipboardFileReference>
   clipboardRevokeDevice(ownerScope: string, deviceID: string, signal?: AbortSignal): Promise<void>
   clipboardCreate(ownerScope: string, item: {
     client_event_id: string
     kind: 'text/plain' | 'text/uri-list' | 'image/x-xdrive-node-ref' | 'application/x-xdrive-node-ref'
-    nonce: string; ciphertext: string
-    target_device_id?: string; ephemeral_key?: string; wrapped_key?: string; node_id?: number
+    content: string
+    target_device_id?: string; node_id?: number
   }, signal?: AbortSignal): Promise<import('./mui/ClipboardPage').XDriveClipboardItem>
   clipboardDelete(ownerScope: string, id: number, signal?: AbortSignal): Promise<void>
   clipboardClear(ownerScope: string, signal?: AbortSignal): Promise<void>
@@ -975,13 +965,6 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         'GET', undefined, signal)
       return result.available === true
     },
-    clipboardVault(signal) {
-      return request('/v1/cloud-clipboard-vault', 'GET', undefined, signal)
-    },
-    clipboardCheck(ownerScope, value, signal) {
-      return request('/v1/cloud-clipboard-check', 'POST',
-        { ...value, owner_scope: notesOwnerScope(ownerScope) }, signal)
-    },
     clipboardList(before, signal) {
       if (before !== undefined && (!Number.isSafeInteger(before) || before <= 0)) {
         throw new Error('无效的剪贴板历史游标')
@@ -990,22 +973,12 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       return request('/v1/cloud-clipboard-list' + query, 'GET', undefined, signal)
     },
     clipboardDevices(signal) {
-      // Public recipient keys only. CGI and Agent re-check current Owner.
+      // Recipient identities only; CGI and Agent re-check current Owner.
       return request('/v1/cloud-clipboard-devices', 'GET', undefined, signal)
     },
     clipboardEnableDevice(ownerScope, signal) {
       return request('/v1/cloud-clipboard-enable-device', 'POST',
         { owner_scope: notesOwnerScope(ownerScope) }, signal)
-    },
-    async clipboardDecrypt(ownerScope, id, signal) {
-      if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Invalid Clipboard item')
-      const result = await request<{ text: string }>('/v1/cloud-clipboard-decrypt', 'POST',
-        { owner_scope: notesOwnerScope(ownerScope), id }, signal)
-      if (typeof result.text !== 'string' || !result.text ||
-          new TextEncoder().encode(result.text).length > 65_536) {
-        throw new Error('Invalid Clipboard device decrypt receipt')
-      }
-      return result
     },
     async clipboardFileReference(id, signal) {
       if (!Number.isSafeInteger(id) || id <= 0)
@@ -1026,14 +999,12 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       const isReference = item.kind === 'image/x-xdrive-node-ref' ||
         item.kind === 'application/x-xdrive-node-ref'
       const isText = item.kind === 'text/plain' || item.kind === 'text/uri-list'
-      if (new TextEncoder().encode(item.ciphertext).length > 90000 ||
-          (!isReference && !isText) ||
+      const size = new TextEncoder().encode(item.content).length
+      if (size === 0 || size > 65536 || (!isReference && !isText) ||
           (isReference && (!item.target_device_id || !Number.isSafeInteger(item.node_id) ||
-            (item.node_id ?? 0) <= 0)) ||
-          (isText && !!item.node_id) ||
-          (item.target_device_id && (!item.ephemeral_key || !item.wrapped_key)) ||
-          (!item.target_device_id && (!!item.ephemeral_key || !!item.wrapped_key))) {
-        throw new Error('无效的剪贴板密文或设备身份')
+            (item.node_id ?? 0) <= 0 || item.content !== 'asset:' + item.node_id)) ||
+          (isText && !!item.node_id)) {
+        throw new Error('无效的剪贴板内容或设备身份')
       }
       return request('/v1/cloud-clipboard-create', 'POST',
         { ...item, owner_scope: notesOwnerScope(ownerScope) }, signal)

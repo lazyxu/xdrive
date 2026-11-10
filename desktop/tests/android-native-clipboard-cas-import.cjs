@@ -15,7 +15,7 @@ test('Android native SAF file picker never silently submits Clipboard message', 
   assert.match(ui, /pickerIntent = Triple\(actionFence\.capture\(\), targetID, referenceKind\)/)
   assert.match(ui, /controller\.clipboardImportLocalFile\(context, uri\)/)
   assert.match(ui, /referenceNodeID = result\.id\.toString\(\)/)
-  assert.match(ui, /再次点击定向加密发送/)
+  assert.match(ui, /再次点击定向发送/)
   assert.match(ui, /if \(referenceKind != pair\.first\) \{\s*referenceKind = pair\.first\s*referenceNodeID = ""/)
   assert.doesNotMatch(ui.slice(ui.indexOf('val localFilePicker ='), ui.indexOf('Column(Modifier.fillMaxSize')),
     /clipboardCreateDirected\(/)
@@ -40,7 +40,7 @@ test('Android Owner A-B-A, Lock, stale target and unknown ACK never auto-retry o
   assert.match(ui, /previous\.deviceID != target/)
   assert.match(ui, /previous\.kind != kind \|\| previous\.nodeID != node/)
   assert.match(ui, /pendingDirected\?\.wire != wire/)
-  assert.match(ui, /pendingDirected == null\)\{Text\("加密发送"\)/)
+  assert.match(ui, /pendingDirected == null\)\{Text\("发送"\)/)
   assert.match(ui, /val \(snapshot, selectedTarget, selectedKind\) = intent/)
   assert.match(ui, /targetID == selectedTarget && referenceKind == selectedKind/)
   assert.match(ui, /if \(stillSession\(snapshot\)\) busy = false/)

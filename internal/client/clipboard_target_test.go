@@ -1,84 +1,71 @@
 package client
 
 import (
-	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 )
 
-func TestClipboardClientV2TargetEnvelopeIsAuthenticatedAndBoundToRecipient(t *testing.T) {
-	encoded := func(size int) string {
-		raw := make([]byte, size)
-		for i := range raw {
-			raw[i] = byte(i%250 + 1)
-		}
-		return base64.StdEncoding.EncodeToString(raw)
+func TestClipboardPlaintextTargetValidation(t *testing.T) {
+	base := ClipboardWrite{ClientEventID: uuid.NewString(), Kind: "text/plain", Content: "hello"}
+	if !validClipboardWrite(base) {
+		t.Fatal("valid broadcast rejected")
 	}
-	item := ClipboardWrite{
-		ClientEventID:  uuid.NewString(),
-		Kind:           "image/x-xdrive-node-ref",
-		Nonce:          encoded(12),
-		Ciphertext:     encoded(40),
-		TargetDeviceID: uuid.NewString(),
-		EphemeralKey:   encoded(32),
-		WrappedKey:     encoded(60),
-		NodeID:         118,
+	directed := base
+	directed.TargetDeviceID = uuid.NewString()
+	if !validClipboardWrite(directed) {
+		t.Fatal("valid target rejected")
 	}
-	if !validClipboardWrite(item) {
-		t.Fatal("valid per-device file Node reference rejected")
-	}
-	tests := []struct {
-		name   string
-		mutate func(*ClipboardWrite)
-	}{
-		{"broadcast-media", func(a *ClipboardWrite) { a.TargetDeviceID = "" }},
-		{"target-without-wrap", func(a *ClipboardWrite) { a.WrappedKey = "" }},
-		{"wrong-ephemeral-length", func(a *ClipboardWrite) { a.EphemeralKey = encoded(31) }},
-		{"bad-target-uuid", func(a *ClipboardWrite) { a.TargetDeviceID = "other-device" }},
-		{"missing-node", func(a *ClipboardWrite) { a.NodeID = 0 }},
-		{"bad-nonce", func(a *ClipboardWrite) { a.Nonce = encoded(11) }},
-		{"wrong-content-kind", func(a *ClipboardWrite) { a.Kind = "image/png" }},
-		{"mixed-text-and-node", func(a *ClipboardWrite) { a.Kind = "text/plain" }},
-		{"malformed-cipher", func(a *ClipboardWrite) { a.Ciphertext = "plaintext" }},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			value := item
-			tc.mutate(&value)
-			if validClipboardWrite(value) {
-				t.Fatal("unsafe target payload accepted")
+	for name, mutate := range map[string]func(*ClipboardWrite){
+		"empty":        func(v *ClipboardWrite) { v.Content = "" },
+		"too-large":    func(v *ClipboardWrite) { v.Content = strings.Repeat("x", 65537) },
+		"bad-utf8":     func(v *ClipboardWrite) { v.Content = string([]byte{0xff}) },
+		"bad-event":    func(v *ClipboardWrite) { v.ClientEventID = "invalid" },
+		"bad-target":   func(v *ClipboardWrite) { v.TargetDeviceID = "invalid" },
+		"text-node":    func(v *ClipboardWrite) { v.NodeID = 123 },
+		"unknown-kind": func(v *ClipboardWrite) { v.Kind = "text/html" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := directed
+			mutate(&v)
+			if validClipboardWrite(v) {
+				t.Fatalf("invalid write accepted: %+v", v)
 			}
 		})
 	}
-	text := item
-	text.Kind = "text/plain"
-	text.NodeID = 0
-	if !validClipboardWrite(text) {
-		t.Fatal("valid device-targeted E2EE text rejected")
+	file := directed
+	file.Kind, file.NodeID, file.Content = "image/x-xdrive-node-ref", 118, "asset:118"
+	if !validClipboardWrite(file) {
+		t.Fatal("valid CAS reference rejected")
 	}
-	text.TargetDeviceID = ""
-	text.WrappedKey = ""
-	text.EphemeralKey = ""
-	if !validClipboardWrite(text) {
-		t.Fatal("existing v1 Owner broadcast text must remain supported")
+	file.Kind = "application/x-xdrive-node-ref"
+	if !validClipboardWrite(file) {
+		t.Fatal("valid file reference rejected")
 	}
-	text.NodeID = 118
-	if validClipboardWrite(text) {
-		t.Fatal("v1 must never carry a file Node as an authorization token")
+	file.Content = "asset:119"
+	if validClipboardWrite(file) {
+		t.Fatal("mismatched CAS reference accepted")
 	}
-	receipt := ClipboardItem{
-		ID: 79, ClientEventID: item.ClientEventID, Kind: item.Kind,
-		Nonce: item.Nonce, Ciphertext: item.Ciphertext, TargetDeviceID: item.TargetDeviceID,
-		EphemeralKey: item.EphemeralKey, WrappedKey: item.WrappedKey,
-		NodeID: item.NodeID, CreatedAt: "2026-11-08T00:00:00Z",
-		ExpiresAt: "2026-11-09T00:00:00Z",
+	file.Content, file.TargetDeviceID = "asset:118", ""
+	if validClipboardWrite(file) {
+		t.Fatal("unaddressed Node reference accepted")
 	}
-	if !validClipboardItem(receipt) {
-		t.Fatal("v2 canonical E2EE receipt rejected")
+}
+
+func TestClipboardPlaintextReceiptValidation(t *testing.T) {
+	base := ClipboardItem{ID: 1, ClientEventID: uuid.NewString(), Kind: "text/plain",
+		Content: "hello", CreatedAt: "2026-11-10T06:00:00Z", ExpiresAt: "2026-11-11T06:00:00Z"}
+	if !validClipboardItem(base) {
+		t.Fatal("valid receipt rejected")
 	}
-	receipt.NodeID = 0
-	if validClipboardItem(receipt) {
-		t.Fatal("a media receipt must bind its exact CAS Node")
+	base.ID = 0
+	if validClipboardItem(base) {
+		t.Fatal("zero ID accepted")
+	}
+	base.ID = 1
+	base.Content = ""
+	if validClipboardItem(base) {
+		t.Fatal("empty content accepted")
 	}
 }

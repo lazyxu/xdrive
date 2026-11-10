@@ -7,6 +7,8 @@ param(
     [Parameter(Mandatory = $true)][string]$LogPath,
     [string]$ExpectedSHA256 = "",
     [long]$ExpectedSize = 0,
+    [string]$ExpectedCommit = "",
+    [switch]$PersonalUnsigned,
     [ValidateRange(30, 1800)][int]$InstallerTimeoutSeconds = 300
 )
 
@@ -90,7 +92,9 @@ function Get-XDriveAppDir {
 
 # The detached Windows installer revalidates the download identity and
 # Authenticode publisher rather than trusting a no-longer-running Go Agent.
-# An unsigned or different-publisher EXE never reaches Start-Process.
+# Normal automatic updates never execute unsigned or foreign-publisher EXEs.
+# Only the separately user-confirmed, source-verified personal Snapshot path
+# may accept a truly unsigned installer with pinned size, SHA-256 and Commit.
 function Assert-VerifiedInstaller([string]$PackagePath, [string]$InstalledDir) {
     $package = Get-Item -LiteralPath $PackagePath -ErrorAction Stop
     if (-not ($package -is [System.IO.FileInfo])) {
@@ -112,7 +116,24 @@ function Assert-VerifiedInstaller([string]$PackagePath, [string]$InstalledDir) {
             throw "installer SHA-256 changed after verified download"
         }
     }
+    if ($ExpectedCommit -ne "" -and $ExpectedCommit -cnotmatch '^[0-9a-f]{40}$') {
+        throw "expected source Commit must be 40 lowercase hexadecimal characters"
+    }
     $candidate = Get-AuthenticodeSignature -LiteralPath $PackagePath
+    if ($PersonalUnsigned) {
+        # Explicit current-Server consent is enforced by authenticated Agent
+        # IPC; the Agent independently checked the public exact-Commit Bundle.
+        # Recheck downloaded bytes and admission before any process shutdown.
+        if ($TargetVersion -ne "snapshot" -or $ExpectedCommit -cnotmatch '^[0-9a-f]{40}$' -or
+            $package.Name -cne "xDriveSetup-amd64.exe" -or $ExpectedSize -le 0 -or
+            $ExpectedSHA256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "personal unsigned installer requires exact Windows Snapshot, Commit, SHA-256 and size"
+        }
+        if ($candidate.Status -ne "NotSigned" -or $null -ne $candidate.SignerCertificate) {
+            throw "personal unsigned mode refuses signed or damaged installer; use normal publisher admission"
+        }
+        return
+    }
     if ($null -eq $candidate.SignerCertificate -or $candidate.Status -eq 'NotSigned' -or
         $candidate.Status -eq 'HashMismatch') {
         throw "installer Authenticode signature missing or damaged"
@@ -281,6 +302,29 @@ function Start-Desktop([string]$AppDir) {
     }
 }
 
+function Test-DesktopStartupCommit([int]$DesktopPID) {
+    if ($ExpectedCommit -eq "") { return $true }
+    # The marker pins the live Electron main PID; its lifecycle start record
+    # contains the actual packaged Desktop Commit, never just its version.
+    $directory = Join-Path $env:LOCALAPPDATA "xDrive"
+    $marker = Join-Path $directory "desktop-running.json"
+    $log = Join-Path $directory "desktop.log"
+    if (-not (Test-Path -LiteralPath $marker -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $log -PathType Leaf)) { return $false }
+    try {
+        $active = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json
+        if ([int]$active.pid -ne $DesktopPID) { return $false }
+        foreach ($line in @(Get-Content -LiteralPath $log -Tail 200 -ErrorAction Stop)) {
+            try {
+                $event = $line | ConvertFrom-Json
+                if ($event.event -eq "start" -and [int]$event.pid -eq $DesktopPID -and
+                    [string]$event.commit -ceq $ExpectedCommit) { return $true }
+            } catch { }
+        }
+    } catch { return $false }
+    return $false
+}
+
 function Start-DesktopAndVerify([string]$AppDir) {
     $desktop = Join-Path $AppDir "desktop\xdrive-desktop.exe"
     if (-not (Test-Path -LiteralPath $desktop)) {
@@ -295,7 +339,8 @@ function Start-DesktopAndVerify([string]$AppDir) {
         foreach ($process in (Get-XDriveProcessesInSession -Names @("xdrive-desktop"))) {
             try {
                 $got = [System.IO.Path]::GetFullPath([string]$process.Path)
-                if ([string]::Equals($got, $want, [System.StringComparison]::OrdinalIgnoreCase)) {
+                if ([string]::Equals($got, $want, [System.StringComparison]::OrdinalIgnoreCase) -and
+                    (Test-DesktopStartupCommit ([int]$process.Id))) {
                     return
                 }
             } catch {
@@ -328,6 +373,9 @@ function Start-AgentAndVerify([string]$AppDir) {
                 $hello = Invoke-RestMethod -Method Get -Uri "$($info.base_url)/v1/hello" -Headers $headers -TimeoutSec 3
                 if ([string]$hello.agent_version -ne $TargetVersion) {
                     throw "Agent version $($hello.agent_version) does not match target $TargetVersion"
+                }
+                if ($ExpectedCommit -ne "" -and [string]$hello.agent_commit -cne $ExpectedCommit) {
+                    throw "Agent source Commit $($hello.agent_commit) does not match target $ExpectedCommit"
                 }
                 if ([int]$hello.protocol_min -gt 2 -or [int]$hello.protocol_max -lt 2) {
                     throw "Agent Desktop IPC protocol is incompatible"
@@ -427,6 +475,26 @@ try {
     $installedVersion = (& $xd version | Out-String).Trim()
     if ($installedVersion -ne $TargetVersion) {
         throw "post-install health check failed: xd version=$installedVersion target=$TargetVersion"
+    }
+    if ($ExpectedCommit -ne "") {
+        $buildJSON = (& $xd version --json | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) {
+            throw "post-install health check failed: xd version --json exited with $LASTEXITCODE"
+        }
+        $build = $buildJSON | ConvertFrom-Json
+        if ([string]$build.commit -cne $ExpectedCommit) {
+            throw "post-install health check failed: xd source Commit=$($build.commit) target=$ExpectedCommit"
+        }
+        # Electron-builder stages this same exact-source metadata beside
+        # app.asar; verify the installed payload before reporting success.
+        $desktopBuildPath = Join-Path $appDir "desktop\resources\xdrive-build-info.json"
+        if (-not (Test-Path -LiteralPath $desktopBuildPath -PathType Leaf)) {
+            throw "post-install health check failed: Desktop build metadata missing"
+        }
+        $desktopBuild = Get-Content -LiteralPath $desktopBuildPath -Raw | ConvertFrom-Json
+        if ([string]$desktopBuild.commit -cne $ExpectedCommit) {
+            throw "post-install health check failed: Desktop Commit=$($desktopBuild.commit) target=$ExpectedCommit"
+        }
     }
 
     Write-Status "verifying" "Verifying Agent IPC, Electron Desktop, and unified client version."

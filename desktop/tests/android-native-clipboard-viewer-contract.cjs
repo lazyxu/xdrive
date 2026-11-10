@@ -9,7 +9,7 @@ const controller = read('android/app/src/main/java/com/tfluid/xdrive/DriveContro
 const screen = read('android/app/src/main/java/com/tfluid/xdrive/NativeClipboardScreens.kt')
 const home = read('android/app/src/main/java/com/tfluid/xdrive/NativeHomeScreens.kt')
 const app = read('android/app/src/main/java/com/tfluid/xdrive/DriveApp.kt')
-test('Android encrypted file ref uses original Owner Files API, not Clipboard as read grant',()=>{
+test('Android plaintext file reference uses original Owner Files API, not Clipboard as read grant',()=>{
  assert.match(controller,/fun revealClipboardFileReference\(nodeID: Long, onLocated: \(DriveNode\) -> Unit\)/)
  assert.match(controller,/currentService\.nodeLocation\(it, nodeID\)/)
  assert.match(controller,/currentService\.root\(it\)/)
@@ -19,7 +19,7 @@ test('Android encrypted file ref uses original Owner Files API, not Clipboard as
  assert.match(controller,/latest\.nativeUiSessionId != initialEpoch/)
  assert.match(controller,/onLocated\(exact\)/)
 })
-test('Android receipt requires decrypted canonical asset identity before opening Files',()=>{
+test('Android receipt requires canonical asset identity before opening Files',()=>{
  assert.match(screen,/plain != "asset:\$\{item\.nodeID\}"/)
  assert.match(screen,/onOpenReferencedFile\(item\.nodeID\)/)
  assert.match(home,/onOpenClipboardFile: \(Long\) -> Unit/)

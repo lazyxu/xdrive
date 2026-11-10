@@ -1577,14 +1577,12 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
             .padding(12)
         }
-        .simultaneousGesture(
-            MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                guard phase == .active, selected == nil, !model.busy,
-                      login.owner != nil else { return }
-                // Resizing existing 48 cells must never fetch a new Range or
-                // reauthorize a different Owner. No current L3 is remounted.
-                wallDensity = wallDensity.applyingPinch(scale)
-            }
+        .xdrivePhotoWallPinch(
+            density: $wallDensity,
+            // Resizing only changes visible geometry; all signed 48-item
+            // readers, Owner checks and Viewer context remain caller-owned.
+            enabled: phase == .active && selected == nil && !model.busy &&
+                     login.owner != nil
         )
         .onChange(of: selected?.id) { selectedID in
             if let selectedID {

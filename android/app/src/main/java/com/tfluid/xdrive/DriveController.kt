@@ -17,12 +17,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** Recipient private material is per-unlocked-UI memory, never in Controller state. */
-class NativeClipboardRecipient(
-    val enrolled: NativeAndroidDeviceEnrollment,
-    val privatePKCS8: ByteArray,
-) {
-    fun erase() { privatePKCS8.fill(0) }
+/** Per-Owner installed recipient authorization; no key material. */
+class NativeClipboardRecipient(val enrolled: NativeAndroidDeviceEnrollment) {
     override fun toString(): String = "NativeClipboardRecipient([redacted])"
 }
 
@@ -4769,7 +4765,7 @@ class DriveController(
     // Clipboard uses the existing verified native Owner root and coordinated
     // bearer refresh. The API and Crypto never receive Device/Source tokens.
     /**
-     * An encrypted Clipboard Node ID is only a hint. Re-resolve the exact
+     * A Clipboard Node ID is only a hint. Re-resolve the exact
      * current Owner/Node/revision/parent against existing Files APIs, then
      * switch to the verified Files window and allow its real native Viewer.
      * Never bypass Files permissions or trust stale Clipboard metadata.
@@ -4856,10 +4852,6 @@ class DriveController(
         }
     }
 
-    suspend fun clipboardVault(): OwnerClipboardVault =
-        withNotesOwner { service, token -> service.clipboardVault(token) }
-    suspend fun clipboardCheck(nonce: String,ciphertext: String,scope: String): OwnerClipboardVault =
-        withNotesOwner { service, token -> service.clipboardCheck(token,nonce,ciphertext,scope) }
     suspend fun clipboardList(
         before: Long? = null, recipient: NativeClipboardRecipient? = null,
     ): OwnerClipboardPage = withNotesOwner { service, token ->
@@ -4868,45 +4860,31 @@ class DriveController(
     }
 
     /**
-     * Explicit foreground user gesture only. Installation identity comes from
-     * the existing verified Owner/device store; no Photo background Source
-     * grant is inherited. The Curve25519 private key stays in AndroidKeystore-
-     * sealed local storage and is never sent with the Owner bearer.
+     * A current verified Owner+device enrollment authorizes targeted Clipboard
+     * receipts. No E2EE key, vault or password is generated or stored.
      */
-    suspend fun clipboardEnableRecipient(context: Context): NativeClipboardRecipient {
-        var candidate: NativeClipboardRecipient? = null
-        try {
-            return withNotesOwner { service, token ->
-                val initial = state.value
-                val sameOwner = {
-                    state.value.nativeUiSessionId == initial.nativeUiSessionId &&
-                        state.value.server == initial.server &&
-                        state.value.username == initial.username &&
-                        state.value.screen in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH) &&
-                        service === api && session != null
-                }
-                val existing = AndroidPhotoDeviceCredentialStore(context).verifyExisting(
-                    service, initial.server, token, initial.username, sameOwner)
-                    ?: throw IllegalStateException(
-                        "请先在设备管理中明确注册此 Android 设备，再启用剪贴板定向接收。")
-                check(sameOwner())
-                val key = withContext(Dispatchers.IO) {
-                    AndroidClipboardDeviceKeyStore(context).loadOrCreate(
-                        existing.first, existing.second.deviceId)
-                }
-                val enrolled = NativeClipboardRecipient(existing.second, key.pkcs8Private)
-                candidate = enrolled
-                service.clipboardEnrollRecipient(token, existing.second, key.publicKeyBase64)
-                check(sameOwner())
-                enrolled
+    suspend fun clipboardEnableRecipient(context: Context): NativeClipboardRecipient =
+        withNotesOwner { service, token ->
+            val initial = state.value
+            val sameOwner = {
+                state.value.nativeUiSessionId == initial.nativeUiSessionId &&
+                    state.value.server == initial.server &&
+                    state.value.username == initial.username &&
+                    state.value.screen in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH) &&
+                    service === api && session != null
             }
-        } catch (failure: Exception) {
-            candidate?.erase()
-            throw failure
+            val existing = AndroidPhotoDeviceCredentialStore(context).verifyExisting(
+                service, initial.server, token, initial.username, sameOwner)
+                ?: throw IllegalStateException(
+                    "请先在设备管理中明确注册此 Android 设备，再启用剪贴板定向接收。")
+            check(sameOwner()) { "Clipboard Owner changed before enrollment" }
+            service.clipboardEnrollRecipient(token, existing.second)
+            check(sameOwner()) { "Clipboard Owner changed after enrollment" }
+            NativeClipboardRecipient(existing.second)
         }
-    }
-    suspend fun clipboardCreate(item: XDriveClipboardCrypto.Wire): OwnerClipboardItem =
-        withNotesOwner { service, token -> service.clipboardCreate(token,item) }
+
+    suspend fun clipboardCreate(item: XDriveClipboardWrite): OwnerClipboardItem =
+        withNotesOwner { service, token -> service.clipboardCreate(token, item) }
 
     /**
      * Explicit SAF file selection -> immutable private staging -> the ORIGINAL
@@ -4987,8 +4965,6 @@ class DriveController(
 
     suspend fun clipboardDevices(): List<OwnerClipboardDevice> =
         withNotesOwner { service, token -> service.clipboardDevices(token) }
-    suspend fun clipboardCreateDirected(item: XDriveClipboardTargetCrypto.Wire): OwnerClipboardItem =
-        withNotesOwner { service, token -> service.clipboardCreateDirected(token, item) }
     suspend fun clipboardDelete(id: Long) {
         withNotesOwner { service, token -> service.clipboardDelete(token,id) }
     }

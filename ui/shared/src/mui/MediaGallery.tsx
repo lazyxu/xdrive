@@ -169,6 +169,15 @@ import { xDriveMobileGalleryDockBottom, xDriveMobileGalleryGlobalInset } from '.
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { XDriveMediaGalleryPhotoWall } from './MediaGalleryPhotoWall'
+import { XDriveMediaGalleryDateNavigation } from './MediaGalleryDateNavigation'
+import {
+  XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
+  XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
+  XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
+  xDriveReadMobileGalleryColumns,
+  xDriveWriteMobileGalleryColumn,
+  xDriveObserveMobileGalleryColumns,
+} from './MediaGalleryPhotoWallPreferences'
 import { XDriveMediaGalleryVirtualTimeline as MediaVirtualTimeline } from './MediaGallerySharedTimeline'
 import { xDrivePlacesVisiblePanels } from '../media-gallery-places-presentation'
 import { XDriveMediaGalleryPlacesHierarchy } from './MediaGalleryPlacesHierarchy'
@@ -5149,35 +5158,7 @@ const mediaGalleryTimeScaleValues: readonly MediaGalleryTimeScale[] = [
 // 320px viewport still has >=44px targets (with the existing 4px gap).
 // iOS 27 physical-device screenshot comparison remains the final visual gate.
 type MobileGalleryColumns = Record<MediaGalleryTimeScale, number>
-const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY = 'xdrive.gallery.mobile.columns.v1'
-const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT: MobileGalleryColumns = {
-  year: 6, month: 5, day: 3, all: 3,
-}
 const XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH = 144
-const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN = 2
-const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX = 10
-
-function xDriveReadMobileGalleryColumns(): MobileGalleryColumns {
-  const fallback = { ...XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT }
-  if (typeof window === 'undefined') return fallback
-  try {
-    const raw = window.localStorage.getItem(XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY)
-    if (!raw) return fallback
-    const parsed = JSON.parse(raw) as Partial<MobileGalleryColumns>
-    for (const scale of mediaGalleryTimeScaleValues) {
-      const n = parsed[scale]
-      if (typeof n === 'number' && Number.isFinite(n)) {
-        fallback[scale] = Math.min(
-          XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
-          Math.max(XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN, Math.round(n)),
-        )
-      }
-    }
-  } catch {
-    // Storage can be denied in private browsing; keep the same media query.
-  }
-  return fallback
-}
 
 function mediaGalleryNormalizeDensity(value: unknown, fallback: number) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
@@ -5680,17 +5661,10 @@ export function XDriveMediaGallery({
   useEffect(() => {
     xDriveWriteMediaGalleryViewPreferences(viewPreferences)
   }, [viewPreferences])
-  useEffect(() => {
-    if (!mobileWebChrome || typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(
-        XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY,
-        JSON.stringify(mobileColumnsByScale),
-      )
-    } catch {
-      // Denied browser storage must not prevent photo browsing.
-    }
-  }, [mobileColumnsByScale, mobileWebChrome])
+  // Both an opened Places sheet and a mounted Gallery may change the same
+  // visual density. Listen for same-document and cross-tab preference edits;
+  // do not write a stale four-scale snapshot on every Gallery re-render.
+  useEffect(() => xDriveObserveMobileGalleryColumns(setMobileColumnsByScale), [])
 
   // The existing virtual Grid/Timeline anchor restoration supports an external
   // logical index; only a new sort generation should apply it.
@@ -5831,6 +5805,9 @@ export function XDriveMediaGallery({
       setMobileColumnsByScale((current) => ({
         ...current, [effectiveTimeScale]: columns,
       }))
+      if (mobileWebChrome) {
+        xDriveWriteMobileGalleryColumn(effectiveTimeScale, columns)
+      }
       return
     }
     const normalized = mediaGalleryNormalizeDensity(value, minTileWidth)
@@ -5843,7 +5820,7 @@ export function XDriveMediaGallery({
         [effectiveTimeScale]: normalized,
       },
     }))
-  }, [compactGallery, effectiveTimeScale, minTileWidth, mobileColumns, viewAnchorRevision])
+  }, [compactGallery, effectiveTimeScale, minTileWidth, mobileColumns, mobileWebChrome, viewAnchorRevision])
 
   const updateGalleryAspectMode = useCallback((nextMode: MediaGalleryAspectMode) => {
     if (nextMode === aspectMode) return
@@ -7230,80 +7207,22 @@ export function XDriveMediaGallery({
                 ))}
               </Stack>
             ) : null}
-            {showCollectionTimeScale && timelineJumpGroups.length > 1 ? (
-              <TextField
-                select
-                size="small"
-                value=""
-                aria-label={effectiveTimeScale === 'year' ? '跳转年份' : '跳转年月'}
-                data-xdrive-gallery-timeline-jump
-                onChange={(event) => {
-                  const group = timelineJumpGroups.find(
-                    (candidate) => candidate.key === event.target.value,
-                  )
-                  if (group) jumpToTimelineGroup(group)
-                }}
-                sx={{
-                  minWidth: 126,
-                  '@media (max-width:899.95px)': {
-                    '& .MuiInputBase-root .MuiSelect-select': {
-                      minHeight: 44,
-                      boxSizing: 'border-box',
-                      display: 'flex',
-                      alignItems: 'center',
-                    },
-                  },
-                }}
-              >
-                <MenuItem value="">
-                  {effectiveTimeScale === 'year' ? '跳转年份' : '跳转年月'}
-                </MenuItem>
-                {timelineJumpGroups.map((group) => (
-                  <MenuItem key={group.key} value={group.key}>
-                    {xDriveMediaGalleryTimelineGroupLabel(group.key)}
-                  </MenuItem>
-                ))}
-              </TextField>
-            ) : null}
-            {showCollectionTimeScale && effectiveTimeScale === 'day' ? (
-              <TextField
-                size="small"
-                type="date"
-                label="跳转日期"
-                aria-label="跳转日期"
-                data-xdrive-gallery-timeline-day-jump
-                value={dayJumpInput}
-                disabled={dayGroupsForJump.length === 0 ||
+            {/* The same visual date controls are used by trusted Places.
+                Gallery keeps its independent signed timeline, navigation
+                anchor and day-fallback callbacks outside the component. */}
+            {showCollectionTimeScale ? (
+              <XDriveMediaGalleryDateNavigation
+                surface="gallery" scale={effectiveTimeScale}
+                jumpGroups={timelineJumpGroups}
+                dayInput={dayJumpInput}
+                dayDisabled={dayGroupsForJump.length === 0 ||
                   dayGroupsForJump[0]?.key === 'unknown'}
-                onChange={(event) => jumpToTimelineDay(event.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ minWidth: 160, '& .MuiInputBase-root': { minHeight: 44 } }}
+                currentGroupKey={currentTimelineGroupKey}
+                hasReturnAnchor={timelineReturnAnchor !== null}
+                onJumpGroup={jumpToTimelineGroup}
+                onJumpDay={jumpToTimelineDay}
+                onReturn={returnToTimelineAnchor}
               />
-            ) : null}
-            {showCollectionTimeScale && effectiveTimeScale !== 'all' ? (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                role="status"
-                data-xdrive-gallery-timeline-current-date
-                sx={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}
-              >
-                {'当前浏览：' + (currentTimelineGroupKey
-                  ? xDriveMediaGalleryTimelineGroupLabel(currentTimelineGroupKey)
-                  : '尚无可定位日期')}
-              </Typography>
-            ) : null}
-            {/* Day-jump feedback is rendered in the fixed Gallery feedback owner. */}
-            {showCollectionTimeScale && timelineReturnAnchor !== null ? (
-              <Button
-                size="small"
-                variant="outlined"
-                data-xdrive-gallery-timeline-return
-                onClick={returnToTimelineAnchor}
-                sx={{ minHeight: 44 }}
-              >
-                返回刚才位置
-              </Button>
             ) : null}
             <Stack direction="row" spacing={0.25} aria-label="照片墙显示比例">
               <Button

@@ -422,24 +422,24 @@
     observeCanvasSize()
   }
   const loadSDK = () => new Promise((resolve,reject) => {
-    if (script || disposed || !active) { reject(Error('unavailable')); return }
+    if (script || disposed || !active) { reject(Error('sdk_load_failed')); return }
     const configured = window._BMapSecurityConfig
     const serviceHost = window.location.origin + '/_BMapService/'
-    if (configured && configured.serviceHost !== serviceHost) { reject(Error('unavailable')); return }
+    if (configured && configured.serviceHost !== serviceHost) { reject(Error('sdk_load_failed')); return }
     window._BMapSecurityConfig = {serviceHost}
     script = document.createElement('script')
     script.async = true
     script.referrerPolicy = 'no-referrer'
     script.src = '/_BMapService/api?v=4.0'
-    let settled = false, poll = null
-    const stop = ok => {
+    let settled = false, poll = null, scriptLoaded = false
+    const stop = (ok, reason = 'sdk_load_failed') => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       if (poll) clearTimeout(poll)
       if (script) { script.onload = null;script.onerror = null }
       if (ok) resolve(window.BMap)
-      else { script?.remove(); script=null; reject(Error('unavailable')) }
+      else { script?.remove(); script=null; reject(Error(reason)) }
     }
     const check = () => {
       if (disposed || !active) { stop(false); return }
@@ -449,15 +449,17 @@
           typeof ns.Label==='function') stop(true)
       else poll = setTimeout(check,80)
     }
-    const timer=setTimeout(()=>stop(false),7500)
-    script.onload=check
-    script.onerror=()=>stop(false)
-    try { document.head.appendChild(script) } catch { stop(false) }
+    const timer=setTimeout(()=>stop(false,
+      scriptLoaded ? 'sdk_namespace_missing' : 'sdk_script_timeout'),7500)
+    script.onload=()=>{ scriptLoaded=true; check() }
+    script.onerror=()=>stop(false,'sdk_script_failed')
+    try { document.head.appendChild(script) } catch { stop(false,'sdk_load_failed') }
   })
   const redeem = async incoming => {
     if (pending || sessionFailed || disposed || !active || !/^[a-f0-9]{64}$/.test(incoming)) return
     pending=true
     let ticket=incoming
+    let phase = 'session'
     try {
       const response=await fetch('/_xdrive_baidu_isolated/session',{
         method:'POST',credentials:'same-origin',cache:'no-store',
@@ -466,12 +468,25 @@
         body:JSON.stringify({ticket}),
       })
       ticket=''
-      if (!response.ok || disposed || !active) throw Error('unavailable')
+      if (disposed || !active) throw Error('unavailable')
+      // Only the numeric HTTP class is trusted. Never forward response text,
+      // URLs, provider details, tickets, map Cookies or authorization headers.
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403)
+          throw Error('session_denied')
+        if (response.status === 429) throw Error('session_rate_limited')
+        throw Error('unavailable')
+      }
       const receipt=await response.json()
       if (!exact(receipt,['provider','runtime_enabled']) ||
           receipt.provider!=='baidu-jsapi-4.0' || receipt.runtime_enabled!==true) throw Error('unavailable')
-      if (!map) bindNative(await loadSDK())
-    } catch {
+      if (!map) {
+        phase = 'sdk'
+        const native = await loadSDK()
+        phase = 'bind'
+        bindNative(native)
+      }
+    } catch (error) {
       // This Child instance can never retry an invalid map-only redemption.
       // Parent may create a fresh, separately signed Child if authorized.
       if (!sessionFailed && !disposed) {
@@ -488,7 +503,18 @@
         try {map?.destroy?.()} catch {}
         map=null
         if(status)status.textContent='隔离地图会话或 SDK 不可用；地点列表和照片墙仍可使用。'
-        send('map-failed')
+        // The untrusted provider's exception MUST NOT cross to Gallery.
+        // Emit a single code-owned, bounded stage, not a URL, response or AK.
+        const reason = phase === 'session'
+          ? (error instanceof Error &&
+              ['session_denied','session_rate_limited'].includes(error.message)
+            ? error.message : 'session_unavailable')
+          : phase === 'bind' ? 'sdk_map_initialization_failed'
+          : error instanceof Error &&
+            ['sdk_script_failed','sdk_script_timeout','sdk_namespace_missing',
+              'sdk_load_failed'].includes(error.message)
+            ? error.message : 'sdk_load_failed'
+        send('map-failed',{reason})
       }
     } finally { ticket=''; pending=false }
   }

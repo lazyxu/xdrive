@@ -7,49 +7,42 @@ const read = p => fs.readFileSync(path.resolve(__dirname, '../..', p), 'utf8')
 const doc = read('docs/architecture/clipboard-sync.md')
 const page = read('ui/shared/src/mui/ClipboardPage.tsx')
 
-test('current Clipboard architecture reflects merged #4124 seven-workstream delivery', () => {
-  // The status date is metadata, not a delivery gate: require a valid
-  // dated status plus independently verified merged commit evidence.
-  assert.match(doc, /\*\*Current source status \(\d{4}-\d{2}-\d{2}\):\*\*/)
-  assert.match(doc, /#4224[\s\S]*?merged as `0f2c7c2fb815d28203722ed0bfdd33add1e4800d`/)
-  assert.match(doc, /#4124[\s\S]*?12\/12 associated workflows/)
-  assert.match(doc, /#4124[\s\S]*?Final Gate success/)
-  assert.match(doc, /Desktop and DSM now support device-directed v2 \*\*send and receive\*\*/)
-  assert.match(doc, /Web\/PWA PNG or file import/)
-  assert.match(doc, /native iOS\/Android local file selection/)
-  assert.match(doc, /Files Viewer/)
-  assert.match(doc, /Android Keystore|Android-Keystore/)
-  assert.match(doc, /separate encrypted directed send/)
-  assert.match(doc, /跳过（未验收）/)
-  assert.doesNotMatch(doc, /Desktop and DSM outbound Agent\/CGI transports remain \*\*v1 text-only/)
-  assert.doesNotMatch(doc, /Direct local image\/file Clipboard ingestion through the existing UploadSession\/CAS writer remains incomplete/)
-  assert.doesNotMatch(doc, /#4086 consolidation candidate \(not merged/)
+test('Clipboard architecture documents the unencrypted Owner-scoped contract', () => {
+  assert.match(doc,/\*\*Current source status \(\d{4}-\d{2}-\d{2}\):\*\*/)
+  assert.match(doc,/plaintext|明文/i)
+  assert.match(doc,/Server (?:can read|stores|保存)|服务器可读取/)
+  assert.match(doc,/Owner/)
+  assert.match(doc,/DeviceIdentity|设备身份/)
+  assert.match(doc,/CAS/)
+  assert.match(doc,/SSE/)
+  assert.match(doc,/24.hour|24 小时/i)
+  assert.match(doc,/#4262/)
+  assert.doesNotMatch(doc,/passphrase required|密钥派生|PBKDF2-HMAC|AES-256-GCM|客户端必须解锁/i)
 })
 
-test('actual Desktop/DSM v2 and Web/native CAS ports match capability claims', () => {
-  const desktop = read('desktop/src/renderer/desktopClipboardDataPort.ts')
-  const dsm = read('web/src/synologyClipboardPort.ts')
-  const web = read('web/src/clipboardDataPort.ts')
-  const ios = read('ios/XDriveIOS/NativeClipboardScreen.swift')
-  const android = read('android/app/src/main/java/com/tfluid/xdrive/NativeClipboardScreens.kt')
-  for (const port of [desktop, dsm]) {
-    assert.match(port, /enableDeviceRecipient:/)
-    assert.match(port, /decryptTarget:/)
-    assert.match(port, /revokeDevice:/)
-    assert.match(port, /listDevices:/)
-    assert.match(port, /target_device_id/)
+test('all browser/Host ports accept content directly without a vault or decrypt API', () => {
+  const paths=[
+    'desktop/src/renderer/desktopClipboardDataPort.ts',
+    'web/src/synologyClipboardPort.ts',
+    'web/src/clipboardDataPort.ts',
+  ]
+  for (const filename of paths) {
+    const src=read(filename)
+    assert.match(src,/content|clipboardCreate|create:/)
+    assert.doesNotMatch(src,/decryptTarget:|initializeCheck:|\bvault:\s*|xDriveClipboardEncrypt\(/)
   }
-  assert.match(web, /uploadLocalFile:/)
-  assert.match(web, /importImageFromClipboard/)
-  assert.match(web, /uploadWithConflictPolicy/)
-  assert.match(ios, /XDriveNativeUploadSessionTransport/)
-  assert.match(android, /clipboardImportLocalFile/)
+  assert.match(read('web/src/clipboardDataPort.ts'),/uploadLocalFile:/)
+  assert.match(read('web/src/clipboardDataPort.ts'),/importImageFromClipboard/)
+  assert.match(read('ios/XDriveIOS/NativeClipboardScreen.swift'),/XDriveNativeUploadSessionTransport/)
+  assert.match(read('android/app/src/main/java/com/tfluid/xdrive/NativeClipboardScreens.kt'),/clipboardImportLocalFile/)
 })
 
-test('shared Clipboard page explains actual Host capabilities without misrepresenting background OS access', () => {
-  assert.match(page, /port\.listDevices\s*\?/)
-  assert.match(page, /port\.watchLocalClipboard\s*\?/)
-  assert.match(page, /定向发送文本及现有云端文件引用/)
-  assert.match(page, /只有明确开启后才在解锁且页面可见时运行/)
-  assert.doesNotMatch(page, /当前版本没有设备定向发送或后台自动监控/)
+test('single shared Clipboard page has no unlocking or encrypted-send branch', () => {
+  assert.match(page,/当前账号的剪贴板/)
+  assert.match(page,/Server 保存明文/)
+  assert.match(page,/content: textAtStart/)
+  assert.match(page,/port\.listDevices\s*\?/)
+  assert.match(page,/port\.watchLocalClipboard\s*\?/)
+  assert.match(page,/默认关闭/)
+  assert.doesNotMatch(page,/剪贴板口令|加密发送|解锁加密剪贴板|xDriveClipboardDeriveKey|xDriveClipboardEncrypt\(/)
 })

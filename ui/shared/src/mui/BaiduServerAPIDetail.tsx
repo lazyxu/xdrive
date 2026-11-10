@@ -126,7 +126,7 @@ export function XDriveBaiduServerAPIDetail({
               <FormControlLabel label="启用坐标转换"
                 control={<Switch checked={enabled} onChange={(_event, value) => onEnabledChange(value)}
                   disabled={!editable || checking} />} />
-              <XDriveSensitiveField label="Server AK" value={draftAK} configured={config.configured}
+              <XDriveSensitiveField label="Server AK" value={draftAK} configured={config.configured} configuredLength={config.ak_length}
                 revealedValue={revealedAK} onReveal={onRevealAK} onHide={onHideAK}
                 revealLoading={revealingAK} revealDisabled={!canRevealAK}
                 disabled={!editable || checking} maxLength={256}

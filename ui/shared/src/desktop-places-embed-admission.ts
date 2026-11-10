@@ -28,16 +28,37 @@ export const XDRIVE_DESKTOP_PLACES_GUEST_PROBE = `(() => {
   // Never reveal an empty/black guest merely because the page root exists.
   const sdk = root.querySelector('[data-xdrive-baidu-isolated-photo-map]')
   const phase = sdk?.getAttribute('data-xdrive-places-sdk-phase')
-  if (root.querySelector('[data-xdrive-baidu-map-unavailable]') ||
-      phase === 'unavailable') return 'unavailable'
+  const unavailable = root.querySelector('[data-xdrive-baidu-map-unavailable]')
+  if (unavailable || phase === 'unavailable') {
+    // Only a short, code-owned reason crosses into the Desktop UI. Never read
+    // provider text, HTTP bodies, keys, cookies or photo attributes.
+    const code = unavailable?.getAttribute('data-xdrive-baidu-map-error-code')
+    return typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(code)
+      ? 'unavailable:' + code : 'unavailable'
+  }
   return phase === 'ready' ? 'ready' : 'pending'
 })()`
 
+const SAFE_MAP_CODES = new Set([
+  'server_release_blocked','isolated_origin_unavailable','child_handshake_timeout',
+  'client_version_mismatch',
+  'status_access_denied','status_unavailable','session_denied',
+  'session_rate_limited','session_timeout','session_unavailable',
+  'sdk_script_failed','sdk_script_timeout','sdk_namespace_missing',
+  'sdk_load_failed','sdk_map_initialization_failed','viewport_denied',
+  'viewport_unavailable','map_binding_failed','session_renew_failed',
+])
+export function xDriveDesktopPlacesGuestFailureCode(raw: unknown): string | null {
+  if (typeof raw !== 'string' || !raw.startsWith('unavailable:')) return null
+  const code = raw.slice('unavailable:'.length)
+  return SAFE_MAP_CODES.has(code) ? code : null
+}
 export function xDriveDesktopPlacesGuestProbeState(
   raw: unknown,
 ): XDriveDesktopPlacesGuestProbeState {
-  return raw === 'ready' || raw === 'login' || raw === 'denied' ||
-    raw === 'unavailable' ? raw : 'pending'
+  if (raw === 'ready' || raw === 'login' || raw === 'denied') return raw
+  return raw === 'unavailable' || xDriveDesktopPlacesGuestFailureCode(raw)
+    ? 'unavailable' : 'pending'
 }
 
 // Electron <webview>.executeJavaScript may throw SYNCHRONOUSLY until the

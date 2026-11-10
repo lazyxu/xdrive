@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -22,7 +21,7 @@ import (
 
 // Real PostgreSQL and authenticated HTTP contract. A device token alone
 // cannot read a target: the current interactive Owner bearer, registered
-// DeviceIdentity credential and separate Clipboard public-key grant must all match.
+// DeviceIdentity credential and separate Clipboard recipient grant must all match.
 func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -72,21 +71,8 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	if err := db.Where("username = ?", "device-owner-b").Take(&ownerB).Error; err != nil {
 		t.Fatal(err)
 	}
-	nonce := base64.StdEncoding.EncodeToString(make([]byte, 12))
-	ciphertext := base64.StdEncoding.EncodeToString([]byte("ciphertext is authenticated by receiver"))
-	for _, owner := range []struct {
-		id     uint64
-		bearer string
-	}{
-		{ownerA.ID, ownerABearer}, {ownerB.ID, ownerBBearer},
-	} {
-		request(t, router, http.MethodGet, "/api/v1/clipboard/vault",
-			owner.bearer, nil, http.StatusOK)
-		check := fmt.Sprintf("{\"nonce\":%q,\"ciphertext\":%q,\"scope\":%q}",
-			nonce, ciphertext, fmt.Sprintf("https://nas.example.test:%d", owner.id))
-		request(t, router, http.MethodPut, "/api/v1/clipboard/vault/check",
-			owner.bearer, strings.NewReader(check), http.StatusOK)
-	}
+	content := "directed plaintext message"
+	request(t, router, http.MethodGet, "/api/v1/clipboard/vault", ownerABearer, nil, http.StatusNotFound)
 	deviceA := uuid.NewString()
 	deviceA2 := uuid.NewString()
 	deviceSecret := strings.Repeat("device-owner-a-token-", 3)
@@ -100,11 +86,6 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	publicKey := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("p", 32)))
-	otherKey := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("q", 32)))
-	ephemeral := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("e", 32)))
-	wrapped := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("w", 60)))
-
 	deviceRequest := func(method, path, bearer, id, token, payload string, expected int) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest(method, path, strings.NewReader(payload))
@@ -126,14 +107,11 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 		}
 		return rec
 	}
-	enrollment := fmt.Sprintf("{\"public_key\":%q}", publicKey)
+	enrollment := "{}"
 	deviceRequest(http.MethodPut, "/api/v1/clipboard/devices/self",
 		ownerABearer, deviceA, deviceSecret, enrollment, http.StatusOK)
 	deviceRequest(http.MethodPut, "/api/v1/clipboard/devices/self",
 		ownerABearer, deviceA, deviceSecret, enrollment, http.StatusOK)
-	deviceRequest(http.MethodPut, "/api/v1/clipboard/devices/self",
-		ownerABearer, deviceA, deviceSecret,
-		fmt.Sprintf("{\"public_key\":%q}", otherKey), http.StatusConflict)
 	deviceRequest(http.MethodPut, "/api/v1/clipboard/devices/self",
 		ownerBBearer, deviceA, deviceSecret, enrollment, http.StatusForbidden)
 	deviceRequest(http.MethodPut, "/api/v1/clipboard/devices/self",
@@ -150,14 +128,12 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 
 	targetEvent := uuid.NewString()
 	targetPayload := func(event string, node uint64) string {
-		kind := "text/plain"
+		kind, value := "text/plain", content
 		if node != 0 {
-			kind = "application/x-xdrive-node-ref"
+			kind, value = "application/x-xdrive-node-ref", fmt.Sprintf("asset:%d", node)
 		}
-		return fmt.Sprintf(
-			"{\"client_event_id\":%q,\"kind\":%q,\"nonce\":%q,\"ciphertext\":%q,"+
-				"\"target_device_id\":%q,\"ephemeral_key\":%q,\"wrapped_key\":%q,\"node_id\":%d}",
-			event, kind, nonce, ciphertext, deviceA, ephemeral, wrapped, node)
+		return fmt.Sprintf(`{"client_event_id":%q,"kind":%q,"content":%q,"target_device_id":%q,"node_id":%d}`,
+			event, kind, value, deviceA, node)
 	}
 	posted := deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
 		ownerABearer, "", "", targetPayload(targetEvent, 0), http.StatusCreated)
@@ -166,11 +142,11 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 		receipt.ID == 0 || receipt.TargetDeviceID != deviceA {
 		t.Fatalf("invalid directed receipt: %s, %v", posted.Body.String(), err)
 	}
-	// A signed-in Owner WITHOUT the target device must not see the envelope.
+	// A signed-in Owner WITHOUT the target device must not see the message.
 	unauthenticatedTarget := deviceRequest(http.MethodGet, "/api/v1/clipboard/items",
 		ownerABearer, "", "", "", http.StatusOK)
 	if strings.Contains(unauthenticatedTarget.Body.String(), targetEvent) {
-		t.Fatal("Owner mailbox leaked directed encrypted content without registered device proof")
+		t.Fatal("Owner mailbox leaked directed plaintext content without registered device proof")
 	}
 	wrongDevice := deviceRequest(http.MethodGet, "/api/v1/clipboard/items",
 		ownerABearer, deviceA2, deviceSecret, "", http.StatusOK)
@@ -180,14 +156,14 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	rightDevice := deviceRequest(http.MethodGet, "/api/v1/clipboard/items",
 		ownerABearer, deviceA, deviceSecret, "", http.StatusOK)
 	if !strings.Contains(rightDevice.Body.String(), targetEvent) {
-		t.Fatal("registered device did not receive its directed envelope")
+		t.Fatal("registered device did not receive its directed message")
 	}
 	// Even after a SECOND same-Owner device enrolls successfully, the first
-	// target's ciphertext must never appear in its inbox. In the opposite
+	// target's content must never appear in its inbox. In the opposite
 	// direction, device A may not receive A2's targeted message either.
 	deviceRequest(http.MethodPut, "/api/v1/clipboard/devices/self",
 		ownerABearer, deviceA2, deviceSecret,
-		fmt.Sprintf("{\"public_key\":%q}", otherKey), http.StatusOK)
+		enrollment, http.StatusOK)
 	deviceA2Event := uuid.NewString()
 	payloadA2 := strings.Replace(targetPayload(deviceA2Event, 0), deviceA, deviceA2, 1)
 	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
@@ -204,7 +180,7 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 		t.Fatal("directed A2 item leaked to target device A")
 	}
 	// The same idempotency ID cannot be reused with another recipient even
-	// when Owner and AES ciphertext are otherwise identical.
+	// when Owner and content are otherwise identical.
 	retargeted := strings.Replace(targetPayload(targetEvent, 0), deviceA, deviceA2, 1)
 	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
 		ownerABearer, "", "", retargeted, http.StatusConflict)
@@ -292,7 +268,7 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	}
 	deviceRequest(http.MethodPut, "/api/v1/clipboard/devices/self",
 		ownerABearer, deviceA, deviceSecret, enrollment, http.StatusConflict)
-	// A valid Clipboard public-key row does not override installation-level
+	// A valid Clipboard recipient row does not override installation-level
 	// device revocation. The Owner's bearer alone cannot reinstate access.
 	if err := db.Model(&meta.ClientDevice{}).
 		Where("owner_id = ? AND id = ?", ownerA.ID, deviceA2).

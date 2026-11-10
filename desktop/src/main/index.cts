@@ -208,14 +208,11 @@ import {
   type AgentCreatedCloudShare,
   type AgentOwnerSharePage,
   type AgentOwnerShareLink,
-  type AgentClipboardVault,
-  type AgentClipboardCheck,
   type AgentClipboardItem,
   type AgentClipboardWrite,
   type AgentClipboardPage,
   type AgentClipboardDevices,
   type AgentClipboardDevice,
-  type AgentClipboardCleartext,
   type AgentNotesNamespace,
   type AgentNotesRow,
   type AgentNotesDetail,
@@ -3650,6 +3647,9 @@ function registerIPCHandlers() {
     const stored=desktopPlacesGuests.get(event.sender.id)
     const status=agentState.status
     if (!stored || event.senderFrame!==event.sender.mainFrame ||
+        // Expected Owner is also private to the exact map-only main frame.
+        // A same-Owner off-route navigation cannot use this IPC as a probe.
+        !desktopPlacesGuestFrameAllowed(event.senderFrame?.url,stored.origin) ||
         !desktopPlacesWebOwnerStillCurrent(stored) ||
         stored.owner!==status?.username ||
         stored.origin!==xDriveResolveSecureBaiduMapTarget(status?.server)?.origin)
@@ -3657,7 +3657,9 @@ function registerIPCHandlers() {
     return stored.owner
   })
   ipcMain.handle('desktop:open-baidu-map-secure', (event, rawScope: unknown) => {
-    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    if (!mainWindow || mainWindow.isDestroyed() ||
+        event.sender !== mainWindow.webContents ||
+        event.senderFrame !== mainWindow.webContents.mainFrame) {
       return { ok: false, error: { code: 'map_owner_denied',
         message: '地图窗口仅允许当前 Desktop 主窗口打开。' } }
     }
@@ -8939,7 +8941,9 @@ function registerIPCHandlers() {
             item.build_commit === commitValue &&
             (item.install_mode === 'manual' ||
              (item.install_mode === 'manual_test_only' && item.platform === 'ios' &&
-              item.filename === 'xDrive-unsigned.ipa')))) {
+              item.filename === 'xDrive-unsigned.ipa') ||
+             (item.install_mode === 'manual_test_only' && item.platform === 'windows' &&
+              item.filename === 'xDriveSetup-amd64.exe')))) {
         throw new AgentIPCError('stale_release_bundle', 409, 'Server Bundle changed before save.')
       }
       const options = {
@@ -8956,16 +8960,17 @@ function registerIPCHandlers() {
     }
   })
   ipcMain.handle('agent:install-release-bundle', (_event, commitValue: unknown,
-    fileValue: unknown, confirmed: unknown) =>
+    fileValue: unknown, confirmed: unknown, personalUnsignedValue: unknown) =>
     runAgentAction<AgentUpdateState>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'release-bundle-current')
       if (confirmed !== true || typeof commitValue !== 'string' ||
           !/^[0-9a-f]{40}$/.test(commitValue) || typeof fileValue !== 'string' ||
-          !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(fileValue)) {
+          !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(fileValue) ||
+          (personalUnsignedValue !== undefined && typeof personalUnsignedValue !== 'boolean')) {
         throw new AgentIPCError('invalid_input', 0, 'Explicit user confirmation and exact Bundle identity are required.')
       }
-      return requireAgentClient().installCurrentServerCommit(commitValue, fileValue)
+      return requireAgentClient().installCurrentServerCommit(commitValue, fileValue, personalUnsignedValue === true)
     }, false))
   ipcMain.handle('agent:cloud-storage-stats', (event, requestID: unknown = undefined) =>
     runAgentAction<AgentCloudStorageStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
@@ -9068,78 +9073,39 @@ function registerIPCHandlers() {
     }
     return value
   }
-  const clipboardCheck = (value: unknown): AgentClipboardCheck => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard verifier')
-    }
-    const v = value as Record<string, unknown>
-    if (typeof v.nonce !== 'string' || !/^[A-Za-z0-9+/]{16}$/.test(v.nonce) ||
-        typeof v.ciphertext !== 'string' || v.ciphertext.length > 256 ||
-        typeof v.scope !== 'string' || v.scope.length > 512 ||
-        !/^https?:\/\/[^/?#@]+:[0-9]+$/.test(v.scope)) {
-      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard verifier metadata')
-    }
-    return { nonce: v.nonce, ciphertext: v.ciphertext, scope: v.scope }
-  }
   const clipboardWrite = (value: unknown): AgentClipboardWrite => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard encrypted item')
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard item')
     }
     const v = value as Record<string, unknown>
-    const knownFields = new Set(['client_event_id', 'kind', 'nonce', 'ciphertext',
-      'target_device_id', 'ephemeral_key', 'wrapped_key', 'node_id'])
-    if (Object.keys(v).some(name => !knownFields.has(name))) {
+    const allowed = new Set(['client_event_id','kind','content','target_device_id','node_id'])
+    if (Object.keys(v).some(name => !allowed.has(name))) {
       throw new AgentIPCError('invalid_input', 0, 'Unexpected Clipboard IPC metadata')
     }
     const uuid = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
-    const decode = (raw: unknown, requiredLength: number): boolean => {
-      if (typeof raw !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(raw)) return false
-      const bytes = Buffer.from(raw, 'base64')
-      return bytes.length === requiredLength && bytes.toString('base64') === raw
-    }
-    const allowedKind = v.kind === 'text/plain' || v.kind === 'text/uri-list' ||
-      v.kind === 'image/x-xdrive-node-ref' || v.kind === 'application/x-xdrive-node-ref'
-    const media = v.kind === 'image/x-xdrive-node-ref' ||
+    const isMedia = v.kind === 'image/x-xdrive-node-ref' ||
       v.kind === 'application/x-xdrive-node-ref'
+    const validKind = isMedia || v.kind === 'text/plain' || v.kind === 'text/uri-list'
     const target = v.target_device_id
     const directed = typeof target === 'string' && target !== ''
     if (typeof v.client_event_id !== 'string' || !uuid.test(v.client_event_id) ||
-        (v.target_device_id !== undefined && typeof v.target_device_id !== 'string') ||
-        (v.ephemeral_key !== undefined && typeof v.ephemeral_key !== 'string') ||
-        (v.wrapped_key !== undefined && typeof v.wrapped_key !== 'string') ||
+        typeof v.content !== 'string' || Buffer.byteLength(v.content,'utf8') < 1 ||
+        Buffer.byteLength(v.content,'utf8') > 65536 || !validKind ||
+        (v.target_device_id !== undefined && (!directed || !uuid.test(target as string))) ||
         (v.node_id !== undefined && (typeof v.node_id !== 'number' ||
           !Number.isSafeInteger(v.node_id))) ||
-        !allowedKind || !decode(v.nonce, 12) ||
-        typeof v.ciphertext !== 'string' || v.ciphertext.length > 90000 ||
-        !/^[A-Za-z0-9+/]+={0,2}$/.test(v.ciphertext) ||
-        Buffer.from(v.ciphertext, 'base64').length < 17 ||
-        Buffer.from(v.ciphertext, 'base64').toString('base64') !== v.ciphertext ||
-        (media !== (typeof v.node_id === 'number' && Number.isSafeInteger(v.node_id) &&
-          v.node_id > 0)) ||
-        (directed && (!uuid.test(target as string) || !decode(v.ephemeral_key, 32) ||
-          !decode(v.wrapped_key, 60))) ||
-        (!directed && (media || v.ephemeral_key || v.wrapped_key || v.target_device_id)) ||
-        (v.node_id !== undefined && !media) ||
-        (v.target_device_id !== undefined && !directed)) {
-      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard ciphertext or target')
+        (isMedia && (!directed || typeof v.node_id !== 'number' || v.node_id <= 0 ||
+          v.content !== 'asset:' + v.node_id)) ||
+        (!isMedia && v.node_id !== undefined)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard content or target')
     }
-    // Construct a strict allowlisted payload. Never forward unknown IPC keys.
     return {
-      client_event_id: v.client_event_id, kind: v.kind as AgentClipboardWrite['kind'],
-      nonce: v.nonce as string, ciphertext: v.ciphertext,
-      ...(directed ? {
-        target_device_id: target as string, ephemeral_key: v.ephemeral_key as string,
-        wrapped_key: v.wrapped_key as string,
-      } : {}),
-      ...(media ? { node_id: v.node_id as number } : {}),
+      client_event_id:v.client_event_id, kind:v.kind as AgentClipboardWrite['kind'],
+      content:v.content,
+      ...(directed ? {target_device_id:target as string} : {}),
+      ...(isMedia ? {node_id:v.node_id as number} : {}),
     }
   }
-  ipcMain.handle('agent:cloud-clipboard-vault', () =>
-    runAgentAction<AgentClipboardVault>(async () =>
-      (await requireClipboardAgent()).cloudClipboardVault(), false))
-  ipcMain.handle('agent:cloud-clipboard-check', (_event, value: unknown) =>
-    runAgentAction<AgentClipboardVault>(async () =>
-      (await requireClipboardAgent()).cloudClipboardCheck(clipboardCheck(value)), false))
   ipcMain.handle('agent:cloud-clipboard-list', (_event, before: unknown) =>
     runAgentAction<AgentClipboardPage>(async () =>
       (await requireClipboardAgent()).cloudClipboardList(clipboardIndex(before, true)), false))
@@ -9149,9 +9115,6 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:cloud-clipboard-enable-device', () =>
     runAgentAction<AgentClipboardDevice>(async () =>
       (await requireClipboardAgent()).cloudClipboardEnableDevice(), false))
-  ipcMain.handle('agent:cloud-clipboard-decrypt', (_event, id: unknown) =>
-    runAgentAction<AgentClipboardCleartext>(async () =>
-      (await requireClipboardAgent()).cloudClipboardDecrypt(clipboardIndex(id)), false))
   ipcMain.handle('agent:cloud-clipboard-revoke-device', (_event, deviceID: unknown) =>
     runAgentAction<void>(async () => {
       if (typeof deviceID !== 'string' ||

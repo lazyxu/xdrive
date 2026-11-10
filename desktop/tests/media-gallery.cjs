@@ -35,6 +35,7 @@ const sharedFilePreviewTransformed = read('ui', 'shared', 'src', 'mui', 'FilePre
 const sharedMediaEdit = read('ui', 'shared', 'src', 'media-edit.ts')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
 const sharedGalleryVirtualTimeline = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualTimeline.ts')
+const sharedGalleryDateNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDateNavigation.tsx')
 const sharedGalleryThumbnailScheduler = read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts')
 const sharedVirtualCollectionController = read('ui', 'shared', 'src', 'mui', 'VirtualCollectionController.ts')
 const sharedGallery = [
@@ -1627,7 +1628,9 @@ test('Gallery time-scale preferences persist per scale and preserve the browsing
     'xDriveMediaGalleryTimelineGroupLabel',
     'window.localStorage.setItem',
   ]) {
-    assert.ok(sharedGalleryMain.includes(token), `Gallery date-browsing memory missing: ${token}`)
+    const source = token === 'data-xdrive-gallery-timeline-jump'
+      ? sharedGalleryDateNavigation : sharedGalleryMain
+    assert.ok(source.includes(token), `Gallery date-browsing memory missing: ${token}`)
   }
   assert.ok(
     sharedGalleryMain.includes('const target = Math.max(0, Math.trunc(group.start_index))') &&

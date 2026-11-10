@@ -1,0 +1,158 @@
+name: iOS offline Owner native pop versus XCTest gesture diagnosis
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ios-offline-owner-autopop-diagnostic.yml'
+      - 'ios/UITests/XDriveIOSOfflineAutoPopUITests.swift'
+      - 'ios/scripts/prepare-native-autopop-smoke.py'
+      - 'ios/scripts/monitor-native-autopop.py'
+      - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
+      - 'ios/XDriveIOS/NativeOwnerLoginModel.swift'
+      - 'ios/XDriveIOS/NativeFilesNavigationPolicy.swift'
+      - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
+      - 'desktop/tests/ios-native-autopop-workflow.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-native-autopop-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  simulator-autopop:
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [candidate, published-b9]
+    # The frozen source is a diagnostic baseline, never a release gate.
+    continue-on-error: ${{ matrix.source != 'candidate' }}
+    steps:
+      - name: Checkout exact test harness and selected native source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare source-pinned genuine SwiftUI navigation with test-only native pop
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_16.4.app ]]; then
+            sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          fi
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          published_sha=b9d5f9695826c144913810240fb8ddba7b584d74
+          if [[ "${{ matrix.source }}" == "candidate" ]]; then
+            # Test THIS PR's exact native product code, not a frozen predecessor.
+            source_sha="${{ github.event.pull_request.head.sha || github.sha }}"
+            test -n "$source_sha"
+            git cat-file -e "$source_sha^{commit}" 2>/dev/null || \
+              git fetch --no-tags --depth=1 origin "$source_sha"
+            test "$(git rev-parse "$source_sha^{commit}")" = "$source_sha" || {
+              echo "::error::Cannot verify exact candidate PR HEAD"
+              exit 1
+            }
+          else
+            source_sha="$published_sha"
+            git cat-file -e "$source_sha^{commit}"
+          fi
+          work="$RUNNER_TEMP/ios-autopop-${{ matrix.source }}"
+          mkdir -p "$work/ios/UITests"
+          git archive "$source_sha" | tar -xf - -C "$work"
+          cp "$GITHUB_WORKSPACE/ios/UITests/XDriveIOSOfflineAutoPopUITests.swift" \
+            "$work/ios/UITests/"
+          python3 "$GITHUB_WORKSPACE/ios/scripts/prepare-navigation-runtime-smoke.py" "$work"
+          if [[ "${{ matrix.source }}" == "candidate" ]]; then
+            # Real no-Session child is a separate lightweight view; do not
+            # inject the legacy Browser auto-pop fixture into the candidate.
+            test -f "$work/ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift"
+            grep -q 'XDriveIOSNativeFilesNoSessionChild' \
+              "$work/ios/XDriveIOS/NativeCloudFilesBrowser.swift"
+          else
+            python3 "$GITHUB_WORKSPACE/ios/scripts/prepare-native-autopop-smoke.py" "$work"
+          fi
+          python3 -m py_compile "$GITHUB_WORKSPACE/ios/scripts/monitor-native-autopop.py"
+          bash "$work/ios/scripts/prepare-assets.sh"
+          (cd "$work/ios" && xcodegen generate --spec project.yml)
+          echo "SMOKE_ROOT=$work" >> "$GITHUB_ENV"
+          echo "SMOKE_SOURCE=$source_sha" >> "$GITHUB_ENV"
+      - name: Boot iPhone 16 on Xcode 16.4-compatible iOS 18.5 Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          devices=json.loads(subprocess.check_output(
+            ["xcrun","simctl","list","devices","available","-j"]))["devices"]
+          available=[(r,p) for r,rows in devices.items() if r.endswith("iOS-18-5")
+                     for p in rows if p.get("isAvailable",True) and p["name"].startswith("iPhone")]
+          if not available: raise SystemExit("No compatible iOS 18.5 Simulator")
+          _,phone=next(((r,p) for r,p in available if p["name"]=="iPhone 16"),
+                       available[0])
+          with open(os.environ["GITHUB_ENV"],"a") as f:
+              f.write("SMOKE_SIM="+phone["udid"]+"\n")
+          PY
+          SIM="$(sed -n 's/^SMOKE_SIM=//p' "$GITHUB_ENV" | tail -1)"
+          xcrun simctl boot "$SIM"
+          python3 - "$SIM" <<'PY'
+          import subprocess,sys
+          subprocess.run(["xcrun","simctl","bootstatus",sys.argv[1],"-b"],
+                         timeout=240,check=True)
+          PY
+      - name: Test native dismiss without XCTest coordinate gesture
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/native-autopop"
+          mkdir -p "$work"
+          if [[ "${{ matrix.source }}" == "candidate" ]]; then
+            only_testing=(
+              "-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests/testCloudFolderNoSessionIsSmallNativeRecoveryInsteadOfFilesList"
+              "-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests/testRecentlyDeletedNoSessionDoesNotMountDestructiveRows"
+            )
+          else
+            only_testing=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSOfflineAutoPopUITests")
+          fi
+          python3 "$GITHUB_WORKSPACE/ios/scripts/monitor-native-autopop.py" \
+            --sim "$SMOKE_SIM" --output "$work" -- \
+            xcodebuild test \
+            -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
+            -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SMOKE_SIM" \
+            -derivedDataPath "$work/DerivedData" \
+            -resultBundlePath "$work/AutoPop.xcresult" \
+            -parallel-testing-enabled NO \
+            "XDRIVE_SOURCE_COMMIT=$SMOKE_SOURCE" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            "${only_testing[@]}"
+      - name: Export native crash evidence without user credentials or photo data
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          dest="$RUNNER_TEMP/native-autopop/diagnostics"
+          mkdir -p "$dest"
+          printf 'source=%s\ncandidate=%s\n' "$SMOKE_SOURCE" "${{ matrix.source }}" \
+            > "$dest/selected-source.txt"
+          if [[ -d "$RUNNER_TEMP/native-autopop/AutoPop.xcresult" ]]; then
+            xcrun xcresulttool get test-results summary \
+              --path "$RUNNER_TEMP/native-autopop/AutoPop.xcresult" \
+              > "$dest/summary.json" 2>&1
+          fi
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 3 -type f \
+            \( -iname '*xDriveIOS*.ips' -o -iname '*xDriveIOS*.crash' \) -mmin -35 \
+            -exec cp {} "$dest/" \; 2>/dev/null
+      - name: Upload exact-source native auto-pop evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-autopop-${{ matrix.source }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/native-autopop/diagnostics/
+            ${{ runner.temp }}/native-autopop/xcodebuild.log
+          retention-days: 7
+          if-no-files-found: warn

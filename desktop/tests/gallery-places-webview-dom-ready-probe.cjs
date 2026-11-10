@@ -21,17 +21,20 @@ const sandbox={exports:{},module:{exports:{}},URLSearchParams,Promise}
 vm.runInNewContext(compiled.outputText,sandbox)
 const {xDriveStartDesktopPlacesGuestProbe:start,
   XDRIVE_DESKTOP_PLACES_GUEST_PROBE:script,
-  xDriveDesktopPlacesGuestProbeState:decode}=sandbox.exports
+  xDriveDesktopPlacesGuestProbeState:decode,
+  xDriveDesktopPlacesGuestFailureCode:decodeFailure}=sandbox.exports
 const sdkSurface=fs.readFileSync(path.join(root,
   'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
 function guestState({rootPresent=false,phase=null,unavailable=false,
-  login=false,denied=false}={}){
+  login=false,denied=false,errorCode=null}={}){
   const sdk=phase===null?null:{
     getAttribute:key=>key==='data-xdrive-places-sdk-phase'?phase:null,
   }
   const page={querySelector:selector=>{
     if(selector==='[data-xdrive-baidu-isolated-photo-map]')return sdk
-    if(selector==='[data-xdrive-baidu-map-unavailable]')return unavailable?{}:null
+    if(selector==='[data-xdrive-baidu-map-unavailable]')return unavailable
+      ? {getAttribute:key=>key==='data-xdrive-baidu-map-error-code'?errorCode:null}
+      : null
     return null
   }}
   const document={querySelector:selector=>{
@@ -106,4 +109,27 @@ test('map SDK phase and auth denial are re-probed after a full-document mode rel
   assert.match(component,/setEmbedGuestReady\(null\)/)
   assert.match(component,/setEmbedRetry\(n=>n\+1\)/)
   assert.match(component,/按 F12 查看地图 Console 和 Network/)
+})
+
+test('production Desktop probe reproduces the generic SDK banner from non-SDK failures',()=>{
+  for(const reason of ['server_release_blocked','session_denied',
+    'sdk_script_failed','sdk_namespace_missing','sdk_map_initialization_failed']){
+    const raw=guestState({rootPresent:true,unavailable:true,errorCode:reason})
+    assert.equal(raw,'unavailable:'+reason)
+    assert.equal(decode(raw),'unavailable')
+    assert.equal(decodeFailure(raw),reason)
+  }
+  assert.equal(decode(guestState({rootPresent:true,unavailable:true})),
+    'unavailable')
+  for(const poisoned of [
+    'unavailable:https://secrets.example/?ak=PRIVATE',
+    'unavailable:sdk_script_failed\nCOOKIE',
+    'unavailable:PRIVATE_AK',
+  ]) assert.equal(decodeFailure(poisoned),null)
+  assert.equal(decode('unavailable:PRIVATE_AK'),'pending')
+  assert.equal(guestState({rootPresent:true,phase:'loading'}),'pending',
+    'missing child handshake remains distinct from an active SDK error')
+  assert.match(component,/xDriveDesktopPlacesGuestFailureCode\(raw\)/)
+  assert.match(component,/data-xdrive-baidu-map-error-code=\{latestDiagnosis\?\.code\}/)
+  assert.doesNotMatch(source,/document\.cookie|access_token|localStorage/)
 })

@@ -176,11 +176,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 .accessibilityIdentifier("native-ios-owner-map-cluster-more")
             }
         }
-        .simultaneousGesture(
-            MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                guard activeOwner, !busy, viewing == nil else { return }
-                wallDensity = wallDensity.applyingPinch(scale)
-            }
+        .xdrivePhotoWallPinch(
+            density: $wallDensity,
+            enabled: activeOwner && !busy && viewing == nil
         )
         .fullScreenCover(item: $viewing, onDismiss: {
             pendingViewerCross = nil

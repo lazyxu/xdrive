@@ -8,8 +8,8 @@ const read = p => fs.readFileSync(path.join(root,p),'utf8')
 const clipboard = read('ios/XDriveIOS/NativeClipboardScreen.swift')
 const files = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
 const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
-test('iOS received node ref rechecks current Owner and decrypts before file open',()=>{
- assert.match(clipboard,/entry\.text == "asset:\\?\(nodeID\)"/)
+test('iOS received node ref rechecks current Owner and canonical plaintext reference before file open',()=>{
+ assert.match(clipboard,/item\.content == "asset:\\?\(nodeID\)"/)
  assert.match(clipboard,/authorizedClient\(for: generation\)/)
  assert.match(clipboard,/reader\.referencedFile\(nodeID: nodeID\)/)
  assert.match(clipboard,/sessionGeneration == generation/)

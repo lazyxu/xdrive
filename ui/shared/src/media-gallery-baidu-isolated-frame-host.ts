@@ -7,6 +7,7 @@ import {
   xDriveValidBaiduIsolatedBoundary,
 } from './media-gallery-baidu-isolated-origin-protocol'
 import type {
+  XDriveBaiduIsolatedFailureReason,
   XDriveBaiduIsolatedCamera,
   XDriveBaiduIsolatedBounds,
   XDriveBaiduIsolationBoundary,
@@ -32,6 +33,10 @@ export type XDriveTrustedProjectedMapCells<T> = Readonly<{
   height: number
   cells: readonly Readonly<{selection:T; count:number; x:number; y:number}>[]
 }>
+/** Parent-owned timeout is never accepted as an untrusted Child message. */
+export type XDriveBaiduIsolatedFrameFailureReason =
+  XDriveBaiduIsolatedFailureReason | 'child_handshake_timeout'
+
 export interface XDriveBaiduIsolatedFrameOptions<T> {
   parentWindow: Window
   host: HTMLElement
@@ -44,7 +49,10 @@ export interface XDriveBaiduIsolatedFrameOptions<T> {
   onViewport?: (bounds: XDriveBaiduIsolatedBounds) => void
   onReady?: () => void
   onMapReady?: () => void
-  onMapFailure?: () => void
+  /** A once-ready Child navigated; revoke Parent presentation until a new
+   * exact-nonce ready + authenticated Owner Range completes. */
+  onMapReset?: () => void
+  onMapFailure?: (reason?: XDriveBaiduIsolatedFrameFailureReason) => void
   /** Gallery-only callback: anonymous keys are rebound to fresh authorized
    * Owner selections, without giving the Child thumbnails or Node IDs. */
   onProjectedCells?: (projected: XDriveTrustedProjectedMapCells<T>) => void
@@ -73,6 +81,7 @@ export interface XDriveBaiduIsolatedFrameHost<T> {
 let nextGeneration = 0
 const framePath = '/_xdrive_baidu_isolated/index.html'
 const maxCells = 64
+export const XDRIVE_BAIDU_CHILD_HANDSHAKE_TIMEOUT_MS = 12_000
 
 function randomHex(crypto: Crypto, bytes: number): string | null {
   try {
@@ -162,6 +171,37 @@ export function xDriveMountBaiduIsolatedFrame<T>(
   // nor media authorization ever consults this presentation-only cache.
   let gestureSelection = new Map<string, T>()
   let gestureCounts = new Map<string, number>()
+  // A failed independent Child document may never send a valid ready packet:
+  // invalid parent-Origin template, CSP, TLS or a blocked iframe must not
+  // strand the Gallery map forever in the loading state. The trusted Parent,
+  // not provider JS, owns this bounded diagnosis.
+  let handshakeTimer: ReturnType<typeof setTimeout> | null = null
+  const clearHandshakeTimer = () => {
+    if (handshakeTimer !== null) {
+      clearTimeout(handshakeTimer)
+      handshakeTimer = null
+    }
+  }
+  const armHandshakeTimer = () => {
+    // Do not let repeated untrusted iframe load events extend an outstanding
+    // handshake indefinitely. Only a real successful ready or foreground
+    // resume can start a fresh window.
+    if (!alive || ready || handshakeTimer !== null ||
+        doc.visibilityState === 'hidden') return
+    handshakeTimer = setTimeout(() => {
+      handshakeTimer = null
+      if (!alive || ready || doc.visibilityState === 'hidden') return
+      // Drop the old WindowProxy, nonce and anonymous Cell selections before
+      // reporting a Parent-owned reason. No token or provider error crosses.
+      detach()
+      options.onMapFailure?.('child_handshake_timeout')
+    }, XDRIVE_BAIDU_CHILD_HANDSHAKE_TIMEOUT_MS)
+  }
+  const onVisibilityChange = () => {
+    if (!alive || ready) return
+    if (doc.visibilityState === 'hidden') clearHandshakeTimer()
+    else if (doc.visibilityState === 'visible') armHandshakeTimer()
+  }
   // The Child (including provider JS) is untrusted: coalesce map camera bursts
   // before they can create unbounded authenticated Owner /cells requests.
   let pendingViewport: XDriveBaiduIsolatedBounds | null = null
@@ -176,6 +216,8 @@ export function xDriveMountBaiduIsolatedFrame<T>(
   const detach = () => {
     if (!alive) return
     alive = false
+    clearHandshakeTimer()
+    doc.removeEventListener('visibilitychange', onVisibilityChange)
     ready = false
     mapReady = false
     clearPendingViewport()
@@ -208,6 +250,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
   }
   const onLoad = () => {
     if (!alive || !boundary) return
+    const previouslyReady = ready
     // Reload MUST rotate the challenge, not merely clear selections: a child
     // script may have recorded the old nonce and try replaying old messages.
     const freshNonce = randomHex(browser.crypto, 32)
@@ -225,6 +268,8 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     gestureCounts.clear()
     if (!published) { detach(); return }
     post(published) // bounded session nonce bootstrap, ZERO Owner data
+    if (previouslyReady) options.onMapReset?.()
+    armHandshakeTimer()
   }
   const onMessage = (raw: MessageEvent) => {
     if (!alive || !boundary) return
@@ -234,6 +279,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
       // Replayed ready packets must never mint another one-use map ticket.
       if (ready) return
       ready = true
+      clearHandshakeTimer()
       if (published) {
         post(published)
         postBootstrapSuppression()
@@ -244,7 +290,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     } else if (event.kind === 'map-failed') {
       clearPendingViewport()
       mapReady = false
-      if (ready) options.onMapFailure?.()
+      if (ready) options.onMapFailure?.(event.reason)
     } else if (event.kind === 'cell-projections') {
       if (!ready || !mapReady || !published) return
       // Exact current Owner selection: no stale, forged or cross-Owner key.
@@ -310,6 +356,8 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     if (!xDriveValidBaiduIsolatedBoundary(boundary)) { detach(); return null }
     published = xDriveCreateBaiduIsolatedCellsMessage(boundary, [])
     if (!published) { detach(); return null }
+    doc.addEventListener('visibilitychange', onVisibilityChange)
+    armHandshakeTimer()
     // Never send a real cell to a child before its validated ready packet.
     return {
       element: iframe,

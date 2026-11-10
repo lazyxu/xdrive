@@ -37,6 +37,34 @@ actual="$("$pkg_root/usr/bin/xd" version)"
   echo "embedded xd version mismatch: got $actual want $VERSION" >&2
   exit 1
 }
+# Verify real extracted executable metadata and bundled Electron resources
+# against the independent source Commit selected by this CI run.
+expected_commit="${GITHUB_SHA:-${CI_COMMIT_SHA:-}}"
+if [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  "$pkg_root/usr/bin/xd" version --json > "$pkg_root/xd-build-info.json"
+  "$pkg_root/usr/bin/xdrive-agent" --build-info-json > "$pkg_root/agent-build-info.json"
+  test -f "$pkg_root/opt/xdrive-desktop/resources/xdrive-build-info.json" || {
+    echo "unified package is missing Desktop source-Commit metadata" >&2
+    exit 1
+  }
+  python3 - "$pkg_root" "$expected_commit" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+commit = sys.argv[2]
+for label, path in (
+    ("xd", root / "xd-build-info.json"),
+    ("Agent", root / "agent-build-info.json"),
+    ("Desktop", root / "opt/xdrive-desktop/resources/xdrive-build-info.json"),
+):
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("commit") != commit:
+        raise SystemExit(f"{label} packaged source Commit {data.get('commit')!r} != CI Commit {commit}")
+PY
+fi
+
 dpkg-deb --field "$PACKAGE" Provides | grep -q 'xdrive-desktop'
 dpkg-deb --field "$PACKAGE" Replaces | grep -q 'xdrive-desktop'
 

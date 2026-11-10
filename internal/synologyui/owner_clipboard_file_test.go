@@ -23,12 +23,6 @@ type dsmClipboardFileFixture struct {
 }
 
 func (*dsmClipboardFileFixture) OwnerClipboardAvailable() bool { return true }
-func (*dsmClipboardFileFixture) OwnerClipboardVault(context.Context) (client.ClipboardVault, error) {
-	return client.ClipboardVault{}, nil
-}
-func (*dsmClipboardFileFixture) OwnerClipboardCheck(context.Context, client.ClipboardCheck) (client.ClipboardVault, error) {
-	return client.ClipboardVault{}, nil
-}
 func (*dsmClipboardFileFixture) OwnerClipboardList(context.Context, uint64) (client.ClipboardPage, error) {
 	return client.ClipboardPage{}, nil
 }
