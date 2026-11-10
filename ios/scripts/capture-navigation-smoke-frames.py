@@ -36,6 +36,12 @@ TARGETS = {
     "testGallerySourcesAlternateWithoutLosingSourceRail",
     "testRepeatedFilterDismissalRestoresSameGallery",
     "testGalleryBackgroundResumeKeepsNativeSourceAndPixels",
+    "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",
+    "testGalleryDismissedFilterThenForegroundDoesNotRebuildWall",
+    "testGalleryPeopleBackThenForegroundKeepsVerifiedWall",
+    "testGallerySourceChangeThenUnchangedForegroundKeepsLatestGeneration",
+    "testGalleryFilesRoundTripThenForegroundKeepsWallGeneration",
+    "testGalleryForegroundAfterDeniedCloudFilesDoesNotLeakOrRebuild",
     "testFilesBackgroundResumeKeepsQuickRailAndPixels",
     "testLocalPhotoSourceRetainsGalleryAfterFilesForegroundRoundtrip",
     # Denied children: capture before AX snapshots that may hang.
@@ -80,6 +86,12 @@ TARGETS = {
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
+    "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",
+    "testGalleryDismissedFilterThenForegroundDoesNotRebuildWall",
+    "testGalleryPeopleBackThenForegroundKeepsVerifiedWall",
+    "testGallerySourceChangeThenUnchangedForegroundKeepsLatestGeneration",
+    "testGalleryFilesRoundTripThenForegroundKeepsWallGeneration",
+    "testGalleryForegroundAfterDeniedCloudFilesDoesNotLeakOrRebuild",
     "testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells",
     "testTrashDeniedRetryThenFilesRailAndGalleryReturnKeepsPixels",
     "testGalleryPeopleThenCloudDeniedAndGalleryReturnNoSettledBlank",
