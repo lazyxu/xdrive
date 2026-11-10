@@ -7,10 +7,10 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $Installer = (Resolve-Path -LiteralPath $Installer).Path
 
-# This is a negative security gate, NOT a successful upgrade/rollback test.
-# An unsigned master Snapshot is intentionally not allowed through the
-# detached automatic updater. Signed PR/stable installers keep the full
-# fault-injection rollback and successful upgrade gates.
+# Negative security gate, not a completed personal upgrade. Ordinary channel
+# automatic updates reject unsigned installers. A separately confirmed private
+# Windows Snapshot must also reject mismatched Commit, target or digest before
+# stopping any process; signed PR/stable installs keep full rollback tests.
 $signature = Get-AuthenticodeSignature -LiteralPath $Installer
 if ($null -ne $signature.SignerCertificate) {
     throw "unsigned admission fixture unexpectedly has an Authenticode signer"
@@ -78,6 +78,30 @@ try {
     if (-not $log.Contains("upgrade failed: installer Authenticode signature missing or damaged") -or
         $log.Contains("upgrade committed successfully")) {
         throw "unsigned rejection did not fail in the signature preflight"
+    }
+
+    # Even when the private unsigned opt-in switch is supplied, it is NOT a
+    # generic "ignore Authenticode" bypass. The separate user-confirmed path
+    # requires a pinned full Commit and the exact master Snapshot target.
+    # Intentionally keep this fixture's target version invalid and verify
+    # refusal before any installed program or discovery state is disturbed.
+    $badPersonalArgs = @($args) + @(
+        "-ExpectedCommit", ("a" * 40),
+        "-ExpectedSHA256", ((Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToLowerInvariant()),
+        "-ExpectedSize", [string](Get-Item -LiteralPath $Installer).Length,
+        "-PersonalUnsigned"
+    )
+    Remove-Item -LiteralPath $statusPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+    $personalProcess = Start-Process -FilePath "powershell.exe" -ArgumentList $badPersonalArgs -PassThru -Wait -NoNewWindow
+    $personalProcess.Refresh()
+    if ($personalProcess.ExitCode -eq 0) {
+        throw "personal unsigned switch bypassed full source/channel admission"
+    }
+    $personalStatus = Get-Content -LiteralPath $statusPath -Raw | ConvertFrom-Json
+    if ($personalStatus.state -ne "failed" -or [bool]$personalStatus.rolled_back -or
+        $personalStatus.message -notlike "personal unsigned installer requires exact Windows Snapshot*") {
+        throw ("invalid personal unsigned admission was not refused before mutation: {0}" -f ($personalStatus | ConvertTo-Json -Compress))
     }
 
     $hasXd = Test-Path -LiteralPath $existingXd -PathType Leaf
