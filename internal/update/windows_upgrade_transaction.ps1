@@ -313,12 +313,11 @@ function Test-DesktopStartupCommit([int]$DesktopPID) {
         -not (Test-Path -LiteralPath $log -PathType Leaf)) { return $false }
     try {
         $active = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json
-        if ([int]$active.pid -ne $DesktopPID -or [string]$active.version -ne $TargetVersion) { return $false }
+        if ([int]$active.pid -ne $DesktopPID) { return $false }
         foreach ($line in @(Get-Content -LiteralPath $log -Tail 200 -ErrorAction Stop)) {
             try {
                 $event = $line | ConvertFrom-Json
                 if ($event.event -eq "start" -and [int]$event.pid -eq $DesktopPID -and
-                    [string]$event.version -eq $TargetVersion -and
                     [string]$event.commit -ceq $ExpectedCommit) { return $true }
             } catch { }
         }
