@@ -64,7 +64,10 @@ test('09 Files tab cover retires operation GET without erasing Home Favorites na
 })
 test('10 no-token real XCUITest opens operation-history child then returns to Gallery', () => {
   assert.match(ui, /func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages\(\)/)
-  assert.match(ui, /tap\("native-ios-files-open-operations", app: app\)/)
+  assert.match(ui, /openFilesOperationHistoryFromBrowse\(app\)/)
+  assert.match(ui, /private func openFilesOperationHistoryFromBrowse\(_ app: XCUIApplication\)/)
+  assert.match(ui, /list\.swipeUp\(\)/)
+  assert.match(ui, /XCTAssertTrue\(action\.isHittable/)
   assert.match(ui, /native-ios-files-operation-history-page/)
   assert.match(ui, /native-ios-files-operation-history-done/)
   assert.match(ui, /assertVisiblePixels\(app, route: "Gallery after denied Files operation history"\)/)
@@ -105,4 +108,19 @@ test('15 screenshot capture lag is separately reported rather than misrepresente
   assert.match(audit, /'p95_ms': percentile\(lags, \.95\)/)
   assert.match(audit, /'finished_before_capture': sum\(/)
   assert.match(audit, /'is_fps_measurement': False, 'proves_zero_transient_flicker': False/)
+})
+
+test('16 real Simulator failure: offscreen Files Home operation entry is brought into viewport before tap', () => {
+  const helper = ui.slice(ui.indexOf('private func openFilesOperationHistoryFromBrowse('),
+    ui.indexOf('func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages()'))
+  assert.match(helper, /assertFiles\(app\)/)
+  assert.match(helper, /let list = app\.tables\.firstMatch\.exists \? app\.tables\.firstMatch :\s*app\.scrollViews\.firstMatch/)
+  assert.match(helper, /for _ in 0\.\.<6 \{\s*if action\.isHittable \{ break \}\s*list\.swipeUp\(\)/)
+  assert.match(helper, /action\.waitForExistence\(timeout: 10\)/)
+  assert.match(helper, /XCTAssertTrue\(action\.isHittable/)
+  assert.match(helper, /action\.tap\(\)/)
+  const history = ui.slice(ui.indexOf('func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages()'),
+    ui.indexOf('func testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels()'))
+  assert.equal((history.match(/openFilesOperationHistoryFromBrowse\(app\)/g) || []).length, 2)
+  assert.doesNotMatch(history, /tap\("native-ios-files-open-operations", app: app\)/)
 })
