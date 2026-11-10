@@ -977,6 +977,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var showingBatchProperties = false
     @State private var showingAncestorsSheet = false
     @State private var quickHistoryReadAttempted = false
+    @State private var filesViewVisible = false
     @State private var managementWriteConfirmed = false
     @State private var versionRestoreConfirmed = false
     @State private var showingPathPrompt = false
@@ -3536,6 +3537,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func filesForegroundLifecycle(returnScroll: ScrollViewProxy) -> some View {
         filesModals
         .onAppear {
+            filesViewVisible = true
             restoreFilesSectionIfNeeded()
             if phase == .active, let owner = login.owner,
                !quickHistoryReadAttempted {
@@ -3590,6 +3592,15 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
+            filesViewVisible = false
+            // Undo/redo operation metadata is optional. A cancelled first
+            // read must not permanently latch the shortcuts as "attempted".
+            // Busy mutations are never cancelled by this navigation path.
+            if quickHistoryReadAttempted && operationShortcuts.loading &&
+               !operationShortcuts.verified && operationShortcuts.status == nil {
+                quickHistoryReadAttempted = false
+            }
+            operationShortcuts.suspendReadForNavigation()
             // This is the Files root leaving the TabView/NavigationStack, not
             // the search results subtree being temporarily covered by the
             // native keyboard. Do not dismiss search as soon as it activates.
@@ -3629,6 +3640,20 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedIDs.removeAll()
             selectedSnapshots.removeAll()
             showingBatchTrashConfirmation = false
+        }
+        .onChange(of: phase) { next in
+            if next != .active {
+                if quickHistoryReadAttempted && operationShortcuts.loading &&
+                   !operationShortcuts.verified && operationShortcuts.status == nil {
+                    quickHistoryReadAttempted = false
+                }
+                operationShortcuts.suspendReadForNavigation()
+            } else if filesViewVisible, !quickHistoryReadAttempted,
+                      let owner = login.owner {
+                quickHistoryReadAttempted = true
+                operationShortcuts.updateExpectedOwner(owner)
+                operationShortcuts.load(login: login)
+            }
         }
     }
 
