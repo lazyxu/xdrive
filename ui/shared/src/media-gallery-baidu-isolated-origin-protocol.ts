@@ -31,10 +31,20 @@ export type XDriveBaiduIsolatedCellProjections = Readonly<{
   width: number; height: number
   points: readonly XDriveBaiduIsolatedProjectedCell[]
 }>
+/** Only predetermined diagnostic stages can cross the untrusted SDK Child boundary.
+ * No response bodies, URLs, AKs, tickets, Owner or provider exceptions. */
+export type XDriveBaiduIsolatedFailureReason =
+  | 'session_unavailable'
+  | 'sdk_load_failed'
+  | 'sdk_script_failed'
+  | 'sdk_script_timeout'
+  | 'sdk_namespace_missing'
+  | 'sdk_map_initialization_failed'
 export type XDriveBaiduChildEvent =
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'ready' }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'cancel' }>
-  | Readonly<{ version: 1; generation: number; nonce: string; kind: 'map-ready' | 'map-failed' }>
+  | Readonly<{ version: 1; generation: number; nonce: string; kind: 'map-ready' }>
+  | Readonly<{ version: 1; generation: number; nonce: string; kind: 'map-failed'; reason?: XDriveBaiduIsolatedFailureReason }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'viewport'; bounds: XDriveBaiduIsolatedBounds }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'camera'; camera: XDriveBaiduIsolatedCamera }>
   | Readonly<{ version: 1; generation: number; nonce: string; kind: 'activate-cell'; key: string }>
@@ -184,11 +194,23 @@ export function xDriveParseBaiduIsolatedChildEvent(
   switch (data.kind) {
     case 'ready':
     case 'map-ready':
-    case 'map-failed':
     case 'cancel':
       if (!exactKeys(data, ['version', 'generation', 'nonce', 'kind'])) return null
       return { version: 1, generation: boundary.generation,
         nonce: boundary.nonce, kind: data.kind }
+    case 'map-failed': {
+      if (exactKeys(data, ['version', 'generation', 'nonce', 'kind']))
+        return {version: 1, generation: boundary.generation,
+          nonce: boundary.nonce, kind: 'map-failed'}
+      if (!exactKeys(data, ['version','generation','nonce','kind','reason']) ||
+          typeof data.reason !== 'string' ||
+          !['session_unavailable','sdk_load_failed','sdk_script_failed',
+            'sdk_script_timeout','sdk_namespace_missing',
+            'sdk_map_initialization_failed'].includes(data.reason)) return null
+      return {version: 1, generation: boundary.generation,
+        nonce: boundary.nonce, kind: 'map-failed',
+        reason: data.reason as XDriveBaiduIsolatedFailureReason}
+    }
     case 'viewport':
       if (!exactKeys(data, ['version','generation','nonce','kind','bounds']) ||
           !boundsValid(data.bounds)) return null
