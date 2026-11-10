@@ -369,18 +369,24 @@ struct XDriveIOSUnifiedPhotoTile: View {
     @State private var loadGeneration = UUID()
 
     private var thumbnailKey: String {
-        [
-            presentingOwner.origin.absoluteString,
-            presentingOwner.instanceID,
-            String(presentingOwner.ownerID),
-            row.id,
-            row.local?.id ?? "",
-            String(describing: row.local?.modifiedAt),
-            String(describing: row.local?.capturedAt),
-            String(row.match?.node_id ?? 0),
-            String(row.cloud?.node.revision ?? 0),
-            row.cloud?.metadata.thumbnail_version ?? ""
-        ].joined(separator: "|")
+        // Explicit String operands avoid expensive inference over nested
+        // optionals and preserve exact Owner/PhotoKit/Node cache identity.
+        let ownerOrigin: String = presentingOwner.origin.absoluteString
+        let ownerInstance: String = presentingOwner.instanceID
+        let ownerIdentity: String = String(presentingOwner.ownerID)
+        let photoIdentity: String = row.id
+        let localIdentity: String = row.local?.id ?? ""
+        let localModified: String = String(describing: row.local?.modifiedAt)
+        let localCaptured: String = String(describing: row.local?.capturedAt)
+        let matchedNode: String = String(row.match?.node_id ?? 0)
+        let cloudRevision: String = String(row.cloud?.node.revision ?? 0)
+        let cloudThumbnail: String = row.cloud?.metadata.thumbnail_version ?? ""
+        let parts: [String] = [
+            ownerOrigin, ownerInstance, ownerIdentity, photoIdentity,
+            localIdentity, localModified, localCaptured, matchedNode,
+            cloudRevision, cloudThumbnail
+        ]
+        return parts.joined(separator: "|")
     }
 
     var body: some View {

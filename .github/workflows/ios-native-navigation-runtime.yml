@@ -37,6 +37,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Use the tested PR head, not a synthetic merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Prepare original release/current source and UI smoke scheme
         shell: bash
         run: |

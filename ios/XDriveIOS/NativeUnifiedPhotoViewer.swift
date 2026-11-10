@@ -109,14 +109,7 @@ struct XDriveIOSNativeUnifiedPhotoViewer: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 4) {
                         ForEach(Array(page.rows.enumerated()), id: \.element.id) { index, photo in
-                            Button { show(page: page, at: index) } label: {
-                                XDriveIOSUnifiedPhotoTile(row: photo, login: login, presentingOwner: selection.owner,
-                                                         displayActive: authorized)
-                                    .frame(width: 48, height: 48)
-                                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(index == position ? Color.accentColor : .clear, lineWidth: 2))
-                            }
-                            .buttonStyle(.plain).disabled(busy).id(photo.id)
-                            .accessibilityLabel("\(photo.presence.title)，第 \(index + 1) 张")
+                            filmstripCell(photo, at: index)
                         }
                     }.padding(3)
                 }
@@ -126,6 +119,28 @@ struct XDriveIOSNativeUnifiedPhotoViewer: View {
         }
         .padding(.horizontal, 8).background(.ultraThinMaterial)
         .accessibilityIdentifier("native-ios-unified-viewer-navigation")
+    }
+
+    // A bounded helper keeps the Viewer NavigationStack type-checker fast
+    // and makes the filmstrip's offscreen-retention policy explicit.
+    private func filmstripCell(_ photo: XDriveIOSNativeUnifiedPhoto,
+                              at index: Int) -> some View {
+        let selected = index == position
+        return Button { show(page: page, at: index) } label: {
+            XDriveIOSUnifiedPhotoTile(
+                row: photo, login: login, presentingOwner: selection.owner,
+                displayActive: authorized, retainWhileCovered: false
+            )
+            .frame(width: 48, height: 48)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(selected ? Color.accentColor : .clear, lineWidth: 2)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .id(photo.id)
+        .accessibilityLabel("\(photo.presence.title)，第 \(index + 1) 张")
     }
 
     private func show(page: XDriveIOSNativeUnifiedGalleryPage, at index: Int) {

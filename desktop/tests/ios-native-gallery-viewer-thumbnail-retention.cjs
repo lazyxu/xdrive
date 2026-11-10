@@ -89,3 +89,17 @@ test('People and thumbnail-cache subroutes retain tiles independently of Viewer 
   assert.match(disappearance, /if retainWhileCovered, retainedKey == thumbnailKey/);
   assert.doesNotMatch(disappearance, /if !displayActive, retainedKey == thumbnailKey/);
 });
+
+test('explicit typed thumbnail identity and Viewer filmstrip compile-sensitive contract', () => {
+  for (const name of ['ownerOrigin', 'ownerInstance', 'ownerIdentity', 'photoIdentity',
+    'localIdentity', 'localModified', 'localCaptured', 'matchedNode', 'cloudRevision',
+    'cloudThumbnail']) {
+    assert.match(tile, new RegExp('let ' + name + ': String ='));
+  }
+  assert.match(tile, /let parts: \[String\] = \[/);
+  assert.match(tile, /return parts\.joined\(separator: "\|"\)/);
+  const viewer = fs.readFileSync(path.join(__dirname, '../../ios/XDriveIOS/NativeUnifiedPhotoViewer.swift'), 'utf8');
+  assert.match(viewer, /ForEach\(Array\(page\.rows\.enumerated\(\)\), id: \\.element\.id\) \{ index, photo in\s*filmstripCell\(photo, at: index\)/);
+  assert.match(viewer, /private func filmstripCell\(/);
+  assert.match(viewer, /displayActive: authorized, retainWhileCovered: false/);
+});
