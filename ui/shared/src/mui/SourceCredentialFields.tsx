@@ -42,6 +42,7 @@ export function XDriveSynologyDsmCredentialFields({
   mode = 'create',
   required = false,
   configured = false,
+  configuredLength,
   revealedPassword = '',
   onRevealPassword,
   onHidePassword,
@@ -57,6 +58,7 @@ export function XDriveSynologyDsmCredentialFields({
   mode?: 'create' | 'update'
   required?: boolean
   configured?: boolean
+  configuredLength?: number
   revealedPassword?: string
   onRevealPassword?: () => void
   onHidePassword?: () => void
@@ -91,7 +93,7 @@ export function XDriveSynologyDsmCredentialFields({
       />
       <XDriveSensitiveField label="DSM 密码"
         value={password} onChange={onPasswordChange}
-        configured={configured} revealedValue={revealedPassword}
+        configured={configured} configuredLength={configuredLength} revealedValue={revealedPassword}
         onReveal={onRevealPassword} onHide={onHidePassword}
         revealLoading={passwordRevealLoading}
         required={required} autoComplete="new-password" />

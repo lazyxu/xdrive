@@ -10,7 +10,7 @@ import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined
 // revision-fenced onReveal callback. New and transient passwords NEVER ask
 // the Server to reveal their old values.
 export function XDriveSensitiveField({
-  label, value, onChange, configured = false, revealedValue = '',
+  label, value, onChange, configured = false, configuredLength, revealedValue = '',
   onReveal, onHide, revealLoading = false, disabled = false, revealDisabled = false,
   placeholder, required = false, autoComplete = 'new-password',
   maxLength, helperText, onFocus, id, autoFocus = false, error = false,
@@ -20,6 +20,8 @@ export function XDriveSensitiveField({
   value: string
   onChange: (value: string) => void
   configured?: boolean
+  // Authorized non-secret metadata; never a substitute for the stored credential.
+  configuredLength?: number
   revealedValue?: string
   onReveal?: () => void
   onHide?: () => void
@@ -65,6 +67,12 @@ export function XDriveSensitiveField({
 
   // A pending edit always takes precedence over a temporary server reveal.
   const shownValue = value || (visible ? revealedValue : '')
+  // Keep the editor value empty until the user types. A visible mask must
+  // never be submitted as a replacement for the persisted credential.
+  const safeLength = typeof configuredLength === 'number' &&
+    Number.isSafeInteger(configuredLength) && configuredLength > 0 && configuredLength <= 65_536
+    ? configuredLength : 8
+  const savedMask = configured && !value && !visible ? '*'.repeat(safeLength) : ''
   // Even an empty new password can switch to visible entry; only persisted
   // secrets require an explicitly supplied audited onReveal callback.
   const canToggle = !revealDisabled && !revealLoading &&
@@ -87,7 +95,7 @@ export function XDriveSensitiveField({
       autoComplete={autoComplete} required={required}
       helperText={helperText} onFocus={onFocus}
       disabled={disabled}
-      placeholder={placeholder ?? (configured && !value ? '••••••••' : '')}
+      placeholder={savedMask || placeholder || ''}
       onChange={(event) => {
         // Editing revealed text changes only this draft; the server does not
         // receive it until the parent explicitly saves the configuration.
@@ -95,6 +103,8 @@ export function XDriveSensitiveField({
         if (revealedValue) onHide?.()
       }}
       slotProps={{
+        // Keep the MUI label clear of the persisted-credential placeholder.
+        inputLabel: { shrink: configured && !value ? true : undefined },
         htmlInput: { maxLength, spellCheck: false, autoCapitalize: 'off' },
         input: {
           startAdornment,

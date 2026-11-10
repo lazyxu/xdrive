@@ -45,6 +45,7 @@ type sourceCredentialTestDTO struct {
 type sourceCredentialTester func(context.Context, string, json.RawMessage) (sourceCredentialTestDTO, error)
 
 type sourceCredentialStatusDTO struct {
+	ValueLength int `json:"value_length,omitempty"`
 	Configured bool       `json:"configured"`
 	KeyVersion uint32     `json:"key_version,omitempty"`
 	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
@@ -411,8 +412,10 @@ func (s *Server) getSourceCredentialStatus(c *gin.Context) {
 		return
 	}
 	updated := row.UpdatedAt
+	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, sourceCredentialStatusDTO{
 		Configured: true, KeyVersion: row.KeyVersion, UpdatedAt: &updated,
+		ValueLength: s.sourceCredentialMaskLength(source, row),
 	})
 }
 
@@ -570,8 +573,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 	}
 	recordSourceCredentialAudit(c, s.DB, auditpkg.ActionSourceCredentialUpdate, source, row.KeyVersion)
 	updated := row.UpdatedAt
+	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, sourceCredentialStatusDTO{
 		Configured: true, KeyVersion: row.KeyVersion, UpdatedAt: &updated,
+		ValueLength: s.sourceCredentialMaskLength(source, row),
 	})
 }
 

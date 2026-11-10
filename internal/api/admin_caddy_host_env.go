@@ -32,6 +32,8 @@ type caddyHostEnvSnapshot struct {
 	LANIP            string    `json:"lan_ip"`
 	LANEnabled       bool      `json:"lan_enabled"`
 	AliDNSConfigured bool      `json:"alidns_configured"`
+	AliDNSIDLength   int       `json:"alidns_id_length,omitempty"`
+	AliDNSSecretLength int     `json:"alidns_secret_length,omitempty"`
 	SHA256           string    `json:"sha256"`
 	PendingRedeploy  bool      `json:"pending_redeploy"`
 	ObservedAt       time.Time `json:"observed_at"`
@@ -90,6 +92,11 @@ func (s *Server) readCaddyHostEnv() (caddyHostEnvSnapshot, error) {
 		snap.DomainEnabled != (snap.Domain != "") || snap.LANEnabled != (snap.LANIP != "") ||
 		(snap.Domain != "" && !validCaddyHTTPSDomain(snap.Domain)) ||
 		(snap.LANIP != "" && !validCaddyLANIP(snap.LANIP)) ||
+		// Old Host snapshots may omit both lengths; mixed or invalid lengths are rejected.
+		(snap.AliDNSIDLength != 0 && (snap.AliDNSIDLength < 8 || snap.AliDNSIDLength > 128)) ||
+		(snap.AliDNSSecretLength != 0 && (snap.AliDNSSecretLength < 8 || snap.AliDNSSecretLength > 256)) ||
+		((snap.AliDNSIDLength > 0 || snap.AliDNSSecretLength > 0) &&
+		 (!snap.AliDNSConfigured || snap.AliDNSIDLength == 0 || snap.AliDNSSecretLength == 0)) ||
 		snap.ObservedAt.IsZero() || time.Since(snap.ObservedAt) > caddyHostEnvFreshness ||
 		time.Until(snap.ObservedAt) > 15*time.Second {
 		return caddyHostEnvSnapshot{}, errCaddyHostEnvUnavailable

@@ -46,6 +46,7 @@ func (s *Server) adminCaddyAliDNSConfigHost(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, adminCaddyAliDNSConfigDTO{
 		Configured: snap.AliDNSConfigured, Revision: 0, Source: "host-env",
+		AccessKeyIDLength: snap.AliDNSIDLength, AccessKeySecretLength: snap.AliDNSSecretLength,
 		UpdatedAt: &snap.ObservedAt, Editable: true, ApplyState: "pending",
 		ApplySupported: false, Requirement: "AliDNS currently comes from Host .env; deployment is separate",
 		HostApplyPending: false, HostEnvSHA256: snap.SHA256,

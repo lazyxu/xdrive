@@ -51,7 +51,9 @@ func validCaddyAliDNSPair(pair caddyAliDNSSecretPair) bool {
 }
 
 type adminCaddyAliDNSConfigDTO struct {
-	Configured     bool       `json:"configured"`
+	AccessKeyIDLength     int        `json:"access_key_id_length,omitempty"`
+	AccessKeySecretLength int        `json:"access_key_secret_length,omitempty"`
+	Configured           bool       `json:"configured"`
 	Revision       uint64     `json:"revision"`
 	Source         string     `json:"source"`
 	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
@@ -111,6 +113,10 @@ func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
 	}
 	state, source := "unmanaged", "unset"
 	configured := exists && len(row.Ciphertext) > 0
+	var idLength, secretLength int
+	if configured {
+		idLength, secretLength = s.caddyAliDNSMaskLengths(row)
+	}
 	if exists {
 		state, source = "pending", "saved"
 		if row.Origin == caddyImportedHostOrigin {
@@ -119,6 +125,7 @@ func (s *Server) adminCaddyAliDNSConfig(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, adminCaddyAliDNSConfigDTO{
 		Configured: configured,
+		AccessKeyIDLength: idLength, AccessKeySecretLength: secretLength,
 		Revision:   row.Revision, Source: source,
 		UpdatedAt: func() *time.Time {
 			if exists {
