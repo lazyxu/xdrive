@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -100,7 +101,7 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 			if tc.oversizedManifest {
 				manifestSize = currentBundleManifestLimit + 1
 			}
-			manifestReads := 0
+			var manifestReads atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				if req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "" {
 					t.Error("Owner credentials leaked to public GitHub publisher")
@@ -146,7 +147,7 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 						"immutable": !tc.mutableRelease, "assets": assets,
 					})
 				case "/repos/lazyxu/xdrive/releases/assets/1234":
-					manifestReads++
+					manifestReads.Add(1)
 					if req.Header.Get("Accept") != "application/octet-stream" {
 						t.Errorf("manifest download did not request raw asset bytes")
 					}
@@ -172,8 +173,8 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 			if (err != nil) != tc.wantError {
 				t.Fatalf("%s public Bundle verification: err=%v wantError=%t", tc.name, err, tc.wantError)
 			}
-			if !tc.wantError && manifestReads != 1 {
-				t.Fatalf("immutable manifest bytes were not verified exactly once: reads=%d", manifestReads)
+			if !tc.wantError && manifestReads.Load() != 1 {
+				t.Fatalf("immutable manifest bytes were not verified exactly once: reads=%d", manifestReads.Load())
 			}
 		})
 	}
