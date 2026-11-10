@@ -222,6 +222,26 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         }
     }
 
+    func testGalleryUnchangedForegroundRetainsVerifiedWallGeneration() {
+        let app = launch()
+        let gallery = target("native-ios-unified-photo-gallery", in: app)
+        XCTAssertTrue(gallery.waitForExistence(timeout: 15),
+                      "Unified Gallery did not mount before foreground transition")
+        guard let before = gallery.value as? String,
+              UUID(uuidString: before) != nil else {
+            XCTFail("Native Gallery debug generation is missing")
+            return
+        }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertTrue(gallery.waitForExistence(timeout: 15))
+        XCTAssertEqual(gallery.value as? String, before,
+                       "Unchanged PhotoKit/Owner foreground return rebuilt the Gallery wall")
+        checkGallery(app)
+        assertNotSolidScreen(app, "Gallery after unchanged PhotoKit foreground return")
+    }
+
     func testGalleryBackgroundResumeKeepsNativeSourceAndPixels() {
         let app = launch()
         select("native-ios-tab-gallery", in: app)

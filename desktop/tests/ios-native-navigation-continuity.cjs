@@ -98,16 +98,26 @@ const scenarios = [
     ]
   },
   {
-    "name": "06 Gallery PhotoKit/scene changes invalidate cached pages",
+    "name": "06 Gallery unchanged return preserves wall, stale PhotoKit still invalidates",
     "checks": [
       {
         "file": "u",
-        "pattern": "!XDriveIOSNativePhotoFingerprintIndex\\.isCurrent\\(library\\) \\{ reset\\(\\) \\}",
+        "pattern": "let currentEpoch = epoch\\.map \\{\\s*XDriveIOSNativePhotoFingerprintIndex\\.isCurrent\\(\\$0\\)\\s*\\} \\?\\? false",
         "flags": ""
       },
       {
         "file": "u",
-        "pattern": "timeline\\.reset\\(\\)\\s*wall\\.reset\\(\\)",
+        "pattern": "if XDriveIOSUnifiedGalleryScenePolicy\\.requiresResetOnReturn\\([\\s\\S]*?\\) \\{\\s*reset\\(\\)",
+        "flags": ""
+      },
+      {
+        "file": "u",
+        "pattern": "private func resetWall\\(\\) \\{[^\\n]*wall\\.reset\\(\\) \\}",
+        "flags": ""
+      },
+      {
+        "file": "u",
+        "pattern": "private func reset\\(\\) \\{[\\s\\S]*?resetWall\\(\\)[\\s\\S]*?timeline\\.reset\\(\\)",
         "flags": ""
       }
     ]
