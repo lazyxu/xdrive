@@ -237,6 +237,43 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         assertVisiblePixels(app, route: "Originals after Files sections")
     }
 
+    func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-files-open-operations", app: app)
+        XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+            .waitForExistence(timeout: 15),
+            "The native Files operation-history sheet was not presented")
+        let done = target("native-ios-files-operation-history-done", app: app)
+        XCTAssertTrue(done.waitForExistence(timeout: 15),
+                      "Operation history has no close action after denial")
+        done.tap()
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Gallery after denied Files operation history")
+    }
+
+    func testFilesOperationHistoryBackgroundThenFilesGalleryReturn() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app: app)
+        tap("native-ios-files-open-operations", app: app)
+        XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+            .waitForExistence(timeout: 15))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        let done = target("native-ios-files-operation-history-done", app: app)
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        assertFiles(app)
+        assertVisiblePixels(app, route: "Files after operations foreground")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Gallery after operations foreground")
+    }
+
     func testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels() {
         let app = launch()
         for index in 0..<4 {
