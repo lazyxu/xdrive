@@ -12,7 +12,8 @@ import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaIte
 import { xDriveMountBaiduIsolatedFrame } from '../media-gallery-baidu-isolated-frame-host'
 import { xDriveMountBaiduInlineMap } from '../media-gallery-baidu-inline-map-host'
 import type { XDriveBaiduJSAPIPrototypeConfig } from '../models'
-import type { XDriveBaiduIsolatedBounds } from '../media-gallery-baidu-isolated-origin-protocol'
+import type { XDriveBaiduIsolatedBounds, XDriveBaiduIsolatedFailureReason } from '../media-gallery-baidu-isolated-origin-protocol'
+import { xDriveRecordBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
 import { xDriveValidBaiduNativeCellsPage } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cell-range'
@@ -750,7 +751,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         setPhase('ready')
         onReady(true)
       },
-      onMapFailure:failure,
+      onMapFailure:(reason?:XDriveBaiduIsolatedFailureReason) => {
+        // A Child may report only a fixed, validated stage. Its raw provider
+        // errors, request URLs, Owner data and one-use tickets never cross.
+        if (mode==='isolated' && scope && reason)
+          xDriveRecordBaiduMapDiagnostic(scope,reason)
+        failure()
+      },
       onProjectedCells:(positions:XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection>) => {
         if (!lifetime.signal.aborted) setProjected(positions)
       },
