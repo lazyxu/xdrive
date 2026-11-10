@@ -137,6 +137,39 @@ export function xDriveMediaGalleryTimelineLayout({
   }
 }
 
+/**
+ * Resolve a signed logical media index to its row without scanning every
+ * time group on every Viewer return, pinch or date jump. The authoritative
+ * timeline layout is ordered by contiguous startIndex; the result is only a
+ * visual pixel offset, never a photo or Owner authorization.
+ *
+ * O(log date groups), including for one-photo-per-day 100k collections.
+ */
+export function xDriveMediaGalleryTimelineOffsetForIndex(
+  layout: XDriveMediaGalleryTimelineLayout,
+  logicalIndex: number,
+): number | null {
+  if (!Number.isFinite(logicalIndex)) return null
+  const index = Math.max(0, Math.trunc(logicalIndex))
+  if (!Number.isSafeInteger(index)) return null
+
+  let lower = 0
+  let upper = layout.groups.length
+  while (lower < upper) {
+    const middle = Math.floor((lower + upper) / 2)
+    if (layout.groups[middle].startIndex <= index) lower = middle + 1
+    else upper = middle
+  }
+  const group = lower > 0 ? layout.groups[lower - 1] : undefined
+  if (!group || index < group.startIndex ||
+      index >= group.startIndex + group.itemCount) return null
+
+  const row = Math.floor(
+    (index - group.startIndex) / Math.max(1, layout.columns),
+  )
+  return group.itemsTop + row * layout.rowStep
+}
+
 export function xDriveMediaGalleryTimelineWindow({
   layout,
   visibleTop,
