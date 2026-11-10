@@ -186,10 +186,30 @@ class AuditTests(unittest.TestCase):
         self.assertIn('def report_missed(key, starts, taps):', watcher)
         self.assertIn('report_missed(key, missed_starts, missed_taps)', watcher)
         self.assertIn('"reason": "test_finished_before_capture"', watcher)
-        self.assertEqual(watcher.count('"capture_request_lag_seconds":'), 2)
+        self.assertEqual(watcher.count('"capture_request_lag_seconds":'), 4)
+        self.assertEqual(watcher.count('"reason": "capture_deadline_missed"'), 2)
+        self.assertEqual(watcher.count('if capture_started - due_at > MAX_CAPTURE_LAG_SECONDS'), 2)
+        self.assertIn('MAX_CAPTURE_LAG_SECONDS = 0.75', watcher)
         self.assertEqual(watcher.count('"capture_duration_seconds":'), 2)
         self.assertIn('capture_started = time.monotonic()', watcher)
         self.assertIn('capture_completed = time.monotonic()', watcher)
+
+    def test_expired_simulator_capture_is_missing_not_fake_after_tap_frame(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp)
+            (p / 'frame-trace.jsonl').write_text(json.dumps({
+                'test': 'recent-favorites',
+                'capture_mode': 'tap-adjacent',
+                'route': 'native-ios-files-section-recent',
+                'scheduled_after_tap_seconds': .15,
+                'capture_request_lag_seconds': 8.6645,
+                'reason': 'capture_deadline_missed',
+                'captured': False, 'file': None,
+            }) + '\n')
+            report = analyze(p)
+            self.assertEqual(report['counts']['capture_missing'], 1)
+            self.assertEqual(report['capture_request_lag']['over_150ms'], 1)
+            self.assertFalse(report['proves_zero_transient_flicker'])
 
     def test_rejects_corrupt_crc(self):
         with tempfile.TemporaryDirectory() as tmp:
