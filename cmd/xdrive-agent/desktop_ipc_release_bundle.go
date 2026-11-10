@@ -91,10 +91,10 @@ func (h *desktopIPCHandler) releaseBundleInstall(w http.ResponseWriter, r *http.
 		return
 	}
 	var input struct {
-		Commit   string `json:"commit"`
-		Filename string `json:"filename"`
-		Confirm  bool   `json:"confirm"`
-		PersonalUnsigned bool `json:"personal_unsigned"`
+		Commit           string `json:"commit"`
+		Filename         string `json:"filename"`
+		Confirm          bool   `json:"confirm"`
+		PersonalUnsigned bool   `json:"personal_unsigned"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
