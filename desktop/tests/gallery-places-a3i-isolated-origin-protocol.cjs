@@ -265,3 +265,31 @@ test('isolated gesture projection is bounded visual-only data, never private aut
   assert.equal(xDriveParseBaiduIsolatedChildEvent({
     ...msg,origin:'https://attacker.example'},boundary()),null)
 })
+
+test('isolated SDK failure diagnostics accept only finite stage and exact Child identity',()=>{
+  for(const reason of [
+    'session_unavailable','sdk_script_failed','sdk_script_timeout',
+    'sdk_namespace_missing','sdk_map_initialization_failed','sdk_load_failed',
+  ]){
+    const incoming=input('map-failed',{reason})
+    const parsed=xDriveParseBaiduIsolatedChildEvent(incoming,boundary())
+    assert.equal(parsed?.kind,'map-failed')
+    assert.equal(parsed.reason,reason)
+    assert.deepEqual(Object.keys(parsed).sort(),
+      ['generation','kind','nonce','reason','version'])
+  }
+  const legacy=xDriveParseBaiduIsolatedChildEvent(input('map-failed'),boundary())
+  assert.equal(legacy?.kind,'map-failed','earlier Child packets remain fail-closed')
+  assert.equal(legacy?.reason,undefined)
+  for(const reason of ['PRIVATE_AK_URL','sdk_token','session_unavailable;token=x','',
+    '../../api',42,null,{}]){
+    assert.equal(xDriveParseBaiduIsolatedChildEvent(
+      input('map-failed',{reason}),boundary()),null)
+  }
+  assert.equal(xDriveParseBaiduIsolatedChildEvent(
+    input('map-failed',{reason:'sdk_script_failed',ticket:'private'}),
+    boundary()),null,'no private fields can follow a failure packet')
+  assert.equal(xDriveParseBaiduIsolatedChildEvent({
+    ...input('map-failed',{reason:'sdk_script_failed'}),
+    origin:'https://attacker.example.org'},boundary()),null)
+})
