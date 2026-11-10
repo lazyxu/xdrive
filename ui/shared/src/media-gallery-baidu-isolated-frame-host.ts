@@ -7,6 +7,7 @@ import {
   xDriveValidBaiduIsolatedBoundary,
 } from './media-gallery-baidu-isolated-origin-protocol'
 import type {
+  XDriveBaiduIsolatedFailureReason,
   XDriveBaiduIsolatedCamera,
   XDriveBaiduIsolatedBounds,
   XDriveBaiduIsolationBoundary,
@@ -44,7 +45,7 @@ export interface XDriveBaiduIsolatedFrameOptions<T> {
   onViewport?: (bounds: XDriveBaiduIsolatedBounds) => void
   onReady?: () => void
   onMapReady?: () => void
-  onMapFailure?: () => void
+  onMapFailure?: (reason?: XDriveBaiduIsolatedFailureReason) => void
   /** Gallery-only callback: anonymous keys are rebound to fresh authorized
    * Owner selections, without giving the Child thumbnails or Node IDs. */
   onProjectedCells?: (projected: XDriveTrustedProjectedMapCells<T>) => void
@@ -244,7 +245,7 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     } else if (event.kind === 'map-failed') {
       clearPendingViewport()
       mapReady = false
-      if (ready) options.onMapFailure?.()
+      if (ready) options.onMapFailure?.(event.reason)
     } else if (event.kind === 'cell-projections') {
       if (!ready || !mapReady || !published) return
       // Exact current Owner selection: no stale, forged or cross-Owner key.
