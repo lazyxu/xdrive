@@ -1,30 +1,44 @@
 #!/usr/bin/env bash
+# Promote only verified immutable images, never downgrade a mutable edge/latest.
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 source scripts/ci/gitlab-release-version.sh
+source scripts/ci/gitlab-registry-utils.sh
 
-# GitLab never re-runs the GitHub test suite. Before a stable v* tag
-# changes any mutable registry tag, require the exact GitHub tag's
-# completed full CI Final Gate and OCR smoke. Fail closed if unavailable.
 if [[ -n "${CI_COMMIT_TAG:-}" ]]; then
   go run scripts/ci/verify-github-stable-final-gate.go
 fi
+xdrive_registry_login
 
-: "${CI_REGISTRY:?GitLab Container Registry must be enabled}"
-: "${CI_REGISTRY_IMAGE:?CI_REGISTRY_IMAGE is required}"
-: "${CI_REGISTRY_USER:?CI_REGISTRY_USER is required}"
-: "${CI_REGISTRY_PASSWORD:?CI_REGISTRY_PASSWORD is required}"
+if [[ $# == 0 ]]; then
+  images=(xdrive-server xdrive-caddy)
+else
+  images=("$@")
+fi
 
-printf '%s' "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
-
-for name in xdrive-server xdrive-caddy xdrive-photo-face xdrive-media-worker; do
-  source_image="$CI_REGISTRY_IMAGE/$name:$XDRIVE_IMAGE_TAG"
-  target_image="$CI_REGISTRY_IMAGE/$name:$XDRIVE_PROMOTION_TAG"
-  docker pull "$source_image"
-  docker tag "$source_image" "$target_image"
-  docker push "$target_image"
+# Preflight ALL inputs and existing mutable tags before changing ANY tag.
+# The resource_group in GitLab serializes promotion for each image group.
+XDRIVE_VERIFIED_SERVER_EDGE=0
+for name in "${images[@]}"; do
+  case "$name" in
+    xdrive-server|xdrive-caddy|xdrive-photo-face|xdrive-media-worker) ;;
+    *) echo "unsupported image name: $name" >&2; exit 2 ;;
+  esac
+  source_ref="$CI_REGISTRY_IMAGE/$name:$XDRIVE_IMAGE_TAG"
+  docker pull "$source_ref"
+  xdrive_assert_image_identity "$source_ref" "$XDRIVE_RELEASE_VERSION" "$CI_COMMIT_SHA"
+  target="$CI_REGISTRY_IMAGE/$name:$XDRIVE_PROMOTION_TAG"
+  xdrive_assert_promotion_ancestry "$name" "$CI_COMMIT_SHA" "$target"
 done
 
-echo "Promoted GitLab server images: $XDRIVE_IMAGE_TAG -> $XDRIVE_PROMOTION_TAG"
+for name in "${images[@]}"; do
+  source_ref="$CI_REGISTRY_IMAGE/$name:$XDRIVE_IMAGE_TAG"
+  target="$CI_REGISTRY_IMAGE/$name:$XDRIVE_PROMOTION_TAG"
+  docker tag "$source_ref" "$target"
+  docker push "$target"
+  # Fail closed if the Registry did not retain the exact image we published.
+  docker pull "$target"
+  xdrive_assert_image_identity "$target" "$XDRIVE_RELEASE_VERSION" "$CI_COMMIT_SHA"
+done
+echo "[xDrive] promoted ${images[*]} from $XDRIVE_IMAGE_TAG to $XDRIVE_PROMOTION_TAG ($CI_COMMIT_SHA)"

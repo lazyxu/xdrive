@@ -1,6 +1,6 @@
 # Unified Push/Pull — post-merge platform audit
 
-**Snapshot:** 2026-11-08; master merge [#4082](https://github.com/lazyxu/xdrive/pull/4082), commit **1761b8fc3c2669c82bf6fa8c36e8a38749d4def9**.
+**Snapshot:** 2026-11-09; [#4082](https://github.com/lazyxu/xdrive/pull/4082) merged as **1761b8fc3c2669c82bf6fa8c36e8a38749d4def9**; [#4093](https://github.com/lazyxu/xdrive/pull/4093) merged as **e38ff7ed9aaf32b01e034a5a4e344f65d584320d**.
 **Authority:** [push-pull-source-management.md](./push-pull-source-management.md) and AGENTS.md.
 **Scope:** new Source provisioning, platform-managed Push/Pull authority, Source life cycle, common transfer and history. This audit replaces the 2026-11-05 pre-integration status. Historical decisions remain in Git history.
 
@@ -23,18 +23,20 @@ All new device Push targets use **同步文件夹/Push/<SourceName>**. All newly
 
 The Server remains the only durable cloud writer: **UploadSession → chunks → finalize → CAS/Node receipt**. Source data, versions, credentials and original Node/CAS are retained on archive. The old target directory, SourceID, Node, CAS, Share and receipts remain in place; **no historical directory migration or silent adoption** is in scope.
 
-## 2. Confirmed executable follow-up gaps
+## 2. Accepted #4093 closure and remaining actionable safety work
 
-| Priority | Gap / action | Acceptance evidence to add |
-| --- | --- | --- |
-| P0 | Shared Source Manager incorrectly describes local-folder Push as having no executor. Explain that the owning Agent performs execution and that Server/foreign devices cannot remotely start local filesystem scans. | Shared TS view and details dialog assertions, no remote Run-Now regression |
-| P0 | The Server exposes the verified canonical Push Source.DeviceID, but the shared TypeScript Source DTO and details do not display that binding. Show the verified DeviceID only for Push, with no secret token or legacy identity fallback. | Source DTO display tests for valid, missing, and Pull-only device claims; server SourceDeviceID contract remains authoritative |
-| P1 | Native iOS/Android backup screens and shared Source Manager represent the same Source/Target/Run yet have different status/configuration affordances. Audit bounded-batch counts, partial/error/unknown-ACK displays, Owner switch, background cancellation, and foreign-device read-only behavior; extend **specific missing** executable contracts, not a parallel backup engine. | Swift/SQLite, Android/JVM/instrumentation, Go/PostgreSQL and shared adapter regressions where coverage is absent |
-| P1 | Source lifecycle across Web/PWA, Desktop and DSM Host adapters still requires a feature-by-feature capability audit: create, configure, resume, pause, archive, restore, history and errors must never advertise an unavailable native action. | One shared capability/negative-action contract per concrete Host; no fake permission state |
-| P1 | The canonical Source progress vocabulary is not a whole-device-backup completion guarantee. Keep each iOS/Android SourceRun as a bounded batch and reject inferred full-library success from scanned, confirmed or old local receipts. | Native SourceRun state and UI tests for partial/unknown/archived cases |
-| P2 | Cloud-only Source cleanup implemented as **separate preview → exact Source-name confirmation → reversible Trash**, independent of Source archive/remove. Only an archived, managed, quiescent, unshared Source target is eligible. The Web Source Manager exposes this only when the authenticated Host has the cleanup port; native and other Hosts cannot invent a cleanup action. | #4093 exact-head PostgreSQL preview/confirm/rollback/forbidden-writer tests, shared Web capability/UI tests; do not claim CI passed until checks finish |
+[#4093](https://github.com/lazyxu/xdrive/pull/4093) is **merged**, not a queued candidate. Its exact HEAD `e5b8401e20b6b53abf5e75d2a8b8bd5646a9f6c3` completed the applicable GitHub CI successfully before the accepted merge. Do not reopen its nine already delivered P0/P1/P2 workstreams:
 
-The P0 display gaps, native state/permission UI, Source history regressions and conditional cleanup flow are part of the same post-merge #4093 candidate. This audit describes proposed code in #4093, **not master-accepted CI**, until that PR's exact HEAD checks pass. The remaining work must be checked against accepted master and open PRs before changing code; tests already present in #4082 are not unfinished features.
+- iOS and Android bounded Source/Target/SourceRun/receipt consistency tests, including native-source generic-operation denials;
+- Web/Desktop/DSM Source Manager capability checks, verified DeviceID, accurate local Agent guidance and partial/failed/cancelled histories;
+- Source archive/restore versus unsettled uploads and Files jobs, Yike Pull failure isolation and Source state regressions;
+- archived Yike Pull-only cloud cleanup via a separately confirmed preview, reversible Trash and preserved Source/Node/CAS history.
+
+### Accepted #4136 cross-Owner cloud-cleanup protection
+
+[#4136](https://github.com/lazyxu/xdrive/pull/4136) **merged** on 2026-11-09 after its exact-head GitHub CI and Final Gate. The archived, Server-managed **Yike Pull-only** preview/Trash endpoint now rejects anomalous foreign-Owner live descendants, competing Source target claims and active Shares regardless of Owner, including previously issued stale previews. PostgreSQL negative regressions cover direct/nested cross-Owner descendants, foreign Source/Share references and ineligible Push or dormant Synology Pull kinds. Do not reopen these merged changes as a migration backlog.
+
+For the canonical-only Source closeout, the consolidated candidate removes legacy target relocation/splitting/migration-preview and unsafe arbitrary-target Source creation or rebinding, while preserving explicit native/device grants, shared UploadSession/CAS receipts, SourceRun history and supported managed target namespaces. This candidate requires **its own exact-head CI and Final Gate** before master merge; historical CI results of the superseded PRs do not validate the consolidated tree.
 
 ## 3. Source/security regressions to maintain for subsequent changes
 
@@ -46,12 +48,13 @@ These are acceptance invariants, **not** an instruction to rewrite the completed
 4. One Source's retry, backoff or cancellation must not mutate another Source/Target; Yike Pull remains independently scheduled, and dormant Synology Pull must still reject new execution.
 5. Source delete/archive/restore must preserve historical SourceItems, SyncRuns, Node/FileVersion/CAS; no Source-side delete propagates into cloud data under backup semantics.
 6. Newly created targets must be Server-provisioned, exclusive and revision-checked; rename must preserve the same TargetNodeID, Share identity and existing versions.
+7. Cloud-only cleanup remains archived Yike Pull-only, must reject cross-Owner Nodes, Source claims and Shares, and must preserve all live Nodes when any proof is ambiguous.
 
 Relevant already-integrated automated coverage includes source_managed_flat_contract_integration_test.go, managed_upload_authority_bridge_integration_test.go, android_photo_managed_uploads_integration_test.go, ios_photo_managed_uploads_integration_test.go, local_source_archive_integration_test.go and synology_pull_disabled_integration_test.go. Re-run affected tests only for actual changed inputs and never replace them with regex-only authorization checks.
 
 ## 4. Explicitly excluded or suspended — not backlog items
 
-- **No historical target migration**. Old Yike/mixed-root/nested 1A–5B migrations are tracked separately under historical Issue #3774, not this new-source MVP. Cloud cleanup is NOT a migration, does not delete provider data, and never rebinds Source/Node IDs.
+- **No historical target migration**. Per the 2026-11-09 no-production-data decision, the old Yike reparenting/splitters, read-only migration-preview API and uid_* target adoption have been removed; no new migration work is tracked. Cloud cleanup remains a separate confirmed reversible Trash action, not migration.
 - **No standalone DSM Synology Photos Push**; do not restore xdrive-source-agent, its upload routes or a parallel CAS writer.
 - **No re-enabling Synology Photos/Files Pull** until a separate Owner decision. Keep existing data/history readable and execution disabled.
 - **No remote device backup trigger from Web/Desktop/DSM** for PhotoKit/MediaStore or an unowned local Root.

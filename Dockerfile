@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian12:nonroot
 FROM golang:1.25-bookworm AS build
 ARG VERSION=dev

@@ -222,6 +222,8 @@ declare global {
   type AgentOfflineImportFinalize = { name: string; state: 'ready'; upload_sha256: string }
   type AgentOfflineHostPlanStatus = import('../../../ui/shared/src/offline-update').XDriveOfflineHostPlanStatus
 
+  type AgentReleaseBundleState = import('../../../ui/shared/src/release-bundles').XDriveReleaseBundleState
+
   type AgentServerUpdateState = {
     supported: boolean
     state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
@@ -255,6 +257,7 @@ declare global {
     update_available: boolean
     downloaded: boolean
     install_supported: boolean
+  manual_install_supported?: boolean
     last_checked_at?: string
     message?: string
     last_error?: string
@@ -322,6 +325,9 @@ declare global {
     state?: 'completed' | 'partial' | 'failed' | 'cancelled'
     error?: string
     skipped?: boolean
+    upload_transferred_bytes?: number
+    upload_cas_reused_bytes?: number
+    upload_resume_reused_bytes?: number
     children?: Array<{
       file_name: string
       path?: string
@@ -425,9 +431,17 @@ declare global {
     check_nonce: string; check_ciphertext: string; aad_scope: string }
   type AgentClipboardCheck = { nonce: string; ciphertext: string; scope: string }
   type AgentClipboardWrite = {
-    client_event_id: string; kind: 'text/plain' | 'text/uri-list'; nonce: string; ciphertext: string
+    client_event_id: string
+    kind: 'text/plain' | 'text/uri-list' | 'image/x-xdrive-node-ref' | 'application/x-xdrive-node-ref'
+    nonce: string; ciphertext: string
+    target_device_id?: string; ephemeral_key?: string; wrapped_key?: string; node_id?: number
   }
   type AgentClipboardItem = AgentClipboardWrite & { id: number; created_at: string; expires_at: string }
+  type AgentClipboardDevices = { devices: {
+    device_id: string; name: string; platform: string; public_key: string
+  }[] }
+  type AgentClipboardDevice = AgentClipboardDevices['devices'][number]
+  type AgentClipboardCleartext = { text: string }
   type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
   type AgentNotesSource = 'mine' | 'ios_notes'
   type AgentNotesNamespace = {
@@ -478,6 +492,8 @@ declare global {
     node: AgentCloudNode
     skipped: boolean
     transferred_bytes: number
+    cas_reused_bytes?: number
+    resume_reused_bytes?: number
   }
   type AgentCloudUploadBatchResult = {
     canceled: boolean
@@ -1154,6 +1170,10 @@ declare global {
         cloudQuota: (requestID?: string) => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
+        getReleaseBundle: () => Promise<DesktopResult<AgentReleaseBundleState>>
+        retryReleaseBundle: () => Promise<DesktopResult<{ state: 'queued' }>>
+        saveReleaseBundle: (commit: string, filename: string) => Promise<DesktopResult<{ saved: boolean }>>
+        installReleaseBundle: (commit: string, filename: string, confirmed: boolean) => Promise<DesktopResult<AgentUpdateState>>
         offlineImport: <T>(action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',
           input?: Record<string, unknown>) => Promise<DesktopResult<T>>
         offlineImportChunk: (id: string, name: string, index: number, data: ArrayBuffer, sha256: string) =>
@@ -1176,6 +1196,10 @@ declare global {
         cloudClipboardVault: () => Promise<DesktopResult<AgentClipboardVault>>
         cloudClipboardCheck: (value: AgentClipboardCheck) => Promise<DesktopResult<AgentClipboardVault>>
         cloudClipboardList: (before: number) => Promise<DesktopResult<AgentClipboardPage>>
+        cloudClipboardDevices: () => Promise<DesktopResult<AgentClipboardDevices>>
+        cloudClipboardEnableDevice: () => Promise<DesktopResult<AgentClipboardDevice>>
+        cloudClipboardDecrypt: (id: number) => Promise<DesktopResult<AgentClipboardCleartext>>
+        cloudClipboardRevokeDevice: (deviceID: string) => Promise<DesktopResult<void>>
         cloudClipboardCreate: (value: AgentClipboardWrite) => Promise<DesktopResult<AgentClipboardItem>>
         cloudClipboardDelete: (id: number) => Promise<DesktopResult<void>>
         cloudClipboardClear: () => Promise<DesktopResult<void>>

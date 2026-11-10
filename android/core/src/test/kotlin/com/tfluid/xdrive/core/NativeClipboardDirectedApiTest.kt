@@ -83,4 +83,117 @@ class NativeClipboardDirectedApiTest {
             }
         }
     }
+
+    @Test fun revokedDeviceStopsDirectedSSEWithoutAStaleCallback() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(403).setBody(
+                "{\"error\":\"Clipboard device revoked\"}"
+            ))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                var delivered = 0
+                try {
+                    api.clipboardWatchForDevice("current-owner-bearer", device, 9) {
+                        delivered++
+                    }
+                    fail("revoked device SSE must be rejected before callback")
+                } catch (expected: ApiException) {
+                    assertEquals(403, expected.statusCode)
+                }
+                assertEquals(0, delivered)
+                val request = server.takeRequest()
+                assertEquals("/api/v1/clipboard/events?after=9", request.path)
+                assertEquals("Bearer current-owner-bearer", request.getHeader("Authorization"))
+                assertEquals(device.deviceId, request.getHeader("X-XDrive-Device-ID"))
+                assertEquals(device.deviceToken, request.getHeader("X-XDrive-Device-Token"))
+                assertNull(request.getHeader("Cookie"))
+            }
+        }
+    }
+
+    @Test fun ownerSwitchCannotReuseAnOldDeviceProofForDirectedReads() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(403).setBody(
+                "{\"error\":\"cross Owner device denied\"}"
+            ))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                try {
+                    api.clipboardListForDevice("second-owner-bearer", device)
+                    fail("cross-Owner device proof must not produce a readable inbox")
+                } catch (expected: ApiException) {
+                    assertEquals(403, expected.statusCode)
+                }
+                val request = server.takeRequest()
+                assertEquals("/api/v1/clipboard/items", request.path)
+                assertEquals("Bearer second-owner-bearer", request.getHeader("Authorization"))
+                assertEquals(device.deviceId, request.getHeader("X-XDrive-Device-ID"))
+                assertEquals(device.deviceToken, request.getHeader("X-XDrive-Device-Token"))
+            }
+        }
+    }
+
+
+    @Test fun ownerRecipientDirectoryIsPublicKeyOnlyAndHasNoInstallationCredential() = runBlocking {
+        MockWebServer().use { server ->
+            val key = XDriveClipboardTargetCrypto.newDeviceKey().publicKeyBase64
+            val id = device.deviceId
+            val wire = """{"devices":[{"device_id":"$id","name":"Verified phone","platform":"android","public_key":"$key"}]}"""
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(wire))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                val recipients = api.clipboardDevices("verified-owner-bearer")
+                assertEquals(1, recipients.size)
+                assertEquals(id, recipients[0].deviceID)
+                assertEquals(key, recipients[0].publicKey)
+                val sent = server.takeRequest()
+                assertEquals("GET", sent.method)
+                assertEquals("/api/v1/clipboard/devices", sent.path)
+                assertEquals("Bearer verified-owner-bearer", sent.getHeader("Authorization"))
+                assertNull(sent.getHeader("X-XDrive-Device-ID"))
+                assertNull(sent.getHeader("X-XDrive-Device-Token"))
+            }
+        }
+    }
+
+    @Test fun directedCreateBindsNumericNodeKindTargetAndUnknownAckReceipt() = runBlocking {
+        MockWebServer().use { server ->
+            val event = UUID.randomUUID().toString()
+            val target = device.deviceId
+            val wire = XDriveClipboardTargetCrypto.Wire(
+                event, target, "application/x-xdrive-node-ref",
+                Base64.getEncoder().encodeToString(ByteArray(12) { 1 }),
+                Base64.getEncoder().encodeToString(ByteArray(32) { 2 }),
+                Base64.getEncoder().encodeToString(ByteArray(32) { 3 }),
+                Base64.getEncoder().encodeToString(ByteArray(60) { 4 }), 118L,
+            )
+            val kind = wire.kind
+            val nonce = wire.nonce
+            val ciphertext = wire.ciphertext
+            val ephemeral = wire.ephemeralKey
+            val wrapped = wire.wrappedKey
+            val response = """{"id":9,"client_event_id":"$event","kind":"$kind","nonce":"$nonce","ciphertext":"$ciphertext","target_device_id":"$target","ephemeral_key":"$ephemeral","wrapped_key":"$wrapped","node_id":118,"created_at":"2026-11-07T00:00:00Z","expires_at":"2026-11-08T00:00:00Z"}"""
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(response))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                assertEquals(118L, api.clipboardCreateDirected("verified-owner-bearer", wire).nodeID)
+                val sent = server.takeRequest()
+                assertEquals("POST", sent.method)
+                assertEquals("/api/v1/clipboard/items", sent.path)
+                assertEquals("Bearer verified-owner-bearer", sent.getHeader("Authorization"))
+                assertNull(sent.getHeader("X-XDrive-Device-Token"))
+                val json = sent.body.readUtf8()
+                assertTrue(json.contains("\"node_id\":118"))
+                assertFalse(json.contains("\"node_id\":\"118\""))
+                assertTrue(json.contains(target))
+                assertTrue(json.contains(wrapped))
+            }
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                .setBody(response.replace("\"node_id\":118", "\"node_id\":119")))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                try {
+                    api.clipboardCreateDirected("verified-owner-bearer", wire)
+                    fail("Mismatched CAS Node receipt must never be accepted as confirmed send")
+                } catch (_: Exception) { }
+                assertEquals(2, server.requestCount)
+            }
+        }
+    }
+
 }

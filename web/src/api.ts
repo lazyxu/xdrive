@@ -137,6 +137,8 @@ import type {
   XDriveUploadConflictPreflight,
 } from '../../ui/shared/src'
 import { xDriveCloudFilesPositionMatchesRequest } from '../../ui/shared/src/cloud-files'
+import { xDriveReleaseBundleDownloadSources } from '../../ui/shared/src/release-bundles'
+import { XDriveStreamingSHA256 } from './releaseBundleSHA256'
 import { webTransferStore } from './transfers'
 import { xDriveAssertMediaReadActive, xDriveMediaResponseBlob } from './mediaBinaryProgress'
 import type { XDriveViewerQualityPreset } from '../../ui/shared/src/viewer-quality-policy'
@@ -232,6 +234,8 @@ export interface XDriveUploadResult {
   node: Node
   skipped: boolean
   transferred_bytes: number
+  cas_reused_bytes?: number
+  resume_reused_bytes?: number
 }
 
 export interface UploadSessionState {
@@ -248,6 +252,7 @@ export interface UploadSessionState {
   resume_key?: string
   expected_revision?: number
   status: 'active' | 'finalized' | 'skipped'
+  instant_cas_reused?: boolean
   expires_at: string
   received_chunks: UploadChunkState[]
   result?: Node
@@ -748,6 +753,9 @@ export class XDriveApi {
     state: 'completed' | 'partial' | 'failed' | 'cancelled'
     error?: string
     skipped?: boolean
+    transferredBytes?: number
+    casReusedBytes?: number
+    resumeReusedBytes?: number
   }) {
     webTransferStore.finishLifecycle(id, input)
     const owner = webUploadGroupOwners.get(id)
@@ -1637,6 +1645,48 @@ export class XDriveApi {
   adminServerUpdate() {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update')
   }
+  releaseBundleStatus() {
+    return this.request<import('../../ui/shared/src/release-bundles').XDriveReleaseBundleState>(
+      '/api/v1/release-bundles/current', { cache: 'no-store' },
+    )
+  }
+
+  adminRetryReleaseBundle() {
+    return this.request<{ state: string }>('/api/v1/admin/release-bundles/retry', {
+      method: 'POST', body: '{}', cache: 'no-store',
+    })
+  }
+
+  async downloadCachedReleaseBundleArtifact(filename: string) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(filename)) {
+      throw new Error('无效的安装包名称')
+    }
+    // File System Access requires the initial picker during the originating
+    // click gesture, before any authenticated network metadata awaits.
+    const sink = await xDriveOpenWebDownloadSink(filename)
+    if (sink.kind === 'cancelled') return
+    try {
+      const current = await this.releaseBundleStatus()
+      const path = `/api/v1/release-bundles/current/artifacts/${encodeURIComponent(filename)}`
+      const artifact = current.artifacts.find(item =>
+        item.filename === filename && item.cached &&
+        item.cache_status === 'verified' && item.build_commit === current.commit &&
+        xDriveReleaseBundleDownloadSources(item).includes(path),
+      )
+      if (!artifact || !Number.isSafeInteger(artifact.size) || artifact.size <= 0 ||
+          !/^[0-9a-f]{64}$/.test(artifact.sha256)) {
+        throw new Error('当前 Server Commit 没有该安装包的可信缓存元数据，已取消保存。')
+      }
+      await this.downloadAuthenticated(
+        path, filename, {}, true, sink, '', undefined, undefined,
+        artifact.size, undefined, artifact.sha256,
+      )
+    } catch (error) {
+      await xDriveAbortWebDownloadSink(sink, error)
+      throw error
+    }
+  }
+
 
   adminOfflineImportList() {
     return this.request<{ items: import('../../ui/shared/src/offline-update').XDriveOfflineImportSummary[] }>(
@@ -3796,6 +3846,7 @@ export class XDriveApi {
     transferID = '',
     groupID = '',
     expectedResumeManifestSHA256 = '',
+    externalSignal?: AbortSignal,
   ): Promise<XDriveUploadResult> {
     const session = this.transferContext()
     const managedExternally = Boolean(transferID)
@@ -3820,7 +3871,17 @@ export class XDriveApi {
       onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
     }
 
+    // Clipboard imports must abort the *actual* CAS writer if this Owner
+    // session or mounted view is cancelled, not just drop its final receipt.
+    const abortFromCaller = () => {
+      if (!managedExternally) webTransferStore.cancel(activeTransferID)
+    }
     try {
+      if (externalSignal) {
+        if (managedExternally) throw new Error('Externally managed uploads cannot have another cancellation owner')
+        if (externalSignal.aborted) abortFromCaller()
+        else externalSignal.addEventListener('abort', abortFromCaller, { once: true })
+      }
       tracking.check()
       // The shared folder controller owns the child's terminal state, but
       // only this Web transport knows its trustworthy cloud destination and
@@ -3880,17 +3941,22 @@ export class XDriveApi {
       tracking.check()
       if (session.status === 'skipped' && session.result) {
         if (!managedExternally) webTransferStore.completeSkipped(activeTransferID, file.size)
-        return { node: session.result, skipped: true, transferred_bytes: 0 }
+        return { node: session.result, skipped: true, transferred_bytes: 0,
+          cas_reused_bytes: 0, resume_reused_bytes: 0 }
       }
       if (session.status === 'finalized' && session.result) {
         reportProgress(file.size)
-        if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size)
-        return { node: session.result, skipped: false, transferred_bytes: 0 }
+        const casReusedBytes = session.instant_cas_reused ? file.size : 0
+        if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size, 0, casReusedBytes, 0)
+        return { node: session.result, skipped: false, transferred_bytes: 0,
+          cas_reused_bytes: casReusedBytes, resume_reused_bytes: 0 }
       }
 
       const received = new Map(session.received_chunks.map((part) => [part.index, part]))
       let completed = 0
       let transferredBytes = 0
+      let casReusedBytes = 0
+      let resumeReusedBytes = 0
       let networkBytes = 0
 
       for (let index = 0; index < session.chunk_count; index += 1) {
@@ -3901,6 +3967,8 @@ export class XDriveApi {
         const hash = chunkHashes[index]
         const existing = received.get(index)
         if (existing && existing.size === expectedSize && existing.sha256 === hash) {
+          if (existing.reused) casReusedBytes += expectedSize
+          else resumeReusedBytes += expectedSize
           completed += expectedSize
           reportProgress(completed)
           continue
@@ -3933,11 +4001,16 @@ export class XDriveApi {
       tracking.check()
       if (!finalized.result) throw new ApiError(500, 'Finalize upload returned no file')
       reportProgress(file.size)
-      if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size)
+      if (!managedExternally) {
+        if (finalized.status === 'skipped') webTransferStore.completeSkipped(activeTransferID, file.size)
+        else webTransferStore.complete(activeTransferID, file.size, file.size, transferredBytes, casReusedBytes, resumeReusedBytes)
+      }
       return {
         node: finalized.result,
         skipped: finalized.status === 'skipped',
         transferred_bytes: transferredBytes,
+        cas_reused_bytes: casReusedBytes,
+        resume_reused_bytes: resumeReusedBytes,
       }
     } catch (error) {
       if (!managedExternally && !session.signal.aborted) {
@@ -3951,6 +4024,7 @@ export class XDriveApi {
       }
       throw error
     } finally {
+      externalSignal?.removeEventListener('abort', abortFromCaller)
       owned?.release()
     }
   }
@@ -5028,7 +5102,17 @@ export class XDriveApi {
     cloudNodeID?: number,
     expectedContentBytes?: number,
     onTransferCreated?: (transferID: string) => void,
+    expectedSHA256?: string,
   ) {
+    if (expectedSHA256 !== undefined && !/^[0-9a-f]{64}$/.test(expectedSHA256)) {
+      throw new Error('无效的当前 Commit 安装包 SHA-256，已拒绝下载。')
+    }
+    const digest = expectedSHA256 ? new XDriveStreamingSHA256() : null
+    const verifyDigest = () => {
+      if (digest && digest.digestHex() !== expectedSHA256) {
+        throw new Error('安装包 SHA-256 与当前 Server Commit 清单不一致，未保存。')
+      }
+    }
     const session = this.transferContext()
     const transferID = trackTransfer ? webTransferStore.create({
       fileName: filename,
@@ -5050,6 +5134,7 @@ export class XDriveApi {
       await tracking.api().ensureFresh(tracking.signal)
       const send = () => fetch(`${API_BASE}${path}`, {
         method: init.method,
+        ...(digest ? { redirect: 'error' as const, cache: 'no-store' as const } : {}),
         headers: {
           ...init.headers,
           ...(tracking.api().session.accessToken ? { Authorization: `Bearer ${tracking.api().session.accessToken}` } : {}),
@@ -5100,6 +5185,10 @@ export class XDriveApi {
             transferProgress?.progress(done)
           },
           exactExpectedBytes,
+          digest ? {
+            onChunk: (bytes) => digest.update(bytes),
+            verify: verifyDigest,
+          } : undefined,
         )
       } else {
         const contentType = response.headers.get('Content-Type') || 'application/octet-stream'
@@ -5112,6 +5201,10 @@ export class XDriveApi {
             if (done) break
             if (!value) continue
             completed += value.byteLength
+            if (exactExpectedBytes !== undefined && completed > exactExpectedBytes) {
+              throw new Error('安装包大小超过当前 Commit 清单，未保存。')
+            }
+            digest?.update(value)
             chunks.push(value as BlobPart)
             transferProgress?.progress(completed)
           }
@@ -5119,6 +5212,18 @@ export class XDriveApi {
         } else {
           blob = await response.blob()
           completed = blob.size
+          if (digest) {
+            const reader = blob.stream().getReader()
+            try {
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                if (value) digest.update(value)
+              }
+            } finally {
+              reader.releaseLock()
+            }
+          }
           transferProgress?.progress(completed)
         }
 
@@ -5126,6 +5231,7 @@ export class XDriveApi {
           throw new Error('下载内容长度不一致，已终止保存。')
         }
         tracking.check()
+        verifyDigest()
         const url = URL.createObjectURL(blob)
         try {
           const a = document.createElement('a')

@@ -57,8 +57,15 @@ import Foundation
         let classify = XDriveIOSNativeLANLoginRoute.pairingProbeFailure
         if case .ipCertificateInvalid = classify(URLError(.serverCertificateUntrusted)) {}
         else { preconditionFailure("IP TLS mismatch misclassified") }
-        if case .ipCertificateInvalid = classify(URLError(.secureConnectionFailed)) {}
-        else { preconditionFailure("IP TLS transport mismatch misclassified") }
+        if case .ipTLSHandshakeFailed(let code) = classify(URLError(.secureConnectionFailed)) {
+            precondition(code == URLError.secureConnectionFailed.rawValue)
+        } else { preconditionFailure("TLS handshake failure falsely blamed on IP SAN") }
+        precondition(XDriveIOSLANPairingFailure.ipTLSHandshakeFailed(-1200).message.contains(
+            "尚不能确定"), "a handshake failure must never claim an invalid root CA")
+        precondition(XDriveIOSLANPairingFailure.ipCertificateIdentityInvalid.message.contains(
+            "IP"), "confirmed IP identity failure must be actionable")
+        precondition(XDriveIOSLANPairingFailure.ipCertificateChainInvalid.message.contains(
+            "根 CA"), "confirmed pinned CA/chain failure must be actionable")
         if case .ipConnectionTimedOut = classify(URLError(.timedOut)) {}
         else { preconditionFailure("IP timeout wrongly blamed on CA") }
         if case .ipConnectionUnavailable(let code) = classify(URLError(.cannotConnectToHost)) {
@@ -75,7 +82,11 @@ import Foundation
         precondition(!XDriveIOSLANPairingFailure.ipVersionInvalid.message.contains(
             "域名提供的证书无法验证"), "unknown JSON must not blame a valid certificate")
         precondition(XDriveIOSLANPairingFailure.ipCertificateInvalid.message.contains(
-            "IP SAN"), "real TLS rejection must mention IP identity")
+            "指定 CA"), "generic certificate denial must describe the configured trust check")
+        precondition(!XDriveIOSLANPairingFailure.ipCertificateInvalid.message.contains(
+            "IP SAN"), "generic certificate denial must not invent a confirmed SAN mismatch")
+        precondition(XDriveIOSLANPairingFailure.ipCertificateIdentityInvalid.message.contains(
+            "SAN"), "confirmed IP identity rejection must mention SAN")
         precondition(XDriveIOSLANPairingFailure.ipVersionStatus(502).message.contains(
             "HTTP 502"), "HTTP diagnostic must carry bounded status only")
         let directIP = try ServerAddress.parse("https://192.168.2.4:8443")

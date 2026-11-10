@@ -109,7 +109,7 @@ if has_changed app; then
   cp deploy/docker-compose.yml "$prepared/app/assets/deploy/docker-compose.yml"
   for file in server-backup.sh server-backup-scheduled.sh server-restore.sh \
     server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh \
-    caddy-env-config.py caddy-admission.py xdrive-server-host.sh xdrive-share-update.py; do
+    caddy-env-config.py caddy-admission.py xdrive-server-host.sh xdrive-share-update.py release_bundle.py; do
     cp "scripts/$file" "$prepared/app/assets/scripts/$file"
   done
   bash -n "$prepared/app/assets/xdrive-server-install.sh"

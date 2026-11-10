@@ -493,6 +493,9 @@ class WebTransferStore {
       state: 'completed' | 'partial' | 'failed' | 'cancelled'
       error?: string
       skipped?: boolean
+      transferredBytes?: number
+      casReusedBytes?: number
+      resumeReusedBytes?: number
     },
   ) {
     const now = Date.now()
@@ -515,6 +518,14 @@ class WebTransferStore {
         retryable: input.state === 'failed'
           ? xDriveCanResumeBrowserUpload({ ...item, state: 'failed' }, now) : false,
         bytes_done: skipped ? 0 : finalDone,
+        upload_skipped: completed && skipped && item.direction === 'upload' && item.scope === 'item',
+        upload_transferred_bytes: completed && !skipped && item.direction === 'upload' && item.scope === 'item' &&
+          Number.isSafeInteger(input.transferredBytes) && input.transferredBytes! >= 0 &&
+          input.transferredBytes! <= item.bytes_total ? input.transferredBytes : undefined,
+        upload_cas_reused_bytes: completed && !skipped && item.direction === 'upload' && item.scope === 'item' &&
+          Number.isSafeInteger(input.casReusedBytes) ? input.casReusedBytes : undefined,
+        upload_resume_reused_bytes: completed && !skipped && item.direction === 'upload' && item.scope === 'item' &&
+          Number.isSafeInteger(input.resumeReusedBytes) ? input.resumeReusedBytes : undefined,
         percent: completed ? 100 : item.percent,
         items_completed: item.scope === 'item' && completed ? 1 : item.items_completed,
         items_failed: item.scope === 'item' && input.state === 'failed' ? 1 : item.items_failed,
@@ -554,7 +565,8 @@ class WebTransferStore {
     })
   }
 
-  complete(id: string, bytesDone?: number, bytesTotal?: number) {
+  complete(id: string, bytesDone?: number, bytesTotal?: number, uploadTransferredBytes?: number,
+    casReusedBytes?: number, resumeReusedBytes?: number) {
     const now = Date.now()
     this.patch(id, (item) => {
       const done = Math.max(0, bytesDone ?? item.bytes_done)
@@ -572,6 +584,13 @@ class WebTransferStore {
         items_queued: 0,
         bytes_done: finalDone,
         bytes_total: total,
+        upload_transferred_bytes: item.direction === 'upload' && Number.isSafeInteger(uploadTransferredBytes) &&
+          uploadTransferredBytes! >= 0 && uploadTransferredBytes! <= total ? uploadTransferredBytes : undefined,
+        upload_cas_reused_bytes: item.direction === 'upload' && Number.isSafeInteger(casReusedBytes)
+          ? casReusedBytes : undefined,
+        upload_resume_reused_bytes: item.direction === 'upload' && Number.isSafeInteger(resumeReusedBytes)
+          ? resumeReusedBytes : undefined,
+        upload_skipped: false,
         percent: total > 0 ? 100 : item.percent,
         instant_bytes_per_second: 0,
         average_bytes_per_second: item.speed_source ? item.average_bytes_per_second : Number.isFinite(average) ? average : 0,
@@ -597,6 +616,10 @@ class WebTransferStore {
         items_queued: 0,
         bytes_done: 0,
         bytes_total: total,
+        upload_skipped: item.direction === 'upload',
+        upload_transferred_bytes: undefined,
+        upload_cas_reused_bytes: undefined,
+        upload_resume_reused_bytes: undefined,
         percent: 100,
         instant_bytes_per_second: 0,
         average_bytes_per_second: 0,

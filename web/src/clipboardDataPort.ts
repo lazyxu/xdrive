@@ -6,6 +6,54 @@ import type { XDriveApi } from './api'
  * No native Device, Agent/Root, Share bearer or background privilege is implied.
  */
 export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: string): XDriveClipboardDataPort {
+  const requireActive = (signal: AbortSignal) => {
+    if (signal.aborted) throw new DOMException('Clipboard 导入已取消', 'AbortError')
+  }
+  const uploadThroughFiles = async (file: File, signal: AbortSignal) => {
+    requireActive(signal)
+    if (!file.name.trim() || !Number.isFinite(file.size) || file.size <= 0 ||
+        file.size > 64 * 1024 * 1024) {
+      throw new Error('仅支持非空且不超过 64 MiB 的本机文件。')
+    }
+    // Only the existing Owner-verified Files writer performs UploadSession/
+    // CAS chunking and finalization. Clipboard cannot mint a blob grant.
+    const root = await api.root(signal)
+    requireActive(signal)
+    if (!Number.isSafeInteger(root.id) || root.id <= 0 || root.type !== 'dir')
+      throw new Error('当前 Owner 的文件根目录不可用。')
+    const result = await api.uploadWithConflictPolicy(
+      root.id, file, 'fail', undefined, '', '', '', signal,
+    )
+    requireActive(signal)
+    if (result.skipped || result.node.type !== 'file' ||
+        result.node.parent_id !== root.id || !Number.isSafeInteger(result.node.id) ||
+        result.node.id <= 0 || result.node.revision <= 0) {
+      throw new Error('文件已上传但未收到可用于 Clipboard 的有效节点收据，请到文件页面核对。')
+    }
+    return { node_id: result.node.id }
+  }
+
+  const importImageFromClipboard = async (signal: AbortSignal) => {
+    requireActive(signal)
+    if (!window.isSecureContext || typeof navigator.clipboard?.read !== 'function')
+      throw new Error('此浏览器不支持用户授权读取本机剪贴板图片。')
+    // Begin the permission-gated read synchronously inside the user's click,
+    // BEFORE any Owner/API request can consume the browser gesture.
+    const reading = navigator.clipboard.read()
+    const items = await reading
+    requireActive(signal)
+    const png = items.find(item => item.types.includes('image/png'))
+    if (!png) throw new Error('本机剪贴板没有可读取的 PNG 图片。')
+    const blob = await png.getType('image/png')
+    requireActive(signal)
+    if (blob.size <= 0 || blob.size > 64 * 1024 * 1024)
+      throw new Error('剪贴板图片必须在 1 字节至 64 MiB 之间。')
+    const file = new File([blob], 'Clipboard-' + crypto.randomUUID() + '.png', {
+      type: 'image/png', lastModified: Date.now(),
+    })
+    return uploadThroughFiles(file, signal)
+  }
+
   return {
     ownerScopeKey,
     vault: signal => api.clipboardVault(signal),
@@ -16,6 +64,8 @@ export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: stri
     clear: signal => api.clipboardClear(signal),
     listDevices: signal => api.clipboardDevices(signal),
     revokeDevice: (id, signal) => api.clipboardRevokeDevice(id, signal),
+    uploadLocalFile: (file, signal) => uploadThroughFiles(file, signal),
+    importImageFromClipboard,
     browseFiles: {
       root: async signal => {
         const root = await api.root(signal)

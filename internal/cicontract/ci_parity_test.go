@@ -38,7 +38,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	githubJobs := nestedMapKeys(t, github, "jobs")
 	gitlabJobs := gitlabJobKeys(gitlab)
 	requiredGitLabJobs := []string{
-		"build-client-core", "build-synology-ui",
+		"build-client-core",
 		"caddy-image", "desktop-linux", "desktop-windows",
 		"media-worker-image", "package-linux-client", "package-windows-client",
 		"photo-face-image", "server-image", "web",
@@ -81,9 +81,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"release/core/",
 		"release/xdrive-linux-amd64.deb",
 		"release/xDriveSetup-amd64.exe",
-		"build-synology-ui:",
-		"npm run build:synology --prefix web",
-		"node web/scripts/verify-synology-ui.mjs",
+		"npm run build:synology",
+		"node scripts/verify-synology-ui.mjs",
 	)
 	for _, forbidden := range []string{
 		"merge_request_event", "single-commit:", "desktop-tests:",
@@ -98,7 +97,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 			t.Errorf("GitLab release-only pipeline still contains test input %q", forbidden)
 		}
 	}
-	assertGitLabJobNeeds(t, gitlab, "build-client-core", []string{"build-synology-ui"})
+	assertGitLabJobNeeds(t, gitlab, "build-client-core", []string{"web"})
 	assertGitLabJobNeeds(t, gitlab, "package-linux-client", []string{"desktop-linux", "build-client-core"})
 	assertGitLabJobNeeds(t, gitlab, "package-windows-client", []string{"desktop-windows", "build-client-core"})
 	assertGitLabJobNeeds(t, gitlab, "caddy-image", []string{"web"})
@@ -113,7 +112,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobImages(t, gitlab, map[string]string{
 		"desktop-linux": "$XDRIVE_CI_NODE_IMAGE", "desktop-windows": "",
 		"build-client-core":      "$XDRIVE_CI_GO_IMAGE",
-		"build-synology-ui":      "$XDRIVE_CI_NODE_IMAGE",
 		"package-linux-client":   "$XDRIVE_CI_GO_IMAGE",
 		"package-windows-client": "",
 		"server-image":           "$XDRIVE_CI_GO_IMAGE",
@@ -128,7 +126,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	assertGitLabCache(t, gitlab, "photo-face-image",
 		"xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/ci-tools/", ".cache/photo-face-runtime/", ".cache/photo-face-models/"},
+		[]string{".cache/ci-tools/", ".cache/photo-face-models/"},
 	)
 	photoFaceJob, ok := gitlab["photo-face-image"].(map[string]any)
 	if !ok {
@@ -138,7 +136,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		t.Errorf("GitLab Photo Face job timeout=%v, want 2h", got)
 	}
 	requireRaw(t, "GitLab model prefetch soft timeout", gitlabRaw,
-		"timeout --signal=TERM --kill-after=30s 105m env XDRIVE_GITLAB_PACKAGE_ONLY=1 bash scripts/ci/test-photo-face-image.sh dist/photo-face-image",
+		"timeout --signal=TERM --kill-after=30s 105m env XDRIVE_GITLAB_PACKAGE_ONLY=1 XDRIVE_GITLAB_STAGING_ONLY=1 bash scripts/ci/test-photo-face-image.sh dist/photo-face-image",
 	)
 	requireRaw(t, "GitHub DSM source-exact build in client-core", githubRaw,
 		"name: Build source-exact DSM shared-MUI bundle",
@@ -146,9 +144,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"node web/scripts/verify-synology-ui.mjs",
 	)
 	requireRaw(t, "GitLab DSM source-exact artifact build", gitlabRaw,
-		"build-synology-ui:", "npm run build:synology --prefix web",
-		"node web/scripts/verify-synology-ui.mjs",
-		"web/dist-synology/", "- job: build-synology-ui",
+		"web:", "npm run build:synology",
+		"node scripts/verify-synology-ui.mjs",
+		"web/dist-synology/", "- job: web",
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
@@ -436,7 +434,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitHubJobNeeds(t, github, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitHubJobNeeds(t, github, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
 	// Master Snapshot is build/artifact-gated; stable tags still require Final Gate.
-	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-client-core", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
+	assertGitHubJobNeeds(t, github, "publish-master", []string{"server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate", "photo-ocr-master-smoke"})
 	requireRaw(t, "GitHub split critical test contract", githubRaw,
 		"go-linux-api:",
@@ -943,15 +941,13 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	)
 	requireRaw(t, "GitHub Publish Packages", githubRelease,
 		"workflow_call:",
-		"name: xdrive-linux-amd64",
-		"name: xdrive-windows-amd64",
+		"bash scripts/ci/download-optional-client-artifacts.sh release",
 		"gh release create snapshot release/* --repo \"$repo\" --prerelease",
 		"target_tag=\"edge\"",
 		"target_tag=\"latest\"",
 		"retention-days: 14",
 		"s|@IMAGE_REGISTRY@|ghcr.io/$GITHUB_REPOSITORY_OWNER|g",
-		"Download exact Linux installer produced by CI",
-		"Download exact Windows installer produced by CI",
+		"Collect successfully built exact-run client installers",
 		"Verify single-installer distribution contract",
 		"pattern: xdrive-*-image",
 		"load_exact xdrive-server-image xdrive/server:test",
@@ -1015,14 +1011,26 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	}
 	// Both providers must consume the original xd/Agent core before advertising an SPK.
 	// Do not relax either publisher to a post-build or best-effort dependency.
-	assertGitLabJobNeeds(t, gitlabReleaseYAML, "publish-release", []string{"build-client-core", "package-linux-client", "package-windows-client", "release-assets", "promote-server-images"})
+	assertGitLabJobNeeds(t, gitlabReleaseYAML, "publish-release", []string{"build-client-core", "package-linux-client", "package-windows-client", "release-assets", "promote-server-images", "publish-server-images"})
 	assertGitLabJobTextContains(t, gitlabReleaseYAML, "publish-release",
 		"sh scripts/ci/install-gitlab-release-tools.sh",
 	)
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, nil)
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, nil)
-	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"server-image", "caddy-image", "photo-face-image", "media-worker-image"})
-	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"server-image", "caddy-image", "photo-face-image", "media-worker-image"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"server-image", "caddy-image"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"server-image", "caddy-image"})
+
+	// The rolling core Snapshot has no optional-service hard dependency,
+	// while stable v* publishing retains both optional image gates.
+	assertGitLabJobNeeds(t, gitlabReleaseYAML, "publish-photo-face-image", []string{"photo-face-image"})
+	assertGitLabJobNeeds(t, gitlabReleaseYAML, "publish-media-worker-image", []string{"media-worker-image"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-release", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{
+		"build-client-core", "package-linux-client", "package-windows-client",
+		"release-assets", "publish-server-images", "promote-server-images",
+		"publish-photo-face-image", "publish-media-worker-image",
+	})
+	requireRaw(t, "GitLab source-only release assets bypass optional stage",
+		gitlabRelease, "needs: []  # Source-only: do not wait for Photo Face / Media Worker builds.")
 
 	requireRaw(t, "GitLab release pipeline", gitlabRelease,
 		`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`,
@@ -1061,10 +1069,10 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"--use-package-registry",
 		"--package-name xdrive-build-packages",
 		"s|@IMAGE_REGISTRY@|$CI_REGISTRY_IMAGE|g",
-		"scripts/ci/import-docker-image.sh",
-		"docker push \"$image\" &",
-		"pids=(",
-		"Published exact CI-produced GitLab server images",
+		"scripts/ci/gitlab-fetch-staged-image.sh",
+		"xdrive_registry_login",
+		"docker push \"$release_ref\"",
+		"two core images published",
 	)
 	if strings.Contains(gitlabPublishRelease, "repository/tags/") {
 		t.Error("GitLab 17.x CI job tokens must not attempt unsupported repository tag mutation during release publication")
@@ -1685,7 +1693,7 @@ func TestPhotoFaceModelCachePersistsFailedPrefetch(t *testing.T) {
 
 	assertGitLabCache(t, gitlab, "photo-face-image",
 		"xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/ci-tools/", ".cache/photo-face-runtime/", ".cache/photo-face-models/"},
+		[]string{".cache/ci-tools/", ".cache/photo-face-models/"},
 	)
 	gitlabJob := gitlab["photo-face-image"].(map[string]any)
 	gitlabCache := gitlabJob["cache"].(map[string]any)
@@ -1887,8 +1895,13 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	)
 	requireRaw(t, "GitLab Photo Face runtime cache", gitlabCI,
 		`key: "xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH"`,
-		`- .cache/photo-face-runtime/`,
+		`XDRIVE_PHOTO_FACE_RUNTIME_CACHE_ARCHIVE: "0"`,
 		`- .cache/photo-face-models/`,
+	)
+	requireRaw(t, "GitLab Photo Face runtime Registry contract", testScript,
+		`runtime_registry_tag="$CI_REGISTRY_IMAGE/xdrive-photo-face-runtime:contract-$runtime_contract_hash"`,
+		`xdrive_pull_or_absent "$runtime_registry_tag"`,
+		`runtime_image_valid`,
 	)
 	requireRaw(t, "GitLab Photo Face runtime cache regression harness", gitlabServerValidation,
 		"bash scripts/ci/test-photo-face-runtime-cache.sh",

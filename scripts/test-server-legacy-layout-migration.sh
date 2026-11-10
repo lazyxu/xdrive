@@ -83,6 +83,7 @@ BACKUP
   */scripts/server-doctor.sh) src="$TEST_ROOT/scripts/server-doctor.sh" ;;
   */scripts/server-migrate-user.sh) src="$TEST_ROOT/scripts/server-migrate-user.sh" ;;
   */scripts/server-control.sh) src="$TEST_ROOT/scripts/server-control.sh" ;;
+  */scripts/release_bundle.py) src="$TEST_ROOT/scripts/release_bundle.py" ;;
   */scripts/caddy-admission.py) src="$TEST_ROOT/scripts/caddy-admission.py" ;;
   */scripts/caddy-env-config.py) src="$TEST_ROOT/scripts/caddy-env-config.py" ;;
   */scripts/xdrive-server-host.sh) src="$TEST_ROOT/scripts/xdrive-server-host.sh" ;;

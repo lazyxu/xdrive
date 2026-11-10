@@ -12,7 +12,7 @@ import { ClipboardFileNodePicker, type ClipboardFileBrowsePort } from './Clipboa
 export type XDriveClipboardItem = {
   id: number
   client_event_id: string
-  kind: XDriveClipboardKind
+  kind: XDriveClipboardTargetWire['kind']
   nonce: string
   ciphertext: string
   created_at: string
@@ -58,7 +58,17 @@ export type XDriveClipboardDataPort = {
   /** Owner session only; public X25519 keys, no source/backup grants. */
   listDevices?(signal?: AbortSignal): Promise<{ devices: XDriveClipboardTargetDevice[] }>
   revokeDevice?(deviceID: string, signal?: AbortSignal): Promise<void>
+  /** Native Host enrolls an already registered local installation; no key leaves Agent. */
+  enableDeviceRecipient?(signal?: AbortSignal): Promise<XDriveClipboardTargetDevice>
+  /** Decrypts only a server-revalidated live item ID on the current Owner device. */
+  decryptTarget?(id: number, signal?: AbortSignal): Promise<string>
   browseFiles?: ClipboardFileBrowsePort
+  /** Explicit Owner user gesture, canonical Files UploadSession/CAS only. */
+  uploadLocalFile?(file: File, signal: AbortSignal): Promise<{ node_id: number }>
+  /** Foreground browser Clipboard.read image/png with user consent only. */
+  importImageFromClipboard?(signal: AbortSignal): Promise<{ node_id: number }>
+  /** Explicit, reauthorized Files Viewer handoff. A Clipboard Node is never a read grant. */
+  openReferencedFile?(nodeID: number, signal: AbortSignal): Promise<void>
 }
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
@@ -96,6 +106,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [referenceKind, setReferenceKind] = useState<'text' | 'image' | 'file'>('text')
   const [nodeID, setNodeID] = useState('')
+  const localUploadInput = useRef<HTMLInputElement | null>(null)
   const active = useRef(true)
   const actionFence = useRef(new XDriveClipboardActionFence())
   const generation = useRef(0)
@@ -132,13 +143,32 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     setLoading(true)
     try {
       const page = await port.list(before, controller.signal)
-      const decoded = await Promise.all(page.items.map(async record => {
-        try {
-          return { record, text: await xDriveClipboardDecrypt(key, aadScope, record) }
-        } catch {
-          return { record, text: null }
+      // At most four expensive Agent/device GET+decrypt proofs at once.
+      // All responses are fenced by this Owner, AbortSignal and generation.
+      const decoded = new Array<DecodedItem>(page.items.length)
+      let cursor = 0
+      const decodeWorker = async () => {
+        while (cursor < page.items.length && !controller.signal.aborted) {
+          const index = cursor++
+          const record = page.items[index]
+          try {
+            let text: string | null = null
+            if (record.target_device_id) {
+              // Never try a broadcast/v1 key on a device-targeted envelope.
+              if (port.decryptTarget)
+                text = await port.decryptTarget(record.id, controller.signal)
+              if (record.node_id && text !== 'asset:' + record.node_id) text = null
+            } else if (record.kind === 'text/plain' || record.kind === 'text/uri-list') {
+              text = await xDriveClipboardDecrypt(key, aadScope, { ...record, kind: record.kind })
+            }
+            decoded[index] = { record, text }
+          } catch {
+            decoded[index] = { record, text: null }
+          }
         }
-      }))
+      }
+      await Promise.all(Array.from({ length: Math.min(4, page.items.length) },
+        () => decodeWorker()))
       if (!active.current || controller.signal.aborted || sequence !== generation.current) return
       setItems(previous => before
         ? [...previous, ...decoded.filter(row => !previous.some(existing => existing.record.id === row.record.id))]
@@ -377,6 +407,44 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     }
   }
 
+  const importToOwnerFiles = async (
+    upload: (signal: AbortSignal) => Promise<{ node_id: number }>,
+  ) => {
+    if (busy || !key || !targetID || referenceKind === 'text') return
+    if (pending.current) {
+      setRetryExpired(true)
+      setMessage('上一条发送回执尚未确认，请先核对并明确放弃旧回执，不会自动再次上传。')
+      return
+    }
+    const actionToken = actionFence.current.capture()
+    setNodeID('') // A failed upload must never send a previously selected Node.
+    await runAction(async signal => {
+      const receipt = await upload(signal)
+      if (!Number.isSafeInteger(receipt.node_id) || receipt.node_id <= 0)
+        throw new Error('没有收到有效的 CAS 文件节点 ID。')
+      if (active.current && !signal.aborted && actionFence.current.isCurrent(actionToken)) {
+        setNodeID(String(receipt.node_id))
+      }
+    }, '已上传到当前 Owner 的云端根目录。请检查文件，然后明确点击“加密发送”；不发送也不会自动删除原件。')
+  }
+
+  const openVerifiedReference = (record: XDriveClipboardItem, text: string | null) => {
+    if (!key || busy || !port.openReferencedFile || !record.target_device_id ||
+        (record.kind !== 'image/x-xdrive-node-ref' &&
+         record.kind !== 'application/x-xdrive-node-ref') ||
+        !Number.isSafeInteger(record.node_id) || !record.node_id ||
+        text !== 'asset:' + record.node_id ||
+        !items.some(row => row.record.id === record.id && row.record === record &&
+          row.text === text)) {
+      setMessage('文件引用已失效或当前设备无权预览，请刷新后重新验证。')
+      return
+    }
+    // The existing Files Host rechecks Owner, Node location, revision and
+    // its normal read permission. Do not fetch bytes from Clipboard.
+    void runAction(signal => port.openReferencedFile!(record.node_id!, signal),
+      '已转到经过授权的文件 Viewer。')
+  }
+
   const pasteFromBrowser = async () => {
     if (!port.readText || reading) return
     const actionToken = actionFence.current.capture()
@@ -463,10 +531,30 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               <TextField label="输入内容" multiline minRows={3} maxRows={10} fullWidth
                 value={draft} onChange={event => { setDraft(event.target.value); setRetryExpired(false) }}
                 helperText="最多 64 KiB；不会在浏览器本地持久保存。" />
+              {port.enableDeviceRecipient ? (
+                <Button size="small" variant="outlined" disabled={busy}
+                  onClick={() => {
+                    void runAction(async signal => {
+                      const device = await port.enableDeviceRecipient!(signal)
+                      if (active.current && !signal.aborted) {
+                        setTargetDevices(current => [...current.filter(
+                          row => row.device_id !== device.device_id), device])
+                      }
+                    }, '此安装已启用单独授权的 Clipboard 定向加密接收。')
+                  }}>启用此设备的定向接收（需要已登记安装）</Button>
+              ) : null}
               {port.listDevices ? (
                 <Stack spacing={1}>
-                  <TextField select label="发送范围" value={targetID}
-                    onChange={e => { setTargetID(e.target.value); setConfirmRevoke(false); setPickerOpen(false) }} size="small">
+                  <TextField select label="发送范围" value={targetID} disabled={busy}
+                    onChange={e => {
+                      setTargetID(e.target.value)
+                      setConfirmRevoke(false)
+                      setPickerOpen(false)
+                      // Switching recipient/broadcast invalidates the previous
+                      // Node intent; never silently send it to another device.
+                      setReferenceKind('text')
+                      setNodeID('')
+                    }} size="small">
                     <MenuItem value="">当前 Owner 所有已解锁客户端（广播）</MenuItem>
                     {targetDevices.map(device => (
                       <MenuItem key={device.device_id} value={device.device_id}>
@@ -476,8 +564,13 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                   </TextField>
                   {targetID ? (
                     <>
-                      <TextField select label="内容类型" value={referenceKind} size="small"
-                        onChange={e => setReferenceKind(e.target.value as 'text' | 'image' | 'file')}>
+                      <TextField select label="内容类型" value={referenceKind} size="small" disabled={busy}
+                        onChange={e => {
+                          // A Node chosen for an image must never silently become
+                          // a file (or vice versa) without a fresh user choice.
+                          setReferenceKind(e.target.value as 'text' | 'image' | 'file')
+                          setNodeID('')
+                        }}>
                         <MenuItem value="text">文本或链接</MenuItem>
                         <MenuItem value="image">现有云端图片引用</MenuItem>
                         <MenuItem value="file">现有云端文件引用</MenuItem>
@@ -501,6 +594,34 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                                   setPickerOpen(false)
                                 }}
                               />
+                            </>
+                          ) : null}
+                          {(port.uploadLocalFile || port.importImageFromClipboard) ? (
+                            <>
+                              {port.uploadLocalFile ? (
+                                <>
+                                  <input ref={localUploadInput} type="file" hidden
+                                    accept={referenceKind === 'image' ? 'image/*' : undefined}
+                                    onChange={event => {
+                                      const file = event.currentTarget.files?.[0]
+                                      event.currentTarget.value = ''
+                                      if (file) void importToOwnerFiles(signal => port.uploadLocalFile!(file, signal))
+                                    }} />
+                                  <Button variant="outlined" size="small" disabled={busy}
+                                    onClick={() => localUploadInput.current?.click()}>
+                                    选择本机文件并上传到云端
+                                  </Button>
+                                </>
+                              ) : null}
+                              {referenceKind === 'image' && port.importImageFromClipboard ? (
+                                <Button variant="outlined" size="small" disabled={busy}
+                                  onClick={() => {
+                                    void importToOwnerFiles(signal => port.importImageFromClipboard!(signal))
+                                  }}>读取本机剪贴板图片并上传</Button>
+                              ) : null}
+                              <Typography variant="caption" color="text.secondary">
+                                上传通过现有 Files/CAS 写入当前 Owner 根目录；上传本身不会自动发送引用或删除原件。
+                              </Typography>
                             </>
                           ) : null}
                         </>
@@ -585,7 +706,9 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               <Stack spacing={1.5}>
                 <Stack direction="row" alignItems="center" justifyContent="space-between">
                   <Typography variant="caption" color="text.secondary">
-                    {record.kind === 'text/uri-list' ? '链接' : '文本'} · {new Date(record.created_at).toLocaleString()}
+                    {record.kind === 'text/uri-list' ? '链接'
+                      : record.kind === 'image/x-xdrive-node-ref' ? '云端图片引用'
+                      : record.kind === 'application/x-xdrive-node-ref' ? '云端文件引用' : '文本'} · {new Date(record.created_at).toLocaleString()}
                   </Typography>
                   <Button size="small" color="error" disabled={busy}
                     onClick={() => { void runAction(signal => port.remove(record.id, signal), '已删除消息。') }}>
@@ -599,6 +722,16 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                     <TextField fullWidth multiline minRows={1} maxRows={7} value={text}
                       InputProps={{ readOnly: true }} aria-label="剪贴板明文（仅在此页面内解密）" />
                     <Stack direction="row" justifyContent="flex-end">
+                      {port.openReferencedFile && record.target_device_id &&
+                        Number.isSafeInteger(record.node_id) && !!record.node_id &&
+                        (record.kind === 'image/x-xdrive-node-ref' ||
+                         record.kind === 'application/x-xdrive-node-ref') &&
+                        text === 'asset:' + record.node_id ? (
+                          <Button size="small" variant="contained" disabled={busy}
+                            onClick={() => openVerifiedReference(record, text)}>
+                            在文件 Viewer 中打开
+                          </Button>
+                        ) : null}
                       <Button size="small" onClick={() => {
                         const actionToken = actionFence.current.capture()
                         void port.copyText(text).then(() => {

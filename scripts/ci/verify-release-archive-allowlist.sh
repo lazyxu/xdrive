@@ -9,10 +9,10 @@ if [[ ! -d "$release_dir" ]]; then
   exit 1
 fi
 
-for name in xdrive-backup-linux-amd64.tar.gz xdrive-backup-windows-amd64.zip xdrive-caddy-image.tar.gz xdrive-caddy-image.id; do
+for name in xdrive-caddy-image.tar.gz xdrive-caddy-image.id; do
   file="$release_dir/$name"
   if [[ ! -f "$file" || ! -s "$file" || -L "$file" ]]; then
-    echo "release archive verification: missing, empty, or linked Backup CLI artifact: $name" >&2
+    echo "release archive verification: missing, empty, or linked Server Caddy dependency: $name" >&2
     exit 1
   fi
 done
@@ -35,4 +35,4 @@ for file in "$release_dir"/*.zip "$release_dir"/*.tar.gz "$release_dir"/*.tgz "$
   esac
 done
 
-echo "Release archive contract passed: two Backup CLI archives, signed Caddy image and armada38x SPK only."
+echo "Release archive contract passed: required verified Caddy image and optional exact-commit client archives only."

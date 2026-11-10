@@ -607,6 +607,34 @@ async function run(win){
       assert.equal(recovered.hasNativeAgent,'undefined')
       browserLogoutRecovered=true
     }
+    // The authenticated Guest is real production Web; a same-document
+    // pushState does not emit Electron will-navigate. Confirm Main retires
+    // the old Guest and its cookie partition rather than rendering Files.
+    let sameDocumentRouteRevoked=false
+    if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===1){
+      stage='production-Desktop-map-only-in-page-route-fence'
+      const oldGuest=guest
+      assert.ok(oldGuest && !oldGuest.isDestroyed(),
+        'regranted production map Guest missing for route escape regression')
+      const authorized=await oldGuest.executeJavaScript(
+        'location.pathname==="/" && location.hash==="#/app/gallery?section=places"')
+      assert.equal(authorized,true,'real mapped Guest starting route invalid')
+      // The script may lose its response when Main destroys the same
+      // WebContents. A thrown execution is NOT proof of successful denial.
+      try {
+        await oldGuest.executeJavaScript(
+          'window.history.pushState({}, "", "/?desktop_places_embed=1#/app/files"); true')
+      } catch {}
+      await until(()=>oldGuest.isDestroyed(),12000,
+        'Main failed to destroy unauthorized in-page Files escape')
+      const oldVisible=await win.webContents.executeJavaScript(
+        '(() => {const v=document.querySelector("[data-xdrive-desktop-embedded-places]");'+
+        'if(!v)return false;const s=getComputedStyle(v);'+
+        'return s.display!=="none" && s.visibility!=="hidden"})()')
+      assert.equal(oldVisible,false,
+        'retired map Guest remained visible after in-page route escape')
+      sameDocumentRouteRevoked=true
+    }
     let nativeLogoutBlockedOldMap=false
     let oldMapHiddenAfterLogout=false
     if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===2){
@@ -662,7 +690,7 @@ async function run(win){
       thumbnailStatus:media.thumbnailStatus,viewerStatus:media.viewerStatus,
       thumbnailBytesValid:media.thumbnailBytesValid,viewerBytesValid:media.viewerBytesValid,
       realWebModeRoundTrip,legacyServerFailedClosed,browserLogoutRecovered,
-      nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
+      sameDocumentRouteRevoked,nativeLogoutBlockedOldMap,oldMapHiddenAfterLogout
     }))
     app.exit(0)
   }catch(error){

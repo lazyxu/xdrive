@@ -28,6 +28,7 @@ import {
   xDriveTransferStateLabel,
   xDriveTransferTree,
   xDriveTransferTreeSpeed,
+  xDriveTransferUploadOutcome,
   type XDriveTransferTask,
   type XDriveTransferTreeNode,
 } from '..'
@@ -95,6 +96,34 @@ function transferStateLabel(item: XDriveTransferTask) {
     : xDriveTransferStateLabel(item.state)
 }
 
+function uploadOutcomeLabel(item: XDriveTransferTask) {
+  switch (xDriveTransferUploadOutcome(item)) {
+    case 'instant': return '秒传'
+    case 'partially_reused': return '部分复用'
+    case 'resumed': return '断点续传'
+    case 'uploaded': return '普通上传'
+    case 'skipped': return '已跳过'
+    default: return null
+  }
+}
+
+function uploadOutcomeSummary(item: XDriveTransferTask) {
+  switch (xDriveTransferUploadOutcome(item)) {
+    case 'instant': return `无需上传文件内容 · CAS 复用 ${formatBytes(item.bytes_total)}`
+    case 'partially_reused': return `实际上传 ${formatBytes(item.upload_transferred_bytes || 0)} · CAS 复用 ${formatBytes(item.upload_cas_reused_bytes || 0)}${item.upload_resume_reused_bytes ? ` · 断点复用 ${formatBytes(item.upload_resume_reused_bytes)}` : ''}`
+    case 'resumed': return `实际上传 ${formatBytes(item.upload_transferred_bytes || 0)} · 断点复用 ${formatBytes(item.upload_resume_reused_bytes || 0)}`
+    case 'uploaded': return `实际上传 ${formatBytes(item.upload_transferred_bytes || 0)}`
+    case 'skipped': return '因冲突跳过，未上传文件内容'
+    default: return null
+  }
+}
+
+function uploadOutcomeTone(item: XDriveTransferTask) {
+  return xDriveTransferUploadOutcome(item) === 'instant' ? 'good' as const
+    : xDriveTransferUploadOutcome(item) === 'partially_reused' ? 'warning' as const
+      : 'neutral' as const
+}
+
 function transferBytes(item: XDriveTransferTask) {
   return item.bytes_total > 0
     ? `${formatBytes(item.bytes_done)} / ${formatBytes(item.bytes_total)}`
@@ -130,6 +159,10 @@ function TransferLeafItem({
     average_bytes_per_second: 0,
   }) : undefined
   const speedLabel = item.speed_source === 'server' ? '服务端发送速度' : '当前速度'
+  const uploadOutcome = xDriveTransferUploadOutcome(item)
+  const uploadSummary = uploadOutcomeSummary(item)
+  const withoutUpload = uploadOutcome === 'instant' || uploadOutcome === 'skipped' ||
+    (uploadOutcome === 'resumed' && item.upload_transferred_bytes === 0)
 
   if (compact) {
     return (
@@ -145,6 +178,13 @@ function TransferLeafItem({
                 onOpen={onOpenTask && canOpenTask?.(item) !== false ? () => onOpenTask(item) : undefined}
               />
               <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
+              {item.direction === 'upload' && item.state === 'completed' ? (
+                <XDriveStatusBadge
+                  tone={uploadOutcome ? uploadOutcomeTone(item) : 'neutral'}
+                  label={uploadOutcomeLabel(item) ?? '方式未记录'}
+                  variant="outlined"
+                />
+              ) : null}
               <Typography variant="caption" color="text.secondary">
                 {xDriveTransferKindLabel(item.kind || item.direction)}
               </Typography>
@@ -184,8 +224,11 @@ function TransferLeafItem({
         />
         <Stack direction="row" spacing={1.5} flexWrap="wrap" sx={{ mt: 0.75 }}>
           <Typography variant="caption" color="text.secondary">
-            {active ? speedLabel : item.speed_source === 'server' ? '平均服务端发送速度' : '平均速度'} {formatBytes(active ? instantSpeed : Math.max(0, item.average_bytes_per_second || 0))}/s
+            {withoutUpload ? uploadSummary : `${active ? speedLabel : item.speed_source === 'server' ? '平均服务端发送速度' : '平均速度'} ${formatBytes(active ? instantSpeed : Math.max(0, item.average_bytes_per_second || 0))}/s`}
           </Typography>
+          {(uploadOutcome === 'partially_reused' || uploadOutcome === 'resumed') && !withoutUpload ? (
+            <Typography variant="caption" color="text.secondary">{uploadSummary}</Typography>
+          ) : null}
           <Typography variant="caption" color="text.secondary">
             已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}
           </Typography>
@@ -219,6 +262,13 @@ function TransferLeafItem({
               onOpen={onOpenTask && canOpenTask?.(item) !== false ? () => onOpenTask(item) : undefined}
             />
             <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
+            {item.direction === 'upload' && item.state === 'completed' ? (
+                <XDriveStatusBadge
+                  tone={uploadOutcome ? uploadOutcomeTone(item) : 'neutral'}
+                  label={uploadOutcomeLabel(item) ?? '方式未记录'}
+                  variant="outlined"
+                />
+              ) : null}
             <Typography variant="caption" color="text.secondary">
               {xDriveTransferKindLabel(item.kind || item.direction)}
             </Typography>
@@ -264,8 +314,9 @@ function TransferLeafItem({
           <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="完成时间">{transferTime(item.completed_at)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label={speedLabel}>{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label={item.speed_source === 'server' ? '平均服务端发送速度' : '平均速度'}>{formatBytesPerSecond(item.average_bytes_per_second)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={speedLabel}>{withoutUpload ? '—（无需上传）' : formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={item.speed_source === 'server' ? '平均服务端发送速度' : '平均速度'}>{withoutUpload ? '—（无需上传）' : formatBytesPerSecond(item.average_bytes_per_second)}</XDriveDescriptionItem>
+          {uploadSummary ? <XDriveDescriptionItem label="上传结果">{uploadSummary}</XDriveDescriptionItem> : null}
           <XDriveDescriptionItem label="方向">{xDriveTransferKindLabel(item.direction)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="重试次数">{item.retry_count.toLocaleString('zh-CN')}</XDriveDescriptionItem>
         </XDriveDescriptionGrid>
@@ -322,6 +373,14 @@ function TransferGroupItem({
     average_bytes_per_second: 0,
   })
   const processed = Math.min(progress.total, progress.completed + progress.failed)
+  const instantChildren = children.filter((child) => xDriveTransferUploadOutcome(child) === 'instant')
+  const reusedChildren = children.filter((child) => xDriveTransferUploadOutcome(child) === 'partially_reused')
+  const resumedChildren = children.filter((child) => xDriveTransferUploadOutcome(child) === 'resumed')
+  // A persisted folder may retain only a bounded subset of child receipts.
+  // Never claim the *whole* folder was instant from a truncated child list.
+  const allInstant = item.direction === 'upload' && item.state === 'completed' &&
+    item.scan_complete === true && progress.total > 0 && children.length === progress.total &&
+    instantChildren.length === children.length
   const phaseLabel = xDriveTransferPhaseLabel(item.phase)
   const discoveredLabel = scanIncomplete
     ? `已发现 ${progress.total.toLocaleString('zh-CN')} 个文件${bytes.total > 0 ? ` · ${formatBytes(bytes.total)}` : ''}`
@@ -411,12 +470,15 @@ function TransferGroupItem({
           <Typography variant="caption" color={progress.failed > 0 ? 'error.main' : 'text.secondary'}>失败 {progress.failed.toLocaleString('zh-CN')}</Typography>
           <Typography variant="caption" color="text.secondary">传输中 {progress.running.toLocaleString('zh-CN')}</Typography>
           <Typography variant="caption" color="text.secondary">等待 {progress.queued.toLocaleString('zh-CN')}</Typography>
+          {instantChildren.length > 0 ? <Typography variant="caption" color="success.main">秒传 {instantChildren.length.toLocaleString('zh-CN')}</Typography> : null}
+          {reusedChildren.length > 0 ? <Typography variant="caption" color="warning.main">部分复用 {reusedChildren.length.toLocaleString('zh-CN')}</Typography> : null}
+          {resumedChildren.length > 0 ? <Typography variant="caption" color="text.secondary">断点续传 {resumedChildren.length.toLocaleString('zh-CN')}</Typography> : null}
         </Stack>
 
         {compact ? (
           <Stack direction="row" spacing={1.5} flexWrap="wrap">
             <Typography variant="caption" color="text.secondary">
-              {active ? speedLabel : speed.serverReported ? '平均服务端发送速度' : '平均速度'} {formatBytes(active ? instantSpeed : Math.max(0, averageSpeed || 0))}/s
+              {allInstant ? '全部秒传 · 无文件内容上传' : `${active ? speedLabel : speed.serverReported ? '平均服务端发送速度' : '平均速度'} ${formatBytes(active ? instantSpeed : Math.max(0, averageSpeed || 0))}/s`}
             </Typography>
             <Typography variant="caption" color="text.secondary">已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}</Typography>
             <Typography variant="caption" color="text.secondary">
@@ -432,8 +494,8 @@ function TransferGroupItem({
         ) : <XDriveDescriptionGrid columns={4}>
           <XDriveDescriptionItem label="阶段">{phaseLabel || xDriveTransferStateLabel(item.state)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="总体进度">{bytes.total > 0 ? `${percent.toFixed(1)}%` : '—'}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label={speedLabel}>{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label={speed.serverReported ? '平均服务端发送速度' : '平均速度'}>{formatBytesPerSecond(averageSpeed)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={speedLabel}>{allInstant ? '—（全部秒传）' : formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={speed.serverReported ? '平均服务端发送速度' : '平均速度'}>{allInstant ? '—（全部秒传）' : formatBytesPerSecond(averageSpeed)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="开始时间">{transferTime(item.started_at)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active && !scanIncomplete ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>

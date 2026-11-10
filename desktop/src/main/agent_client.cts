@@ -20,12 +20,19 @@ export type AgentClipboardVault = {
 }
 export type AgentClipboardCheck = { nonce: string; ciphertext: string; scope: string }
 export type AgentClipboardWrite = {
-  client_event_id: string; kind: 'text/plain' | 'text/uri-list'
+  client_event_id: string
+  kind: 'text/plain' | 'text/uri-list' | 'image/x-xdrive-node-ref' | 'application/x-xdrive-node-ref'
   nonce: string; ciphertext: string
+  target_device_id?: string; ephemeral_key?: string; wrapped_key?: string; node_id?: number
 }
 export type AgentClipboardItem = AgentClipboardWrite & {
   id: number; created_at: string; expires_at: string
 }
+export type AgentClipboardDevices = {
+  devices: { device_id: string; name: string; platform: string; public_key: string }[]
+}
+export type AgentClipboardDevice = AgentClipboardDevices['devices'][number]
+export type AgentClipboardCleartext = { text: string }
 export type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
 
 export type AgentNotesSource = 'mine' | 'ios_notes'
@@ -267,6 +274,28 @@ export type AgentOfflineHostPlanStatus = {
   }
 }
 
+// Mirror the authenticated IPC DTO structurally in the CJS main process.
+// Importing ESM UI source here violates Node16 resolution and desktop rootDir.
+export type AgentReleaseBundleState = {
+  state: 'unavailable' | 'syncing' | 'paused_for_server' | 'retry_needed' | 'ready'
+  commit?: string
+  channel?: 'master' | 'stable'
+  server_version?: string
+  cached_commit?: string
+  message?: string
+  artifacts: Array<{
+    platform: 'ios' | 'android' | 'windows' | 'linux' | 'dsm' | 'cli'
+    filename: string
+    build_commit: string
+    sha256: string
+    size: number
+    install_mode: 'manual' | 'manual_test_only'
+    cached: boolean
+    cache_status: 'pending' | 'verified' | 'missing_upstream' | 'verification_failed' | 'retry_needed' | 'unavailable'
+    download_urls: string[]
+  }>
+}
+
 export type AgentServerUpdateState = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
@@ -300,6 +329,7 @@ export type AgentUpdateState = {
   update_available: boolean
   downloaded: boolean
   install_supported: boolean
+  manual_install_supported?: boolean
   last_checked_at?: string
   message?: string
   last_error?: string
@@ -440,6 +470,9 @@ export type AgentTransferLifecycleInput = {
   state?: 'completed' | 'partial' | 'failed' | 'cancelled'
   error?: string
   skipped?: boolean
+  upload_transferred_bytes?: number
+  upload_cas_reused_bytes?: number
+  upload_resume_reused_bytes?: number
   children?: Array<{
     file_name: string
     path?: string
@@ -1003,6 +1036,8 @@ export type AgentCloudUploadResult = {
   node: AgentCloudNode
   skipped: boolean
   transferred_bytes: number
+  cas_reused_bytes?: number
+  resume_reused_bytes?: number
 }
 
 export type AgentCloudArchiveExtractResult = {
@@ -4907,6 +4942,26 @@ export class AgentIPCClient {
     return this.request<AgentServerUpdateState>('GET', '/v1/server-update')
   }
 
+  currentReleaseBundle() {
+    return this.request<AgentReleaseBundleState>('GET', '/v1/release-bundle/current')
+  }
+
+  retryReleaseBundle() {
+    return this.request<{ state: 'queued' }>('POST', '/v1/release-bundle/retry', {}, 45_000)
+  }
+
+  downloadReleaseBundle(commit: string, filename: string, destination: string) {
+    return this.request<{ saved: true }>('POST', '/v1/release-bundle/download',
+      { commit, filename, destination }, 30 * 60_000)
+  }
+
+  installCurrentServerCommit(commit: string, filename: string) {
+    // A lost ACK may follow a completed installation. NEVER automatically
+    // replay a privilege-changing user-confirmed operation over Agent IPC.
+    return this.request<AgentUpdateState>('POST', '/v1/release-bundle/install',
+      { commit, filename, confirm: true }, 15 * 60_000, undefined, false)
+  }
+
   offlineImports() {
     return this.request<AgentOfflineImportList>('GET', '/v1/offline-imports')
   }
@@ -5034,6 +5089,24 @@ export class AgentIPCClient {
   cloudClipboardList(before = 0) {
     const query = before > 0 ? '?before=' + encodeURIComponent(String(before)) : ''
     return this.request<AgentClipboardPage>('GET', '/v1/cloud/clipboard/items' + query)
+  }
+  cloudClipboardDevices() {
+    return this.request<AgentClipboardDevices>('GET', '/v1/cloud/clipboard/devices')
+  }
+  cloudClipboardEnableDevice() {
+    return this.request<AgentClipboardDevice>('POST',
+      '/v1/cloud/clipboard/enable-device', {}, 30_000, undefined, false)
+  }
+  cloudClipboardDecrypt(id: number) {
+    if (!Number.isSafeInteger(id) || id <= 0) throw Error('Invalid Clipboard item ID')
+    return this.request<AgentClipboardCleartext>('POST',
+      '/v1/cloud/clipboard/decrypt', { id }, 30_000, undefined, false)
+  }
+  cloudClipboardRevokeDevice(deviceID: string) {
+    if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(deviceID))
+      throw Error('Invalid Clipboard recipient ID')
+    return this.request<void>('POST', '/v1/cloud/clipboard/revoke-device',
+      { device_id: deviceID }, 30_000, undefined, false)
   }
   cloudClipboardCreate(value: AgentClipboardWrite) {
     return this.request<AgentClipboardItem>('POST', '/v1/cloud/clipboard/items',

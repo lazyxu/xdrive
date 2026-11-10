@@ -3,6 +3,8 @@
 package update
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,10 +39,30 @@ func TestWriteWindowsUpdateScripts(t *testing.T) {
 		"last-known-good-startmenu",
 		"Restore-LastKnownGood",
 		"rolled_back",
+		"Assert-VerifiedInstaller",
+		"Get-AuthenticodeSignature",
+		"Get-FileHash",
+		"windowsPowerShellModules",
+		"$env:PSModulePath",
+		"ExpectedSHA256",
+		"ExpectedSize",
+		"HashMismatch",
 	} {
 		if !strings.Contains(string(transactionBody), marker) {
 			t.Fatalf("transaction script missing %q", marker)
 		}
+	}
+	// The first Security/Utility cmdlet may otherwise autoload pwsh 7's
+	// incompatible module in a detached Windows PowerShell 5.1 child.
+	// This bootstrap MUST run before the signing and rollback transaction.
+	bootstrap := strings.Index(string(transactionBody), "$env:PSModulePath = $windowsPowerShellModules")
+	transactionStart := strings.Index(string(transactionBody), "Write-Log \"begin update")
+	if bootstrap < 0 || transactionStart < 0 || bootstrap >= transactionStart {
+		t.Fatal("WindowsPowerShell built-in module path must be prioritized before installer verification")
+	}
+	if strings.Count(string(transactionBody), "function Assert-VerifiedInstaller") != 1 ||
+		strings.Count(string(transactionBody), "Write-Log \"begin update") != 1 {
+		t.Fatal("invalid duplicate Windows installer transaction or signature verifier")
 	}
 	cleanupBody, err := os.ReadFile(cleanup)
 	if err != nil {
@@ -73,5 +95,26 @@ func TestLastInstallStatusAcceptsUTF8BOM(t *testing.T) {
 	}
 	if status.State != "success" || status.TargetVersion != "snapshot-test" {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestWindowsUpdateRefusesEqualLengthCorruptedPackage(t *testing.T) {
+	data := []byte("verified Windows installer fixture")
+	digest := sha256.Sum256(data)
+	path := filepath.Join(t.TempDir(), "xDriveSetup-amd64.exe")
+	bad := []byte(strings.Repeat("Z", len(data)))
+	if err := os.WriteFile(path, bad, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := Result{
+		Current: "0.1.0", Latest: "0.1.1",
+		Asset: Asset{Name: filepath.Base(path), Size: int64(len(data)),
+			Digest: "sha256:" + hex.EncodeToString(digest[:])},
+	}
+	if _, err := InstallPreviouslyVerified(t.Context(), path, result); err == nil {
+		t.Fatal("equal-size corrupt package attempted Windows install")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("rejected package path changed unexpectedly: %v", err)
 	}
 }

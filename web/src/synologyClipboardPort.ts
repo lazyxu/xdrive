@@ -1,5 +1,5 @@
 import type { XDriveClipboardDataPort } from '../../ui/shared/src/mui/ClipboardPage'
-import type { XDriveSynologyBackupLocalClient } from '../../ui/shared/src/synology-backup-adapter'
+import type { XDriveSynologyBackupLocalClient, XDriveSynologyClipboardFileReference } from '../../ui/shared/src/synology-backup-adapter'
 import { xDriveBrowserCopyText } from './browserClipboard'
 
 /** DSM shares the one canonical React Clipboard UI but never borrows the
@@ -8,6 +8,7 @@ import { xDriveBrowserCopyText } from './browserClipboard'
  */
 export function createXDriveDSMClipboardPort(
   cgi: XDriveSynologyBackupLocalClient, expectedOwnerScope: string,
+  openVerifiedFile?: (reference: XDriveSynologyClipboardFileReference, signal: AbortSignal) => Promise<void>,
 ): XDriveClipboardDataPort {
   if (!/^[0-9a-f]{64}$/.test(expectedOwnerScope)) {
     throw new Error('DSM Owner 尚未通过身份检查')
@@ -48,12 +49,36 @@ export function createXDriveDSMClipboardPort(
     initializeCheck: (value, signal) => checked(
       scope => cgi.clipboardCheck(scope, value, signal), signal),
     list: (before, signal) => checked(() => cgi.clipboardList(before, signal), signal),
+    listDevices: signal => checked(() => cgi.clipboardDevices(signal), signal),
+    revokeDevice: (id, signal) => checked(scope => cgi.clipboardRevokeDevice(scope, id, signal), signal),
+    enableDeviceRecipient: signal => checked(scope => cgi.clipboardEnableDevice(scope, signal), signal),
+    openReferencedFile: openVerifiedFile ? async (id, signal) => {
+      if (!Number.isSafeInteger(id) || id <= 0)
+        throw new Error('Invalid current Owner Clipboard file identity')
+      const reference = await checked(() => cgi.clipboardFileReference(id, signal), signal)
+      signal.throwIfAborted()
+      await openVerifiedFile(reference, signal)
+      await current(signal)
+    } : undefined,
+    decryptTarget: async (id, signal) => {
+      if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Invalid recipient ID')
+      const response = await checked(scope => cgi.clipboardDecrypt(scope, id, signal), signal)
+      return response.text
+    },
     create: (item, signal) => {
-      // DSM's authenticated CGI remains v1 text-only. Reject rather than
-      // down-convert a device-targeted message to Owner broadcast.
+      if (item.target_device_id) {
+        const media = item.kind === 'image/x-xdrive-node-ref' ||
+          item.kind === 'application/x-xdrive-node-ref'
+        if (!item.ephemeral_key || !item.wrapped_key ||
+            media !== (Number.isSafeInteger(item.node_id) && (item.node_id ?? 0) > 0)) {
+          throw new Error('DSM 设备定向加密消息缺少目标或 CAS 文件引用')
+        }
+        return checked(scope => cgi.clipboardCreate(scope, item, signal), signal)
+      }
+      // Never downgrade media or directed encrypted envelopes to v1 broadcast.
       if ((item.kind !== 'text/plain' && item.kind !== 'text/uri-list') ||
-          item.target_device_id || item.ephemeral_key || item.wrapped_key || item.node_id) {
-        throw new Error('DSM Clipboard 暂不支持定向消息或文件引用')
+          item.ephemeral_key || item.wrapped_key || item.node_id) {
+        throw new Error('DSM 不允许把设备定向密文降级广播')
       }
       const legacy = { client_event_id: item.client_event_id, kind: item.kind,
         nonce: item.nonce, ciphertext: item.ciphertext }

@@ -236,6 +236,10 @@ func (s *Server) Router() *gin.Engine {
 	// Native RefreshToken proof in addition to authenticated Owner bearer.
 	// Never expose this issuance endpoint to normal Web-only authentication.
 	authed.POST("/auth/desktop-map/issue", s.issueDesktopMapGuestGrant)
+	// Authenticated current Release Bundle metadata and resumable package bytes.
+	authed.GET("/release-bundles/current", s.releaseBundleStatus)
+	authed.GET("/release-bundles/current/artifacts/:name", s.releaseBundleArtifactDownload)
+	authed.HEAD("/release-bundles/current/artifacts/:name", s.releaseBundleArtifactDownload)
 	authed.GET("/me", s.me)
 	authed.GET("/me/quota", s.quotaUsage)
 	authed.GET("/me/storage", s.storageStats)
@@ -620,8 +624,6 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/sources/:id/connector-config", s.getSourceConnectorConfig)
 	authed.PUT("/sources/:id/connector-config", s.putSourceConnectorConfig)
 	authed.GET("/sources/:id/browse", s.browseSourceDirectories)
-	// M05 read-only diagnostics; this response never authorizes a migration.
-	authed.GET("/sources/:id/migration-preview", s.previewLegacySourceMigration)
 	authed.GET("/sources/:id/items", s.listSourceItems)
 	authed.GET("/sources/:id/collections", s.listSourceCollections)
 	authed.GET("/sources/:id/collections/:collectionID/items", s.listSourceCollectionItems)
@@ -640,6 +642,7 @@ func (s *Server) Router() *gin.Engine {
 
 	admin := authed.Group("/admin")
 	admin.Use(s.requireAdmin())
+	admin.POST("/release-bundles/retry", s.adminRetryReleaseBundle)
 	admin.GET("/users", s.adminListUsers)
 	admin.GET("/services", s.adminServiceDependencies)
 	admin.GET("/services/caddy/https", s.adminCaddyHTTPSConfig)

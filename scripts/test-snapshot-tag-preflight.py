@@ -50,7 +50,23 @@ assert 'permissions:{contents:"write",workflows:"write"}' in issuer
 assert 'select([.repositories[]?.full_name] == [$repo])' in issuer
 token = "GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}"
 assert release.count(token) == 4, "preflight, ref probe, publish and post-publish dispatch must share the scoped token"
-assert release.count("GH_TOKEN: ${{ github.token }}") == 2, "attestation check and stable publish keep original token"
+assert release.count("GH_TOKEN: ${{ github.token }}") == 4, (
+    "attestation, stable publish and both exact-run client inventory steps must use read-only caller token"
+)
+# The post-publish acceptance MUST be a separate parent workflow job, not a
+# nested job inside publish-master's reusable release workflow: otherwise an
+# unavailable attestation service would incorrectly mark Server publication
+# itself failed and could block independent offline package publication.
+assert "  verify-immutable-bundle:\n" not in release
+assert "  verify-published-bundle:\n" in ci
+verify_job = ci.split("  verify-published-bundle:\n", 1)[1]
+assert "needs: [publish-master, publish-stable]" in verify_job
+assert "needs.publish-master.result == 'success'" in verify_job
+assert "needs.publish-stable.result == 'success'" in verify_job
+assert "contents: read" in verify_job and "attestations: read" in verify_job
+assert "contents: write" not in verify_job and "packages: write" not in verify_job
+assert 'run: python3 scripts/ci/verify-live-release-bundle.py --commit "$GITHUB_SHA" --require-sigstore' in verify_job
+
 assert release.index(token) < release.index(marker)
 assert token in release.split(marker, 1)[1].split("      - name: Log in to GHCR for channel promotion", 1)[0]
 assert token in release.split("      - name: Publish rolling snapshot prerelease", 1)[1].split("      - name: Assert distribution assets", 1)[0]

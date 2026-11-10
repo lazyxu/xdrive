@@ -65,8 +65,7 @@ emit() {
   fi
 }
 
-if [[ "${TEST_TAMPER_STAGE_SCRIPT:-0}" == 1 &&
-      "$url" == */scripts/server-control.sh ]]; then
+if [[ "${TEST_TAMPER_STAGE_SCRIPT:-0}" == 1 && "$url" == */scripts/server-control.sh ]]; then
   emit '#!/usr/bin/env bash
 exit 99
 '
@@ -124,6 +123,7 @@ printf "%s\n" "$dir"
   */0123456789abcdef0123456789abcdef01234567/scripts/server-verify.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-doctor.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-control.sh|\
+  */0123456789abcdef0123456789abcdef01234567/scripts/release_bundle.py|\
   */0123456789abcdef0123456789abcdef01234567/scripts/caddy-admission.py|\
   */0123456789abcdef0123456789abcdef01234567/scripts/caddy-env-config.py|\
   */0123456789abcdef0123456789abcdef01234567/scripts/xdrive-share-update.py|\
@@ -168,8 +168,8 @@ bash "$INSTALLER" >"$TMP/ok.out" 2>"$TMP/ok.err"
 grep -q '\[xDrive\] \[1/9\] resolve release channel' "$TMP/ok.out"
 grep -q 'Resolved latest fully published master snapshot: 0123456789ab' "$TMP/ok.out"
 grep -q '\[xDrive\] \[9/9\] complete' "$TMP/ok.out"
-grep -q '\[xDrive\] download: 1/12 docker-compose.yml' "$TMP/ok.out"
-grep -q '\[xDrive\] download: 12/12 xdrive-server' "$TMP/ok.out"
+grep -q '\[xDrive\] download: 1/13 docker-compose.yml' "$TMP/ok.out"
+grep -q '\[xDrive\] download: 13/13 xdrive-server' "$TMP/ok.out"
 if grep -Eq '\[xDrive\] download: [0-9]+/9 ' "$TMP/ok.out"; then
   echo "deployment asset count confused with install stages" >&2
   exit 1
@@ -246,6 +246,10 @@ if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-ok/config/.env"; then
   exit 1
 fi
 grep -q "/$MASTER_SHA/deploy/docker-compose.yml$" "$TMP/state/urls"
+test ! -e "$TMP/config-ok/data/release-bundles/dependency-busy"
+test ! -e "$TMP/config-ok/data/release-bundles/dependency-ready"
+# The source-only install path must never leave cached package downloads
+# paused after a successful no-start staging transaction.
 test -x "$TMP/config-ok/bin/xdrive-server"
 test -x "$TMP/config-ok/bin/server-migrate-user.sh"
 test -x "$TMP/config-ok/bin/server-backup.sh"
@@ -258,7 +262,7 @@ test "$(cat "$TMP/config-ok/state/layout-version")" = "2"
 test ! -e "$TMP/config-ok/.env"
 test ! -e "$TMP/config-ok/docker-compose.yml"
 
-# The release-generated installer binds all 12 raw deployment assets to
+# The release-generated installer binds all 13 raw deployment assets to
 # digests calculated from its authenticated checkout. Recreate that set from
 # the already-fetched happy-path fixture and test the generated trust boundary.
 signed_manifest="$TMP/staged-source.sha256"
@@ -266,7 +270,7 @@ signed_manifest="$TMP/staged-source.sha256"
   sha256sum "$TMP/config-ok/config/docker-compose.yml" | awk '{ print $1 "  deploy/docker-compose.yml" }'
   for source_script in server-backup.sh server-backup-scheduled.sh server-restore.sh \
     server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh \
-    caddy-env-config.py caddy-admission.py xdrive-share-update.py xdrive-server-host.sh; do
+    caddy-env-config.py caddy-admission.py xdrive-share-update.py xdrive-server-host.sh release_bundle.py; do
     staged_name="$source_script"
     [[ "$source_script" == xdrive-server-host.sh ]] && staged_name=xdrive-server
     sha256sum "$TMP/config-ok/bin/$staged_name" | awk -v path="scripts/$source_script" '{ print $1 "  " path }'
@@ -279,7 +283,7 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin-ok:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config-signed" XD_SHELL_RC_PATH="$TMP/config-signed.bashrc" \
 XD_NONINTERACTIVE=1 XD_INSTALL_NO_START=1 XD_LAN_HTTPS_IP=192.168.2.4 \
 bash "$TMP/signed-installer.sh" >"$TMP/signed.out" 2>"$TMP/signed.err"
-grep -q 'all 12 signed release deployment asset SHA-256 checks passed' "$TMP/signed.out"
+grep -q 'all 13 signed release deployment asset SHA-256 checks passed' "$TMP/signed.out"
 if grep -q 'raw bootstrap template' "$TMP/signed.err"; then
   echo "rendered signed installer must never skip embedded asset verification" >&2
   exit 1

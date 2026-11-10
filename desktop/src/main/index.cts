@@ -213,6 +213,9 @@ import {
   type AgentClipboardItem,
   type AgentClipboardWrite,
   type AgentClipboardPage,
+  type AgentClipboardDevices,
+  type AgentClipboardDevice,
+  type AgentClipboardCleartext,
   type AgentNotesNamespace,
   type AgentNotesRow,
   type AgentNotesDetail,
@@ -319,6 +322,7 @@ import {
   type AgentUpdateSource,
   type AgentUpdateState,
   type AgentServerUpdateState,
+  type AgentReleaseBundleState,
   type AgentStatus,
   type AgentTransferLifecycleInput,
   type AgentTransfers,
@@ -463,7 +467,7 @@ function desktopPlacesWebOwnerStillCurrent(identity: DesktopPlacesWebIdentity) {
   return agentState.connected && status?.configured === true &&
     status.username === identity.owner &&
     xDriveResolveSecureBaiduMapTarget(status.server)?.origin === identity.origin &&
-    status.auth_status !== '登录已过期' && status.auth_status !== '账户已禁用'
+    status.auth_status === '已登录' && status.must_change_password !== true
 }
 
 // The isolated guest network stack does not inherit the Agent's app-local CA.
@@ -1863,7 +1867,9 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
   opened: true; separate_login_required: true
 }>> {
   if (!agentState.connected || !agentState.status?.configured ||
-      !agentState.status.username) {
+      !agentState.status.username ||
+      agentState.status.auth_status !== '已登录' ||
+      agentState.status.must_change_password === true) {
     return { ok: false, error: { code: 'map_login_required',
       message: '请先登录 xDrive Desktop，才能打开独立 HTTPS 地图窗口。' } }
   }
@@ -1883,9 +1889,11 @@ async function openSecureBaiduMapWindow(rawScope: unknown): Promise<DesktopResul
   // JSAPI4 release. The isolated HTTPS Renderer is NEVER allowed to propose
   // an Origin or opt into an arbitrary provider/CDN destination.
   const ownerName = agentState.status.username
-  const sameOwner = () => Boolean(agentState.connected &&
-    agentState.status?.username === ownerName &&
-    xDriveResolveSecureBaiduMapTarget(agentState.status?.server)?.origin === target.origin)
+  // The asynchronous SDK release can finish after native auth loss.
+  // Recheck the same fail-closed predicate as the authenticated Guest.
+  const sameOwner = () => desktopPlacesWebOwnerStillCurrent({
+    owner: ownerName, origin: target.origin,
+  })
   let releasedOrigin: string | null = null
   try {
     const released = await requireAgentClient().mediaBaiduJSAPI4Release()
@@ -2289,6 +2297,11 @@ function createMainWindow(showOnReady = true) {
         pending.owner!==owner || pending.origin!==target.origin) {
       guest.close();return
     }
+    // A prepared one-use guest must not attach after native auth loss,
+    // even when Owner/Server/partition have not moved.
+    if (!desktopPlacesWebOwnerStillCurrent({owner,origin:target.origin})) {
+      guest.close();return
+    }
     const identity={owner,origin:target.origin,scope:pending.scope}
     desktopPlacesGuests.set(guest.id,identity)
     guest.setWindowOpenHandler(()=>({action:'deny'}))
@@ -2328,6 +2341,24 @@ function createMainWindow(showOnReady = true) {
       desktopPlacesGuestNavigationAllowed(rawURL,identity)
     guest.on('will-navigate',(event,url)=>{if(!authorized(url))event.preventDefault()})
     guest.on('will-redirect',(event,url)=>{if(!authorized(url))event.preventDefault()})
+    // Electron will-navigate does NOT fire for hash/history.pushState routes.
+    // Those in-page transitions are non-cancellable: synchronously retire
+    // this one-use Guest's network partition and forcibly destroy it before
+    // an unreviewed React route can retain a privileged map browser session.
+    const revokeInPageNavigation=(rawURL:string)=>{
+      if(authorized(rawURL))return
+      // A late event from an already retired Guest cannot revoke the newer
+      // Owner's independent HTTPS partition.
+      if(desktopPlacesGuests.get(guest.id)===identity)closeDesktopPlacesGuests()
+      if(!guest.isDestroyed())guest.close({waitForBeforeUnload:false})
+    }
+    guest.on('did-start-navigation',details=>{
+      if(details.isMainFrame && details.isSameDocument)
+        revokeInPageNavigation(details.url)
+    })
+    guest.on('did-navigate-in-page',(_event,url,isMainFrame)=>{
+      if(isMainFrame)revokeInPageNavigation(url)
+    })
     guest.on('destroyed',()=>desktopPlacesGuests.delete(guest.id))
   })
   win.webContents.on('will-navigate', (event, url) => {
@@ -2635,16 +2666,16 @@ function publishAgentState(next: AgentConnectionState) {
       next.status.server!==previous.status?.server ||
       next.status.username!==previous.status?.username ||
       connectionIPChanged ||
-      next.status.auth_status==='登录已过期' ||
-      next.status.auth_status==='账户已禁用'
+      next.status.auth_status!=='已登录' ||
+      next.status.must_change_password===true
   )) closeDesktopPlacesGuests()
   if (secureBaiduMapWindow && (
       !next.connected || !next.status?.configured ||
       next.status.server !== previous.status?.server ||
       next.status.username !== previous.status?.username ||
       connectionIPChanged ||
-      next.status.auth_status === '登录已过期' ||
-      next.status.auth_status === '账户已禁用'
+      next.status.auth_status !== '已登录' ||
+      next.status.must_change_password === true
   )) closeSecureBaiduMapWindow()
   const changed = JSON.stringify(previous) !== JSON.stringify(next)
   if (
@@ -8868,6 +8899,61 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().startServerUpdate(sourceValue, channelValue, backupFileDataValue === true)
   }, false))
+  ipcMain.handle('agent:get-release-bundle', () =>
+    runAgentAction<AgentReleaseBundleState>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'release-bundle-current')
+      return requireAgentClient().currentReleaseBundle()
+    }, false))
+  ipcMain.handle('agent:retry-release-bundle', () =>
+    runAgentAction<{ state: 'queued' }>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'release-bundle-current')
+      return requireAgentClient().retryReleaseBundle()
+    }, false))
+  ipcMain.handle('agent:save-release-bundle', async (_event, commitValue: unknown, fileValue: unknown) => {
+    try {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'release-bundle-current')
+      if (typeof commitValue !== 'string' || !/^[0-9a-f]{40}$/.test(commitValue) ||
+          typeof fileValue !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(fileValue)) {
+        throw new AgentIPCError('invalid_input', 0, 'Current Bundle Commit and filename are required.')
+      }
+      const client = requireAgentClient()
+      const current = await client.currentReleaseBundle()
+      if (current.commit !== commitValue ||
+          !current.artifacts.some(item => item.filename === fileValue &&
+            item.build_commit === commitValue &&
+            (item.install_mode === 'manual' ||
+             (item.install_mode === 'manual_test_only' && item.platform === 'ios' &&
+              item.filename === 'xDrive-unsigned.ipa')))) {
+        throw new AgentIPCError('stale_release_bundle', 409, 'Server Bundle changed before save.')
+      }
+      const options = {
+        title: '保存当前 Server Commit 的已验证安装包',
+        defaultPath: path.join(app.getPath('downloads'), fileValue),
+      }
+      const chosen = mainWindow ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options)
+      if (chosen.canceled || !chosen.filePath) return { ok: true, data: { saved: false } }
+      await client.downloadReleaseBundle(commitValue, fileValue, chosen.filePath)
+      return { ok: true, data: { saved: true } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+  ipcMain.handle('agent:install-release-bundle', (_event, commitValue: unknown,
+    fileValue: unknown, confirmed: unknown) =>
+    runAgentAction<AgentUpdateState>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'release-bundle-current')
+      if (confirmed !== true || typeof commitValue !== 'string' ||
+          !/^[0-9a-f]{40}$/.test(commitValue) || typeof fileValue !== 'string' ||
+          !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(fileValue)) {
+        throw new AgentIPCError('invalid_input', 0, 'Explicit user confirmation and exact Bundle identity are required.')
+      }
+      return requireAgentClient().installCurrentServerCommit(commitValue, fileValue)
+    }, false))
   ipcMain.handle('agent:cloud-storage-stats', (event, requestID: unknown = undefined) =>
     runAgentAction<AgentCloudStorageStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
       const hello = await requireAgentLifecycle().ensureRunning()
@@ -8952,7 +9038,10 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudShares(nodeID)
   }, false))
 
-  // Clipboard has six explicit channels and requires the current signed-in
+  // Clipboard has explicit, narrow Owner-only channels (including public
+  // recipient discovery). Neither a renderer nor a device token can
+  // forward arbitrary Server HTTP or obtain an Owner bearer.
+  // Clipboard requires the current signed-in
   // Owner. Renderer never sees a Server bearer or arbitrary HTTP URL.
   const requireClipboardAgent = async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
@@ -8984,16 +9073,53 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard encrypted item')
     }
     const v = value as Record<string, unknown>
-    if (typeof v.client_event_id !== 'string' ||
-        !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v.client_event_id) ||
-        (v.kind !== 'text/plain' && v.kind !== 'text/uri-list') ||
-        typeof v.nonce !== 'string' || v.nonce.length !== 16 ||
-        typeof v.ciphertext !== 'string' ||
-        v.ciphertext.length < 20 || v.ciphertext.length > 90000) {
-      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard ciphertext')
+    const knownFields = new Set(['client_event_id', 'kind', 'nonce', 'ciphertext',
+      'target_device_id', 'ephemeral_key', 'wrapped_key', 'node_id'])
+    if (Object.keys(v).some(name => !knownFields.has(name))) {
+      throw new AgentIPCError('invalid_input', 0, 'Unexpected Clipboard IPC metadata')
     }
-    return { client_event_id: v.client_event_id, kind: v.kind,
-      nonce: v.nonce, ciphertext: v.ciphertext }
+    const uuid = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
+    const decode = (raw: unknown, requiredLength: number): boolean => {
+      if (typeof raw !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(raw)) return false
+      const bytes = Buffer.from(raw, 'base64')
+      return bytes.length === requiredLength && bytes.toString('base64') === raw
+    }
+    const allowedKind = v.kind === 'text/plain' || v.kind === 'text/uri-list' ||
+      v.kind === 'image/x-xdrive-node-ref' || v.kind === 'application/x-xdrive-node-ref'
+    const media = v.kind === 'image/x-xdrive-node-ref' ||
+      v.kind === 'application/x-xdrive-node-ref'
+    const target = v.target_device_id
+    const directed = typeof target === 'string' && target !== ''
+    if (typeof v.client_event_id !== 'string' || !uuid.test(v.client_event_id) ||
+        (v.target_device_id !== undefined && typeof v.target_device_id !== 'string') ||
+        (v.ephemeral_key !== undefined && typeof v.ephemeral_key !== 'string') ||
+        (v.wrapped_key !== undefined && typeof v.wrapped_key !== 'string') ||
+        (v.node_id !== undefined && (typeof v.node_id !== 'number' ||
+          !Number.isSafeInteger(v.node_id))) ||
+        !allowedKind || !decode(v.nonce, 12) ||
+        typeof v.ciphertext !== 'string' || v.ciphertext.length > 90000 ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(v.ciphertext) ||
+        Buffer.from(v.ciphertext, 'base64').length < 17 ||
+        Buffer.from(v.ciphertext, 'base64').toString('base64') !== v.ciphertext ||
+        (media !== (typeof v.node_id === 'number' && Number.isSafeInteger(v.node_id) &&
+          v.node_id > 0)) ||
+        (directed && (!uuid.test(target as string) || !decode(v.ephemeral_key, 32) ||
+          !decode(v.wrapped_key, 60))) ||
+        (!directed && (media || v.ephemeral_key || v.wrapped_key || v.target_device_id)) ||
+        (v.node_id !== undefined && !media) ||
+        (v.target_device_id !== undefined && !directed)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard ciphertext or target')
+    }
+    // Construct a strict allowlisted payload. Never forward unknown IPC keys.
+    return {
+      client_event_id: v.client_event_id, kind: v.kind as AgentClipboardWrite['kind'],
+      nonce: v.nonce as string, ciphertext: v.ciphertext,
+      ...(directed ? {
+        target_device_id: target as string, ephemeral_key: v.ephemeral_key as string,
+        wrapped_key: v.wrapped_key as string,
+      } : {}),
+      ...(media ? { node_id: v.node_id as number } : {}),
+    }
   }
   ipcMain.handle('agent:cloud-clipboard-vault', () =>
     runAgentAction<AgentClipboardVault>(async () =>
@@ -9004,6 +9130,22 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:cloud-clipboard-list', (_event, before: unknown) =>
     runAgentAction<AgentClipboardPage>(async () =>
       (await requireClipboardAgent()).cloudClipboardList(clipboardIndex(before, true)), false))
+  ipcMain.handle('agent:cloud-clipboard-devices', () =>
+    runAgentAction<AgentClipboardDevices>(async () =>
+      (await requireClipboardAgent()).cloudClipboardDevices(), false))
+  ipcMain.handle('agent:cloud-clipboard-enable-device', () =>
+    runAgentAction<AgentClipboardDevice>(async () =>
+      (await requireClipboardAgent()).cloudClipboardEnableDevice(), false))
+  ipcMain.handle('agent:cloud-clipboard-decrypt', (_event, id: unknown) =>
+    runAgentAction<AgentClipboardCleartext>(async () =>
+      (await requireClipboardAgent()).cloudClipboardDecrypt(clipboardIndex(id)), false))
+  ipcMain.handle('agent:cloud-clipboard-revoke-device', (_event, deviceID: unknown) =>
+    runAgentAction<void>(async () => {
+      if (typeof deviceID !== 'string' ||
+          !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(deviceID))
+        throw new AgentIPCError('invalid_input', 0, 'Invalid Clipboard recipient')
+      return (await requireClipboardAgent()).cloudClipboardRevokeDevice(deviceID)
+    }, false))
   ipcMain.handle('agent:cloud-clipboard-create', (_event, value: unknown) =>
     runAgentAction<AgentClipboardItem>(async () =>
       (await requireClipboardAgent()).cloudClipboardCreate(clipboardWrite(value)), false))

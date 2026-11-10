@@ -137,6 +137,29 @@ struct XDriveIOSClipboardPage: Decodable {
     let next_before: UInt64?
 }
 
+struct XDriveIOSClipboardTargetDevice: Decodable, Identifiable {
+    let device_id: String
+    let name: String
+    let platform: String
+    let public_key: String
+    var id: String { device_id }
+}
+
+private struct XDriveIOSClipboardTargetDirectory: Decodable {
+    let devices: [XDriveIOSClipboardTargetDevice]
+}
+
+struct XDriveIOSClipboardDirectedWrite: Encodable {
+    let client_event_id: String
+    let kind: String
+    let target_device_id: String
+    let ephemeral_key: String
+    let wrapped_key: String
+    let nonce: String
+    let ciphertext: String
+    let node_id: UInt64?
+}
+
 private final class XDriveIOSClipboardRejectRedirects:
     XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
@@ -321,6 +344,66 @@ struct XDriveIOSNativeClipboardClient {
         guard page.items.count <= 50 else { throw XDriveIOSClipboardCrypto.Failure.invalidCiphertext }
         return page
     }
+    /// Public recipient keys are fetched through the current interactive
+    /// Owner bearer only. Installation credentials are not required and
+    /// must never be exposed in the SwiftUI device picker.
+    func devices() async throws -> [XDriveIOSClipboardTargetDevice] {
+        let sender = try XDriveIOSNativeClipboardClient(owner: owner, accessToken: token)
+        let directory = try await sender.request("/api/v1/clipboard/devices",
+            response: XDriveIOSClipboardTargetDirectory.self)
+        guard directory.devices.count <= 100 else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidCiphertext
+        }
+        var ids = Set<String>()
+        for device in directory.devices {
+            guard UUID(uuidString: device.device_id) != nil,
+                  ids.insert(device.device_id).inserted,
+                  !device.name.isEmpty, device.name.count <= 128,
+                  !device.platform.isEmpty, device.platform.count <= 32,
+                  let publicBytes = Data(base64Encoded: device.public_key),
+                  publicBytes.count == 32, publicBytes.contains(where: { $0 != 0 }) else {
+                throw XDriveIOSClipboardCrypto.Failure.invalidCiphertext
+            }
+        }
+        return directory.devices
+    }
+
+    func sendDirected(_ wire: XDriveIOSClipboardDirectedWrite) async throws
+        -> XDriveIOSClipboardItem {
+        guard UUID(uuidString: wire.client_event_id) != nil,
+              UUID(uuidString: wire.target_device_id) != nil,
+              let ephemeral = Data(base64Encoded: wire.ephemeral_key), ephemeral.count == 32,
+              let wrapped = Data(base64Encoded: wire.wrapped_key), wrapped.count == 60,
+              let iv = Data(base64Encoded: wire.nonce), iv.count == 12,
+              let encrypted = Data(base64Encoded: wire.ciphertext),
+              (17...65_552).contains(encrypted.count) else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidCiphertext
+        }
+        let media = wire.kind == "image/x-xdrive-node-ref" ||
+                    wire.kind == "application/x-xdrive-node-ref"
+        guard (media && (wire.node_id ?? 0) > 0) ||
+              (!media && wire.node_id == nil &&
+               (wire.kind == "text/plain" || wire.kind == "text/uri-list")) else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidCiphertext
+        }
+        // The receiver's installation header must not be reused as a
+        // sender grant; only the Owner bearer and selected public key go out.
+        let sender = try XDriveIOSNativeClipboardClient(owner: owner, accessToken: token)
+        let value = try await sender.request("/api/v1/clipboard/items",
+            method: "POST", body: JSONEncoder().encode(wire),
+            response: XDriveIOSClipboardItem.self)
+        guard value.client_event_id == wire.client_event_id,
+              value.target_device_id == wire.target_device_id,
+              value.ephemeral_key == wire.ephemeral_key,
+              value.wrapped_key == wire.wrapped_key,
+              value.nonce == wire.nonce,
+              value.ciphertext == wire.ciphertext,
+              value.kind == wire.kind, value.node_id == wire.node_id else {
+            throw XDriveIOSClipboardCrypto.Failure.invalidCiphertext
+        }
+        return value
+    }
+
     func send(_ wire: XDriveIOSClipboardCrypto.Encrypted) async throws -> XDriveIOSClipboardItem {
         let bytes = try JSONEncoder().encode(wire)
         let received = try await request("/api/v1/clipboard/items", method: "POST",

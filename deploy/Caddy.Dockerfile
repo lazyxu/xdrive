@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 ARG CADDY_VERSION=2.10.2
 FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
 ARG GOPROXY=https://proxy.golang.org|direct
@@ -24,9 +23,11 @@ RUN set -eu; \
 
 FROM caddy:${CADDY_VERSION}-alpine
 ARG VERSION=dev
+ARG BUILD_COMMIT=
 LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
       org.opencontainers.image.description="xDrive Web + Caddy edge with AliDNS DNS-01 support" \
-      org.opencontainers.image.version="$VERSION"
+      org.opencontainers.image.version="$VERSION" \
+      org.opencontainers.image.revision="$BUILD_COMMIT"
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 # Caddy's upstream final image may retain cap_net_bind_service=+ep on this
 # executable. A capability-dumb file cannot exec with cap_drop=ALL (EPERM),

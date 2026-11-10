@@ -78,7 +78,7 @@ dir="$output/xdrive-backup-pipe-test"
 mkdir -p "$dir"
 printf "%s\n" "$dir"
 ' ;;
-  */scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/server-control.sh|*/scripts/caddy-admission.py|*/scripts/caddy-env-config.py|*/scripts/xdrive-share-update.py|*/scripts/xdrive-server-host.sh)
+  */scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/server-control.sh|*/scripts/release_bundle.py|*/scripts/caddy-admission.py|*/scripts/caddy-env-config.py|*/scripts/xdrive-share-update.py|*/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
 ' ;;

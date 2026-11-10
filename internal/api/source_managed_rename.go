@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -11,7 +10,7 @@ import (
 )
 
 var (
-	errSourceTargetMigrationRequired = errors.New("source target must be migrated before renaming")
+	errSourceTargetMigrationRequired = errors.New("source target is not a current managed destination")
 	errSourceTargetNameConflict      = errors.New("managed source target name is occupied")
 	errSourceTargetRenameActive      = errors.New("source has an active run; target rename is unsafe")
 )
@@ -112,20 +111,13 @@ func requireSourceTargetRenameQuiescentTx(tx *gorm.DB, source meta.Source, targe
 	return nil
 }
 
-// renameManagedSourceTargetTx is part of PATCH /sources/:id's Source-locked
-// transaction. Only a proven managed root may be renamed. A legacy Source may
-// point at a user-owned mixed folder; renaming that folder is not authorized by
-// the Source's display name. Its migration must establish exclusive ownership.
+// Rename only current, server-provisioned Push/Pull targets. No old-layout
+// directory adoption, relocation or uid_* compatibility is supported.
 func renameManagedSourceTargetTx(tx *gorm.DB, source meta.Source, nextName string) error {
 	if err := meta.ValidateName(nextName); err != nil {
 		return errInvalidSourceConfig
 	}
-	if source.TargetNodeID == nil {
-		// Yike's first, credential-validated target is bound later. In that
-		// phase the leaf must be derived from the Source name, not nickname.
-		if source.Kind == yikeSourceKind && source.Direction == meta.SourceDirectionPull {
-			return nil
-		}
+	if source.TargetNodeID == nil || !source.TargetManaged {
 		return errSourceTargetMigrationRequired
 	}
 
@@ -139,12 +131,7 @@ func renameManagedSourceTargetTx(tx *gorm.DB, source meta.Source, nextName strin
 		}
 		return err
 	}
-	// Yike has a preexisting server-controlled target contract. Every other
-	// Source needs explicit server-side management provenance; naming/path
-	// resemblance must never turn a manually selected legacy folder into one.
-	if !source.TargetManaged && source.Kind != yikeSourceKind {
-		return errSourceTargetMigrationRequired
-	}
+	// Every Source kind uses the same server-managed target provenance.
 
 	ancestors, err := managedSourceTargetAncestorIDsTx(tx, source, target)
 	if err != nil {
@@ -183,22 +170,6 @@ WHERE s.owner_id = ? AND s.id <> ?`,
 	}
 
 	leaf := nextName
-	if source.Kind == yikeSourceKind {
-		names, err := managedSourceTargetAncestorNamesTx(tx, source, target)
-		if err != nil {
-			return err
-		}
-		if len(names) >= 3 && names[0] == "Yike Photos" && names[1] == "Pull" &&
-			names[2] == yikeTargetRootName && target.Name == source.Name {
-			leaf = nextName
-		} else {
-			accountID, ok := managedYikeTargetAccountID(target.Name)
-			if !ok {
-				return errSourceTargetMigrationRequired
-			}
-			leaf = fmt.Sprintf("uid_%d_%s", accountID, nextName)
-		}
-	}
 	if err := meta.ValidateName(leaf); err != nil {
 		return errInvalidSourceConfig
 	}
@@ -282,9 +253,7 @@ func managedSourceTargetAncestorIDsTx(tx *gorm.DB, source meta.Source, target me
 	return append(ancestors, ownerRoot.ID), nil
 }
 
-// Select the exact accepted hierarchy from the real Node ancestors. The new
-// Push/Pull namespaces are canonical; old prefixes remain readable for
-// already-existing Sources, but no code moves those targets.
+// Accept only current canonical managed Push/Pull target ancestors.
 func managedSourceTargetAncestorNamesTx(tx *gorm.DB, source meta.Source, target meta.Node) ([]string, error) {
 	if target.ParentID == nil {
 		return nil, errSourceTargetMigrationRequired
@@ -317,36 +286,23 @@ func managedSourceTargetAncestorNamesTx(tx *gorm.DB, source meta.Source, target 
 	case meta.SourceDirectionPush:
 		switch source.Kind {
 		case meta.SourceKindLocalFolder, meta.SourceKindIOSPhotos, meta.SourceKindAndroidPhotos, synologySourceKind:
-		default:
-			return nil, errSourceTargetMigrationRequired
+			if leafParent.Name == "Push" && namespace.Name == yikeTargetRootName {
+				return []string{"Push", yikeTargetRootName}, nil
+			}
 		}
-		// New Push targets are direct children of 同步文件夹/Push. Older
-		// Sources retain their existing device-group or 设备备份 ancestry.
-		if leafParent.Name == "Push" && namespace.Name == yikeTargetRootName {
-			return []string{"Push", yikeTargetRootName}, nil
-		}
-		if namespace.Name != "Push" && namespace.Name != "设备备份" {
-			return nil, errSourceTargetMigrationRequired
-		}
-		return []string{"", namespace.Name, yikeTargetRootName}, nil
-
 	case meta.SourceDirectionPull:
+		var connector string
 		switch source.Kind {
 		case yikeSourceKind:
-			if leafParent.Name == "Yike Photos" && namespace.Name == "Pull" {
-				return []string{"Yike Photos", "Pull", yikeTargetRootName}, nil
-			}
-			if leafParent.Name == yikeTargetConnectorName && namespace.Name == yikeTargetRootName {
-				return []string{yikeTargetConnectorName, yikeTargetRootName}, nil
-			}
+			connector = yikePullTargetConnectorName
 		case synologySourceKind:
-			if leafParent.Name == "Synology Photos" && (namespace.Name == "Pull" || namespace.Name == "远程拉取") {
-				return []string{leafParent.Name, namespace.Name, yikeTargetRootName}, nil
-			}
+			connector = "Synology Photos"
 		case synologyFilesSourceKind:
-			if leafParent.Name == "Synology Files" && (namespace.Name == "Pull" || namespace.Name == "远程拉取") {
-				return []string{leafParent.Name, namespace.Name, yikeTargetRootName}, nil
-			}
+			connector = "Synology Files"
+		}
+		if connector != "" && leafParent.Name == connector &&
+			namespace.Name == yikePullTargetRootName {
+			return []string{connector, yikePullTargetRootName, yikeTargetRootName}, nil
 		}
 	}
 	return nil, errSourceTargetMigrationRequired

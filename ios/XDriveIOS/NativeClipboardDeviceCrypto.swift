@@ -47,6 +47,57 @@ enum XDriveIOSClipboardDeviceCrypto {
         return generated
     }
 
+    // The Native sender produces exactly the WebCrypto v2 wire. Only the
+    // recipient's published public key enters the sender; the private key
+    // never leaves its own device, and the Server receives neither key.
+    static func encryptForDevice(
+        _ clear: String, ownerScope: String, deviceID: String, publicKey: String,
+        kind: String, nodeID: UInt64 = 0,
+        eventID: String = UUID().uuidString.lowercased()
+    ) throws -> XDriveIOSClipboardDirectedWrite {
+        let plain = Data(clear.utf8)
+        guard (1...65_536).contains(plain.count),
+              ownerScope.utf8.count <= 512, !ownerScope.isEmpty,
+              UUID(uuidString: deviceID) != nil, UUID(uuidString: eventID) != nil,
+              let recipientRaw = Data(base64Encoded: publicKey),
+              recipientRaw.count == 32, recipientRaw.contains(where: { $0 != 0 }) else {
+            throw Failure.invalidEnvelope
+        }
+        let isText = kind == "text/plain" || kind == "text/uri-list"
+        let isReference = kind == "image/x-xdrive-node-ref" ||
+                          kind == "application/x-xdrive-node-ref"
+        guard (isText && nodeID == 0) || (isReference && nodeID > 0) else {
+            throw Failure.invalidEnvelope
+        }
+        let recipient = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: recipientRaw)
+        let ephemeral = Curve25519.KeyAgreement.PrivateKey()
+        let shared = try ephemeral.sharedSecretFromKeyAgreement(with: recipient)
+        let context = "xdrive-clipboard-target-v1|\(ownerScope)|\(eventID)|\(deviceID)"
+        let salt = Data(SHA256.hash(data: Data((context + "|salt").utf8)))
+        let wrapKey = shared.hkdfDerivedSymmetricKey(
+            using: SHA256.self, salt: salt,
+            sharedInfo: Data((context + "|wrap").utf8), outputByteCount: 32)
+        let contentKey = SymmetricKey(size: .bits256)
+        let keyBytes = contentKey.withUnsafeBytes { Data($0) }
+        let wrappedNonce = AES.GCM.Nonce()
+        let wrapped = try AES.GCM.seal(keyBytes, using: wrapKey,
+            nonce: wrappedNonce,
+            authenticating: Data((context + "|key|\(kind)|\(nodeID)").utf8))
+        let nonce = AES.GCM.Nonce()
+        let cipher = try AES.GCM.seal(plain, using: contentKey,
+            nonce: nonce,
+            authenticating: Data((context + "|content|\(kind)|\(nodeID)").utf8))
+        return XDriveIOSClipboardDirectedWrite(
+            client_event_id: eventID, kind: kind,
+            target_device_id: deviceID,
+            ephemeral_key: ephemeral.publicKey.rawRepresentation.base64EncodedString(),
+            wrapped_key: (Data(wrappedNonce) + wrapped.ciphertext + wrapped.tag).base64EncodedString(),
+            nonce: Data(nonce).base64EncodedString(),
+            ciphertext: (cipher.ciphertext + cipher.tag).base64EncodedString(),
+            node_id: nodeID > 0 ? nodeID : nil
+        )
+    }
+
     static func decrypt(_ item: XDriveIOSClipboardItem, ownerScope: String,
                         deviceID: String, privateKey: Curve25519.KeyAgreement.PrivateKey) throws -> String {
         guard item.target_device_id == deviceID,

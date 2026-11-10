@@ -9,12 +9,13 @@
 > These rules supersede older DSM Source Agent descriptions below.
 > Native Local Push archive/paused restore requires the owning Device and
 > verified Root proof, never an Owner session alone.
-> New Push targets are flat `同步文件夹/Push/<SourceName>`, and legacy
-> target directories are not migrated.
+> New Push targets are flat `同步文件夹/Push/<SourceName>`. There is no
+> production historical Push/Pull data: old target migration and uid_* adoption
+> are removed; newly created Sources use canonical Server-provisioned targets.
 
 
 **Decision:** 2026-11-05  
-**Scope:** new Push/Pull Sources and new destinations. Old directories, file contents and receipts are not migrated. S01 allows only a verified Owner/platform-matched Source.DeviceID metadata backfill; it does not move targets or rebind unrelated devices.
+**Scope:** only newly created canonical Push/Pull Sources and destinations. No old-directory relocation, legacy migration preview or credential-time target adoption. Database schema/index upgrades and verified Source.DeviceID authorization remain independent of directory migration.
 
 This is the canonical cross-platform contract. Platform guides describe adapters and current as-built status; they must not define different Source lifecycles, destination namespaces, device identity rules, or Pull execution models.
 
@@ -55,7 +56,7 @@ Rules:
 7. TargetManaged is set only after successful Server provisioning. Existing managed-subtree write guards remain mandatory.
 8. Occupied leaves, unverified ancestors, duplicate bindings and overlapping Source subtrees fail closed. Never adopt an ordinary same-name folder.
 
-Historical Sources can still reference 同步文件夹/设备备份, 同步文件夹/远程拉取, or Yike-specific 同步文件夹/一刻相册. These are **retained historical paths**, not current new-source provisioning gaps. After #4082, new Sources use the canonical Push/Pull namespace. No old-directory migration is requested.
+There is no production legacy Source target data to relocate. Old directory trees and uid_* target names are not supported as managed Source targets; creating a new Source provisions its canonical target atomically. The service does not expose a migration-preview endpoint.
 
 ## 3. Source types and entry points
 
@@ -186,7 +187,7 @@ iOS Photos 使用统一的 `Source(kind=ios_photos, direction=push, sync_mode=ba
 - Source Manager 展示统一目标目录、最近运行状态和分页运行历史；不提供 Server 端 Run Now、通用来源设置、虚构的相册集合或逐文件错误快照。继续备份、权限和自动计划仍在绑定的 iPhone 上管理。
 
 
-## Optional Source cloud-only cleanup — #4093 candidate
+## Optional Source cloud-only cleanup — merged #4093
 
 Cloud-only cleanup is a **separate explicit Owner action**, not Source archive/delete and not a replacement for ordinary Files operations. A retired or archived Source does not silently remove its cloud files.
 
@@ -196,7 +197,9 @@ Cloud-only cleanup is a **separate explicit Owner action**, not Source archive/d
 4. Unsettled UploadSessions, running SourceRuns, queued Files operations, foreign Source/SourceItem dependencies, active direct Shares, malformed ancestry and stale revisions **fail closed**. Data remains intact on refusal.
 5. The target subtree is only soft-deleted using the existing bounded, atomic Trash operation. Source/SourceItems/SyncRuns, file versions and CAS stay unchanged. The Owner uses the existing Trash Restore API for rollback; Source stays archived. Ordinary permanent Trash delete is denied while any Source remains bound to the target.
 
-This is a new API + UI candidate in #4093. It is not implemented in merged master until its exact HEAD CI, PostgreSQL tests and Final Gate succeed. Physical device/production validation remains separate.
+The preview/confirmation/Trash workflow above was **merged into master through #4093** (merge commit `e38ff7ed9aaf32b01e034a5a4e344f65d584320d`) after exact-HEAD CI. The eligible Source kind remains archived, managed **Yike Photos Pull only**; neither dormant Synology Pull nor native/device Push gains a cloud cleanup action.
+
+The additional fail-closed cross-Owner subtree, Source, and Share protection **merged through #4136** after exact-head CI/Final Gate on 2026-11-09. Server-side preview and Trash both enforce archived Yike Pull-only eligibility, including old malformed cross-Owner ancestry and stale previews. The PostgreSQL negative regressions are part of accepted master. Cloud cleanup remains separate from legacy migration and cannot grant a second CAS writer. Physical device/production validation remains separate.
 
 ## S10–S18 destination policy (merged in #4082, 2026-11-07)
 
@@ -206,4 +209,4 @@ This is a new API + UI candidate in #4093. It is not implemented in merged maste
 - Registered Push device names, remote Synology NAS names and Yike account nicknames are defaults, not authorization proofs. User edits override suggestions.
 - New Yike Pull creates its target at Source creation. Remote account identity is privately stored apart from its display name; refreshing credentials preserves the same target Node.
 - Running/queued SourceRuns, active UploadSessions and unsettled local Push operations block rename. Otherwise Source/Node names and revisions commit atomically; child IDs and CAS receipts remain unchanged.
-- Old Sources, old directories, and old receipts are not migrated or silently adopted.
+- Old Sources and old directory trees are not migrated or adopted. New Source provisioning, upload receipts and Source archive/restore stay supported.

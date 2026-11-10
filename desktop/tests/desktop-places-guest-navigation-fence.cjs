@@ -93,6 +93,13 @@ test('Owner switch, logout, expired Agent, disabled account and Server change re
     state => { state.status.username = 'other-owner' },
     state => { state.status.auth_status = '登录已过期' },
     state => { state.status.auth_status = '账户已禁用' },
+    state => { state.status.auth_status = '需要重新登录' },
+    state => { state.status.auth_status = '需要修改密码' },
+    state => { state.status.auth_status = '访问被拒绝' },
+    state => { state.status.auth_status = '未登录' },
+    state => { state.status.auth_status = '未知状态' },
+    state => { state.status.auth_status = undefined },
+    state => { state.status.must_change_password = true },
     state => { state.status.server = 'https://192.168.7.9:8443' },
   ]) {
     const {state, navigate} = fixture()
@@ -102,11 +109,23 @@ test('Owner switch, logout, expired Agent, disabled account and Server change re
   }
 })
 
+test('paused sync or transport faults do not revoke a legitimately logged-in map', () => {
+  const {state, navigate} = fixture()
+  state.status.sync_status = '已暂停'
+  state.status.paused = true
+  assert.equal(navigate(simple, {owner, origin}), true)
+  state.status.sync_status = '连接失败'
+  assert.equal(navigate(simple, {owner, origin}), true)
+})
+
 test('actual Electron Guest navigation AND redirects use the same strict scope allowlist', () => {
   const begin = main.indexOf("win.webContents.on('did-attach-webview'")
   const end = main.indexOf("win.webContents.on('will-navigate'", begin)
   assert.ok(begin >= 0 && end > begin)
   const wiring = main.slice(begin, end)
+  assert.match(wiring,
+    /desktopPlacesWebOwnerStillCurrent\(\{owner,origin:target\.origin\}\)/,
+    'late WebView attach must reject a native Agent that lost its login')
   assert.match(wiring,
     /const authorized=\(rawURL:string\)=>\s*desktopPlacesGuestNavigationAllowed\(rawURL,identity\)/)
   assert.match(wiring,
@@ -115,4 +134,37 @@ test('actual Electron Guest navigation AND redirects use the same strict scope a
     /guest\.on\('will-redirect',\(event,url\)=>\{if\(!authorized\(url\)\)event\.preventDefault\(\)\}\)/)
   assert.match(main, /desktopPlacesGuestFrameAllowed\(event.senderFrame.url,guest.origin\)/,
     'scope consume and navigation must share the same narrow frame allowlist')
+  assert.match(wiring,/guest\.on\('did-start-navigation',details=>\{/,
+    'React hash/history navigation requires a main-frame early revocation fence')
+  assert.match(wiring,/if\(details\.isMainFrame && details\.isSameDocument\)/)
+  assert.match(wiring,/guest\.on\('did-navigate-in-page',\(_event,url,isMainFrame\)=>\{/)
+  assert.match(wiring,/if\(isMainFrame\)revokeInPageNavigation\(url\)/)
+  assert.match(wiring,/if\(desktopPlacesGuests\.get\(guest\.id\)===identity\)closeDesktopPlacesGuests\(\)/,
+    'revoke Cookie partition only for the matching current Guest')
+  assert.match(wiring,/if\(!guest\.isDestroyed\(\)\)guest\.close\(\{waitForBeforeUnload:false\}\)/,
+    'force-close unauthorized in-page document, ignoring beforeunload')
+})
+
+test('hash and history.pushState cannot escape map-only routes',()=>{
+  const {navigate}=fixture()
+  const identity={owner,origin}
+  const urls=[
+    simple,
+    origin+'/?desktop_places_embed=1&places_map_mode=isolated'+route,
+    origin+'/index.html?desktop_places_embed=1'+route,
+  ]
+  for(const url of urls)assert.equal(navigate(url,identity),true)
+  const escaped=[
+    origin+'/?desktop_places_embed=1#/app/files',
+    origin+'/?desktop_places_embed=1#/app/notes',
+    origin+'/?desktop_places_embed=1#/app/media-viewer?node=42',
+    origin+'/?desktop_places_embed=1#/app/gallery?section=library',
+    origin+'/?desktop_places_embed=1#/app/gallery?section=places&owner=foreign',
+    origin+'/?desktop_places_embed=1&new_route=1'+route,
+    origin+'/?places_map_mode=isolated'+route,
+  ]
+  for(const url of escaped)assert.equal(navigate(url,identity),false,url)
+  const {state,navigate:stale}=fixture()
+  state.status.username='other-owner'
+  assert.equal(stale(simple,identity),false,'stale Owner cannot navigate history')
 })

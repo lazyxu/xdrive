@@ -44,6 +44,14 @@ export type XDriveTransferTask = {
   state: XDriveTransferState
   bytes_done: number
   bytes_total: number
+  // Only set after a successful upload using verified transport/CAS receipt.
+  // This is actual file-content upload, not logical progress or measured speed.
+  upload_transferred_bytes?: number
+  // Only CAS-staged chunks count as dedup; resumed chunks have their own source.
+  upload_cas_reused_bytes?: number
+  upload_resume_reused_bytes?: number
+  // Conflict-policy skip is distinct from a full CAS hit (instant upload).
+  upload_skipped?: boolean
   percent: number
   items_total?: number
   items_completed?: number
@@ -452,6 +460,24 @@ export function xDriveTransferEtaMs(task: XDriveTransferTask) {
     : task.average_bytes_per_second
   if (speed <= 0) return undefined
   return Math.max(0, Math.round(((task.bytes_total - task.bytes_done) / speed) * 1000))
+}
+
+export type XDriveUploadTransferOutcome = 'instant' | 'partially_reused' | 'resumed' | 'uploaded' | 'skipped'
+
+/** A zero-byte transfer alone can be a resume, skip, or missing receipt. */
+export function xDriveTransferUploadOutcome(task: XDriveTransferTask): XDriveUploadTransferOutcome | null {
+  if (task.direction !== 'upload' || task.scope === 'group' || task.state !== 'completed') return null
+  if (task.upload_skipped === true) return 'skipped'
+  const transferred = task.upload_transferred_bytes
+  const cas = task.upload_cas_reused_bytes ?? 0
+  const resumed = task.upload_resume_reused_bytes ?? 0
+  const valid = (value: number) => Number.isSafeInteger(value) && value >= 0 && value <= task.bytes_total
+  if (!valid(task.bytes_total) || transferred === undefined || !valid(transferred) ||
+      !valid(cas) || !valid(resumed) || transferred + cas + resumed !== task.bytes_total) return null
+  if (task.bytes_total > 0 && transferred === 0 && cas === task.bytes_total) return 'instant'
+  if (cas > 0) return 'partially_reused'
+  if (resumed > 0) return 'resumed'
+  return 'uploaded'
 }
 
 export function xDriveTransferPercent(task: XDriveTransferTask) {

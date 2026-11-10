@@ -63,6 +63,7 @@ services:
       XD_REFRESH_TOKEN_TTL: ${XD_REFRESH_TOKEN_TTL:-720h}
       XD_STORAGE_ROOT: /data
       XD_HOST_CONTROL_DIR: /host-control
+      XD_RELEASE_BUNDLE_DIR: /release-bundles
       XD_UPDATE_IMPORT_DIR: /update-imports
       XD_FILES_DATA_HOST_PATH: ${XD_FILES_DATA_DIR:-}
       XD_POSTGRES_DATA_HOST_PATH: ${XD_POSTGRES_DATA_DIR:-}
@@ -88,6 +89,7 @@ services:
     volumes:
       - "${XD_FILES_DATA_DIR:-../data/files}:/data"
       - "${XD_HOST_CONTROL_HOST_DIR:-../state/control}:/host-control"
+      - "${XD_RELEASE_BUNDLE_HOST_DIR:-../data/release-bundles}:/release-bundles:ro"
       # Admin offline packages are isolated from ordinary CAS and backup
       # storage; Server may stage bytes, but no Docker socket is mounted.
       - "${XD_UPDATE_IMPORT_HOST_DIR:-../state/update-imports}:/update-imports"

@@ -1,4 +1,4 @@
-import type { MediaBaiduNativeCellSelection, MediaItem, MediaItemRange } from './models'
+import type { MediaBaiduNativeCellSelection, MediaItem, MediaItemRange, MediaTimelineGroupSets, MediaTimelineGroupIndex } from './models'
 import { xDriveValidBaiduNativeCellRangePage } from './media-gallery-baidu-jsapi4-cell-range'
 import {
   XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,
@@ -133,14 +133,51 @@ export function xDrivePlacesPhotoWindowRehydrate(
     depth: window.depth, total: window.total }
 }
 
+
+/** Explicit first-time seek beyond the visited prefix. Preserve #4127:
+ * rehydration must never materialize unvisited rows; a separate seek can
+ * use a newly verified 48-item aligned signed Owner page. */
+export function xDrivePlacesPhotoWindowSeek(
+  selection: MediaBaiduNativeCellSelection,
+  window: XDrivePlacesPhotoWindow,
+  page: MediaItemRange,
+): XDrivePlacesPhotoWindow | null {
+  const offset = page?.offset
+  if (!Number.isSafeInteger(offset) || offset < window.depth ||
+      offset >= window.total ||
+      offset % XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT !== 0 ||
+      !acceptsPage(selection, window, page, offset)) return null
+  if (offset === window.depth)
+    return xDrivePlacesPhotoWindowAppend(selection, window, page)
+  const residentEnd = window.start + window.items.length
+  const duplicate = page.items.some(item => window.items.some(old =>
+    old.node.id === item.node.id))
+  if ((offset === residentEnd ||
+       offset + page.items.length === window.start) && duplicate) return null
+  if (offset === residentEnd) {
+    return xDrivePlacesPhotoWindowBound({
+      start: window.start, items: [...window.items, ...page.items],
+      depth: window.depth, total: window.total,
+    })
+  }
+  if (offset + page.items.length === window.start) {
+    const combined = [...page.items, ...window.items]
+    return { start: offset,
+      items: combined.slice(0, XDRIVE_PLACES_DRAWER_WINDOW_ITEM_LIMIT),
+      depth: window.depth, total: window.total }
+  }
+  return { start: offset, items: [...page.items],
+    depth: window.depth, total: window.total }
+}
+
 export function xDrivePlacesPhotoWindowMissingOffset(
   window: XDrivePlacesPhotoWindow,
   start: number,
   end: number,
 ): number | null {
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
-      start < 0 || end < start || end >= window.depth ||
-      window.items.length < 1 || window.depth <= 0) return null
+      start < 0 || end < start || end >= window.total ||
+      window.items.length < 1 || window.total <= 0) return null
   const residentEnd = window.start + window.items.length
   if (start < window.start) {
     return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
@@ -154,9 +191,49 @@ export function xDrivePlacesPhotoWindowMissingOffset(
     return Math.floor(start / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }
-  if (end >= residentEnd && residentEnd < window.depth) {
+  if (end >= residentEnd && residentEnd < window.total) {
     return Math.floor(residentEnd / XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT) *
       XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT
   }
   return null
+}
+
+/** Admit only a COMPLETE Owner-signed timeline index for this Cell. A 48-item
+ * sparse page cannot be grouped by dates locally: it would fabricate the
+ * missing date boundaries and could make a 100k location appear smaller.
+ * This index is display-only and cannot authorize an unloaded photo.
+ */
+export function xDrivePlacesPhotoTimelineGroups(
+  page: MediaItemRange,
+): MediaTimelineGroupSets | null {
+  if (page?.offset !== 0 || !Number.isSafeInteger(page.total_count) ||
+      page.total_count < 1 || !page.timeline_group_sets) return null
+  const input = page.timeline_group_sets
+  const output = {} as MediaTimelineGroupSets
+  const formats: ReadonlyArray<keyof MediaTimelineGroupSets> = ['year','month','day']
+  for (const scale of formats) {
+    const groups = input[scale]
+    if (!Array.isArray(groups) || groups.length < 1 ||
+        groups.length > page.total_count) return null
+    const accepted: MediaTimelineGroupIndex[] = []
+    let count = 0
+    const datePattern = scale === 'year' ? /^\d{4}$/ :
+      scale === 'month' ? /^\d{4}-\d{2}$/ : /^\d{4}-\d{2}-\d{2}$/
+    for (const group of groups) {
+      if (!group || typeof group.key !== 'string' ||
+          !(group.key === 'unknown' || datePattern.test(group.key)) ||
+          !Number.isSafeInteger(group.item_count) || group.item_count < 1 ||
+          !Number.isSafeInteger(group.start_index) ||
+          group.start_index !== count ||
+          group.item_count > page.total_count - count) return null
+      accepted.push({
+        key: group.key, item_count: group.item_count,
+        start_index: group.start_index,
+      })
+      count += group.item_count
+    }
+    if (count !== page.total_count) return null
+    output[scale] = accepted
+  }
+  return output
 }

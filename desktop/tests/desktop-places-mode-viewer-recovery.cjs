@@ -84,6 +84,13 @@ test('Owner/filter/date/camera/tab switches reject late one-use scope handoff',a
     {...issued,ownerScope:foreign},
     {...issued,photoScopeKey:differentScope({favorite:false})},
     {...issued,photoScopeKey:differentScope({captured_from:'2026-09-01'})},
+    {...issued,photoScopeKey:differentScope({captured_to:'2026-12-01'})},
+    {...issued,photoScopeKey:differentScope({asset_kind:'video'})},
+    {...issued,photoScopeKey:differentScope({sort_by:'added'})},
+    {...issued,photoScopeKey:differentScope({time_zone:'UTC'})},
+    {...issued,photoScopeKey:mapScope.xDriveBaiduMapPhotoScopeKey({
+      ...scope,albumKey:'manual:Other',
+    })},
     {...issued,camera:{...camera,zoom:13}}, {...issued,camera:null},
     {...issued,routeHref:'https://maps.xdrive.example/#/app/files'},
   ])assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(issued,changed),false)
@@ -112,4 +119,27 @@ test('Owner logout/switch clears even an already-marked Viewer return and old ca
   assert.equal(cameraState.xDriveReadBaiduNativeCamera(owner,1003),undefined)
   assert.equal(cell.xDriveTakeBaiduCellViewerReturn(owner,1003),undefined)
   clear()
+})
+
+
+// Full-document mode switches must not reuse a previous one-use scope ticket,
+// while already-authorized filters/camera remain a trusted Owner-only hint.
+test('isolated/prototype mode URL roundtrip retires old one-use handoff',()=>{
+  const token='f'.repeat(64)
+  const ticket=mode.xDrivePlacesMapScopeHandoffURL(href,'isolated',token)
+  assert.ok(ticket)
+  assert.equal(mode.xDrivePlacesMapModeFromHref(ticket),'isolated')
+  assert.equal(new URL(ticket).searchParams.get('places_map_scope_required'),'1')
+  assert.equal(mode.xDrivePlacesMapScopeHandoffURL(ticket,'prototype',token),null,
+    'a second untrusted map ticket cannot overwrite the first')
+  const prototype=mode.xDrivePlacesMapModeNavigationURL(ticket,'prototype')
+  assert.ok(prototype)
+  assert.equal(mode.xDrivePlacesMapModeFromHref(prototype),'prototype')
+  assert.equal(new URL(prototype).searchParams.has('places_map_handoff'),false)
+  assert.equal(new URL(prototype).searchParams.has('places_map_scope_required'),false)
+  const reroute=mode.xDrivePlacesMapScopeHandoffURL(prototype,'isolated',token)
+  assert.ok(reroute)
+  assert.equal(new URL(reroute).searchParams.has('places_map_handoff'),true)
+  for(const value of [owner,scope.albumKey,scope.filters.time_zone,String(camera.latitude)])
+    assert.equal(ticket.includes(value),false,'private map state stays outside URLs')
 })

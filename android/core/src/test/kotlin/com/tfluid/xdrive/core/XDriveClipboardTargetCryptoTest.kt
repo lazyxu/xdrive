@@ -47,6 +47,36 @@ class XDriveClipboardTargetCryptoTest {
         }
     }
 
+    @Test fun nativeSenderRoundTripsExactRecipientAndRejectsRetargeting() {
+        val device = XDriveClipboardTargetCrypto.newDeviceKey()
+        val id = "a8d11b3e-eaf7-4a8a-aedb-3c51908c6df2"
+        val wire = XDriveClipboardTargetCrypto.encrypt(scope, id, device.publicKeyBase64,
+            "image/x-xdrive-node-ref", "asset:118", 118L)
+        assertEquals("asset:118", XDriveClipboardTargetCrypto.decrypt(
+            scope, id, device.pkcs8Private, wire))
+        assertEquals(60, Base64.getDecoder().decode(wire.wrappedKey).size)
+        assertEquals(32, Base64.getDecoder().decode(wire.ephemeralKey).size)
+        for (tampered in listOf(
+            wire.copy(targetDeviceID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+            wire.copy(kind = "application/x-xdrive-node-ref"),
+            wire.copy(nodeID = 119L),
+            wire.copy(clientEventID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+        )) {
+            assertThrows(Exception::class.java) {
+                XDriveClipboardTargetCrypto.decrypt(scope, tampered.targetDeviceID,
+                    device.pkcs8Private, tampered)
+            }
+        }
+        val second = XDriveClipboardTargetCrypto.newDeviceKey()
+        assertThrows(Exception::class.java) {
+            XDriveClipboardTargetCrypto.decrypt(scope, id, second.pkcs8Private, wire)
+        }
+        assertThrows(Exception::class.java) {
+            XDriveClipboardTargetCrypto.encrypt(scope, id, device.publicKeyBase64,
+                "application/x-xdrive-node-ref", "asset:118", 0L)
+        }
+    }
+
     @Test fun generatedDeviceKeysAreWellFormedAndDistinct() {
         val first = XDriveClipboardTargetCrypto.newDeviceKey()
         val second = XDriveClipboardTargetCrypto.newDeviceKey()

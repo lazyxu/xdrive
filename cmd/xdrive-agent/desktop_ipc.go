@@ -110,6 +110,7 @@ var desktopIPCCapabilities = []string{
 	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
 	"server-update",
+	"release-bundle-current",
 	"server-offline-import",
 	"media-gallery",
 	"media-index-status",
@@ -618,6 +619,10 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/clipboard/vault", h.cloudClipboardVault)
 	mux.HandleFunc("PUT /v1/cloud/clipboard/check", h.cloudClipboardCheck)
 	mux.HandleFunc("GET /v1/cloud/clipboard/items", h.cloudClipboardList)
+	mux.HandleFunc("GET /v1/cloud/clipboard/devices", h.cloudClipboardDevices)
+	mux.HandleFunc("POST /v1/cloud/clipboard/enable-device", h.cloudClipboardEnableDevice)
+	mux.HandleFunc("POST /v1/cloud/clipboard/decrypt", h.cloudClipboardDecrypt)
+	mux.HandleFunc("POST /v1/cloud/clipboard/revoke-device", h.cloudClipboardRevokeDevice)
 	mux.HandleFunc("POST /v1/cloud/clipboard/items", h.cloudClipboardCreate)
 	mux.HandleFunc("DELETE /v1/cloud/clipboard/items", h.cloudClipboardClear)
 	mux.HandleFunc("DELETE /v1/cloud/clipboard/items/{id}", h.cloudClipboardDelete)
@@ -772,6 +777,12 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
 	mux.HandleFunc("GET /v1/server-update", h.serverUpdateState)
 	mux.HandleFunc("POST /v1/server-update", h.startServerUpdate)
+	// Only the local Agent owns Server credentials. Desktop receives a fixed
+	// current-Commit protocol, never a caller-specified remote download URL.
+	mux.HandleFunc("GET /v1/release-bundle/current", h.releaseBundleState)
+	mux.HandleFunc("POST /v1/release-bundle/retry", h.releaseBundleRetry)
+	mux.HandleFunc("POST /v1/release-bundle/download", h.releaseBundleDownload)
+	mux.HandleFunc("POST /v1/release-bundle/install", h.releaseBundleInstall)
 	// Renderer cannot provide a Server credential or Host path; local Agent IPC
 	// forwards only fixed admin import identities and bounded bytes.
 	mux.HandleFunc("GET /v1/offline-imports", h.offlineImport)
@@ -801,6 +812,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/item", h.mediaItem)
 	mux.HandleFunc("GET /v1/cloud/node-location", h.nodeLocation)
+	mux.HandleFunc("GET /v1/cloud/clipboard-file", h.cloudClipboardFile)
 	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
 	mux.HandleFunc("GET /v1/media/index-status", h.mediaIndexStatus)
 	mux.HandleFunc("POST /v1/media/selection-snapshot", h.mediaCreateSelectionSnapshot)
@@ -7625,6 +7637,9 @@ func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Req
 		State        string `json:"state,omitempty"`
 		Error        string `json:"error,omitempty"`
 		Skipped      bool   `json:"skipped,omitempty"`
+		SentBytes    *int64 `json:"upload_transferred_bytes,omitempty"`
+		CASBytes     *int64 `json:"upload_cas_reused_bytes,omitempty"`
+		ResumeBytes  *int64 `json:"upload_resume_reused_bytes,omitempty"`
 		Children     []struct {
 			FileName     string `json:"file_name,omitempty"`
 			Path         string `json:"path,omitempty"`
@@ -7758,7 +7773,28 @@ func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Req
 			writeDesktopIPCError(w, http.StatusBadRequest, "missing_transfer_id", "id is required")
 			return
 		}
-		if err := h.ctrl.FinishTransfer(input.ID, strings.TrimSpace(input.State), input.Error, input.Skipped); err != nil {
+		state := strings.TrimSpace(input.State)
+		var err error
+		if input.SentBytes != nil && input.CASBytes != nil &&
+			input.ResumeBytes != nil {
+			if state != transfer.StateCompleted || input.Skipped || *input.SentBytes < 0 ||
+				*input.CASBytes < 0 || *input.ResumeBytes < 0 {
+				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_upload_receipt", "uploaded bytes require successful non-skipped completion")
+				return
+			}
+			if port, ok := h.ctrl.(interface {
+				FinishTransferWithUploadReceipt(string, string, string, bool, *int64, *int64, *int64) error
+			}); ok {
+				err = port.FinishTransferWithUploadReceipt(input.ID, state, input.Error, false,
+					input.SentBytes, input.CASBytes, input.ResumeBytes)
+			} else {
+				// Older hosts finish normally without falsely claiming CAS reuse.
+				err = h.ctrl.FinishTransfer(input.ID, state, input.Error, false)
+			}
+		} else {
+			err = h.ctrl.FinishTransfer(input.ID, state, input.Error, input.Skipped)
+		}
+		if err != nil {
 			writeDesktopIPCControllerError(w, err)
 			return
 		}

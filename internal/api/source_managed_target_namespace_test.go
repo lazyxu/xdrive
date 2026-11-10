@@ -1,97 +1,78 @@
 package api
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 )
 
-func TestManagedSourceTargetRenameAcceptsCanonicalAndExistingNamespaces(t *testing.T) {
+func TestManagedSourceTargetRenameAcceptsCanonicalOnly(t *testing.T) {
 	db, _, owner, _, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.SyncRun{}, &meta.UploadSession{}); err != nil {
 		t.Fatal(err)
 	}
-	syncFolder := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
-	namespaces := map[string]meta.Node{}
-	for _, name := range []string{"Push", "设备备份", "Pull", "远程拉取"} {
-		namespaces[name] = createFilePropertiesDir(t, db, owner.ID, syncFolder.ID, name)
+	syncRoot := createFilePropertiesDir(t, db, owner.ID, root.ID, yikeTargetRootName)
+	pushRoot := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, "Push")
+	pullRoot := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, "Pull")
+	legacyPush := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, "设备备份")
+	legacyPull := createFilePropertiesDir(t, db, owner.ID, syncRoot.ID, "远程拉取")
+	type renameCase struct {
+		name, kind, direction, connector string
+		parentID                         uint64
+		managed, allow                   bool
 	}
-	cases := []struct {
-		name      string
-		kind      string
-		direction string
-		namespace string
-		connector string
-		leaf      string
-		nextName  string
-		wantLeaf  string
-		managed   bool
-	}{
-		{name: "local Push", kind: meta.SourceKindLocalFolder, direction: meta.SourceDirectionPush,
-			namespace: "Push", connector: "device_a1b2c3d4e5f6", leaf: "Local", nextName: "LocalNew", wantLeaf: "LocalNew", managed: true},
-		{name: "flat local Push", kind: meta.SourceKindLocalFolder, direction: meta.SourceDirectionPush,
-			namespace: "Push", leaf: "Source flat local Push", nextName: "Flat Local New", wantLeaf: "Flat Local New", managed: true},
-		{name: "flat iOS Push", kind: meta.SourceKindIOSPhotos, direction: meta.SourceDirectionPush,
-			namespace: "Push", leaf: "Source flat iOS Push", nextName: "iPhone New", wantLeaf: "iPhone New", managed: true},
-		{name: "flat DSM Push", kind: synologySourceKind, direction: meta.SourceDirectionPush,
-			namespace: "Push", leaf: "Source flat DSM Push", nextName: "NAS New", wantLeaf: "NAS New", managed: true},
-		{name: "legacy local Push", kind: meta.SourceKindLocalFolder, direction: meta.SourceDirectionPush,
-			namespace: "设备备份", connector: "device_a1b2c3d4e5f6", leaf: "LocalOld", nextName: "LocalOldNew", wantLeaf: "LocalOldNew", managed: true},
-		{name: "iOS Push", kind: meta.SourceKindIOSPhotos, direction: meta.SourceDirectionPush,
-			namespace: "Push", connector: "iPhone_a1b2c3d4e5f6", leaf: "Photos", nextName: "PhotosNew", wantLeaf: "PhotosNew", managed: true},
-		{name: "DSM Push", kind: synologySourceKind, direction: meta.SourceDirectionPush,
-			namespace: "Push", connector: "NAS_a1b2c3d4e5f6", leaf: "NAS Photos", nextName: "NAS Photos New", wantLeaf: "NAS Photos New", managed: true},
-		{name: "Android Push", kind: "android_photos", direction: meta.SourceDirectionPush,
-			namespace: "Push", connector: "Pixel_a1b2c3d4e5f6", leaf: "Android Photos", nextName: "Android Photos New", wantLeaf: "Android Photos New", managed: true},
-		{name: "Yike Pull", kind: yikeSourceKind, direction: meta.SourceDirectionPull,
-			namespace: "Pull", connector: "Yike Photos", leaf: "uid_12345_old", nextName: "Yike New", wantLeaf: "uid_12345_Yike New", managed: true},
-		{name: "legacy Yike Pull", kind: yikeSourceKind, direction: meta.SourceDirectionPull,
-			namespace: yikeTargetRootName, connector: yikeTargetConnectorName, leaf: "uid_12345_old", nextName: "Yike Legacy New", wantLeaf: "uid_12345_Yike Legacy New", managed: false},
-		{name: "new Yike Pull", kind: yikeSourceKind, direction: meta.SourceDirectionPull,
-			namespace: "Pull", connector: "Yike Photos", leaf: "Source new Yike Pull", nextName: "Yike Photos New", wantLeaf: "Yike Photos New", managed: true},
-		{name: "Synology Photos Pull", kind: synologySourceKind, direction: meta.SourceDirectionPull,
-			namespace: "Pull", connector: "Synology Photos", leaf: "Synology", nextName: "Synology New", wantLeaf: "Synology New", managed: true},
-		{name: "legacy Synology Photos Pull", kind: synologySourceKind, direction: meta.SourceDirectionPull,
-			namespace: "远程拉取", connector: "Synology Photos", leaf: "Synology Old", nextName: "Synology Old New", wantLeaf: "Synology Old New", managed: true},
-		{name: "Synology Files Pull", kind: synologyFilesSourceKind, direction: meta.SourceDirectionPull,
-			namespace: "Pull", connector: "Synology Files", leaf: "Files", nextName: "Files New", wantLeaf: "Files New", managed: true},
-		{name: "legacy Synology Files Pull", kind: synologyFilesSourceKind, direction: meta.SourceDirectionPull,
-			namespace: "远程拉取", connector: "Synology Files", leaf: "Files Old", nextName: "Files Old New", wantLeaf: "Files Old New", managed: true},
+	cases := []renameCase{
+		{"local Push", meta.SourceKindLocalFolder, meta.SourceDirectionPush, "", pushRoot.ID, true, true},
+		{"iOS Push", meta.SourceKindIOSPhotos, meta.SourceDirectionPush, "", pushRoot.ID, true, true},
+		{"Android Push", meta.SourceKindAndroidPhotos, meta.SourceDirectionPush, "", pushRoot.ID, true, true},
+		{"DSM Push", synologySourceKind, meta.SourceDirectionPush, "", pushRoot.ID, true, true},
+		{"Yike Pull", yikeSourceKind, meta.SourceDirectionPull, "Yike Photos", pullRoot.ID, true, true},
+		{"Synology Photos Pull", synologySourceKind, meta.SourceDirectionPull, "Synology Photos", pullRoot.ID, true, true},
+		{"Synology Files Pull", synologyFilesSourceKind, meta.SourceDirectionPull, "Synology Files", pullRoot.ID, true, true},
+		{"unmanaged canonical", yikeSourceKind, meta.SourceDirectionPull, "Yike Photos", pullRoot.ID, false, false},
+		{"legacy device-group Push", meta.SourceKindLocalFolder, meta.SourceDirectionPush, "old-device", legacyPush.ID, true, false},
+		{"legacy remote Pull", synologyFilesSourceKind, meta.SourceDirectionPull, "Synology Files", legacyPull.ID, true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			namespace := syncFolder
-			if tc.namespace != yikeTargetRootName {
-				namespace = namespaces[tc.namespace]
-			}
-			parent := namespace
+			parentID := tc.parentID
 			if tc.connector != "" {
-				parent = createFilePropertiesDir(t, db, owner.ID, namespace.ID, tc.connector)
+				parent := createFilePropertiesDir(t, db, owner.ID, parentID, tc.connector)
+				parentID = parent.ID
 			}
-			target := createFilePropertiesDir(t, db, owner.ID, parent.ID, tc.leaf)
-			targetID := target.ID
+			leaf := "Source " + tc.name
+			target := createFilePropertiesDir(t, db, owner.ID, parentID, leaf)
 			source := meta.Source{
-				OwnerID: owner.ID, Name: "Source " + tc.name, Kind: tc.kind,
+				OwnerID: owner.ID, Name: leaf, Kind: tc.kind,
 				Direction: tc.direction, SyncMode: meta.SourceSyncModeBackup,
 				RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused,
-				Revision: 1, TargetNodeID: &targetID, TargetManaged: tc.managed,
+				Revision: 1, TargetNodeID: &target.ID, TargetManaged: tc.managed,
 			}
 			if err := db.Create(&source).Error; err != nil {
 				t.Fatal(err)
 			}
-			if err := db.Transaction(func(tx *gorm.DB) error {
-				return renameManagedSourceTargetTx(tx, source, tc.nextName)
-			}); err != nil {
-				t.Fatalf("valid managed target hierarchy was rejected: %v", err)
+			nextName := "Next " + tc.name
+			err := db.Transaction(func(tx *gorm.DB) error {
+				return renameManagedSourceTargetTx(tx, source, nextName)
+			})
+			if tc.allow && err != nil {
+				t.Fatalf("canonical managed rename rejected: %v", err)
+			}
+			if !tc.allow && !errors.Is(err, errSourceTargetMigrationRequired) {
+				t.Fatalf("legacy/unmanaged rename accepted: %v", err)
 			}
 			var after meta.Node
 			if err := db.First(&after, target.ID).Error; err != nil {
 				t.Fatal(err)
 			}
-			if after.Name != tc.wantLeaf || after.ParentID == nil || *after.ParentID != parent.ID {
-				t.Fatalf("rename changed target identity/path: got=%+v wantLeaf=%q parent=%d",
-					after, tc.wantLeaf, parent.ID)
+			want := leaf
+			if tc.allow {
+				want = nextName
+			}
+			if after.Name != want || after.ParentID == nil || *after.ParentID != parentID {
+				t.Fatalf("rename changed target identity: node=%+v expected=%q", after, want)
 			}
 		})
 	}

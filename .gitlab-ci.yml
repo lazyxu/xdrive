@@ -71,10 +71,13 @@ variables:
     when: always
 
 .go-linux-cache:
+  variables:
+    GOCACHE: "$CI_PROJECT_DIR/.cache/go-build"
   cache:
-    key: "xdrive-go-linux-v1-$CI_RUNNER_EXECUTABLE_ARCH"
+    key: "xdrive-go-linux-v2-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:
       - .cache/go-mod/
+      - .cache/go-build/
     policy: pull-push
     when: always
 
@@ -87,10 +90,12 @@ variables:
     when: always
 
 desktop-linux:
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: true
     - when: on_success
   image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache
@@ -118,10 +123,12 @@ desktop-linux:
       - dist/desktop-runtime-linux-amd64.tar.gz
 
 desktop-windows:
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: true
     - when: on_success
   stage: build
   needs: []
@@ -149,42 +156,21 @@ desktop-windows:
 
 # The published DSM SPK must include the isolated common MUI bundle,
 # not just the CLI-only ARMv7 agent payload.
-build-synology-ui:
-  image: $XDRIVE_CI_NODE_IMAGE
-  stage: build
-  needs: []
-  tags:
-    - linux
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
-      interruptible: false
-    - when: on_success
-  script:
-    - |
-      set -euo pipefail
-      npm ci --prefix web --no-audit --no-fund
-      npm run build:synology --prefix web
-      node web/scripts/verify-synology-ui.mjs
-  artifacts:
-    name: "xdrive-synology-ui-$CI_COMMIT_SHORT_SHA"
-    expire_in: 2 days
-    when: on_success
-    paths:
-      - web/dist-synology/
-
 build-client-core:
   variables:
     GIT_DEPTH: "0"
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: true
     - when: on_success
   image: $XDRIVE_CI_GO_IMAGE
   extends: .go-linux-cache
   stage: build
   needs:
-    - job: build-synology-ui
+    - job: web
       artifacts: true
   tags:
     - linux
@@ -220,10 +206,12 @@ build-client-core:
       - release/synology/*.spk.sha256
 
 package-linux-client:
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: true
     - when: on_success
   image: $XDRIVE_CI_GO_IMAGE
   stage: package
@@ -244,10 +232,12 @@ package-linux-client:
       - release/xdrive-linux-amd64.deb
 
 server-image:
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: true
       variables:
         XDRIVE_GITLAB_PACKAGE_ONLY: "1"
     - when: on_success
@@ -255,66 +245,100 @@ server-image:
   extends: .ci-tools-cache
   stage: package
   needs: []
-  resource_group: xdrive-server-image
   tags:
     - linux
   before_script:
     - *install_docker_cli_only
   script:
-    - XDRIVE_GITLAB_PACKAGE_ONLY=1 bash scripts/ci/gitlab-server-image.sh
+    - XDRIVE_GITLAB_PACKAGE_ONLY=1 XDRIVE_GITLAB_STAGING_ONLY=1 bash scripts/ci/gitlab-server-image.sh
+    - bash scripts/ci/gitlab-stage-image.sh xdrive-server dist/server-image xdrive/server:test
   artifacts:
     name: "xdrive-server-image-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days
     when: on_success
     paths:
-      - dist/server-image/
+      - dist/server-image/image.ref
+      - dist/server-image/image.digest
+      - dist/server-image/image.id
+      - dist/server-image/image.commit
 
 media-worker-image:
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
-      variables:
-        XDRIVE_GITLAB_PACKAGE_ONLY: "1"
-    - when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      changes:
+        - cmd/server/**/*
+        - internal/**/*
+        - go.mod
+        - go.sum
+        - deploy/MediaWorker.Dockerfile
+        - deploy/install-media-worker-ffmpeg.sh
+        - scripts/ci/test-media-worker-image.sh
+        - scripts/ci/gitlab-registry-utils.sh
+        - scripts/ci/gitlab-stage-image.sh
+        - scripts/ci/gitlab-fetch-staged-image.sh
+        - scripts/ci/gitlab-server-images.sh
+        - scripts/ci/gitlab-promote-images.sh
+        - .gitlab-ci.yml
+        - infra/ci/gitlab-release.yml
+      interruptible: true
+      allow_failure: true
+    - when: never
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
   stage: package
   needs: []
-  resource_group: xdrive-media-worker-image
   tags:
     - linux
   before_script:
     - *install_docker_cli_only
   script:
-    - XDRIVE_GITLAB_PACKAGE_ONLY=1 bash scripts/ci/test-media-worker-image.sh dist/media-worker-image
+    - XDRIVE_GITLAB_PACKAGE_ONLY=1 XDRIVE_GITLAB_STAGING_ONLY=1 bash scripts/ci/test-media-worker-image.sh dist/media-worker-image
+    - bash scripts/ci/gitlab-stage-image.sh xdrive-media-worker dist/media-worker-image xdrive/media-worker:test
   artifacts:
     name: "xdrive-media-worker-image-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days
     when: on_success
     paths:
-      - dist/media-worker-image/
+      - dist/media-worker-image/image.ref
+      - dist/media-worker-image/image.digest
+      - dist/media-worker-image/image.id
+      - dist/media-worker-image/image.commit
 
 photo-face-image:
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
-      variables:
-        XDRIVE_GITLAB_PACKAGE_ONLY: "1"
-    - when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      changes:
+        - services/photo-face-analyzer/**/*
+        - scripts/ci/test-photo-face-image.sh
+        - scripts/ci/photo-face-runtime-cache-key.sh
+        - scripts/ci/gitlab-registry-utils.sh
+        - scripts/ci/gitlab-stage-image.sh
+        - scripts/ci/gitlab-fetch-staged-image.sh
+        - scripts/ci/gitlab-server-images.sh
+        - scripts/ci/gitlab-promote-images.sh
+        - .gitlab-ci.yml
+        - infra/ci/gitlab-release.yml
+      interruptible: true
+      allow_failure: true
+    - when: never
   image: $XDRIVE_CI_GO_IMAGE
   stage: package
+  variables:
+    XDRIVE_PHOTO_FACE_RUNTIME_CACHE_ARCHIVE: "0"
   timeout: 2h
   needs: []
-  resource_group: xdrive-photo-face-image
   tags:
     - linux
   cache:
     key: "xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:
       - .cache/ci-tools/
-      - .cache/photo-face-runtime/
       - .cache/photo-face-models/
     policy: pull-push
     when: always
@@ -323,19 +347,25 @@ photo-face-image:
   script:
     # Leave time below the 2h job limit for cache:when:always to save
     # compatible model .part files even if every source is too slow.
-    - timeout --signal=TERM --kill-after=30s 105m env XDRIVE_GITLAB_PACKAGE_ONLY=1 bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
+    - timeout --signal=TERM --kill-after=30s 105m env XDRIVE_GITLAB_PACKAGE_ONLY=1 XDRIVE_GITLAB_STAGING_ONLY=1 bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
+    - bash scripts/ci/gitlab-stage-image.sh xdrive-photo-face dist/photo-face-image xdrive/photo-face:test
   artifacts:
     name: "xdrive-photo-face-image-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days
     when: on_success
     paths:
-      - dist/photo-face-image/
+      - dist/photo-face-image/image.ref
+      - dist/photo-face-image/image.digest
+      - dist/photo-face-image/image.id
+      - dist/photo-face-image/image.commit
 
 caddy-image:
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: true
       variables:
         XDRIVE_GITLAB_PACKAGE_ONLY: "1"
     - when: on_success
@@ -345,25 +375,30 @@ caddy-image:
   needs:
     - job: web
       artifacts: true
-  resource_group: xdrive-caddy-image
   tags:
     - linux
   before_script:
     - *install_docker_cli_only
   script:
-    - XDRIVE_GITLAB_PACKAGE_ONLY=1 bash scripts/ci/gitlab-caddy-image.sh
+    - XDRIVE_GITLAB_PACKAGE_ONLY=1 XDRIVE_GITLAB_STAGING_ONLY=1 bash scripts/ci/gitlab-caddy-image.sh
+    - bash scripts/ci/gitlab-stage-image.sh xdrive-caddy dist/caddy-image xdrive/caddy:test
   artifacts:
     name: "xdrive-caddy-image-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days
     when: on_success
     paths:
-      - dist/caddy-image/
+      - dist/caddy-image/image.ref
+      - dist/caddy-image/image.digest
+      - dist/caddy-image/image.id
+      - dist/caddy-image/image.commit
 
 package-windows-client:
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: true
     - when: on_success
   stage: package
   needs:
@@ -371,7 +406,6 @@ package-windows-client:
       artifacts: true
     - job: build-client-core
       artifacts: true
-  resource_group: xdrive-package-windows-client
   tags:
     - windows
   script:
@@ -384,10 +418,12 @@ package-windows-client:
       - release/xDriveSetup-amd64.exe
 
 web:
-  # Keep in-flight master publication inputs noninterruptible.
+  # Master builds can be superseded; only active publication is noninterruptible.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
       interruptible: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: true
       variables:
         XDRIVE_GITLAB_PACKAGE_ONLY: "1"
     - when: on_success
@@ -395,7 +431,7 @@ web:
   stage: build
   needs: []
   cache:
-    key: "xdrive-web-$CI_RUNNER_EXECUTABLE_ARCH"
+    key: "xdrive-web-v2-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:
       - .cache/npm/
     policy: pull-push
@@ -413,10 +449,13 @@ web:
       cd web
       npm ci --no-audit --no-fund
       npm run build
+      npm run build:synology
+      node scripts/verify-synology-ui.mjs
   artifacts:
     name: "xdrive-web-dist-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days
     when: on_success
     paths:
       - web/dist/
+      - web/dist-synology/
 

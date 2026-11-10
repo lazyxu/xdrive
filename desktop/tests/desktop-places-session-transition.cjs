@@ -207,3 +207,71 @@ test('successful explicit re-login retires old HTTPS map before seeding same Own
   assert.ok(accepted>=0&&close>accepted&&secure>accepted&&seed>close&&seed>secure,
     'same-Owner HTTPS CA/re-login cannot reuse an old guest partition or Cookie')
 })
+
+
+// The real Agent also reports "needs re-login", "password change required"
+// and "access denied". None may keep either map window alive; a valid paused
+// sync, however, retains the Owner's authenticated map session.
+test('published native Agent terminal auth states revoke both map surfaces',()=>{
+  const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&
+    n.name?.text==='publishAgentState')
+  assert.ok(fn)
+  const compiledPublish=ts.transpileModule(fn.getText(ast),{
+    fileName:'publish-agent-revocation.cts',
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}})
+  const before={connected:true,status:{configured:true,username:owner,
+    server:origin,connection_ip:'192.168.7.8',
+    auth_status:'已登录',must_change_password:false}}
+  const harness=()=>{
+    const calls=[]
+    const env={
+      exports:{},initial:structuredClone(before),JSON,
+      desktopPlacesGuests:new Map([[9,true]]),
+      desktopPlacesPending:null,desktopPlacesWebReady:null,desktopPlacesWebPending:null,
+      secureBaiduMapWindow:{},
+      closeDesktopPlacesGuests:()=>calls.push('guest-closed'),
+      closeSecureBaiduMapWindow:()=>calls.push('secure-closed'),
+      resetSourceRunNotificationState:()=>{},
+      notifyAgentTransition:()=>{},rebuildTrayMenu:()=>{},
+      updateTaskbarOverlay:()=>{},updateTaskbarProgress:()=>{},
+      mainWindow:null,
+    }
+    const run=new Function(...Object.keys(env),[
+      'let agentState=initial',compiledPublish.outputText,
+      'return next=>{publishAgentState(next);return agentState}',
+    ].join('\n'))(...Object.values(env))
+    return {run,calls}
+  }
+  for(const auth_status of [
+    '未登录','需要重新登录','需要修改密码','访问被拒绝',
+    '登录已过期','账户已禁用','未知状态',undefined,
+  ]){
+    const {run,calls}=harness()
+    run({connected:true,status:{...before.status,auth_status}})
+    assert.deepEqual(calls,['guest-closed','secure-closed'],
+      'failed native auth status '+String(auth_status))
+  }
+  {
+    const {run,calls}=harness()
+    run({connected:true,status:{...before.status,must_change_password:true}})
+    assert.deepEqual(calls,['guest-closed','secure-closed'])
+  }
+  {
+    const {run,calls}=harness()
+    run({connected:true,status:{...before.status,
+      sync_status:'已暂停',paused:true}})
+    assert.deepEqual(calls,[],'sync pause must not revoke valid login')
+  }
+  {
+    const {run,calls}=harness()
+    run({connected:true,status:{...before.status,
+      connection_ip:'192.168.7.9'}})
+    assert.deepEqual(calls,['guest-closed','secure-closed'],
+      'old CA, CONNECT and cookies cannot survive Agent selected-IP change')
+  }
+  {
+    const {run,calls}=harness()
+    run({connected:true,status:{...before.status,username:'foreign-owner'}})
+    assert.deepEqual(calls,['guest-closed','secure-closed'])
+  }
+})

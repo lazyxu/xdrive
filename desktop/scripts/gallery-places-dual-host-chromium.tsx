@@ -46,6 +46,10 @@ const mixedMarkerMap = !genuineGin &&
 // 28 through the bounded 48-item Owner Range rather than previewing 12.
 const albumDialog28 = !genuineGin &&
   new URLSearchParams(location.search).get('album_dialog_28') === '1'
+// Real Chromium + mounted Gallery virtual host, synthetic Owner-signed page
+// fixtures. The first signed page reports 100k; only 48 identities per read.
+const largePlace100k = !genuineGin &&
+  new URLSearchParams(location.search).get('place_100k') === '1'
 // Screenshot-specific adjacent current Owner Cells: old 104x92px visual
 // exclusion erased the 28-photo cover beside an independent 142-photo cover.
 const adjacent142And28 = !genuineGin &&
@@ -155,7 +159,7 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
   const x = Math.min(7,Math.max(0,Math.floor(offset/(width/8))))
   const y = Math.min(7,Math.max(0,Math.floor((locationPoint.latitude-bounds.south)/
     ((bounds.north-bounds.south)/8))))
-  const count = albumDialog28 ? 28 : favorite ? 3 :
+  const count = largePlace100k ? 100_000 : albumDialog28 ? 28 : favorite ? 3 :
     partialBD09 && !partialLocationReady ? 3 : 9
   const first={cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
     node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
@@ -244,6 +248,15 @@ const listOwnerCellItems=async(selection:any,limit:number,offset:number,
   }else{
     const count=selection.photo_count
     range={offset,limit,total_count:count,
+      ...(largePlace100k && offset===0 ? {
+        // Controlled COMPLETE Server-like timeline index for testing shared
+        // date-grouped virtual rows, never generated from a sparse resident page.
+        timeline_group_sets: {
+          year:[{key:'2026',item_count:count,start_index:0}],
+          month:[{key:'2026-01',item_count:count,start_index:0}],
+          day:[{key:'2026-01-01',item_count:count,start_index:0}],
+        },
+      } : {}),
       ...(sort.anchorNodeID && sort.anchorNodeID>=selection.node_id &&
           sort.anchorNodeID<selection.node_id+count
         ? {anchor_index:sort.anchorNodeID-selection.node_id} : {}),
@@ -557,7 +570,10 @@ function TestApp(){
         'synthetic-private-owner',selection,approved,Date.now(),presentation)
       probe.photoOpens.push({valid,nodeID,anchorIndex:index,
         expanded:presentation.expanded,loadedCount:presentation.loadedCount,
-        scrollTop:presentation.scrollTop,scrollLeft:presentation.scrollLeft})
+        scrollTop:presentation.scrollTop,scrollLeft:presentation.scrollLeft,
+        returnAnchorIndex:presentation.anchorIndex,
+        returnAnchorViewportOffset:presentation.anchorViewportOffset,
+        visitedDepth:presentation.visitedDepth})
       if(valid)setDrawerViewer(nodeID)
     }catch{probe.rangeError=true}
   }

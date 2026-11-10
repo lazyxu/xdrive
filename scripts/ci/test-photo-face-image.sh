@@ -5,7 +5,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 source scripts/ci/build-metadata.sh
-
 artifact_dir="${1:-dist/photo-face-image}"
 final_image="xdrive/photo-face:test"
 analyzer_dir="$ROOT/services/photo-face-analyzer"
@@ -70,6 +69,30 @@ if [[ -f "$runtime_archive" ]]; then
   fi
 fi
 
+# Registry-backed runtime cache survives GitLab runner replacement and cache eviction.
+# Both the full dependency/model contract and the runtime probe must pass.
+runtime_registry_tag=""
+runtime_registry_present=0
+if [[ -n "${CI_REGISTRY_IMAGE:-}" ]]; then
+  source scripts/ci/gitlab-registry-utils.sh
+  xdrive_registry_login
+  runtime_registry_tag="$CI_REGISTRY_IMAGE/xdrive-photo-face-runtime:contract-$runtime_contract_hash"
+  if ! runtime_image_valid; then
+    if xdrive_pull_or_absent "$runtime_registry_tag"; then
+      docker tag "$runtime_registry_tag" "$runtime_image"
+      runtime_image_valid || {
+        echo "[photo-face] registry cache violates the runtime contract; refusing poisoned image" >&2
+        exit 1
+      }
+      runtime_registry_present=1
+      echo "[photo-face] restored long-lived Registry runtime $runtime_registry_tag"
+    else
+      status=$?
+      [[ "$status" == 10 ]] || exit 1
+    fi
+  fi
+fi
+
 if ! runtime_image_valid; then
   docker image rm -f "$runtime_image" >/dev/null 2>&1 || true
   echo "[photo-face] building reusable runtime image $runtime_image ($runtime_contract_hash)"
@@ -115,7 +138,27 @@ if ! runtime_image_valid; then
   }
 fi
 
-if [[ ! -f "$runtime_archive" ]]; then
+# Publish immutable cache-keyed runtime after local contract verification.
+# Existing runtime tags are validated and reused, never overwritten blindly.
+if [[ -n "$runtime_registry_tag" && "$runtime_registry_present" != 1 ]]; then
+  if xdrive_pull_or_absent "$runtime_registry_tag"; then
+    docker tag "$runtime_registry_tag" "$runtime_image"
+    runtime_image_valid || {
+      echo "[photo-face] existing Registry runtime has wrong contract" >&2
+      exit 1
+    }
+  else
+    status=$?
+    [[ "$status" == 10 ]] || exit 1
+    # Model runtime may be fetched/built before GitHub tag CI finishes.
+    # The first Registry *write* alone waits for the exact stable gate.
+    bash scripts/ci/gitlab-stable-prestage-gate.sh
+    docker tag "$runtime_image" "$runtime_registry_tag"
+    docker push "$runtime_registry_tag"
+  fi
+fi
+
+if [[ "${XDRIVE_PHOTO_FACE_RUNTIME_CACHE_ARCHIVE:-1}" == 1 && ! -f "$runtime_archive" ]]; then
   tmp_archive="$runtime_archive.tmp"
   rm -f "$tmp_archive"
   docker save "$runtime_image" | gzip -1 >"$tmp_archive"
@@ -182,4 +225,6 @@ if [[ "${XDRIVE_GITLAB_PACKAGE_ONLY:-0}" != "1" ]]; then
 fi
 
 rm -rf "$artifact_dir"
-bash scripts/ci/export-docker-image.sh "$final_image" "$artifact_dir"
+if [[ "${XDRIVE_GITLAB_STAGING_ONLY:-0}" != "1" ]]; then
+  bash scripts/ci/export-docker-image.sh "$final_image" "$artifact_dir"
+fi

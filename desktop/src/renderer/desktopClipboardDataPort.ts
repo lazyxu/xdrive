@@ -6,10 +6,13 @@ import { XDriveDesktopClipboardObservationGate } from './desktopClipboardObserva
 export function createDesktopClipboardDataPort(
   agent: Pick<Window['xdriveDesktop']['agent'],
     'cloudClipboardVault' | 'cloudClipboardCheck' | 'cloudClipboardList' |
-    'cloudClipboardCreate' | 'cloudClipboardDelete' | 'cloudClipboardClear'>,
+    'cloudClipboardCreate' | 'cloudClipboardDelete' | 'cloudClipboardClear' |
+    'cloudClipboardDevices' | 'cloudClipboardEnableDevice' |
+    'cloudClipboardDecrypt' | 'cloudClipboardRevokeDevice'>,
   ownerScopeKey: string,
   server: string,
   ownerCurrent: () => boolean,
+  openVerifiedFile?: (nodeID: number, signal: AbortSignal) => Promise<void>,
 ): XDriveClipboardDataPort {
   const verify = (signal?: AbortSignal) => {
     signal?.throwIfAborted()
@@ -43,12 +46,42 @@ export function createDesktopClipboardDataPort(
     vault: signal => run(() => agent.cloudClipboardVault(), signal),
     initializeCheck: (value, signal) => run(() => agent.cloudClipboardCheck(value), signal),
     list: (before, signal) => run(() => agent.cloudClipboardList(before ?? 0), signal),
+    listDevices: signal => run(() => agent.cloudClipboardDevices(), signal),
+    enableDeviceRecipient: signal => run(() => agent.cloudClipboardEnableDevice(), signal),
+    revokeDevice: (id, signal) => run(() => agent.cloudClipboardRevokeDevice(id), signal),
+    openReferencedFile: openVerifiedFile ? async (nodeID, signal) => {
+      if (!Number.isSafeInteger(nodeID) || nodeID <= 0)
+        throw new Error('invalid Clipboard file reference')
+      verify(signal)
+      await openVerifiedFile(nodeID, signal)
+      // A successful, explicit Clipboard -> Files route transition unmounts
+      // Clipboard and cancels its page-scoped action signal. Keep the Owner
+      // check, but never mistake this expected disposal for an authorization
+      // failure after the verified Files handoff has already been admitted.
+      verify()
+    } : undefined,
+    decryptTarget: async (id, signal) => {
+      if (!Number.isSafeInteger(id) || id <= 0) throw Error('Invalid Clipboard item ID')
+      const result = await run(() => agent.cloudClipboardDecrypt(id), signal)
+      if (typeof result.text !== 'string' || !result.text) throw Error('Clipboard decrypt unavailable')
+      return result.text
+    },
     create: (value, signal) => {
-      // Desktop Agent IPC remains a narrow v1-only transport; retaining the
-      // recipient is mandatory for v2 and cannot silently fall back to v1.
+      if (value.target_device_id) {
+        if (!/^[0-9a-f-]{36}$/.test(value.target_device_id) ||
+            !value.ephemeral_key || !value.wrapped_key ||
+            ((value.kind === 'image/x-xdrive-node-ref' ||
+              value.kind === 'application/x-xdrive-node-ref') !==
+              (Number.isSafeInteger(value.node_id) && (value.node_id ?? 0) > 0))) {
+          throw new Error('Desktop 定向消息缺少已验证设备和加密文件身份')
+        }
+        // Exact encrypted v2 fields are checked again by Main, Agent and
+        // Server. No generic proxy or device-credential privilege here.
+        return run(() => agent.cloudClipboardCreate(value), signal)
+      }
       if ((value.kind !== 'text/plain' && value.kind !== 'text/uri-list') ||
-          value.target_device_id || value.ephemeral_key || value.wrapped_key || value.node_id) {
-        throw new Error('Desktop Clipboard Agent 暂不支持定向消息或文件引用')
+          value.ephemeral_key || value.wrapped_key || value.node_id) {
+        throw new Error('Desktop 不允许把定向内容降级为 v1 广播')
       }
       const legacy = { client_event_id: value.client_event_id, kind: value.kind,
         nonce: value.nonce, ciphertext: value.ciphertext }

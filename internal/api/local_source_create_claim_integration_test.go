@@ -67,6 +67,29 @@ func TestLocalSourceCreateAndFirstBindRequireCreatingDevice(t *testing.T) {
 		!saved.TargetManaged || saved.TargetNodeID == nil || *saved.TargetNodeID != *created.TargetNodeID {
 		t.Fatalf("server-owned device/target claim not stored: %+v", saved)
 	}
+	// Reproduce the exact Desktop submission from the reported dialog. This
+	// must succeed on the current managed Push Server without selecting a
+	// cloud target. A deployed Server returning "Valid Source configuration is
+	// required." for this request is not running this compatible contract.
+	desktopBody := `{"name":"下载","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual"}`
+	desktopResponse := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources",
+		ownerJWT, strings.NewReader(desktopBody), http.StatusCreated, valid)
+	var desktopCreated sourceDTO
+	if err := json.Unmarshal(desktopResponse.Body.Bytes(), &desktopCreated); err != nil {
+		t.Fatal(err)
+	}
+	if desktopCreated.ID == 0 || desktopCreated.ID == created.ID ||
+		desktopCreated.Name != "下载" || desktopCreated.Kind != meta.SourceKindLocalFolder ||
+		desktopCreated.Direction != meta.SourceDirectionPush ||
+		desktopCreated.SyncMode != meta.SourceSyncModeBackup ||
+		desktopCreated.RunMode != meta.SourceRunModeSync ||
+		desktopCreated.Status != meta.SourceStatusPaused ||
+		desktopCreated.DeviceID != deviceA.ID ||
+		!desktopCreated.TargetManaged || desktopCreated.TargetNodeID == nil ||
+		*desktopCreated.TargetNodeID == 0 ||
+		desktopCreated.TargetPath != "同步文件夹/Push/下载" {
+		t.Fatalf("current Server rejected Desktop's managed Push create contract: %+v", desktopCreated)
+	}
 	rootID := uuid.NewString()
 	fingerprint := strings.Repeat("a", 64)
 	bindURL := fmt.Sprintf("/api/v1/sources/%d/local-binding", created.ID)

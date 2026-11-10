@@ -1044,6 +1044,27 @@ func (c *agentController) FinishTransfer(id, state, message string, skipped bool
 	return handle.Finish(state, finishErr)
 }
 
+// FinishTransferWithUploadReceipt retains CAS and resume bytes with the first
+// terminal outcome. Older hosts can continue using FinishTransfer unchanged.
+func (c *agentController) FinishTransferWithUploadReceipt(
+	id, state, message string, skipped bool, transferred, cas, resumed *int64,
+) error {
+	if transferred == nil || cas == nil || resumed == nil || skipped {
+		return c.FinishTransfer(id, state, message, skipped)
+	}
+	handle := c.transfers.Handle(id)
+	if handle == nil {
+		return errors.New("transfer not found")
+	}
+	var finishErr error
+	if strings.TrimSpace(message) != "" {
+		finishErr = errors.New(strings.TrimSpace(message))
+	}
+	return handle.FinishUploadReceipt(state, finishErr, &transfer.UploadContentReceipt{
+		TransferredBytes: *transferred, CASReusedBytes: *cas, ResumeReusedBytes: *resumed,
+	})
+}
+
 func (c *agentController) ClearTransferHistory(scopes ...string) (uint64, []transfer.Task) {
 	c.historyMu.Lock()
 	defer c.historyMu.Unlock()

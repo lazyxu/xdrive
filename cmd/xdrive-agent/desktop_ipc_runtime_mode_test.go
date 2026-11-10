@@ -322,3 +322,36 @@ func TestBackupOnlyIPCServeFailureStopsScheduler(t *testing.T) {
 		})
 	}
 }
+
+func TestBackupOnlyClipboardFileViewerExactRouteNoGenericNodeAccess(t *testing.T) {
+	if fullAgentOnlyRequest(http.MethodGet, "/v1/cloud/clipboard-file") {
+		t.Fatal("DSM Owner Files reference GET must be admitted in backup-only runtime")
+	}
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		if !fullAgentOnlyRequest(method, "/v1/cloud/clipboard-file") {
+			t.Fatalf("unsafe Clipboard file method %s admitted", method)
+		}
+	}
+	for _, route := range []string{
+		"/v1/cloud/node-location",
+		"/v1/cloud/clipboard-file/other",
+		"/v1/cloud/clipboard-private-key",
+	} {
+		if !fullAgentOnlyRequest(http.MethodGet, route) {
+			t.Fatalf("backup-only acquired generic Files/Clipboard grant: %s", route)
+		}
+	}
+	caps := desktopIPCCapabilitiesForRuntime(true)
+	seenFiles := false
+	for _, value := range caps {
+		if value == "node-location" {
+			t.Fatal("Backup-only must never expose generic node-location capability")
+		}
+		if value == "cloud-files-read" {
+			seenFiles = true
+		}
+	}
+	if !seenFiles {
+		t.Fatal("required current Owner Files read capability disappeared")
+	}
+}

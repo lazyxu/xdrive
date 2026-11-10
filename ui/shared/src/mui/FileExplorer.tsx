@@ -1001,7 +1001,7 @@ export function XDriveFileExplorer({
     grouping: XDriveFileExplorerGrouping, signal: AbortSignal,
   ) => Promise<XDriveCloudFilesPosition>
   /** A one-shot, parent-scoped navigation intent from Search/Gallery/Viewer. */
-  revealTarget?: { parentID: number; nodeID: number; requestID: string }
+  revealTarget?: { parentID: number; nodeID: number; requestID: string; openPreview?: boolean }
   groupingEnabled?: boolean
   commandBarStart?: ReactNode
   commandBarEnd?: ReactNode
@@ -5319,6 +5319,13 @@ export function XDriveFileExplorer({
       setActiveLogicalIndex(result.index)
       setViewRestoreFeedback('')
       host.focus({ preventScroll: true })
+      // A Clipboard request may open Quick Look only AFTER the same exact
+      // Server position + revision + Range admission as the normal reveal.
+      // Do not turn an unverified Node ID into a media/Files read grant.
+      if (target.openPreview === true && current()) {
+        if (result.item.kind === 'file') openQuickLook(result.item)
+        else setViewRestoreFeedback('目标已不是可预览的文件，请刷新并重新验证。')
+      }
     })().catch(() => {
       if (current()) setViewRestoreFeedback('无法精确定位目标文件；请刷新文件夹后重试。')
     }).finally(() => { finished = true })
@@ -5329,7 +5336,7 @@ export function XDriveFileExplorer({
       }
     }
   }, [
-    revealTarget?.requestID, revealTarget?.nodeID, revealTarget?.parentID,
+    revealTarget?.requestID, revealTarget?.nodeID, revealTarget?.parentID, revealTarget?.openPreview,
     loading, interactionScopeKey, viewState?.ready, searchSummary !== undefined,
     viewMode, viewportHeight, logicalItemCount, sort.key, sort.direction,
     groupingSignature, Boolean(groupedDetailsLayout), Boolean(groupedGridLayout),
