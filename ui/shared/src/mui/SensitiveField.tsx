@@ -20,7 +20,7 @@ export function XDriveSensitiveField({
   value: string
   onChange: (value: string) => void
   configured?: boolean
-  // Authorized non-secret metadata; never a substitute for the stored credential.
+  /** Length supplied by trusted configuration metadata; never inferred from ciphertext. */
   configuredLength?: number
   revealedValue?: string
   onReveal?: () => void
@@ -41,6 +41,7 @@ export function XDriveSensitiveField({
   sx?: SxProps<Theme>
 }) {
   const [visible, setVisible] = useState(false)
+  const [editing, setEditing] = useState(false)
   const hideRef = useRef(onHide)
   useEffect(() => { hideRef.current = onHide }, [onHide])
 
@@ -66,13 +67,14 @@ export function XDriveSensitiveField({
   }, [visible])
 
   // A pending edit always takes precedence over a temporary server reveal.
-  const shownValue = value || (visible ? revealedValue : '')
-  // Keep the editor value empty until the user types. A visible mask must
-  // never be submitted as a replacement for the persisted credential.
-  const safeLength = typeof configuredLength === 'number' &&
+  // Keep a retained secret visibly populated without putting the actual secret
+  // in the editable draft. A real length is used only when supplied by the API.
+  // Older APIs have no length metadata, so show a neutral 8-character mask.
+  const maskLength = typeof configuredLength === 'number' &&
     Number.isSafeInteger(configuredLength) && configuredLength > 0 && configuredLength <= 65_536
     ? configuredLength : 8
-  const savedMask = configured && !value && !visible ? '*'.repeat(safeLength) : ''
+  const retained = configured && !value && !editing
+  const shownValue = value || (visible ? revealedValue : retained ? '*'.repeat(maskLength) : '')
   // Even an empty new password can switch to visible entry; only persisted
   // secrets require an explicitly supplied audited onReveal callback.
   const canToggle = !revealDisabled && !revealLoading &&
@@ -93,17 +95,23 @@ export function XDriveSensitiveField({
       type={visible ? 'text' : 'password'} autoFocus={autoFocus} error={error}
       value={shownValue}
       autoComplete={autoComplete} required={required}
-      helperText={helperText} onFocus={onFocus}
+      helperText={helperText} onFocus={() => {
+        // Focusing the empty draft clears only the visual mask, not the stored key.
+        if (configured && !value && !visible) setEditing(true)
+        onFocus?.()
+      }}
+      onBlur={() => setEditing(false)}
       disabled={disabled}
-      placeholder={savedMask || placeholder || ''}
+      placeholder={placeholder}
       onChange={(event) => {
         // Editing revealed text changes only this draft; the server does not
         // receive it until the parent explicitly saves the configuration.
+        setEditing(true)
         onChange(event.target.value)
         if (revealedValue) onHide?.()
       }}
       slotProps={{
-        // Keep the MUI label clear of the persisted-credential placeholder.
+        // Retained mask is an input-only display; keep the label above it.
         inputLabel: { shrink: configured && !value ? true : undefined },
         htmlInput: { maxLength, spellCheck: false, autoCapitalize: 'off' },
         input: {
