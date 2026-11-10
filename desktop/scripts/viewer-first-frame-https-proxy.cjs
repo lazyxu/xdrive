@@ -119,8 +119,11 @@ function installPinnedViewerFixtureCertificate(electronSession, fixture) {
         fingerprint = new X509Certificate(presented).fingerprint256.toLowerCase()
       }
     } catch { /* reject malformed or absent certificates */ }
-    callback(request.hostname === url.hostname &&
-      fingerprint === fixture.fingerprint ? 0 : -3)
+    // Even a generally trusted CA leaf for this precise loopback origin is
+    // forbidden unless it matches the one-use SHA-256 pin. Other origins
+    // retain normal Chromium certificate verification.
+    const fixtureHost = request.hostname === url.hostname
+    callback(fixtureHost ? (fingerprint === fixture.fingerprint ? 0 : -2) : -3)
   })
 }
 module.exports = { startViewerFirstFrameHTTPSProxy, installPinnedViewerFixtureCertificate }

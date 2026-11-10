@@ -39,8 +39,17 @@ test('ephemeral HTTPS forwards real Owner proof and partial signed H264 Range', 
     const verdict=(hostname,data)=>{let code;verifier({hostname,certificate:{data}},v=>{code=v});return code}
     assert.equal(verdict('127.0.0.1',fixture.certificatePEM),0)
     assert.equal(verdict('untrusted.example',fixture.certificatePEM),-3)
-    assert.equal(verdict('127.0.0.1','not a certificate'),-3)
-    assert.equal(verdict('127.0.0.1',''),-3)
+    assert.equal(verdict('127.0.0.1','not a certificate'),-2)
+    assert.equal(verdict('127.0.0.1',''),-2)
+    const alternate = await startViewerFirstFrameHTTPSProxy(
+      'http://127.0.0.1:' + upstream.address().port)
+    try {
+      assert.notEqual(alternate.fingerprint, fixture.fingerprint)
+      assert.equal(verdict('127.0.0.1',alternate.certificatePEM),-2,
+        'another loopback TLS leaf must not substitute the one-use pinned SHA-256')
+      assert.equal(verdict('untrusted.example',alternate.certificatePEM),-3,
+        'unrelated hosts keep Chromium verification')
+    } finally { await alternate.close() }
     const read=(endpoint,headers)=>new Promise((resolve,reject)=>{
       // The independent Node test client alone permits this one self-signed
       // fixture certificate; the product Electron session must PIN its hash.
