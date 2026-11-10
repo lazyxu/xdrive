@@ -4,6 +4,7 @@ package update
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -79,6 +80,16 @@ func installDownloaded(ctx context.Context, path string, result Result) (string,
 	}
 	if got := strings.TrimSpace(string(output)); got != strings.TrimSpace(result.Latest) {
 		return "", fmt.Errorf("post-install health check failed: xd version=%q want=%q", got, result.Latest)
+	}
+	if len(result.Commit) == 40 {
+		buildOutput, err := exec.CommandContext(ctx, filepath.Clean("/usr/bin/xd"), "version", "--json").Output()
+		if err != nil {
+			return "", fmt.Errorf("post-install health check failed: xd build metadata: %w", err)
+		}
+		var build struct { Commit string `json:"commit"` }
+		if err := json.Unmarshal(buildOutput, &build); err != nil || build.Commit != result.Commit {
+			return "", fmt.Errorf("post-install health check failed: xd source Commit=%q want=%q: %v", build.Commit, result.Commit, err)
+		}
 	}
 	return "verified Linux unified client package installed with authorized apt and post-install health check passed", nil
 }
