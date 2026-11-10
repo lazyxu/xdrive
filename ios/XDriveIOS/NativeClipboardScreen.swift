@@ -400,6 +400,16 @@ struct XDriveIOSNativeClipboardScreen: View {
         }
         let nodeID = directed && referenceKind != "text" ?
             (UInt64(referenceNodeID) ?? 0) : 0
+        // Never turn an explicitly chosen file/image into an unrelated text
+        // message just because a stale or malformed Node ID was supplied.
+        if directed && referenceKind != "text" && nodeID == 0 {
+            message = "请先选择并核验已完成上传的云端文件。"
+            return
+        }
+        if !directed && !targetID.isEmpty {
+            message = "请先明确选择当前账号广播或目标设备。"
+            return
+        }
         let kind: String
         if nodeID > 0 {
             kind = referenceKind == "image" ?
