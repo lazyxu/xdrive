@@ -102,7 +102,9 @@ test('date grouping uses only complete same-Owner first-page indices, not sparse
 })
 
 test('Gallery and Places use one shared photo wall and one dated virtual renderer',()=>{
-  assert.match(gallery,/<XDriveMediaGalleryPhotoWall surface="gallery">/)
+  assert.match(gallery,/<XDriveMediaGalleryPhotoWall surface="gallery"/)
+  assert.match(gallery,/pinch=\{compactGallery && !selectionMode && !mobileCollectionsOverview/)
+  assert.match(gallery,/onChange: changeSharedGalleryPinch/)
   assert.match(drawer,/<XDriveMediaGalleryPhotoWall surface="places"/)
   assert.match(drawer,/<XDriveMediaGalleryVirtualTimeline/)
   assert.match(gallery,/XDriveMediaGalleryVirtualTimeline as MediaVirtualTimeline/)
@@ -111,6 +113,23 @@ test('Gallery and Places use one shared photo wall and one dated virtual rendere
   assert.match(timeline,/export function XDriveMediaGalleryVirtualTimeline\(/)
   assert.match(timeline,/placesDrawer=\{placesDrawer\}/)
   assert.doesNotMatch(host,/fetch\(|listOwnerCells|JWT|Baidu/)
+})
+
+test('Gallery and Places use one pinch recognizer with independent UI-only states',()=>{
+  assert.match(gallery, /pinch=\{compactGallery && !selectionMode && !mobileCollectionsOverview/)
+  assert.match(gallery, /onStart: startSharedGalleryPinch/)
+  assert.match(gallery, /onChange: changeSharedGalleryPinch/)
+  assert.match(gallery, /onGestureEnd: endSharedGalleryPinch/)
+  assert.match(gallery, /galleryPinchSuppressClickUntilRef\.current = Date\.now\(\) \+ 350/)
+  assert.match(gallery, /clearGalleryTouchPress\(\)/)
+  assert.doesNotMatch(gallery, /handleGalleryTouchStart|handleGalleryTouchMove|finishGalleryPinch/)
+  assert.match(host, /pinch\.onStart\?\.\(index\)/)
+  assert.match(host, /pinch\?\.onGestureEnd\?\.\(\)/)
+  assert.match(host, /onClickCapture=\{event => \{/)
+  assert.match(host, /event\.stopPropagation\(\)/)
+  assert.match(drawer, /pinchChange = useCallback/)
+  assert.match(drawer, /restoreLayout\(index,viewportOffset\)/)
+  assert.doesNotMatch(host, /fetch\(|listOwnerCells|Authorization|JWT/)
 })
 
 test('Places pinch shares Gallery column policy and retains a numeric visible anchor',()=>{

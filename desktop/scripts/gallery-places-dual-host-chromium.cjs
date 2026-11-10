@@ -3701,6 +3701,12 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
             box.bottom>rect.top && box.top<rect.bottom
         })
     },beforeDateJump.index)
+    // The shared Grid's scroll-to-anchor intentionally waits one/two RAFs
+    // after switching back from a dated Timeline. Wait for that actual
+    // layout commit, then click physically: Playwright locator.click() may
+    // auto-scroll a fully visible tile and invalidate the captured pixel Y.
+    await page.evaluate(()=>new Promise(resolve=>
+      requestAnimationFrame(()=>requestAnimationFrame(resolve))))
     const clicked=await dialog.locator('[data-xdrive-places-photo-drawer-items]')
       .evaluate(el=>{
         const rect=el.getBoundingClientRect()
@@ -3715,14 +3721,26 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
           scroll:el.scrollTop}
       })
     assert(clicked && clicked.index>80_000,'a deep signed visible tile must be mounted')
-    await dialog.locator('[data-xdrive-media-index="'+clicked.index+'"]').click()
+    const target=dialog.locator('[data-xdrive-media-index="'+clicked.index+'"]')
+    const rect=await target.boundingBox()
+    assert(rect && rect.width>0 && rect.height>0,
+      'deep Viewer candidate must have a real physical hit target')
+    // A real mouse hit at the already-visible tile cannot trigger
+    // Playwright's locator auto-scroll between measurement and admission.
+    await page.mouse.click(rect.x+rect.width/2,rect.y+rect.height/2)
     await page.locator('#fixture-viewer').waitFor({state:'visible'})
     const opened=await page.evaluate(()=>window.__mapProbe.photoOpens.at(-1))
-    record(mode+': 100k deep Viewer authenticates selected row and saves logical index',
-      opened?.valid===true && opened.anchorIndex===clicked.index &&
+    const deepViewerMatched=opened?.valid===true && opened.anchorIndex===clicked.index &&
       opened.returnAnchorIndex===clicked.index &&
       Math.abs(opened.returnAnchorViewportOffset-clicked.offset)<=2 &&
-      errors.length===0)
+      errors.length===0
+    if(!deepViewerMatched) console.error('places-100k-deep-viewer-identity',
+      JSON.stringify({mode,clickedIndex:clicked.index,clickedOffset:clicked.offset,
+        openedValid:opened?.valid,openedIndex:opened?.anchorIndex,
+        returnIndex:opened?.returnAnchorIndex,
+        returnOffset:opened?.returnAnchorViewportOffset,runtimeErrors:errors.length}))
+    record(mode+': 100k deep Viewer authenticates selected row and saves logical index',
+      deepViewerMatched)
     const beforeBack=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.length)
     await page.locator('#fixture-viewer-back').click()
     await dialog.waitFor({state:'visible'})
