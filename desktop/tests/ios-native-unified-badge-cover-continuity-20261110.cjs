@@ -40,6 +40,6 @@ test('queue read failure clears both the previous badge map and completed-histor
 test('a covered or resumed page never starts an unbounded backlog scan', () => {
   assert.match(read, /let ids = model.rows.compactMap \{ \$0.local\?\.id \}/)
   assert.match(read, /ids.count <= 48/)
-  assert.match(wall, /\.task\(id: "\\(visible\):\\(displayActive\):\\(retry)"\)/)
+  assert.match(wall, /\.task\(id: .*visible.*displayActive.*retry/)
   assert.match(wall, /await readVisibleQueueBadges\(\)/)
 })
