@@ -3599,6 +3599,15 @@ struct XDriveIOSNativeFilesBrowser: View {
             if isHome, let current = login.owner,
                let retained = favoriteShortcutsOwner,
                XDriveIOSNativePhotoOwnerScope.matches(current, retained) {
+                // A first Home Favorites GET can be cancelled by an immediate
+                // Gallery/Files tab switch. It has no verified rows and no
+                // terminal error; release the first-read latch so the next
+                // Home appearance really retries. Proven same-Owner rows and
+                // failed/denied terminal reads must not auto-loop.
+                if homeReadAttempted && favoriteShortcuts.loading &&
+                   !favoriteShortcuts.verified && favoriteShortcuts.error == nil {
+                    homeReadAttempted = false
+                }
                 favoriteShortcuts.suspendForNavigation()
             } else {
                 favoriteShortcuts.invalidate()
