@@ -198,7 +198,7 @@ async function prepareAppDestination(win, name) {
     const state = await safeSPARouteState(win, target)
       .catch(() => ({rendererUnavailable:true}))
     throw Error('P0C2_REAL_FIVE_SLOT_DIAGNOSTIC '+
-      JSON.stringify({target,buttonError:last?.error||null,state})+
+      JSON.stringify({target,buttonError:last?.error||null,hitCounts:last?.counts||null,state})+
       ' | '+String(error))
   }
 }

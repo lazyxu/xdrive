@@ -23,6 +23,8 @@ test('real signed H264 fixture only clicks an unobscured actual button and diagn
   assert.ok(harness.includes('return hit === button || button.contains(hit)'))
   assert.ok(harness.includes('matching:matching.length'))
   assert.ok(harness.includes('withinViewport,unobscured:candidates.length'))
+  assert.ok(harness.includes('hitCounts:last?.counts||null'),
+    'a failed genuine click must report anonymous viewport and obstruction counts')
   assert.ok(harness.includes("'unobscured genuine five-slot destination '+name"))
   assert.ok(harness.includes("win.webContents.sendInputEvent({type:'mouseDown'"))
   assert.ok(harness.includes("win.webContents.sendInputEvent({type:'mouseUp'"))
