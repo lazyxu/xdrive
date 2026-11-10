@@ -367,3 +367,19 @@ test('current trusted React photo covers suppress ONLY matching anonymous Child 
   frame.dispose()
   assert.equal(frame.setPhotoCoverSelections([]),false)
 })
+
+test('trusted frame host relays only validated Child SDK failure code',()=>{
+  const f=fixture()
+  const reported=[]
+  f.options.onMapFailure=reason=>reported.push(reason)
+  const frame=xDriveMountBaiduIsolatedFrame(f.options)
+  assert.ok(frame)
+  f.childListeners.get('load')()
+  f.emit('ready')
+  f.emit('map-failed',{reason:'PRIVATE_TOKEN'})
+  f.emit('map-failed',{reason:'sdk_script_failed',ticket:'private'})
+  assert.deepEqual(reported,[],'untrusted reasons and extra keys are denied')
+  f.emit('map-failed',{reason:'sdk_script_failed'})
+  assert.deepEqual(reported,['sdk_script_failed'])
+  frame.dispose()
+})
