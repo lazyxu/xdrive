@@ -176,6 +176,15 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
         XCTAssertTrue(full.exists, "Must select real Full Access, not Limited")
         full.tap()
+        // The previous candidates could tap a "Full Access" cell while the
+        // real xDrive still reported denial. Record the system selection
+        // state instead of interpreting a successful tap as authorization.
+        print("MAP_PHOTOS_FULL_ACCESS_ROW_SELECTED \(full.isSelected)")
+        print("MAP_PHOTOS_FULL_ACCESS_POST_TAP AX tree:\n\(settings.debugDescription)")
+        let settingsProof = XCTAttachment(screenshot: settings.screenshot())
+        settingsProof.name = "native-ios-real-photos-full-access-after-tap"
+        settingsProof.lifetime = .keepAlways
+        add(settingsProof)
 
         // iOS may require a further consent acknowledgement; do not tap
         // an arbitrary alert choice or accidentally grant Limited access.
@@ -198,7 +207,28 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
         if !element("native-ios-full-library-gps-map", in: app)
             .waitForExistence(timeout: 35) {
-            diagnose("PhotoKit still not authorized after real Settings consent", in: app)
+            // Diagnose whether this is an unrefreshed SwiftUI map or a real
+            // persistent TCC denial. A cold restart is diagnostic only:
+            // *never* pass an immediate Settings-return test on its basis.
+            diagnose("MapKit absent immediately after Settings Full Access", in: app)
+            let liveBlocked = element("native-ios-map-open-photo-settings", in: app).exists
+            app.terminate()
+            app.launch()
+            let launcher = element("native-ios-tab-launcher", in: app)
+            let launcherAvailable = launcher.waitForExistence(timeout: 15)
+            if launcherAvailable { launcher.tap() }
+            let mapEntry = element("native-ios-launcher-map", in: app)
+            let entryAvailable = mapEntry.waitForExistence(timeout: 15)
+            if entryAvailable { mapEntry.tap() }
+            let afterRestart = element("native-ios-full-library-gps-map", in: app)
+                .waitForExistence(timeout: 35)
+            let restartBlocked = element("native-ios-map-open-photo-settings", in: app).exists
+            print("MAP_PHOTOS_COLD_START_PROBE before_blocked=\(liveBlocked) map=\(afterRestart) after_blocked=\(restartBlocked)")
+            diagnose(afterRestart
+                ? "PhotoKit Full Access worked only after cold restart: fix immediate foreground refresh"
+                : "PhotoKit Full Access still not admitted after cold restart: inspect real TCC/readWrite decision",
+                in: app)
+            XCTFail("Full Access must mount real MapKit immediately after Settings return, without restart")
         }
     }
 
