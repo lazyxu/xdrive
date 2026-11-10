@@ -34,6 +34,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let openBackup: () -> Void
     let priorityBackup: (String) -> Void
+    // The parent presents the existing shared MapKit route as an overlay.
+    // Keeping this Gallery mounted preserves its query, grid density and
+    // real PhotoKit/Owner page cursor on the return from native MapKit.
+    var onShowMap: ((XDriveIOSNativePhotoMapCaptureRange?) -> Void)? = nil
     @StateObject private var timeline = XDriveIOSNativeUnifiedPhotoTimeline()
     @StateObject private var wall = XDriveIOSNativeUnifiedPhotoWall()
     @StateObject private var photoObserver = XDriveIOSUnifiedPhotoObserver()
@@ -46,6 +50,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
+    @State private var openMapAfterFilterDismiss = false
+    @State private var pendingMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var pairing: XDriveIOSNativeUnifiedPhoto?
     @State private var indexRequest = UUID()
     @State private var retryUnavailable = false
@@ -91,7 +97,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             .onChange(of: photoObserver.change) { _ in reset() }
             .onChange(of: login.owner) { _ in
                 showingPeople = false; showingThumbnailCache = false
-                sourceFilter = nil; query = .init(); draft = .init(); reset()
+                sourceFilter = nil; query = .init(); draft = .init()
+                openMapAfterFilterDismiss = false
+                pendingMapCaptureRange = nil
+                reset()
             }
             .onChange(of: sourceFilter) { _ in resetWall() }
             .onChange(of: query) { _ in resetWall() }
@@ -116,7 +125,16 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     // any changed Owner/PhotoKit grant/epoch resets on return.
                 }
             }
-            .sheet(isPresented: $showFilters) { filterEditor }
+            .sheet(isPresented: $showFilters, onDismiss: {
+                // UIKit cannot present the map while the filter editor sheet
+                // is still being dismissed. The owning Gallery remains live
+                // underneath; no source/page/filter state is rebuilt here.
+                guard openMapAfterFilterDismiss else { return }
+                openMapAfterFilterDismiss = false
+                let selectedRange = pendingMapCaptureRange
+                pendingMapCaptureRange = nil
+                onShowMap?(selectedRange)
+            }) { filterEditor }
             .sheet(item: $pairing) { row in
                 XDriveIOSNativePhotoPairingDetails(
                     row: row, retry: { reset() }, backup: openBackup,
@@ -294,6 +312,30 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     }
                     Text("两端匹配的照片按本机拍摄日期排列；日期未知的照片只在不限日期时显示。").font(.footnote)
                 }
+                if onShowMap != nil {
+                    Section("地图") {
+                        Button {
+                            guard mapUnavailableReason == nil, draft.isValid
+                            else { return }
+                            // Commit any in-flight filter edits first so the
+                            // Gallery shown after MapKit has the same date
+                            // criteria as the map that was just opened.
+                            query = draft
+                            pendingMapCaptureRange = representableMapCaptureRange
+                            openMapAfterFilterDismiss = true
+                            showFilters = false
+                        } label: {
+                            Label("显示地图", systemImage: "map")
+                        }
+                        .disabled(mapUnavailableReason != nil || !draft.isValid)
+                        .accessibilityIdentifier("native-ios-unified-gallery-show-map")
+                        Text(mapUnavailableReason ??
+                             "地图按本机 PhotoKit 或当前云端 Owner 分别显示有位置照片；来源可在地图内切换，不会将两端照片误称为同一个已筛选集合。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-unified-gallery-map-scope")
+                    }
+                }
             }
             .navigationTitle("搜索与筛选").navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -301,6 +343,42 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 ToolbarItem(placement: .confirmationAction) { Button("应用") { applyQuery() }.disabled(!draft.isValid) }
             }
         }
+    }
+
+    // The unified photo wall can filter source identity, filenames, media
+    // subtypes and arbitrary date criteria, while the existing native
+    // MapKit routes have separate PhotoKit/Owner scopes. Refuse every
+    // predicate that MapKit cannot represent *exactly*; never display an
+    // unfiltered map under an actively filtered Gallery heading.
+    private var mapUnavailableReason: String? {
+        if sourceFilter != nil {
+            return "当前“两端都有／仅本机／仅云端／待核验”来源筛选无法在地图中精确重现。请先选择“全部”来源。"
+        }
+        if !draft.isValid {
+            return "请先修正日期范围或搜索条件。"
+        }
+        if !draft.term.isEmpty {
+            return "地图目前不支持按文件名筛选位置。请先清除搜索文字。"
+        }
+        if draft.media != .all {
+            return "地图的本机和云端媒体类型筛选尚未统一，请先选择“所有媒体”。"
+        }
+        if draft.from != nil || draft.until != nil {
+            guard let from = draft.from, let until = draft.until,
+                  XDriveIOSNativePhotoMapCaptureRange(
+                    from: from, to: until, label: "当前图库日期筛选"
+                  ).valid else {
+                return "所选日期超出地图支持的连续时间范围（最长 370 天）。"
+            }
+        }
+        return nil
+    }
+
+    private var representableMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange? {
+        guard let from = draft.from, let until = draft.until else { return nil }
+        let range = XDriveIOSNativePhotoMapCaptureRange(
+            from: from, to: until, label: "当前图库日期筛选")
+        return range.valid ? range : nil
     }
 
     private func applyQuery() { guard draft.isValid else { return }; query = draft; showFilters = false }
