@@ -56,8 +56,6 @@ export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: stri
 
   return {
     ownerScopeKey,
-    vault: signal => api.clipboardVault(signal),
-    initializeCheck: (check, signal) => api.clipboardInitializeCheck(check, signal),
     list: (before, signal) => api.clipboardItems(before, signal),
     create: (item, signal) => api.clipboardCreate(item, signal),
     remove: (id, signal) => api.clipboardRemove(id, signal),
