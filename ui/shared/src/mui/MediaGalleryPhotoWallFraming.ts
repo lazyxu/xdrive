@@ -94,12 +94,17 @@ export function xDriveMediaGalleryObserveFraming(
  * fitting and the exact same loading-progress mask. No re-download or
  * fresh Owner request is needed when the user switches appearance.
  */
-export function xDriveMediaGalleryFramingStyles(mode: XDriveMediaGalleryFraming) {
+export function xDriveMediaGalleryFramingStyles(
+  mode: XDriveMediaGalleryFraming, pinch = false,
+) {
   const fit: 'contain' | 'cover' = mode === 'contain' ? 'contain' : 'cover'
   return {
     '& [data-xdrive-media-tile] img': {
       objectFit: fit,
       transformOrigin: 'center',
+      // Pinch preview is composed into the SAME selector. Spreading a second
+      // selector object into MUI sx would erase objectFit on touch devices.
+      ...(pinch ? {transform: 'scale(var(--xdrive-gallery-pinch-preview, 1))'} : {}),
     },
     '& [data-xdrive-media-tile] [data-xdrive-media-loading-progress]': {
       maskSize: fit,
