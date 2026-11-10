@@ -86,7 +86,9 @@ func installDownloaded(ctx context.Context, path string, result Result) (string,
 		if err != nil {
 			return "", fmt.Errorf("post-install health check failed: xd build metadata: %w", err)
 		}
-		var build struct { Commit string `json:"commit"` }
+		var build struct {
+			Commit string `json:"commit"`
+		}
 		if err := json.Unmarshal(buildOutput, &build); err != nil || build.Commit != result.Commit {
 			return "", fmt.Errorf("post-install health check failed: xd source Commit=%q want=%q: %v", build.Commit, result.Commit, err)
 		}
@@ -94,7 +96,9 @@ func installDownloaded(ctx context.Context, path string, result Result) (string,
 		if err != nil {
 			return "", fmt.Errorf("post-install health check failed: Agent build metadata: %w", err)
 		}
-		var agentBuild struct { Commit string `json:"commit"` }
+		var agentBuild struct {
+			Commit string `json:"commit"`
+		}
 		if err := json.Unmarshal(agentOutput, &agentBuild); err != nil || agentBuild.Commit != result.Commit {
 			return "", fmt.Errorf("post-install health check failed: Agent source Commit=%q want=%q: %v", agentBuild.Commit, result.Commit, err)
 		}
@@ -102,7 +106,9 @@ func installDownloaded(ctx context.Context, path string, result Result) (string,
 		if err != nil {
 			return "", fmt.Errorf("post-install health check failed: Desktop build metadata: %w", err)
 		}
-		var desktopBuild struct { Commit string `json:"commit"` }
+		var desktopBuild struct {
+			Commit string `json:"commit"`
+		}
 		if err := json.Unmarshal(desktopOutput, &desktopBuild); err != nil || desktopBuild.Commit != result.Commit {
 			return "", fmt.Errorf("post-install health check failed: Desktop source Commit=%q want=%q: %v", desktopBuild.Commit, result.Commit, err)
 		}
