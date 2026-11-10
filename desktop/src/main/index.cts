@@ -8961,16 +8961,17 @@ function registerIPCHandlers() {
     }
   })
   ipcMain.handle('agent:install-release-bundle', (_event, commitValue: unknown,
-    fileValue: unknown, confirmed: unknown) =>
+    fileValue: unknown, confirmed: unknown, personalUnsignedValue: unknown) =>
     runAgentAction<AgentUpdateState>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'release-bundle-current')
       if (confirmed !== true || typeof commitValue !== 'string' ||
           !/^[0-9a-f]{40}$/.test(commitValue) || typeof fileValue !== 'string' ||
-          !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(fileValue)) {
+          !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,180}$/.test(fileValue) ||
+          (personalUnsignedValue !== undefined && typeof personalUnsignedValue !== 'boolean')) {
         throw new AgentIPCError('invalid_input', 0, 'Explicit user confirmation and exact Bundle identity are required.')
       }
-      return requireAgentClient().installCurrentServerCommit(commitValue, fileValue)
+      return requireAgentClient().installCurrentServerCommit(commitValue, fileValue, personalUnsignedValue === true)
     }, false))
   ipcMain.handle('agent:cloud-storage-stats', (event, requestID: unknown = undefined) =>
     runAgentAction<AgentCloudStorageStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
