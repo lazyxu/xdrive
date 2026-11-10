@@ -23,6 +23,7 @@ func TestPWAOfflineInstanceDurableConcurrentAndIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, adminDB)
 	open := func() *gorm.DB {
 		t.Helper()
 		schema := "pwa_id_" + strings.ReplaceAll(uuid.NewString(), "-", "")
@@ -41,6 +42,7 @@ func TestPWAOfflineInstanceDurableConcurrentAndIsolated(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		trackMigrationTestDB(t, db)
 		if err := db.AutoMigrate(&meta.PWAOfflineInstance{}); err != nil {
 			t.Fatal(err)
 		}

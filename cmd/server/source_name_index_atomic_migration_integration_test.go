@@ -25,6 +25,7 @@ func TestMigrateSourceNameNamespaceIndexRollbackOnLegacyCollision(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, rootDB)
 	schema := "source_name_swap_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := rootDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -41,6 +42,7 @@ func TestMigrateSourceNameNamespaceIndexRollbackOnLegacyCollision(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}); err != nil {
 		t.Fatal(err)
 	}

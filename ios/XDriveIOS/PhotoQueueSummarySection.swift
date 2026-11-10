@@ -285,6 +285,7 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("完成") { dismiss() }
+                        .accessibilityIdentifier("native-ios-photo-task-list-done")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("刷新") { refresh() }.disabled(model.loading)

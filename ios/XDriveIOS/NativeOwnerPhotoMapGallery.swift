@@ -82,10 +82,18 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                     onClose: onClose,
                     cameraOnEntry: localMapCamera,
                     onLibraryCameraChange: { next in
-                        guard source == .local, let expectedOwner,
-                              XDriveIOSNativePhotoOwnerScope.matches(
+                        // Local PhotoKit maps work without a Server Owner.
+                        // Preserve their camera in a signed-out session, but
+                        // never accept an old callback across login/logout or
+                        // an Owner switch. Cloud camera remains Owner-bound.
+                        guard source == .local else { return }
+                        if let expectedOwner {
+                            guard XDriveIOSNativePhotoOwnerScope.matches(
                                 login.owner, expectedOwner
-                              ) else { return }
+                            ) else { return }
+                        } else {
+                            guard login.owner == nil else { return }
+                        }
                         localMapCamera = next
                     },
                     onFocusChange: onFocusChange,

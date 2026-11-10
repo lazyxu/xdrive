@@ -1,5 +1,6 @@
 import AVKit
 import Combine
+import OSLog
 import PDFKit
 import SwiftUI
 
@@ -133,6 +134,10 @@ struct XDriveIOSNativeFilesViewer: View {
     @State private var exportFallbackEligible = false
     @State private var showImageChrome = true
     @State private var showVideoChrome = true
+    // One measurement per exact player/Node. Do not confuse a signed URL or
+    // AVPlayerItem.status == readyToPlay with a displayed video frame.
+    @State private var previewRequestedAt: TimeInterval = 0
+    @State private var videoFirstFrameRecorded = false
     @State private var streamedWindow: [XDriveIOSNativeFilesNode] = []
     @State private var neighborBusy = false
     @State private var neighborError: String?
@@ -154,6 +159,13 @@ struct XDriveIOSNativeFilesViewer: View {
         guard let display else { return false }
         if case .video = display { return true }
         return false
+    }
+
+    // Keep the same dark video canvas during an asynchronous signed-URL
+    // preview so a white loading surface never flashes before the first frame.
+    private var expectsVideoCanvas: Bool {
+        let ext = (viewed.name as NSString).pathExtension.lowercased()
+        return ["mov", "mp4", "m4v", "3gp"].contains(ext)
     }
 
     private var chromeVisible: Bool {
@@ -254,7 +266,8 @@ struct XDriveIOSNativeFilesViewer: View {
                                 XDriveIOSNativePhotoVideoSurface(
                                     player: player, showChrome: showVideoChrome,
                                     onChromeTap: { toggleVideoChrome() },
-                                    onNavigateSwipe: { move($0) }
+                                    onNavigateSwipe: { move($0) },
+                                    onFirstFrame: { recordVideoFirstFrame(player) }
                                 )
                                 .id(viewed.id)
                                 .onAppear { if authorized { player.play() } }
@@ -311,12 +324,28 @@ struct XDriveIOSNativeFilesViewer: View {
                     .accessibilityIdentifier("native-ios-files-viewer-error-scroll")
                 } else if loading {
                     ProgressView("正在读取当前文件…")
+                        .tint(expectsVideoCanvas ? .white : .accentColor)
+                        .foregroundStyle(expectsVideoCanvas ? Color.white : Color.secondary)
                 } else {
                     Text("文件预览不可用").foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(isStillImage || isNativeVideo ? Color.black : Color(uiColor: .systemBackground))
+            .background(isStillImage || isNativeVideo || (loading && expectsVideoCanvas)
+                        ? Color.black : Color(uiColor: .systemBackground))
+            .overlay {
+                if isNativeVideo && !videoFirstFrameRecorded {
+                    ProgressView("正在加载视频首帧…")
+                        .tint(.white)
+                        .foregroundStyle(.white)
+                        .font(.footnote)
+                        .padding(12)
+                        .background(.black.opacity(0.55),
+                                    in: RoundedRectangle(cornerRadius: 12))
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("native-ios-files-video-first-frame-pending")
+                }
+            }
             .overlay(alignment: .bottom) {
                 if neighborBusy {
                     ProgressView("正在核验相邻文件…")
@@ -372,8 +401,13 @@ struct XDriveIOSNativeFilesViewer: View {
                     .disabled(neighborBusy || !mayNavigate(1))
                 }
             }
-            .toolbar(chromeVisible ? .visible : .hidden,
-                     for: .navigationBar, .bottomBar)
+            // A video tap may hide its timeline and top chrome, but must
+            // never hide Next/Previous or Back-to-list navigation at bottom.
+            // This also avoids the abrupt bottom-bar layout switch after the
+            // media URL resolves and the first frame begins to render.
+            .toolbar(chromeVisible ? .visible : .hidden, for: .navigationBar)
+            .toolbar(isNativeVideo ? .visible :
+                     (chromeVisible ? .visible : .hidden), for: .bottomBar)
         }
         .statusBarHidden(!chromeVisible)
         .task(id: attempt) {
@@ -482,6 +516,28 @@ struct XDriveIOSNativeFilesViewer: View {
         }
     }
 
+    /// This is the first *displayed* frame from this Viewer's AVPlayerLayer.
+    /// Suppress old-item callbacks after Next/Previous, retry, logout or close.
+    @MainActor
+    private func recordVideoFirstFrame(_ renderedPlayer: AVPlayer) {
+        guard authorized, !isClosing, isNativeVideo,
+              let current = player, current === renderedPlayer,
+              current.currentItem != nil, previewRequestedAt > 0,
+              !videoFirstFrameRecorded else { return }
+        videoFirstFrameRecorded = true
+        let ms = max(0, Int((ProcessInfo.processInfo.systemUptime -
+                              previewRequestedAt) * 1000))
+        // A real signed iPhone normally has no synthetic UI-smoke argument.
+        // Expose a privacy-safe device log as well as the CI-readable marker,
+        // so actual first-frame p50/p95 can be obtained from device Console.
+        // Never log the Node name, signed URL, Owner, or access token.
+        Logger(subsystem: "com.xdrive.ios", category: "FilesVideoFirstFrame")
+            .notice("IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS stage=layer-ready value=\(ms, privacy: .public)")
+        if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
+            print("IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS stage=layer-ready value=\(ms)")
+        }
+    }
+
     @MainActor
     private func reloadCurrent() {
         guard authorized, !isClosing else { return }
@@ -506,6 +562,7 @@ struct XDriveIOSNativeFilesViewer: View {
         let current = viewed
         let generation = attempt
         retire()
+        previewRequestedAt = ProcessInfo.processInfo.systemUptime
         failure = nil
         loading = true
         guard authorized else {
@@ -526,7 +583,15 @@ struct XDriveIOSNativeFilesViewer: View {
             guard generation == attempt, viewed == current, authorized,
                   !isClosing else { return }
             switch result {
-            case .video(let url), .audio(let url):
+            case .video(let url):
+                let item = AVPlayerItem(url: url)
+                // Avoid requiring a long forward buffer before attempting the
+                // first frame. The shared surface still exposes true buffering.
+                item.preferredForwardBufferDuration = 2
+                let candidate = AVPlayer(playerItem: item)
+                candidate.automaticallyWaitsToMinimizeStalling = false
+                player = candidate
+            case .audio(let url):
                 player = AVPlayer(url: url)
             default: break
             }
@@ -651,6 +716,8 @@ struct XDriveIOSNativeFilesViewer: View {
         // image must always restore visible escape and retry controls.
         showImageChrome = true
         showVideoChrome = true
+        previewRequestedAt = 0
+        videoFirstFrameRecorded = false
         // Cancel the old item's signed download and delete any staged bytes
         // before a swipe, retry, Owner/scene exit or Viewer dismissal.
         exporter.invalidate()

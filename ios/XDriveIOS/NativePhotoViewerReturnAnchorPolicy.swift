@@ -51,7 +51,10 @@ enum XDriveIOSNativePhotoViewerReturnAnchorPolicy {
               let lastOpenedID,
               !lastOpenedID.isEmpty,
               lastOpenedID.utf8.count <= 1024,
-              currentPageIDs.count <= 64 else { return nil }
+              !currentPageIDs.isEmpty, currentPageIDs.count <= 64,
+              currentPageIDs.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 }),
+              Set(currentPageIDs).count == currentPageIDs.count
+        else { return nil }
         return currentPageIDs.contains(lastOpenedID) ? lastOpenedID : nil
     }
 

@@ -29,7 +29,7 @@ test('one native Files modal opens from the current real page and reanchors afte
   // Cancellation is still mandatory; clearing the verified source rows here
   // caused the observed immediate pop/flicker on folder taps.
   const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'),
-    browser.indexOf('var body: some View', browser.indexOf('private func suspendVisibleRange()')));
+    browser.indexOf('private func filesForegroundLifecycle(', browser.indexOf('private func suspendVisibleRange()')));
   assert.match(suspend, /model\.suspendForNavigation\(\)/);
   assert.doesNotMatch(suspend, /model\.invalidate\(\)/);
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?model\.invalidate\(\)/);
@@ -132,7 +132,9 @@ test('Files audio and video expose initial KVO loading failure, scoped retry and
   assert.match(modal, /accessibilityIdentifier\("native-ios-files-player-reload"\)/);
   assert.match(modal, /Button\("重试"\) \{ reloadCurrent\(\) \}/);
   assert.match(modal, /private func reloadCurrent\(\)[\s\S]*?guard authorized, !isClosing else \{ return \}[\s\S]*?retire\(\)[\s\S]*?failure = nil[\s\S]*?loading = true[\s\S]*?attempt = UUID\(\)/);
-  assert.match(modal, /private func openCurrent\(\) async[\s\S]*?retire\(\)\s*failure = nil\s*loading = true/);
+  assert.match(modal, /private func openCurrent\(\) async[\s\S]*?retire\(\)\s*previewRequestedAt = ProcessInfo\.processInfo\.systemUptime\s*failure = nil\s*loading = true/);
+  assert.match(modal, /private func recordVideoFirstFrame\(_ renderedPlayer: AVPlayer\)/);
+  assert.match(modal, /current === renderedPlayer/);
   assert.match(modal, /\.onChange\(of: phase\)[\s\S]*?retire\(\)/);
 });
 
@@ -229,7 +231,10 @@ test('Files video uses Gallery native timeline and Owner-gated canvas paging wit
   assert.match(modal, /\.id\(viewed\.id\)/);
   assert.match(modal, /\.onAppear \{ if authorized \{ player\.play\(\) \} \}/);
   assert.match(modal, /\.onDisappear \{ player\.pause\(\) \}/);
-  assert.match(modal, /\.toolbar\(chromeVisible \? \.visible : \.hidden,/);
+  assert.match(modal, /\.toolbar\(chromeVisible \? \.visible : \.hidden, for: \.navigationBar\)/);
+  // Hiding video playback chrome must not hide Next/Previous or cause a
+  // bottom-bar reflow when the first frame becomes ready.
+  assert.match(modal, /\.toolbar\(isNativeVideo \? \.visible :[\s\S]*?for: \.bottomBar\)/);
   assert.match(modal, /\.statusBarHidden\(!chromeVisible\)/);
   assert.match(modal, /private func retire\(\) \{[\s\S]*?showImageChrome = true\s*showVideoChrome = true/);
   assert.match(modal, /XDriveIOSNativeFilesViewerPolicy\.neighbor\(/);

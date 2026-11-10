@@ -685,7 +685,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
 
             .sheet(item: $managementIntent, onDismiss: {
-                reload()
+                // Closing read-only management must not blank a verified
+                // Recent/Favorites list. Revalidate same-Owner rows in place.
+                if phase == .active && !model.loading {
+                    reload(preserveVerifiedRows: model.matches(login.owner, kind: kind))
+                }
             }) { intent in
                 if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
                    let parentID = intent.item.node.parent_id, parentID > 0,
@@ -759,7 +763,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 // A Viewer owns the return until its onDismiss callback.
                 guard phase == .active, !viewerRefreshPending else { return }
                 if !model.matches(login.owner, kind: kind) {
-                    if !model.loading { reload() }
+                    // Do not loop failed authorization reads during rapid
+                    // Native Files/Recent/Favorites tab-return transitions.
+                    if !model.loading && model.error == nil { reload() }
                 } else if !model.loading &&
                           selectedFile == nil && locateIntent == nil &&
                           managementIntent == nil {
@@ -789,7 +795,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     // A screen that appeared while inactive must still load
                     // when foregrounded. Revalidate an old same-scope page
                     // silently, never revive a previous Owner or collection.
-                    reload(preserveVerifiedRows: model.matches(login.owner, kind: kind))
+                    // Keep last verified rows mounted on return; a terminal
+                    // denied read is retried only on an explicit action.
+                    if model.matches(login.owner, kind: kind) {
+                        reload(preserveVerifiedRows: true)
+                    } else if model.error == nil {
+                        reload()
+                    }
                 }
             }
             .onChange(of: kind) { _ in
@@ -822,6 +834,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 model.invalidate()
                 favorites.invalidate()
                 recentClear.invalidate()
+                // Any new Owner gets only its own freshly verified collection.
+                if isVisible && phase == .active && login.owner != nil {
+                    reload()
+                }
             }
             .onChange(of: model.loading) { now in
                 guard !now, selectedFile == nil, let target = returnFile else { return }

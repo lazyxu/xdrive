@@ -15,7 +15,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var controller: XDriveIOSNativePhotoBackupController
     var launchAction: XDriveIOSNativePhotoBackupLaunch = .overview
-    var launchNonce: UUID = UUID()
+    // A call site without an explicit nonce must not generate a new shortcut
+    // every time the parent SwiftUI body is rebuilt.
+    var launchNonce: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
     let onShowCloudOriginals: () -> Void
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
@@ -24,6 +26,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var originalProof = XDriveIOSNativeCurrentPhotoReceiptModel()
     @StateObject private var destination = XDriveIOSNativePhotoBackupDestinationModel()
     @State private var page = Page.overview
+    @State private var lastAppliedLaunchNonce: UUID?
     @State private var showTaskList = false
     @State private var detail: Detail?
     @State private var enablingAutomaticBackup = false
@@ -117,14 +120,23 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
         }
-        // An active user's taps or scrolls reset the 10-second idle window.
-        // Simultaneous gestures preserve Form scroll and Button interactions.
+        // Bind task presentation to the stable page host, not outside a
+        // stack of mutually exclusive confirmation dialogs. It must remain
+        // mounted while the content switches between overview and details.
+        .sheet(isPresented: $showTaskList) {
+            XDriveIOSNativePhotoBackupTaskList(login: login, controller: controller)
+        }
+        // Only Focused Backup needs the full-screen activity gestures.
+        // A permanent ancestor tap/drag recognizer interferes with nested
+        // Form buttons and native sheet navigation on real Simulator.
         .simultaneousGesture(
-            TapGesture().onEnded { noteFocusedUserActivity() }
+            TapGesture().onEnded { noteFocusedUserActivity() },
+            including: focusedPresentationActive ? .all : .none
         )
         .simultaneousGesture(
             DragGesture(minimumDistance: 4)
-                .onChanged { _ in noteFocusedUserActivity() }
+                .onChanged { _ in noteFocusedUserActivity() },
+            including: focusedPresentationActive ? .all : .none
         )
         // Synology-style focused display: dark, not locked. A tap wakes the
         // native status screen without cancelling or restarting the uploader.
@@ -452,6 +464,16 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         overviewQueue.refresh(login: login)
     }
 
+    private func applyLaunchActionIfNeeded() {
+        // onAppear can fire again during a child page transition or after a
+        // sheet is presented. Replaying .overview here would silently bounce
+        // the user back and hide the task sheet. Only an explicit new launch
+        // nonce is permitted to reapply a shortcut.
+        guard lastAppliedLaunchNonce != launchNonce else { return }
+        lastAppliedLaunchNonce = launchNonce
+        applyLaunchAction()
+    }
+
     private func applyLaunchAction() {
         // A shortcut navigates only; Focused still requires separate consent.
         switch launchAction {
@@ -465,14 +487,28 @@ struct XDriveIOSNativePhotoBackupScreen: View {
 
     var body: some View {
         backupLifetimeContent
-        .sheet(isPresented: $showTaskList) {
-            XDriveIOSNativePhotoBackupTaskList(login: login, controller: controller)
-        }
         .onAppear {
-            applyLaunchAction()
+            // The default overview is already the @State initial route. A
+            // SwiftUI reappear after a tap must never reapply .overview.
+            // Explicit shortcuts and later nonce changes still navigate.
+            if launchAction != .overview { applyLaunchActionIfNeeded() }
             refreshOverviewQueueIfEligible()
         }
-        .onChange(of: launchNonce) { _ in applyLaunchAction() }
+        .onChange(of: launchNonce) { _ in applyLaunchActionIfNeeded() }
+        .onChange(of: page) { newPage in
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
+                print("BACKUP_MVP_ROUTE page=\(String(describing: newPage))")
+            }
+            #endif
+        }
+        .onChange(of: showTaskList) { shown in
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
+                print("BACKUP_MVP_TASK_SHEET visible=\(shown)")
+            }
+            #endif
+        }
         .onChange(of: receipts.mode) { mode in
             if mode == .idle {
                 controller.refresh(owner: login.owner)
@@ -526,6 +562,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             )
         }
         .onChange(of: login.owner) { _ in
+            XDriveIOSPhotoBackupRemoteHintDelegate.invalidatePendingRegistration()
             page = .overview
             destination.reset()
             destination.refresh(login: login)
@@ -1270,6 +1307,15 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text("只核验当前选择的普通照片或视频；Live Photo 需要同时核验静态图、动态视频和完整 ZIP 清单。此结果仅代表核验时刻，不能据此宣布全部照片已备份。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            // A separate one-item, user-confirmed, physically retained CAS
+            // proof gates PhotoKit deletion. The historical ledger audit
+            // never grants deletion permission.
+            // An unverified destructive Apple Photos deletion flow is NOT part
+            // of the incremental-backup MVP. Only explicitly signed validation
+            // builds may expose it after device/iCloud retention acceptance.
+            #if XDRIVE_ENABLE_PHOTO_ORIGINAL_RELEASE
+            XDriveIOSNativePhotoFreeSpaceSection(login: login, controller: controller)
+            #endif
             XDriveIOSNativePhotoWholeLibraryAuditSection(login: login)
                 .id(Detail.audit)
             Section("可选系统后台原件备份") {

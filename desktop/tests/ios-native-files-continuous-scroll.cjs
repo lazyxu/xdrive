@@ -50,7 +50,7 @@ test('sliding range preserves Viewer return and bounded selection, and owner/nav
   assert.match(browser, /self\.entries = \[\]\s*self\.total = 0\s*self\.verifiedPage = false/)
   assert.match(browser, /\.onDisappear \{ suspendVisibleRange\(\) \}/)
   assert.match(browser, /private func suspendVisibleRange\(\) \{[\s\S]*?guard selectedFile == nil else \{ return \}[\s\S]*?model\.suspendForNavigation\(\)/)
-  const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'), browser.indexOf('var body: some View', browser.indexOf('private func suspendVisibleRange()')))
+  const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'), browser.indexOf('private func filesForegroundLifecycle(', browser.indexOf('private func suspendVisibleRange()')))
   assert.doesNotMatch(suspend, /model\.invalidate\(\)/)
 })
 

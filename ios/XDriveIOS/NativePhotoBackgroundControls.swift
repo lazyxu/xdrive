@@ -168,6 +168,12 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                 }
                 status = remote
                 serverVerified = true
+                // Optional APNs: only after the exact managed grant and
+                // Device proof have been acknowledged by the Server.
+                XDriveIOSPhotoBackupRemoteHintDelegate
+                    .requestRegistrationForApprovedBackgroundOwner(
+                        expectedOwner, stopEpoch: stopVersion
+                    )
                 XDriveIOSBGAttemptStatus.record(.scheduled, owner: expectedOwner)
                 notice = "服务器已确认授权。iOS 决定后台执行时机，单次最多尝试 \(XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun) 个原件；锁定状态可能无法读取原件。"
             } catch {
@@ -271,6 +277,12 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                 }
                 status = confirmed
                 serverVerified = true
+                // Rotation revokes the prior grant's APNs registration.
+                // Re-enroll the token only under the renewed exact Owner.
+                XDriveIOSPhotoBackupRemoteHintDelegate
+                    .requestRegistrationForApprovedBackgroundOwner(
+                        expectedOwner, stopEpoch: stopVersion
+                    )
                 notice = "后台授权已续期并经服务器验证；iOS 仍自行决定实际后台执行时间。"
             } catch {
                 guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)

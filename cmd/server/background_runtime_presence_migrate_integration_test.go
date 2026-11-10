@@ -23,6 +23,7 @@ func TestMigrateCreatesBackgroundRuntimePresence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, baseDB)
 	schema := "migrate_runtime_presence_" +
 		strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(
@@ -47,6 +48,7 @@ func TestMigrateCreatesBackgroundRuntimePresence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}

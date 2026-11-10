@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography, useMediaQuery } from '@mui/material'
+import { Box, Button, CircularProgress, Dialog, IconButton, MenuItem, Stack, TextField, Typography, useMediaQuery } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
-import type { MediaItem, MediaTimelineGroupSets } from '../models'
+import type { MediaItem, MediaTimelineGroupIndex, MediaTimelineGroupSets } from '../models'
 import {
   XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
   XDRIVE_PLACES_DRAWER_RETURN_SCROLL_LIMIT,
@@ -15,6 +15,11 @@ import type { XDriveMediaGalleryVirtualCollection } from './MediaGallerySharedTi
 import type { MediaThumbnailLoader, MediaPreviewURLLoader, MediaVideoPosterSaver } from './MediaGallery'
 import { XDriveMediaGalleryPhotoWall } from './MediaGalleryPhotoWall'
 import { XDriveMediaGalleryVirtualTimeline } from './MediaGallerySharedTimeline'
+import { xDriveMediaGalleryTimelineGroupLabel } from './MediaGalleryVirtualTimeline'
+import {
+  xDriveMediaGalleryTimelineGroupAtIndex,
+  xDriveMediaGalleryTimelineNearestDay,
+} from './MediaGalleryTimelineNavigation'
 import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
 
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
@@ -155,7 +160,27 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   }), [sparse, phase, total, loadedDepth, resident, itemAt, notifyRange])
   const visibleAnchor = useRef<{index:number;viewportOffset:number}|null>(null)
   const [visibleIndex, setVisibleIndex] = useState<number | null>(null)
+  // Numeric UI-only navigation intents. A deep date jump still triggers a
+  // fresh Owner-signed /cell-items window through the trusted Parent.
+  const [timelineReturnAnchor, setTimelineReturnAnchor] = useState<{
+    index: number; viewportOffset: number
+  } | null>(null)
+  const [dayJumpInput, setDayJumpInput] = useState('')
+  const [dayJumpFeedback, setDayJumpFeedback] = useState('')
   const visibleItem = resident.get(visibleIndex ?? windowStart)
+  const timelineJumpGroups = (timeScale === 'year'
+    ? timelineGroups?.year ?? []
+    : timelineGroups?.month ?? []).filter(group => group.key !== 'unknown')
+  const currentTimelineGroup = timeScale !== 'all' && timelineGroups
+    ? xDriveMediaGalleryTimelineGroupAtIndex(
+        timelineGroups[timeScale], visibleIndex ?? 0)
+    : null
+  useEffect(() => {
+    // A new authenticated date index means a different photo snapshot.
+    setTimelineReturnAnchor(null)
+    setDayJumpInput('')
+    setDayJumpFeedback('')
+  }, [timelineGroups])
   // Ref-backed callback preserves the shared Gallery scroll/ResizeObserver
   // lifetime when Parent's authorized page state changes.
   const anchorPort = useRef(onVisibleAnchorChange)
@@ -181,7 +206,51 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     if (next===timeScale || (next!=='all' && !timelineGroups)) return
     const anchor=visibleAnchor.current
     if (anchor) restoreLayout(anchor.index,anchor.viewportOffset)
+    setDayJumpInput('')
+    setDayJumpFeedback('')
     setTimeScale(next)
+  }
+  const jumpToTimelineGroup = (group: MediaTimelineGroupIndex) => {
+    if (phase !== 'ready' || !expanded || !timelineGroups ||
+        !Number.isSafeInteger(group.start_index) || group.start_index < 0 ||
+        !Number.isSafeInteger(group.item_count) || group.item_count < 1 ||
+        group.start_index + group.item_count > total) return
+    const index = visibleAnchor.current?.index ?? visibleIndex ?? windowStart
+    const offset = visibleAnchor.current?.viewportOffset ?? 0
+    if (Number.isSafeInteger(index) && index >= 0 && index < total &&
+        index !== group.start_index && Number.isFinite(offset)) {
+      setTimelineReturnAnchor({ index, viewportOffset: offset })
+    }
+    // Shared virtual Grid/Timeline resolves the target index, and the trusted
+    // Parent re-verifies the precise Owner Cell page before a Tile is active.
+    restoreLayout(group.start_index, 0)
+  }
+  const jumpToTimelineDay = (day: string) => {
+    setDayJumpInput(day)
+    if (!day) {
+      setDayJumpFeedback('')
+      return
+    }
+    if (timeScale !== 'day' || !timelineGroups || phase !== 'ready') return
+    const match = xDriveMediaGalleryTimelineNearestDay(timelineGroups.day, day)
+    if (!match) {
+      setDayJumpFeedback('当前地点没有可定位的有效日期')
+      return
+    }
+    setDayJumpInput(match.group.key)
+    setDayJumpFeedback(match.exact ? '' :
+      '所选日期没有照片，已定位至' +
+        xDriveMediaGalleryTimelineGroupLabel(match.group.key))
+    jumpToTimelineGroup(match.group)
+  }
+  const returnToTimelineAnchor = () => {
+    const anchor = timelineReturnAnchor
+    setTimelineReturnAnchor(null)
+    setDayJumpInput('')
+    setDayJumpFeedback('')
+    if (!anchor || phase !== 'ready' || !expanded ||
+        anchor.index < 0 || anchor.index >= total) return
+    restoreLayout(anchor.index, anchor.viewportOffset)
   }
   const pinchChange = useCallback((columns:number,index:number,viewportOffset:number) => {
     setColumnsByScale(current=>({...current,[timeScale]:columns}))
@@ -418,6 +487,64 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             </Typography>
           ) : null}
         </Stack>
+        {phase==='ready' && timelineGroups && expanded ? (
+          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap"
+            alignItems="center" sx={{px:1.25,pb:0.75,rowGap:0.75}}>
+            {timelineJumpGroups.length > 1 ? (
+              <TextField select size="small" value=""
+                label={timeScale==='year' ? '跳转年份' : '跳转年月'}
+                aria-label={timeScale==='year' ? '跳转年份' : '跳转年月'}
+                data-xdrive-places-photo-timeline-jump
+                onChange={event => {
+                  const group=timelineJumpGroups.find(value => value.key===event.target.value)
+                  if (group) jumpToTimelineGroup(group)
+                }}
+                sx={{minWidth:130,'& .MuiInputBase-root':{minHeight:44}}}>
+                <MenuItem value="">
+                  {timeScale==='year' ? '跳转年份' : '跳转年月'}
+                </MenuItem>
+                {timelineJumpGroups.map(group => (
+                  <MenuItem key={group.key} value={group.key}>
+                    {xDriveMediaGalleryTimelineGroupLabel(group.key)}
+                  </MenuItem>
+                ))}
+              </TextField>
+            ) : null}
+            {timeScale==='day' ? (
+              <TextField size="small" type="date" label="跳转日期"
+                aria-label="跳转日期"
+                data-xdrive-places-photo-timeline-day-jump
+                value={dayJumpInput}
+                disabled={!timelineGroups.day.some(group => group.key!=='unknown')}
+                onChange={event => jumpToTimelineDay(event.target.value)}
+                slotProps={{inputLabel:{shrink:true}}}
+                sx={{minWidth:160,'& .MuiInputBase-root':{minHeight:44}}}/>
+            ) : null}
+            {timeScale!=='all' ? (
+              <Typography variant="caption" color="text.secondary" role="status"
+                data-xdrive-places-photo-timeline-current-date
+                sx={{minHeight:44,display:'inline-flex',alignItems:'center'}}>
+                {'当前浏览：' + (currentTimelineGroup
+                  ? xDriveMediaGalleryTimelineGroupLabel(currentTimelineGroup.key)
+                  : '尚无可定位日期')}
+              </Typography>
+            ) : null}
+            {timelineReturnAnchor ? (
+              <Button size="small" variant="outlined"
+                data-xdrive-places-photo-timeline-return
+                onClick={returnToTimelineAnchor}
+                sx={{minHeight:44,textTransform:'none'}}>
+                返回刚才位置
+              </Button>
+            ) : null}
+            {dayJumpFeedback ? (
+              <Typography variant="caption" color="text.secondary" role="status"
+                data-xdrive-places-photo-timeline-day-feedback>
+                {dayJumpFeedback}
+              </Typography>
+            ) : null}
+          </Stack>
+        ) : null}
       </Box>
       {phase==='loading' ? (
         <Stack role="status" direction="row" spacing={1} alignItems="center"

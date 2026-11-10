@@ -11,6 +11,16 @@ const stage = read('ios/XDriveIOS/NativeManualDocumentStage.swift')
 const policy = read('ios/XDriveIOS/NativeFilesUploadBatchPolicy.swift')
 const go = read('internal/api/router.go')
 
+test('UploadReadback remains module-visible after rebasing folder resume on master', () => {
+  // master deliberately exposed the shared verified-readback helper to other
+  // native files within the Swift module; reverting it to private is a real
+  // integration regression even when git reports a clean text merge.
+  assert.match(upload, /^struct XDriveIOSNativeFilesUploadReadback \{/m)
+  assert.doesNotMatch(upload, /^\s*private struct XDriveIOSNativeFilesUploadReadback \{/m)
+  assert.match(upload, /func requireCommitted\(/)
+  assert.match(upload, /func requireCreatedDirectory\(/)
+})
+
 test('native Files picker uses the sole existing Go UploadSession writer and private one-shot staging', () => {
   assert.match(panel, /\.fileImporter\(/)
   assert.match(panel, /allowedContentTypes: \[\.item\]/)
@@ -72,7 +82,13 @@ test('native Files folder picker scans the full subtree before any remote POST, 
   assert.match(upload, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
   assert.match(upload, /XDriveIOSOriginalRunGate\.shared\.release\(gate\)/)
   assert.match(upload, /possiblySubmitted = true/)
-  assert.match(upload, /不要自动重传/)
+  assert.match(upload, /不能自动续传/)
+  assert.match(upload, /if error is XDriveManualDocumentStageError/)
+  assert.match(upload, /prior\.keys == steps\.map\(\\\.key\)/)
+  assert.match(upload, /proof\.requireCommitted\(/)
+  assert.match(upload, /proof\.requireCreatedDirectory\(/)
+  assert.match(panel, /native-ios-files-folder-resume/)
+  assert.match(panel, /native-ios-files-folder-upload-progress/)
   assert.match(policy, /enum XDriveIOSNativeFilesFolderUploadPolicy/)
   assert.match(policy, /static let maximumFiles = 128/)
   assert.match(policy, /static let maximumDirectories = 64/)

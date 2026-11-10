@@ -153,6 +153,37 @@ func TestIOSPhotoBackgroundGrantBindsCurrentManagedDestination(t *testing.T) {
 	}
 	requestWithHeaders(t, router, http.MethodGet,
 		grantPath+"/proof", "", nil, http.StatusUnauthorized, bound)
+
+	// A lost iPhone may be revoked using the Owner session alone. Before
+	// revocation an encrypted APNs token can remain on its grant row; the
+	// same Owner revocation must erase it atomically, not merely stop sends.
+	nowRegistered := time.Now().UTC()
+	if err := db.Model(&meta.IOSPhotoBackgroundGrant{}).
+		Where("id = ?", grant.ID).
+		Updates(map[string]any{
+			"apns_token_ciphertext": []byte{1, 2, 3, 4},
+			"apns_key_version":      uint32(1),
+			"apns_token_digest":     strings.Repeat("a", 64),
+			"apns_environment":      "production",
+			"apns_registered_at":    nowRegistered,
+			"apns_last_sent_at":     nowRegistered,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodPost,
+		grantPath+"/"+grant.ID+"/revoke", token,
+		nil, http.StatusOK, nil)
+	var revokedGrant meta.IOSPhotoBackgroundGrant
+	if err := db.First(&revokedGrant, "id = ?", grant.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if revokedGrant.RevokedAt == nil ||
+		len(revokedGrant.APNSTokenCiphertext) != 0 ||
+		revokedGrant.APNSKeyVersion != 0 || revokedGrant.APNSTokenDigest != "" ||
+		revokedGrant.APNSEnvironment != "" || revokedGrant.APNSRegisteredAt != nil ||
+		revokedGrant.APNSLastSentAt != nil {
+		t.Fatal("lost iPhone Owner revocation retained APNs token or sending authority")
+	}
 }
 
 // Historical grants remain listable/revocable, but no Owner-root-only

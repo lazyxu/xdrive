@@ -294,11 +294,21 @@ jobs:
         run: bash scripts/ci/collect-optional-native-release.sh "$GITHUB_SHA" release
       - name: Generate immutable full-commit Release Bundle manifest
         shell: bash
+        # Only a build with this same CI run's configured Windows signing
+        # certificate may advertise a Windows installer as usable. The Windows
+        # packaging step verifies its Authenticode signature and fails closed
+        # when configured signing fails. Without it the EXE is test-only.
+        env:
+          XD_BUNDLE_WINDOWS_SIGN_CONFIGURED: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 != '' }}
         run: |
           set -euo pipefail
           channel=master
           [[ "$GITHUB_REF" != refs/tags/v* ]] || channel=stable
-          python3 scripts/ci/generate-release-bundle.py release "$GITHUB_SHA" "$channel"
+          args=()
+          if [[ "$XD_BUNDLE_WINDOWS_SIGN_CONFIGURED" == "true" ]]; then
+            args+=(--windows-signed)
+          fi
+          python3 scripts/ci/generate-release-bundle.py release "$GITHUB_SHA" "$channel" "${args[@]}"
       - name: Generate checksums
         shell: bash
         run: |

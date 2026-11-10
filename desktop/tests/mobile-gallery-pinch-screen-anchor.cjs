@@ -24,7 +24,10 @@ function load(file) {
 }
 const anchor = load('ui/shared/src/mui/MediaGalleryScrollAnchor.ts')
 const grid = load('ui/shared/src/mui/MediaGalleryVirtualGrid.ts')
-const source = (read('ui/shared/src/mui/MediaGallery.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx') + '\n' + read('ui/shared/src/mui/MediaGallerySharedTimeline.tsx'))
+const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+const photoWallHost = read('ui/shared/src/mui/MediaGalleryPhotoWall.tsx')
+const source = (gallery + '\n' + read('ui/shared/src/mui/MediaGallerySharedTiles.tsx') +
+  '\n' + read('ui/shared/src/mui/MediaGallerySharedTimeline.tsx'))
 
 test('Pinch preserves row Y inside an independently scrolling Gallery viewport', () => {
   const scrollViewportTop = 52
@@ -103,9 +106,10 @@ test('Nonfinite coordinates are not allowed to corrupt scroll position', () => {
 
 test('Only a pinch revision uses the screen-space anchor: sort, time and slider retain top alignment', () => {
   assert.match(source, /pinchViewportRestore\?\.revision === viewAnchorRevision/)
-  assert.match(source, /anchorViewportTop = tile\.getBoundingClientRect\(\)\.top -/)
-  assert.match(source, /mediaGalleryScrollParent\(galleryPhotoWallRef\.current \?\? tile\)/)
-  assert.match(source, /pinch\.anchorViewportTop,/)
+  assert.match(photoWallHost, /viewportOffset: tile\.getBoundingClientRect\(\)\.top -/)
+  assert.match(photoWallHost, /mediaGalleryScrollParent\(tile\)/)
+  assert.match(photoWallHost, /pinch\.onChange\(columns, current\.index, current\.viewportOffset\)/)
+  assert.match(gallery, /updateGalleryDensity\(columns, viewportOffset\)/)
   assert.match(source, /setPinchViewportRestore\(/)
   assert.match(source, /viewAnchorRevision \+ 1, viewportTop: anchorViewportTop/)
   assert.match(source, /anchorViewportTop !== undefined && Number\.isFinite\(anchorViewportTop\)/)
@@ -120,9 +124,14 @@ test('Only a pinch revision uses the screen-space anchor: sort, time and slider 
   assert.equal((source.match(/restoredAnchorRevisionRef\.current = restoreAnchorRevision/g) || []).length, 2)
   assert.equal((source.match(/if \(!restored && restoredAnchorRevisionRef\.current === restoreAnchorRevision\)/g) || []).length, 2)
   assert.equal((source.match(/if \(afterLayout !== null\) window\.cancelAnimationFrame\(afterLayout\)/g) || []).length, 2)
-  assert.match(source, /onTouchStartCapture=\{handleGalleryTouchStart\}/)
-  assert.match(source, /onTouchCancelCapture=\{\(\) => finishGalleryPinch\(false\)\}/)
-  assert.match(source, /onPointerDownCapture=\{handleGalleryPointerDown\}/)
+  assert.match(photoWallHost, /onTouchStartCapture=\{startPinch\}/)
+  assert.match(photoWallHost, /onTouchCancelCapture=\{\(\) => endPinch\(false\)\}/)
+  assert.match(gallery, /pinch=\{compactGallery && !selectionMode && !mobileCollectionsOverview/)
+  assert.match(gallery, /onPointerDownCapture=\{handleGalleryPointerDown\}/)
+  assert.match(gallery, /onStart: startSharedGalleryPinch/)
+  assert.match(gallery, /onChange: changeSharedGalleryPinch/)
+  assert.match(gallery, /onGestureEnd: endSharedGalleryPinch/)
+  assert.doesNotMatch(gallery, /handleGalleryTouchStart|handleGalleryTouchMove|finishGalleryPinch|galleryPinchRef/)
   assert.match(source, /onVisibleAnchorChange=\{captureVisibleAnchor\}/)
   assert.match(source, /const virtualCollection = useXDriveVirtualCollection<MediaItem>/)
   assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),

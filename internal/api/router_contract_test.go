@@ -66,9 +66,15 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/ios/photos/background/uploads/resume-lookup", suite: "ios-photo-root-upload"},
 		{method: "GET", path: "/api/v1/ios/photos/background/receipts/nodes/:id", suite: "ios-photo-root-upload"},
 		{method: "GET", path: "/api/v1/ios/photos/background-managed/receipts/nodes/:id", suite: "ios-photo-managed-background-upload"},
+		// APNs token cannot grant generic bearer/upload rights. Both methods
+		// require the existing revocable grant AND independent native Device.
+		{method: "PUT", path: "/api/v1/ios/photos/background-managed/apns-token", suite: "ios-photo-apns-grant-device"},
+		{method: "DELETE", path: "/api/v1/ios/photos/background-managed/apns-token", suite: "ios-photo-apns-grant-device"},
 		{method: "GET", path: "/api/v1/ios/photos/background-managed/uploads/:id", suite: "ios-photo-managed-background-upload"},
 		{method: "GET", path: "/api/v1/ios/photos/backup-destination", suite: "ios-photo-backup-destination"},
 		{method: "GET", path: "/api/v1/ios/photos/managed/receipts/nodes/:id", suite: "ios-photo-managed-upload"},
+		{method: "POST", path: "/api/v1/ios/photos/managed/original-retention", suite: "ios-photo-retention-bound-source"},
+		{method: "GET", path: "/api/v1/ios/photos/managed/original-retention/:id", suite: "ios-photo-retention-bound-source"},
 		{method: "GET", path: "/api/v1/ios/photos/managed/uploads/:id", suite: "ios-photo-managed-upload"},
 		{method: "POST", path: "/api/v1/ios/photos/background-managed/uploads", suite: "ios-photo-managed-background-upload"},
 		{method: "POST", path: "/api/v1/ios/photos/background-managed/uploads/:id/finalize", suite: "ios-photo-managed-background-upload"},

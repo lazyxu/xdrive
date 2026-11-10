@@ -1,3 +1,4 @@
+import { IncrementalSHA256, feedFullUploadHash } from './uploadFullSha256.mjs'
 import type { PhotoContentSources } from '../../ui/shared/src/photo-content-identity'
 import { photoContentPath, photoContentSelection, validPhotoContentKey } from '../../ui/shared/src/photo-content-identity'
 import { xDriveBaiduNativeCellsFilterParams, xDriveBaiduNativeViewportRangeParams, xDriveValidBaiduNativeViewportRangePage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
@@ -3896,12 +3897,17 @@ export class XDriveApi {
       const chunkCount = file.size === 0 ? 0 : Math.ceil(file.size / chunkSize)
       const chunkHashes: string[] = []
       const hashScratch: UploadHashScratch = { buffer: null, byob: true }
+      // Feed the full-file hash from the same bounded 8 MiB buffers used
+      // for per-chunk WebCrypto hashes. No whole-file arrayBuffer allocation.
+      const fullFileHasher = new IncrementalSHA256()
       for (let index = 0; index < chunkCount; index += 1) {
         tracking.check()
         const start = index * chunkSize
         const end = Math.min(file.size, start + chunkSize)
-        chunkHashes.push(await sha256Blob(file.slice(start, end), hashScratch))
+        chunkHashes.push(await sha256Blob(file.slice(start, end), hashScratch, fullFileHasher, tracking.check))
       }
+      const fullFileSHA256 = fullFileHasher.digestHex()
+      tracking.check()
 
       // A small ordered chunk-manifest digest binds a resumed file to its
       // original bytes before any Server mutation or resumed chunk request.
@@ -3933,6 +3939,7 @@ export class XDriveApi {
           size: file.size,
           chunk_size: chunkSize,
           chunk_sha256: chunkHashes,
+          sha256: fullFileSHA256,
           resume_key: resumeKey,
           conflict_policy: conflictPolicy,
         }),
@@ -5388,9 +5395,18 @@ export class XDriveApi {
 
 type UploadHashScratch = { buffer: ArrayBuffer | null; byob: boolean }
 
-async function sha256Blob(blob: Blob, scratch: UploadHashScratch): Promise<string> {
+async function sha256Blob(
+  blob: Blob, scratch: UploadHashScratch,
+  fullFileHasher?: IncrementalSHA256, check?: () => void,
+): Promise<string> {
+  const hashArrayBuffer = async () => {
+    const data = await blob.arrayBuffer()
+    const chunkHash = await sha256Buffer(data)
+    if (fullFileHasher) await feedFullUploadHash(fullFileHasher, new Uint8Array(data), check)
+    return chunkHash
+  }
   if (!scratch.byob || typeof blob.stream !== 'function' || blob.size === 0 || blob.size > 8 * 1024 * 1024) {
-    return sha256Buffer(await blob.arrayBuffer())
+    return hashArrayBuffer()
   }
   let reader: ReadableStreamBYOBReader
   try {
@@ -5398,7 +5414,7 @@ async function sha256Blob(blob: Blob, scratch: UploadHashScratch): Promise<strin
   } catch (error) {
     if (!(error instanceof TypeError) && !(error && typeof error === 'object' && 'name' in error && error.name === 'TypeError')) throw error
     scratch.byob = false
-    return sha256Buffer(await blob.arrayBuffer())
+    return hashArrayBuffer()
   }
   try {
     const minReader = reader as ReadableStreamBYOBReader & {
@@ -5415,8 +5431,12 @@ async function sha256Blob(blob: Blob, scratch: UploadHashScratch): Promise<strin
       }
       if (done && filled < blob.size) throw new Error(`Upload hash stream ended at ${filled} of ${blob.size} bytes`)
     }
-    // The digest settles before the next chunk takes ownership of the scratch.
-    return await sha256Buffer(scratch.buffer, blob.size)
+    // Both digests settle before the next chunk reuses the BYOB scratch.
+    const chunkHash = await sha256Buffer(scratch.buffer, blob.size)
+    if (fullFileHasher) {
+      await feedFullUploadHash(fullFileHasher, new Uint8Array(scratch.buffer, 0, blob.size), check)
+    }
+    return chunkHash
   } finally {
     try { await reader.cancel() } catch { /* Preserve any original read/hash error. */ }
     reader.releaseLock()

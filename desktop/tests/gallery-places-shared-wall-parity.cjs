@@ -102,7 +102,9 @@ test('date grouping uses only complete same-Owner first-page indices, not sparse
 })
 
 test('Gallery and Places use one shared photo wall and one dated virtual renderer',()=>{
-  assert.match(gallery,/<XDriveMediaGalleryPhotoWall surface="gallery">/)
+  assert.match(gallery,/<XDriveMediaGalleryPhotoWall surface="gallery"/)
+  assert.match(gallery,/pinch=\{compactGallery && !selectionMode && !mobileCollectionsOverview/)
+  assert.match(gallery,/onChange: changeSharedGalleryPinch/)
   assert.match(drawer,/<XDriveMediaGalleryPhotoWall surface="places"/)
   assert.match(drawer,/<XDriveMediaGalleryVirtualTimeline/)
   assert.match(gallery,/XDriveMediaGalleryVirtualTimeline as MediaVirtualTimeline/)
@@ -111,6 +113,23 @@ test('Gallery and Places use one shared photo wall and one dated virtual rendere
   assert.match(timeline,/export function XDriveMediaGalleryVirtualTimeline\(/)
   assert.match(timeline,/placesDrawer=\{placesDrawer\}/)
   assert.doesNotMatch(host,/fetch\(|listOwnerCells|JWT|Baidu/)
+})
+
+test('Gallery and Places use one pinch recognizer with independent UI-only states',()=>{
+  assert.match(gallery, /pinch=\{compactGallery && !selectionMode && !mobileCollectionsOverview/)
+  assert.match(gallery, /onStart: startSharedGalleryPinch/)
+  assert.match(gallery, /onChange: changeSharedGalleryPinch/)
+  assert.match(gallery, /onGestureEnd: endSharedGalleryPinch/)
+  assert.match(gallery, /galleryPinchSuppressClickUntilRef\.current = Date\.now\(\) \+ 350/)
+  assert.match(gallery, /clearGalleryTouchPress\(\)/)
+  assert.doesNotMatch(gallery, /handleGalleryTouchStart|handleGalleryTouchMove|finishGalleryPinch/)
+  assert.match(host, /pinch\.onStart\?\.\(index\)/)
+  assert.match(host, /pinch\?\.onGestureEnd\?\.\(\)/)
+  assert.match(host, /onClickCapture=\{event => \{/)
+  assert.match(host, /event\.stopPropagation\(\)/)
+  assert.match(drawer, /pinchChange = useCallback/)
+  assert.match(drawer, /restoreLayout\(index,viewportOffset\)/)
+  assert.doesNotMatch(host, /fetch\(|listOwnerCells|Authorization|JWT/)
 })
 
 test('Places pinch shares Gallery column policy and retains a numeric visible anchor',()=>{
@@ -195,4 +214,63 @@ test('Owner revocation, stale Cell, Viewer return and dual hosts keep original f
   assert.match(tiles,/data-xdrive-places-photo-drawer-item=\{placesDrawer \? item.node.id : undefined\}/)
   assert.match(drawer,/restoreAnchorViewportOffset=/)
   assert.match(drawer,/data-xdrive-places-album-dialog/)
+})
+
+
+test('Places date jump uses the same indexed Gallery lookup for deep signed ranges',()=>{
+  const nav = loadPolicy('ui/shared/src/mui/MediaGalleryTimelineNavigation.ts')
+  const range = first(100000)
+  range.timeline_group_sets = {
+    year: [{key:'2026',item_count:100000,start_index:0}],
+    month: [
+      {key:'2026-11',item_count:90048,start_index:0},
+      {key:'2026-10',item_count:9952,start_index:90048},
+    ],
+    day: [
+      {key:'2026-11-10',item_count:48,start_index:0},
+      {key:'2026-11-07',item_count:90000,start_index:48},
+      {key:'2026-10-31',item_count:9952,start_index:90048},
+    ],
+  }
+  const signed = policy.xDrivePlacesPhotoTimelineGroups(range)
+  assert.ok(signed, 'A full first-Range signed group index is required')
+  assert.equal(nav.xDriveMediaGalleryTimelineGroupAtIndex(signed.day,90048).key,
+    '2026-10-31')
+  assert.deepEqual(nav.xDriveMediaGalleryTimelineNearestDay(signed.day,'2026-11-01'),
+    {group:signed.day[2],exact:false})
+  assert.deepEqual(nav.xDriveMediaGalleryTimelineNearestDay(signed.day,'2026-11-07'),
+    {group:signed.day[1],exact:true})
+  assert.equal(nav.xDriveMediaGalleryTimelineNearestDay(signed.day,'2026-02-30'),null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups({...range,offset:48}),null)
+
+  // A sparse far-date target must be handed to the existing virtual window.
+  // Reading a signed date index never grants raw Node/media access by itself.
+  assert.match(drawer,/restoreLayout\(group\.start_index, 0\)/)
+  assert.match(drawer,/onRangeChange: notifyRange/)
+  assert.match(parent,/xDrivePlacesPhotoWindowSeek\(selection,priorWindow,range\)/)
+  assert.match(parent,/xDrivePlacesDrawerValidRange\(cell,range\)/)
+})
+
+test('Places dated browsing matches Gallery navigation without bypassing Owner fencing',()=>{
+  const navigation = read('ui/shared/src/mui/MediaGalleryTimelineNavigation.ts')
+  assert.match(drawer,/xDriveMediaGalleryTimelineNearestDay\(timelineGroups\.day, day\)/)
+  assert.match(drawer,/xDriveMediaGalleryTimelineGroupAtIndex\(/)
+  assert.match(gallery,/xDriveMediaGalleryTimelineNearestDay\(dayGroupsForJump, day\)/)
+  assert.match(navigation,/export function xDriveMediaGalleryTimelineNearestDay\(/)
+  for(const selector of [
+    'data-xdrive-places-photo-timeline-jump',
+    'data-xdrive-places-photo-timeline-day-jump',
+    'data-xdrive-places-photo-timeline-current-date',
+    'data-xdrive-places-photo-timeline-return',
+    'data-xdrive-places-photo-timeline-day-feedback',
+  ]) assert.ok(drawer.includes(selector), selector)
+  assert.match(drawer,/phase==='ready' && timelineGroups && expanded/)
+  assert.match(drawer,/Number\.isSafeInteger\(group\.start_index\)/)
+  assert.match(drawer,/group\.start_index \+ group\.item_count > total/)
+  assert.match(drawer,/setTimelineReturnAnchor\(\{ index, viewportOffset: offset \}\)/)
+  assert.match(drawer,/restoreLayout\(anchor\.index, anchor\.viewportOffset\)/)
+  assert.match(drawer,/disabled=\{!timelineGroups\.day\.some\(/)
+  // There is no new range reader or date-derived authority in the presentation.
+  assert.doesNotMatch(drawer,/fetch\(|listOwnerCells\(|listOwnerCellItems\(/)
+  assert.match(parent,/photoOpener\.current\(state\.selection,approved\.scope,item\.node\.id,item\.node\.revision/)
 })

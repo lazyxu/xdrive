@@ -78,6 +78,11 @@ private struct IOSPhotoGrantRequest: Encodable {
     let device_id: String
 }
 
+private struct IOSPhotoAPNSTokenRegistration: Encodable {
+    let device_token: String
+    let environment: String
+}
+
 private final class XDriveIOSPhotoGrantRejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
@@ -517,6 +522,38 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         }
     }
 
+    /// APNs token registration has no uploader permission. Registration is
+    /// allowed only after the already-confirmed *same Owner* explicitly
+    /// enabled native BG access. The token is never saved in UserDefaults.
+    func registerAPNSToken(_ bytes: Data, environment: String,
+                           expectedOwner: XDriveNativeOwnerRoot) async throws {
+        guard (16...256).contains(bytes.count),
+              environment == "development" || environment == "production",
+              let approved = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
+              approved.matches(expectedOwner), approved.hasManagedDestination,
+              let grant = try read(owner: expectedOwner),
+              grant.matches(expectedOwner), grant.hasManagedDestination,
+              !grant.revokePending, grant.expiresAt > Date(),
+              grant.grantID == approved.grantID,
+              grant.deviceID == approved.deviceID,
+              grant.sourceID == approved.sourceID,
+              grant.targetNodeID == approved.targetNodeID else {
+            throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
+        }
+        let body = try JSONEncoder().encode(IOSPhotoAPNSTokenRegistration(
+            device_token: bytes.map { String(format: "%02x", $0) }.joined(),
+            environment: environment
+        ))
+        let device = XDriveIOSBackgroundDeviceProof(
+            deviceID: approved.deviceID, secret: approved.deviceToken
+        )
+        _ = try await request(
+            owner: expectedOwner, method: "PUT",
+            path: "/api/v1/ios/photos/background-managed/apns-token",
+            device: device, rawGrant: approved.grantSecret, body: body
+        )
+    }
+
     private func request(
         owner: XDriveNativeOwnerRoot, method: String, path: String,
         accessToken: String? = nil,
@@ -524,8 +561,12 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         rawGrant: String? = nil,
         body: Data? = nil
     ) async throws -> (Data, Int) {
-        guard method == "GET" || method == "POST",
-              path.hasPrefix("/api/v1/ios/photos/background-grants"),
+        let grantRoute = (method == "GET" || method == "POST") &&
+            path.hasPrefix("/api/v1/ios/photos/background-grants")
+        let apnsRoute = (method == "PUT" || method == "DELETE") &&
+            path == "/api/v1/ios/photos/background-managed/apns-token" &&
+            accessToken == nil && device != nil && rawGrant != nil
+        guard grantRoute || apnsRoute,
               (accessToken == nil || !accessToken!.isEmpty),
               (rawGrant == nil || Self.validSecret(rawGrant!)),
               let origin = try? ServerAddress.parse(owner.origin.absoluteString),

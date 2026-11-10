@@ -22,6 +22,7 @@ func TestMigratePrivateLocalPushOperationIntentsRemainEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, root)
 	schema := "migrate_local_op_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := root.Exec(fmt.Sprintf("CREATE SCHEMA %q", schema)).Error; err != nil {
 		t.Fatal(err)
@@ -38,6 +39,7 @@ func TestMigratePrivateLocalPushOperationIntentsRemainEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackMigrationTestDB(t, db)
 	for i := 0; i < 2; i++ {
 		if err := migrate(db); err != nil {
 			t.Fatal(err)

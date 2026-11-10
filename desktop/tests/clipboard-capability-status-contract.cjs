@@ -8,7 +8,10 @@ const doc = read('docs/architecture/clipboard-sync.md')
 const page = read('ui/shared/src/mui/ClipboardPage.tsx')
 
 test('current Clipboard architecture reflects merged #4124 seven-workstream delivery', () => {
-  assert.match(doc, /Current source status \(2026-11-09\)/)
+  // The status date is metadata, not a delivery gate: require a valid
+  // dated status plus independently verified merged commit evidence.
+  assert.match(doc, /\*\*Current source status \(\d{4}-\d{2}-\d{2}\):\*\*/)
+  assert.match(doc, /#4224[\s\S]*?merged as `0f2c7c2fb815d28203722ed0bfdd33add1e4800d`/)
   assert.match(doc, /#4124[\s\S]*?12\/12 associated workflows/)
   assert.match(doc, /#4124[\s\S]*?Final Gate success/)
   assert.match(doc, /Desktop and DSM now support device-directed v2 \*\*send and receive\*\*/)

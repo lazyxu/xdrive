@@ -21,9 +21,14 @@ test('Files still and thumbnail use same native photo single-tap chrome without 
 
 test('immersive still hides only image chrome; files PDF/audio/video/error and recoverable original export remain intact', () => {
   const viewer = file.slice(file.indexOf('struct XDriveIOSNativeFilesViewer: View'))
-  assert.match(viewer, /\.toolbar\(chromeVisible \? \.visible : \.hidden,\s*for: \.navigationBar, \.bottomBar\)/)
+  assert.match(viewer, /\.toolbar\(chromeVisible \? \.visible : \.hidden, for: \.navigationBar\)/)
+  assert.match(viewer, /\.toolbar\(isNativeVideo \? \.visible :[\s\S]*?for: \.bottomBar\)/)
+  // Real video navigation remains visible even when the canvas transport
+  // controls are hidden. Still-image immersive mode may hide both bars.
   assert.match(viewer, /\.statusBarHidden\(!chromeVisible\)/)
-  assert.match(viewer, /\.background\(isStillImage \|\| isNativeVideo \? Color\.black : Color\(uiColor: \.systemBackground\)\)/)
+  assert.match(viewer, /\.background\(isStillImage \|\| isNativeVideo \|\| \(loading && expectsVideoCanvas\)\s*\? Color\.black : Color\(uiColor: \.systemBackground\)\)/)
+  assert.match(viewer, /native-ios-files-video-first-frame-pending/)
+  assert.match(viewer, /\.allowsHitTesting\(false\)/)
   assert.match(viewer, /if showImageChrome \{\s*XDriveIOSNativeViewerQualityPanel\(/)
   assert.match(viewer, /if showImageChrome \{\s*ScrollView \{[\s\S]*?originalExportFallback/)
   assert.match(viewer, /native-ios-files-viewer-thumbnail-recovery/)

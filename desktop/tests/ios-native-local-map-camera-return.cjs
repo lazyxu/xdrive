@@ -13,7 +13,14 @@ test('local MapKit retains only a transient WGS84 camera across local/cloud sour
   assert.match(dash, /cloudMapCamera: \$cloudMapCamera,\s*localMapCamera: \$localMapCamera,\s*onFocusChange:/)
   assert.match(owner, /@Binding var localMapCamera: MKCoordinateRegion\?/)
   assert.match(owner, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?cameraOnEntry: localMapCamera,[\s\S]*?onLibraryCameraChange: \{ next in/)
-  assert.match(owner, /guard source == \.local, let expectedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?localMapCamera = next/)
+  // The local PhotoKit map is also usable without a Server Owner. Guard the
+  // current source and the exact Owner identity when present, but preserve
+  // camera state while both presentation and callback remain signed out.
+  assert.match(owner, /guard source == \.local else \{ return \}/)
+  assert.match(owner, /if let expectedOwner \{\s*guard XDriveIOSNativePhotoOwnerScope\.matches\(/)
+  assert.match(owner, /login\.owner, expectedOwner/)
+  assert.match(owner, /else \{\s*guard login\.owner == nil else \{ return \}\s*\}/)
+  assert.match(owner, /localMapCamera = next/)
   assert.match(local, /var cameraOnEntry: MKCoordinateRegion\? = nil/)
   assert.match(local, /var onLibraryCameraChange: \(\(MKCoordinateRegion\?\) -> Void\)\? = nil/)
   assert.match(local, /onCamera: \{ current in[\s\S]*?globalCamera = current\s*onLibraryCameraChange\?\(current\)/)

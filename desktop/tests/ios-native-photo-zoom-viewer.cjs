@@ -181,7 +181,7 @@ test('native video canvas pages through current authorized neighboring media, no
     media.indexOf('/// Root and album-specific media wall'))
   const originalDetail = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
     cloud.indexOf('/// SwiftUI\'s ForEach identity'))
-  const canvas = video.slice(video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player)'),
+  const canvas = video.slice(video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player, onFirstFrame: onFirstFrame)'),
     video.indexOf('if showChrome {'))
   const controls = video.slice(video.indexOf('if showChrome {'))
   assert.match(video, /let onNavigateSwipe: \(\(Int\) -> Void\)\?/)

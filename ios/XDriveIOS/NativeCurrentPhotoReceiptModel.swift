@@ -34,6 +34,22 @@ struct XDriveIOSNativePhotoProofStamp: Equatable {
     }
 }
 
+/// Transient in-memory proof for one current PhotoKit revision. This is not
+/// a deletion lease, never serialized, and is invalidated on any PhotoKit or
+/// Owner change. Free Up Space must separately obtain a server CAS hold.
+struct XDriveIOSNativeVerifiedOriginal: Equatable {
+    let localIdentifier: String
+    let stamp: XDriveIOSNativePhotoProofStamp
+    let nodeID: UInt64
+    let nodeRevision: UInt64
+    let sessionID: String
+    let sha256: String
+    let byteSize: Int64
+    let kind: String
+    let sourceID: UInt64
+    let targetNodeID: UInt64
+}
+
 private enum XDriveIOSNativeCurrentPhotoReceiptError: Error {
     case staleSource
     case invalidOriginal
@@ -60,6 +76,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
     // Set only after the current original SHA and exact live managed Node
     // were both reverified. A historical ledger receipt cannot set this.
     private(set) var verifiedManagedDestination: XDriveIOSPhotoManagedDestination?
+    @Published private(set) var verifiedOriginal: XDriveIOSNativeVerifiedOriginal?
 
     private var epoch = UUID()
     private var worker: Task<Void, Never>?
@@ -77,6 +94,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
         currentNodeVerified = false
         verifiedAt = nil
         verifiedManagedDestination = nil
+        verifiedOriginal = nil
         message = "请选择一张本机照片或视频进行核验。"
     }
 
@@ -295,6 +313,14 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                     throw XDriveIOSNativeCurrentPhotoReceiptError.invalidOriginal
                 }
                 self.verifiedManagedDestination = latestManaged.destination
+                self.verifiedOriginal = XDriveIOSNativeVerifiedOriginal(
+                    localIdentifier: localIdentifier, stamp: stamp,
+                    nodeID: nodeID, nodeRevision: revision, sessionID: sessionID,
+                    sha256: sha256, byteSize: payloadBytes,
+                    kind: stamp.isLive ? "live" : stamp.kind,
+                    sourceID: latestManaged.destination.sourceID,
+                    targetNodeID: latestManaged.destination.targetNodeID
+                )
                 self.currentNodeVerified = true
                 self.verifiedAt = Date()
                 self.message =
@@ -333,6 +359,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
         currentNodeVerified = false
         verifiedAt = nil
         verifiedManagedDestination = nil
+        verifiedOriginal = nil
         message = reason
     }
 

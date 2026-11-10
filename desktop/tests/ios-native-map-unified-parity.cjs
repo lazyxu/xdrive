@@ -120,13 +120,13 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   // reported DENIED. Use a real PhotoKit permission prompt, target app
   // XCUIApplication reset, and a Full Access system button instead.
   assert.match(runtimeWorkflow, /name: Install candidate and reset Photos for system authorization prompt/)
-  assert.match(runtimeWorkflow, /if: matrix.source == 'candidate'/)
+  assert.match(runtimeWorkflow, /if: matrix.source == 'candidate-mapkit'/)
   assert.match(runtimeWorkflow, /xcrun simctl install "\$SMOKE_SIM" "\$app"/)
   assert.match(runtimeWorkflow, /xcrun simctl privacy "\$SMOKE_SIM" reset all "\$identifier"/)
   assert.doesNotMatch(runtimeWorkflow, /xcrun simctl privacy "\$SMOKE_SIM" grant photos/)
   assert.ok(runtimeWorkflow.indexOf('name: Install candidate and reset Photos for system authorization prompt') <
-            runtimeWorkflow.indexOf('name: Run real XCUITest Gallery-Files and native MapKit'))
-  assert.match(simulator, /app\.resetAuthorizationStatus\(for: \.photos\)/)
+            runtimeWorkflow.indexOf('name: Run real XCUITest Gallery-Files transitions'))
+  assert.doesNotMatch(simulator, /app\.resetAuthorizationStatus\(for: \.photos\)/)
   assert.match(simulator, /authorizeFullPhotosInSettings\(/)
   assert.match(simulator, /XCUIApplication\(bundleIdentifier: "com\.apple\.Preferences"\)/)
   assert.match(simulator, /native-ios-map-open-photo-settings/)
@@ -190,6 +190,9 @@ test('Settings-return permission transition is live-revalidated and cold-start f
   assert.match(simulator, /MAP_PHOTOS_FULL_ACCESS_POST_TAP AX tree/)
   assert.match(simulator, /native-ios-real-photos-full-access-after-tap/)
   assert.match(simulator, /MAP_PHOTOS_COLD_START_PROBE before_blocked=/)
+  assert.match(simulator, /MAP_PHOTOS_TARGET_AUTH_STAGE/)
+  assert.match(local, /native-ios-map-photo-auth-readback/)
+  assert.match(runtimeWorkflow, /candidate-mapkit\)/)
   assert.match(simulator, /Full Access must mount real MapKit immediately after Settings return, without restart/)
   const permissionTap = simulator.indexOf('full.tap()')
   const proof = simulator.indexOf('MAP_PHOTOS_FULL_ACCESS_POST_TAP')

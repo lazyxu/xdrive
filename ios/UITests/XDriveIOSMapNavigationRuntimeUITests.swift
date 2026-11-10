@@ -105,6 +105,20 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
                       "Never select Photos outside the real xDrive app Settings")
     }
 
+    private func recordActualPhotoKitReadback(
+        _ app: XCUIApplication, stage: String
+    ) {
+        // The app, not the separate XCTest Runner, must report its effective
+        // .readWrite status. Only present in an actual denied/limited MapKit
+        // screen of the CI-only Debug smoke target.
+        let readback = element("native-ios-map-photo-auth-readback", in: app)
+        if readback.exists {
+            print("MAP_PHOTOS_TARGET_AUTH_STAGE \(stage) \(readback.label)")
+        } else {
+            print("MAP_PHOTOS_TARGET_AUTH_STAGE \(stage) readback-not-mounted")
+        }
+    }
+
     /// Exercise an actual user-level Settings decision if the simulator
     /// reports Photos denied despite simctl/XCTest authorization resets.
     /// The production map remains fail closed for denied or Limited access.
@@ -205,6 +219,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
         app.activate()
         XCTAssertEqual(app.state, .runningForeground)
+        recordActualPhotoKitReadback(app, stage: "after-settings")
         if !element("native-ios-full-library-gps-map", in: app)
             .waitForExistence(timeout: 35) {
             // Diagnose whether this is an unrefreshed SwiftUI map or a real
@@ -214,6 +229,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             let liveBlocked = element("native-ios-map-open-photo-settings", in: app).exists
             app.terminate()
             app.launch()
+            recordActualPhotoKitReadback(app, stage: "after-restart-before-map")
             let launcher = element("native-ios-tab-launcher", in: app)
             let launcherAvailable = launcher.waitForExistence(timeout: 15)
             if launcherAvailable { launcher.tap() }
@@ -223,6 +239,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             let afterRestart = element("native-ios-full-library-gps-map", in: app)
                 .waitForExistence(timeout: 35)
             let restartBlocked = element("native-ios-map-open-photo-settings", in: app).exists
+            recordActualPhotoKitReadback(app, stage: "after-restart-map")
             print("MAP_PHOTOS_COLD_START_PROBE before_blocked=\(liveBlocked) map=\(afterRestart) after_blocked=\(restartBlocked)")
             diagnose(afterRestart
                 ? "PhotoKit Full Access worked only after cold restart: fix immediate foreground refresh"
@@ -235,10 +252,10 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     private func openLocalMap() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
-        // XCTest controls the TARGET app's Photos authorization. Unlike a
-        // simctl TCC grant, this reset is tied to the actual XCUIApplication
-        // process and makes the real first-use system prompt testable.
-        app.resetAuthorizationStatus(for: .photos)
+        // The candidate Simulator job resets Photos once for the installed
+        // target app before UI tests. Do NOT reset again for every testcase:
+        // a later reset can invalidate the system Full Access selected by a
+        // previous test. Only the target's live PhotoKit readback is authority.
         app.launch()
         XCTAssertEqual(app.state, .runningForeground)
 

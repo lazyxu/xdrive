@@ -29,6 +29,7 @@ const timeline = load('ui/shared/src/mui/MediaGalleryVirtualTimeline.ts', {
   './MediaGalleryVirtualGrid': grid,
 })
 const gallerySource = read('ui/shared/src/mui/MediaGallery.tsx')
+const sharedWallSource = read('ui/shared/src/mui/MediaGalleryPhotoWall.tsx')
 const chromeSource = read('ui/shared/src/mui/MobileGalleryChrome.tsx')
 
 // Reference: lazyxu/kfs/develop:
@@ -170,12 +171,23 @@ test('P0-2 mobile gesture has one root, preserves Gallery anchor and uses same v
   assert.match(gallerySource, /mobileColumnsByScale\[effectiveTimeScale\]/)
   assert.match(gallerySource, /XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH = 144/)
   assert.match(gallerySource, /data-xdrive-gallery-photo-wall/)
-  assert.match(gallerySource, /onTouchStartCapture=\{handleGalleryTouchStart\}/)
-  assert.match(gallerySource, /onTouchMoveCapture=\{handleGalleryTouchMove\}/)
-  assert.match(gallerySource, /onTouchEndCapture=\{handleGalleryTouchEnd\}/)
+  assert.match(gallerySource, /<XDriveMediaGalleryPhotoWall surface="gallery"/)
+  assert.match(gallerySource, /pinch=\{compactGallery && !selectionMode && !mobileCollectionsOverview/)
+  assert.match(gallerySource, /onStart: startSharedGalleryPinch/)
+  assert.match(gallerySource, /onChange: changeSharedGalleryPinch/)
+  assert.match(gallerySource, /onGestureEnd: endSharedGalleryPinch/)
   assert.match(gallerySource, /clearGalleryTouchPress\(\)/)
   assert.match(gallerySource, /viewAnchorIndexRef\.current = index/)
-  assert.match(gallerySource, /updateGalleryDensity\(\s*xDriveMediaGalleryPinchColumnCount\(/)
+  assert.match(gallerySource, /updateGalleryDensity\(columns, viewportOffset\)/)
+  assert.match(sharedWallSource, /onTouchStartCapture=\{startPinch\}/)
+  assert.match(sharedWallSource, /onTouchMoveCapture=\{movePinch\}/)
+  assert.match(sharedWallSource, /endPinch\(true\)/)
+  assert.match(sharedWallSource, /endPinch\(false\)/)
+  assert.match(sharedWallSource, /xDriveMediaGalleryPinchColumnCount\(/)
+  assert.match(sharedWallSource, /pinch\.onChange\(columns, current\.index, current\.viewportOffset\)/)
+  assert.match(sharedWallSource, /suppressClickUntil\.current = Date\.now\(\) \+ 350/)
+  assert.doesNotMatch(gallerySource,
+    /handleGalleryTouchStart|handleGalleryTouchMove|handleGalleryTouchEnd|finishGalleryPinch/)
   const virtualCallSites = gallerySource.match(/<(?:MediaVirtualTileGrid|MediaVirtualTimeline)\b[\s\S]*?\/>/g) || []
   assert.equal(virtualCallSites.length, 2, 'one shared virtual grid and one virtual timeline')
   for (const call of virtualCallSites) {

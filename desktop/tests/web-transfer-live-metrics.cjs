@@ -50,7 +50,17 @@ function createBrowser(fetchResponse = () => { throw new Error('Unexpected fetch
     XMLHttpRequest: UploadRequest,
     setTimeout(callback, milliseconds) {
       const id = ++nextTimer
-      timers.set(id, { callback, due: now + milliseconds })
+      const timer = { callback, due: now + (milliseconds ?? 0) }
+      timers.set(id, timer)
+      // A real zero-delay timer yields to the browser event loop. The hash
+      // preflight uses this to stay responsive between 1 MiB slices; tests
+      // must not require advancing the fake wall clock to release that yield.
+      // Retain cancellation semantics and virtual time for positive delays.
+      if ((milliseconds ?? 0) <= 0) queueMicrotask(() => {
+        if (timers.get(id) !== timer) return
+        timers.delete(id)
+        callback()
+      })
       return id
     },
     clearTimeout(id) { timers.delete(id) },
@@ -85,7 +95,10 @@ function createBrowser(fetchResponse = () => { throw new Error('Unexpected fetch
     const execute = vm.runInContext(`(function(require, module, exports) { ${compiled}\n})`, context, { filename })
     execute((specifier) => {
       if (specifier === '../../ui/shared/src') return load(path.join(repo, 'ui/shared/src/transfers.ts'))
-      return load(path.resolve(path.dirname(filename), specifier + '.ts'))
+      // Preserve explicit .mjs/.js module specifiers (e.g. the incremental
+      // SHA-256 implementation); only extensionless TS imports receive .ts.
+      const resolved = path.extname(specifier) ? specifier : `${specifier}.ts`
+      return load(path.resolve(path.dirname(filename), resolved))
     }, module, module.exports)
     return module.exports
   }
@@ -108,6 +121,17 @@ function createBrowser(fetchResponse = () => { throw new Error('Unexpected fetch
     },
   }
 }
+
+test('zero-delay hashing yields resume without advancing the fake clock', async () => {
+  const browser = createBrowser()
+  let resumed = 0
+  const cancelled = browser.context.setTimeout(() => { resumed += 10 }, 0)
+  browser.context.clearTimeout(cancelled)
+  browser.context.setTimeout(() => { resumed += 1 }, 0)
+  await browser.flush()
+  assert.equal(resumed, 1)
+  assert.equal(browser.now(), initialNow)
+})
 
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })

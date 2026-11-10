@@ -55,6 +55,14 @@ struct NativePhotoWallDensityPolicyChecks {
         precondition(!Window.canRestore((id: 2, revision: 4),
             in: revisions, scopeActive: true,
             matches: { $0.id == $1.id && $0.revision == $1.revision }))
+        precondition(!Window.canRestore(4, in: [2, 4, 4, 6],
+                                        scopeActive: true),
+                     "duplicate tile IDs must not steal the Viewer return anchor")
+        precondition(!Window.canRestore(
+            (id: 2, revision: 3),
+            in: revisions + [(id: 2, revision: 3)], scopeActive: true,
+            matches: { $0.id == $1.id && $0.revision == $1.revision }
+        ), "duplicate exact Node revisions must not restore ambiguously")
         print("native local PhotoKit square wall density and framing: PASS")
     }
 }

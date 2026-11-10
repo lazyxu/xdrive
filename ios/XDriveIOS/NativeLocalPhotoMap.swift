@@ -1285,6 +1285,16 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     Text("本机照片地图需要完整照片访问权限。当前为“有限访问”，不会扫描或显示部分图库。")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
+#if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
+                        // Expose the real target app PhotoKit decision to
+                        // XCTest; the runner's own TCC permission is not proof.
+                        // This is a read-only CI diagnostic, never an admission
+                        // or production bypass.
+                        Text("PhotoKit rw=\(PHPhotoLibrary.authorizationStatus(for: .readWrite).rawValue) add=\(PHPhotoLibrary.authorizationStatus(for: .addOnly).rawValue) cached=\(authorization.rawValue)")
+                            .accessibilityIdentifier("native-ios-map-photo-auth-readback")
+                    }
+#endif
                     Button("打开 iOS 设置") { openPhotoSettings() }
                         .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("native-ios-map-open-photo-settings")
@@ -1295,6 +1305,16 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     Text("本机照片地图需要完整照片访问权限。请在 iOS 设置中允许访问所有照片。")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
+#if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
+                        // Expose the real target app PhotoKit decision to
+                        // XCTest; the runner's own TCC permission is not proof.
+                        // This is a read-only CI diagnostic, never an admission
+                        // or production bypass.
+                        Text("PhotoKit rw=\(PHPhotoLibrary.authorizationStatus(for: .readWrite).rawValue) add=\(PHPhotoLibrary.authorizationStatus(for: .addOnly).rawValue) cached=\(authorization.rawValue)")
+                            .accessibilityIdentifier("native-ios-map-photo-auth-readback")
+                    }
+#endif
                     Button("打开 iOS 设置") { openPhotoSettings() }
                         .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("native-ios-map-open-photo-settings")
