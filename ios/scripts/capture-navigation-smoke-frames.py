@@ -32,6 +32,10 @@ TAP_FRAME_OFFSETS_SECONDS = (0.15, 0.55)
 # a 24-test no-session Simulator artifact. Frames captured long after
 # their scheduled +150ms slot are not valid click-adjacent evidence.
 MAX_CAPTURE_LAG_SECONDS = 0.75
+# Even an on-time request may take seconds before the PNG represents a
+# Simulator frame. Keep the original image, but never label the sample as
+# reliable tap-adjacent evidence if simctl took longer than 2.5s.
+MAX_CAPTURE_DURATION_SECONDS = 2.5
 # Cover late repeated transitions, not just the first three taps.
 # Bounded per test to avoid exhausting storage on rapid 16-cycle suites.
 TAP_CAPTURE_NUMBERS = frozenset((1, 2, 4, 8, 12, 16))
@@ -299,6 +303,10 @@ while True:
                 "scheduled_after_start_seconds": delay,
                 "capture_request_lag_seconds": round(max(0, capture_started - due_at), 4),
                 "capture_duration_seconds": round(capture_completed - capture_started, 4),
+                "capture_reliable": ok and
+                    capture_completed - capture_started <= MAX_CAPTURE_DURATION_SECONDS,
+                "capture_unreliable_reason": "capture_too_slow" if ok and
+                    capture_completed - capture_started > MAX_CAPTURE_DURATION_SECONDS else None,
                 "captured": ok, "file": destination.name if ok else None,
             }, ensure_ascii=False) + "\n")
     tap_due, tap_scheduled = (
@@ -346,6 +354,10 @@ while True:
                 "capture_mode": "tap-adjacent",
                 "capture_request_lag_seconds": round(max(0, capture_started - due_at), 4),
                 "capture_duration_seconds": round(capture_completed - capture_started, 4),
+                "capture_reliable": ok and
+                    capture_completed - capture_started <= MAX_CAPTURE_DURATION_SECONDS,
+                "capture_unreliable_reason": "capture_too_slow" if ok and
+                    capture_completed - capture_started > MAX_CAPTURE_DURATION_SECONDS else None,
                 "captured": ok, "file": destination.name if ok else None,
             }, ensure_ascii=False) + "\n")
     # 300ms log polling is too coarse for a scheduled +150ms tap sample.
