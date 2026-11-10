@@ -200,3 +200,28 @@ test('Settings-return permission transition is live-revalidated and cold-start f
   const coldStart = simulator.indexOf('MAP_PHOTOS_COLD_START_PROBE')
   assert.ok(permissionTap >= 0 && permissionTap < proof && proof < resume && resume < coldStart)
 })
+
+test('real iOS first-use Photo Library system prompt cannot be default-denied by XCTest', () => {
+  // A real iOS 18.5 run logged "Default interruption handler ... Don’t Allow"
+  // when the native launcher was tapped. A later selected Settings radio
+  // button did NOT change the target app's PHAuthorizationStatus = denied.
+  assert.match(simulator, /addUIInterruptionMonitor\(withDescription:/)
+  assert.match(simulator, /private func acceptPhotoLibraryFullAccess\(/)
+  assert.match(simulator, /MAP_PHOTOS_INITIAL_FULL_ACCESS_PROMPT/)
+  assert.match(simulator, /MAP_PHOTOS_UNKNOWN_FIRST_PERMISSION_PROMPT/)
+  assert.match(simulator, /private func handleInitialPhotoLibraryPromptIfPresent\(/)
+  assert.match(simulator, /XCUIApplication\(bundleIdentifier: "com\.apple\.springboard"\)/)
+  assert.match(simulator, /"Allow Full Access", "Full Access"/)
+  assert.match(simulator, /"Allow Access to All Photos"/)
+  assert.match(simulator, /"允许访问所有照片"/)
+  assert.match(simulator, /"Real initial Photos prompt must permit explicit Full Access"/)
+  assert.match(simulator, /acceptPhotoLibraryFullAccess\(in: alert, stage: "interruption"\)/)
+  const monitor = simulator.indexOf('addUIInterruptionMonitor(')
+  const launch = simulator.indexOf('app.launch()')
+  const proactive = simulator.indexOf('handleInitialPhotoLibraryPromptIfPresent()', launch)
+  const launcher = simulator.indexOf('let launcher = element("native-ios-tab-launcher", in: app)', launch)
+  assert.ok(monitor >= 0 && monitor < launch && proactive > launch &&
+    proactive < launcher, 'Full Access handler must run before native launcher can trigger default denial')
+  assert.doesNotMatch(simulator, /buttons\["Don[’']t Allow"\]\.tap\(\)/)
+  assert.match(simulator, /Expected actual user-granted Full Access; still denied or Limited/)
+})
