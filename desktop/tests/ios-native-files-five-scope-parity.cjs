@@ -97,7 +97,7 @@ test('real Simulator smoke is triggered by Files/Gallery subroute edits, not onl
   assert.doesNotMatch(watched, /-\s*'ios\/\*\*'/,
     'Do not make unrelated iOS modules consume two expensive Simulator jobs')
   assert.match(workflow, /xcodebuild test/)
-  assert.match(workflow, /source:\s*\[release-c83, candidate-navigation, candidate-gallery-files\]/)
+  assert.match(workflow, /source:\s*\[release-c83,\s*candidate-navigation,\s*candidate-gallery-files,\s*candidate-no-session\]/)
   // A real release baseline is informational; both candidate suites are hard
   // gates, never waived because a stale c83 build or older PR was green.
   assert.match(workflow, /candidate-navigation\)[\s\S]*?XDriveIOSNavigationRuntimeUITests/)
