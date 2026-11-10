@@ -184,6 +184,18 @@ final class XDriveIOSNativeFilesOperationsModel: ObservableObject {
         status = nil
     }
 
+    /// A hidden Files tab does not need an unfinished metadata GET.
+    /// Cancel only reads, never an in-flight undo/redo mutation whose
+    /// outcome must be reconciled with the Server. Keep exact Owner-
+    /// verified rows so a return cannot briefly paint an empty shortcut.
+    func suspendReadForNavigation() {
+        guard !busy else { return }
+        epoch = UUID()
+        job?.cancel()
+        job = nil
+        loading = false
+    }
+
     func load(login: XDriveIOSNativeOwnerLoginModel) {
         guard !loading, !busy,
               let owner = login.owner, let expected,
