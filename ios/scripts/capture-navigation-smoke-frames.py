@@ -122,6 +122,8 @@ NAV_TARGETS = {
     # but were missing from the screenshot observer's target set.
     "testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels",
     "testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank",
+    "testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent",
+    "testLocalPhotoWithFilesQuickSectionsPreservesLocalChild",
     # Each new live Gallery generation test additionally captures nearby
     # Simulator frames; screenshots are diagnostic, not a measured FPS.
     "testUnifiedWallGenerationPersistsThroughSixFilesTabRoundTrips",
