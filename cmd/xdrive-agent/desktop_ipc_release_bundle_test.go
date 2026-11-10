@@ -12,7 +12,7 @@ import (
 
 type releaseBundleIPCTestController struct {
 	*fakeDesktopIPCController
-	listing       client.ReleaseBundleListing
+	listing          client.ReleaseBundleListing
 	retryCount       int
 	downloadCount    int
 	installCount     int

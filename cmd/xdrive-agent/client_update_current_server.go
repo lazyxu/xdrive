@@ -107,8 +107,8 @@ func (m *clientUpdateManager) InstallCurrentServerCommit(
 		Current: version.String(), Latest: listing.ServerVersion,
 		Channel: listing.Channel, Commit: expectedCommit,
 		PersonalUnsigned: personalUnsigned,
-		UpdateAvailable: true,
-		ReleaseName:     "Current Server Commit " + expectedCommit,
+		UpdateAvailable:  true,
+		ReleaseName:      "Current Server Commit " + expectedCommit,
 		Asset: xupdate.Asset{
 			Name: item.Filename, Size: item.Size,
 			Digest: "sha256:" + item.SHA256,
