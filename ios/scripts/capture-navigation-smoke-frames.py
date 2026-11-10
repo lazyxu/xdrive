@@ -180,6 +180,25 @@ current_case = None
 cursor = 0
 manifest = output / "frame-trace.jsonl"
 
+def report_missed(key, starts, taps):
+    """A finished XCTest must not silently lose its scheduled frame evidence."""
+    if not starts and not taps:
+        return
+    with manifest.open("a", encoding="utf-8") as stream:
+        for _, _, frame, delay in starts:
+            stream.write(json.dumps({
+                "test": key[0], "attempt": key[1], "frame": frame + 1,
+                "capture_mode": "test-start", "scheduled_after_start_seconds": delay,
+                "captured": False, "file": None, "reason": "test_finished_before_capture",
+            }, ensure_ascii=False) + "\n")
+        for _, _, tap, frame, delay, route in taps:
+            stream.write(json.dumps({
+                "test": key[0], "attempt": key[1], "route": route,
+                "tap_number": tap, "frame": frame + 1,
+                "capture_mode": "tap-adjacent", "scheduled_after_tap_seconds": delay,
+                "captured": False, "file": None, "reason": "test_finished_before_capture",
+            }, ensure_ascii=False) + "\n")
+
 while True:
     if log.exists():
         with log.open("r", errors="replace") as stream:
@@ -226,6 +245,11 @@ while True:
                 name = ended.group(1)
                 for key in tuple(active):
                     if key[0] == name:
+                        missed_starts = [event for event in scheduled if event[1] == key]
+                        missed_taps = [event for event in tap_scheduled if event[1] == key]
+                        report_missed(key, missed_starts, missed_taps)
+                        scheduled = [event for event in scheduled if event[1] != key]
+                        tap_scheduled = [event for event in tap_scheduled if event[1] != key]
                         active.discard(key)
                         if current_case == key:
                             current_case = None
@@ -235,13 +259,14 @@ while True:
         [entry for entry in scheduled if entry[0] <= now],
         [entry for entry in scheduled if entry[0] > now],
     )
-    for _, key, index, delay in due:
+    for due_at, key, index, delay in due:
         # A completed XCTest must never get screenshots of the NEXT test.
         if key not in active:
             continue
         name, count = key
         destination = output / f"{name}-{count}-frame{index + 1}.png"
         ok = False
+        capture_started = time.monotonic()
         try:
             subprocess.run(
                 ["xcrun", "simctl", "io", simulator, "screenshot", str(destination)],
@@ -252,17 +277,20 @@ while True:
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
                 FileNotFoundError):
             pass
+        capture_completed = time.monotonic()
         with manifest.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps({
                 "test": name, "attempt": count, "frame": index + 1,
                 "scheduled_after_start_seconds": delay,
+                "capture_request_lag_seconds": round(max(0, capture_started - due_at), 4),
+                "capture_duration_seconds": round(capture_completed - capture_started, 4),
                 "captured": ok, "file": destination.name if ok else None,
             }, ensure_ascii=False) + "\n")
     tap_due, tap_scheduled = (
         [entry for entry in tap_scheduled if entry[0] <= now],
         [entry for entry in tap_scheduled if entry[0] > now],
     )
-    for _, key, tap_count, frame, delay, route in tap_due:
+    for due_at, key, tap_count, frame, delay, route in tap_due:
         # A stale tap cannot capture frames from the next XCTest case.
         if key not in active:
             continue
@@ -271,6 +299,7 @@ while True:
             f"{name}-{count}-tap{tap_count}-{route}-frame{frame + 1}.png"
         )
         ok = False
+        capture_started = time.monotonic()
         try:
             subprocess.run(
                 ["xcrun", "simctl", "io", simulator, "screenshot", str(destination)],
@@ -281,12 +310,15 @@ while True:
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
                 FileNotFoundError):
             pass
+        capture_completed = time.monotonic()
         with manifest.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps({
                 "test": name, "attempt": count, "route": route,
                 "tap_number": tap_count, "frame": frame + 1,
                 "scheduled_after_tap_seconds": delay,
                 "capture_mode": "tap-adjacent",
+                "capture_request_lag_seconds": round(max(0, capture_started - due_at), 4),
+                "capture_duration_seconds": round(capture_completed - capture_started, 4),
                 "captured": ok, "file": destination.name if ok else None,
             }, ensure_ascii=False) + "\n")
     # 300ms log polling is too coarse for a scheduled +150ms tap sample.
