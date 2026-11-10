@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -23,20 +22,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.tfluid.xdrive.core.*
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.URI
-import javax.crypto.spec.SecretKeySpec
 
 private data class DirectedClipboardPending(
     val payload: String, val deviceID: String, val kind: String,
-    val nodeID: Long, val createdAt: Long, val wire: XDriveClipboardTargetCrypto.Wire,
+    val nodeID: Long, val createdAt: Long, val wire: XDriveClipboardWrite,
 )
 
 /** Native, foreground-only Clipboard text mailbox. No automatic pasteboard
- * monitor, WebView, stored passphrase/key or auxiliary Owner credential.
+ * monitor, WebView, stored passwords or auxiliary Owner credential.
  */
 @Composable
 internal fun NativeClipboardScreen(
@@ -54,15 +49,11 @@ internal fun NativeClipboardScreen(
     val scope = rememberCoroutineScope()
     val epoch = state.nativeUiSessionId
     val actionFence = remember(epoch) { XDriveClipboardSessionFence() }
-    var password by remember(epoch) { mutableStateOf("") }
     var draft by remember(epoch) { mutableStateOf("") }
-    var key by remember(epoch) { mutableStateOf<SecretKeySpec?>(null) }
-    // The Keychain/Keystore never enters Compose. This transient recipient
-    // is wiped on Lock, Owner switch or route disposal.
+    // Only the verified device identity stays in ephemeral UI state.
     var recipient by remember(epoch) { mutableStateOf<NativeClipboardRecipient?>(null) }
-    var aadScope by remember(epoch) { mutableStateOf("") }
     var list by remember(epoch) { mutableStateOf(emptyList<Pair<OwnerClipboardItem, String?>>()) }
-    var pending by remember(epoch) { mutableStateOf<Triple<String, Long, XDriveClipboardCrypto.Wire>?>(null) }
+    var pending by remember(epoch) { mutableStateOf<Triple<String, Long, XDriveClipboardWrite>?>(null) }
     var requireAbandon by remember(epoch) { mutableStateOf(false) }
     var devices by remember(epoch) { mutableStateOf(emptyList<OwnerClipboardDevice>()) }
     var targetID by remember(epoch) { mutableStateOf("") }
@@ -83,11 +74,7 @@ internal fun NativeClipboardScreen(
     fun stillSession(snapshot: Long) = stillOwner() && actionFence.accepts(snapshot)
     fun lock() {
         actionFence.invalidate()
-        recipient?.erase()
         recipient = null
-        key = null
-        aadScope = ""
-        password = ""
         draft = ""
         list = emptyList()
         pending = null
@@ -106,37 +93,22 @@ internal fun NativeClipboardScreen(
     }
     DisposableEffect(epoch) {
         // Disposal must both invalidate late work and drop all decrypted
-        // UI state/derived-key references, not just invalidate its callbacks.
+        // UI state and Owner-scoped history, not just invalidate its callbacks.
         onDispose { lock() }
     }
     suspend fun refresh() {
-        val localKey = key ?: return
-        val scopeAtStart = aadScope
-        if (refreshing || scopeAtStart.isEmpty()) return
+        if (refreshing || !stillOwner()) return
         val snapshot = actionFence.capture()
-        if (!stillSession(snapshot)) return
         refreshing = true
         try {
-            val currentRecipient = recipient
-            val page = controller.clipboardList(recipient = currentRecipient)
-            val decoded = withContext(Dispatchers.Default) {
-                page.items.map { item ->
-                    val plain = runCatching {
-                        if (item.targetDeviceID == null) {
-                            XDriveClipboardCrypto.decrypt(item.wire, localKey, scopeAtStart)
-                        } else {
-                            require(currentRecipient != null &&
-                                item.targetDeviceID == currentRecipient.enrolled.deviceId)
-                            XDriveClipboardTargetCrypto.decrypt(scopeAtStart,
-                                currentRecipient.enrolled.deviceId,
-                                currentRecipient.privatePKCS8,
-                                requireNotNull(item.targetedWire()))
-                        }
-                    }.getOrNull()
-                    item to plain
+            val page = controller.clipboardList(recipient = recipient)
+            if (stillSession(snapshot)) {
+                list = page.items.map { item ->
+                    item to item.content.takeIf { clear ->
+                        item.nodeID == 0L || clear == "asset:" + item.nodeID
+                    }
                 }
             }
-            if (stillSession(snapshot) && key === localKey) list = decoded
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             if (stillSession(snapshot)) message = e.message ?: "剪贴板读取失败"
@@ -148,14 +120,13 @@ internal fun NativeClipboardScreen(
     // Owner may read public keys. Discard late results on Lock or A→B→A.
     // A single scoped recipient-directory GET on each visible foreground
     // entry. Lifecycle STOP cancels it; there is NO background polling.
-    LaunchedEffect(epoch, key, lifecycleOwner) {
-        if (key == null) return@LaunchedEffect
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (!stillOwner() || key == null) return@repeatOnLifecycle
+    LaunchedEffect(epoch, lifecycleOwner) {
+                lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (!stillOwner() ) return@repeatOnLifecycle
             val snapshot = actionFence.capture()
             try {
                 val received = controller.clipboardDevices()
-                if (stillSession(snapshot) && key != null) {
+                if (stillSession(snapshot) ) {
                     devices = received
                     if (targetID.isNotEmpty() && received.none { it.deviceID == targetID }) {
                         targetID = ""
@@ -171,30 +142,28 @@ internal fun NativeClipboardScreen(
 
     // Inactive/background activities must not keep either a polling job or
     // the Owner SSE socket alive. Resume always reconciles full GET first.
-    LaunchedEffect(epoch, key, recipient?.enrolled?.deviceId, lifecycleOwner) {
-        if (key == null) return@LaunchedEffect
-        val snapshot = actionFence.capture()
+    LaunchedEffect(epoch, recipient?.enrolled?.deviceId, lifecycleOwner) {
+                val snapshot = actionFence.capture()
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (stillOwner() && key != null) refresh()
-            while (stillSession(snapshot) && key != null) {
+            if (stillOwner() ) refresh()
+            while (stillSession(snapshot) ) {
                 delay(15_000)
-                if (!stillSession(snapshot) || key == null) break
+                if (!stillSession(snapshot) ) break
                 refresh()
             }
         }
     }
-    LaunchedEffect(epoch, key, recipient?.enrolled?.deviceId, lifecycleOwner) {
-        if (key == null) return@LaunchedEffect
-        val snapshot = actionFence.capture()
-        var after = 0L // Only in-memory for the current unlock/Owner epoch.
+    LaunchedEffect(epoch, recipient?.enrolled?.deviceId, lifecycleOwner) {
+                val snapshot = actionFence.capture()
+        var after = 0L // Never persist across Owner epochs.
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (stillOwner() && key != null) refresh()
-            while (stillSession(snapshot) && key != null) {
+            if (stillOwner() ) refresh()
+            while (stillSession(snapshot) ) {
                 try {
                     val currentRecipient = recipient
                     val invalidation: suspend () -> Unit = {
                         withContext(Dispatchers.Main.immediate) {
-                            if (stillSession(snapshot) && key != null) refresh()
+                            if (stillSession(snapshot) ) refresh()
                         }
                     }
                     after = if (currentRecipient == null) {
@@ -207,7 +176,7 @@ internal fun NativeClipboardScreen(
                 } catch (_: Exception) {
                     // Unsupported/failed SSE never disables the 15s fallback.
                 }
-                if (!stillSession(snapshot) || key == null) break
+                if (!stillSession(snapshot) ) break
                 refresh() // Disconnect/cursor eviction: full Owner GET.
                 delay(3_000)
             }
@@ -215,9 +184,8 @@ internal fun NativeClipboardScreen(
     }
     LaunchedEffect(epoch, incomingText) {
         if (!incomingText.isNullOrBlank() && stillOwner() &&
-            incomingText.toByteArray(Charsets.UTF_8).size <= XDriveClipboardCrypto.MAX_TEXT_BYTES) {
-            // ACTION_SEND only populates draft. The user must unlock and tap
-            // Send explicitly; no automatic cross-device transmission.
+            incomingText.toByteArray(Charsets.UTF_8).size <= 65536) {
+            // ACTION_SEND only populates draft; send requires an explicit tap.
             draft = incomingText
             onIncomingConsumed()
         }
@@ -231,20 +199,20 @@ internal fun NativeClipboardScreen(
         pickerIntent = null
         if (uri != null && intent != null && stillSession(intent.first) &&
             targetID == intent.second && referenceKind == intent.third &&
-            key != null && !busy) {
+            !busy) {
             val (snapshot, selectedTarget, selectedKind) = intent
             referenceNodeID = ""
             busy = true
             scope.launch {
                 try {
                     val result = controller.clipboardImportLocalFile(context, uri) {
-                        stillSession(snapshot) && key != null &&
+                        stillSession(snapshot)  &&
                             targetID == selectedTarget && referenceKind == selectedKind
                     }
                     if (stillSession(snapshot) && targetID == selectedTarget &&
                         referenceKind == selectedKind) {
                         referenceNodeID = result.id.toString()
-                        message = "文件已有已核验的 CAS Node 收据。请核对后再次点击定向加密发送。"
+                        message = "文件已有已核验的 CAS Node 收据。请核对后再次点击定向发送。"
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) {
@@ -260,80 +228,26 @@ internal fun NativeClipboardScreen(
     }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("剪贴板", style = MaterialTheme.typography.headlineSmall)
-        Text("当前账号的加密收件箱；图片/文件使用 CAS 引用。系统剪贴板只在点击后读取或写入。",
+        Text("剪贴板不加密，Server 明文保存最多 24 小时；请勿发送密码或验证码。系统剪贴板只在点击后读取或写入。",
             style = MaterialTheme.typography.bodySmall)
         if (message != null) Text(message!!,color = MaterialTheme.colorScheme.error,
             modifier=Modifier.testTag("native-clipboard-status"))
-        if (key == null) {
-            OutlinedTextField(value = password, onValueChange = { password = it.take(256) },
-                label = { Text("独立剪贴板口令") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
-            Button(onClick = {
-                if (busy) return@Button
-                val snapshot = actionFence.capture()
-                val passwordAtStart = password
-                busy = true
-                scope.launch {
-                    try {
-                        if (!stillSession(snapshot)) return@launch
-                        val vault = controller.clipboardVault()
-                        val localKey = withContext(Dispatchers.Default) {
-                            XDriveClipboardCrypto.deriveKey(passwordAtStart, vault.salt)
-                        }
-                        val origin = URI(state.server)
-                        require(origin.scheme == "https" && origin.rawUserInfo == null &&
-                            !origin.host.isNullOrBlank() && vault.ownerID > 0)
-                        val claimed = origin.scheme + "://" + origin.rawAuthority + ":" + vault.ownerID
-                        val verifiedScope = if (vault.checkCiphertext.isBlank()) {
-                            val check = XDriveClipboardCrypto.newCheck(localKey, claimed)
-                            if (!stillSession(snapshot)) return@launch
-                            val pinned = controller.clipboardCheck(check.nonce, check.ciphertext, claimed)
-                            XDriveClipboardCrypto.verifyCheck(localKey, pinned.aadScope,
-                                pinned.checkNonce, pinned.checkCiphertext)
-                            pinned.aadScope
-                        } else {
-                            require(vault.aadScope.isNotEmpty()) {
-                                "旧版加密历史需先在原始浏览器解锁并固定范围。"
-                            }
-                            XDriveClipboardCrypto.verifyCheck(localKey, vault.aadScope,
-                                vault.checkNonce, vault.checkCiphertext)
-                            vault.aadScope
-                        }
-                        if (stillSession(snapshot) && key == null) {
-                            key = localKey
-                            aadScope = verifiedScope
-                            password = ""
-                            message = null
-                            refresh()
-                        }
-                    } catch (e: CancellationException) { throw e }
-                    catch (e: Exception) {
-                        if (stillSession(snapshot)) message = e.message ?: "无法解锁"
-                    } finally {
-                        if (stillSession(snapshot)) busy = false
-                    }
-                }
-            },enabled = password.length >= 12 && !busy) { Text("解锁") }
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { lock() }) { Text("锁定") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { scope.launch { refresh() } },enabled=!busy && !refreshing) {
                     Text("刷新")
                 }
             }
             if (recipient == null) {
                 OutlinedButton(onClick = {
-                    if (busy || key == null) return@OutlinedButton
+                    if (busy ) return@OutlinedButton
                     val snapshot = actionFence.capture()
-                    val localKey = key
                     busy = true
                     scope.launch {
                         var received: NativeClipboardRecipient? = null
                         try {
                             if (!stillSession(snapshot)) return@launch
                             received = controller.clipboardEnableRecipient(context)
-                            if (stillSession(snapshot) && key === localKey) {
+                            if (stillSession(snapshot)) {
                                 recipient = received
                                 received = null
                                 message = "此设备已启用单独授权的 Clipboard 定向接收"
@@ -343,13 +257,12 @@ internal fun NativeClipboardScreen(
                         catch (e: Exception) {
                             if (stillSession(snapshot)) message = e.message ?: "设备接收授权失败"
                         } finally {
-                            received?.erase()
                             if (stillSession(snapshot)) busy = false
                         }
                     }
                 }, enabled = !busy) { Text("启用设备定向接收（需已注册设备）") }
             } else {
-                Text("此 Android 设备已启用单独授权的定向解密",
+                Text("此 Android 设备已启用单独授权的定向接收",
                     style = MaterialTheme.typography.bodySmall)
             }
             // Target selection is explicit. A directed v2 message must never
@@ -360,7 +273,7 @@ internal fun NativeClipboardScreen(
                         "定向发送：" + (devices.firstOrNull { it.deviceID == targetID }?.name ?: "设备已失效"))
                 }
                 DropdownMenu(expanded=targetMenu,onDismissRequest={targetMenu=false}) {
-                    DropdownMenuItem(text={Text("当前 Owner 广播（v1 文本）")},onClick={
+                    DropdownMenuItem(text={Text("当前 Owner 广播")},onClick={
                         targetID="";targetMenu=false;referenceKind="text";referenceNodeID=""
                     })
                     devices.forEach { device ->
@@ -393,7 +306,7 @@ internal fun NativeClipboardScreen(
                     Text("只发送已存在的云端 Node 引用，不增加文件权限。",
                         style=MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick={
-                        if (busy || key == null || targetID.isEmpty() ||
+                        if (busy  || targetID.isEmpty() ||
                             pending != null || pendingDirected != null) return@OutlinedButton
                         pickerIntent = Triple(actionFence.capture(), targetID, referenceKind)
                         localFilePicker.launch(arrayOf(
@@ -418,9 +331,7 @@ internal fun NativeClipboardScreen(
                         return@Button
                     }
                     val snapshot = actionFence.capture()
-                    val keyAtStart = key ?: return@Button
-                    val scopeAtStart = aadScope
-                    val textAtStart = draft
+                                                            val textAtStart = draft
                     busy = true
                     scope.launch {
                         try {
@@ -438,17 +349,21 @@ internal fun NativeClipboardScreen(
                                 }
                                 previous.third
                             } else {
-                                val encrypted = XDriveClipboardCrypto.encrypt(
-                                    textAtStart, keyAtStart, scopeAtStart)
-                                pending = Triple(textAtStart, System.currentTimeMillis(), encrypted)
-                                encrypted
+                                val plain = XDriveClipboardWrite(
+                                    java.util.UUID.randomUUID().toString(),
+                                    if (textAtStart.trim().matches(Regex("^https?://\\S+$", RegexOption.IGNORE_CASE)))
+                                        "text/uri-list" else "text/plain",
+                                    textAtStart)
+                                require(plain.valid())
+                                pending = Triple(textAtStart, System.currentTimeMillis(), plain)
+                                plain
                             }
                             if (!stillSession(snapshot)) return@launch
                             controller.clipboardCreate(wire)
-                            if (stillSession(snapshot) && key === keyAtStart) {
+                            if (stillSession(snapshot)) {
                                 pending = null
                                 if (draft == textAtStart) draft = "" // Preserve newer input.
-                                message = "已加密发送到当前账号"
+                                message = "已发送到当前账号"
                                 refresh()
                             }
                         } catch (e: CancellationException) { throw e }
@@ -461,19 +376,18 @@ internal fun NativeClipboardScreen(
                         }
                     }
                 },enabled=!busy && draft.isNotEmpty() && targetID.isEmpty() &&
-                    pendingDirected == null){Text("加密发送")}
+                    pendingDirected == null){Text("发送")}
             }
             if (targetID.isNotEmpty()) {
                 Button(onClick={
-                    if (busy || key == null) return@Button
+                    if (busy ) return@Button
                     val snapshot = actionFence.capture()
-                    val scopeAtStart = aadScope
-                    val target = targetID
+                                        val target = targetID
                     val device = devices.firstOrNull { it.deviceID == target }
                     val kind = when(referenceKind) {
                         "image" -> "image/x-xdrive-node-ref"
                         "file" -> "application/x-xdrive-node-ref"
-                        else -> XDriveClipboardCrypto.mediaKind(draft)
+                        else -> if (draft.trim().matches(Regex("^https?://\\S+$", RegexOption.IGNORE_CASE))) "text/uri-list" else "text/plain"
                     }
                     val node = if (referenceKind == "text") 0L else referenceNodeID.toLongOrNull() ?: 0L
                     val clear = if (node > 0L) "asset:"+node else draft
@@ -501,21 +415,20 @@ internal fun NativeClipboardScreen(
                                 }
                                 previous.wire
                             } else {
-                                withContext(Dispatchers.Default) {
-                                    XDriveClipboardTargetCrypto.encrypt(
-                                        scopeAtStart, target, device.publicKey, kind, clear, node)
-                                }.also {
+                                XDriveClipboardWrite(
+                                    java.util.UUID.randomUUID().toString(), kind, clear, target, node
+                                ).also {
                                     if (stillSession(snapshot)) pendingDirected = DirectedClipboardPending(
                                         clear,target,kind,node,System.currentTimeMillis(),it)
                                 }
                             }
                             if (!stillSession(snapshot) || pendingDirected?.wire != wire)
                                 return@launch
-                            controller.clipboardCreateDirected(wire)
+                            controller.clipboardCreate(wire)
                             if (stillSession(snapshot)) {
                                 pendingDirected=null
                                 if (referenceKind=="text" && draft==clear) draft=""
-                                message="已将加密内容定向发送到所选设备。"
+                                message="已将内容定向发送到所选设备。"
                                 refresh()
                             }
                         } catch (e: CancellationException) { throw e }
@@ -527,7 +440,7 @@ internal fun NativeClipboardScreen(
                         }
                     }
                 },enabled=!busy && devices.any { it.deviceID==targetID }) {
-                    Text("定向加密发送")
+                    Text("定向发送")
                 }
             }
             if (requireAbandon && (pending != null || pendingDirected != null)) {
@@ -563,14 +476,14 @@ internal fun NativeClipboardScreen(
                                 "application/x-xdrive-node-ref" -> "云端文件引用"
                                 else -> "文本"
                             }, style=MaterialTheme.typography.labelSmall)
-                            if (plain==null) Text("此条消息无法解密。",
+                            if (plain==null) Text("此条消息无效或无访问权限。",
                                 color=MaterialTheme.colorScheme.error)
                             else {
                                 if (item.nodeID > 0L) {
                                     Text("云端文件 #${item.nodeID} · 原件仍在 Files/CAS",
                                         maxLines = 2)
                                     TextButton(onClick = {
-                                        if (busy || key == null || plain != "asset:${item.nodeID}")
+                                        if (busy  || plain != "asset:${item.nodeID}")
                                             return@TextButton
                                         onOpenReferencedFile(item.nodeID)
                                     }, enabled = !busy && plain == "asset:${item.nodeID}") {
@@ -585,14 +498,14 @@ internal fun NativeClipboardScreen(
                                 }
                             }
                             TextButton(onClick={
-                                if (busy || key == null) return@TextButton
+                                if (busy ) return@TextButton
                                 val snapshot = actionFence.capture()
                                 busy = true
                                 scope.launch {
                                     try {
                                         if (!stillSession(snapshot)) return@launch
                                         controller.clipboardDelete(item.id)
-                                        if (stillSession(snapshot) && key != null) {
+                                        if (stillSession(snapshot) ) {
                                             list = list.filterNot { it.first.id == item.id }
                                         }
                                     } catch (e: CancellationException) { throw e }
@@ -607,12 +520,11 @@ internal fun NativeClipboardScreen(
                     }
                 }
             }
-        }
     }
     if(clearConfirm) AlertDialog(onDismissRequest={clearConfirm=false},
         title={Text("清空剪贴板历史？")},text={Text("不可撤销。")},
         confirmButton={TextButton(onClick={
-            if (busy || key == null) return@TextButton
+            if (busy ) return@TextButton
             clearConfirm = false
             val snapshot = actionFence.capture()
             busy = true
@@ -620,7 +532,7 @@ internal fun NativeClipboardScreen(
                 try {
                     if (!stillSession(snapshot)) return@launch
                     controller.clipboardClear()
-                    if (stillSession(snapshot) && key != null) list = emptyList()
+                    if (stillSession(snapshot) ) list = emptyList()
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) {
                     if (stillSession(snapshot)) message = e.message
