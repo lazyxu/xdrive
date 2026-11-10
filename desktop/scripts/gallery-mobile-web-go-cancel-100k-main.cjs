@@ -171,10 +171,25 @@ function sendActualPointer(win, where) {
   win.webContents.sendInputEvent({type:'mouseUp',x:where.x,y:where.y,button:'left',clickCount:1})
 }
 async function prepareAppDestination(win, name) {
-  return until(async () => {
-    const pos = await visibleButtonCenter(win, name)
-    return pos.error ? null : pos
-  }, 25000, 'unobscured genuine five-slot destination '+name)
+  let last = null
+  try {
+    return await until(async () => {
+      const pos = await visibleButtonCenter(win, name)
+      last = pos
+      return pos.error ? null : pos
+    }, 25000, 'unobscured genuine five-slot destination '+name)
+  } catch (error) {
+    // A real UI gate remains failing. No test-only navigation or synthetic
+    // pointer is introduced. Report bounded structural flags only; never dump
+    // tokens, URLs, User/Owner data, DOM text or a private path.
+    const target = name === '文件' ? 'files' :
+      name === '图库' ? 'gallery' : 'overview'
+    const state = await safeSPARouteState(win, target)
+      .catch(() => ({rendererUnavailable:true}))
+    throw Error('P0C2_REAL_FIVE_SLOT_DIAGNOSTIC '+
+      JSON.stringify({target,buttonError:last?.error||null,state})+
+      ' | '+String(error))
+  }
 }
 async function safeSPARouteState(win, target) {
   return win.webContents.executeJavaScript(`(() => ({
