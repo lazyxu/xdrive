@@ -1,25 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Card, Divider, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
-import {
-  xDriveClipboardDeriveKey, xDriveClipboardEncrypt, xDriveClipboardDecrypt,
-  xDriveClipboardValidateText, xDriveClipboardMakeVaultCheck,
-  xDriveClipboardVerifyVaultCheck, xDriveClipboardKind, type XDriveClipboardKind,
-} from '../clipboard-crypto'
+
 import { XDriveClipboardActionFence } from '../clipboard-action-fence'
-import { xDriveClipboardEncryptForDevice, type XDriveClipboardTargetWire } from '../clipboard-target-crypto'
+
 import { ClipboardFileNodePicker, type ClipboardFileBrowsePort } from './ClipboardFileNodePicker'
+
+export type XDriveClipboardKind = 'text/plain' | 'text/uri-list' |
+  'image/x-xdrive-node-ref' | 'application/x-xdrive-node-ref'
 
 export type XDriveClipboardItem = {
   id: number
   client_event_id: string
-  kind: XDriveClipboardTargetWire['kind']
-  nonce: string
-  ciphertext: string
+  kind: XDriveClipboardKind
+  content: string
   created_at: string
   expires_at: string
   target_device_id?: string
-  ephemeral_key?: string
-  wrapped_key?: string
   node_id?: number
 }
 
@@ -27,48 +23,35 @@ export type XDriveClipboardTargetDevice = {
   device_id: string
   name: string
   platform: string
-  public_key: string
 }
 
 export type XDriveClipboardDataPort = {
-  /** Server origin + authenticated, verified Owner ID. Never contain a token. */
   readonly ownerScopeKey: string
-  vault(signal?: AbortSignal): Promise<{ salt: string; iterations: number; kdf: string;
-    check_nonce: string; check_ciphertext: string; aad_scope: string; owner_id?: number }>
-  initializeCheck(check: { nonce: string; ciphertext: string; scope: string }, signal?: AbortSignal): Promise<{
-    salt: string; iterations: number; kdf: string; check_nonce: string; check_ciphertext: string; aad_scope: string }>
   list(before?: number, signal?: AbortSignal): Promise<{ items: XDriveClipboardItem[]; next_before: number | null }>
-  create(item: {
-    client_event_id: string; kind: XDriveClipboardTargetWire['kind']
-    nonce: string; ciphertext: string
-    target_device_id?: string; ephemeral_key?: string; wrapped_key?: string
-    node_id?: number
-  }, signal?: AbortSignal): Promise<XDriveClipboardItem>
+  create(item: { client_event_id: string; kind: XDriveClipboardKind; content: string;
+    target_device_id?: string; node_id?: number }, signal?: AbortSignal): Promise<XDriveClipboardItem>
   remove(id: number, signal?: AbortSignal): Promise<void>
   clear(signal?: AbortSignal): Promise<void>
-  /** Must be initiated by the user's gesture; never silently query OS clipboard. */
   readText?(): Promise<string>
   copyText(text: string): Promise<void>
-  /** Canonical v1 AES AAD scope for native hosts, derived from verified Owner ID. */
-  claimScope?(vault: { owner_id?: number }): string
-  /** Optional authenticated SSE. The existing foreground refresh remains a fallback. */
   watchChanges?(onChange: () => void, signal: AbortSignal): Promise<void>
-  /** Desktop-only, opt-in, unlocked and visible monitoring; callback does not read Web clipboard. */
   watchLocalClipboard?(onChange: (text: string) => Promise<void>, signal: AbortSignal): Promise<void>
-  /** Owner session only; public X25519 keys, no source/backup grants. */
   listDevices?(signal?: AbortSignal): Promise<{ devices: XDriveClipboardTargetDevice[] }>
   revokeDevice?(deviceID: string, signal?: AbortSignal): Promise<void>
-  /** Native Host enrolls an already registered local installation; no key leaves Agent. */
   enableDeviceRecipient?(signal?: AbortSignal): Promise<XDriveClipboardTargetDevice>
-  /** Decrypts only a server-revalidated live item ID on the current Owner device. */
-  decryptTarget?(id: number, signal?: AbortSignal): Promise<string>
   browseFiles?: ClipboardFileBrowsePort
-  /** Explicit Owner user gesture, canonical Files UploadSession/CAS only. */
   uploadLocalFile?(file: File, signal: AbortSignal): Promise<{ node_id: number }>
-  /** Foreground browser Clipboard.read image/png with user consent only. */
   importImageFromClipboard?(signal: AbortSignal): Promise<{ node_id: number }>
-  /** Explicit, reauthorized Files Viewer handoff. A Clipboard Node is never a read grant. */
   openReferencedFile?(nodeID: number, signal: AbortSignal): Promise<void>
+}
+
+function xDriveClipboardKind(text: string): XDriveClipboardKind {
+  return /^https?:\/\/\S+$/i.test(text.trim()) ? 'text/uri-list' : 'text/plain'
+}
+
+function xDriveClipboardValidateText(text: string): void {
+  const size = new TextEncoder().encode(text).length
+  if (!size || size > 65536) throw new Error('剪贴板只支持 1–65536 字节的文本。')
 }
 
 type DecodedItem = { record: XDriveClipboardItem; text: string | null }
@@ -81,15 +64,12 @@ function errorLabel(reason: unknown): string {
   return reason instanceof Error && reason.message ? reason.message : '剪贴板操作失败，请重试。'
 }
 
-/** A separate Owner-bound component prevents old key/history surviving A→B→A. */
+/** Separate Owner-bound state prevents stale history surviving A→B→A. */
 export function XDriveClipboardPage({ port }: { port: XDriveClipboardDataPort }) {
   return <XDriveClipboardOwnerPage key={port.ownerScopeKey} port={port} />
 }
 
 function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
-  const [passphrase, setPassphrase] = useState('')
-  const [key, setKey] = useState<CryptoKey | null>(null)
-  const [aadScope, setAADScope] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [items, setItems] = useState<DecodedItem[]>([])
   const [nextBefore, setNextBefore] = useState<number | null>(null)
@@ -112,14 +92,14 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const generation = useRef(0)
   const readController = useRef<AbortController | null>(null)
   const writeController = useRef<AbortController | null>(null)
-  // A failed/unknown ACK retry must use the *same* encrypted EventID/bytes.
+  // A failed/unknown ACK retry must use the same EventID/content/target.
   const pending = useRef<{
     text: string
     createdAt: number
     targetID: string
     nodeID: number
-    item: { client_event_id: string; kind: XDriveClipboardKind | XDriveClipboardTargetWire['kind']; nonce: string; ciphertext: string;
-      target_device_id?: string; ephemeral_key?: string; wrapped_key?: string; node_id?: number }
+    item: { client_event_id: string; kind: XDriveClipboardKind; content: string;
+      target_device_id?: string; node_id?: number }
   } | null>(null)
 
   useEffect(() => {
@@ -135,7 +115,6 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   }, [])
 
   const load = useCallback(async (before?: number) => {
-    if (!key || !aadScope) return
     const sequence = ++generation.current
     readController.current?.abort()
     const controller = new AbortController()
@@ -143,32 +122,14 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     setLoading(true)
     try {
       const page = await port.list(before, controller.signal)
-      // At most four expensive Agent/device GET+decrypt proofs at once.
-      // All responses are fenced by this Owner, AbortSignal and generation.
-      const decoded = new Array<DecodedItem>(page.items.length)
-      let cursor = 0
-      const decodeWorker = async () => {
-        while (cursor < page.items.length && !controller.signal.aborted) {
-          const index = cursor++
-          const record = page.items[index]
-          try {
-            let text: string | null = null
-            if (record.target_device_id) {
-              // Never try a broadcast/v1 key on a device-targeted envelope.
-              if (port.decryptTarget)
-                text = await port.decryptTarget(record.id, controller.signal)
-              if (record.node_id && text !== 'asset:' + record.node_id) text = null
-            } else if (record.kind === 'text/plain' || record.kind === 'text/uri-list') {
-              text = await xDriveClipboardDecrypt(key, aadScope, { ...record, kind: record.kind })
-            }
-            decoded[index] = { record, text }
-          } catch {
-            decoded[index] = { record, text: null }
-          }
-        }
-      }
-      await Promise.all(Array.from({ length: Math.min(4, page.items.length) },
-        () => decodeWorker()))
+      // The message is already plaintext; a Node reference still must match
+      // its immutable, Server-validated identity before opening Files Viewer.
+      const decoded: DecodedItem[] = page.items.map(record => ({
+        record,
+        text: typeof record.content !== 'string' ||
+          (record.node_id && record.content !== 'asset:' + record.node_id)
+          ? null : record.content,
+      }))
       if (!active.current || controller.signal.aborted || sequence !== generation.current) return
       setItems(previous => before
         ? [...previous, ...decoded.filter(row => !previous.some(existing => existing.record.id === row.record.id))]
@@ -180,10 +141,9 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     } finally {
       if (active.current && sequence === generation.current) setLoading(false)
     }
-  }, [key, aadScope, port])
+  }, [port])
 
   useEffect(() => {
-    if (!key) return
     void load()
     // Only the *visible* mounted page polls. There is no background read of
     // the browser clipboard, no hidden PWA task, and no Server SSE claim.
@@ -195,10 +155,10 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       generation.current++
       readController.current?.abort()
     }
-  }, [key, load])
+  }, [load])
 
   useEffect(() => {
-    if (!key || !port.watchChanges) return
+    if (!port.watchChanges) return
     const controller = new AbortController()
     // SSE carries only invalidation signals. GET /items remains authoritative.
     // Reconnect is bounded; old deployments keep using foreground polling.
@@ -220,15 +180,14 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       controller.abort()
       if (timer) clearTimeout(timer)
     }
-  }, [key, port, load])
+  }, [port, load])
 
   useEffect(() => {
-    if (!key || !port.listDevices) { setTargetDevices([]); setTargetID(''); return }
+    if (!port.listDevices) { setTargetDevices([]); setTargetID(''); return }
     const controller = new AbortController()
     void port.listDevices(controller.signal).then(result => {
       if (!controller.signal.aborted && active.current)
-        setTargetDevices(result.devices.filter(d =>
-          !!d.device_id && /^[A-Za-z0-9+/]{43}=$/.test(d.public_key)))
+        setTargetDevices(result.devices.filter(d => !!d.device_id))
     }).catch(() => {
       if (!controller.signal.aborted && active.current) {
         setTargetDevices([])
@@ -236,61 +195,10 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       }
     })
     return () => controller.abort()
-  }, [key, port])
-
-  const unlock = async () => {
-    if (busy || key) return
-    const actionToken = actionFence.current.capture()
-    setMessage('')
-    setBusy(true)
-    const controller = new AbortController()
-    writeController.current = controller
-    try {
-      const info = await port.vault(controller.signal)
-      if (info.kdf !== 'PBKDF2-SHA256' || info.iterations !== 310000) {
-        throw new Error('Server 剪贴板加密版本不兼容。')
-      }
-      const nextKey = await xDriveClipboardDeriveKey(passphrase, info.salt)
-      const claimScope = port.claimScope ? port.claimScope(info) : port.ownerScopeKey
-      const verified = info.check_ciphertext
-        ? info
-        : await port.initializeCheck({
-            ...await xDriveClipboardMakeVaultCheck(nextKey, claimScope),
-            scope: claimScope,
-          }, controller.signal)
-      let canonicalScope = verified.aad_scope || claimScope
-      await xDriveClipboardVerifyVaultCheck(nextKey, canonicalScope, {
-        nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
-      })
-      // Legacy canaries have no AAD scope. Pin it only after successful
-      // local verification; keep the original ciphertext and passphrase.
-      if (!verified.aad_scope) {
-        const pinned = await port.initializeCheck({
-          nonce: verified.check_nonce, ciphertext: verified.check_ciphertext,
-          scope: claimScope,
-        }, controller.signal)
-        // During a rolling Server/Web deployment an older Server may omit
-        // aad_scope. The successfully verified original-origin v1 vault
-        // remains usable; cross-domain support becomes available after
-        // the Server is upgraded and the original browser pins its scope.
-        canonicalScope = pinned.aad_scope || claimScope
-        await xDriveClipboardVerifyVaultCheck(nextKey, canonicalScope, {
-          nonce: pinned.check_nonce, ciphertext: pinned.check_ciphertext,
-        })
-      }
-      if (!active.current || controller.signal.aborted) return
-      setAADScope(canonicalScope)
-      setKey(nextKey)
-      setPassphrase('')
-    } catch (error) {
-      if (active.current && !controller.signal.aborted) setMessage(errorLabel(error))
-    } finally {
-      if (active.current && actionFence.current.isCurrent(actionToken)) setBusy(false)
-    }
-  }
+  }, [port])
 
   const send = async (observedText?: string) => {
-    if (!key || !aadScope || busy || (observedText !== undefined && pending.current)) return
+    if (busy || (observedText !== undefined && pending.current)) return
     const isRef = observedText === undefined && referenceKind !== 'text'
     const selectedNodeID = isRef ? Number(nodeID) : 0
     const selectedTarget = observedText === undefined ? targetID : ''
@@ -309,7 +217,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     // Exact kind is authenticated AEAD metadata, not a display-only label.
     // An unknown ACK for an image reference must not be reused as a file
     // reference to the same Node/recipient (or vice versa).
-    const expectedKind: XDriveClipboardTargetWire['kind'] = isRef
+    const expectedKind: XDriveClipboardKind = isRef
       ? (referenceKind === 'image' ? 'image/x-xdrive-node-ref' : 'application/x-xdrive-node-ref')
       : xDriveClipboardKind(textAtStart)
     if (pending.current) {
@@ -336,16 +244,14 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (pending.current?.text !== textAtStart || pending.current?.targetID !== selectedTarget ||
           pending.current?.nodeID !== selectedNodeID || pending.current?.item.kind !== expectedKind) {
         const client_event_id = crypto.randomUUID()
-        const encrypted = selectedDevice
-          ? await xDriveClipboardEncryptForDevice(aadScope, selectedTarget, selectedDevice.public_key,
-              client_event_id, expectedKind, textAtStart, selectedNodeID)
-          : await xDriveClipboardEncrypt(key, aadScope, client_event_id, textAtStart)
-        // AES-GCM is not abortable: Lock can happen while encryption is pending.
-        // Do not resurrect the previous Owner/session's retry cache.
+        const item = { client_event_id, kind: expectedKind, content: textAtStart,
+          ...(selectedTarget ? { target_device_id: selectedTarget } : {}),
+          ...(selectedNodeID > 0 ? { node_id: selectedNodeID } : {}) }
+        // A route teardown or Owner change must never resurrect stale receipts.
         if (!active.current || controller.signal.aborted ||
             !actionFence.current.isCurrent(actionToken)) return
         pending.current = { text: textAtStart, targetID: selectedTarget, nodeID: selectedNodeID,
-          createdAt: Date.now(), item: { client_event_id, ...encrypted } }
+          createdAt: Date.now(), item }
       }
       if (!active.current || controller.signal.aborted ||
           !actionFence.current.isCurrent(actionToken)) return
@@ -355,9 +261,9 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       pending.current = null
       setDraft(current => observedText === undefined && !isRef && current === textAtStart ? '' : current)
       setMessage(observedText !== undefined
-        ? '已自动加密发送剪贴板变化。'
-        : selectedTarget ? '已加密投递至所选设备；只有目标设备可解密。'
-          : '已加密发送至当前账号的剪贴板历史。')
+        ? '已自动同步剪贴板变化。'
+        : selectedTarget ? '已发送至所选设备。'
+          : '已发送至当前账号的剪贴板历史。')
       void load()
     } catch (error) {
       if (active.current && !controller.signal.aborted &&
@@ -369,7 +275,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   }
 
   useEffect(() => {
-    if (!monitorEnabled || !key || !aadScope || !port.watchLocalClipboard) return
+    if (!monitorEnabled || !port.watchLocalClipboard) return
     const controller = new AbortController()
     let alive = true
     void port.watchLocalClipboard(async text => {
@@ -386,7 +292,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     })
     return () => { alive = false; controller.abort() }
   // React state changes re-arm the observer with a new local baseline.
-  }, [monitorEnabled, key, aadScope, port, busy, draft])
+  }, [monitorEnabled, port, busy, draft])
 
   const runAction = async (action: (signal: AbortSignal) => Promise<void>, success: string) => {
     if (busy) return
@@ -410,7 +316,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
   const importToOwnerFiles = async (
     upload: (signal: AbortSignal) => Promise<{ node_id: number }>,
   ) => {
-    if (busy || !key || !targetID || referenceKind === 'text') return
+    if (busy || !targetID || referenceKind === 'text') return
     if (pending.current) {
       setRetryExpired(true)
       setMessage('上一条发送回执尚未确认，请先核对并明确放弃旧回执，不会自动再次上传。')
@@ -425,11 +331,11 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
       if (active.current && !signal.aborted && actionFence.current.isCurrent(actionToken)) {
         setNodeID(String(receipt.node_id))
       }
-    }, '已上传到当前 Owner 的云端根目录。请检查文件，然后明确点击“加密发送”；不发送也不会自动删除原件。')
+    }, '已上传到当前 Owner 的云端根目录。请检查文件，然后明确点击“发送”；不发送也不会自动删除原件。')
   }
 
   const openVerifiedReference = (record: XDriveClipboardItem, text: string | null) => {
-    if (!key || busy || !port.openReferencedFile || !record.target_device_id ||
+    if (busy || !port.openReferencedFile || !record.target_device_id ||
         (record.kind !== 'image/x-xdrive-node-ref' &&
          record.kind !== 'application/x-xdrive-node-ref') ||
         !Number.isSafeInteger(record.node_id) || !record.node_id ||
@@ -463,69 +369,23 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
     }
   }
 
-  const lock = () => {
-    // A Browser clipboard permission prompt may finish after Lock. Never
-    // reintroduce its plaintext or a stale success/failure into this vault.
-    actionFence.current.invalidate()
-    writeController.current?.abort()
-    readController.current?.abort()
-    generation.current++
-    pending.current = null
-    setKey(null)
-    setAADScope(null)
-    setItems([])
-    setNextBefore(null)
-    setDraft('')
-    setPassphrase('')
-    setReading(false)
-    setBusy(false)
-    setConfirmClear(false)
-    setRetryExpired(false)
-    setTargetDevices([])
-    setTargetID('')
-    setConfirmRevoke(false)
-    setPickerOpen(false)
-    setReferenceKind('text')
-    setNodeID('')
-    setMonitorEnabled(false)
-    setMessage('剪贴板已锁定，本地明文和密钥已从页面状态清除。')
-  }
-
   return (
     <Stack spacing={2.5} sx={{ maxWidth: 900, mx: 'auto', pb: 5 }} data-xdrive-clipboard>
       <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
         <Box>
           <Typography variant="h5" fontWeight={700}>剪贴板</Typography>
           <Typography variant="body2" color="text.secondary">
-            当前账号的端到端加密收件箱 · 文本与已上传文件引用
+            当前账号的剪贴板 · 文本与已上传文件引用
           </Typography>
         </Box>
-        {key ? <Button color="inherit" onClick={lock}>锁定</Button> : null}
+
       </Stack>
       <Alert severity="info">
-        Web/PWA 不会监听系统剪贴板。Desktop 监听默认关闭；仅在解锁且此页面可见时，可明确开启自动加密发送。
-        使用 HTTPS/localhost；不同浏览器需输入相同的独立剪贴板口令。
-        忘记口令后旧消息无法解密。
+        剪贴板内容不会端到端加密；Server 保存明文，请勿发送密码或验证码。
+        Web/PWA 不自动监听系统剪贴板；Desktop 默认关闭监听，仅在明确开启且页面可见时同步。
       </Alert>
       {message ? <Alert severity={message.startsWith('已') ? 'success' : 'warning'} onClose={() => setMessage('')}>{message}</Alert> : null}
-      {!key ? (
-        <Card variant="outlined" sx={{ p: 2.5 }}>
-          <Stack spacing={2}>
-            <Typography variant="h6">解锁加密剪贴板</Typography>
-            <Typography variant="body2" color="text.secondary">
-              首次使用请输入新的独立口令（至少 12 个字符）。
-              以后在其他浏览器中使用相同口令。Server 不会保存口令。
-            </Typography>
-            <TextField type="password" label="剪贴板口令" autoComplete="new-password"
-              value={passphrase} onChange={event => setPassphrase(event.target.value)}
-              inputProps={{ maxLength: 256 }} fullWidth />
-            <Button variant="contained" disabled={busy || passphrase.length < 12}
-              onClick={() => { void unlock() }}>解锁</Button>
-          </Stack>
-        </Card>
-      ) : (
-        <>
-          <Card variant="outlined" sx={{ p: 2.5 }}>
+                <Card variant="outlined" sx={{ p: 2.5 }}>
             <Stack spacing={2}>
               <Typography variant="h6">发送文字或链接</Typography>
               <TextField label="输入内容" multiline minRows={3} maxRows={10} fullWidth
@@ -540,7 +400,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                         setTargetDevices(current => [...current.filter(
                           row => row.device_id !== device.device_id), device])
                       }
-                    }, '此安装已启用单独授权的 Clipboard 定向加密接收。')
+                    }, '此安装已启用单独授权的 Clipboard 定向接收。')
                   }}>启用此设备的定向接收（需要已登记安装）</Button>
               ) : null}
               {port.listDevices ? (
@@ -555,7 +415,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                       setReferenceKind('text')
                       setNodeID('')
                     }} size="small">
-                    <MenuItem value="">当前 Owner 所有已解锁客户端（广播）</MenuItem>
+                    <MenuItem value="">当前账号全部客户端（广播）</MenuItem>
                     {targetDevices.map(device => (
                       <MenuItem key={device.device_id} value={device.device_id}>
                         {device.name} · {device.platform}
@@ -586,7 +446,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                               <Button size="small" variant="outlined" disabled={busy}
                                 onClick={() => setPickerOpen(true)}>从云端文件选择</Button>
                               <ClipboardFileNodePicker
-                                open={pickerOpen && !!key && !!targetID}
+                                open={pickerOpen && !!targetID}
                                 port={port.browseFiles} kind={referenceKind}
                                 onClose={() => setPickerOpen(false)}
                                 onSelect={item => {
@@ -662,7 +522,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               ) : null}
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button variant="contained" disabled={busy || (referenceKind === 'text' ? !draft.length : !nodeID || !targetID)} onClick={() => { void send() }}>
-                  {busy ? '处理中…' : '加密发送'}
+                  {busy ? '处理中…' : '发送'}
                 </Button>
                 <Button variant="outlined" disabled={busy || reading || !port.readText}
                   onClick={() => { void pasteFromBrowser() }}>
@@ -696,7 +556,7 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                     void runAction(signal => port.clear(signal), '已清空本账号的剪贴板历史。')
                   }}>确认清空</Button>
               </Stack>
-            }>确定删除当前账号全部剪贴板密文历史吗？此操作不可撤销。</Alert>
+            }>确定删除当前账号全部剪贴板历史吗？此操作不可撤销。</Alert>
           ) : null}
           {!items.length && !loading ? (
             <Typography color="text.secondary">暂无有效消息。可从同一账号的其他浏览器发送文字。</Typography>
@@ -716,11 +576,11 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
                   </Button>
                 </Stack>
                 {text === null ? (
-                  <Alert severity="error">无法解密。请检查口令是否与发送端一致，或消息是否损坏。</Alert>
+                  <Alert severity="error">消息内容无效或文件引用不匹配，请刷新。</Alert>
                 ) : (
                   <>
                     <TextField fullWidth multiline minRows={1} maxRows={7} value={text}
-                      InputProps={{ readOnly: true }} aria-label="剪贴板明文（仅在此页面内解密）" />
+                      InputProps={{ readOnly: true }} aria-label="剪贴板内容" />
                     <Stack direction="row" justifyContent="flex-end">
                       {port.openReferencedFile && record.target_device_id &&
                         Number.isSafeInteger(record.node_id) && !!record.node_id &&
@@ -760,11 +620,9 @@ function XDriveClipboardOwnerPage({ port }: { port: XDriveClipboardDataPort }) {
               ? ' 此 Host 支持向已登记设备定向发送文本及现有云端文件引用。'
               : ' 此 Host 仅支持当前 Owner 的手动文本与链接发送。'}
             {port.watchLocalClipboard
-              ? ' Desktop 系统剪贴板监听默认关闭，只有明确开启后才在解锁且页面可见时运行。'
+              ? ' Desktop 系统剪贴板监听默认关闭，只有明确开启后才在页面可见时运行。'
               : ' 不会在后台自动读取系统剪贴板。'}
           </Typography>
-        </>
-      )}
     </Stack>
   )
 }
