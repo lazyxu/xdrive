@@ -535,11 +535,14 @@ function configureDesktopPlacesWebSession(partition:string) {
   placesSession.setPermissionRequestHandler((_guest,_permission,answer)=>answer(false))
   placesSession.setPermissionCheckHandler(()=>false)
   placesSession.webRequest.onBeforeRequest((details,callback)=>{
-    if(partition!==desktopPlacesWebPartition || !agentState.connected ||
-        !agentState.status?.configured || !agentState.status.username){
+    // A partition is bound to its original Owner, even while a native
+    // authentication transition is retiring that Owner's Cookie jar.
+    const identity=desktopPlacesWebReady ?? desktopPlacesWebPending
+    if(partition!==desktopPlacesWebPartition || !identity ||
+        !desktopPlacesWebOwnerStillCurrent(identity)){
       callback({cancel:true});return
     }
-    const allowed=xDriveResolveSecureBaiduMapTarget(agentState.status.server)?.origin ?? null
+    const allowed=identity.origin
     // A provider script must never use the map Cookie partition to contact
     // localhost, an alternate private IP or another port.
     if (!placesGuestIPRequestAllowed(details.url,allowed)) {
@@ -552,7 +555,7 @@ function configureDesktopPlacesWebSession(partition:string) {
     const target=desktopPlacesSelectedRoute(allowed,selectedIP)
     const active=desktopPlacesNetworkRoute
     if (!target || !active || active.partition!==partition ||
-      active.owner!==agentState.status.username ||
+      active.owner!==identity.owner ||
       active.origin!==target.origin || active.ip!==selectedIP ||
       !active.route.isActive()) {
       callback({cancel:true});return
@@ -564,10 +567,16 @@ function configureDesktopPlacesWebSession(partition:string) {
     if (requestOrigin!==target.origin) {
       callback({cancel:false});return // public provider retains DIRECT TLS
     }
+    // The proxy resolver may complete after sign-out, Owner switch, CA
+    // revocation or partition rotation. Its result is not authorization.
+    const generation=desktopPlacesWebGeneration
     void placesSession.resolveProxy(details.url).then(proxy=>{
       callback({cancel:partition!==desktopPlacesWebPartition ||
+        generation!==desktopPlacesWebGeneration ||
+        !desktopPlacesWebOwnerStillCurrent(identity) ||
+        desktopPlacesNetworkRoute!==active ||
         !active.route.isActive() ||
-        agentState.status?.connection_ip!==selectedIP ||
+        agentState.status?.connection_ip?.trim()!==selectedIP ||
         proxy!==active.route.proxyDirective})
     }).catch(()=>callback({cancel:true}))
   })
@@ -578,24 +587,23 @@ function configureDesktopPlacesWebSession(partition:string) {
       // No global TLS bypass: public Baidu and other standard HTTPS domains.
       callback(-3);return
     }
-    if(partition!==desktopPlacesWebPartition || !agentState.connected ||
-        !status?.configured || !status.username ||
-        xDriveResolveSecureBaiduMapTarget(status.server)?.origin!==target.origin ||
+    const identity=desktopPlacesWebReady ?? desktopPlacesWebPending
+    if(partition!==desktopPlacesWebPartition || !identity ||
+        identity.origin!==target.origin ||
+        !desktopPlacesWebOwnerStillCurrent(identity) ||
         requiresApprovedLANPin(target.origin) &&
           !approvedManualLANPin(target.origin)) {
       callback(-2);return
     }
-    const owner=status.username
+    const owner=identity.owner
     const pin=desktopPlacesCurrentLANPin(target.origin,owner)
     if(!pin){callback(-3);return} // Valid system CA remains Chromium-owned.
     const generation=desktopPlacesWebGeneration
     const stillCurrent=()=>{
-      const current=agentState.status
       const active=desktopPlacesCurrentLANPin(target.origin,owner)
       return partition===desktopPlacesWebPartition &&
-        generation===desktopPlacesWebGeneration && agentState.connected &&
-        current?.configured===true && current.username===owner &&
-        xDriveResolveSecureBaiduMapTarget(current.server)?.origin===target.origin &&
+        generation===desktopPlacesWebGeneration &&
+        desktopPlacesWebOwnerStillCurrent(identity) &&
         active?.sha256===pin.sha256 && active.root_pem===pin.root_pem &&
         !privateLANTrustStoreCorrupt && !rejectedManualLANOrigins.has(target.origin)
     }
@@ -2271,7 +2279,8 @@ function createMainWindow(showOnReady = true) {
         params.partition!==desktopPlacesWebPartition ||
         pending?.partition!==desktopPlacesWebPartition ||
         params.preload || params.nodeintegration || params.disablewebsecurity ||
-        !pending || pending.windowID!==win.webContents.id ||
+        !pending || !desktopPlacesWebOwnerStillCurrent(pending) ||
+        pending.windowID!==win.webContents.id ||
         pending.expiresAt<=Date.now() ||
         pending.owner!==agentState.status.username ||
         pending.origin!==xDriveResolveSecureBaiduMapTarget(agentState.status.server)?.origin) {
@@ -3585,8 +3594,10 @@ function registerIPCHandlers() {
     const status=agentState.status
     const target=xDriveResolveSecureBaiduMapTarget(status?.server)
     const scope=xDriveParseDesktopBaiduMapScope(rawScope)
-    if (!agentState.connected || !status?.configured ||
-        !status.username || !target || !scope) {
+    if (!status?.username || !target || !scope ||
+        !desktopPlacesWebOwnerStillCurrent({
+          owner:status.username,origin:target.origin,
+        })) {
       return {ok:false,error:{code:'map_scope_denied',
         message:'当前 Desktop 地图范围或账户不受信任。'}}
     }
@@ -3620,8 +3631,8 @@ function registerIPCHandlers() {
     const expectedOrigin=xDriveResolveSecureBaiduMapTarget(status?.server)?.origin
     if (!guest || !guest.scope ||
         event.senderFrame!==event.sender.mainFrame ||
-        !agentState.connected || !status?.configured ||
-        guest.owner!==status.username || guest.origin!==expectedOrigin ||
+        !desktopPlacesWebOwnerStillCurrent(guest) ||
+        guest.owner!==status?.username || guest.origin!==expectedOrigin ||
         webUsername!==guest.owner) {
       return {ok:false,error:{code:'map_scope_denied',
         message:'地图身份或一次性筛选交接已失效。'}}
@@ -3639,9 +3650,9 @@ function registerIPCHandlers() {
     const stored=desktopPlacesGuests.get(event.sender.id)
     const status=agentState.status
     if (!stored || event.senderFrame!==event.sender.mainFrame ||
-        !agentState.connected || !status?.configured ||
-        stored.owner!==status.username ||
-        stored.origin!==xDriveResolveSecureBaiduMapTarget(status.server)?.origin)
+        !desktopPlacesWebOwnerStillCurrent(stored) ||
+        stored.owner!==status?.username ||
+        stored.origin!==xDriveResolveSecureBaiduMapTarget(status?.server)?.origin)
       return null
     return stored.owner
   })
@@ -3660,7 +3671,9 @@ function registerIPCHandlers() {
     const status = agentState.status
     const currentOrigin = xDriveResolveSecureBaiduMapTarget(status?.server)?.origin ?? ''
     if (!pending || !win || win.isDestroyed() || !status ||
-        !agentState.connected ||
+        !desktopPlacesWebOwnerStillCurrent({
+          owner:pending.ownerUsername,origin:pending.serverOrigin,
+        }) ||
         event.sender !== win.webContents ||
         !xDriveDesktopBaiduMapClaimAllowed({
           windowID: win.webContents.id, pendingWindowID: pending.windowID,
