@@ -74,7 +74,13 @@ test('mounted native map source picker borrows parent route hints for local MapK
   assert.match(wrapper, /@Binding var localMapPageOffset: Int/);
   assert.match(wrapper, /@Binding var localMapCamera: MKCoordinateRegion\?/);
   assert.match(wrapper, /XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset,\s*onClose: onClose,\s*cameraOnEntry: localMapCamera,\s*onLibraryCameraChange: \{ next in/);
-  assert.match(wrapper, /guard source == \.local, let expectedOwner,\s*XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, expectedOwner\s*\) else \{ return \}\s*localMapCamera = next\s*\},\s*onFocusChange: onFocusChange/);
+  // Local camera admission is allowed for a stable guest session, but is
+  // rejected if the user logs in or changes Owner while the map is open.
+  assert.match(wrapper, /guard source == \.local else \{ return \}/);
+  assert.match(wrapper, /if let expectedOwner \{\s*guard XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, expectedOwner\s*\) else \{ return \}\s*\} else \{\s*guard login\.owner == nil else \{ return \}\s*\}/);
+  assert.match(wrapper, /localMapCamera = next\s*\},\s*onFocusChange: onFocusChange/);
+  // Cloud camera is never granted the guest-only local branch.
+  assert.match(wrapper, /guard source == \.cloud, let expectedOwner,/);
   assert.match(wrapper, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
   assert.match(wrapper, /Picker\("地图照片来源", selection: \$source\)/);
   assert.match(wrapper, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/);
