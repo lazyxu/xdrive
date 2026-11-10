@@ -80,7 +80,9 @@ class AuditTests(unittest.TestCase):
         self.assertGreaterEqual(len(cases), 66)
         self.assertFalse(cases - registered,
                          'untested native routes: ' + ', '.join(sorted(cases - registered)))
-        self.assertIn('FRAME_OFFSETS_SECONDS[:1] if name in MINIMAL_TARGETS', watcher)
+        self.assertIn('FRAME_OFFSETS_SECONDS[-1:] if name in MINIMAL_TARGETS', watcher)
+        self.assertIn('minimal and count == 1', watcher)
+        self.assertIn('delays = (0.55,) if minimal else TAP_FRAME_OFFSETS_SECONDS', watcher)
 
     def test_missing_trace_is_explicit_even_without_any_frame(self):
         with tempfile.TemporaryDirectory() as tmp:
