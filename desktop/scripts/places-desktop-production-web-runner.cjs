@@ -145,6 +145,13 @@ async function bootElectron(boot,env,bootstrap){
     if(boot===1)assert.equal(row.legacyServerFailedClosed,true)
     if(boot===1)assert.equal(row.sameDocumentRouteRevoked,true)
     if(boot===2){
+      assert.equal(row.nativeLogoutBlockedOldMap,false)
+      assert.equal(row.oldMapHiddenAfterLogout,false)
+      assert.equal(row.noNestedLogin,true)
+      assert.equal(row.mapMode,'prototype',
+        'second no-password Desktop restart must retain the default map')
+    }
+    if(boot===3){
       assert.equal(row.nativeLogoutBlockedOldMap,true)
       assert.equal(row.oldMapHiddenAfterLogout,true)
     }
@@ -217,7 +224,7 @@ async function main(){
     const results=[]
     const logoutReady=path.join(dir,'agent-logout-ready')
     const logoutDone=path.join(dir,'agent-logout-done')
-    for(let boot=1;boot<=2;boot++){
+    for(let boot=1;boot<=3;boot++){
       const running=bootElectron(boot,{
         ...env,XD_DESKTOP_PLACES_PRODUCTION_ORIGIN:fixture.url,
         XD_DESKTOP_PLACES_PRODUCTION_OWNER:fixture.owner,
@@ -225,7 +232,7 @@ async function main(){
         XD_DESKTOP_PLACES_LOGOUT_DONE:logoutDone,
         XD_DESKTOP_PLACES_LEGACY_MARKER:legacyMarker,
       },bootstrap)
-      if(boot===2){
+      if(boot===3){
         // Keep the genuine production Electron Main and WebView running while
         // its independent, already-authenticated Go Agent logs out.
         await Promise.race([
@@ -247,7 +254,7 @@ async function main(){
         fs.writeFileSync(logoutDone,'logout-and-owner-switch',{mode:0o600})
       }
       results.push(await running)
-      if(boot===1){
+      if(boot<=2){
         const status=await ipc.status()
         assert.equal(status.configured,true)
         assert.equal(status.username,fixture.owner)
@@ -258,6 +265,7 @@ async function main(){
       productionDesktopMain:true,productionDesktopPreload:true,
       productionDesktopRenderer:true,productionWebGallery:true,
       productionMapGuest:true,restarts:results.length,
+      consecutiveAuthenticatedAgentBoots:2,
       AgentSessionRetained:true,savedDesktopPassword:false,
       noSecondLogin:true,OwnerExact:true,syntheticPhotoFixture:true,
       actualSignedOwnerCells:true,scopedAlbumFavoritesAndDate:true,

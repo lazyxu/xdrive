@@ -2660,7 +2660,10 @@ async function testAutomaticBD09VisibilityRecheck(browser,mode,port){
 
 // Post-ready Server /cells failure is different from a valid zero-photo map.
 // Run the SAME shipped React Parent + private cover logic under both SDK Hosts.
-async function testOwnerCellsFailureRetry(browser,mode,port){
+async function testOwnerCellsFailureRetry(browser,mode,port,variant='network'){
+  assert(['network','401','403','429','503'].includes(variant))
+  const label=mode+': '+variant+': '
+  const status=variant==='network'?null:Number(variant)
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
     serviceWorkers:'block'})
@@ -2674,7 +2677,8 @@ async function testOwnerCellsFailureRetry(browser,mode,port){
     return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
   })
   try {
-    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+'&cells_failure=1',
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+'&cells_failure=1'+
+      (status===null?'':'&cells_failure_status='+status),
       {waitUntil:'domcontentloaded'})
     await page.waitForFunction(()=>window.__mapProbe?.ready===true)
     await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
@@ -2696,10 +2700,11 @@ async function testOwnerCellsFailureRetry(browser,mode,port){
       failureText:document.querySelector('[data-xdrive-places-cells-query-error]')?.textContent || '',
       sdkFailed:window.__mapProbe.failed,
     }))
-    record(mode+': genuine post-ready Owner Cells fault clears stale private cover pins',
-      empty.faults.length===1&&empty.faults[0].favorite===true&&
+    record(label+'genuine post-ready Owner Cells fault clears stale private cover pins',
+      empty.faults.length===1&&empty.faults[0].status===status&&
+      empty.faults[0].favorite===true&&
       empty.faults[0].albumKey===''&&empty.stalePins===0&&!empty.sdkFailed)
-    record(mode+': failed map query is not mislabeled as an empty GPS photo map',
+    record(label+'failed map query is not mislabeled as an empty GPS photo map',
       empty.failureText.includes('定位照片范围读取或校验失败')&&
       empty.failureText.includes('重试定位照片')&&
       !empty.failureText.includes('暂无可显示的定位照片'))
@@ -2717,17 +2722,17 @@ async function testOwnerCellsFailureRetry(browser,mode,port){
       faults:window.__mapProbe.failedOwnerCellsReads.length,
       sdkFailed:window.__mapProbe.failed,
     }))
-    record(mode+': retry restores decoded favorites only under the same Owner scope',
+    record(label+'retry restores decoded favorites only under the same Owner scope',
       !restored.errorStillVisible&&!restored.sdkFailed&&restored.faults===1&&
       restored.favorites.some(q=>q.albumKey===''&&q.count===3))
-    record(mode+': Owner Cells retry reuses the mounted SDK Host',
+    record(label+'Owner Cells retry reuses the mounted SDK Host',
       (mode==='inline' ? inlineSDKLoads : childSDKLoads)===sdkBefore)
     await cover.click()
     const drawer=page.locator('[data-xdrive-places-photo-drawer]')
     await drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
       .waitFor({state:'visible'})
     const drawerCount=await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()
-    record(mode+': recovered favorites cover opens only the authorized 3-photo drawer',
+    record(label+'recovered favorites cover opens only the authorized 3-photo drawer',
       drawerCount===3&&errors.length===0)
   } finally {await context.close()}
 }
@@ -4818,8 +4823,13 @@ async function main(){
       await testAutomaticBD09VisibilityRecheck(browser,'isolated',port)
       await testMapColdH264Poster(browser,'inline',port)
       await testMapColdH264Poster(browser,'isolated',port)
-      await testOwnerCellsFailureRetry(browser,'inline',port)
-      await testOwnerCellsFailureRetry(browser,'isolated',port)
+      // Real mounted React + Chromium under both SDK Hosts. The same
+      // signed Owner query must fail closed and recover through an explicit
+      // retry across every numeric HTTP class and a true network failure.
+      for(const variant of ['network','401','403','429','503']){
+        await testOwnerCellsFailureRetry(browser,'inline',port,variant)
+        await testOwnerCellsFailureRetry(browser,'isolated',port,variant)
+      }
       for(const scheme of ['light','dark']){
         await testMapKeyboardAppearance(browser,'inline',scheme,port)
         await testMapKeyboardAppearance(browser,'isolated',scheme,port)
