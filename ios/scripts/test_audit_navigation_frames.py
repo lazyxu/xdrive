@@ -27,7 +27,10 @@ class AuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / 'flat.png'
             make_png(p, [[(255, 255, 255)] * 120 for _ in range(140)])
-            self.assertTrue(score_png(p)['likely_uniform_content'])
+            scores = score_png(p)
+            self.assertTrue(scores['likely_uniform_content'])
+            self.assertTrue(scores['likely_blank_shell'])
+            self.assertFalse(scores['app_chrome_present'])
 
     def test_colorful_tabs_do_not_hide_blank_content(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -37,7 +40,10 @@ class AuditTests(unittest.TestCase):
                 colors.append([((x+y) % 256, 50, 60) if y < 20 or y > 120
                                else (255, 255, 255) for x in range(120)])
             make_png(p, colors)
-            self.assertTrue(score_png(p)['likely_uniform_content'])
+            scores = score_png(p)
+            self.assertTrue(scores['likely_uniform_content'])
+            self.assertFalse(scores['likely_blank_shell'])
+            self.assertTrue(scores['app_chrome_present'])
 
     def test_actual_content_pixels_not_marked_flat(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -45,6 +51,57 @@ class AuditTests(unittest.TestCase):
             make_png(p, [[(x*3 % 256, y*4 % 256, (x+y) % 256)
                           for x in range(120)] for y in range(140)])
             self.assertFalse(score_png(p)['likely_uniform_content'])
+
+    def test_dark_blank_shell_is_not_assumed_to_be_rendered_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp) / 'dark.png'
+            make_png(p, [[(12, 12, 12)] * 120 for _ in range(140)])
+            scores = score_png(p)
+            self.assertTrue(scores['likely_blank_shell'])
+            self.assertFalse(scores['app_chrome_present'])
+
+    def test_sparse_files_list_with_native_header_and_tabs_is_not_a_blank_shell(self):
+        # Real no-token Recent/Favorites pages have large white content areas
+        # but genuine native navigation chrome, search and retry affordances.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp) / 'files-sparse.png'
+            pixels = [[(255, 255, 255) for _ in range(120)] for _ in range(140)]
+            for y in list(range(14, 28)) + list(range(110, 132)):
+                for x in range(18, 102):
+                    if (y % 7 < 3 and x % 17 < 11):
+                        pixels[y][x] = (49, 122, 218)
+            make_png(p, pixels)
+            scores = score_png(p)
+            self.assertTrue(scores['likely_uniform_content'])
+            self.assertTrue(scores['app_chrome_present'])
+            self.assertFalse(scores['likely_blank_shell'])
+
+    def test_uniform_content_with_native_chrome_has_distinct_report_class(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp)
+            pixels = [[(255, 255, 255)] * 120 for _ in range(140)]
+            for row in list(range(12, 29)) + list(range(112, 129)):
+                for x in range(20, 100):
+                    if (x + row) % 9 < 4:
+                        pixels[row][x] = (18, 91, 201)
+            make_png(p / 'sparse.png', pixels)
+            (p / 'frame-trace.jsonl').write_text(
+                json.dumps({'test': 'Recent', 'file': 'sparse.png', 'captured': True}) + '\n')
+            report = analyze(p)
+            self.assertEqual(report['counts']['sparse_or_empty_content'], 1)
+            self.assertNotIn('blank_shell_candidate', report['counts'])
+
+    def test_startup_full_shell_blank_keeps_diagnostic_not_a_crash_verdict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp)
+            make_png(p / 'launch.png', [[(255, 255, 255)] * 120 for _ in range(140)])
+            (p / 'frame-trace.jsonl').write_text(
+                json.dumps({'test': 'launch', 'file': 'launch.png', 'captured': True,
+                            'scheduled_after_start_seconds': 0.5}) + '\n')
+            report = analyze(p)
+            self.assertEqual(report['counts']['blank_shell_candidate'], 1)
+            self.assertFalse(report['proves_zero_transient_flicker'])
+            self.assertFalse(report['is_fps_measurement'])
 
     def test_missing_capture_is_reported_not_passed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -63,7 +120,8 @@ class AuditTests(unittest.TestCase):
                 json.dumps({'test': 'native', 'captured': True, 'file': 'a.png'}) + '\n')
             report = analyze(p)
             self.assertEqual(report['total_frames'], 1)
-            self.assertEqual(report['counts']['uniform_content_candidate'], 1)
+            self.assertEqual(report['counts']['blank_shell_candidate'], 1)
+            self.assertFalse(report['frames'][0]['metrics']['app_chrome_present'])
             self.assertFalse(report['is_fps_measurement'])
 
     def test_every_native_gallery_files_journey_has_frame_diagnostics(self):
