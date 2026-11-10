@@ -85,10 +85,12 @@ try {
     # requires a pinned full Commit and the exact master Snapshot target.
     # Intentionally keep this fixture's target version invalid and verify
     # refusal before any installed program or discovery state is disturbed.
+    $fixtureDigest = (Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToLowerInvariant()
+    $fixtureSize = [string]((Get-Item -LiteralPath $Installer).Length)
     $badPersonalArgs = @($args) + @(
         "-ExpectedCommit", ("a" * 40),
-        "-ExpectedSHA256", ((Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToLowerInvariant()),
-        "-ExpectedSize", [string](Get-Item -LiteralPath $Installer).Length,
+        "-ExpectedSHA256", $fixtureDigest,
+        "-ExpectedSize", $fixtureSize,
         "-PersonalUnsigned"
     )
     Remove-Item -LiteralPath $statusPath -Force -ErrorAction SilentlyContinue
