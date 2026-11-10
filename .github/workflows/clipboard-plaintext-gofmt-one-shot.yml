@@ -1,0 +1,39 @@
+name: Clipboard one-shot Go formatting
+
+on:
+  push:
+    branches:
+      - feat/clipboard-plaintext-remove-unlock-20261110
+
+permissions:
+  contents: write
+
+concurrency:
+  group: clipboard-one-shot-gofmt-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    if: github.repository == 'lazyxu/xdrive'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Apply Go's canonical formatter and retire this temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          find cmd internal -name '*.go' -type f -print0 | xargs -0 -r gofmt -w
+          echo 'Formatted Go changes:'
+          git diff --stat -- '*.go'
+          rm -f .github/workflows/clipboard-plaintext-gofmt-one-shot.yml
+          git add -u
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'style(clipboard): canonical gofmt and retire one-shot formatter'
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
