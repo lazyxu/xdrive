@@ -91,6 +91,48 @@ class AuditTests(unittest.TestCase):
             self.assertTrue(report['missing_capture_trace'])
             self.assertFalse(report['proves_zero_transient_flicker'])
 
+    def test_finished_short_xctest_is_reported_as_missing_capture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp)
+            (p / 'frame-trace.jsonl').write_text(json.dumps({
+                'test': 'testShortChildReturn', 'captured': False,
+                'file': None, 'reason': 'test_finished_before_capture',
+                'capture_mode': 'test-start',
+            }) + '\n')
+            report = analyze(p)
+            self.assertFalse(report['missing_capture_trace'])
+            self.assertEqual(report['counts']['capture_missing'], 1)
+            self.assertEqual(report['finished_before_capture'], 1)
+            self.assertFalse(report['proves_zero_transient_flicker'])
+
+    def test_capture_lag_is_measured_not_claimed_as_render_fps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp)
+            make_png(p / 'lag.png', [[(16, 80, 124)] * 40 for _ in range(60)])
+            (p / 'frame-trace.jsonl').write_text(json.dumps({
+                'test': 'testTab', 'captured': True,
+                'file': 'lag.png', 'capture_request_lag_seconds': .381,
+                'capture_duration_seconds': .11,
+                'scheduled_after_tap_seconds': .15,
+            }) + '\n')
+            report = analyze(p)
+            self.assertEqual(report['capture_request_lag']['samples'], 1)
+            self.assertEqual(report['capture_request_lag']['p50_ms'], 381)
+            self.assertEqual(report['capture_request_lag']['over_150ms'], 1)
+            self.assertFalse(report['is_fps_measurement'])
+
+    def test_live_observer_reports_lost_scheduled_frames_and_true_lag(self):
+        repo = pathlib.Path(__file__).resolve().parents[2]
+        watcher = (repo / 'ios' / 'scripts' /
+                   'capture-navigation-smoke-frames.py').read_text(encoding='utf-8')
+        self.assertIn('def report_missed(key, starts, taps):', watcher)
+        self.assertIn('report_missed(key, missed_starts, missed_taps)', watcher)
+        self.assertIn('"reason": "test_finished_before_capture"', watcher)
+        self.assertEqual(watcher.count('"capture_request_lag_seconds":'), 2)
+        self.assertEqual(watcher.count('"capture_duration_seconds":'), 2)
+        self.assertIn('capture_started = time.monotonic()', watcher)
+        self.assertIn('capture_completed = time.monotonic()', watcher)
+
     def test_rejects_corrupt_crc(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / 'a.png'
