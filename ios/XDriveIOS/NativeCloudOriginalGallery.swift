@@ -776,10 +776,15 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
                 model.currentReader = XDriveIOSNativeCloudOriginalReader(
                     owner: expected, accessToken: auth.accessToken
                 )
-                if start == 0 { model.verifiedFirstPage = reply.nodes }
+                if start == 0 {
+                    model.verifiedFirstPage = reply.nodes
+                    // A cold reader can now admit missing visible thumbnails.
+                    // Later 48-node pages mount their own tiles; bumping the
+                    // global key on every append re-requests every failed tile.
+                    model.thumbnailEpoch = UUID()
+                }
                 model.verifiedPageOwner = expected
                 model.coveredRetryRequired = false
-                model.thumbnailEpoch = UUID()
                 // Uploads can move older nodes into both adjacent pages.
                 // Retain the first visible occurrence of each node ID.
                 for node in reply.nodes {
@@ -1877,7 +1882,12 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     Text("仅可见项目请求 Server 缩略图；若尚未生成则保留文件图标，不下载大体积原件填充缩略图。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                if model.busy { ProgressView("正在验证并读取云端目录…") }
+                // A returning, already verified Owner wall must not gain a
+                // new row-height spinner on a quiet first-page recheck.
+                // Later ranges have their stable 128pt tail placeholder.
+                if model.busy && !model.matchesOwner(login.owner) {
+                    ProgressView("正在验证并读取云端目录…")
+                }
                 if let error = model.error {
                     Text(error).foregroundStyle(.red)
                     Button("重试") {
