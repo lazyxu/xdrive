@@ -8944,7 +8944,9 @@ function registerIPCHandlers() {
             item.build_commit === commitValue &&
             (item.install_mode === 'manual' ||
              (item.install_mode === 'manual_test_only' && item.platform === 'ios' &&
-              item.filename === 'xDrive-unsigned.ipa')))) {
+              item.filename === 'xDrive-unsigned.ipa') ||
+             (item.install_mode === 'manual_test_only' && item.platform === 'windows' &&
+              item.filename === 'xDriveSetup-amd64.exe')))) {
         throw new AgentIPCError('stale_release_bundle', 409, 'Server Bundle changed before save.')
       }
       const options = {
