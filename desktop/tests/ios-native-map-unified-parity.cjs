@@ -173,3 +173,27 @@ test('iOS 18.5 Settings permission smoke proves exact app detail before Photos s
   assert.match(simulator, /app\.activate\(\)/)
   assert.match(simulator, /Expected actual user-granted Full Access; still denied or Limited/)
 })
+
+
+test('Settings-return permission transition is live-revalidated and cold-start failures remain hard failures', () => {
+  // The previous exact-head real Simulator selected "Full Access" in
+  // Settings, but xDrive still presented a denial. Never infer TCC state
+  // from a Settings tap; check live PhotoKit .readWrite on foreground.
+  assert.match(local, /\.onReceive\(NotificationCenter\.default\.publisher\(/)
+  assert.match(local, /for: UIApplication\.didBecomeActiveNotification/)
+  assert.match(local, /let live = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(local, /IOS_MAP_PHOTO_AUTH_REENTRY cached=/)
+  assert.match(local, /guard phase == \.active, live != authorization else \{ return \}/)
+  assert.match(local, /authorization = live[\s\S]*?invalidate\(\)[\s\S]*?guard live == \.authorized else \{ return \}/)
+  assert.match(local, /scanFullLibrary\(returningCamera: returningCamera\)/)
+  assert.match(simulator, /MAP_PHOTOS_FULL_ACCESS_ROW_SELECTED/)
+  assert.match(simulator, /MAP_PHOTOS_FULL_ACCESS_POST_TAP AX tree/)
+  assert.match(simulator, /native-ios-real-photos-full-access-after-tap/)
+  assert.match(simulator, /MAP_PHOTOS_COLD_START_PROBE before_blocked=/)
+  assert.match(simulator, /Full Access must mount real MapKit immediately after Settings return, without restart/)
+  const permissionTap = simulator.indexOf('full.tap()')
+  const proof = simulator.indexOf('MAP_PHOTOS_FULL_ACCESS_POST_TAP')
+  const resume = simulator.indexOf('app.activate()')
+  const coldStart = simulator.indexOf('MAP_PHOTOS_COLD_START_PROBE')
+  assert.ok(permissionTap >= 0 && permissionTap < proof && proof < resume && resume < coldStart)
+})
