@@ -108,6 +108,52 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         }
     }
 
+    func testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank() {
+        let app = launch()
+        checkGallery(app)
+        select("native-ios-gallery-open-filters", in: app)
+        let open = target("native-ios-unified-gallery-show-map", in: app)
+        XCTAssertTrue(open.waitForExistence(timeout: 15),
+                      "Unified Gallery filter editor must offer native Show Map")
+        XCTAssertTrue(open.isEnabled, "Unfiltered Gallery may enter scoped MapKit")
+        open.tap()
+        // The filter sheet fully dismisses before presenting the existing
+        // MapKit route. The local permission screen may still be denied:
+        // never pretend this UI-navigation smoke proves PhotoKit Full Access.
+        XCTAssertTrue(target("native-ios-map-source-selector", in: app)
+            .waitForExistence(timeout: 25),
+            "Unified Gallery did not present the real local/cloud map")
+        XCTAssertTrue(target("native-ios-map-dismiss", in: app)
+            .waitForExistence(timeout: 15),
+            "Modal MapKit must have a real return action")
+        select("native-ios-map-dismiss", in: app)
+        checkGallery(app)
+        XCTAssertTrue(target("native-ios-unified-photo-gallery", in: app)
+            .waitForExistence(timeout: 15),
+            "Map return replaced rather than retained the unified Gallery")
+        assertNotSolidScreen(app, "Unified Gallery after modal MapKit return")
+    }
+
+    func testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership() {
+        let app = launch()
+        checkGallery(app)
+        let paired = app.buttons["两端都有"].firstMatch
+        XCTAssertTrue(paired.waitForExistence(timeout: 15),
+                      "Unified Gallery source filter is unavailable")
+        if !paired.isHittable {
+            target("native-ios-unified-gallery-filters", in: app).swipeLeft()
+        }
+        paired.tap()
+        select("native-ios-gallery-open-filters", in: app)
+        let open = target("native-ios-unified-gallery-show-map", in: app)
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        XCTAssertFalse(open.isEnabled,
+                       "A both-sources identity filter cannot silently display an unfiltered local map")
+        XCTAssertTrue(target("native-ios-unified-gallery-map-scope", in: app).exists)
+        app.buttons["取消"].firstMatch.tap()
+        checkGallery(app)
+    }
+
     func testOfflineOwnerCloudFilesBackKeepsHomeAndDoesNotExit() {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)

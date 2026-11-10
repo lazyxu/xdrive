@@ -371,7 +371,7 @@ test('verified native Viewer GPS opens the existing Gallery local map and nearby
   assert.match(map, /onChange\(of: incomingMapJump\?\.id\)/)
   assert.match(dashboard, /@State private var localMapJump: XDriveIOSNativeLocalMapJump\?/)
   assert.match(dashboard, /ownerScopeKey == expectedRouteOwnerKey[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?openGallery\(\.map\)\s+localMapJump = jump\s+localMapCamera = jump\.camera\s+localMapScope = \.library\s+mapSource = \.local/)
-  assert.match(dashboard, /localMapJump = nil\s+galleryMapCaptureRange = nil\s+mapSource = \.local/)
+  assert.match(dashboard, /localMapJump = nil\s+galleryMapCaptureRange = nil\s+presentingUnifiedMap = false\s+unifiedMapCaptureRange = nil\s+mapSource = \.local/)
   assert.doesNotMatch(map, /WKWebView|URLSession\(|UploadSession|UserDefaults/)
 })
 
@@ -550,8 +550,6 @@ test('native Map Done works without cloud login while restored Owner Gallery sou
   assert.match(routing, /else \{\s*mapReturnGallerySource = nil\s*mapReturnOwnerScopeKey = nil/)
   const close = routing.slice(routing.indexOf('private func closeGalleryMap()'))
   assert.match(close, /guard gallerySource == \.map else \{ return \}/)
-  // Local PhotoKit maps require Photos Full Access, not a Server Owner login.
-  // The separate cloud-Owner selector still requires verified session state.
   assert.doesNotMatch(close, /guard gallerySource == \.map, login\.owner != nil/)
   assert.match(close, /mapReturnOwnerScopeKey == ownerScopeKey[\s\S]*?\? mapReturnGallerySource : nil/)
   assert.match(routing, /let fallback = XDriveIOSNativeGallerySource\(rawValue: "unified"\) \?\? \.local/)
