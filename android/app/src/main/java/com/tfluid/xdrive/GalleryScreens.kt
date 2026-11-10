@@ -371,7 +371,11 @@ internal fun ColumnScope.Gallery(
             }
             if (state.loading || state.error != null || positioned) return@LaunchedEffect
             if (state.galleryJumpIndex != null) {
-                // A Server-indexed time jump starts at its actual first item.
+                // A LaunchedEffect inside BoxWithConstraints can start while
+                // its parent is still measuring. Let that measure pass finish:
+                // scrollToItem forces remeasurement and otherwise may throw
+                // "performMeasureAndLayout called during measure layout".
+                awaitFrame()
                 gridState.scrollToItem(if (blankTop > 0.dp) 1 else 0)
                 positioned = true
             } else if (state.galleryOffset > 0 && state.galleryItems.size < 24) {
@@ -381,6 +385,9 @@ internal fun ColumnScope.Gallery(
                 if (last >= 0) {
                     val first = if (state.gallerySortDir == "desc") 0
                         else last + (if (blankTop > 0.dp) 1 else 0)
+                    // Wait for the initial subcomposition's measure to finish
+                    // before forcing the grid's first visible index.
+                    awaitFrame()
                     gridState.scrollToItem(first)
                 }
                 positioned = true
@@ -440,7 +447,12 @@ internal fun ColumnScope.Gallery(
                 returnIndex in state.galleryItems.indices) {
                 val id = state.galleryItems[returnIndex].identity
                 if (gridState.layoutInfo.visibleItemsInfo.none { it.key == id }) {
-                    gridState.scrollToItem(returnIndex + if (blankTop > 0.dp) 1 else 0)
+                    // Viewer return can also coincide with BoxWithConstraints
+                    // subcomposition. Never scroll recursively during measure.
+                    awaitFrame()
+                    if (gridState.layoutInfo.visibleItemsInfo.none { it.key == id }) {
+                        gridState.scrollToItem(returnIndex + if (blankTop > 0.dp) 1 else 0)
+                    }
                 }
             }
         }
