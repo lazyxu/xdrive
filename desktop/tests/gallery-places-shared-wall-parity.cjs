@@ -113,6 +113,23 @@ test('Gallery and Places use one shared photo wall and one dated virtual rendere
   assert.doesNotMatch(host,/fetch\(|listOwnerCells|JWT|Baidu/)
 })
 
+test('Gallery and Places use one pinch recognizer with independent UI-only states',()=>{
+  assert.match(gallery, /pinch=\{compactGallery && !selectionMode && !mobileCollectionsOverview/)
+  assert.match(gallery, /onStart: startSharedGalleryPinch/)
+  assert.match(gallery, /onChange: changeSharedGalleryPinch/)
+  assert.match(gallery, /onGestureEnd: endSharedGalleryPinch/)
+  assert.match(gallery, /galleryPinchSuppressClickUntilRef\.current = Date\.now\(\) \+ 350/)
+  assert.match(gallery, /clearGalleryTouchPress\(\)/)
+  assert.doesNotMatch(gallery, /handleGalleryTouchStart|handleGalleryTouchMove|finishGalleryPinch/)
+  assert.match(host, /pinch\.onStart\?\.\(index\)/)
+  assert.match(host, /pinch\?\.onGestureEnd\?\.\(\)/)
+  assert.match(host, /onClickCapture=\{event => \{/)
+  assert.match(host, /event\.stopPropagation\(\)/)
+  assert.match(drawer, /pinchChange = useCallback/)
+  assert.match(drawer, /restoreLayout\(index,viewportOffset\)/)
+  assert.doesNotMatch(host, /fetch\(|listOwnerCells|Authorization|JWT/)
+})
+
 test('Places pinch shares Gallery column policy and retains a numeric visible anchor',()=>{
   assert.match(host,/xDriveMediaGalleryPinchColumnCount\(/)
   assert.match(host,/onChange\(columns, current.index, current.viewportOffset\)/)
