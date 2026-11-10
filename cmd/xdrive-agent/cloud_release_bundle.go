@@ -59,12 +59,12 @@ func (c *agentController) CloudDownloadReleaseBundle(ctx context.Context, fullCo
 	return fmt.Errorf("current Server Commit does not contain the requested approved installer")
 }
 
-func (c *agentController) CloudInstallCurrentServerCommit(ctx context.Context, fullCommit, filename string) (clientUpdateState, error) {
+func (c *agentController) CloudInstallCurrentServerCommit(ctx context.Context, fullCommit, filename string, personalUnsigned bool) (clientUpdateState, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return c.updates.Snapshot(), err
 	}
-	return c.updates.InstallCurrentServerCommit(ctx, cli, fullCommit, filename)
+	return c.updates.InstallCurrentServerCommit(ctx, cli, fullCommit, filename, personalUnsigned)
 }
 
 func releaseBundleDownloadAllowed(item client.ReleaseBundleArtifact, fullCommit, filename string) bool {
