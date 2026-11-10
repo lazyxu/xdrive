@@ -136,7 +136,8 @@ test('Places pinch shares Gallery column policy and retains a numeric visible an
   assert.match(host,/xDriveMediaGalleryPinchColumnCount\(/)
   assert.match(host,/onChange\(columns, current.index, current.viewportOffset\)/)
   assert.match(host,/suppressClickUntil.current = Date.now\(\) \+ 350/)
-  assert.match(drawer,/all: 3, year: 6, month: 5, day: 3/)
+  assert.match(drawer,/XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT/)
+  assert.match(drawer,/xDriveReadMobileGalleryColumns\(\)/)
   assert.match(drawer,/referenceColumnWidth=\{144\}/)
   assert.match(drawer,/restoreLayout\(index,viewportOffset\)/)
   for(const count of [142,100000]){

@@ -14,6 +14,13 @@ import { MediaTile, MediaVirtualTileGrid } from './MediaGallerySharedTiles'
 import type { XDriveMediaGalleryVirtualCollection } from './MediaGallerySharedTiles'
 import type { MediaThumbnailLoader, MediaPreviewURLLoader, MediaVideoPosterSaver } from './MediaGallery'
 import { XDriveMediaGalleryPhotoWall } from './MediaGalleryPhotoWall'
+import {
+  XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
+  xDriveReadMobileGalleryColumns,
+  xDriveWriteMobileGalleryColumn,
+  xDriveObserveMobileGalleryColumns,
+} from './MediaGalleryPhotoWallPreferences'
+import type { XDriveGalleryPhotoWallScale } from './MediaGalleryPhotoWallPreferences'
 import { XDriveMediaGalleryVirtualTimeline } from './MediaGallerySharedTimeline'
 import { xDriveMediaGalleryTimelineGroupLabel } from './MediaGalleryVirtualTimeline'
 import {
@@ -92,19 +99,24 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   }, [loadThumbnail])
   const thumbnailScheduler = thumbnailSession?.owner === loadThumbnail
     ? thumbnailSession.scheduler : null
-  type TimeScale = 'all' | 'year' | 'month' | 'day'
+  type TimeScale = XDriveGalleryPhotoWallScale
   const mobile = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const [timeScale, setTimeScale] = useState<TimeScale>(
     () => initialPresentation?.timeScale ?? 'all')
   const [columnsByScale, setColumnsByScale] = useState<Record<TimeScale, number>>(() => {
-    const defaults = {all: 3, year: 6, month: 5, day: 3}
+    // Gallery/Places share only bounded visual column preferences. Viewer
+    // return may override the current scale for one short-lived UI intent;
+    // it never writes an old authenticated item's state to browser storage.
+    const defaults = xDriveReadMobileGalleryColumns()
     const scale = initialPresentation?.timeScale ?? 'all'
     return initialPresentation?.columns !== undefined
       ? {...defaults,[scale]:initialPresentation.columns} : defaults
   })
-  const baselineColumns: Record<TimeScale, number> = {
-    all: 3, year: 6, month: 5, day: 3,
-  }
+  const baselineColumns: Record<TimeScale, number> =
+    XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT
+  // Gallery remains mounted beneath the map Dialog. Refresh cosmetic column
+  // choices after same-document or cross-tab changes without touching Cells.
+  useEffect(() => xDriveObserveMobileGalleryColumns(setColumnsByScale), [])
   const [layoutRestore, setLayoutRestore] = useState<{
     index: number; offset: number; revision: number
   } | null>(null)
@@ -254,8 +266,9 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   }
   const pinchChange = useCallback((columns:number,index:number,viewportOffset:number) => {
     setColumnsByScale(current=>({...current,[timeScale]:columns}))
+    if (mobile) xDriveWriteMobileGalleryColumn(timeScale,columns)
     restoreLayout(index,viewportOffset)
-  }, [timeScale,restoreLayout])
+  }, [mobile,timeScale,restoreLayout])
   const tileItem = (target: EventTarget | null) => {
     const tile = target instanceof Element
       ? target.closest('[data-xdrive-places-photo-drawer-item]') : null
