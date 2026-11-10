@@ -27,7 +27,7 @@ test('01 Files/Gallery selected tab is passed explicitly only to Originals wall'
 })
 test('02 a tab-covered wall retires signed reader without blanking verified rows', () => {
   assert.match(wall, /\.onChange\(of: isTabActive\) \{ active in[\s\S]*?needsTabRevalidation = true\s*model.cancel\(\)/)
-  assert.match(wall, /if phase == \.active, !isTabActive,\s*model.matchesOwner\(login.owner\) \{\s*needsTabRevalidation = true\s*model.cancel\(\)\s*\} else \{\s*model.invalidate\(\)/)
+  assert.match(wall, /if phase == \.active, !isTabActive,\s*model.matchesOwner\(login.owner\) \{\s*needsTabRevalidation = true\s*model.cancel\(\)\s*\} else \{[\s\S]*?needsTabRevalidation = false\s*hasActivated = false\s*model.invalidate\(\)/)
   const cancel = slice('    func cancel() {', '    func thumbnail(_ node:')
   assert.match(cancel, /currentReader = nil/)
   assert.doesNotMatch(cancel, /nodes = \[\]|seenNodeIDs\.removeAll\(\)|total = 0|scanned = 0/)
@@ -104,4 +104,9 @@ test('14 mandatory XCUITest and unsigned IPA source-contract gates stay wired', 
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSGalleryFilesFrameContinuityUITests/)
   assert.match(workflow, /capture-navigation-smoke-frames.py/)
   assert.match(ipa, /ios-native-cloud-original-tab-continuity-20261110.cjs/)
+})
+test('15 real source exit restarts first load while Owner change hides counts and rows', () => {
+  assert.match(wall, /needsTabRevalidation = false\s*hasActivated = false\s*model.invalidate\(\)/)
+  assert.match(wall, /model.matchesOwner\(login.owner\) \? model.scanned : 0/)
+  assert.match(wall, /if model.matchesOwner\(login.owner\) &&\s*model.scanned < model.total/)
 })
