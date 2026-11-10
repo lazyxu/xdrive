@@ -150,6 +150,9 @@ async function visibleButtonCenter(win, label) {
       return accessible === label || text === label
     })
     let withinViewport = 0
+    let blockerKind = 'none'
+    let blockerTag = 'none'
+    let blockerStack = null
     const candidates = matching.filter(button => {
       const bounds = button.getBoundingClientRect()
       const style = getComputedStyle(button)
@@ -159,14 +162,31 @@ async function visibleButtonCenter(win, label) {
       withinViewport++
       const x = bounds.left + bounds.width / 2, y = bounds.top + bounds.height / 2
       const hit = document.elementFromPoint(x, y)
-      return hit === button || button.contains(hit)
+      if (hit === button || button.contains(hit)) return true
+      // Fixed-category, anonymous obstruction telemetry. Never print actual
+      // DOM text, class strings, private Owner labels or source URLs.
+      blockerKind = !hit ? 'no-hit' :
+        hit.closest('[data-xdrive-mobile-five-slot]') ? 'inside-navigation' :
+        hit.closest('.MuiBackdrop-root') ? 'modal-backdrop' :
+        hit.closest('[role="dialog"]') ? 'dialog' :
+        hit.closest('.MuiDrawer-root') ? 'drawer' :
+        hit.closest('.MuiTooltip-popper') ? 'tooltip' :
+        hit.closest('[data-xdrive-media-gallery-virtual-grid]') ? 'gallery-grid' :
+        hit.closest('[data-xdrive-mobile-app-header]') ? 'mobile-header' :
+        hit.closest('main') ? 'main-content' :
+        hit === document.body || hit === document.documentElement ? 'document-root' : 'other'
+      blockerTag = ['DIV','MAIN','SECTION','SPAN','BUTTON','SVG','PATH','IMG','NAV','FOOTER','HEADER','ASIDE'].includes(hit?.tagName)
+        ? hit.tagName : 'other'
+      const layer = hit ? Number(getComputedStyle(hit).zIndex) : NaN
+      blockerStack = Number.isFinite(layer) && Math.abs(layer) <= 10000 ? layer : null
+      return false
     })
     if (candidates.length !== 1) return {
       error:'expected one visible five-slot destination '+label+'; got '+candidates.length,
       // Anonymous counts diagnose wrong label, geometry, or a genuine
       // overlapping UI. Never bypass the real hit test or expose DOM text.
       counts:{buttons:buttons.length,matching:matching.length,
-        withinViewport,unobscured:candidates.length},
+        withinViewport,unobscured:candidates.length,blockerKind,blockerTag,blockerStack},
     }
     const rect = candidates[0].getBoundingClientRect()
     return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}

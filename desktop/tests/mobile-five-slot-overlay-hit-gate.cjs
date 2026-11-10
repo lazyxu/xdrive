@@ -23,6 +23,9 @@ test('real signed H264 fixture only clicks an unobscured actual button and diagn
   assert.ok(harness.includes('return hit === button || button.contains(hit)'))
   assert.ok(harness.includes('matching:matching.length'))
   assert.ok(harness.includes('withinViewport,unobscured:candidates.length'))
+  assert.ok(harness.includes('blockerKind ='), 'must distinguish real blocking UI families')
+  assert.ok(harness.includes('blockerTag'), 'must emit bounded element type only')
+  assert.ok(harness.includes('blockerStack'), 'must emit bounded z-index only')
   assert.ok(harness.includes('hitCounts:last?.counts||null'),
     'a failed genuine click must report anonymous viewport and obstruction counts')
   assert.ok(harness.includes("'unobscured genuine five-slot destination '+name"))
