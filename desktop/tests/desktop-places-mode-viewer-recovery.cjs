@@ -201,6 +201,10 @@ test('one-use Owner PhotoScope survives mode-only navigation but fails closed on
     assert.equal(historyBootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state,'denied')
     history.forward()
     assert.equal(historyBootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state,'denied')
+    // Mark a live, signed Viewer selection before logout; the old Owner
+    // cannot reuse it after switching routes or Browser history.
+    assert.equal(cell.xDriveMarkBaiduCellViewerReturn(owner,411,1,1002),true)
+    assert.equal(viewport.xDriveMarkBaiduViewportViewerReturn(owner,411,1,1002),true)
     // Owner logout invalidates EVERY private visual return pointer. A stale
     // browser history entry cannot authorize an old Viewer or camera.
     clear()

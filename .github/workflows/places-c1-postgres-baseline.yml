@@ -88,7 +88,12 @@ jobs:
           assert [r["owner_assets"] for r in data] == [10000, 100000], "wrong dataset sizes"
           for report in data:
               metrics = report["metrics"]
+              assert report["test_process_max_rss_kb"] > 0, "missing actual Go process MaxRSS"
               assert len(metrics) == 7, "missing real query measurements"
+              assert sum(m["operation"] == "world_map_64" for m in metrics) == 1
+              assert next(m for m in metrics if m["operation"] == "world_map_64")["count"] == report["owner_assets"]
+              for metric in metrics:
+                  assert metric["max_ms"] >= metric["p95_ms"] >= metric["p50_ms"] >= 0, metric["operation"]
               for sample in metrics:
                   assert sample["sample_count"] == 7
                   assert sample.get("explain_analyze_buffers"), sample["operation"]
