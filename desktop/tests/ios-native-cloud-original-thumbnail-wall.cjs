@@ -11,8 +11,8 @@ test('cloud originals render a bounded adaptive native thumbnail grid', () => {
   assert.match(src, /LazyVGrid\(/)
   assert.match(src, /ForEach\(model.nodes\)/)
   assert.match(src, /node: node, viewerActive: selected != nil,\s*model: model, login: login/)
-  assert.match(src, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)-\\\(viewerActive\)"\)/)
-  assert.match(src, /\.onDisappear \{[\s\S]*?if !viewerActive \{ thumb = nil \}/)
+  assert.match(src, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)-\\\(viewerActive\)-\\\(isTabActive\)-\\\(model.thumbnailEpoch\)"\)/)
+  assert.match(src, /\.onDisappear \{[\s\S]*?if !viewerActive && isTabActive \{ thumb = nil \}/)
   assert.match(src, /node.isLiveArchive \|\| node.isVideo/)
 })
 
@@ -182,7 +182,7 @@ test('cloud originals retire thumbnail pixels on Node revision or exact Owner/ro
   // a separate explicit identity, so an updated revision cannot reuse its old
   // @State UIImage and skip the new thumbnail request.
   assert.match(wall, /ForEach\(model.nodes\) \{ node in[\s\S]*?XDriveIOSNativeCloudOriginalTile\([\s\S]*?\.id\(XDriveIOSNativeCloudOriginalTileIdentity\(\s*node: node, owner: login.owner\s*\)\)[\s\S]*?\.buttonStyle\(\.plain\)/)
-  assert.match(tile, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)-\\\(viewerActive\)"\)/)
+  assert.match(tile, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)-\\\(viewerActive\)-\\\(isTabActive\)-\\\(model.thumbnailEpoch\)"\)/)
   assert.doesNotMatch(identity, /token|accessToken|localIdentifier|password|UserDefaults/)
 })
 
