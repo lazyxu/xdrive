@@ -7,7 +7,7 @@ import Photos
 import SwiftUI
 import UIKit
 
-struct XDriveIOSNativeCloudOriginal: Decodable, Identifiable {
+struct XDriveIOSNativeCloudOriginal: Decodable, Identifiable, Equatable {
     let id: UInt64
     let name: String
     let type: String
@@ -577,6 +577,17 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
     // Never persisted or sent to a URL/JS: one current-Owner bearer in RAM
     // from the last independently verified page request.
     private var currentReader: XDriveIOSNativeCloudOriginalReader?
+    // A tab-covered wall may retain only entries proven for this Owner. The
+    // first Server range is a bounded 48-node comparison on return.
+    private var verifiedPageOwner: XDriveNativeOwnerRoot?
+    private var verifiedFirstPage: [XDriveIOSNativeCloudOriginal] = []
+    @Published private(set) var thumbnailEpoch = UUID()
+    @Published private(set) var coveredRetryRequired = false
+
+    func matchesOwner(_ owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard let owner, let verifiedPageOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedPageOwner)
+    }
 
     /// Opening L3 Viewer retires *all* in-flight page/thumbnail generations
     /// while retaining the verified 48-item wall and visible scroll anchor.
@@ -637,12 +648,86 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
         seenNodeIDs.removeAll()
         total = 0
         scanned = 0
+        verifiedPageOwner = nil
+        verifiedFirstPage = []
+        coveredRetryRequired = false
+        thumbnailEpoch = UUID()
         error = nil
     }
 
     func reload(login: XDriveIOSNativeOwnerLoginModel) {
         invalidate()
         loadNext(login: login)
+    }
+
+    /// Recheck the same Owner's first 48-root-node range on tab return
+    /// without publishing a temporary empty list. A changed first page or
+    /// total atomically replaces the previous snapshot. Old signed thumbnail
+    /// credentials were retired on tab leave and are never reused.
+    func revalidateCoveredTab(login: XDriveIOSNativeOwnerLoginModel) {
+        guard let expected = login.owner,
+              matchesOwner(expected), scanned > 0 else {
+            reload(login: login)
+            return
+        }
+        cancel()
+        let ticket = epoch
+        busy = true
+        coveredRetryRequired = false
+        error = nil
+        work = Task { @MainActor [weak self] in
+            defer {
+                if self?.epoch == ticket {
+                    self?.busy = false
+                    self?.work = nil
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard self?.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { throw XDriveIOSNativeCloudReadError.invalidScope }
+                let reader = XDriveIOSNativeCloudOriginalReader(
+                    owner: expected, accessToken: auth.accessToken
+                )
+                let fresh = try await reader.page(offset: 0)
+                try Task.checkCancellation()
+                guard let model = self, model.epoch == ticket,
+                      model.matchesOwner(login.owner) else { return }
+                // No blind reuse if the first page, total or Node revision
+                // changed while the user viewed Files/another tab.
+                if fresh.total != model.total ||
+                   fresh.nodes != model.verifiedFirstPage {
+                    model.nodes = fresh.nodes
+                    model.seenNodeIDs = Set(fresh.nodes.map(\.id))
+                    model.total = fresh.total
+                    model.scanned = min(fresh.total, 48)
+                }
+                model.verifiedPageOwner = expected
+                model.verifiedFirstPage = fresh.nodes
+                model.currentReader = reader
+                model.coveredRetryRequired = false
+                model.error = nil
+                // Re-request thumbnail placeholders using a newly verified
+                // bearer, without re-fetching already decoded same-Owner tiles.
+                model.thumbnailEpoch = UUID()
+            } catch is CancellationError {
+            } catch {
+                guard let model = self, model.epoch == ticket else { return }
+                if XDriveIOSNativeCloudOriginalModel.canRetainPage(after: error),
+                   model.matchesOwner(login.owner) {
+                    // Temporary 429/503/network failures keep previously
+                    // verified Owner rows, but require explicit Retry.
+                    model.coveredRetryRequired = true
+                    model.error = "当前云端原件暂时无法重新核验；旧列表未更新，请重试。"
+                } else {
+                    model.invalidate()
+                    model.error = "云端原件授权或内容已变化；旧列表已清除，请重新验证。"
+                }
+            }
+        }
     }
 
     func loadNext(login: XDriveIOSNativeOwnerLoginModel) {
@@ -691,6 +776,10 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
                 model.currentReader = XDriveIOSNativeCloudOriginalReader(
                     owner: expected, accessToken: auth.accessToken
                 )
+                if start == 0 { model.verifiedFirstPage = reply.nodes }
+                model.verifiedPageOwner = expected
+                model.coveredRetryRequired = false
+                model.thumbnailEpoch = UUID()
                 // Uploads can move older nodes into both adjacent pages.
                 // Retain the first visible occurrence of each node ID.
                 for node in reply.nodes {
