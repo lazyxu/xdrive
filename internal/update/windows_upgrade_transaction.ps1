@@ -372,12 +372,17 @@ $backupDir = Join-Path $transactionRoot "last-known-good"
 $startMenuBackup = Join-Path $transactionRoot "last-known-good-startmenu"
 $startMenuGroup = Get-XDriveStartMenuGroup
 
+# Do not stop the existing client or touch a stale backup when installer
+# admission fails. Rollback is only valid once this transaction has begun
+# changing the running client state.
+$transactionStarted = $false
 try {
     Write-Log "begin update $CurrentVersion -> $TargetVersion"
     Write-Status "preparing" "Verifying downloaded installer and publisher."
     Assert-VerifiedInstaller $Installer $appDir
     Write-Status "preparing" "Creating last-known-good client backup."
 
+    $transactionStarted = $true
     Stop-XDriveProcesses
     Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $startMenuBackup -Recurse -Force -ErrorAction SilentlyContinue
@@ -455,11 +460,13 @@ try {
     $message = $_.Exception.Message
     Write-Log "upgrade failed: $message"
     $rolledBack = $false
-    try {
-        $rolledBack = Restore-LastKnownGood $appDir $backupDir $transactionRoot $startMenuBackup
-    } catch {
-        Write-Log "rollback failed: $($_.Exception.Message)"
-        $rolledBack = $false
+    if ($transactionStarted) {
+        try {
+            $rolledBack = Restore-LastKnownGood $appDir $backupDir $transactionRoot $startMenuBackup
+        } catch {
+            Write-Log "rollback failed: $($_.Exception.Message)"
+            $rolledBack = $false
+        }
     }
     if ($rolledBack) {
         Write-Status "rolled_back" $message $true

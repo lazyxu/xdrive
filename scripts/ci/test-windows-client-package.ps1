@@ -16,10 +16,33 @@ try {
     & ./scripts/ci/test-windows-process-scope.ps1
     & ./scripts/ci/test-windows-artifact-preconditions.ps1
 
-    if ($ExpectSigned) {
-        $signature = Get-AuthenticodeSignature $Installer
-        if ($null -eq $signature.SignerCertificate -or $signature.Status -eq "NotSigned") {
-            throw "exact Windows installer is missing its Authenticode signature"
+    $signature = Get-AuthenticodeSignature -LiteralPath $Installer
+    if ($signature.Status -eq "HashMismatch") {
+        throw "exact Windows installer has a damaged Authenticode signature"
+    }
+    if ($ExpectSigned -and ($null -eq $signature.SignerCertificate -or $signature.Status -eq "NotSigned")) {
+        throw "exact Windows installer is missing its Authenticode signature"
+    }
+
+    if ($null -eq $signature.SignerCertificate) {
+        # Master snapshots without production signing credentials are intentionally
+        # unsigned. They cannot execute the signed updater's rollback/upgrade
+        # transaction. Verify the real detached updater rejects the EXACT
+        # published package instead of falsely expecting a post-install rollback.
+        & ./scripts/ci/test-windows-unsigned-upgrade-admission.ps1 -Installer $Installer -TargetVersion $TargetVersion
+        Write-Host "Unsigned Windows Snapshot: verified fail-closed admission; signed $Scenario transaction not validated."
+        return
+    }
+
+    if ($Scenario -eq "rollback") {
+        # Also exercise the unsigned negative path on signed PR builds, since
+        # master Snapshot and PR signing policies intentionally differ.
+        $fixture = Join-Path $env:TEMP ("xdrive-unsigned-admission-" + [guid]::NewGuid().ToString("N") + ".exe")
+        try {
+            [IO.File]::WriteAllBytes($fixture, [Text.Encoding]::UTF8.GetBytes("unsigned Windows installer negative fixture"))
+            & ./scripts/ci/test-windows-unsigned-upgrade-admission.ps1 -Installer $fixture -TargetVersion $TargetVersion
+        } finally {
+            Remove-Item -LiteralPath $fixture -Force -ErrorAction SilentlyContinue
         }
     }
 
