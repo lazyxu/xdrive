@@ -13,7 +13,13 @@ test('local MapKit retains only a transient WGS84 camera across local/cloud sour
   assert.match(dash, /cloudMapCamera: \$cloudMapCamera,\s*localMapCamera: \$localMapCamera,\s*onFocusChange:/)
   assert.match(owner, /@Binding var localMapCamera: MKCoordinateRegion\?/)
   assert.match(owner, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?cameraOnEntry: localMapCamera,[\s\S]*?onLibraryCameraChange: \{ next in/)
-  assert.match(owner, /guard source == \.local, let expectedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?localMapCamera = next/)
+  const localCallback = owner.split('onLibraryCameraChange: { next in')[1]?.split('localMapCamera = next')[0]
+  assert.ok(localCallback, 'local camera callback must exist')
+  assert.match(localCallback, /guard source == \\.local else \\{ return \\}/)
+  // A signed-in map validates the original Owner; a guest local PhotoKit map
+  // admits only a STILL signed-out session, never a late callback after login.
+  assert.match(localCallback, /if let expectedOwner \\{[\\s\\S]*?XDriveIOSNativePhotoOwnerScope\\.matches\\(\\s*login\\.owner, expectedOwner\\s*\\) else \\{ return \\}[\\s\\S]*?\\} else \\{\\s*guard login\\.owner == nil else \\{ return \\}\\s*\\}/)
+  assert.match(owner, /localMapCamera = next\\s*\\},\\s*onFocusChange: onFocusChange/)
   assert.match(local, /var cameraOnEntry: MKCoordinateRegion\? = nil/)
   assert.match(local, /var onLibraryCameraChange: \(\(MKCoordinateRegion\?\) -> Void\)\? = nil/)
   assert.match(local, /onCamera: \{ current in[\s\S]*?globalCamera = current\s*onLibraryCameraChange\?\(current\)/)
