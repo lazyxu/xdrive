@@ -56,9 +56,13 @@ export function createXDriveDSMClipboardPort(
       if (!Number.isSafeInteger(id) || id <= 0)
         throw new Error('Invalid current Owner Clipboard file identity')
       const reference = await checked(() => cgi.clipboardFileReference(id, signal), signal)
+      // The Host callback synchronously commits its Viewer selection. A
+      // *post*-commit network Owner check can reject after showing stale
+      // metadata from the previous account. Finish the final Owner/session
+      // proof before asking the Host to stage any preview.
+      await current(signal)
       signal.throwIfAborted()
       await openVerifiedFile(reference, signal)
-      await current(signal)
     } : undefined,
     decryptTarget: async (id, signal) => {
       if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Invalid recipient ID')

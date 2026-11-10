@@ -110,6 +110,44 @@ test('DSM abort and Owner revocation during file resolution never open previous 
   assert.equal(opened,0)
 })
 
+test('DSM final Owner admission must pass before any Viewer preview is committed',async()=>{
+  let checks=0, lookups=0, previews=0
+  const cgi={
+    serverConnection:async()=>({
+      configured:true,must_change_password:false,server:'https://drive.example/',
+      username:'owner',owner_scope:++checks === 3 ? other : owner,
+    }),
+    clipboardFileReference:async(id,signal)=>{
+      assert.equal(id,118)
+      assert.equal(signal.aborted,false)
+      lookups++
+      return reference
+    },
+  }
+  const port=dsm.createXDriveDSMClipboardPort(cgi,owner,async()=>{previews++})
+  await assert.rejects(port.openReferencedFile(118,new AbortController().signal),/已变化/)
+  assert.equal(checks,3,'late authorization change must be observed')
+  assert.equal(lookups,1,'authenticated File locator was already resolved')
+  assert.equal(previews,0,'a rejected final Owner proof must never commit Viewer state')
+})
+
+test('DSM abort during final Owner admission cannot leave a stale Viewer',async()=>{
+  const controller=new AbortController()
+  let checks=0, previews=0
+  const cgi={
+    serverConnection:async()=>{
+      if (++checks === 3) controller.abort()
+      return {configured:true,must_change_password:false,
+        server:'https://drive.example/',username:'owner',owner_scope:owner}
+    },
+    clipboardFileReference:async()=>reference,
+  }
+  const port=dsm.createXDriveDSMClipboardPort(cgi,owner,async()=>{previews++})
+  await assert.rejects(port.openReferencedFile(118,controller.signal))
+  assert.equal(checks,3,'abort must take effect at the final admission boundary')
+  assert.equal(previews,0,'cancelled request cannot stage the decrypted Node metadata')
+})
+
 test('Desktop hands off only safe Node IDs and valid Owner scopes',async()=>{
   let ownerLive=true, opened=0
   const port=desktop.createDesktopClipboardDataPort(
