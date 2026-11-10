@@ -42,7 +42,7 @@ import type { XDrivePhotoFocusOwnerState } from '../media-gallery-baidu-photo-fo
 import type { XDriveViewerPhotoMapSelection } from '../media-gallery-viewer-photo-map-selection'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { XDriveFolderIcon } from './FolderIcon'
-import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import {
   ArrowBack as ArrowBackIcon,
   Image as ImageIcon,
@@ -215,7 +215,6 @@ import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
 import { xDriveMediaGalleryAnchorScrollDelta } from './MediaGalleryScrollAnchor'
-import { xDriveMediaGalleryPinchColumnCount } from './MediaGalleryVirtualGrid'
 import { xDriveMediaGalleryTimelineGroupLabel } from './MediaGalleryVirtualTimeline'
 import {
   xDriveMediaGalleryTimelineGroupAtIndex,
@@ -6050,96 +6049,25 @@ export function XDriveMediaGallery({
 
   useEffect(() => () => clearGalleryTouchPress(), [clearGalleryTouchPress, section])
 
-  // The mobile photo wall alone owns pinch-to-change-columns. Native one-
-  // finger vertical scroll and Viewer gestures must remain unaffected.
-  const galleryPhotoWallRef = useRef<HTMLDivElement | null>(null)
-  const galleryPinchRef = useRef<{
-    startDistance: number
-    lastDistance: number
-    initialColumns: number
-    anchorViewportTop?: number
-    active: boolean
-  } | null>(null)
+  // Gallery and Places now use the SAME photo-wall pinch recognizer.
+  // Gallery only supplies its existing density/viewport state and cancels
+  // its own long-press intent; the host owns two-finger geometry and cleanup.
+  // The parent capture listener also fences post-pinch synthesized clicks.
   const galleryPinchSuppressClickUntilRef = useRef(0)
-
-  const clearGalleryPinch = () => {
-    galleryPinchRef.current = null
-    galleryPhotoWallRef.current?.style.removeProperty('--xdrive-gallery-pinch-preview')
-  }
-  useEffect(() => () => clearGalleryPinch(), [
-    compactGallery, mobileCollectionsOverview, selectionMode,
-  ])
-
-  const handleGalleryTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
-    if (!compactGallery || selectionMode || mobileCollectionsOverview ||
-        event.touches.length !== 2 ||
-        !(event.target instanceof Element) ||
-        !event.target.closest('[data-xdrive-media-tile]')) return
-    const distance = Math.hypot(
-      event.touches[0].clientX - event.touches[1].clientX,
-      event.touches[0].clientY - event.touches[1].clientY,
-    )
-    if (distance < 24) return
+  const startSharedGalleryPinch = useCallback((index: number) => {
     clearGalleryTouchPress()
     galleryHoldClickRef.current = null
-    const center = galleryPhotoWallRef.current?.ownerDocument.elementFromPoint(
-      (event.touches[0].clientX + event.touches[1].clientX) / 2,
-      (event.touches[0].clientY + event.touches[1].clientY) / 2,
-    )
-    const tile = center?.closest<HTMLElement>('[data-xdrive-media-tile]') ??
-      event.target.closest<HTMLElement>('[data-xdrive-media-tile]')
-    const index = Number(tile?.dataset.xdriveMediaIndex)
-    let anchorViewportTop: number | undefined
-    if (tile && Number.isSafeInteger(index) && index >= 0) {
-      viewAnchorIndexRef.current = index
-      const scrollParent = mediaGalleryScrollParent(galleryPhotoWallRef.current ?? tile)
-      anchorViewportTop = tile.getBoundingClientRect().top -
-        (scrollParent?.getBoundingClientRect().top ?? 0)
-    }
-    galleryPinchRef.current = {
-      startDistance: distance, lastDistance: distance,
-      initialColumns: mobileColumns, anchorViewportTop, active: false,
-    }
-  }
-
-  const handleGalleryTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
-    const pinch = galleryPinchRef.current
-    if (!pinch || event.touches.length !== 2) return
-    const distance = Math.hypot(
-      event.touches[0].clientX - event.touches[1].clientX,
-      event.touches[0].clientY - event.touches[1].clientY,
-    )
-    if (!Number.isFinite(distance) || distance < 24) return
-    pinch.lastDistance = distance
-    const zoom = distance / pinch.startDistance
-    if (!pinch.active && Math.abs(zoom - 1) < 0.08) return
-    pinch.active = true
-    // CSS-only feedback; the shared VirtualCollection is recalculated once
-    // when fingers lift, never per touchmove.
-    galleryPhotoWallRef.current?.style.setProperty(
-      '--xdrive-gallery-pinch-preview',
-      String(Math.max(0.8, Math.min(1.2, zoom))),
-    )
-  }
-
-  const finishGalleryPinch = (commit: boolean) => {
-    const pinch = galleryPinchRef.current
-    if (!pinch) return
-    clearGalleryPinch()
+    viewAnchorIndexRef.current = index
+  }, [clearGalleryTouchPress])
+  const changeSharedGalleryPinch = useCallback((
+    columns: number, index: number, viewportOffset: number,
+  ) => {
+    viewAnchorIndexRef.current = index
+    updateGalleryDensity(columns, viewportOffset)
+  }, [updateGalleryDensity])
+  const endSharedGalleryPinch = useCallback(() => {
     galleryPinchSuppressClickUntilRef.current = Date.now() + 350
-    if (!commit || !pinch.active) return
-    updateGalleryDensity(
-      xDriveMediaGalleryPinchColumnCount(
-        pinch.initialColumns, pinch.startDistance, pinch.lastDistance,
-        XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
-        XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
-      ),
-      pinch.anchorViewportTop,
-    )
-  }
-  const handleGalleryTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
-    if (event.touches.length < 2) finishGalleryPinch(true)
-  }
+  }, [])
 
   const handleGalleryPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'touch' && !event.isPrimary) {
@@ -6999,7 +6927,7 @@ export function XDriveMediaGallery({
         // cropping the already-decoded still/video/Live thumbnail image.
         '& [data-xdrive-media-tile] img': {
           objectFit: aspectMode === 'contain' ? 'contain' : 'cover',
-          transform: compactGallery ? 'scale(var(--xdrive-gallery-pinch-preview, 1))' : undefined,
+          // Scale feedback now belongs to the shared Gallery/Places Host.
           transformOrigin: 'center',
         },
         // The progress raster must use the same fitting rule as its final
@@ -8361,13 +8289,16 @@ export function XDriveMediaGallery({
       ) : null}
 
       {showPhotoCollection ? (
-        <Box ref={galleryPhotoWallRef} data-xdrive-gallery-photo-wall
-          onTouchStartCapture={handleGalleryTouchStart}
-          onTouchMoveCapture={handleGalleryTouchMove}
-          onTouchEndCapture={handleGalleryTouchEnd}
-          onTouchCancelCapture={() => finishGalleryPinch(false)}
-          sx={{ touchAction: compactGallery ? 'pan-y' : undefined }}>
-        <XDriveMediaGalleryPhotoWall surface="gallery">
+        <Box data-xdrive-gallery-photo-wall>
+        <XDriveMediaGalleryPhotoWall surface="gallery"
+          pinch={compactGallery && !selectionMode && !mobileCollectionsOverview ? {
+            columns: mobileColumns,
+            minColumns: XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
+            maxColumns: XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
+            onStart: startSharedGalleryPinch,
+            onChange: changeSharedGalleryPinch,
+            onGestureEnd: endSharedGalleryPinch,
+          } : undefined}>
         {blockingCollectionError ? (
           <Paper
             variant="outlined"
