@@ -71,6 +71,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
       getElementById(){return messageTarget},
       ...(sdkEnabled?{
         head:{appendChild(script){scripts.push(script);queueMicrotask(()=>{
+          if(options.sdkNeverSettles)return // Real request stalls: no load/error callback.
           if(options.sdkScriptError)script.onerror?.()
           else script.onload?.()
         })}},
@@ -493,6 +494,7 @@ test('isolated Child stages worldwide label suppression before SDK readiness and
 
 test('production Child reproduces SDK namespace and constructor failures with no provider data',async()=>{
   const cases=[
+    {sdkNeverSettles:true,shortSDKTimeout:true,reason:'sdk_script_timeout'},
     {sdkMissingMap:true,shortSDKTimeout:true,reason:'sdk_namespace_missing'},
     {sdkConstructorThrows:true,reason:'sdk_map_initialization_failed'},
   ]
