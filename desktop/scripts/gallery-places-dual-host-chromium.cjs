@@ -3553,6 +3553,46 @@ async function test100kSparseRangeViewerAndResize(browser,mode,port){
     await dialog.getByText('100,000 张照片和视频',{exact:true}).waitFor()
     await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor()
     await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor()
+    // Both real mounted React/Baidu Hosts must apply the same visual-only
+    // crop/contain policy as Gallery. The signed 48-item Owner range,
+    // virtual geometry and Viewer admissions are not re-fetched on a toggle.
+    await page.waitForFunction(()=>{
+      const wall=document.querySelector('[data-xdrive-shared-photo-wall="places"]')
+      return Boolean(wall?.querySelector('[data-xdrive-media-tile] img'))
+    })
+    const beforeFramingReads=await page.evaluate(()=>
+      window.__mapProbe.photoPreviewRanges.length)
+    await dialog.locator('[data-xdrive-places-photo-aspect-contain]').click()
+    await page.waitForFunction(()=>{
+      const host=document.querySelector('[data-xdrive-shared-photo-wall="places"]')
+      const img=host?.querySelector('[data-xdrive-media-tile] img')
+      return host?.getAttribute('data-xdrive-shared-photo-wall-framing')==='contain' &&
+        img && getComputedStyle(img).objectFit==='contain'
+    })
+    const contained=await dialog.evaluate(el=>({
+      button:el.querySelector('[data-xdrive-places-photo-aspect-contain]')
+        ?.getAttribute('aria-pressed'),
+      tiles:el.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+      reads:window.__mapProbe.photoPreviewRanges.length,
+      saved:JSON.parse(localStorage.getItem('xdrive.gallery.view-preferences.v1')||'{}')
+        .aspectMode,
+    }))
+    record(mode+': Places photo wall full-ratio rendering preserves signed bounded window',
+      contained.button==='true' && contained.saved==='contain' &&
+      contained.tiles>0 && contained.tiles<160 &&
+      contained.reads-beforeFramingReads<=1 && errors.length===0)
+    await dialog.locator('[data-xdrive-places-photo-aspect-crop]').click()
+    await page.waitForFunction(()=>{
+      const host=document.querySelector('[data-xdrive-shared-photo-wall="places"]')
+      const img=host?.querySelector('[data-xdrive-media-tile] img')
+      return host?.getAttribute('data-xdrive-shared-photo-wall-framing')==='crop' &&
+        img && getComputedStyle(img).objectFit==='cover'
+    })
+    record(mode+': Places crop restore does not change Owner PhotoAsset reads',
+      await page.evaluate(before=>
+        window.__mapProbe.photoPreviewRanges.length-before<=1 &&
+        JSON.parse(localStorage.getItem('xdrive.gallery.view-preferences.v1')||'{}')
+          .aspectMode==='crop',beforeFramingReads) && errors.length===0)
     // A real mounted 100k Owner Cell supplies a COMPLETE signed date index.
     // Switching the Parent's shared Timeline must never materialize 100k cards
     // or hand photo identity to either isolated third-party SDK Host.
