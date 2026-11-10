@@ -1840,7 +1840,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     Text("当前账户已备份的 iPhone 原件，向下滚动时自动查找后续照片和视频。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                Text("已检查根目录 \(model.scanned) / \(model.total) 项")
+                Text("已检查根目录 \(model.matchesOwner(login.owner) ? model.scanned : 0) / \(model.matchesOwner(login.owner) ? model.total : 0) 项")
                     .font(.footnote).monospacedDigit()
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 5)],
@@ -1889,7 +1889,8 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     }
                         .buttonStyle(.bordered)
                 }
-                if model.scanned < model.total && model.error == nil {
+                if model.matchesOwner(login.owner) &&
+                   model.scanned < model.total && model.error == nil {
                     VStack(spacing: 8) {
                         if model.busy {
                             ProgressView()
@@ -1908,7 +1909,8 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     }
                     .onDisappear { scanTailVisible = false }
                 }
-                if model.scanned > 0 && model.nodes.isEmpty {
+                if model.matchesOwner(login.owner) &&
+                   model.scanned > 0 && model.nodes.isEmpty {
                     Text("当前已检查范围没有找到 iPhone 备份原件；继续向下滚动查找，不能据此认为云端没有文件。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
@@ -2118,6 +2120,10 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     needsTabRevalidation = true
                     model.cancel()
                 } else {
+                    // A genuine Gallery source eviction is not a tab cover.
+                    // If SwiftUI reuses this view, its next mount must load.
+                    needsTabRevalidation = false
+                    hasActivated = false
                     model.invalidate()
                 }
             }
