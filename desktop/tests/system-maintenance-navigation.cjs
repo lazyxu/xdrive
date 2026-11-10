@@ -162,14 +162,59 @@ test('administrator maintenance requires explicit confirmation before posting a 
   assert.deepEqual(effects, ['host-start'], 'disabled administrator control must not start another task')
 })
 
-test('Release Bundle Desktop save allows only explicit unsigned iOS testing, never privileged native install', () => {
+test('Release Bundle Desktop keeps iOS test-only and permits only separately confirmed private Windows Snapshot install', () => {
   const main = read('desktop', 'src', 'main', 'index.cts')
   const backend = read('cmd', 'xdrive-agent', 'cloud_release_bundle.go')
   const current = read('cmd', 'xdrive-agent', 'client_update_current_server.go')
   assert.ok(main.includes("item.install_mode === 'manual_test_only' && item.platform === 'ios'"), 'test-only IPA must remain an explicitly labeled manual save')
   assert.ok(main.includes("item.filename === 'xDrive-unsigned.ipa'"))
   assert.ok(backend.includes('item.Platform == "ios" && item.Filename == "xDrive-unsigned.ipa"'))
-  assert.ok(current.includes('artifact.InstallMode == "manual"'), 'native install must refuse test-only packages')
+  assert.ok(current.includes('currentServerInstallAllowed(*artifact'), 'native install must recheck exact platform, Commit and consent')
+  assert.ok(current.includes('personalUnsigned && (runtime.GOOS != "windows"'), 'personal unsigned install must be Windows-only')
   assert.ok(desktop.includes('clientUpdate?.manual_install_supported])'),
     'Desktop release controls must refresh when native manual-install capability arrives')
 })
+
+test('ordinary Desktop client update shows opt-in current-Server Bundle without admin retry privileges', () => {
+  const page = read('ui', 'shared', 'src', 'mui', 'ClientUpdatePage.tsx')
+  const card = read('ui', 'shared', 'src', 'mui', 'ReleaseBundleCard.tsx')
+  const adapter = read('ui', 'shared', 'src', 'release-bundles.ts')
+  const client = read('desktop', 'src', 'main', 'agent_client.cts')
+  const preload = read('desktop', 'src', 'preload', 'index.cts')
+  const controller = read('cmd', 'xdrive-agent', 'desktop_ipc_release_bundle.go')
+  assert.ok(page.includes('<XDriveReleaseBundleCard port={releaseBundlePort} />'))
+  assert.ok(desktop.includes('releaseBundlePort: clientReleaseBundlePort'))
+  assert.ok(desktop.includes('retry: undefined'))
+  assert.ok(adapter.includes('retry?: () => Promise<unknown>'))
+  assert.ok(card.includes('port.retry ?'))
+  assert.ok(card.includes('artifact.install_mode === \'manual_test_only\''))
+  assert.ok(card.includes('personalUnsigned ?'))
+  assert.ok(card.includes('pendingInstall.personalUnsigned'))
+  assert.ok(client.includes('personal_unsigned: personalUnsigned'))
+  assert.ok(preload.includes('personalUnsigned = false'))
+  assert.ok(controller.includes('PersonalUnsigned bool'))
+  assert.ok(card.includes('pendingInstall?.personalUnsigned ?'))
+});
+
+test('post-install native Commit admission uses exact installed xd, Agent and Desktop metadata', () => {
+  const cli = read('cmd', 'xd', 'main.go')
+  const agent = read('cmd', 'xdrive-agent', 'main.go')
+  const hello = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+  const linux = read('internal', 'update', 'platform_linux.go')
+  const win = read('internal', 'update', 'windows_upgrade_transaction.ps1')
+  const metadata = read('desktop', 'scripts', 'set-version.mjs')
+  const packaging = read('desktop', 'electron-builder.yml')
+  assert.ok(cli.includes('version.Metadata()') && cli.includes('--json'))
+  assert.ok(agent.includes('--build-info-json') && agent.includes('version.Metadata()'))
+  assert.ok(hello.includes('AgentCommit:      version.Metadata().Commit'))
+  assert.ok(metadata.includes("'build-info.json'"))
+  assert.ok(packaging.includes('xdrive-build-info.json'))
+  assert.ok(linux.includes('/opt/xdrive-desktop/resources/xdrive-build-info.json'))
+  assert.ok(linux.includes('"/usr/bin/xdrive-agent", "--build-info-json"'))
+  for (const marker of ['ExpectedCommit', 'PersonalUnsigned', 'Test-DesktopStartupCommit',
+                        'agent_commit', 'xd Commit=', 'Desktop Commit=', 'rolled_back']) {
+    assert.ok(win.includes(marker), 'missing Windows post-install requirement: ' + marker)
+  }
+  assert.ok(win.includes("$candidate.Status -ne 'NotSigned'"))
+  assert.ok(win.includes('Get-AuthenticodeSignature'), 'signed publisher admission must remain intact')
+});
