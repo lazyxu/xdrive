@@ -24,7 +24,7 @@ KNOWN = (
 )
 
 
-def build(directory: Path, commit: str, channel: str):
+def build(directory: Path, commit: str, channel: str, *, windows_signed=False):
     if not SHA_RE.fullmatch(commit):
         raise ValueError("release requires the full lowercase Git commit SHA")
     if channel not in {"master", "stable"}:
@@ -40,6 +40,11 @@ def build(directory: Path, commit: str, channel: str):
         # A successful Server build is not blocked by an absent client build.
         # Never invent the missing artifact or reuse a different Commit.
         for path in matches:
+            # Stable Windows releases MUST have the validated signing path;
+            # Snapshot may publish a diagnostic installer but never claim it
+            # can be installed through the signed Windows updater.
+            if platform == "windows" and channel == "stable" and not windows_signed:
+                raise ValueError("stable Windows installer requires verified signing configuration")
             if not path.is_file() or path.is_symlink() or path.name in seen:
                 raise ValueError(f"unsafe or duplicate release file: {path.name}")
             seen.add(path.name)
@@ -61,8 +66,12 @@ def build(directory: Path, commit: str, channel: str):
                 "build_commit": commit,
                 # The published iOS IPA has no Apple developer signature. It is a
                 # testing input, not an installable native update.
-                "install_mode": ("manual_test_only" if platform == "ios" and
-                                 path.name == "xDrive-unsigned.ipa" else "manual"),
+                "install_mode": (
+                    "manual_test_only"
+                    if (platform == "ios" and path.name == "xDrive-unsigned.ipa")
+                    or (platform == "windows" and not windows_signed)
+                    else "manual"
+                ),
                 "sources": {
                     "gitlab": (
                         "http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive"
@@ -84,11 +93,17 @@ def main():
     parser.add_argument("commit")
     parser.add_argument("channel", choices=("master", "stable"))
     parser.add_argument("--output", default="release-bundle.json")
+    parser.add_argument(
+        "--windows-signed", action="store_true",
+        help="set only when this exact CI run used and verified its Windows signing certificate",
+    )
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", args.output):
         parser.error("invalid output filename")
     try:
-        manifest = build(args.directory, args.commit, args.channel)
+        manifest = build(
+            args.directory, args.commit, args.channel, windows_signed=args.windows_signed
+        )
         target = args.directory / args.output
         if target.exists():
             raise ValueError("refusing to replace existing immutable release manifest")
