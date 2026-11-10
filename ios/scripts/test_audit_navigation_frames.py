@@ -66,6 +66,22 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(report['counts']['uniform_content_candidate'], 1)
             self.assertFalse(report['is_fps_measurement'])
 
+    def test_every_native_gallery_files_journey_has_frame_diagnostics(self):
+        import re
+        repo = pathlib.Path(__file__).resolve().parents[2]
+        cases = set()
+        for path in ('XDriveIOSGalleryFilesStabilityUITests.swift',
+                     'XDriveIOSGalleryFilesFrameContinuityUITests.swift'):
+            source = (repo / 'ios' / 'UITests' / path).read_text(encoding='utf-8')
+            cases.update(re.findall(r'\bfunc (test\w+)\(\)', source))
+        watcher = (repo / 'ios' / 'scripts' /
+                   'capture-navigation-smoke-frames.py').read_text(encoding='utf-8')
+        registered = set(re.findall(r'"(test\w+)"', watcher))
+        self.assertGreaterEqual(len(cases), 66)
+        self.assertFalse(cases - registered,
+                         'untested native routes: ' + ', '.join(sorted(cases - registered)))
+        self.assertIn('FRAME_OFFSETS_SECONDS[:1] if name in MINIMAL_TARGETS', watcher)
+
     def test_rejects_corrupt_crc(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / 'a.png'
