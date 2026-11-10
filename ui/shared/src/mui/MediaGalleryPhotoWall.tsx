@@ -13,6 +13,10 @@ export type XDriveMediaGalleryPhotoWallPinch = Readonly<{
   minColumns?: number
   maxColumns?: number
   onChange: (columns: number, anchorIndex: number, viewportOffset: number) => void
+  /** Caller-only interaction cleanup (e.g. cancel Gallery long-press). */
+  onStart?: (anchorIndex: number) => void
+  /** Parent capture listeners must also reject the synthetic pinch click. */
+  onGestureEnd?: () => void
 }>
 
 export function XDriveMediaGalleryPhotoWall({
@@ -68,6 +72,7 @@ export function XDriveMediaGalleryPhotoWall({
         (scroll?.getBoundingClientRect().top ?? 0),
       active: false,
     }
+    pinch.onStart?.(index)
   }
 
   const movePinch = (event: TouchEvent<HTMLDivElement>) => {
@@ -90,6 +95,7 @@ export function XDriveMediaGalleryPhotoWall({
     clearGesture()
     if (!current || !current.active) return
     suppressClickUntil.current = Date.now() + 350
+    pinch?.onGestureEnd?.()
     if (!commit || !pinch) return
     const columns = xDriveMediaGalleryPinchColumnCount(
       current.columns, current.startDistance, current.lastDistance,
