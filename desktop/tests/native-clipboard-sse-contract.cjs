@@ -26,18 +26,18 @@ test('iOS SSE uses verified Owner HTTPS bearer and cancellable ephemeral URLSess
   assert.match(swiftClient, /defer \{ session\.invalidateAndCancel\(\) \}/)
   assert.match(swiftClient, /line\.count < 4096/)
   assert.match(swiftClient, /try decoder\.acceptLine\(text\)/)
-  assert.doesNotMatch(swiftClient.slice(swiftClient.indexOf('func watchChanges('),swiftClient.indexOf('func vault()',swiftClient.indexOf('func watchChanges('))), /UIPasteboard|UserDefaults|Keychain|http:\/\//)
+  assert.doesNotMatch(swiftClient.slice(swiftClient.indexOf('func watchChanges('),swiftClient.indexOf('func enrollClipboardDevice()',swiftClient.indexOf('func watchChanges('))), /UIPasteboard|UserDefaults|Keychain|http:\/\//)
 })
 
-test('iOS subscription only runs while unlocked, has 15s GET fallback and reconnect GET', () => {
-  assert.match(swiftPage, /\.task\(id: unlocked && scenePhase == \.active\)/)
+test('iOS subscription only runs while foregrounded, has 15s GET fallback and reconnect GET', () => {
+  assert.match(swiftPage, /\.task\(id: scenePhase == \.active\)/)
   assert.match(swiftPage, /@Environment\(\\\.scenePhase\) private var scenePhase/)
   assert.match(swiftPage, /sessionGeneration == generation/)
   assert.match(swiftPage, /client\.watchChanges\(after: after\)/)
   assert.match(swiftPage, /await refresh\(\) \/\/ Full GET after disconnect/)
   assert.match(swiftPage, /15_000_000_000/)
   assert.match(swiftPage, /3_000_000_000/)
-  assert.match(swiftPage, /\.onDisappear \{ lock\(\) \}/)
+  assert.match(swiftPage, /\.onDisappear \{ reset\(\) \}/)
   assert.match(swiftParser, /value == "\{\}"/)
 })
 
@@ -68,8 +68,8 @@ test('Android SSE stays on the same pinned Owner transport with cancellable fram
 test('Android SSE locks with Owner and never replaces polling / authoritative GET', () => {
   assert.match(androidPage, /controller\.clipboardWatch\(after\)/)
   assert.match(androidPage, /lifecycleOwner\.lifecycle\.repeatOnLifecycle\(Lifecycle\.State\.STARTED\)/)
-  assert.match(androidPage, /while \(stillSession\(snapshot\) && key != null\)/)
-  assert.match(androidPage, /if \(stillSession\(snapshot\) && key != null\) refresh\(\)/)
+  assert.match(androidPage, /while \(stillSession\(snapshot\)\s*\)/)
+  assert.match(androidPage, /if \(stillOwner\(\)\s*\) refresh\(\)/)
   assert.match(androidPage, /refresh\(\) \/\/ Disconnect\/cursor eviction/)
   assert.match(androidPage, /delay\(15_000\)/)
   assert.match(androidPage, /delay\(3_000\)/)
