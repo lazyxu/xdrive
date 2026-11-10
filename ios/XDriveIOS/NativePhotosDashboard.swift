@@ -749,6 +749,11 @@ struct XDriveIOSNativePhotosDashboard: View {
                                   focusGeneration == galleryFocusGeneration
                             else { return }
                             unifiedMapCaptureRange = range
+                            // The default unified wall represents its full
+                            // bounded Gallery, not a previously selected
+                            // 64-photo local-map page or stale Viewer GPS.
+                            localMapScope = .library
+                            localMapJump = nil
                             mapSource = .local
                             presentingUnifiedMap = true
                         }
