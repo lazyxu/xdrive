@@ -76,6 +76,20 @@ before committing its last-known-good transaction. Linux checks installed
 xd, Agent and Desktop build metadata following authorized apt/PolicyKit
 installation. A textual version such as `snapshot` alone is insufficient.
 
+Before any native Windows/Linux installer is executed, the independent public
+GitHub trust check must verify the exact Bundle tag commit, Release
+`immutable:true`, and the published installer size and SHA-256. It also
+retrieves the raw `release-bundle.json` from GitHub's numeric Release asset
+endpoint, permitting only GitHub-owned release asset CDN redirects; the asset
+bytes must match the GitHub Release's manifest digest and size. The parsed
+manifest must identify the same full Commit and exact requested platform,
+filename, mode, source URLs, size and SHA-256. **Every other manifest entry**
+must correspond one-to-one with the published Release asset inventory. A
+missing/unreadable/tampered manifest fails closed; an authenticated Server
+cannot introduce an installer not actually present in the immutable public
+manifest. This independent pre-install check is distinct from the Host's own
+caching and the operator's real deployment acceptance.
+
 This source implementation is not a claim of real-device acceptance. Confirm
 the actual Windows personal unsigned installer (including its OS warning),
 rollback after a deliberately failed post-install SHA check, restart and Agent
