@@ -74,8 +74,10 @@ func releaseBundleDownloadAllowed(item client.ReleaseBundleArtifact, fullCommit,
 	if item.InstallMode == "manual" {
 		return true
 	}
-	// Unsigned IPA remains available for developer-side signing and testing,
-	// but never participates in the native automatic installer.
+	// Save-only is less privileged than an installer transaction. Both the
+	// exact-source iOS testing IPA and personal Windows Snapshot may be saved;
+	// native execution still requires the separately confirmed installer gate.
 	return item.InstallMode == "manual_test_only" &&
-		item.Platform == "ios" && item.Filename == "xDrive-unsigned.ipa"
+		((item.Platform == "ios" && item.Filename == "xDrive-unsigned.ipa") ||
+			(item.Platform == "windows" && item.Filename == "xDriveSetup-amd64.exe"))
 }
