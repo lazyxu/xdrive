@@ -8,6 +8,14 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
+        // Real iOS 18.5 XCTest default interruption handling automatically
+        // taps "Don’t Allow" on this application's first Photo Library prompt.
+        // Install a narrowly scoped Full Access monitor BEFORE app.launch.
+        // A Limited, Add-Only or unknown choice must never be accepted.
+        addUIInterruptionMonitor(withDescription: "xDrive genuine Photos Full Access") {
+            [weak self] alert in
+            self?.acceptPhotoLibraryFullAccess(in: alert, stage: "interruption") ?? false
+        }
     }
     override func tearDownWithError() throws {
         XCUIDevice.shared.orientation = .portrait
@@ -15,6 +23,53 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
 
     private func element(_ id: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
+    }
+
+    /// Only Apple's genuine system Photo Library permission alert may be
+    /// handled here. This is not a TCC grant, fake readWrite value or shortcut
+    /// to mounting MapKit: the target app must still report .authorized.
+    private func acceptPhotoLibraryFullAccess(
+        in alert: XCUIElement, stage: String
+    ) -> Bool {
+        let title = alert.label
+        guard title.localizedCaseInsensitiveContains("Photo Library") ||
+              title.contains("照片") || title.contains("相簿") else {
+            return false
+        }
+        let accepted = [
+            "Allow Full Access", "Full Access",
+            "Allow Access to All Photos", "Allow Access to All Photos and Videos",
+            "允许完全访问", "允许访问所有照片", "允许访问全部照片",
+            "完全访问", "完整访问", "所有照片"
+        ]
+        for label in accepted {
+            let option = alert.buttons[label].firstMatch
+            if option.exists && option.isHittable {
+                print("MAP_PHOTOS_INITIAL_FULL_ACCESS_PROMPT stage=\(stage) option=\(label)")
+                option.tap()
+                return true
+            }
+        }
+        print("MAP_PHOTOS_UNKNOWN_FIRST_PERMISSION_PROMPT stage=\(stage) AX tree:\n\(alert.debugDescription)")
+        return false
+    }
+
+    private func handleInitialPhotoLibraryPromptIfPresent() {
+        // Do this immediately after launch, before the first Dashboard tap:
+        // otherwise XCTest's fallback interruption handler can deny Photos
+        // while merely opening the launcher. This path clicks real UI only.
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let prompt = springboard.alerts.firstMatch
+        if prompt.waitForExistence(timeout: 5) {
+            let title = prompt.label
+            if title.localizedCaseInsensitiveContains("Photo Library") ||
+               title.contains("照片") || title.contains("相簿") {
+                XCTAssertTrue(
+                    acceptPhotoLibraryFullAccess(in: prompt, stage: "pre-launcher"),
+                    "Real initial Photos prompt must permit explicit Full Access"
+                )
+            }
+        }
     }
 
     /// Keep the exact real AX tree and a screenshot on navigation failure.
@@ -258,6 +313,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         // previous test. Only the target's live PhotoKit readback is authority.
         app.launch()
         XCTAssertEqual(app.state, .runningForeground)
+        handleInitialPhotoLibraryPromptIfPresent()
 
         // The native Dashboard's "全部" launcher has a stable, explicit
         // "地图" route and does not depend on the Dynamic slot's conditional
