@@ -13,7 +13,7 @@ import { xDriveMountBaiduIsolatedFrame } from '../media-gallery-baidu-isolated-f
 import { xDriveMountBaiduInlineMap } from '../media-gallery-baidu-inline-map-host'
 import type { XDriveBaiduJSAPIPrototypeConfig } from '../models'
 import type { XDriveBaiduIsolatedBounds, XDriveBaiduIsolatedFailureReason } from '../media-gallery-baidu-isolated-origin-protocol'
-import { xDriveRecordBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
+import { xDriveRecordBaiduMapDiagnostic, xDriveClassifyBaiduMapRequestFailure } from '../media-gallery-baidu-diagnostics'
 import { xDriveValidBaiduNativeCellsPage } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cell-range'
@@ -934,7 +934,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           })
         }
         return true
-      } catch {
+      } catch (error) {
         if (run===generation) {
           pendingResizeDrawer.current=null
           if (pendingCoverClick.current && !request.signal.aborted) {
@@ -944,6 +944,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         }
         if(!request.signal.aborted && !lifetime.signal.aborted && run===generation &&
             approved.key===filterRef.current.key) {
+          // The first Owner /cells may fail before ANY SDK script is fetched.
+          // Preserve the numeric HTTP class in trusted, Owner-local diagnostics.
+          if (scope) xDriveRecordBaiduMapDiagnostic(scope,
+            xDriveClassifyBaiduMapRequestFailure('viewport',error))
           // A failed/invalid Owner Cells response has NO media authority.
           // Preserve only the scope identity for an explicit guarded retry.
           const failureScope = {owner:scope ?? '',key:approved.key}
@@ -990,7 +994,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         if(lifetime.signal.aborted || receipt?.provider!=='baidu-jsapi-4.0' ||
             receipt.child_origin!==childOrigin || !/^[a-f0-9]{64}$/.test(receipt.ticket) ||
             !frame.bootstrapMapSession(receipt.ticket)) throw new Error('map_session_denied')
-      } catch { failure() }
+      } catch (error) {
+        if (scope && mode==='isolated' && !lifetime.signal.aborted)
+          xDriveRecordBaiduMapDiagnostic(scope,
+            xDriveClassifyBaiduMapRequestFailure('session',error))
+        failure()
+      }
     }
     // Restore only the validated BD-09 camera after Child map-ready.
     // Original WGS84 photo EXIF never enters the isolated document.
