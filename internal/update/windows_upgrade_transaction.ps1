@@ -1227,9 +1227,9 @@ try {
     if (-not (Test-Path -LiteralPath $logFile -PathType Leaf)) { return $false }
     foreach ($line in @(Get-Content -LiteralPath $logFile -Tail 200 -ErrorAction SilentlyContinue)) {
         try {
-            $event = $line | ConvertFrom-Json
-            if ($event.event -eq 'start' -and [int]$event.pid -eq $LaunchedPID -and
-                [string]$event.commit -ceq $ExpectedCommit) { return $true }
+            $entry = $line | ConvertFrom-Json
+            if ($entry.event -eq 'start' -and [int]$entry.pid -eq $LaunchedPID -and
+                [string]$entry.commit -ceq $ExpectedCommit) { return $true }
         } catch { continue }
     }
     return $false
@@ -3998,6 +3998,14 @@ try {
         $xdBuild = (& $xd version --json | Out-String | ConvertFrom-Json)
         if ([string]$xdBuild.commit -cne $ExpectedCommit) {
             throw "post-install health check failed: xd Commit=$($xdBuild.commit) target=$ExpectedCommit"
+        }
+        $desktopBuildPath = Join-Path $appDir "desktop\resources\xdrive-build-info.json"
+        if (-not (Test-Path -LiteralPath $desktopBuildPath -PathType Leaf)) {
+            throw "post-install health check failed: Desktop build metadata missing"
+        }
+        $desktopBuild = Get-Content -LiteralPath $desktopBuildPath -Raw | ConvertFrom-Json
+        if ([string]$desktopBuild.commit -cne $ExpectedCommit) {
+            throw "post-install health check failed: Desktop Commit=$($desktopBuild.commit) target=$ExpectedCommit"
         }
     }
 
