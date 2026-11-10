@@ -1,15 +1,11 @@
 package api
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strconv"
-	"strings"
+	"unicode/utf8"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,18 +23,14 @@ const (
 	clipboardChangeCap = 256
 )
 
-var errClipboardInvalid = errors.New("invalid encrypted clipboard payload")
-var errClipboardVaultNotReady = errors.New("clipboard vault has no encrypted verifier")
+var errClipboardInvalid = errors.New("invalid clipboard payload")
 var errClipboardForbidden = errors.New("clipboard target forbidden")
 
 type clipboardWriteRequest struct {
 	ClientEventID  string `json:"client_event_id"`
 	Kind           string `json:"kind"`
-	Nonce          string `json:"nonce"`
-	Ciphertext     string `json:"ciphertext"`
+	Content        string `json:"content"`
 	TargetDeviceID string `json:"target_device_id,omitempty"`
-	EphemeralKey   string `json:"ephemeral_key,omitempty"`
-	WrappedKey     string `json:"wrapped_key,omitempty"`
 	NodeID         uint64 `json:"node_id,omitempty"`
 }
 
@@ -46,11 +38,8 @@ type clipboardItemResponse struct {
 	ID             uint64    `json:"id"`
 	ClientEventID  string    `json:"client_event_id"`
 	Kind           string    `json:"kind"`
-	Nonce          string    `json:"nonce"`
-	Ciphertext     string    `json:"ciphertext"`
+	Content        string    `json:"content"`
 	TargetDeviceID string    `json:"target_device_id,omitempty"`
-	EphemeralKey   string    `json:"ephemeral_key,omitempty"`
-	WrappedKey     string    `json:"wrapped_key,omitempty"`
 	NodeID         uint64    `json:"node_id,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	ExpiresAt      time.Time `json:"expires_at"`
@@ -63,170 +52,31 @@ func clipboardItemDTO(item meta.ClipboardItem) clipboardItemResponse {
 	}
 	return clipboardItemResponse{
 		ID: item.ID, ClientEventID: item.ClientEventID, Kind: item.Kind,
-		Nonce: item.Nonce, Ciphertext: item.Ciphertext,
-		TargetDeviceID: item.TargetDeviceID, EphemeralKey: item.EphemeralKey,
-		WrappedKey: item.WrappedKey, NodeID: nodeID,
+		Content: item.Ciphertext, TargetDeviceID: item.TargetDeviceID, NodeID: nodeID,
 		CreatedAt: item.CreatedAt, ExpiresAt: item.ExpiresAt,
 	}
 }
 
+// Plaintext is delivered only to the current authenticated Owner (or enrolled
+// recipient). Transport remains HTTPS and responses are never cacheable.
 func validateClipboardWrite(req clipboardWriteRequest) error {
-	if uuid.Validate(req.ClientEventID) != nil {
-		return errClipboardInvalid
-	}
+	if uuid.Validate(req.ClientEventID) != nil ||
+		len(req.Content) == 0 || len(req.Content) > clipboardMaxText ||
+		!utf8.ValidString(req.Content) { return errClipboardInvalid }
 	switch req.Kind {
 	case "text/plain", "text/uri-list":
-		if req.NodeID != 0 {
-			return errClipboardInvalid
-		}
+		if req.NodeID != 0 { return errClipboardInvalid }
 	case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
-		if req.NodeID == 0 || req.TargetDeviceID == "" {
-			return errClipboardInvalid
-		}
+		if req.NodeID == 0 || req.TargetDeviceID == "" ||
+			req.Content != fmt.Sprintf("asset:%d", req.NodeID) { return errClipboardInvalid }
 	default:
 		return errClipboardInvalid
 	}
-	if req.TargetDeviceID == "" {
-		if req.EphemeralKey != "" || req.WrappedKey != "" {
-			return errClipboardInvalid
-		}
-	} else {
+	if req.TargetDeviceID != "" {
 		id, err := uuid.Parse(req.TargetDeviceID)
-		if err != nil || id.String() != req.TargetDeviceID {
-			return errClipboardInvalid
-		}
-		pub, e1 := base64.StdEncoding.Strict().DecodeString(req.EphemeralKey)
-		wrapped, e2 := base64.StdEncoding.Strict().DecodeString(req.WrappedKey)
-		if e1 != nil || e2 != nil || len(pub) != 32 || len(wrapped) != 60 {
-			return errClipboardInvalid
-		}
-	}
-	nonce, err := base64.StdEncoding.Strict().DecodeString(req.Nonce)
-	if err != nil || len(nonce) != 12 {
-		return errClipboardInvalid
-	}
-	if len(req.Ciphertext) == 0 || len(req.Ciphertext) > base64.StdEncoding.EncodedLen(clipboardMaxText+16) {
-		return errClipboardInvalid
-	}
-	data, err := base64.StdEncoding.Strict().DecodeString(req.Ciphertext)
-	if err != nil || len(data) < 17 || len(data) > clipboardMaxText+16 {
-		return errClipboardInvalid
+		if err != nil || id.String() != req.TargetDeviceID { return errClipboardInvalid }
 	}
 	return nil
-}
-
-func (s *Server) clipboardVault(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	uid := userID(c)
-	if uid == 0 {
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	var vault meta.ClipboardVault
-	err := s.DB.WithContext(c.Request.Context()).Where("owner_id = ?", uid).First(&vault).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		salt := make([]byte, 16)
-		if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard vault unavailable"})
-			return
-		}
-		proposed := meta.ClipboardVault{OwnerID: uid, Salt: base64.StdEncoding.EncodeToString(salt)}
-		if err := s.DB.WithContext(c.Request.Context()).
-			Clauses(clause.OnConflict{DoNothing: true}).Create(&proposed).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard vault unavailable"})
-			return
-		}
-		err = s.DB.WithContext(c.Request.Context()).Where("owner_id = ?", uid).First(&vault).Error
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard vault unavailable"})
-		return
-	}
-	c.JSON(http.StatusOK, clipboardVaultDTO(vault))
-}
-
-func clipboardVaultDTO(vault meta.ClipboardVault) gin.H {
-	return gin.H{
-		"salt": vault.Salt, "owner_id": vault.OwnerID, "kdf": "PBKDF2-SHA256", "iterations": 310000,
-		"check_nonce": vault.CheckNonce, "check_ciphertext": vault.CheckCiphertext,
-		"aad_scope": vault.AADScope,
-	}
-}
-
-// The v1 AAD includes the first Browser origin and its authenticated Owner ID.
-// Pin that original scope once so another public/LAN URL can reuse the same
-// passphrase and history. It is metadata, never an authorization capability.
-func clipboardValidAADScope(scope string, ownerID uint64) bool {
-	if ownerID == 0 || len(scope) > 512 {
-		return false
-	}
-	suffix := ":" + strconv.FormatUint(ownerID, 10)
-	if !strings.HasSuffix(scope, suffix) {
-		return false
-	}
-	origin := strings.TrimSuffix(scope, suffix)
-	u, err := url.Parse(origin)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") ||
-		u.Host == "" || u.Hostname() == "" || u.Opaque != "" || u.User != nil ||
-		u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		return false
-	}
-	return u.Scheme+"://"+u.Host == origin
-}
-
-// First Browser sets an encrypted canary once; later Browsers must locally
-// verify the same passphrase before they can write new encrypted messages.
-func (s *Server) putClipboardVaultCheck(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	uid := userID(c)
-	if uid == 0 {
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
-	var req struct {
-		Nonce      string `json:"nonce"`
-		Ciphertext string `json:"ciphertext"`
-		Scope      string `json:"scope"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid vault check"})
-		return
-	}
-	if !clipboardValidAADScope(req.Scope, uid) || len(req.Ciphertext) > 256 || validateClipboardWrite(clipboardWriteRequest{
-		ClientEventID: "00000000-0000-4000-8000-000000000001",
-		Kind:          "text/plain", Nonce: req.Nonce, Ciphertext: req.Ciphertext,
-	}) != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid vault check"})
-		return
-	}
-	// The initial canary and its AAD scope are pinned atomically. An existing
-	// legacy vault (created before AADScope was stored) can claim the missing
-	// scope only with its original unchanged encrypted canary.
-	db := s.DB.WithContext(c.Request.Context())
-	res := db.Model(&meta.ClipboardVault{}).
-		Where("owner_id = ? AND check_ciphertext = ''", uid).
-		Updates(map[string]interface{}{"check_nonce": req.Nonce, "check_ciphertext": req.Ciphertext, "aad_scope": req.Scope})
-	if res.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard vault unavailable"})
-		return
-	}
-	if res.RowsAffected == 0 {
-		res = db.Model(&meta.ClipboardVault{}).
-			Where("owner_id = ? AND aad_scope = '' AND check_nonce = ? AND check_ciphertext = ?",
-				uid, req.Nonce, req.Ciphertext).
-			Update("aad_scope", req.Scope)
-		if res.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "clipboard vault unavailable"})
-			return
-		}
-	}
-	var accepted meta.ClipboardVault
-	if err := db.Where("owner_id = ?", uid).First(&accepted).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "clipboard vault not initialized"})
-		return
-	}
-	c.JSON(http.StatusOK, clipboardVaultDTO(accepted))
 }
 
 func clipboardNodeRefID(item meta.ClipboardItem) uint64 {
@@ -236,12 +86,9 @@ func clipboardNodeRefID(item meta.ClipboardItem) uint64 {
 	return 0
 }
 func clipboardSameItem(existing meta.ClipboardItem, request clipboardWriteRequest) bool {
-	return existing.Kind == request.Kind &&
-		existing.Nonce == request.Nonce &&
-		existing.Ciphertext == request.Ciphertext &&
+	return existing.Kind == request.Kind && existing.Nonce == "" &&
+		existing.Ciphertext == request.Content &&
 		existing.TargetDeviceID == request.TargetDeviceID &&
-		existing.EphemeralKey == request.EphemeralKey &&
-		existing.WrappedKey == request.WrappedKey &&
 		clipboardNodeRefID(existing) == request.NodeID
 }
 
@@ -376,7 +223,7 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, clipboardMaxWire)
 	var req clipboardWriteRequest
 	if err := c.ShouldBindJSON(&req); err != nil || validateClipboardWrite(req) != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid encrypted clipboard item"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid clipboard item"})
 		return
 	}
 	db := s.DB.WithContext(c.Request.Context())
@@ -406,25 +253,17 @@ func (s *Server) createClipboardItem(c *gin.Context) {
 	now := time.Now().UTC()
 	item := meta.ClipboardItem{
 		OwnerID: uid, ClientEventID: req.ClientEventID, Kind: req.Kind,
-		Nonce: req.Nonce, Ciphertext: req.Ciphertext,
-		TargetDeviceID: req.TargetDeviceID, EphemeralKey: req.EphemeralKey, WrappedKey: req.WrappedKey,
+		Nonce: "", Ciphertext: req.Content, TargetDeviceID: req.TargetDeviceID,
 		CreatedAt: now, ExpiresAt: now.Add(clipboardRetention),
 	}
 	if req.NodeID != 0 {
 		item.NodeID = &req.NodeID
 	}
 	err := db.Transaction(func(tx *gorm.DB) error {
-		// Lock the Owner vault to serialize inserts + 50-item pruning. Two
-		// concurrent READ COMMITTED transactions otherwise can each retain
-		// different sets of 50 records and exceed the retention cap.
-		var vault meta.ClipboardVault
+		// Lock the authenticated Owner row; no encrypted vault is required.
+		var owner meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("owner_id = ?", uid).First(&vault).Error; err != nil {
-			return err
-		}
-		if vault.CheckCiphertext == "" {
-			return errClipboardVaultNotReady
-		}
+			Where("id = ?", uid).First(&owner).Error; err != nil { return err }
 		if err := s.clipboardValidateTargetAndNode(tx, uid, req); err != nil {
 			return err
 		}
@@ -454,8 +293,8 @@ WHERE owner_id = ?
 			c.JSON(http.StatusForbidden, gin.H{"error": "Clipboard destination unavailable"})
 			return
 		}
-		if errors.Is(err, errClipboardVaultNotReady) || errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusConflict, gin.H{"error": "clipboard vault must be initialized before sending"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Clipboard Owner unavailable"})
 			return
 		}
 		// A concurrent retry may have inserted the same EventID. Return only
@@ -501,7 +340,7 @@ func (s *Server) listClipboardItems(c *gin.Context) {
 		return
 	}
 	db := s.DB.WithContext(c.Request.Context()).
-		Where("owner_id = ? AND expires_at > ?", uid, time.Now().UTC())
+		Where("owner_id = ? AND expires_at > ? AND nonce = ''", uid, time.Now().UTC())
 	db = clipboardVisibleToDevice(db, deviceID)
 	if before > 0 {
 		db = db.Where("id < ?", before)
@@ -556,11 +395,9 @@ func (s *Server) deleteClipboardItem(c *gin.Context) {
 	}
 	var deleted bool
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var vault meta.ClipboardVault
+		var owner meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("owner_id = ?", uid).First(&vault).Error; err != nil {
-			return err
-		}
+			Where("id = ?", uid).First(&owner).Error; err != nil { return err }
 		var victim meta.ClipboardItem
 		if err := tx.Where("owner_id = ? AND id = ?", uid, id).Take(&victim).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -604,11 +441,9 @@ func (s *Server) clearClipboardItems(c *gin.Context) {
 		return
 	}
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var vault meta.ClipboardVault
+		var owner meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("owner_id = ?", uid).First(&vault).Error; err != nil {
-			return err
-		}
+			Where("id = ?", uid).First(&owner).Error; err != nil { return err }
 		result := tx.Where("owner_id = ?", uid).Delete(&meta.ClipboardItem{})
 		if result.Error != nil {
 			return result.Error
