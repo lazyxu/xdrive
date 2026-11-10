@@ -964,6 +964,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var quickRenameDraft = ""
     @State private var quickActionNotice: String?
     @Environment(\.xdriveNativeTransfers) private var transfers
+    @Environment(\.dismissSearch) private var dismissSearch
     @ObservedObject private var clipboard = XDriveIOSNativeFilesClipboard.shared
     @State private var showingClipboardPasteConfirmation = false
     @State private var showingSavedSearches = false
@@ -1014,6 +1015,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     // search UI after Submit/tab exit without discarding activeQuery or its
     // verified return anchor.
     @State private var searchPresented = false
+    // A native dismissal may clear the editable draft, not the Owner-scoped
+    // committed Server query or its verified return anchor.
+    @State private var submittedSearchRestoreQuery: String?
     @State private var activeQuery = ""
     @State private var searchFilters = XDriveIOSNativeFilesSearchFilterState()
     @State private var searchReturnOffset: Int?
@@ -2598,11 +2602,20 @@ struct XDriveIOSNativeFilesBrowser: View {
             text: $queryDraft, presented: $searchPresented
         ))
         .onSubmit(of: .search) {
+            let submitted = queryDraft
             submitSearch()
-            // Closing the native search presentation must reveal Recent /
-            // Browse / Favorites again. Do NOT call dismissSearch(): it
-            // clears the search text and can silently clear activeQuery.
+            // The iOS 18 search overlay can remain above the Files rail even
+            // after isPresented=false. Dismiss native search explicitly while
+            // fencing its transient text clear from the committed Server query.
+            submittedSearchRestoreQuery = submitted
+            dismissSearch()
             searchPresented = false
+            Task { @MainActor in
+                await Task.yield()
+                guard submittedSearchRestoreQuery == submitted else { return }
+                queryDraft = submitted
+                submittedSearchRestoreQuery = nil
+            }
         }
         .task(id: queryDraft) {
             // System Files-style progressive search, but only for a valid
@@ -2625,6 +2638,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             submitSearch()
         }
         .onChange(of: queryDraft) { value in
+            // Native Search dismissal is not a user instruction to clear a
+            // verified Server search and return position.
+            if submittedSearchRestoreQuery != nil { return }
             if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !activeQuery.isEmpty {
                 if searchFilters.hasActiveFilters {
@@ -3624,6 +3640,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 operationShortcuts.load(login: login)
             }
             isHomeEditing = false
+            submittedSearchRestoreQuery = nil
             searchPresented = false
             ancestorCrumbs = []
             ancestorStatus = nil
@@ -4809,6 +4826,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func clearSearch() {
+        submittedSearchRestoreQuery = nil
         searchPresented = false
         guard !activeQuery.isEmpty || !queryDraft.isEmpty ||
               searchFilters.hasActiveFilters || searchReturnOffset != nil else { return }

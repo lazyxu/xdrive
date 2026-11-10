@@ -23,21 +23,24 @@ test('iOS 17+ Files search presentation is separate from committed Server query'
   assert.match(browser, /text: \$queryDraft, presented: \$searchPresented/)
 })
 
-test('Search Submit dismisses overlay without dismissSearch clearing committed query', () => {
+test('Search Submit explicitly retires the native overlay without clearing committed Server query', () => {
   const start = browser.indexOf('.onSubmit(of: .search) {')
   const end = browser.indexOf('.task(id: queryDraft) {', start)
   assert.ok(start >= 0 && end > start)
   const submit = browser.slice(start, end)
   assert.match(submit, /submitSearch\(\)/)
   assert.match(submit, /searchPresented = false/)
-  assert.doesNotMatch(submit, /^\s*dismissSearch\(\)/m)
+  assert.match(submit, /submittedSearchRestoreQuery = submitted/)
+  assert.match(submit, /dismissSearch\(\)/)
+  assert.match(submit, /queryDraft = submitted/)
+  assert.match(browser, /if submittedSearchRestoreQuery != nil \{ return \}/)
   assert.match(browser, /private func submitSearch\(\)/)
   assert.match(browser, /searchReturnNodeID/)
 })
 
 test('Files root, Owner change and reset retire search presentation', () => {
   assert.ok((browser.match(/searchPresented = false/g) || []).length >= 4)
-  assert.match(browser, /private func clearSearch\(\) \{\s*searchPresented = false/)
+  assert.match(browser, /private func clearSearch\(\) \{\s*submittedSearchRestoreQuery = nil\s*searchPresented = false/)
 })
 
 test('all four protected shortcuts fail closed before mounting Recent/Favorites list', () => {

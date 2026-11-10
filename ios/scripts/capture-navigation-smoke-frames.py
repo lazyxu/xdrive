@@ -72,6 +72,12 @@ TARGETS = {
     "testCloudDenialGalleryFilterFilesReturnCanReenterDeniedChild",
     "testTrashDenialPeopleBackThenTrashDenialDoesNotLeakRows",
     "testCloudAndTrashDenialsCaptureVisibleNativeRecoveryScreens",
+    "testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels",
+    "testGalleryAlbumsOriginalsAndUnifiedRoundTripsKeepPixels",
+    "testGalleryFilterDismissThenFilesReturnDoesNotBlankTheWall",
+    "testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail",
+    "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
+    "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
     "testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells",
@@ -91,6 +97,12 @@ NAV_TARGETS = {
     "testNoSessionRecentFavoritesDeniedPagesAreNotSolidBlankScreens",
     "testNoSessionCloudTrashRapidBackDoesNotRepushOldChild",
     "testRapidGalleryFilesTabOscillationPreservesBothShells",
+    "testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels",
+    "testGalleryAlbumsOriginalsAndUnifiedRoundTripsKeepPixels",
+    "testGalleryFilterDismissThenFilesReturnDoesNotBlankTheWall",
+    "testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail",
+    "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
+    "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 TARGETS.update(NAV_TARGETS)
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
