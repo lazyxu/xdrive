@@ -215,6 +215,9 @@ test('post-install native Commit admission uses exact installed xd, Agent and De
                         'agent_commit', 'xd source Commit=', 'Desktop Commit=', 'rolled_back']) {
     assert.ok(win.includes(marker), 'missing Windows post-install requirement: ' + marker)
   }
-  assert.ok(win.includes("$candidate.Status -ne 'NotSigned'"))
+  assert.ok(win.includes('if ([string]$build.commit -cne $ExpectedCommit)'),
+    'installed xd full Commit mismatch must be rejected')
+  assert.match(win, /\$candidate\.Status\s+-ne\s+['"]NotSigned['"]/,
+    'personal unsigned path must reject signed or damaged installers')
   assert.ok(win.includes('Get-AuthenticodeSignature'), 'signed publisher admission must remain intact')
 });
