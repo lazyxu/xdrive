@@ -10,7 +10,7 @@ test('cloud originals render a bounded adaptive native thumbnail grid', () => {
   assert.match(src, /private struct XDriveIOSNativeCloudOriginalTile: View/)
   assert.match(src, /LazyVGrid\(/)
   assert.match(src, /ForEach\(model.nodes\)/)
-  assert.match(src, /node: node, viewerActive: selected != nil,\s*model: model, login: login/)
+  assert.match(src, /node: node, viewerActive: selected != nil,\s*isTabActive: isTabActive,\s*model: model, login: login/)
   assert.match(src, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)-\\\(viewerActive\)-\\\(isTabActive\)-\\\(model.thumbnailEpoch\)"\)/)
   assert.match(src, /\.onDisappear \{[\s\S]*?if !viewerActive && isTabActive \{ thumb = nil \}/)
   assert.match(src, /node.isLiveArchive \|\| node.isVideo/)
@@ -59,7 +59,7 @@ test('foreground native Viewer preempts every queued cloud-original tile without
     src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
   const wall = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
   assert.match(tile, /let viewerActive: Bool/)
-  assert.match(tile, /guard !viewerActive, thumb == nil/)
+  assert.match(tile, /guard isTabActive, !viewerActive,\s*model.matchesOwner\(login.owner\), thumb == nil/)
   assert.match(tile, /model\.thumbnail\(node, login: login\)/)
   assert.match(tile, /try Task\.checkCancellation\(\)/)
   assert.match(tile, /if !viewerActive \{ thumb = nil \}/)
@@ -177,7 +177,7 @@ test('cloud originals retire thumbnail pixels on Node revision or exact Owner/ro
   }
   assert.doesNotMatch(identity, /rootRevision/, 'unrelated root writes must not reload all visible tiles')
   assert.match(tile, /@State private var thumb: UIImage\?/)
-  assert.match(tile, /guard !viewerActive, thumb == nil/)
+  assert.match(tile, /guard isTabActive, !viewerActive,\s*model.matchesOwner\(login.owner\), thumb == nil/)
   // The ForEach Node ID remains stable for scroll focus; the *child tile* gets
   // a separate explicit identity, so an updated revision cannot reuse its old
   // @State UIImage and skip the new thumbnail request.
@@ -336,7 +336,7 @@ test('cloud originals scroll-trigger the next verified root window without visib
   assert.match(wall, /\.onChange\(of: model\.busy\) \{ pending in\s*if !pending && scanTailVisible \{\s*requestMoreOnScroll\(\)/)
   assert.match(wall, /\.onChange\(of: model\.scanned\)/)
   assert.doesNotMatch(wall, /Button\("继续检查下一批"\)|Button\("上一页"\)|Button\("下一页"\)/)
-  assert.match(wall, /Button\("重试"\) \{ model\.loadNext\(login: login\) \}/)
+  assert.match(wall, /Button\("重试"\) \{[\s\S]*?if model.coveredRetryRequired \{[\s\S]*?model.revalidateCoveredTab\(login: login\)[\s\S]*?else \{[\s\S]*?model.loadNext\(login: login\)/)
 })
 
 test('empty unfiltered root windows have bounded automatic scan budgets and explicit scroll admission', () => {
@@ -346,7 +346,7 @@ test('empty unfiltered root windows have bounded automatic scan budgets and expl
   assert.match(wall, /consecutiveEmptyScans \+= 1/)
   assert.match(wall, /DragGesture\(minimumDistance: 14\)\.onEnded/)
   assert.match(wall, /consecutiveEmptyScans = 0\s*lastAutoScanOffset = nil\s*requestMoreOnScroll\(\)/)
-  assert.match(wall, /guard phase == \.active, selected == nil, scanTailVisible,/)
+  assert.match(wall, /guard phase == \.active, isTabActive, selected == nil, scanTailVisible,\s*model.matchesOwner\(login.owner\),/)
   assert.match(wall, /login\.owner != nil, !model\.busy, model\.error == nil/)
   assert.match(wall, /model\.scanned < model\.total,/)
   assert.match(wall, /consecutiveEmptyScans < maxAutomaticEmptyScans,/)
