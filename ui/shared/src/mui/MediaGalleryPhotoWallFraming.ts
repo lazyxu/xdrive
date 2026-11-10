@@ -95,7 +95,7 @@ export function xDriveMediaGalleryObserveFraming(
  * fresh Owner request is needed when the user switches appearance.
  */
 export function xDriveMediaGalleryFramingStyles(mode: XDriveMediaGalleryFraming) {
-  const fit = mode === 'contain' ? 'contain' : 'cover'
+  const fit: 'contain' | 'cover' = mode === 'contain' ? 'contain' : 'cover'
   return {
     '& [data-xdrive-media-tile] img': {
       objectFit: fit,
