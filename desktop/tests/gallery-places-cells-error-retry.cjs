@@ -199,3 +199,31 @@ test('current failed Owner scope can retry once, in-flight and cross-scope canno
   assert.equal(call({failedCellsScopeRef:{current:{owner:'fixture-owner-b',key:'owner:family'}}}).length,0)
   assert.equal(call({lifetime:{signal:{aborted:true}}}).length,0)
 })
+
+test('all Owner HTTP denial, quota and upstream classes clear stale map Cells before explicit retry',async()=>{
+  for(const [status,code] of [
+    [401,'viewport_denied'],
+    [403,'viewport_denied'],
+    [429,'viewport_rate_limited'],
+    [503,'viewport_unavailable'],
+  ]){
+    const f=harness({requestStatus:status})
+    assert.equal(await f.run(),false,'Owner request must fail closed: '+status)
+    assert.deepEqual(f.diagnostics,[{scope:'fixture-owner-a',code}])
+    assert.deepEqual(f.published,[[],[]],
+      'no previous Owner Cell can be restored on HTTP '+status)
+    assert.deepEqual(f.failed,[{owner:'fixture-owner-a',key:'owner:family'}])
+    assert.deepEqual(f.summaries,[null])
+    assert.equal(f.pendingCoverClick.current,null)
+    assert.equal(f.pendingResizeDrawer.current,null)
+  }
+  const network=harness()
+  assert.equal(await network.run(),false)
+  assert.equal(network.diagnostics[0].code,'viewport_unavailable')
+  // A denied map-only Session is distinct from a revoked Owner Cells Range.
+  for(const [status,code] of [
+    [401,'session_denied'],[403,'session_denied'],
+    [429,'session_rate_limited'],[503,'session_unavailable'],
+  ])assert.equal(classifyFailure('session',{status}),code)
+  assert.equal(classifyFailure('status',{status:429}),'status_rate_limited')
+})

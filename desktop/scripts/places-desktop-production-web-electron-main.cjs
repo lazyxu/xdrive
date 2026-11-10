@@ -637,7 +637,7 @@ async function run(win){
     }
     let nativeLogoutBlockedOldMap=false
     let oldMapHiddenAfterLogout=false
-    if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===2){
+    if(Number(process.env.XD_DESKTOP_PLACES_BOOT||'0')===3){
       stage='production-Desktop-live-Agent-logout-while-WebView-mounted'
       const readyFile=process.env.XD_DESKTOP_PLACES_LOGOUT_READY
       const doneFile=process.env.XD_DESKTOP_PLACES_LOGOUT_DONE

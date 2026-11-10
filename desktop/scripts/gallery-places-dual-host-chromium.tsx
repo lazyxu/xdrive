@@ -77,7 +77,13 @@ let partialLocationReady = false
 let savedSyntheticPoster: Blob | null = null
 // An opt-in synthetic failure during a *post-ready* restricted Owner query.
 // The next identical retry must recover without remounting either SDK Host.
-const testCellsFailure = new URLSearchParams(location.search).get('cells_failure') === '1'
+const cellsFailureParams = new URLSearchParams(location.search)
+const testCellsFailure = cellsFailureParams.get('cells_failure') === '1'
+// A finite synthetic HTTP status permits real React/Chromium retry tests for
+// Owner denial, rate limiting and upstream outage without provider secrets.
+const failureStatusParam = cellsFailureParams.get('cells_failure_status')
+const cellsFailureStatus = ['401','403','429','503'].includes(failureStatusParam ?? '')
+  ? Number(failureStatusParam) : null
 // This negative fixture ONLY affects the synthetic trusted Owner Range. Both
 // SDK Hosts receive the same first-page failure; no private bytes or SDK
 // callbacks are involved in the replay.
@@ -182,8 +188,11 @@ const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey
   const favorite=filters?.favorite===true
   if(testCellsFailure && !genuineGin && favorite && failFavoriteCellsOnce){
     failFavoriteCellsOnce=false
-    probe.failedOwnerCellsReads.push({favorite,albumKey})
-    throw Error('synthetic_post_ready_owner_cells_network_failure')
+    probe.failedOwnerCellsReads.push({favorite,albumKey,
+      status:cellsFailureStatus})
+    const fault = Error('synthetic_post_ready_owner_cells_network_failure')
+    if(cellsFailureStatus!==null) Object.assign(fault,{status:cellsFailureStatus})
+    throw fault
   }
   let data
   if(genuineGin){

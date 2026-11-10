@@ -27,6 +27,9 @@ const cell=load('ui/shared/src/media-gallery-baidu-cell-return-session.ts',deps)
 const viewport=load('ui/shared/src/media-gallery-baidu-viewport-return-session.ts',deps)
 const mode=load('ui/shared/src/media-gallery-places-map-mode.ts')
 const lifecycle=load('ui/shared/src/media-gallery-places-request-lifecycle.ts')
+const historyBootstrap=load('web/src/mapScopeHandoff.ts',{
+  '../../ui/shared/src/media-gallery-places-map-mode':mode,
+})
 const owner='desktop:map-a',foreign='desktop:map-b'
 const scope={albumKey:'manual:Family',filters:{favorite:true,asset_kind:'image',
   captured_from:'2026-10-01',captured_to:'2026-11-01',time_zone:'Asia/Tokyo',
@@ -142,4 +145,73 @@ test('isolated/prototype mode URL roundtrip retires old one-use handoff',()=>{
   assert.equal(new URL(reroute).searchParams.has('places_map_handoff'),true)
   for(const value of [owner,scope.albumKey,scope.filters.time_zone,String(camera.latitude)])
     assert.equal(ticket.includes(value),false,'private map state stays outside URLs')
+})
+
+test('one-use Owner PhotoScope survives mode-only navigation but fails closed on Back/Forward, reload and logout',()=>{
+  for(const target of ['prototype','isolated']){
+    clear()
+    assert.equal(visual.xDriveRememberBaiduMapVisualScope(owner,scope,1000),true)
+    assert.equal(cameraState.xDriveRememberBaiduNativeCamera(owner,camera,1000),true)
+    assert.equal(cell.xDriveRememberBaiduCellReturn(owner,
+      {selection,sort,photoScope:scope},1000),true)
+    assert.equal(viewport.xDriveRememberBaiduViewportReturn(owner,
+      {bounds,sort,photoScope:scope},1000),true)
+    const nonce='e'.repeat(64)
+    const from=mode.xDrivePlacesMapScopeHandoffURL(href,target,nonce)
+    assert.ok(from)
+    const stack=[from]
+    let position=0
+    const location={href:from,origin:new URL(from).origin}
+    const history={
+      state:{xdriveHistoryIndex:17},
+      replaceState(state,_title,url){
+        assert.equal(state.xdriveHistoryIndex,17)
+        this.state=state
+        location.href=String(url)
+        stack[position]=location.href
+      },
+      pushState(state,_title,url){
+        this.state=state
+        position++
+        stack.splice(position)
+        stack.push(new URL(String(url),location.href).href)
+        location.href=stack[position]
+      },
+      back(){if(position>0)position--;location.href=stack[position]},
+      forward(){if(position<stack.length-1)position++;location.href=stack[position]},
+    }
+    const browser={location,history}
+    assert.deepEqual(historyBootstrap.xDriveTakeMapScopeHandoffFromURL(browser),
+      {state:'pending',ticket:nonce,target})
+    const scrubbed=location.href
+    assert.ok(!scrubbed.includes(nonce) &&
+      new URL(scrubbed).searchParams.get('places_map_scope_required')==='1')
+    // The private visual state stays Owner-only. A one-use ticket is not
+    // re-minted merely by revisiting the saved history entry.
+    assert.deepEqual(visual.xDriveReadBaiduMapVisualScope(owner,1002),scope)
+    assert.deepEqual(cameraState.xDriveReadBaiduNativeCamera(owner,1002),camera)
+    assert.equal(visual.xDriveReadBaiduMapVisualScope(foreign,1002),undefined)
+    assert.equal(historyBootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state,'denied')
+    const unrelated=new URL(location.href)
+    unrelated.hash='#/app/files'
+    history.pushState(history.state,'',unrelated.href)
+    assert.equal(historyBootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state,'denied')
+    history.back()
+    assert.equal(location.href,scrubbed)
+    assert.equal(historyBootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state,'denied')
+    history.forward()
+    assert.equal(historyBootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state,'denied')
+    // Owner logout invalidates EVERY private visual return pointer. A stale
+    // browser history entry cannot authorize an old Viewer or camera.
+    clear()
+    assert.equal(visual.xDriveReadBaiduMapVisualScope(owner,1003),undefined)
+    assert.equal(cameraState.xDriveReadBaiduNativeCamera(owner,1003),undefined)
+    assert.equal(cell.xDriveTakeBaiduCellViewerReturn(owner,1003),undefined)
+    assert.equal(viewport.xDriveTakeBaiduViewportViewerReturn(owner,1003),undefined)
+    assert.equal(historyBootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state,'denied')
+    // Only the explicit user abandon action may remove the nonsecret
+    // restriction marker; it never resurrects any old Owner permission.
+    assert.equal(historyBootstrap.xDriveAbandonMapScopeRequired(browser),true)
+    assert.equal(historyBootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state,'none')
+  }
 })

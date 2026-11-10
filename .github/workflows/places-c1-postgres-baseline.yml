@@ -6,6 +6,13 @@ on:
     paths:
       - internal/api/media_places_c1_baseline_linux_test.go
       - .github/workflows/places-c1-postgres-baseline.yml
+      # Session recovery changes must also prove genuine 10k/100k Owner map
+      # Count, signed range, cancellation and Go process RSS in PostgreSQL.
+      # This opt-in test does not claim real Baidu, physical CAS or iPhone.
+      - 'desktop/scripts/places-desktop-production-web-*.cjs'
+      - 'desktop/scripts/gallery-places-dual-host-chromium.*'
+      - 'desktop/tests/gallery-places-cells-error-retry.cjs'
+      - 'desktop/tests/desktop-places-mode-viewer-recovery.cjs'
   workflow_dispatch:
 
 permissions:
