@@ -86,3 +86,21 @@ test('13 operation-history regression runs in the required unsigned IPA workflow
   assert.match(ipa, /desktop\/tests\/ios-native-files-operation-cold-return-20261110\.cjs/)
   assert.match(ipa, /node --test desktop\/tests\/ios-native-files-undo-redo\.cjs/)
 })
+
+test('14 completed short XCUITest may not silently drop scheduled screenshot evidence', () => {
+  assert.match(watcher, /def report_missed\(key, starts, taps\):/)
+  assert.match(watcher, /report_missed\(key, missed_starts, missed_taps\)/)
+  assert.match(watcher, /"reason": "test_finished_before_capture"/)
+  assert.match(watcher, /scheduled = \[event for event in scheduled if event\[1\] != key\]/)
+  assert.match(watcher, /tap_scheduled = \[event for event in tap_scheduled if event\[1\] != key\]/)
+})
+test('15 screenshot capture lag is separately reported rather than misrepresented as 60/120 Hz FPS', () => {
+  const audit = read('ios/scripts/audit_navigation_frames.py')
+  assert.equal((watcher.match(/"capture_request_lag_seconds":/g) || []).length, 2)
+  assert.equal((watcher.match(/"capture_duration_seconds":/g) || []).length, 2)
+  assert.match(audit, /'capture_request_lag': \{/)
+  assert.match(audit, /'p50_ms': percentile\(lags, \.50\)/)
+  assert.match(audit, /'p95_ms': percentile\(lags, \.95\)/)
+  assert.match(audit, /'finished_before_capture': sum\(/)
+  assert.match(audit, /'is_fps_measurement': False, 'proves_zero_transient_flicker': False/)
+})
