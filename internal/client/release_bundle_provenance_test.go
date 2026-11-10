@@ -13,13 +13,13 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 	listing, item := bundleClientFixture(t, []byte("exact-current-server-package"))
 	tag := "bundle-" + listing.Commit
 	for _, tc := range []struct {
-		name        string
-		wrongCommit bool
-		wrongDigest bool
-		missingFile bool
+		name           string
+		wrongCommit    bool
+		wrongDigest    bool
+		missingFile    bool
 		mutableRelease bool
-		redirect    bool
-		wantError   bool
+		redirect       bool
+		wantError      bool
 	}{
 		{name: "exact verified package"},
 		{name: "mutable release must fail closed", mutableRelease: true, wantError: true},
