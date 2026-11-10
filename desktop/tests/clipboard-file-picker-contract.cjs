@@ -16,9 +16,9 @@ test('Clipboard file selection is Owner read-only with existing paginated Nodes/
   assert.match(picker,/onSelect\(node\)/)
   assert.doesNotMatch(picker,/createUpload|uploadChunk|UploadSession|SourceRun|fetch\(/)
 })
-test('file references are only selected for an unlocked targeted device; no raw OS file bytes', () => {
+test('file references are only selected for an enrolled targeted device; no raw OS file bytes', () => {
   assert.match(ui,/ClipboardFileNodePicker/)
-  assert.match(ui,/open=\{pickerOpen && !!key && !!targetID\}/)
+  assert.match(ui,/open=\{pickerOpen && !!targetID\}/)
   assert.match(ui,/setNodeID\(String\(item\.id\)\)/)
   assert.match(ui,/readOnly: !!port\.browseFiles/)
   assert.doesNotMatch(picker,/FileReader|readAsArrayBuffer|Blob\(|localStorage|clipboard\.readText/)

@@ -556,13 +556,18 @@ jobs:
                 remote_complete=1
                 break
               fi
-              # Retire only superseded SPKs or standalone DSM Photos
-              # source-agent binaries, and only after current digests match.
-              # Unrelated unexpected Release assets remain fail-closed.
+              # GitHub --clobber replaces matching names but NEVER removes
+              # packages absent from this exact source run. Old optional
+              # Windows/Linux/iOS/signed-Android clients would otherwise mix
+              # Commit identities and make exact asset-set verification fail.
+              # Only delete KNOWN old distribution names, AFTER all new
+              # artifact digests have matched. Unknown assets fail closed.
               while IFS=$'\t' read -r old_asset_id old_asset_name; do
                 if [[ ! -f "release/$old_asset_name" ]] &&
                    { [[ "$old_asset_name" =~ ^xdrivenas-armada38x-[0-9][0-9A-Za-z.-]*\.spk(\.sha256)?$ ]] ||
-                     [[ "$old_asset_name" =~ ^xdrive-source-agent-linux-(amd64|arm64|armv7)$ ]]; }; then
+                     [[ "$old_asset_name" =~ ^xdrive-source-agent-linux-(amd64|arm64|armv7)$ ]] ||
+                     [[ "$old_asset_name" =~ ^(xdrive-linux-amd64\.deb|xDriveSetup-amd64\.exe|xDrive-unsigned\.ipa(\.sha256)?|xdrive-backup-linux-amd64\.tar\.gz|xdrive-backup-windows-amd64\.zip)$ ]] ||
+                     [[ "$old_asset_name" =~ ^xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apk$ ]]; }; then
                   [[ "$old_asset_id" =~ ^[0-9]+$ ]] || {
                     echo "Invalid superseded Snapshot asset ID." >&2
                     exit 1
@@ -579,6 +584,10 @@ jobs:
           done
           if [[ "$remote_complete" != 1 ]]; then
             echo "Snapshot asset verification incomplete; preserving previous tag." >&2
+            echo "[xDrive] Expected exact-Commit Snapshot asset names:" >&2
+            printf '%s\n' "$expected_names" >&2
+            echo "[xDrive] Observed remote Snapshot asset names:" >&2
+            printf '%s\n' "$actual_names" >&2
             exit 1
           fi
           echo "[xDrive] all published Snapshot asset SHA-256 digests verified."

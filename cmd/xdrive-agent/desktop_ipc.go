@@ -59,6 +59,7 @@ type desktopIPCHello struct {
 	ProtocolMin      int      `json:"protocol_min"`
 	ProtocolMax      int      `json:"protocol_max"`
 	AgentVersion     string   `json:"agent_version"`
+	AgentCommit      string   `json:"agent_commit,omitempty"`
 	PID              int      `json:"pid"`
 	Platform         string   `json:"platform"`
 	Arch             string   `json:"arch"`
@@ -616,12 +617,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
 	// Clipboard is a separate Owner-scoped API; it never uses Files copy/paste.
-	mux.HandleFunc("GET /v1/cloud/clipboard/vault", h.cloudClipboardVault)
-	mux.HandleFunc("PUT /v1/cloud/clipboard/check", h.cloudClipboardCheck)
 	mux.HandleFunc("GET /v1/cloud/clipboard/items", h.cloudClipboardList)
 	mux.HandleFunc("GET /v1/cloud/clipboard/devices", h.cloudClipboardDevices)
 	mux.HandleFunc("POST /v1/cloud/clipboard/enable-device", h.cloudClipboardEnableDevice)
-	mux.HandleFunc("POST /v1/cloud/clipboard/decrypt", h.cloudClipboardDecrypt)
 	mux.HandleFunc("POST /v1/cloud/clipboard/revoke-device", h.cloudClipboardRevokeDevice)
 	mux.HandleFunc("POST /v1/cloud/clipboard/items", h.cloudClipboardCreate)
 	mux.HandleFunc("DELETE /v1/cloud/clipboard/items", h.cloudClipboardClear)
@@ -1063,6 +1061,7 @@ func (h *desktopIPCHandler) hello(w http.ResponseWriter, _ *http.Request) {
 		ProtocolMin:      desktopIPCProtocolMin,
 		ProtocolMax:      desktopIPCProtocolMax,
 		AgentVersion:     version.String(),
+		AgentCommit:      version.Metadata().Commit,
 		PID:              os.Getpid(),
 		Platform:         runtime.GOOS,
 		Arch:             runtime.GOARCH,

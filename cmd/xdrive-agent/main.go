@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -21,6 +22,13 @@ func main() {
 // In Backup-only mode, DSM must not report a running Agent whose authenticated
 // local control interface failed to start.
 func runAgent() int {
+	if len(os.Args) == 2 && os.Args[1] == "--build-info-json" {
+		if err := json.NewEncoder(os.Stdout).Encode(version.Metadata()); err != nil {
+			writeEarlyError(err)
+			return 1
+		}
+		return 0
+	}
 	if handled, err := runShellAction(os.Args[1:]); handled {
 		if err != nil {
 			writeEarlyError(err)

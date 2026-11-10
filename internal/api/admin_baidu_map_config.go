@@ -41,6 +41,7 @@ type baiduMapEffectiveConfig struct {
 type adminBaiduMapConfigDTO struct {
 	Enabled         bool       `json:"enabled"`
 	Configured      bool       `json:"configured"`
+	AKLength        int        `json:"ak_length,omitempty"`
 	Source          string     `json:"source"`
 	Editable        bool       `json:"editable"`
 	RequiresRestart bool       `json:"requires_restart"`
@@ -127,6 +128,7 @@ func (s *Server) adminBaiduMapConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, adminBaiduMapConfigDTO{
 		Enabled:         cfg.Enabled,
 		Configured:      cfg.Configured,
+		AKLength:        credentialMaskLength(cfg.AK),
 		Source:          cfg.Source,
 		Editable:        s.DB != nil && s.ConnectorSecrets != nil,
 		RequiresRestart: false,

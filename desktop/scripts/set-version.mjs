@@ -38,3 +38,6 @@ const buildInfo = {
 
 const metadataPath = path.join(root, 'src', 'main', 'build_metadata.cts')
 writeFileSync(metadataPath, `export const desktopBuildInfo = Object.freeze(${JSON.stringify(buildInfo, null, 2)})\n`)
+// Electron-builder includes the same exact-source metadata beside app.asar so
+// native Windows/Linux installers can verify the Desktop payload after install.
+writeFileSync(path.join(root, 'build-info.json'), `${JSON.stringify(buildInfo, null, 2)}\n`)

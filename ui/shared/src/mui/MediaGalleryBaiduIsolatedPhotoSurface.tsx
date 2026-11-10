@@ -7,12 +7,13 @@ import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaAsyncVideoPoster } from './MediaGalleryPreviewMedia'
 import type { MediaThumbnailLoader } from './MediaGallery'
-import type { XDriveTrustedProjectedMapCells } from '../media-gallery-baidu-isolated-frame-host'
+import type { XDriveTrustedProjectedMapCells, XDriveBaiduIsolatedFrameFailureReason } from '../media-gallery-baidu-isolated-frame-host'
 import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaItem, MediaTimelineGroupSets } from '../models'
 import { xDriveMountBaiduIsolatedFrame } from '../media-gallery-baidu-isolated-frame-host'
 import { xDriveMountBaiduInlineMap } from '../media-gallery-baidu-inline-map-host'
 import type { XDriveBaiduJSAPIPrototypeConfig } from '../models'
 import type { XDriveBaiduIsolatedBounds } from '../media-gallery-baidu-isolated-origin-protocol'
+import { xDriveRecordBaiduMapDiagnostic, xDriveClassifyBaiduMapRequestFailure } from '../media-gallery-baidu-diagnostics'
 import { xDriveValidBaiduNativeCellsPage } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cell-range'
@@ -581,6 +582,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     // is still converting the Owner's GPS. Preserve worldwide discovery until
     // the first real derived cell appears, unless a user has changed the SDK
     // camera or this map is restoring an explicit Viewer camera.
+    let lastKnownCamera = returnCamera
     let cameraTouched = Boolean(returnCamera)
     let initialWorldEmpty = false
     setPhase('loading')
@@ -739,7 +741,23 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         // the two SDK Hosts' bounded gesture-only projections.
         cancel(Boolean(keepVisual))
       },
-      onCamera:(camera:XDriveBaiduNativeCameraSnapshot) => { if(!lifetime.signal.aborted) cameraUpdate.current?.(camera) },
+      onCamera:(camera:XDriveBaiduNativeCameraSnapshot) => {
+        if (lifetime.signal.aborted) return
+        // Retain only a validated, already-BD09 camera hint across a Child
+        // document reload. The new Owner /cells still reauthorizes all pins.
+        if (xDriveValidBaiduNativeCameraSnapshot(camera)) {
+          lastKnownCamera = {coordinate_space:'bd09ll',
+            latitude:camera.latitude,longitude:camera.longitude,zoom:camera.zoom}
+        }
+        cameraUpdate.current?.(camera)
+      },
+      onMapReset:() => {
+        if (lifetime.signal.aborted || failed) return
+        returnCamera = lastKnownCamera ? {...lastKnownCamera} : null
+        cancel()
+        setPhase('loading')
+        onReady(false)
+      },
       onMapReady:() => {
         if(lifetime.signal.aborted)return
         if (returnCamera) {
@@ -750,7 +768,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         setPhase('ready')
         onReady(true)
       },
-      onMapFailure:failure,
+      onMapFailure:(reason?:XDriveBaiduIsolatedFrameFailureReason) => {
+        // A Child may report only a fixed, validated stage. Its raw provider
+        // errors, request URLs, Owner data and one-use tickets never cross.
+        if (mode==='isolated' && scope && reason)
+          xDriveRecordBaiduMapDiagnostic(scope,reason)
+        failure()
+      },
       onProjectedCells:(positions:XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection>) => {
         if (!lifetime.signal.aborted) setProjected(positions)
       },
@@ -927,7 +951,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           })
         }
         return true
-      } catch {
+      } catch (error) {
         if (run===generation) {
           pendingResizeDrawer.current=null
           if (pendingCoverClick.current && !request.signal.aborted) {
@@ -937,6 +961,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         }
         if(!request.signal.aborted && !lifetime.signal.aborted && run===generation &&
             approved.key===filterRef.current.key) {
+          // The first Owner /cells may fail before ANY SDK script is fetched.
+          // Preserve the numeric HTTP class in trusted, Owner-local diagnostics.
+          if (scope) xDriveRecordBaiduMapDiagnostic(scope,
+            xDriveClassifyBaiduMapRequestFailure('viewport',error))
           // A failed/invalid Owner Cells response has NO media authority.
           // Preserve only the scope identity for an explicit guarded retry.
           const failureScope = {owner:scope ?? '',key:approved.key}
@@ -983,7 +1011,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         if(lifetime.signal.aborted || receipt?.provider!=='baidu-jsapi-4.0' ||
             receipt.child_origin!==childOrigin || !/^[a-f0-9]{64}$/.test(receipt.ticket) ||
             !frame.bootstrapMapSession(receipt.ticket)) throw new Error('map_session_denied')
-      } catch { failure() }
+      } catch (error) {
+        if (scope && mode==='isolated' && !lifetime.signal.aborted)
+          xDriveRecordBaiduMapDiagnostic(scope,
+            xDriveClassifyBaiduMapRequestFailure('session',error))
+        failure()
+      }
     }
     // Restore only the validated BD-09 camera after Child map-ready.
     // Original WGS84 photo EXIF never enters the isolated document.

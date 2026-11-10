@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Box, Button, CircularProgress, Dialog, IconButton, MenuItem, Stack, TextField, Typography, useMediaQuery } from '@mui/material'
+import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography, useMediaQuery } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
@@ -14,6 +14,14 @@ import { MediaTile, MediaVirtualTileGrid } from './MediaGallerySharedTiles'
 import type { XDriveMediaGalleryVirtualCollection } from './MediaGallerySharedTiles'
 import type { MediaThumbnailLoader, MediaPreviewURLLoader, MediaVideoPosterSaver } from './MediaGallery'
 import { XDriveMediaGalleryPhotoWall } from './MediaGalleryPhotoWall'
+import { XDriveMediaGalleryDateNavigation } from './MediaGalleryDateNavigation'
+import {
+  XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
+  xDriveReadMobileGalleryColumns,
+  xDriveWriteMobileGalleryColumn,
+  xDriveObserveMobileGalleryColumns,
+} from './MediaGalleryPhotoWallPreferences'
+import type { XDriveGalleryPhotoWallScale } from './MediaGalleryPhotoWallPreferences'
 import { XDriveMediaGalleryVirtualTimeline } from './MediaGallerySharedTimeline'
 import { xDriveMediaGalleryTimelineGroupLabel } from './MediaGalleryVirtualTimeline'
 import {
@@ -92,19 +100,24 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   }, [loadThumbnail])
   const thumbnailScheduler = thumbnailSession?.owner === loadThumbnail
     ? thumbnailSession.scheduler : null
-  type TimeScale = 'all' | 'year' | 'month' | 'day'
+  type TimeScale = XDriveGalleryPhotoWallScale
   const mobile = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const [timeScale, setTimeScale] = useState<TimeScale>(
     () => initialPresentation?.timeScale ?? 'all')
   const [columnsByScale, setColumnsByScale] = useState<Record<TimeScale, number>>(() => {
-    const defaults = {all: 3, year: 6, month: 5, day: 3}
+    // Gallery/Places share only bounded visual column preferences. Viewer
+    // return may override the current scale for one short-lived UI intent;
+    // it never writes an old authenticated item's state to browser storage.
+    const defaults = xDriveReadMobileGalleryColumns()
     const scale = initialPresentation?.timeScale ?? 'all'
     return initialPresentation?.columns !== undefined
       ? {...defaults,[scale]:initialPresentation.columns} : defaults
   })
-  const baselineColumns: Record<TimeScale, number> = {
-    all: 3, year: 6, month: 5, day: 3,
-  }
+  const baselineColumns: Record<TimeScale, number> =
+    XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT
+  // Gallery remains mounted beneath the map Dialog. Refresh cosmetic column
+  // choices after same-document or cross-tab changes without touching Cells.
+  useEffect(() => xDriveObserveMobileGalleryColumns(setColumnsByScale), [])
   const [layoutRestore, setLayoutRestore] = useState<{
     index: number; offset: number; revision: number
   } | null>(null)
@@ -254,8 +267,9 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   }
   const pinchChange = useCallback((columns:number,index:number,viewportOffset:number) => {
     setColumnsByScale(current=>({...current,[timeScale]:columns}))
+    if (mobile) xDriveWriteMobileGalleryColumn(timeScale,columns)
     restoreLayout(index,viewportOffset)
-  }, [timeScale,restoreLayout])
+  }, [mobile,timeScale,restoreLayout])
   const tileItem = (target: EventTarget | null) => {
     const tile = target instanceof Element
       ? target.closest('[data-xdrive-places-photo-drawer-item]') : null
@@ -488,62 +502,20 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
           ) : null}
         </Stack>
         {phase==='ready' && timelineGroups && expanded ? (
-          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap"
-            alignItems="center" sx={{px:1.25,pb:0.75,rowGap:0.75}}>
-            {timelineJumpGroups.length > 1 ? (
-              <TextField select size="small" value=""
-                label={timeScale==='year' ? '跳转年份' : '跳转年月'}
-                aria-label={timeScale==='year' ? '跳转年份' : '跳转年月'}
-                data-xdrive-places-photo-timeline-jump
-                onChange={event => {
-                  const group=timelineJumpGroups.find(value => value.key===event.target.value)
-                  if (group) jumpToTimelineGroup(group)
-                }}
-                sx={{minWidth:130,'& .MuiInputBase-root':{minHeight:44}}}>
-                <MenuItem value="">
-                  {timeScale==='year' ? '跳转年份' : '跳转年月'}
-                </MenuItem>
-                {timelineJumpGroups.map(group => (
-                  <MenuItem key={group.key} value={group.key}>
-                    {xDriveMediaGalleryTimelineGroupLabel(group.key)}
-                  </MenuItem>
-                ))}
-              </TextField>
-            ) : null}
-            {timeScale==='day' ? (
-              <TextField size="small" type="date" label="跳转日期"
-                aria-label="跳转日期"
-                data-xdrive-places-photo-timeline-day-jump
-                value={dayJumpInput}
-                disabled={!timelineGroups.day.some(group => group.key!=='unknown')}
-                onChange={event => jumpToTimelineDay(event.target.value)}
-                slotProps={{inputLabel:{shrink:true}}}
-                sx={{minWidth:160,'& .MuiInputBase-root':{minHeight:44}}}/>
-            ) : null}
-            {timeScale!=='all' ? (
-              <Typography variant="caption" color="text.secondary" role="status"
-                data-xdrive-places-photo-timeline-current-date
-                sx={{minHeight:44,display:'inline-flex',alignItems:'center'}}>
-                {'当前浏览：' + (currentTimelineGroup
-                  ? xDriveMediaGalleryTimelineGroupLabel(currentTimelineGroup.key)
-                  : '尚无可定位日期')}
-              </Typography>
-            ) : null}
-            {timelineReturnAnchor ? (
-              <Button size="small" variant="outlined"
-                data-xdrive-places-photo-timeline-return
-                onClick={returnToTimelineAnchor}
-                sx={{minHeight:44,textTransform:'none'}}>
-                返回刚才位置
-              </Button>
-            ) : null}
-            {dayJumpFeedback ? (
-              <Typography variant="caption" color="text.secondary" role="status"
-                data-xdrive-places-photo-timeline-day-feedback>
-                {dayJumpFeedback}
-              </Typography>
-            ) : null}
-          </Stack>
+          <Box sx={{px:1.25,pb:0.75}}>
+            <XDriveMediaGalleryDateNavigation
+              surface="places" scale={timeScale}
+              jumpGroups={timelineJumpGroups}
+              dayInput={dayJumpInput}
+              dayDisabled={!timelineGroups.day.some(group => group.key!=='unknown')}
+              currentGroupKey={currentTimelineGroup?.key ?? null}
+              hasReturnAnchor={timelineReturnAnchor !== null}
+              dayFeedback={dayJumpFeedback}
+              onJumpGroup={jumpToTimelineGroup}
+              onJumpDay={jumpToTimelineDay}
+              onReturn={returnToTimelineAnchor}
+            />
+          </Box>
         ) : null}
       </Box>
       {phase==='loading' ? (

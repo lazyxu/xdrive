@@ -18,7 +18,33 @@ try {
         "ValidateScripts" {
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/windows-e2e.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/build-windows-installer.ps1))
-            $null = [scriptblock]::Create((Get-Content -Raw ./scripts/test-windows-client-upgrade.ps1))
+            $upgradeSource = Get-Content -Raw ./scripts/test-windows-client-upgrade.ps1
+            $null = [scriptblock]::Create($upgradeSource)
+            # Protect against a previously observed malformed textual rewrite:
+            # a syntactically valid file can still contain duplicated test
+            # functions, causing later declarations to shadow the real gates.
+            $requiredFunctions = @(
+                "Stop-XDriveProcesses",
+                "Get-DesktopLifecycleDiagnostics",
+                "Wait-XDriveProcessInSession",
+                "Invoke-Transaction",
+                "Read-Status",
+                "Uninstall-XDrive"
+            )
+            foreach ($functionName in $requiredFunctions) {
+                $declarations = [regex]::Matches(
+                    $upgradeSource,
+                    "(?m)^function\s+" + [regex]::Escape($functionName) + "\s*(?:\(|\{)"
+                ).Count
+                if ($declarations -ne 1) {
+                    throw "Windows upgrade source has $declarations declarations of $functionName (expected exactly one)"
+                }
+            }
+            foreach ($scenario in @('Invoke-Transaction "snapshot-deadbeefdead"', 'Invoke-Transaction $TargetVersion')) {
+                if ([regex]::Matches($upgradeSource, [regex]::Escape($scenario)).Count -ne 1) {
+                    throw "Windows upgrade source must contain one required $scenario scenario"
+                }
+            }
             $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_upgrade_transaction.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_legacy_cleanup.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_process_scope.ps1))

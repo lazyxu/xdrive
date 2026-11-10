@@ -142,6 +142,14 @@ func TestAdminCaddyAliDNSStagingEncryptionAndAccessControl(t *testing.T) {
 		!strings.Contains(saved.Body.String(), `"apply_state":"pending"`) {
 		t.Fatalf("saving credentials must not reveal/apply them, HTTP %d", saved.Code)
 	}
+	// An authorized status GET may expose only lengths, never secret material.
+	status := call(http.MethodGet, path, adminToken, "")
+	if status.Code != http.StatusOK ||
+		!strings.Contains(status.Body.String(), fmt.Sprintf(`"access_key_id_length":%d`, len(id))) ||
+		!strings.Contains(status.Body.String(), fmt.Sprintf(`"access_key_secret_length":%d`, len(secret))) ||
+		strings.Contains(status.Body.String(), id) || strings.Contains(status.Body.String(), secret) {
+		t.Fatalf("AliDNS mask length metadata invalid or unexpectedly revealed plaintext: HTTP %d", status.Code)
+	}
 	var row meta.AdminServiceSecret
 	if err := db.Where("name = ?", caddyAliDNSSecretName).First(&row).Error; err != nil {
 		t.Fatal(err)

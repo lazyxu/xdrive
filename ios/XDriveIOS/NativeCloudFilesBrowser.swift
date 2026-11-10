@@ -1377,7 +1377,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                       parentID == folder.id, phase == .active,
                       found.contains(crumb), found.last?.id == folder.id else { return }
                 // Do not infer a path from a stale displayed folder name.
-                pathDestination = XDriveIOSNativeFilesFolder(id: crumb.id, name: crumb.name)
+                pathDestination = XDriveIOSNativeFilesFolder(
+                    id: crumb.id, name: crumb.name,
+                    initialSort: sort, initialOrder: order,
+                    initialGrouping: grouping,
+                    initialFoldersFirst: foldersFirst
+                )
             } catch is CancellationError {
             } catch {
                 guard pathTicket == ticket else { return }
@@ -1996,7 +2001,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .accessibilityIdentifier("native-ios-files-disclose-\(entry.node.id)")
                 }
                 NavigationLink(value: XDriveIOSNativeFilesFolder(
-                    id: entry.node.id, name: entry.node.name
+                    id: entry.node.id, name: entry.node.name,
+                    initialSort: sort, initialOrder: order,
+                    initialGrouping: grouping,
+                    initialFoldersFirst: foldersFirst
                 )) {
                     row(entry)
                 }
@@ -4092,7 +4100,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                     pathError = "当前已经位于这个文件夹。"
                 } else {
                     pathDestination = XDriveIOSNativeFilesFolder(
-                        id: destinationID, name: destinationName
+                        id: destinationID, name: destinationName,
+                        initialSort: sort, initialOrder: order,
+                        initialGrouping: grouping,
+                        initialFoldersFirst: foldersFirst
                     )
                 }
             } catch is CancellationError {
@@ -4428,7 +4439,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .accessibilityIdentifier("native-ios-files-select-\(entry.id)")
             } else if entry.node.isDirectory {
                 NavigationLink(value: XDriveIOSNativeFilesFolder(
-                    id: entry.node.id, name: entry.node.name
+                    id: entry.node.id, name: entry.node.name,
+                    initialSort: sort, initialOrder: order,
+                    initialGrouping: grouping,
+                    initialFoldersFirst: foldersFirst
                 )) {
                     gridLabel(entry)
                 }

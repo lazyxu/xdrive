@@ -859,13 +859,17 @@ export default function App({
         const result = await window.xdriveDesktop.agent.saveReleaseBundle(manifest.commit, filename)
         if (!result.ok) throw new Error(result.error.message)
       },
-      installCurrent: platform && clientUpdate?.manual_install_supported === true ? async (commit, filename) => {
-        const result = await window.xdriveDesktop.agent.installReleaseBundle(commit, filename, true)
+      installCurrent: platform && clientUpdate?.manual_install_supported === true ? async (commit, filename, personalUnsigned) => {
+        const result = await window.xdriveDesktop.agent.installReleaseBundle(commit, filename, true, personalUnsigned === true)
         if (!result.ok) throw new Error(result.error.message)
         setClientUpdate(result.data)
       } : undefined,
     }
   }, [agent.hello?.capabilities, info?.platform, clientUpdate?.manual_install_supported])
+  // Ordinary Desktop users may install their own current-Server package but
+  // cannot submit the admin-only Host package-cache retry operation.
+  const clientReleaseBundlePort = useMemo(() => releaseBundlePort
+    ? { ...releaseBundlePort, retry: undefined } : undefined, [releaseBundlePort])
   const offlineImportPort = useMemo<import('../../../ui/shared/src/offline-update').XDriveOfflineImportPort>(() => {
     async function call<T>(
       action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',
@@ -3042,6 +3046,7 @@ export default function App({
     services: {
       clientUpdatePage: {
         clientUpdateContent: <DesktopClientUpdatePanel {...desktopClientUpdateProps} />,
+        releaseBundlePort: clientReleaseBundlePort,
         buildInfo: info,
       },
       shareCenterPage: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files')

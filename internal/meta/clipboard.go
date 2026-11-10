@@ -2,8 +2,7 @@ package meta
 
 import "time"
 
-// ClipboardVault has only a random Owner-specific KDF salt. The Server never
-// receives or stores the passphrase, derived key, or plaintext.
+// ClipboardVault is a retired legacy table; the plaintext Clipboard API does not use it.
 type ClipboardVault struct {
 	OwnerID         uint64 `gorm:"primaryKey"`
 	Salt            string `gorm:"size:24;not null"`
@@ -16,7 +15,9 @@ type ClipboardVault struct {
 
 func (ClipboardVault) TableName() string { return "xd_clipboard_vaults" }
 
-// ClipboardItem stores end-to-end encrypted short-lived browser text.
+// ClipboardItem holds plaintext. Legacy ciphertext/nonce database columns
+// are retained temporarily for non-destructive schema compatibility; API
+// responses use content and old encrypted rows are not returned.
 // ClientEventID is the idempotency key scoped to this authenticated Owner.
 type ClipboardItem struct {
 	ID             uint64    `gorm:"primaryKey"`
@@ -36,7 +37,7 @@ type ClipboardItem struct {
 func (ClipboardItem) TableName() string { return "xd_clipboard_items" }
 
 // ClipboardChange is an Owner-only durable notification cursor. It deliberately
-// contains no plaintext, key material, nonce or even encrypted payload; clients
+// contains no plaintext or payload; clients
 // re-fetch the bounded mailbox through the existing revocable Owner API.
 type ClipboardChange struct {
 	ID             uint64    `gorm:"primaryKey"`
@@ -48,8 +49,8 @@ type ClipboardChange struct {
 
 func (ClipboardChange) TableName() string { return "xd_clipboard_changes" }
 
-// Separate Owner/device Clipboard capability; not an arbitrary Source/Root
-// entitlement. The Server stores public Curve25519 material only.
+// Explicit Owner/device Clipboard recipient authorization. The PublicKey
+// column is obsolete schema compatibility and is never returned to clients.
 type ClipboardDeviceKey struct {
 	OwnerID   uint64 `gorm:"primaryKey"`
 	DeviceID  string `gorm:"size:36;primaryKey"`

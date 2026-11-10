@@ -7,6 +7,7 @@ import {
   XDRIVE_MEDIA_GALLERY_TIMELINE_HEADER_GAP,
   xDriveMediaGalleryTimelineIndexVisible,
   xDriveMediaGalleryTimelineLayout,
+  xDriveMediaGalleryTimelineOffsetForIndex,
   xDriveMediaGalleryTimelineWindow,
 } from './MediaGalleryVirtualTimeline'
 import type { MediaThumbnailLoader, MediaPreviewURLLoader, MediaVideoPosterSaver } from './MediaGallery'
@@ -17,23 +18,6 @@ import {
 import type {
   MediaSelectionModifiers, MediaGalleryReturnViewport, XDriveMediaGalleryVirtualCollection,
 } from './MediaGallerySharedTiles'
-
-// Shared with the full Gallery and Owner-signed Places Drawer. The dated
-// grouping index is produced by the exact scoped Server Gallery Range, not by
-// sorting a sparse 48-item window or trusting any third-party SDK.
-function mediaGalleryTimelineOffsetForIndex(
-  layout: ReturnType<typeof xDriveMediaGalleryTimelineLayout>,
-  logicalIndex: number,
-) {
-  const index = Math.max(0, Math.trunc(logicalIndex))
-  const group = layout.groups.find((candidate) => (
-    index >= candidate.startIndex &&
-    index < candidate.startIndex + candidate.itemCount
-  ))
-  if (!group) return null
-  const row = Math.floor((index - group.startIndex) / Math.max(1, layout.columns))
-  return group.itemsTop + row * layout.rowStep
-}
 
 function sameMediaTimelineWindow(
   left: ReturnType<typeof xDriveMediaGalleryTimelineWindow>,
@@ -241,7 +225,7 @@ export function XDriveMediaGalleryVirtualTimeline({
         referenceColumnWidth,
         baselineColumns,
     })
-    const offset = mediaGalleryTimelineOffsetForIndex(layout, restoreAnchorIndex)
+    const offset = xDriveMediaGalleryTimelineOffsetForIndex(layout, restoreAnchorIndex)
     if (offset === null) return
     // Wait for the new row/total-height layout before restoring the position
     // of a pinched tile. A later unrelated render may change the visible

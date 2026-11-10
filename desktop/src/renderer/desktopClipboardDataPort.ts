@@ -5,12 +5,12 @@ import { XDriveDesktopClipboardObservationGate } from './desktopClipboardObserva
 // owns each narrow operation; automatic OS polling is strictly opt-in and page-bound.
 export function createDesktopClipboardDataPort(
   agent: Pick<Window['xdriveDesktop']['agent'],
-    'cloudClipboardVault' | 'cloudClipboardCheck' | 'cloudClipboardList' |
+    'cloudClipboardList' |
     'cloudClipboardCreate' | 'cloudClipboardDelete' | 'cloudClipboardClear' |
     'cloudClipboardDevices' | 'cloudClipboardEnableDevice' |
-    'cloudClipboardDecrypt' | 'cloudClipboardRevokeDevice'>,
+    'cloudClipboardRevokeDevice'>,
   ownerScopeKey: string,
-  server: string,
+  _server: string,
   ownerCurrent: () => boolean,
   openVerifiedFile?: (nodeID: number, signal: AbortSignal) => Promise<void>,
 ): XDriveClipboardDataPort {
@@ -31,20 +31,6 @@ export function createDesktopClipboardDataPort(
   const observation = new XDriveDesktopClipboardObservationGate()
   return {
     ownerScopeKey,
-    claimScope(vault) {
-      const id = vault.owner_id
-      if (!Number.isSafeInteger(id) || !id || id <= 0) {
-        throw new Error('当前 Agent 未提供经过验证的 Clipboard Owner 身份')
-      }
-      const url = new URL(server)
-      if (url.protocol !== 'https:' || url.username || url.password ||
-          url.pathname !== '/' || url.search || url.hash) {
-        throw new Error('Desktop Clipboard Server 地址无效')
-      }
-      return url.origin + ':' + String(id)
-    },
-    vault: signal => run(() => agent.cloudClipboardVault(), signal),
-    initializeCheck: (value, signal) => run(() => agent.cloudClipboardCheck(value), signal),
     list: (before, signal) => run(() => agent.cloudClipboardList(before ?? 0), signal),
     listDevices: signal => run(() => agent.cloudClipboardDevices(), signal),
     enableDeviceRecipient: signal => run(() => agent.cloudClipboardEnableDevice(), signal),
@@ -60,32 +46,15 @@ export function createDesktopClipboardDataPort(
       // failure after the verified Files handoff has already been admitted.
       verify()
     } : undefined,
-    decryptTarget: async (id, signal) => {
-      if (!Number.isSafeInteger(id) || id <= 0) throw Error('Invalid Clipboard item ID')
-      const result = await run(() => agent.cloudClipboardDecrypt(id), signal)
-      if (typeof result.text !== 'string' || !result.text) throw Error('Clipboard decrypt unavailable')
-      return result.text
-    },
-    create: (value, signal) => {
-      if (value.target_device_id) {
-        if (!/^[0-9a-f-]{36}$/.test(value.target_device_id) ||
-            !value.ephemeral_key || !value.wrapped_key ||
-            ((value.kind === 'image/x-xdrive-node-ref' ||
-              value.kind === 'application/x-xdrive-node-ref') !==
-              (Number.isSafeInteger(value.node_id) && (value.node_id ?? 0) > 0))) {
-          throw new Error('Desktop 定向消息缺少已验证设备和加密文件身份')
-        }
-        // Exact encrypted v2 fields are checked again by Main, Agent and
-        // Server. No generic proxy or device-credential privilege here.
-        return run(() => agent.cloudClipboardCreate(value), signal)
+    create: async (value, signal) => {
+      const media = value.kind === 'image/x-xdrive-node-ref' ||
+        value.kind === 'application/x-xdrive-node-ref'
+      if ((media && (!value.target_device_id || !value.node_id ||
+          value.content !== 'asset:' + value.node_id)) ||
+          (!media && !!value.node_id)) {
+        throw new Error('Desktop Clipboard 内容与目标设备不匹配')
       }
-      if ((value.kind !== 'text/plain' && value.kind !== 'text/uri-list') ||
-          value.ephemeral_key || value.wrapped_key || value.node_id) {
-        throw new Error('Desktop 不允许把定向内容降级为 v1 广播')
-      }
-      const legacy = { client_event_id: value.client_event_id, kind: value.kind,
-        nonce: value.nonce, ciphertext: value.ciphertext }
-      return run(() => agent.cloudClipboardCreate(legacy), signal)
+      return run(() => agent.cloudClipboardCreate(value), signal)
     },
     remove: (id, signal) => run(() => agent.cloudClipboardDelete(id), signal),
     clear: signal => run(() => agent.cloudClipboardClear(), signal),

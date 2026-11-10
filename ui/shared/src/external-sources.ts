@@ -190,6 +190,7 @@ export interface ExternalSourceCollectionItem extends ExternalSourceItem {
 
 export interface ExternalSourceCredentialStatus {
   configured: boolean
+  value_length?: number
   key_version?: number
   updated_at?: string
 }

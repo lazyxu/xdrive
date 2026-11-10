@@ -31,6 +31,7 @@ var (
 type baiduJSAPIDesiredConfig struct {
 	DesiredEnabled bool
 	Configured     bool
+	AKLength       int
 	Revision       uint64
 	UpdatedAt      *time.Time
 }
@@ -39,6 +40,7 @@ type adminBaiduJSAPIConfigDTO struct {
 	Provider        string     `json:"provider"`
 	DesiredEnabled  bool       `json:"desired_enabled"`
 	Configured      bool       `json:"configured"`
+	BrowserAKLength int        `json:"browser_ak_length,omitempty"`
 	Editable        bool       `json:"editable"`
 	Revision        uint64     `json:"revision"`
 	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
@@ -70,6 +72,7 @@ func (s *Server) baiduJSAPIDesired(ctx context.Context) (baiduJSAPIDesiredConfig
 	return baiduJSAPIDesiredConfig{
 		DesiredEnabled: row.Enabled,
 		Configured:     len(row.Ciphertext) != 0,
+		AKLength:       s.adminSecretMaskLength(row, baiduJSAPISecretAADID, baiduJSAPISecretKind),
 		Revision:       row.Revision,
 		UpdatedAt:      &row.UpdatedAt,
 	}, nil
@@ -124,6 +127,7 @@ func (s *Server) adminBaiduJSAPIConfig(c *gin.Context) {
 		Provider:        "baidu-jsapi-4.0",
 		DesiredEnabled:  cfg.DesiredEnabled,
 		Configured:      cfg.Configured,
+		BrowserAKLength: cfg.AKLength,
 		Editable:        s != nil && s.DB != nil && s.ConnectorSecrets != nil,
 		Revision:        cfg.Revision,
 		UpdatedAt:       cfg.UpdatedAt,

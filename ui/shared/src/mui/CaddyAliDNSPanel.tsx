@@ -206,14 +206,14 @@ export function XDriveCaddyAliDNSPanel({
               凭据加密服务未就绪，当前不可编辑。
             </Typography>}
             <XDriveSensitiveField label="AccessKey ID" value={keyID}
-              configured={config.configured}
+              configured={config.configured} configuredLength={config.access_key_id_length}
               revealedValue={active ? shown?.access_key_id : undefined}
               onReveal={() => { void reveal() }} onHide={hide}
               revealLoading={revealing} revealDisabled={!config.configured || !source.revealCaddyAliDNS || atomicSaving}
               disabled={!canEdit} maxLength={128}
               onChange={(value) => { setPendingClear(false); setKeyID(value) }} />
             <XDriveSensitiveField label="AccessKey Secret" value={keySecret}
-              configured={config.configured}
+              configured={config.configured} configuredLength={config.access_key_secret_length}
               revealedValue={active ? shown?.access_key_secret : undefined}
               onReveal={() => { void reveal() }} onHide={hide}
               revealLoading={revealing} revealDisabled={!config.configured || !source.revealCaddyAliDNS || atomicSaving}

@@ -51,18 +51,21 @@ type BundlePreference struct {
 type Result struct {
 	// An optional matching current-Server cache never changes update target
 	// selection. Absent/outdated bundles preserve the channel's updater.
-	Bundle          *BundlePreference
-	Current         string
-	Latest          string
-	Channel         string
-	Commit          string
-	UpdateAvailable bool
-	ReleaseName     string
-	PublishedAt     string
-	ReleaseNotes    string
-	ReleaseURL      string
-	Asset           Asset
-	Checksums       Asset
+	Bundle  *BundlePreference
+	Current string
+	Latest  string
+	Channel string
+	Commit  string
+	// Only set by the explicit current-Server Windows Snapshot confirmation flow.
+	// Normal channel updates always require Authenticode publisher admission.
+	PersonalUnsigned bool
+	UpdateAvailable  bool
+	ReleaseName      string
+	PublishedAt      string
+	ReleaseNotes     string
+	ReleaseURL       string
+	Asset            Asset
+	Checksums        Asset
 }
 
 type InstallStatus struct {

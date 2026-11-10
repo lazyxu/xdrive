@@ -160,6 +160,8 @@ def visible(values, pending):
         "domain": domain, "domain_enabled": bool(domain),
         "lan_ip": lan, "lan_enabled": bool(lan),
         "alidns_configured": bool(values["ALIYUN_ACCESS_KEY_ID"] and values["ALIYUN_ACCESS_KEY_SECRET"]),
+        "alidns_id_length": len(values["ALIYUN_ACCESS_KEY_ID"]),
+        "alidns_secret_length": len(values["ALIYUN_ACCESS_KEY_SECRET"]),
         "sha256": fingerprint(values), "pending_redeploy": pending,
         "observed_at": datetime.now(timezone.utc).isoformat(),
     }

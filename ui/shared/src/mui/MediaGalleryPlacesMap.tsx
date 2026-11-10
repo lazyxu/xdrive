@@ -20,7 +20,7 @@ import type { XDriveBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostic
 import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
 import {
   XDRIVE_DESKTOP_PLACES_GUEST_PROBE, xDriveDesktopPlacesGuestProbeState,
-  xDriveStartDesktopPlacesGuestProbe,
+  xDriveDesktopPlacesGuestFailureCode, xDriveStartDesktopPlacesGuestProbe,
 } from '../desktop-places-embed-admission'
 import {
   XDRIVE_PLACES_HANDOFF_TIMEOUT_MS, XDRIVE_PLACES_EMBED_PREPARE_TIMEOUT_MS,
@@ -269,7 +269,10 @@ export function XDriveMediaGalleryPlacesMap({
           } else if(state==='denied') {
             deny('Web 地图身份桥接或临时会话验证失败，请检查 Server Web 版本后重试。')
           } else if(state==='unavailable') {
-            failGuest('百度地图 SDK 加载失败，已停止显示空白画布。请重试；按 F12 查看地图 Console 和 Network。')
+            const code=xDriveDesktopPlacesGuestFailureCode(raw)
+            failGuest(code
+              ? `隔离地图运行失败（错误码：${code}）。请重试；按 F12 查看地图 Console 和 Network。`
+              : '隔离地图运行失败（可能涉及签名发布、会话、SDK 或视窗请求）。请重试；按 F12 查看地图 Console 和 Network。')
           } else if(state==='ready' && !mapMounted) {
             mapMounted=true
             setEmbedGuestReady({key:embedIdentity})
@@ -1007,7 +1010,9 @@ export function XDriveMediaGalleryPlacesMap({
           <Typography variant="body2" color="text.secondary">正在验证百度动态地图会话…</Typography>
         </Stack>
       ) : (
-        <Box role="alert" data-xdrive-baidu-map-unavailable sx={{ px: 1.5, pb: 1.5 }}>
+        <Box role="alert" data-xdrive-baidu-map-unavailable
+          data-xdrive-baidu-map-error-code={latestDiagnosis?.code}
+          sx={{ px: 1.5, pb: 1.5 }}>
           <Typography variant="body2" color="text.secondary">
             百度动态照片地图暂不可用；地点列表和照片墙仍可使用。
           </Typography>

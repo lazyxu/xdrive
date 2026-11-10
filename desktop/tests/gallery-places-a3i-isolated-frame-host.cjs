@@ -30,6 +30,7 @@ const framePath = 'ui/shared/src/media-gallery-baidu-isolated-frame-host.ts'
 const protocol = originalTS(protocolPath)
 const {
   xDriveMountBaiduIsolatedFrame,
+  XDRIVE_BAIDU_CHILD_HANDSHAKE_TIMEOUT_MS,
 } = originalTS(framePath, { './media-gallery-baidu-isolated-origin-protocol': protocol })
 const hostSource = fs.readFileSync(path.join(root, framePath), 'utf8')
 
@@ -55,8 +56,12 @@ function fixture(childOrigin = 'https://map-isolated.example.org', crypto = webc
     addEventListener(type, fn) { listeners.set(type, fn) },
     removeEventListener(type) { listeners.delete(type) },
   }
+  const docListeners = new Map()
   const document = {
     defaultView: parentWindow,
+    visibilityState: 'visible',
+    addEventListener(type, fn) { docListeners.set(type, fn) },
+    removeEventListener(type) { docListeners.delete(type) },
     createElement(tag) { assert.equal(tag, 'iframe'); return frame },
   }
   const host = {
@@ -81,7 +86,7 @@ function fixture(childOrigin = 'https://map-isolated.example.org', crypto = webc
     fn({origin: childOrigin, source: frame.contentWindow,
       data: {version:1, generation:packet.generation, nonce:packet.nonce, kind, ...rest}})
   }
-  return {seen,frame,parentWindow,host,selections,cameras,cancels,options,emit,listeners,childListeners}
+  return {seen,frame,parentWindow,document,docListeners,host,selections,cameras,cancels,options,emit,listeners,childListeners}
 }
 
 test('A3i-Msg2 rejects same-site subdomains, IP/localhost, ports and missing secure crypto before iframe creation', () => {
@@ -366,4 +371,151 @@ test('current trusted React photo covers suppress ONLY matching anonymous Child 
     'revoked SDK Child cannot hide any old Owner Cell')
   frame.dispose()
   assert.equal(frame.setPhotoCoverSelections([]),false)
+})
+
+test('trusted frame host relays only validated Child SDK failure code',()=>{
+  const f=fixture()
+  const reported=[]
+  f.options.onMapFailure=reason=>reported.push(reason)
+  const frame=xDriveMountBaiduIsolatedFrame(f.options)
+  assert.ok(frame)
+  f.childListeners.get('load')()
+  f.emit('ready')
+  f.emit('map-failed',{reason:'PRIVATE_TOKEN'})
+  f.emit('map-failed',{reason:'sdk_script_failed',ticket:'private'})
+  assert.deepEqual(reported,[],'untrusted reasons and extra keys are denied')
+  f.emit('map-failed',{reason:'sdk_script_failed'})
+  assert.deepEqual(reported,['sdk_script_failed'])
+  frame.dispose()
+})
+
+test('missing trusted Child handshake expires once; repeated reload, stale packets and hidden pages cannot leave a blank map', () => {
+  const realSetTimeout = global.setTimeout
+  const realClearTimeout = global.clearTimeout
+  const tasks = new Map()
+  let clock = 0, sequence = 0
+  global.setTimeout = (callback, delay, ...args) => {
+    const id = ++sequence
+    tasks.set(id, {due: clock + delay, run: () => callback(...args)})
+    return id
+  }
+  global.clearTimeout = id => { tasks.delete(id) }
+  const advance = milliseconds => {
+    clock += milliseconds
+    for (let i = 0; i < 30; i++) {
+      const due = [...tasks].filter(([,entry]) => entry.due <= clock)
+      if (!due.length) return
+      for (const [id,entry] of due) {
+        if (tasks.delete(id)) entry.run()
+      }
+    }
+    assert.fail('runaway trusted Parent handshake timer')
+  }
+  const mounted = []
+  const create = () => {
+    const f = fixture()
+    const errors = []
+    f.options.onMapFailure = code => errors.push(code)
+    const host = xDriveMountBaiduIsolatedFrame(f.options)
+    assert.ok(host)
+    mounted.push(host)
+    return {f,errors,host}
+  }
+  const deadline = XDRIVE_BAIDU_CHILD_HANDSHAKE_TIMEOUT_MS
+  assert.equal(deadline, 12_000)
+  try {
+    const absent = create()
+    advance(deadline - 1)
+    assert.deepEqual(absent.errors, [])
+    advance(1)
+    assert.deepEqual(absent.errors, ['child_handshake_timeout'])
+    assert.equal(absent.f.frame.removed, true)
+    assert.equal(absent.f.listeners.has('message'), false)
+    assert.equal(absent.f.docListeners.has('visibilitychange'), false)
+    assert.equal(tasks.size, 0)
+
+    const ready = create()
+    ready.f.childListeners.get('load')()
+    ready.f.emit('ready')
+    advance(deadline * 2)
+    assert.deepEqual(ready.errors, [], 'valid exact-nonce ready cancels the watchdog')
+    ready.host.dispose()
+    assert.equal(tasks.size, 0)
+
+    const reloading = create()
+    reloading.f.childListeners.get('load')()
+    advance(deadline - 100)
+    reloading.f.childListeners.get('load')()
+    // The stale first-generation ready packet is no longer valid, and a
+    // hostile Child cannot postpone the original deadline by reloading.
+    reloading.f.emit('ready')
+    advance(100)
+    assert.deepEqual(reloading.errors, ['child_handshake_timeout'])
+
+    const hidden = create()
+    hidden.f.document.visibilityState = 'hidden'
+    hidden.f.docListeners.get('visibilitychange')()
+    advance(deadline * 3)
+    assert.deepEqual(hidden.errors, [], 'background/sleep is not handshake failure')
+    hidden.f.document.visibilityState = 'visible'
+    hidden.f.docListeners.get('visibilitychange')()
+    advance(deadline - 1)
+    assert.deepEqual(hidden.errors, [])
+    advance(1)
+    assert.deepEqual(hidden.errors, ['child_handshake_timeout'])
+
+    const afterReadyReload = create()
+    afterReadyReload.f.childListeners.get('load')()
+    afterReadyReload.f.emit('ready')
+    advance(deadline * 2)
+    assert.deepEqual(afterReadyReload.errors, [])
+    afterReadyReload.f.childListeners.get('load')()
+    advance(deadline)
+    assert.deepEqual(afterReadyReload.errors, ['child_handshake_timeout'],
+      'reloaded iframe must not reuse previously successful map readiness')
+
+    const forged = create()
+    forged.f.childListeners.get('load')()
+    forged.f.emit('ready', {token:'attacker'})
+    advance(deadline)
+    assert.deepEqual(forged.errors, ['child_handshake_timeout'],
+      'untrusted extra keys must not cancel the Parent-owned deadline')
+  } finally {
+    mounted.forEach(host => host.dispose())
+    global.setTimeout = realSetTimeout
+    global.clearTimeout = realClearTimeout
+  }
+  assert.equal(tasks.size, 0, 'disposing all Host generations clears all timers')
+})
+
+test('Child document reload revokes already-ready Parent photo authority until a fresh handshake', () => {
+  const f = fixture()
+  const resets = []
+  const ready = []
+  f.options.onMapReset = () => resets.push('reset')
+  f.options.onReady = () => ready.push('ready')
+  const frame = xDriveMountBaiduIsolatedFrame(f.options)
+  assert.ok(frame)
+  f.childListeners.get('load')()
+  assert.deepEqual(resets, [], 'initial Child load is not a session reset')
+  f.emit('ready')
+  f.emit('map-ready')
+  assert.deepEqual(ready, ['ready'])
+  f.childListeners.get('load')()
+  assert.deepEqual(resets, ['reset'], 'authenticated Child reload revokes prior map pixels')
+  f.emit('ready')
+  assert.deepEqual(ready, ['ready'], 'old nonce cannot reactivate a reloaded Child')
+  const freshChallenge = f.seen.at(-1).payload
+  f.listeners.get('message')({
+    origin:f.options.childOrigin,source:f.frame.contentWindow,
+    data:{version:1,generation:freshChallenge.generation,
+      nonce:freshChallenge.nonce,kind:'ready'},
+  })
+  assert.deepEqual(ready, ['ready','ready'], 'only fresh exact-generation ready can reenter')
+  frame.dispose()
+  const photoSurface = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  assert.match(photoSurface, /onMapReset:\(\) => \{[\s\S]*?cancel\(\)[\s\S]*?setPhase\('loading'\)[\s\S]*?onReady\(false\)/)
+  assert.match(photoSurface, /xDriveValidBaiduNativeCameraSnapshot\(camera\)/)
+  assert.match(photoSurface, /returnCamera = lastKnownCamera \? \{\.\.\.lastKnownCamera\} : null/)
 })

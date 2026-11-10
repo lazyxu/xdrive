@@ -251,8 +251,6 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/me/change-password/browser", s.changePassword)
 	// Owner-only short-lived E2EE Web mailbox. No SourceRun, public share or
 	// native Photo grant can use these authenticated routes.
-	authed.GET("/clipboard/vault", s.clipboardVault)
-	authed.PUT("/clipboard/vault/check", s.putClipboardVaultCheck)
 	authed.GET("/clipboard/devices", s.listClipboardDevices)
 	authed.PUT("/clipboard/devices/self", s.enrollClipboardDeviceKey)
 	authed.POST("/clipboard/devices/:id/revoke", s.revokeClipboardDeviceKey)

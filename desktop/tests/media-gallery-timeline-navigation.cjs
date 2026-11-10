@@ -79,19 +79,28 @@ test('M13 deep 100k index/date lookup remains logarithmic rather than scanning a
 
 test('M13 shared Gallery controls expose accessible indexed date jump/current date/back anchor', () => {
   const gallery = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
+  const controls = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryDateNavigation.tsx'), 'utf8')
   for (const token of [
     'data-xdrive-gallery-timeline-day-jump',
     'data-xdrive-gallery-timeline-current-date',
     'data-xdrive-gallery-timeline-return',
+    'data-xdrive-gallery-timeline-jump',
+  ]) assert.ok(controls.includes(token), 'Missing shared date control: ' + token)
+  for (const token of [
     'xDriveMediaGalleryTimelineNearestDay(',
     'xDriveMediaGalleryTimelineGroupAtIndex(',
     'viewAnchorIndexRef.current',
     'restoreAnchorRevision={viewAnchorRevision}',
+    '<XDriveMediaGalleryDateNavigation',
+    'onJumpGroup={jumpToTimelineGroup}',
+    'onJumpDay={jumpToTimelineDay}',
+    'onReturn={returnToTimelineAnchor}',
   ]) {
     assert.ok(gallery.includes(token), 'Missing M13 UI/anchor contract: ' + token)
   }
-  assert.match(gallery, /aria-label="跳转日期"/)
-  assert.match(gallery, /type="date"/)
+  assert.match(controls, /aria-label="跳转日期"/)
+  assert.match(controls, /type="date"/)
   assert.match(gallery, /setTimelineReturnAnchor\(/)
   assert.match(gallery, /const timelineNavigationGroups = useMemo/)
   assert.match(gallery, /item_count: group\.items\.length/)

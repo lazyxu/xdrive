@@ -18,10 +18,23 @@ import (
 // configured release channel; a Server upgrade never triggers this method.
 //
 // Trust: current authenticated Owner -> immutable GitHub tag/source+asset
-// digest verification -> exact size and SHA-256 -> OS-specific signed-package
-// admission. Never execute an arbitrary Server-supplied URL or download path.
+// digest verification -> exact size and SHA-256 -> OS-specific admission.
+// Only an explicitly confirmed Windows master Snapshot may omit Authenticode. Never execute an arbitrary Server-supplied URL or download path.
+// currentServerInstallAllowed is the last local policy check after the
+// authenticated Server listing. Explicit private unsigned consent must never
+// leak into stable, Linux or background/channel update flows.
+func currentServerInstallAllowed(artifact client.ReleaseBundleArtifact, platform, channel, commit, filename string, personalUnsigned bool) bool {
+	if artifact.Platform != platform || artifact.Filename != filename || artifact.BuildCommit != commit {
+		return false
+	}
+	if personalUnsigned {
+		return platform == "windows" && channel == xupdate.ChannelMaster && artifact.InstallMode == "manual_test_only"
+	}
+	return artifact.InstallMode == "manual"
+}
+
 func (m *clientUpdateManager) InstallCurrentServerCommit(
-	ctx context.Context, cli *client.Client, expectedCommit, filename string,
+	ctx context.Context, cli *client.Client, expectedCommit, filename string, personalUnsigned bool,
 ) (clientUpdateState, error) {
 	if !m.Snapshot().ManualInstallSupported {
 		return m.Snapshot(), fmt.Errorf("当前平台未提供可验证的系统安装授权；请下载当前 Server 安装包后使用平台安装程序")
@@ -60,6 +73,9 @@ func (m *clientUpdateManager) InstallCurrentServerCommit(
 			Commit: expectedCommit, Channel: listing.Channel,
 		}), nil
 	}
+	if personalUnsigned && (runtime.GOOS != "windows" || listing.Channel != xupdate.ChannelMaster) {
+		return m.fail(fmt.Errorf("personal unsigned installer is permitted only for an explicitly confirmed Windows master Snapshot"))
+	}
 	if runtime.GOARCH != "amd64" || (runtime.GOOS != "windows" && runtime.GOOS != "linux") {
 		return m.fail(fmt.Errorf("no supported verified installer for current device architecture"))
 	}
@@ -73,14 +89,16 @@ func (m *clientUpdateManager) InstallCurrentServerCommit(
 	var item *client.ReleaseBundleArtifact
 	for i := range listing.Artifacts {
 		artifact := &listing.Artifacts[i]
-		if artifact.Filename == filename && artifact.Platform == runtime.GOOS &&
-			artifact.BuildCommit == expectedCommit && artifact.InstallMode == "manual" {
+		if currentServerInstallAllowed(*artifact, runtime.GOOS, listing.Channel, expectedCommit, filename, personalUnsigned) {
 			item = artifact
 			break
 		}
 	}
 	if item == nil {
-		return m.fail(fmt.Errorf("the current Server does not publish a signed installer for this platform"))
+		return m.fail(fmt.Errorf("the current Server has no approved installer for this platform and consent mode"))
+	}
+	if personalUnsigned != (item.InstallMode == "manual_test_only") {
+		return m.fail(fmt.Errorf("personal unsigned consent must match the exact published Windows installer mode"))
 	}
 	if err := client.VerifyCurrentBundlePublisher(opCtx, expectedCommit, *item); err != nil {
 		return m.fail(fmt.Errorf("independent published-Commit verification failed: %w", err))
@@ -88,8 +106,9 @@ func (m *clientUpdateManager) InstallCurrentServerCommit(
 	result := xupdate.Result{
 		Current: version.String(), Latest: listing.ServerVersion,
 		Channel: listing.Channel, Commit: expectedCommit,
-		UpdateAvailable: true,
-		ReleaseName:     "Current Server Commit " + expectedCommit,
+		PersonalUnsigned: personalUnsigned,
+		UpdateAvailable:  true,
+		ReleaseName:      "Current Server Commit " + expectedCommit,
 		Asset: xupdate.Asset{
 			Name: item.Filename, Size: item.Size,
 			Digest: "sha256:" + item.SHA256,
@@ -119,8 +138,9 @@ func (m *clientUpdateManager) InstallCurrentServerCommit(
 	m.state.BytesDone = item.Size
 	m.state.Message = "当前 Server Commit 安装包已验证，准备系统安装…"
 	m.mu.Unlock()
-	// The platform installer re-checks the digest and permissions. Windows
-	// additionally pins its Authenticode signer to the installed xd.exe.
+	// The platform installer re-checks digest, installed Commit and permissions.
+	// Windows preserves signed publisher admission unless explicit personal
+	// unsigned Snapshot consent is bound to this verified Release.
 	if _, err := xupdate.InstallPreviouslyVerified(opCtx, path, result); err != nil {
 		return m.fail(err)
 	}

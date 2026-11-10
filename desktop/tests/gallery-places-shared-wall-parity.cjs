@@ -25,6 +25,7 @@ const policy = loadPolicy('ui/shared/src/media-gallery-places-photo-window.ts')
 const grid = loadPolicy('ui/shared/src/mui/MediaGalleryVirtualGrid.ts')
 const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
 const drawer = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+const dateControls = read('ui/shared/src/mui/MediaGalleryDateNavigation.tsx')
 const parent = read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
 const map = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
 const tiles = read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
@@ -136,7 +137,8 @@ test('Places pinch shares Gallery column policy and retains a numeric visible an
   assert.match(host,/xDriveMediaGalleryPinchColumnCount\(/)
   assert.match(host,/onChange\(columns, current.index, current.viewportOffset\)/)
   assert.match(host,/suppressClickUntil.current = Date.now\(\) \+ 350/)
-  assert.match(drawer,/all: 3, year: 6, month: 5, day: 3/)
+  assert.match(drawer,/XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT/)
+  assert.match(drawer,/xDriveReadMobileGalleryColumns\(\)/)
   assert.match(drawer,/referenceColumnWidth=\{144\}/)
   assert.match(drawer,/restoreLayout\(index,viewportOffset\)/)
   for(const count of [142,100000]){
@@ -263,13 +265,17 @@ test('Places dated browsing matches Gallery navigation without bypassing Owner f
     'data-xdrive-places-photo-timeline-current-date',
     'data-xdrive-places-photo-timeline-return',
     'data-xdrive-places-photo-timeline-day-feedback',
-  ]) assert.ok(drawer.includes(selector), selector)
+  ]) assert.ok(dateControls.includes(selector), selector)
+  assert.match(drawer,/<XDriveMediaGalleryDateNavigation/)
+  assert.match(drawer,/onJumpGroup=\{jumpToTimelineGroup\}/)
+  assert.match(drawer,/onJumpDay=\{jumpToTimelineDay\}/)
+  assert.match(drawer,/onReturn=\{returnToTimelineAnchor\}/)
   assert.match(drawer,/phase==='ready' && timelineGroups && expanded/)
   assert.match(drawer,/Number\.isSafeInteger\(group\.start_index\)/)
   assert.match(drawer,/group\.start_index \+ group\.item_count > total/)
   assert.match(drawer,/setTimelineReturnAnchor\(\{ index, viewportOffset: offset \}\)/)
   assert.match(drawer,/restoreLayout\(anchor\.index, anchor\.viewportOffset\)/)
-  assert.match(drawer,/disabled=\{!timelineGroups\.day\.some\(/)
+  assert.match(drawer,/dayDisabled=\{!timelineGroups\.day\.some\(/)
   // There is no new range reader or date-derived authority in the presentation.
   assert.doesNotMatch(drawer,/fetch\(|listOwnerCells\(|listOwnerCellItems\(/)
   assert.match(parent,/photoOpener\.current\(state\.selection,approved\.scope,item\.node\.id,item\.node\.revision/)

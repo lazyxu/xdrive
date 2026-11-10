@@ -36,6 +36,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
       this.removeEventListener=(name)=>{if(name==='click')this.click=null}
     },
     Map:function Map(){
+      if(options.sdkConstructorThrows)throw Error('PRIVATE_PROVIDER_AK_VALUE')
       this.centerAndZoom=(point,zoom)=>moves.push({latitude:point.lat,longitude:point.lng,zoom})
       this.addEventListener=(name,listener)=>nativeEvents.set(name,listener)
       this.addOverlay=label=>{labels.push(label)}
@@ -51,7 +52,8 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
     },
   }
   const env={window:{location:{origin:childOrigin},parent,
-    ...(sdkEnabled?{BMap:fakeSDK}:{}),
+    ...(sdkEnabled?{BMap:options.sdkMissingMap
+      ? {Point:fakeSDK.Point,Label:fakeSDK.Label} : fakeSDK}:{}),
     ...(options.resizeFixture ? {ResizeObserver:ResizeObserverFixture} : {}),
     addEventListener(type,cb){events.set(type,cb)},
     removeEventListener(type,cb){if(events.get(type)===cb)events.delete(type)}},
@@ -59,15 +61,18 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
       fetch:async()=>{
         redeems.push(true)
         if(options.sessionNetworkFailure)throw Error('controlled-session-failure')
-        return {ok:!options.sessionDenied,
+        const status=options.sessionStatus ?? (options.sessionDenied ? 403 : 200)
+        return {status,ok:status>=200 && status<300,
           json:async()=>options.sessionReceipt ?? {provider:'baidu-jsapi-4.0',runtime_enabled:true}}
       },
-      setTimeout,clearTimeout,
+      setTimeout:(fn,ms)=>setTimeout(fn,
+        options.shortSDKTimeout && ms===7500 ? 25 : ms),clearTimeout,
     }:{}),
     document:{
       getElementById(){return messageTarget},
       ...(sdkEnabled?{
         head:{appendChild(script){scripts.push(script);queueMicrotask(()=>{
+          if(options.sdkNeverSettles)return // Real request stalls: no load/error callback.
           if(options.sdkScriptError)script.onerror?.()
           else script.onload?.()
         })}},
@@ -251,7 +256,8 @@ async function waitForChild(condition, reason) {
 }
 
 test('failed Child Session/SDK denies map rendering without Static fallback or ticket disclosure',async()=>{
-  for(const options of [{sessionDenied:true},{sessionNetworkFailure:true},{sdkScriptError:true}]) {
+  for(const options of [{sessionDenied:true},{sessionStatus:401},{sessionStatus:429},
+    {sessionNetworkFailure:true},{sdkScriptError:true}]) {
     const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true,options)
     f.sendObject(f.parent,'https://gallery.example.net',init)
     f.sendObject(f.parent,'https://gallery.example.net',{
@@ -259,9 +265,13 @@ test('failed Child Session/SDK denies map rendering without Static fallback or t
     await waitForChild(()=>f.sent.some(e=>e.message.kind==='map-failed'),'one map failure was delivered')
     assert.equal(f.moves.length,0,'failed Session/SDK cannot mount an active map')
     assert.equal(f.sent.filter(e=>e.message.kind==='map-failed').length,1)
+    assert.equal(f.sent.find(e=>e.message.kind==='map-failed').message.reason,
+      options.sdkScriptError ? 'sdk_script_failed' : options.sessionStatus===429
+        ? 'session_rate_limited' : options.sessionDenied || options.sessionStatus===401
+          ? 'session_denied' : 'session_unavailable')
     assert.match(f.messageTarget.textContent,/地点列表和照片墙仍可使用/)
     assert.doesNotMatch(f.messageTarget.textContent,/静态地图|静态底图/)
-    if(options.sessionDenied||options.sessionNetworkFailure)
+    if(options.sessionDenied||options.sessionNetworkFailure || options.sessionStatus===401 || options.sessionStatus===429)
       assert.equal(f.scripts.length,0,'SDK must never load before map-session redemption')
     else assert.equal(f.scripts.length,1,'SDK failure follows a valid Session')
     assert(!JSON.stringify(f.sent).includes('b'.repeat(64)),'ticket never echoes to Parent')
@@ -484,4 +494,41 @@ test('isolated Child stages worldwide label suppression before SDK readiness and
   assert.equal(visible().length,0,
     'an old anonymous worldwide key cannot restore hidden camera labels')
   f.events.get('pagehide')?.()
+})
+
+test('production Child reproduces SDK namespace and constructor failures with no provider data',async()=>{
+  const cases=[
+    {sdkNeverSettles:true,shortSDKTimeout:true,reason:'sdk_script_timeout'},
+    {sdkMissingMap:true,shortSDKTimeout:true,reason:'sdk_namespace_missing'},
+    {sdkConstructorThrows:true,reason:'sdk_map_initialization_failed'},
+  ]
+  for(const {reason,...options} of cases) {
+    const f=childFixture('https://gallery.example.net',
+      'https://map-isolated.example.org',true,options)
+    f.sendObject(f.parent,'https://gallery.example.net',init)
+    f.sendObject(f.parent,'https://gallery.example.net',{
+      version:1,generation:7,nonce:'a'.repeat(64),
+      kind:'map-session',ticket:'b'.repeat(64)})
+    await waitForChild(()=>f.sent.some(e=>e.message.kind==='map-failed'),
+      'safe '+reason+' failure from production child.js')
+    const failure=f.sent.find(e=>e.message.kind==='map-failed')
+    assert.equal(failure.message.reason,reason)
+    assert.deepEqual(Object.keys(failure.message).sort(),
+      ['generation','kind','nonce','reason','version'])
+    assert(!JSON.stringify(f.sent).includes('PRIVATE_PROVIDER_AK_VALUE'),
+      'provider exception must not enter the trusted Parent')
+    assert(!JSON.stringify(f.sent).includes('b'.repeat(64)),
+      'one-use Child ticket must never echo')
+    assert.equal(f.sent.filter(e=>e.message.kind==='map-failed').length,1)
+    f.events.get('pagehide')?.()
+  }
+})
+
+test('unconfigured separate-site HTML cannot complete Child handshake',()=>{
+  assert.match(html,/REPLACE_WITH_TRUSTED_HTTPS_PARENT_ORIGIN/)
+  const f=childFixture('REPLACE_WITH_TRUSTED_HTTPS_PARENT_ORIGIN',
+    'https://map-isolated.example.org',true)
+  assert.equal(f.events.has('message'),false)
+  f.sendObject(f.parent,'https://gallery.example.net',init)
+  assert.equal(f.sent.length,0,'no ready message; Desktop must time out')
 })
