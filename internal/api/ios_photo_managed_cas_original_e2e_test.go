@@ -231,7 +231,11 @@ func TestIOSPhotoManagedOriginalHTTPResumeFinalizeCASReadback(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Model(&meta.Node{}).
-		Where("id = ? AND owner_id = ? AND parent_id = ?", nodeID, owner.ID, target.TargetNodeID).
+		// Count EVERY current file with the same destination and name. A
+		// count pinned to the already returned nodeID can never detect a
+		// second Node created by a lost Finalize ACK retry.
+		Where("owner_id = ? AND parent_id = ? AND name = ? AND type = ? AND deleted_at IS NULL",
+			owner.ID, target.TargetNodeID, name, meta.NodeTypeFile).
 		Count(&nodes).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -249,4 +253,18 @@ func TestIOSPhotoManagedOriginalHTTPResumeFinalizeCASReadback(t *testing.T) {
 		receiptPath, ownerToken, nil, http.StatusForbidden, headers)
 	requestWithHeaders(t, router, http.MethodPost,
 		lookupPath, ownerToken, encode(identity), http.StatusForbidden, headers)
+	// Revoking a device must also block a new original writer, while the
+	// previously committed original stays intact in physical CAS.
+	requestWithHeaders(t, router, http.MethodPost,
+		path, ownerToken, encode(createBody), http.StatusForbidden, headers)
+	retained, err := local.Open(context.Background(), actualFile.StorageKey)
+	if err != nil {
+		t.Fatalf("device revocation lost physical CAS original: %v", err)
+	}
+	retainedBytes, readErr := io.ReadAll(retained)
+	closeErr = retained.Close()
+	if readErr != nil || closeErr != nil ||
+		!bytes.Equal(retainedBytes, content) || digest(retainedBytes) != fullHash {
+		t.Fatalf("device revocation corrupted stored original: read=%v close=%v", readErr, closeErr)
+	}
 }
