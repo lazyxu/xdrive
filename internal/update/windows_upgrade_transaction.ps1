@@ -486,6 +486,16 @@ try {
         if ([string]$build.commit -cne $ExpectedCommit) {
             throw "post-install health check failed: xd source Commit=$($build.commit) target=$ExpectedCommit"
         }
+        # Electron-builder stages this same exact-source metadata beside
+        # app.asar; verify the installed payload before reporting success.
+        $desktopBuildPath = Join-Path $appDir "desktop\resources\xdrive-build-info.json"
+        if (-not (Test-Path -LiteralPath $desktopBuildPath -PathType Leaf)) {
+            throw "post-install health check failed: Desktop build metadata missing"
+        }
+        $desktopBuild = Get-Content -LiteralPath $desktopBuildPath -Raw | ConvertFrom-Json
+        if ([string]$desktopBuild.commit -cne $ExpectedCommit) {
+            throw "post-install health check failed: Desktop Commit=$($desktopBuild.commit) target=$ExpectedCommit"
+        }
     }
 
     Write-Status "verifying" "Verifying Agent IPC, Electron Desktop, and unified client version."
