@@ -158,7 +158,12 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
       expected, name)
   }
   assert.match(map, /wallDensity = wallDensity\.applyingPinch\(scale\)/)
-  assert.match(cluster, /wallDensity = wallDensity\.applyingPinch\(scale\)/)
+  assert.match(shared, /struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier/)
+  assert.match(shared, /density = density\.applyingPinch\(scale\)/)
+  assert.match(cluster, /\.xdrivePhotoWallPinch\(/)
+  assert.match(cluster, /density: \$wallDensity,/)
+  assert.match(cluster, /enabled: activeOwner && !busy && viewing == nil/)
+  assert.doesNotMatch(cluster, /MagnificationGesture\(minimumScaleDelta:/)
   assert.match(map, /@Environment\(\\\.dynamicTypeSize\)/)
   assert.match(album, /@Environment\(\\\.dynamicTypeSize\)/)
   assert.doesNotMatch(shared, /PHAsset\.fetchAssets|URLSession|UploadSession|\\.task\(/)
