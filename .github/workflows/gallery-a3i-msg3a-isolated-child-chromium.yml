@@ -14,7 +14,9 @@ permissions:
 
 jobs:
   isolated-map-child-chromium:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'sec/places-a3i-msg3a-child-boundary-20261021'
+    # The pull_request path filter already limits this real Chrome check to
+    # isolated Child test changes. Do not silently skip successor fixes.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
