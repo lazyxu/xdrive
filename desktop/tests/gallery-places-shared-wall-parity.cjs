@@ -102,7 +102,9 @@ test('date grouping uses only complete same-Owner first-page indices, not sparse
 })
 
 test('Gallery and Places use one shared photo wall and one dated virtual renderer',()=>{
-  assert.match(gallery,/<XDriveMediaGalleryPhotoWall surface="gallery">/)
+  assert.match(gallery,/<XDriveMediaGalleryPhotoWall surface="gallery"/)
+  assert.match(gallery,/pinch=\{compactGallery && !selectionMode && !mobileCollectionsOverview/)
+  assert.match(gallery,/onChange: changeSharedGalleryPinch/)
   assert.match(drawer,/<XDriveMediaGalleryPhotoWall surface="places"/)
   assert.match(drawer,/<XDriveMediaGalleryVirtualTimeline/)
   assert.match(gallery,/XDriveMediaGalleryVirtualTimeline as MediaVirtualTimeline/)
