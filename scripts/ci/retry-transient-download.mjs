@@ -12,7 +12,12 @@ if (args.length === 0) {
 const maxAttempts = 3
 const delayMs = Math.max(0, Math.min(60_000, Number(process.env.XDRIVE_CI_RETRY_DELAY_MS ?? 10_000) || 0))
 const maxCaptured = 128 * 1024
-const transient = /(?:response code:?\s*504|HTTP(?:\s+response\s+code:?)?\s*504|gateway time-?out)/i
+const transientHTTP = /(?:response code:?\s*504|HTTP(?:\s+response\s+code:?)?\s*504|gateway time-?out)/i
+// A known-good Kotlin Gradle plugin occasionally cannot be resolved from
+// external repositories on a fresh GitHub runner. Only the standalone master
+// APK build opts into this narrow, bounded retry; compiler errors stay fatal.
+const retryGradlePluginResolution = process.env.XDRIVE_CI_RETRY_GRADLE_PLUGIN_RESOLUTION === '1'
+const transientGradlePlugin = /Plugin \[id: 'org\.jetbrains\.kotlin\.android', version: '[^']+', apply: false\] was not found in any of the following sources:/i
 
 function attempt() {
   return new Promise((resolve) => {
@@ -36,7 +41,13 @@ function attempt() {
       resolve({ code: 127, transient: false })
     })
     child.on('close', (code, signal) => {
-      resolve({ code: code ?? 1, transient: !signal && transient.test(recent) })
+      const retryHTTP = transientHTTP.test(recent)
+      const retryGradle = retryGradlePluginResolution && transientGradlePlugin.test(recent)
+      resolve({
+        code: code ?? 1,
+        transient: !signal && (retryHTTP || retryGradle),
+        reason: retryGradle ? 'Kotlin Gradle plugin resolution' : 'HTTP 504 dependency download',
+      })
     })
   })
 }
@@ -48,6 +59,6 @@ for (let i = 1; i <= maxAttempts; i++) {
     process.stderr.write(`[ci-retry] build failed with exit ${result.code}; ${result.transient ? 'transient download still unavailable' : 'not a transient download failure'}\n`)
     process.exit(result.code || 1)
   }
-  process.stderr.write(`[ci-retry] HTTP 504 dependency download, retry ${i + 1}/${maxAttempts} after ${delayMs}ms\n`)
+  process.stderr.write(`[ci-retry] ${result.reason}, retry ${i + 1}/${maxAttempts} after ${delayMs}ms\n`)
   await delay(delayMs)
 }
