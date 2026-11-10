@@ -5,6 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 source scripts/ci/gitlab-release-version.sh
 
+# This source-only job has needs: []; no packaging artifact creates its output.
+mkdir -p release
+
 # Bind every fetched deployment asset to the exact CI source commit.
 # This Release installer must never be treated as an unverified raw bootstrap.
 deploy_hash_manifest="$(mktemp)"

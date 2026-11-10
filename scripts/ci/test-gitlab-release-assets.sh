@@ -30,9 +30,8 @@ for source in "${sources[@]}"; do
   mkdir -p "$fixture/$(dirname "$source")"
   cp "$ROOT/$source" "$fixture/$source"
 done
-# Production packaging provides the release staging directory; reproduce that
-# prerequisite while still verifying every generated artifact and digest.
-mkdir -p "$fixture/release"
+# The source-only job has needs: [] and starts without packaging artifacts.
+test ! -e "$fixture/release"
 
 sha="0123456789abcdef0123456789abcdef01234567"
 (
@@ -89,6 +88,17 @@ while read -r digest source_path; do
     echo "Staged deployment asset differs from embedded digest: $source_path" >&2; exit 1
   }
 done < "$fixture/embedded.sha256"
+
+# Re-running source collection must preserve unrelated staged client packages.
+printf 'existing client package\n' > "$fixture/release/client-sentinel"
+(cd "$fixture/release"; sha256sum xdrive-server-install.sh) > "$fixture/installer.sha256"
+(
+  cd "$fixture"
+  env CI_COMMIT_SHA="$sha" CI_COMMIT_BRANCH=master CI_COMMIT_TAG= CI_REGISTRY_IMAGE="registry.example.test/xuliang/xdrive" bash scripts/ci/gitlab-release-assets.sh
+)
+grep -Fxq 'existing client package' "$fixture/release/client-sentinel"
+(cd "$fixture/release"; sha256sum --check --status "$fixture/installer.sha256")
+cmp "$fixture/scripts/xdrive-share-update.py" "$fixture/release/xdrive-share-update.py"
 for name in server-control.sh release_bundle.py caddy-env-config.py caddy-admission.py xdrive-share-update.py; do
   grep -Fq -- "- release/$name" "$ROOT/infra/ci/gitlab-release.yml" || {
     echo "Deployment asset missing from GitLab artifact handoff: $name" >&2; exit 1

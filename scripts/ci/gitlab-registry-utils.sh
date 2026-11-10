@@ -20,7 +20,11 @@ xdrive_pull_or_absent() {
     rm -f "$error"
     return 0
   fi
-  if grep -Eiq 'manifest unknown|manifest for .+ not found|manifest does not exist|unknown manifest' "$error"; then
+  # The containerd image store reports a missing manifest differently. Match
+  # the complete diagnostic and both exact references, never generic "not found"
+  # (which can also describe a missing credential helper, blob or proxy route).
+  if [[ "$(cat "$error")" == "Error response from daemon: failed to resolve reference \"$ref\": $ref: not found" ]] ||
+     grep -Eiq 'manifest unknown|manifest for .+ not found|manifest does not exist|unknown manifest' "$error"; then
     rm -f "$error"
     return 10
   fi

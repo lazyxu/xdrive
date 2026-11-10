@@ -20,14 +20,27 @@ case "$op" in
   info) ;;
   pull)
     ref="$1"
+    if [[ -n "${MOCK_PULL_ERROR_FILE:-}" && ( "$ref" == *:sha-* || "$ref" == *:edge || "$ref" == *:contract-* ) ]]; then
+      cat "$MOCK_PULL_ERROR_FILE" >&2; exit 1
+    fi
     if [[ "${MOCK_EDGE_STATE:-}" == outage && "$ref" == *:edge ]]; then
       echo 'dial tcp: connect timeout' >&2; exit 1
     fi
     if [[ "${MOCK_EDGE_STATE:-}" == missing && "$ref" == *:edge ]] && ! grep -Fxq "push $ref" "$MOCK_DOCKER_EVENTS"; then
-      echo 'manifest unknown: manifest unknown' >&2; exit 1
+      if [[ "${MOCK_MISSING_FORMAT:-}" == containerd ]]; then
+        printf 'Error response from daemon: failed to resolve reference "%s": %s: not found\n' "$ref" "$ref" >&2
+      else
+        echo 'manifest unknown: manifest unknown' >&2
+      fi
+      exit 1
     fi
     if [[ "${MOCK_RELEASE_EXISTS:-0}" != 1 && "$ref" == *:sha-* ]]; then
-      echo 'manifest unknown: manifest unknown' >&2; exit 1
+      if [[ "${MOCK_MISSING_FORMAT:-}" == containerd ]]; then
+        printf 'Error response from daemon: failed to resolve reference "%s": %s: not found\n' "$ref" "$ref" >&2
+      else
+        echo 'manifest unknown: manifest unknown' >&2
+      fi
+      exit 1
     fi
     ;;
   image)
@@ -95,6 +108,60 @@ grep -Fxq "registry.test.invalid/xdrive/xdrive-media-worker:ci-100-200" dist/med
 grep -Eq '^sha256:[0-9a-f]{64}$' dist/media-worker-image/image.digest
 bash scripts/ci/gitlab-server-images.sh xdrive-media-worker dist/media-worker-image xdrive/media-worker:test
 
+# Pipeline 3821: containerd reports the exact unresolved reference as not found.
+# The real publisher must still verify staged bytes before creating the tag.
+export MOCK_MISSING_FORMAT=containerd
+: > "$MOCK_DOCKER_EVENTS"
+bash scripts/ci/gitlab-server-images.sh xdrive-media-worker dist/media-worker-image xdrive/media-worker:test
+grep -Fxq "push $CI_REGISTRY_IMAGE/xdrive-media-worker:sha-${CI_COMMIT_SHA:0:12}" "$MOCK_DOCKER_EVENTS"
+unset MOCK_MISSING_FORMAT
+
+# Exercise the shared helper used by immutable, mutable and runtime tags.
+source scripts/ci/gitlab-registry-utils.sh
+export MOCK_PULL_ERROR_FILE="$TMP/pull-error"
+for suffix in sha-0123456789ab edge contract-0123456789ab; do
+  ref="$CI_REGISTRY_IMAGE/xdrive-photo-face-runtime:$suffix"
+  printf 'Error response from daemon: failed to resolve reference "%s": %s: not found\n' "$ref" "$ref" > "$MOCK_PULL_ERROR_FILE"
+  status=0
+  xdrive_pull_or_absent "$ref" || status=$?
+  [[ "$status" == 10 ]] || { echo 'exact containerd missing manifest was not recognized' >&2; exit 1; }
+done
+
+# Similar text is not proof of absence: unrelated references, HTTP routes,
+# credential helpers, authorization, transport errors and mixed output all fail.
+ref="$CI_REGISTRY_IMAGE/xdrive-media-worker:sha-${CI_COMMIT_SHA:0:12}"
+other="$CI_REGISTRY_IMAGE/unrelated:edge"
+for diagnostic in \
+  "Error response from daemon: failed to resolve reference \"$other\": $other: not found" \
+  "Error response from daemon: failed to resolve reference \"$ref\": $other: not found" \
+  "Error response from daemon: failed to resolve reference \"$ref\": unexpected status from HEAD request: 404 Not Found" \
+  "Error response from daemon: failed to resolve reference \"$ref\": 401 Unauthorized" \
+  'denied: access forbidden (403)' \
+  'dial tcp: lookup registry.test.invalid: no such host' \
+  'net/http: TLS handshake timeout' \
+  'x509: certificate signed by unknown authority' \
+  'unexpected status: 503 Service Unavailable' \
+  'error getting credentials: executable docker-credential-test not found' \
+  'blob sha256:1234: not found' \
+  "$(printf 'Error response from daemon: failed to resolve reference "%s": %s: not found\nunauthorized: authentication required' "$ref" "$ref")"; do
+  printf '%s\n' "$diagnostic" > "$MOCK_PULL_ERROR_FILE"
+  status=0
+  xdrive_pull_or_absent "$ref" > "$TMP/unknown.log" 2>&1 || status=$?
+  [[ "$status" == 1 ]] || { echo 'unknown pull error treated as absence' >&2; exit 1; }
+  for publisher in gitlab-server-images.sh gitlab-promote-images.sh; do
+    : > "$MOCK_DOCKER_EVENTS"
+    args=()
+    if [[ "$publisher" == gitlab-server-images.sh ]]; then
+      args=(xdrive-media-worker dist/media-worker-image xdrive/media-worker:test)
+    fi
+    if bash "scripts/ci/$publisher" "${args[@]}" > "$TMP/unknown-publisher.log" 2>&1; then
+      echo 'unknown registry failure allowed publication' >&2; exit 1
+    fi
+    ! grep -q '^push ' "$MOCK_DOCKER_EVENTS"
+  done
+done
+unset MOCK_PULL_ERROR_FILE
+
 # Existing immutable tag with different bytes must be refused.
 export MOCK_RELEASE_EXISTS=1 MOCK_CONFLICT=1
 if bash scripts/ci/gitlab-server-images.sh xdrive-media-worker dist/media-worker-image xdrive/media-worker:test > "$TMP/conflict.log" 2>&1; then
@@ -140,6 +207,11 @@ unset MOCK_LEGACY_CADDY MOCK_SERVER_NO_REV
 # A fresh Registry supports safe first promotion after all source labels pass.
 export MOCK_EDGE_STATE=missing
 bash scripts/ci/gitlab-promote-images.sh > "$TMP/bootstrap.log" 2>&1
+export MOCK_MISSING_FORMAT=containerd
+: > "$MOCK_DOCKER_EVENTS"
+bash scripts/ci/gitlab-promote-images.sh > "$TMP/bootstrap-containerd.log" 2>&1
+grep -Fxq "push $CI_REGISTRY_IMAGE/xdrive-server:edge" "$MOCK_DOCKER_EVENTS"
+unset MOCK_MISSING_FORMAT
 unset MOCK_EDGE_STATE
 
 echo 'GitLab Registry staging, immutable conflict, stale edge, outage and legacy Caddy regressions passed'
