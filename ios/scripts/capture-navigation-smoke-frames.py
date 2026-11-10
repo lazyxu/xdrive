@@ -28,6 +28,10 @@ output.mkdir(parents=True, exist_ok=True)
 FRAME_OFFSETS_SECONDS = (0.5, 1.5, 3.5)
 # Short tap-adjacent samples, still not a video/FPS measurement.
 TAP_FRAME_OFFSETS_SECONDS = (0.15, 0.55)
+# Real macOS simctl screenshots required 1.23s P50 / 5.88s P95 across
+# a 24-test no-session Simulator artifact. Frames captured long after
+# their scheduled +150ms slot are not valid click-adjacent evidence.
+MAX_CAPTURE_LAG_SECONDS = 0.75
 # Cover late repeated transitions, not just the first three taps.
 # Bounded per test to avoid exhausting storage on rapid 16-cycle suites.
 TAP_CAPTURE_NUMBERS = frozenset((1, 2, 4, 8, 12, 16))
@@ -267,6 +271,17 @@ while True:
         destination = output / f"{name}-{count}-frame{index + 1}.png"
         ok = False
         capture_started = time.monotonic()
+        if capture_started - due_at > MAX_CAPTURE_LAG_SECONDS:
+            with manifest.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({
+                    "test": name, "attempt": count, "frame": index + 1,
+                    "capture_mode": "test-start",
+                    "scheduled_after_start_seconds": delay,
+                    "capture_request_lag_seconds": round(capture_started - due_at, 4),
+                    "captured": False, "file": None,
+                    "reason": "capture_deadline_missed",
+                }, ensure_ascii=False) + "\n")
+            continue
         try:
             subprocess.run(
                 ["xcrun", "simctl", "io", simulator, "screenshot", str(destination)],
@@ -300,6 +315,18 @@ while True:
         )
         ok = False
         capture_started = time.monotonic()
+        if capture_started - due_at > MAX_CAPTURE_LAG_SECONDS:
+            with manifest.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({
+                    "test": name, "attempt": count, "route": route,
+                    "tap_number": tap_count, "frame": frame + 1,
+                    "capture_mode": "tap-adjacent",
+                    "scheduled_after_tap_seconds": delay,
+                    "capture_request_lag_seconds": round(capture_started - due_at, 4),
+                    "captured": False, "file": None,
+                    "reason": "capture_deadline_missed",
+                }, ensure_ascii=False) + "\n")
+            continue
         try:
             subprocess.run(
                 ["xcrun", "simctl", "io", simulator, "screenshot", str(destination)],
