@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
-	"unicode/utf8"
-	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/client"
@@ -48,14 +48,14 @@ func isDSMClipboardWrite(path string) bool {
 const dsmClipboardBodyMax = 128 << 10
 
 type dsmClipboardWrite struct {
-	OwnerScope string `json:"owner_scope"`
-	Content string `json:"content,omitempty"`
-	ClientEventID string `json:"client_event_id,omitempty"`
-	Kind string `json:"kind,omitempty"`
+	OwnerScope     string `json:"owner_scope"`
+	Content        string `json:"content,omitempty"`
+	ClientEventID  string `json:"client_event_id,omitempty"`
+	Kind           string `json:"kind,omitempty"`
 	TargetDeviceID string `json:"target_device_id,omitempty"`
-	DeviceID string `json:"device_id,omitempty"`
-	NodeID uint64 `json:"node_id,omitempty"`
-	ID uint64 `json:"id,omitempty"`
+	DeviceID       string `json:"device_id,omitempty"`
+	NodeID         uint64 `json:"node_id,omitempty"`
+	ID             uint64 `json:"id,omitempty"`
 }
 
 func parseDSMClipboardWrite(r *http.Request) (dsmClipboardWrite, error) {
@@ -63,7 +63,7 @@ func parseDSMClipboardWrite(r *http.Request) (dsmClipboardWrite, error) {
 	if r.ContentLength < 2 || r.ContentLength > dsmClipboardBodyMax {
 		return v, errors.New("invalid Clipboard body length")
 	}
-	raw, err := io.ReadAll(io.LimitReader(r.Body, dsmClipboardBodyMax+1))
+	raw, err := io.ReadAll(io.LimitReader(r.Body, dsmClipboardBodyMax + 1))
 	if err != nil || len(raw) > dsmClipboardBodyMax || int64(len(raw)) != r.ContentLength {
 		return v, errors.New("unbounded Clipboard body")
 	}
@@ -88,13 +88,16 @@ func parseDSMClipboardWrite(r *http.Request) (dsmClipboardWrite, error) {
 		}
 		switch v.Kind {
 		case "text/plain", "text/uri-list":
-			if v.NodeID != 0 { return v, errors.New("text cannot grant file access") }
+			if v.NodeID != 0 {
+				return v, errors.New("text cannot grant file access")
+			}
 		case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
 			if v.NodeID == 0 || v.TargetDeviceID == "" ||
 				v.Content != fmt.Sprintf("asset:%d", v.NodeID) {
 				return v, errors.New("invalid file reference")
 			}
-		default: return v, errors.New("invalid Clipboard kind")
+		default:
+			return v, errors.New("invalid Clipboard kind")
 		}
 		if v.TargetDeviceID != "" {
 			id, err := uuid.Parse(v.TargetDeviceID)
@@ -118,7 +121,8 @@ func parseDSMClipboardWrite(r *http.Request) (dsmClipboardWrite, error) {
 			v.Kind != "" || v.TargetDeviceID != "" || v.NodeID != 0 {
 			return v, errors.New("invalid Clipboard delete")
 		}
-	default: return v, errors.New("unknown Clipboard mutation")
+	default:
+		return v, errors.New("unknown Clipboard mutation")
 	}
 	return v, nil
 }
