@@ -82,6 +82,13 @@ class AuditTests(unittest.TestCase):
                          'untested native routes: ' + ', '.join(sorted(cases - registered)))
         self.assertIn('FRAME_OFFSETS_SECONDS[:1] if name in MINIMAL_TARGETS', watcher)
 
+    def test_missing_trace_is_explicit_even_without_any_frame(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = analyze(pathlib.Path(tmp))
+            self.assertEqual(report['total_frames'], 0)
+            self.assertTrue(report['missing_capture_trace'])
+            self.assertFalse(report['proves_zero_transient_flicker'])
+
     def test_rejects_corrupt_crc(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / 'a.png'
