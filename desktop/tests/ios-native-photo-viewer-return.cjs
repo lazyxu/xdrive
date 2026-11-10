@@ -114,7 +114,11 @@ test('Gallery child NavigationLinks keep verified unified page checkpoints on re
   assert.match(disappeared, /explicitOriginalAudit = false/)
   assert.doesNotMatch(disappeared, /started = false|timeline\.reset\(\)|wall\.reset\(\)/)
   // Owner, PhotoKit epoch and scene invalidation must still run independently.
-  assert.match(life, /!XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(library\) \{ reset\(\) \}/)
+  assert.match(life, /validateForegroundWall\(\)/)
+  assert.match(unified, /private func validateForegroundWall\(\) \{[\s\S]*XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(\$0\)/)
+  assert.match(unified, /if XDriveIOSUnifiedGalleryScenePolicy\.requiresResetOnReturn\([\s\S]*?\) \{\s*reset\(\)/)
+  const phase = life.slice(life.indexOf('.onChange(of: phase)'), life.indexOf('.sheet(isPresented: $showFilters)'))
+  assert.doesNotMatch(phase, /wall\.reset\(\)|timeline\.reset\(\)/)
   assert.match(life, /\.onChange\(of: login\.owner\) \{ _ in/)
   assert.match(life, /\.onChange\(of: phase\) \{ state in/)
 })
