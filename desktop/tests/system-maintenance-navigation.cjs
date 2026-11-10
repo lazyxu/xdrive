@@ -212,7 +212,7 @@ test('post-install native Commit admission uses exact installed xd, Agent and De
   assert.ok(linux.includes('/opt/xdrive-desktop/resources/xdrive-build-info.json'))
   assert.ok(linux.includes('"/usr/bin/xdrive-agent", "--build-info-json"'))
   for (const marker of ['ExpectedCommit', 'PersonalUnsigned', 'Test-DesktopStartupCommit',
-                        'agent_commit', 'xd Commit=', 'Desktop Commit=', 'rolled_back']) {
+                        'agent_commit', 'xd source Commit=', 'Desktop Commit=', 'rolled_back']) {
     assert.ok(win.includes(marker), 'missing Windows post-install requirement: ' + marker)
   }
   assert.ok(win.includes("$candidate.Status -ne 'NotSigned'"))
