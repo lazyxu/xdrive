@@ -112,6 +112,61 @@ struct XDriveIOSNativeFilesContinuousWindowChecks {
             lastAppearedNodeID: 0, startOffset: 0,
             loadedIDs: ids(0, 64), total: 100_000
         ) == nil, "reject zero Node identity")
+        require(Window.pageContaining(itemNumber: 1, total: 100_000) == 0,
+                "first file can jump")
+        require(Window.pageContaining(itemNumber: 99_999, total: 100_000) == 99_968,
+                "distant file uses one aligned 64-item Range")
+        require(Window.pageContaining(itemNumber: 100_001, total: 100_000) == nil,
+                "reject out-of-range jump")
+        require(Window.pageContaining(itemNumber: Int.max, total: 100_000) == nil,
+                "reject overflowing item number")
+        // A corrupt but page-aligned Int cursor previously overflowed before
+        // checking total, crashing on both scroll and Viewer return paths.
+        let hugeAligned = Int.max - 63
+        require(Window.requestedOffset(direction: .next, startOffset: hugeAligned,
+                                       loadedCount: 64, total: 100) == nil,
+                "oversized aligned next-page cursor fails without integer overflow")
+        require(Window.restoreAnchor(
+            lastAppearedNodeID: 1, startOffset: hugeAligned,
+            loadedIDs: ids(0, 64), total: 100
+        ) == nil, "oversized aligned return cursor fails without integer overflow")
+        // Exercise a 100k-item logical directory without ever materializing
+        // 100k SwiftUI file rows. Every jump uses exactly one 64-row Range;
+        // these are deterministic algorithm checks, not claimed iPhone FPS.
+        require(Window.pageSize == 64 && Window.maximumVisibleItems == 256,
+                "bounded view stays four contiguous Server pages")
+        let stressBegin = ProcessInfo.processInfo.systemUptime
+        for itemNumber in stride(from: 1, through: 100_000, by: 97) {
+            guard let page = Window.pageContaining(itemNumber: itemNumber,
+                                                    total: 100_000) else {
+                require(false, "100k ordinal must resolve to a page")
+                continue
+            }
+            require(page >= 0 && page % 64 == 0 &&
+                    page <= itemNumber - 1 && itemNumber - 1 - page < 64,
+                    "100k ordinal maps to one aligned Server Range")
+            let count = min(64, 100_000 - page)
+            let items = ids(page, page + count)
+            require(items.count <= Window.pageSize,
+                    "a distant 100k jump must not create a full-file list")
+            require(Window.restoreAnchor(lastAppearedNodeID: UInt64(itemNumber),
+                                         startOffset: page,
+                                         loadedIDs: items, total: 100_000) ==
+                    Window.RestoreAnchor(nodeID: UInt64(itemNumber), pageOffset: page),
+                    "return anchor at distant ordinal")
+        }
+        for offset in stride(from: 0, to: 100_000, by: 64) {
+            let count = min(64, 100_000 - offset)
+            let expected = offset + count < 100_000 ? offset + count : nil
+            require(Window.requestedOffset(direction: .next, startOffset: offset,
+                                           loadedCount: count, total: 100_000) == expected,
+                    "100k continuous paging never overflows or skips a Range")
+        }
+        require(Window.pageContaining(itemNumber: 1,
+                                      total: Window.maximumTotal + 1) == nil,
+                "reject implausible large directory totals")
+        let stressMS = Int((ProcessInfo.processInfo.systemUptime - stressBegin) * 1000)
+        print("IOS_NATIVE_FILES_100K_POLICY_MS value=\(stressMS) bounded_rows=256")
         print("iOS Files bounded continuous scrolling policy passed")
     }
 }

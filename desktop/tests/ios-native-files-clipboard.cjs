@@ -21,7 +21,8 @@ test('clipboard captures only one Owner and one bounded, verified same-parent se
 test('clipboard survives navigation but is cleared by an Owner change', () => {
   assert.match(browser, /@ObservedObject private var clipboard = XDriveIOSNativeFilesClipboard\.shared/)
   assert.match(browser, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?clipboard\.clear\(\)/)
-  const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'), browser.indexOf('var body: some View', browser.indexOf('private func suspendVisibleRange()')))
+  const suspend = browser.slice(browser.indexOf('private func suspendVisibleRange()'), browser.indexOf('private func filesForegroundLifecycle(', browser.indexOf('private func suspendVisibleRange()')))
+  assert.match(suspend, /model\.suspendForNavigation\(\)/)
   assert.doesNotMatch(suspend, /clipboard\.clear\(\)/)
 })
 

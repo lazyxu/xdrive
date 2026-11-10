@@ -8,6 +8,14 @@ enum XDriveIOSNativeFilesContinuousWindowPolicy {
     static let maximumVisibleItems = 4 * pageSize
     static let maximumTotal = 10_000_000
 
+    /// Jump to a distant ordinal using one Server Range, not O(N) swipes.
+    /// The requested index remains untrusted until that Range is authenticated.
+    static func pageContaining(itemNumber: Int, total: Int) -> Int? {
+        guard total > 0, total <= maximumTotal,
+              itemNumber > 0, itemNumber <= total else { return nil }
+        return ((itemNumber - 1) / pageSize) * pageSize
+    }
+
     enum Direction: Equatable {
         case previous
         case next
@@ -33,9 +41,10 @@ enum XDriveIOSNativeFilesContinuousWindowPolicy {
               startOffset >= 0, startOffset % pageSize == 0,
               total > 0, total <= maximumTotal,
               !loadedIDs.isEmpty, loadedIDs.count <= maximumVisibleItems,
-              startOffset + loadedIDs.count <= total,
+              startOffset <= total,
+              loadedIDs.count <= total - startOffset,
               loadedIDs.count % pageSize == 0 ||
-                  startOffset + loadedIDs.count == total,
+                  loadedIDs.count == total - startOffset,
               Set(loadedIDs).count == loadedIDs.count,
               loadedIDs.allSatisfy({ $0 > 0 }),
               let index = loadedIDs.firstIndex(of: nodeID)
@@ -49,8 +58,9 @@ enum XDriveIOSNativeFilesContinuousWindowPolicy {
         guard startOffset >= 0, startOffset % pageSize == 0,
               total > 0, total <= maximumTotal,
               loadedCount > 0, loadedCount <= maximumVisibleItems,
-              startOffset + loadedCount <= total,
-              loadedCount % pageSize == 0 || startOffset + loadedCount == total
+              startOffset <= total,
+              loadedCount <= total - startOffset,
+              loadedCount % pageSize == 0 || loadedCount == total - startOffset
         else { return nil }
         switch direction {
         case .previous:

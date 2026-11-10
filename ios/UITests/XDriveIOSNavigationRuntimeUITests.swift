@@ -236,4 +236,121 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
         XCTAssertEqual(app.state, .runningForeground)
     }
+
+    // The Files Home is a genuine two-page, lazily rendered CollectionView.
+    // Deep '整理' rows do not exist in AX until the collection is scrolled.
+    // Never guess a tap coordinate or silently treat absence as a pass.
+    private func filesHomeEntry(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 12),
+                      "Native Files Home collection is not mounted")
+        let button = app.buttons.matching(identifier: identifier).firstMatch
+        for _ in 0..<5 {
+            if button.exists && button.isHittable { return button }
+            list.swipeUp()
+        }
+        XCTAssertTrue(button.waitForExistence(timeout: 8),
+                      "Scrolled Files Home but no matching entry: \(identifier)")
+        XCTAssertTrue(button.isHittable, "Files Home entry exists but is not visible")
+        return button
+    }
+
+    // Exercise actual native child-route mount/dismiss under an offline Owner.
+    // These are Simulator navigation tests, not a frame-time/flicker benchmark.
+    func testSyntheticOwnerSavedSearchesRepeatedSheetReturn() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        for cycle in 0..<2 {
+            filesHomeEntry("native-ios-files-open-saved-searches", in: app).tap()
+            XCTAssertTrue(find("native-ios-files-saved-searches-page", in: app)
+                .waitForExistence(timeout: 20),
+                          "Saved Searches form did not mount at return cycle \(cycle)")
+            let done = app.buttons["完成"].firstMatch
+            XCTAssertTrue(done.waitForExistence(timeout: 10))
+            done.tap()
+            XCTAssertTrue(filesHomeEntry("native-ios-files-open-saved-searches", in: app)
+                .exists, "Files Home lost after Saved Searches")
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+    }
+
+    func testSyntheticOwnerOperationsHistoryRepeatedSheetReturn() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        for cycle in 0..<2 {
+            filesHomeEntry("native-ios-files-open-operations", in: app).tap()
+            XCTAssertTrue(find("native-ios-files-operation-history-page", in: app)
+                .waitForExistence(timeout: 20),
+                          "Operations form did not mount at return cycle \(cycle)")
+            let done = app.buttons["完成"].firstMatch
+            XCTAssertTrue(done.waitForExistence(timeout: 10))
+            done.tap()
+            XCTAssertTrue(filesHomeEntry("native-ios-files-open-operations", in: app)
+                .exists, "Files Home lost after Operations History")
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+    }
+
+    func testSyntheticOwnerRecentlyDeletedReturnKeepsFilesHomeMounted() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-trash", in: app)
+        // Capture a real rendered frame BEFORE traversing the AX hierarchy,
+        // so a repeated 120s XCUI snapshot failure still has a visual record.
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = "trash-child-after-push"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        let errorPage = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-trash-error-page").firstMatch
+        XCTAssertTrue(errorPage.waitForExistence(timeout: 12),
+                      "Unreadable Trash must mount a bounded error surface")
+        let back = app.buttons["native-ios-files-trash-error-return"].firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 12),
+                      "Recently Deleted native recovery did not mount")
+        back.tap()
+        XCTAssertTrue(find("native-ios-files-open-trash", in: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testSyntheticOwnerGalleryCacheReturnKeepsMineMounted() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-mine", in: app)
+        let cacheLink = app.buttons["缩略图缓存"].firstMatch
+        if cacheLink.waitForExistence(timeout: 8) {
+            cacheLink.tap()
+        } else {
+            let cacheLabel = app.staticTexts["缩略图缓存"].firstMatch
+            XCTAssertTrue(cacheLabel.waitForExistence(timeout: 10),
+                          "Native cache navigation link missing")
+            cacheLabel.tap()
+        }
+        XCTAssertTrue(find("native-ios-gallery-thumbnail-cache", in: app)
+            .waitForExistence(timeout: 20), "Gallery cache child page did not mount")
+        let back = app.navigationBars["缩略图缓存"].buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        back.tap()
+        XCTAssertTrue(find("native-ios-tab-mine", in: app).exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+    /// Actual simulator navigation: compact Home edit is a live SwiftUI
+    /// control, not a static source contract. No authenticated Owner required.
+    func testFilesHomeInlineEditKeepsBrowseShellAndRestoresDone() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        let edit = find("native-ios-files-home-edit-toggle", in: app)
+        XCTAssertTrue(edit.waitForExistence(timeout: 12))
+        edit.tap()
+        XCTAssertEqual(edit.label, "完成")
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+        XCTAssertTrue(find("native-ios-files-open-root-location", in: app).exists)
+        edit.tap()
+        XCTAssertEqual(edit.label, "编辑")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
 }

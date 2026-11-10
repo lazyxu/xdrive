@@ -67,8 +67,9 @@ test('native viewer pages PhotoKit without exporting data, provides still video 
   assert.match(detailModel, /func load\(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false\)/)
   assert.match(detailModel, /options\.isNetworkAccessAllowed = allowICloud/)
   assert.match(detailModel, /liveOptions\.isNetworkAccessAllowed = allowICloud/)
-  assert.ok(local.includes('if selected != nil { suspendForViewer() }'))
-  assert.ok(local.includes('else { invalidate() }'))
+  assert.match(local, /if selected != nil \{\s*suspendForViewer\(\)/)
+  assert.match(local, /else if phase == \.active &&[\s\S]*?\[\.authorized, \.limited\]\.contains\([\s\S]*?suspendForViewer\(\)/)
+  assert.match(local, /else \{\s*invalidate\(\)\s*\}/)
   assert.doesNotMatch(local, /URLSession|UploadSession|document\.cookie|window\.webkit/)
 })
 
@@ -271,10 +272,11 @@ test('native local and album photo walls free short landscape grid space while r
     if (name === 'album') {
       // Album MapKit cover is another transient child; preserve the verified
       // page and scroll checkpoint, but invalidate on a genuine route exit.
-      assert.match(screen, /if selected != nil \|\| showingAlbumMap \{ suspendForViewer\(\) \}/, name)
-      assert.match(screen, /else \{ libraryMonitor\.stop\(\); invalidate\(\) \}/, name)
+      assert.match(screen, /if selected != nil \|\| showingAlbumMap \|\|\s*\(phase == \.active && albumAuthorized\) \{\s*suspendForViewer\(\)/, name)
+      assert.match(screen, /else \{\s*libraryMonitor\.stop\(\)\s*invalidate\(\)\s*\}/, name)
     } else {
-      assert.match(screen, /if selected != nil \{ suspendForViewer\(\) \}/, name)
+      assert.match(screen, /if selected != nil \{\s*suspendForViewer\(\)/, name)
+      assert.match(screen, /else if phase == \.active &&[\s\S]*?\[\.authorized, \.limited\]\.contains\([\s\S]*?suspendForViewer\(\)/, name)
     }
     assert.doesNotMatch(screen, /\.id\(compactGallery\)|onChange\(of: compactGallery\)|UploadSession|URLSession/, name)
   }

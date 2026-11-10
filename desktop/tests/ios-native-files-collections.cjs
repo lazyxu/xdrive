@@ -175,7 +175,7 @@ test('Recent and Favorites expose native long-press and swipe operations through
   assert.match(screen, /private func openManagement\([\s\S]*?phase == \.active, model\.verified, !model\.loading,/)
   assert.match(screen, /let owner = login\.owner, let parentID = item\.node\.parent_id,/)
   assert.match(screen, /XDriveIOSNativeFilesCollectionsPolicy\.validItem\(item, kind: kind\),\s*filteredItems\.contains\(item\), model\.items\.contains\(item\)/)
-  assert.match(screen, /\.sheet\(item: \$managementIntent, onDismiss: \{\s*reload\(\)/)
+  assert.match(screen, /\.sheet\(item: \$managementIntent, onDismiss: \{[\s\S]*?reload\(preserveVerifiedRows: model\.matches\(login\.owner, kind: kind\)\)/)
   assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, intent\.owner\)/)
   assert.match(screen, /folderID: parentID, folderName: nil,/)
   assert.match(screen, /file: intent\.item\.node\.isDirectory \? nil : intent\.item\.node/)

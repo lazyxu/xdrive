@@ -192,7 +192,7 @@ test('video buffering is truthful, pausable while waiting, and cancels on scene 
     video.indexOf('private func retireReplay()'))
   const scrub = video.slice(video.indexOf('private func beginScrub()'),
     video.indexOf('private func previewScrub('))
-  const canvas = video.slice(video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player)'),
+  const canvas = video.slice(video.indexOf('XDriveIOSNativePhotoVideoLayer(player: player, onFirstFrame: onFirstFrame)'),
     video.indexOf('if showChrome {'))
   assert.match(video, /@State private var buffering = false/)
   assert.match(refresh, /let transport = player\.timeControlStatus/)

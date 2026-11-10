@@ -6,7 +6,8 @@ const path = require('node:path')
 const source = fs.readFileSync(path.resolve(__dirname,'../..','ios/XDriveIOS/NativeFilesOperationHistory.swift'),'utf8')
 test('Operations model can rebind a reused sheet to a new expected Owner',()=>{
   assert.match(source,/private var expected: XDriveNativeOwnerRoot/)
-  assert.match(source,/func updateExpectedOwner\(_ owner: XDriveNativeOwnerRoot\) \{\s*guard !XDriveIOSNativePhotoOwnerScope\.matches\(expected, owner\) else \{ return \}\s*invalidate\(\)\s*expected = owner/)
+  assert.match(source,/func updateExpectedOwner\(_ owner: XDriveNativeOwnerRoot\) \{\s*if let expected, XDriveIOSNativePhotoOwnerScope\.matches\(expected, owner\) \{\s*return\s*\}\s*invalidate\(\)\s*expected = owner/)
+  assert.match(source,/init\(owner: XDriveNativeOwnerRoot\? = nil\)/)
 })
 test('old request failure cannot post error or uncertain ACK to a switched account',()=>{
   assert.equal((source.match(/\} catch \{\s*guard let self, self\.epoch == ticket,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)\s*else \{ return \}/g)||[]).length,2)
@@ -37,7 +38,7 @@ test('confirm button rechecks action eligibility, item membership and Owner',()=
 })
 test('pending one-shot POST disables both Done and swipe dismissal',()=>{
   assert.match(source,/\.interactiveDismissDisabled\(model\.busy\)/)
-  assert.match(source,/Button\("完成"\) \{ dismiss\(\) \}\s*\.disabled\(model\.busy\)/)
+  assert.match(source,/Button\("完成"\) \{\s*if let onClose \{ onClose\(\) \} else \{ dismiss\(\) \}\s*\}\s*\.accessibilityIdentifier\("native-ios-files-operation-history-done"\)\s*\.disabled\(model\.busy\)/)
 })
 test('status panel is scoped to current active login, not previous account',()=>{
   assert.match(source,/if phase == \.active,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\),\s*let status = model\.status/)

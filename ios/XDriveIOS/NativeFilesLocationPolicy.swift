@@ -93,6 +93,24 @@ enum XDriveIOSNativeFilesLocationPolicy {
             name: parent.id == ownerRootID ? "云端根目录" : parent.name
         )
     }
+    /// A menu is populated only from a verified, exact current directory chain.
+    /// These IDs are navigation hints, not independent authorization grants.
+    static func directoryBreadcrumbs(
+        of selected: XDriveIOSNativeFilesNode,
+        at location: XDriveIOSNativeFilesLocationDTO,
+        ownerRootID: UInt64
+    ) -> [XDriveIOSNativeFilesLocationCrumb]? {
+        guard selected.isDirectory,
+              parent(of: selected, at: location, ownerRootID: ownerRootID) != nil,
+              location.breadcrumbs.last?.id == selected.id,
+              location.breadcrumbs.last?.name == selected.name else { return nil }
+        return location.breadcrumbs.map {
+            $0.id == ownerRootID
+                ? XDriveIOSNativeFilesLocationCrumb(id: $0.id, name: "xDrive 云端")
+                : $0
+        }
+    }
+
     /// Only the current Owner-confirmed cloud-relative Server path can be copied.
     static func currentCopyPath(
         of selected: XDriveIOSNativeFilesNode,

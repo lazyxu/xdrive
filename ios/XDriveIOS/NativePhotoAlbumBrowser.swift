@@ -459,6 +459,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @State private var albumMapJump: XDriveIOSNativeLocalMapJump?
     @State private var pendingAlbumMapJump: XDriveIOSNativeLocalMapJump?
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
+    @State private var isContentVisible = false
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
     @State private var pageRevision = 0
@@ -846,9 +847,15 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             })
         }
         .onAppear {
-            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            isContentVisible = true
+            let freshGrant = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            let sameVerifiedPage = page != nil && total != nil && !loading &&
+                pageRevision == libraryMonitor.revision &&
+                freshGrant == permission &&
+                (freshGrant == .authorized || freshGrant == .limited)
+            permission = freshGrant
             libraryMonitor.start()
-            if selected == nil && total == nil && !loading { reload() }
+            if selected == nil && !sameVerifiedPage && !loading { reload() }
         }
         .onChange(of: libraryMonitor.revision) { _ in
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -895,16 +902,22 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     invalidate()
                     error = "本机相册访问权限已失效，请返回相册重新授权。"
                 }
-            } else {
+            } else if isContentVisible {
                 reload()
             }
         }
         .onDisappear {
-            // The album MapKit cover and the Viewer are transient child pages.
-            // Preserve the verified count/page/scroll anchor while either is
-            // shown; PhotoKit monitor and scene invalidation remain active.
-            if selected != nil || showingAlbumMap { suspendForViewer() }
-            else { libraryMonitor.stop(); invalidate() }
+            isContentVisible = false
+            // A foreground Gallery/Files tab switch must not discard the
+            // currently authorized album wall and flash an empty first frame.
+            // Keep its PhotoKit monitor live while the native View is retained.
+            if selected != nil || showingAlbumMap ||
+               (phase == .active && albumAuthorized) {
+                suspendForViewer()
+            } else {
+                libraryMonitor.stop()
+                invalidate()
+            }
         }
     }
 
@@ -1152,12 +1165,17 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
 
     private func reload() {
         permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        invalidate()
         guard permission == .authorized || permission == .limited else {
+            // A denied page must be retired immediately. For an authorized
+            // refresh, load(offset:) owns the ONE invalidation and read.
+            invalidate()
             clearViewerTileAnchor()
             error = "本机相册访问权限已失效，请返回相册重新授权。"
             return
         }
+        // load(offset:) already invalidates the old PhotoKit scan. Calling
+        // invalidate() here as well clears the wall twice per refresh and
+        // amplifies empty-frame churn when an album is re-entered.
         load(offset: savedOffset)
     }
 

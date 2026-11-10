@@ -13,7 +13,46 @@ private final class XDriveIOSNativePhotoVideoLayerHost: UIView {
 private struct XDriveIOSNativePhotoVideoLayer: UIViewRepresentable {
     let player: AVPlayer
 
-    final class Coordinator {}
+    /// Observe the layer that actually renders the video. Item .readyToPlay,
+    /// network completion and player.rate are not first-frame measurements.
+    /// The Coordinator binds to one exact player and retires KVO on reuse.
+    var onFirstFrame: (() -> Void)? = nil
+
+    final class Coordinator {
+        private weak var observedPlayer: AVPlayer?
+        private var readyObservation: NSKeyValueObservation?
+        private var delivered = false
+        private var callback: (() -> Void)?
+
+        func bind(layer: AVPlayerLayer, player: AVPlayer,
+                  onFirstFrame: (() -> Void)?) {
+            callback = onFirstFrame
+            guard observedPlayer !== player || readyObservation == nil else { return }
+            readyObservation?.invalidate()
+            observedPlayer = player
+            delivered = false
+            readyObservation = layer.observe(\.isReadyForDisplay,
+                                             options: [.initial, .new]) {
+                [weak self, weak layer, weak player] _, _ in
+                DispatchQueue.main.async {
+                    guard let self, let layer, let player,
+                          self.observedPlayer === player,
+                          layer.player === player, layer.isReadyForDisplay,
+                          !self.delivered else { return }
+                    self.delivered = true
+                    self.callback?()
+                }
+            }
+        }
+
+        func retire() {
+            readyObservation?.invalidate()
+            readyObservation = nil
+            observedPlayer = nil
+            callback = nil
+            delivered = false
+        }
+    }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> XDriveIOSNativePhotoVideoLayerHost {
@@ -21,18 +60,24 @@ private struct XDriveIOSNativePhotoVideoLayer: UIViewRepresentable {
         view.backgroundColor = .black
         view.playbackLayer.videoGravity = .resizeAspect
         view.playbackLayer.player = player
+        context.coordinator.bind(layer: view.playbackLayer, player: player,
+                                 onFirstFrame: onFirstFrame)
         return view
     }
 
     func updateUIView(_ view: XDriveIOSNativePhotoVideoLayerHost, context: Context) {
         if view.playbackLayer.player !== player {
+            context.coordinator.retire()
             view.playbackLayer.player = player
         }
+        context.coordinator.bind(layer: view.playbackLayer, player: player,
+                                 onFirstFrame: onFirstFrame)
     }
 
     static func dismantleUIView(
         _ view: XDriveIOSNativePhotoVideoLayerHost, coordinator: Coordinator
     ) {
+        coordinator.retire()
         view.playbackLayer.player = nil
     }
 }
@@ -45,14 +90,18 @@ struct XDriveIOSNativePhotoVideoSurface: View {
     let showChrome: Bool
     let onChromeTap: () -> Void
     let onNavigateSwipe: ((Int) -> Void)?
+    // Used only when a caller needs a true displayed-first-frame timestamp.
+    let onFirstFrame: (() -> Void)?
 
     init(player: AVPlayer, showChrome: Bool,
          onChromeTap: @escaping () -> Void,
-         onNavigateSwipe: ((Int) -> Void)? = nil) {
+         onNavigateSwipe: ((Int) -> Void)? = nil,
+         onFirstFrame: (() -> Void)? = nil) {
         self.player = player
         self.showChrome = showChrome
         self.onChromeTap = onChromeTap
         self.onNavigateSwipe = onNavigateSwipe
+        self.onFirstFrame = onFirstFrame
     }
 
     @Environment(\.scenePhase) private var phase
@@ -213,7 +262,7 @@ struct XDriveIOSNativePhotoVideoSurface: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            XDriveIOSNativePhotoVideoLayer(player: player)
+            XDriveIOSNativePhotoVideoLayer(player: player, onFirstFrame: onFirstFrame)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onChromeTap)

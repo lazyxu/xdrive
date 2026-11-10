@@ -221,7 +221,8 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                                 ZStack(alignment: .topLeading) {
                                     XDriveIOSUnifiedPhotoTile(
                                         row: row, login: login, presentingOwner: owner,
-                                        displayActive: displayActive
+                                        displayActive: displayActive,
+                                        retainWhileCovered: retainWhileCovered
                                     )
                                     if let local = row.local, backupBadgeOwner != nil,
                                        let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy.badge(

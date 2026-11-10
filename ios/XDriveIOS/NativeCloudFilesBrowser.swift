@@ -847,6 +847,11 @@ private struct XDriveIOSNativeFilesRowDestinationIntent: Identifiable {
     let kind: XDriveIOSNativeFilesDestinationKind
 }
 
+private struct XDriveIOSNativeFilesQuickOperationIntent {
+    let action: XDriveIOSNativeFilesOperationPolicy.Action
+    let operation: XDriveIOSNativeFilesOperation
+}
+
 private struct XDriveIOSNativeFilesFolder: Hashable {
     let id: UInt64
     let name: String
@@ -878,6 +883,33 @@ private enum XDriveIOSNativeFilesQuickSection: String, CaseIterable, Identifiabl
     }
 }
 
+/// Keep the search presentation separate from its committed Server filter.
+/// SwiftUI's active searchable presentation can cover the feature-local rail
+/// even after pressing the keyboard Search key. The iOS 17+ presentation
+/// binding closes the overlay without clearing the committed query; earlier
+/// iOS versions keep the original searchable fallback.
+private struct XDriveIOSNativeFilesSearchPresentation: ViewModifier {
+    @Binding var text: String
+    @Binding var presented: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.searchable(
+                text: $text, isPresented: $presented,
+                placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: "搜索全部文件"
+            )
+        } else {
+            content.searchable(
+                text: $text,
+                placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: "搜索全部文件"
+            )
+        }
+    }
+}
+
 /// iOS fixed Files tab: genuine native bounded Owner directory navigation
 /// and whole-library search. File previews use the separate native L3 Viewer;
 /// Owner-bound creation, transfers and mutations live in the native action sheet.
@@ -887,6 +919,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private static let internalDragType = "com.lazyxu.xdrive.files.internal-node"
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
     @StateObject private var inlineFolders = XDriveIOSNativeFilesInlineFolderStore()
     @StateObject private var favoriteShortcuts = XDriveIOSNativeFilesCollectionPageModel()
@@ -897,6 +930,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var favoriteFoldersExpanded = true
     @StateObject private var searchOptions = XDriveIOSNativeFilesSearchOptionsModel()
     @State private var favoriteShortcutsOwner: XDriveNativeOwnerRoot?
+    // Failed/offline Home reads must not restart on every tab or child return.
+    @State private var homeReadAttempted = false
     @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
     @StateObject private var batchTarget = XDriveIOSNativeFilesBatchTargetModel()
     @StateObject private var chunked = XDriveIOSNativeFilesChunkedMutationModel()
@@ -909,7 +944,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var resumeTicket = UUID()
     @State private var scrollResumeTask: Task<Void, Never>?
     @State private var routeResumeMessage: String?
+    @State private var ancestorCrumbs: [XDriveIOSNativeFilesLocationCrumb] = []
+    @State private var ancestorStatus: String?
     @State private var showingOrganizeHome = false
+    @State private var isHomeEditing = false
     @State private var organizeHomeOwner: XDriveNativeOwnerRoot?
     @State private var viewerAdmitted = [UInt64: XDriveIOSNativeFilesNode]()
     @State private var viewerAdmissionOrder: [UInt64] = []
@@ -926,6 +964,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var quickRenameDraft = ""
     @State private var quickActionNotice: String?
     @Environment(\.xdriveNativeTransfers) private var transfers
+    @Environment(\.dismissSearch) private var dismissSearch
     @ObservedObject private var clipboard = XDriveIOSNativeFilesClipboard.shared
     @State private var showingClipboardPasteConfirmation = false
     @State private var showingSavedSearches = false
@@ -933,10 +972,19 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var showingFileOperations = false
     @State private var fileOperationsOwner: XDriveNativeOwnerRoot?
     @State private var operationWasAccepted = false
+    @StateObject private var operationShortcuts = XDriveIOSNativeFilesOperationsModel()
+    @State private var pendingQuickOperation: XDriveIOSNativeFilesQuickOperationIntent?
+    @State private var showingBatchProperties = false
+    @State private var showingAncestorsSheet = false
+    @State private var quickHistoryReadAttempted = false
     @State private var managementWriteConfirmed = false
     @State private var versionRestoreConfirmed = false
     @State private var showingPathPrompt = false
     @State private var pathDraft = ""
+    @State private var showingIndexJump = false
+    @State private var jumpIndexDraft = ""
+    @State private var pendingJumpIndex: Int?
+    @State private var pendingJumpStartedAt: TimeInterval?
     @State private var pathBusy = false
     @State private var pathError: String?
     @State private var pathDestination: XDriveIOSNativeFilesFolder?
@@ -963,6 +1011,13 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var pendingDrop: XDriveIOSNativeFilesDropIntent?
     @State private var offset = 0
     @State private var queryDraft = ""
+    // Presentation state is not a Server search query. Dismiss the focused
+    // search UI after Submit/tab exit without discarding activeQuery or its
+    // verified return anchor.
+    @State private var searchPresented = false
+    // A native dismissal may clear the editable draft, not the Owner-scoped
+    // committed Server query or its verified return anchor.
+    @State private var submittedSearchRestoreQuery: String?
     @State private var activeQuery = ""
     @State private var searchFilters = XDriveIOSNativeFilesSearchFilterState()
     @State private var searchReturnOffset: Int?
@@ -1060,6 +1115,22 @@ struct XDriveIOSNativeFilesBrowser: View {
             snapshots: selectedSnapshots, selectedIDs: selectedIDs,
             parentID: parentID
         ) ?? []
+    }
+
+    private var mostRecentUndo: XDriveIOSNativeFilesOperation? {
+        guard operationShortcuts.matches(login.owner), !operationShortcuts.busy,
+              !operationShortcuts.loading else { return nil }
+        return operationShortcuts.items.first {
+            XDriveIOSNativeFilesOperationPolicy.canPerform(.undo, for: $0)
+        }
+    }
+
+    private var mostRecentRedo: XDriveIOSNativeFilesOperation? {
+        guard operationShortcuts.matches(login.owner), !operationShortcuts.busy,
+              !operationShortcuts.loading else { return nil }
+        return operationShortcuts.items.first {
+            XDriveIOSNativeFilesOperationPolicy.canPerform(.redo, for: $0)
+        }
     }
 
     private var canPasteHere: Bool {
@@ -1258,6 +1329,63 @@ struct XDriveIOSNativeFilesBrowser: View {
         showingOrganizeHome = true
     }
 
+    @MainActor
+    private func loadAncestorCrumbs() async {
+        ancestorCrumbs = []
+        ancestorStatus = nil
+        guard let folder, let owner = login.owner, phase == .active,
+              quickSection == .browse else { return }
+        do {
+            let auth = try await login.verifiedAuthorization()
+            try Task.checkCancellation()
+            guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner) else { return }
+            let found = try await XDriveIOSNativeFilesLocateReader(
+                owner: auth.owner, accessToken: auth.accessToken
+            ).verifiedDirectoryBreadcrumbs(folder.id)
+            try Task.checkCancellation()
+            guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                  parentID == folder.id, phase == .active else { return }
+            ancestorCrumbs = found
+        } catch is CancellationError {
+        } catch {
+            guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+            ancestorStatus = "目录位置暂无法核验，请重试。"
+        }
+    }
+
+    @MainActor
+    private func openVerifiedAncestor(_ crumb: XDriveIOSNativeFilesLocationCrumb) {
+        guard let folder, crumb.id != folder.id, !pathBusy,
+              ancestorCrumbs.contains(crumb), let owner = login.owner,
+              phase == .active, quickSection == .browse else { return }
+        cancelPathLookup()
+        let ticket = UUID()
+        pathTicket = ticket
+        pathBusy = true
+        pathTask = Task { @MainActor in
+            defer { if pathTicket == ticket { pathBusy = false; pathTask = nil } }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner) else { return }
+                let found = try await XDriveIOSNativeFilesLocateReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                ).verifiedDirectoryBreadcrumbs(folder.id)
+                try Task.checkCancellation()
+                guard pathTicket == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      parentID == folder.id, phase == .active,
+                      found.contains(crumb), found.last?.id == folder.id else { return }
+                // Do not infer a path from a stale displayed folder name.
+                pathDestination = XDriveIOSNativeFilesFolder(id: crumb.id, name: crumb.name)
+            } catch is CancellationError {
+            } catch {
+                guard pathTicket == ticket else { return }
+                ancestorStatus = "上级目录已变化或无法核验，请刷新位置。"
+            }
+        }
+    }
+
     private var arrangementStatusText: String {
         let sortName: String
         switch sort {
@@ -1308,17 +1436,33 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
             .accessibilityIdentifier("native-ios-files-open-trash")
+            NavigationLink {
+                // Do not construct Recent rows without a verified native Session.
+                if login.hasLocalOwnerSession {
+                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
+                } else {
+                    XDriveIOSNativeFilesNoSessionRoute(kind: .recent)
+                }
+            } label: {
+                Label("最近使用", systemImage: "clock")
+            }
+            .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
+            .accessibilityIdentifier("native-ios-files-open-recent")
         }
-        Section("个人收藏") {
+        Section("个人收藏文件夹") {
             DisclosureGroup("收藏夹和常用收藏", isExpanded: $favoriteFoldersExpanded) {
                 NavigationLink {
-                    XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+                    if login.hasLocalOwnerSession {
+                        XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+                    } else {
+                        XDriveIOSNativeFilesNoSessionRoute(kind: .favorites)
+                    }
                 } label: {
                     Label("收藏夹", systemImage: "star")
                 }
                 .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
                 .accessibilityIdentifier("native-ios-files-open-favorites")
-                ForEach(verifiedFavoriteFolders) { item in
+                ForEach(isHomeEditing ? verifiedFavoriteFolders : Array(verifiedFavoriteFolders.prefix(4))) { item in
                 NavigationLink {
                     XDriveIOSNativeFilesBrowser(
                         login: login, folderID: item.node.id,
@@ -1351,11 +1495,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                 }
             }
-        }
-        Section("快捷目录") {
+            // Keep Favorites and pinned shortcuts in the same home grouping
+            // as Web/PWA. Both nested disclosures retain their own load/status
+            // and permission guards, but do not consume separate long Sections.
             DisclosureGroup("固定的文件夹", isExpanded: $quickAccessExpanded) {
                 if quickAccess.matches(login.owner) {
-                    ForEach(quickAccess.items) { item in
+                    ForEach(Array(quickAccess.items.prefix(isHomeEditing ? quickAccess.items.count : 5))) { item in
                         HStack(spacing: 8) {
                             NavigationLink {
                                 XDriveIOSNativeFilesBrowser(
@@ -1372,23 +1517,46 @@ struct XDriveIOSNativeFilesBrowser: View {
                                 }
                             }
                             .accessibilityIdentifier("native-ios-files-pinned-folder-\(item.id)")
-                            Menu {
-                                Button("上移") {
-                                    reorderQuickAccess(item, delta: -1)
+                            if isHomeEditing {
+                                Button { reorderQuickAccess(item, delta: -1) } label: {
+                                    Image(systemName: "arrow.up")
+                                        .frame(minWidth: 44, minHeight: 44)
                                 }
-                                Button("下移") {
-                                    reorderQuickAccess(item, delta: 1)
+                                .disabled(quickAccess.busy || quickAccess.loading)
+                                Button { reorderQuickAccess(item, delta: 1) } label: {
+                                    Image(systemName: "arrow.down")
+                                        .frame(minWidth: 44, minHeight: 44)
                                 }
-                                Button("取消固定", role: .destructive) {
+                                .disabled(quickAccess.busy || quickAccess.loading)
+                                Button(role: .destructive) {
                                     quickAccess.unpin(item.id, login: login)
+                                } label: {
+                                    Image(systemName: "pin.slash")
+                                        .frame(minWidth: 44, minHeight: 44)
                                 }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .frame(minWidth: 44, minHeight: 44)
+                                .disabled(quickAccess.busy || quickAccess.loading)
+                                .accessibilityIdentifier("native-ios-files-pinned-inline-unpin-\(item.id)")
+                            } else {
+                                Menu {
+                                    Button("上移") { reorderQuickAccess(item, delta: -1) }
+                                    Button("下移") { reorderQuickAccess(item, delta: 1) }
+                                    Button("取消固定", role: .destructive) {
+                                        quickAccess.unpin(item.id, login: login)
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                        .frame(minWidth: 44, minHeight: 44)
+                                }
+                                .disabled(quickAccess.busy || quickAccess.loading)
+                                .accessibilityIdentifier("native-ios-files-pinned-more-\(item.id)")
                             }
-                            .disabled(quickAccess.busy || quickAccess.loading)
-                            .accessibilityIdentifier("native-ios-files-pinned-more-\(item.id)")
                         }
+                    }
+                    if quickAccess.items.count > 5 && !isHomeEditing {
+                        Button("查看全部 \(quickAccess.items.count) 个固定目录") {
+                            isHomeEditing = true
+                        }
+                        .accessibilityIdentifier("native-ios-files-home-show-all-pins")
                     }
                     if quickAccess.items.isEmpty {
                         Text("还没有固定文件夹。打开云端目录，长按文件夹即可固定。")
@@ -1410,16 +1578,16 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
             }
         }
-        Section("快捷访问") {
-            NavigationLink {
-                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
-            } label: {
-                Label("最近使用", systemImage: "clock")
+        Section("整理") {
+            if isHomeEditing {
+                Label("可直接调整固定文件夹顺序并取消固定", systemImage: "hand.draw")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
-            .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
-            .accessibilityIdentifier("native-ios-files-open-recent")
-        }
-        Section("标签") {
+            Button { isHomeEditing.toggle() } label: {
+                Label(isHomeEditing ? "完成首页整理" : "直接编辑浏览首页",
+                      systemImage: isHomeEditing ? "checkmark" : "pencil")
+            }
+            .accessibilityIdentifier("native-ios-files-home-edit-inline")
             Button { openTagManager() } label: {
                 Label("管理标签", systemImage: "tag.circle")
             }
@@ -1453,8 +1621,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Button("重试") { searchOptions.load(login: login) }
                 }
             }
-        }
-        Section("整理") {
+            Divider()
             Button { presentOrganizeHome() } label: {
                 Label("整理浏览首页", systemImage: "square.grid.2x2")
             }
@@ -1679,6 +1846,15 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Text(error).foregroundStyle(.orange)
                 Button("重试当前页") { reload() }
                     .accessibilityIdentifier("native-ios-files-retry")
+                // Cloud-folder readers can fail before a protected Node is
+                // readable. Provide a stable native escape route instead of
+                // relying solely on a potentially inaccessible back toolbar.
+                if folder != nil {
+                    Button { dismiss() } label: {
+                        Label("返回文件", systemImage: "chevron.left")
+                    }
+                    .accessibilityIdentifier("native-ios-files-error-return")
+                }
             } else if model.entries.isEmpty {
                 Label("当前目录或搜索结果为空。", systemImage: "folder")
                     .foregroundStyle(.secondary)
@@ -2139,6 +2315,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                           selectedIDs.count > XDriveIOSNativeFilesBatchTrashPolicy.maxSelected)
                         .accessibilityIdentifier("native-ios-files-batch-tags")
                     Divider()
+                    Button("查看已选项目属性") {
+                        showingBatchProperties = true
+                    }
+                    .disabled(chosenItems.isEmpty || !canSelectPage)
+                    .accessibilityIdentifier("native-ios-files-batch-properties")
                     Button("已选项批量下载并导出") {
                         prepareSelectedExport()
                     }
@@ -2362,7 +2543,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// confirmed result and uncertain-operation errors.
     @ViewBuilder private var filesQuickFeedback: some View {
         let message = quickActionNotice ?? quickMutation.status ??
-            quickDestinationWriter.status ?? quickFavorite.status
+            quickDestinationWriter.status ?? quickFavorite.status ??
+            operationShortcuts.status
         if let message {
             HStack(spacing: 10) {
                 if quickMutation.busy || quickDestinationWriter.busy || quickFavorite.busy {
@@ -2383,15 +2565,58 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private var filesChrome: some View {
-        filesList
-        .listStyle(.plain)
-        .overlay(alignment: .bottom) { filesQuickFeedback }
-        .searchable(
-            text: $queryDraft,
-            placement: .navigationBarDrawer(displayMode: .automatic),
-            prompt: "搜索全部文件"
-        )
-        .onSubmit(of: .search) { submitSearch() }
+        Group {
+            // An unreadable Owner folder has no verified rows to enumerate.
+            // Build a small native error surface instead of keeping the entire
+            // virtual List/thumbnail/navigation AX tree alive under a failed
+            // authorization. This also gives XCTest a bounded accessibility
+            // hierarchy on the recoverable child route.
+            if !isHome && !model.loading && !model.verifiedPage,
+               let failure = model.errorMessage {
+                VStack(alignment: .leading, spacing: 18) {
+                    Label("无法读取当前目录", systemImage: "exclamationmark.triangle")
+                        .font(.headline)
+                    Text(failure).font(.subheadline).foregroundStyle(.secondary)
+                    HStack {
+                        Button("重试当前页") { reload() }
+                            .accessibilityIdentifier("native-ios-files-retry")
+                        Button { dismiss() } label: {
+                            Label("返回文件", systemImage: "chevron.left")
+                        }
+                        .accessibilityIdentifier("native-ios-files-error-return")
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer(minLength: 0)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("native-ios-files-error-page")
+            } else {
+                filesList
+                    .listStyle(.plain)
+                    .overlay(alignment: .bottom) { filesQuickFeedback }
+            }
+        }
+        .modifier(XDriveIOSNativeFilesSearchPresentation(
+            text: $queryDraft, presented: $searchPresented
+        ))
+        .onSubmit(of: .search) {
+            let submitted = queryDraft
+            submitSearch()
+            // The iOS 18 search overlay can remain above the Files rail even
+            // after isPresented=false. Dismiss native search explicitly while
+            // fencing its transient text clear from the committed Server query.
+            submittedSearchRestoreQuery = submitted
+            dismissSearch()
+            searchPresented = false
+            Task { @MainActor in
+                await Task.yield()
+                guard submittedSearchRestoreQuery == submitted else { return }
+                queryDraft = submitted
+                submittedSearchRestoreQuery = nil
+            }
+        }
         .task(id: queryDraft) {
             // System Files-style progressive search, but only for a valid
             // Server query. Task identity cancels superseded keyboard drafts
@@ -2413,6 +2638,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             submitSearch()
         }
         .onChange(of: queryDraft) { value in
+            // Native Search dismissal is not a user instruction to clear a
+            // verified Server search and return position.
+            if submittedSearchRestoreQuery != nil { return }
             if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !activeQuery.isEmpty {
                 if searchFilters.hasActiveFilters {
@@ -2457,6 +2685,60 @@ struct XDriveIOSNativeFilesBrowser: View {
             XDriveIOSNativeFilesBrowser(login: login, folder: next)
         }
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                if isHome {
+                    Button(isHomeEditing ? "完成" : "编辑") {
+                        isHomeEditing.toggle()
+                    }
+                    .accessibilityIdentifier("native-ios-files-home-edit-toggle")
+                }
+            }
+            ToolbarItem(placement: .principal) {
+                if let folder, !isGlobalSearch {
+                    Menu {
+                        if ancestorCrumbs.isEmpty {
+                            Button(ancestorStatus ?? "重新核验目录位置") {
+                                Task { await loadAncestorCrumbs() }
+                            }
+                        } else {
+                            if ancestorCrumbs.count > 32,
+                               let root = ancestorCrumbs.first {
+                                Button {
+                                    openVerifiedAncestor(root)
+                                } label: {
+                                    Label(root.name, systemImage: "externaldrive")
+                                }
+                            }
+                            ForEach(ancestorCrumbs.suffix(32), id: \.id) { crumb in
+                                Button {
+                                    openVerifiedAncestor(crumb)
+                                } label: {
+                                    if crumb.id == folder.id {
+                                        Label(crumb.name, systemImage: "checkmark")
+                                    } else {
+                                        Label(crumb.name, systemImage: "folder")
+                                    }
+                                }
+                            }
+                            if ancestorCrumbs.count > 32 {
+                                Button("查看全部 \(ancestorCrumbs.count) 级目录") {
+                                    showingAncestorsSheet = true
+                                }
+                                .accessibilityIdentifier("native-ios-files-all-ancestors")
+                            }
+                            Button("刷新位置", systemImage: "arrow.clockwise") {
+                                Task { await loadAncestorCrumbs() }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(folder.name).lineLimit(1)
+                            Image(systemName: "chevron.down").font(.caption2)
+                        }
+                    }
+                    .accessibilityIdentifier("native-ios-files-path-dropdown")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if selecting {
                     Button("完成") {
@@ -2555,6 +2837,15 @@ struct XDriveIOSNativeFilesBrowser: View {
                         .accessibilityIdentifier("native-ios-files-save-current-search")
                     }
                     Button {
+                        showingIndexJump = true
+                        jumpIndexDraft = ""
+                    } label: {
+                        Label("跳转到文件序号…", systemImage: "arrow.down.to.line.compact")
+                    }
+                    .disabled(isHome || isGlobalSearch || selecting ||
+                              !model.verifiedPage || model.loading || model.total == 0)
+                    .accessibilityIdentifier("native-ios-files-jump-to-index")
+                    Button {
                         showingPathPrompt = true
                         pathError = nil
                     } label: {
@@ -2573,6 +2864,24 @@ struct XDriveIOSNativeFilesBrowser: View {
                         }
                         .accessibilityIdentifier("native-ios-files-toolbar-organize-home")
                     }
+                    Button("撤销最近操作") {
+                        if let operation = mostRecentUndo {
+                            pendingQuickOperation = .init(action: .undo, operation: operation)
+                        }
+                    }
+                    .disabled(selecting || mostRecentUndo == nil || model.loading)
+                    .accessibilityIdentifier("native-ios-files-undo-shortcut")
+                    Button("重做最近操作") {
+                        if let operation = mostRecentRedo {
+                            pendingQuickOperation = .init(action: .redo, operation: operation)
+                        }
+                    }
+                    .disabled(selecting || mostRecentRedo == nil || model.loading)
+                    .accessibilityIdentifier("native-ios-files-redo-shortcut")
+                    Button("核对可撤销操作") { operationShortcuts.load(login: login) }
+                        .disabled(operationShortcuts.busy || operationShortcuts.loading ||
+                                  login.owner == nil)
+                        .accessibilityIdentifier("native-ios-files-refresh-operation-shortcuts")
                     Button { presentFileOperations() } label: {
                         Label("文件操作历史／撤销／重做",
                               systemImage: "arrow.uturn.backward.circle")
@@ -2601,6 +2910,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
             }
         }
+        .task(id: folder?.id) { await loadAncestorCrumbs() }
     }
 
     /// Keep the Files-only Recent/Browse/Favorites rail accessible inside a
@@ -2626,6 +2936,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                                !isHome && !isGlobalSearch {
                                 // Capture before SwiftUI unmounts the Browse List.
                                 browseReturnAnchor = lastAppearedNodeID
+                            }
+                            if quickSection == .browse && option != .browse {
+                                searchPresented = false
                             }
                             quickSection = option
                             if let owner = login.owner {
@@ -2739,6 +3052,14 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Text("账户已变化，请关闭后重新打开整理页面。")
             }
         }
+        .alert("跳转到文件序号", isPresented: $showingIndexJump) {
+            TextField("1–\(model.total)", text: $jumpIndexDraft)
+                .keyboardType(.numberPad)
+            Button("跳转") { jumpToItemIndex() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("根据服务器已确认的 \(model.total) 项总数定位；跳转后会再次核验该页。")
+        }
         .alert("前往文件夹", isPresented: $showingPathPrompt) {
             TextField("例如 /工作/文档", text: $pathDraft)
                 .textInputAutocapitalization(.never)
@@ -2837,7 +3158,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) {
                 NavigationStack {
                     XDriveIOSNativeFilesOperationHistoryScreen(
-                        login: login, expectedOwner: owner
+                        login: login, expectedOwner: owner,
+                        onClose: { showingFileOperations = false }
                     ) {
                         operationWasAccepted = true
                     }
@@ -2855,7 +3177,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     XDriveIOSNativeFilesSavedSearchesScreen(
                         login: login, expectedOwner: owner,
                         proposedQuery: activeQuery,
-                        proposedFilters: searchFilters
+                        proposedFilters: searchFilters,
+                        onClose: { showingSavedSearches = false }
                     ) { saved in
                         applySavedSearch(saved, expectedOwner: owner)
                     }
@@ -3026,6 +3349,92 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Text("当前账户已变化，请关闭后重新进入文件版本历史。")
             }
         }
+        .sheet(isPresented: $showingAncestorsSheet) {
+            NavigationStack {
+                List {
+                    ForEach(ancestorCrumbs, id: \.id) { crumb in
+                        Button {
+                            showingAncestorsSheet = false
+                            Task { @MainActor in
+                                await Task.yield()
+                                openVerifiedAncestor(crumb)
+                            }
+                        } label: {
+                            Label(crumb.name, systemImage: "folder")
+                        }
+                    }
+                }
+                .navigationTitle("所有上级目录")
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { showingAncestorsSheet = false }
+                    }
+                }
+            }
+            .accessibilityIdentifier("native-ios-files-all-ancestors-sheet")
+        }
+        .sheet(isPresented: $showingBatchProperties) {
+            NavigationStack {
+                List {
+                    Section("选择摘要") {
+                        LabeledContent("项目", value: String(chosenItems.count))
+                        LabeledContent("文件", value: String(chosenItems.filter { !$0.isDirectory }.count))
+                        LabeledContent("文件夹", value: String(chosenItems.filter { $0.isDirectory }.count))
+                        Text("大小只统计所选文件，不包含文件夹内未加载内容。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Section("已核验的选中项目") {
+                        ForEach(chosenItems, id: \.id) { node in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(node.name).lineLimit(2)
+                                HStack(spacing: 12) {
+                                    Text(node.isDirectory ? "文件夹" :
+                                         ByteCountFormatter.string(
+                                            fromByteCount: node.size, countStyle: .file))
+                                    Text("版本 \(node.revision)")
+                                }
+                                .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("所选项目属性")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { showingBatchProperties = false }
+                    }
+                }
+            }
+            .accessibilityIdentifier("native-ios-files-batch-properties-sheet")
+        }
+        .confirmationDialog(
+            pendingQuickOperation.map { $0.action.label + "最近文件操作？" } ?? "文件操作",
+            isPresented: Binding(
+                get: { pendingQuickOperation != nil },
+                set: { if !$0 { pendingQuickOperation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("确认" + (pendingQuickOperation?.action.label ?? "")) {
+                if let pending = pendingQuickOperation,
+                   operationShortcuts.matches(login.owner),
+                   operationShortcuts.items.contains(pending.operation),
+                   XDriveIOSNativeFilesOperationPolicy.canPerform(
+                      pending.action, for: pending.operation
+                   ) {
+                    operationShortcuts.submit(
+                        pending.action, operation: pending.operation, login: login
+                    ) {
+                        quickActionNotice = "服务器已接受文件操作；请在操作历史核对最终结果。"
+                    }
+                }
+                pendingQuickOperation = nil
+            }
+            Button("取消", role: .cancel) { pendingQuickOperation = nil }
+        } message: {
+            Text("只提交一次，服务器重新核验版本和权限；已排队不代表执行完成。")
+        }
         .fullScreenCover(item: $selectedFile, onDismiss: {
             selectedOwner = nil
             viewerAdmitted.removeAll()
@@ -3123,23 +3532,36 @@ struct XDriveIOSNativeFilesBrowser: View {
         model.suspendForNavigation()
     }
 
-    var body: some View {
-        ScrollViewReader { returnScroll in
-            filesModals
+    // Keep the SwiftUI type-checker's work in separate opaque view segments.
+    private func filesForegroundLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        filesModals
         .onAppear {
             restoreFilesSectionIfNeeded()
+            if phase == .active, let owner = login.owner,
+               !quickHistoryReadAttempted {
+                quickHistoryReadAttempted = true
+                operationShortcuts.updateExpectedOwner(owner)
+                operationShortcuts.load(login: login)
+            }
             // Returning from a child must keep the same verified rows, their
             // SwiftUI NavigationLinks and scroll position. Do not refetch on
             // every stack pop; explicit refresh and Owner change still do.
             if isHome {
-                if !favoriteShortcuts.matches(login.owner, kind: .favorites) ||
-                    !quickAccess.matches(login.owner) {
+                if !homeReadAttempted {
+                    homeReadAttempted = true
                     reload()
-                } else {
-                    // On return, silently revalidate Favorites that may have
-                    // changed in a child without removing source links.
+                } else if favoriteShortcuts.matches(login.owner, kind: .favorites) &&
+                          quickAccess.matches(login.owner) {
+                    // A successful same-Owner return can revalidate favorites
+                    // without clearing the Home navigation links. Offline/error
+                    // states await explicit Retry instead of another full fetch.
                     loadFavoriteShortcuts()
                 }
+            } else if !isHome && !model.verifiedPage &&
+                      model.errorMessage != nil {
+                // Re-entering an unreadable child must not spin an auth GET or
+                // remount the List every time SwiftUI delivers onAppear.
+                // Explicit Retry remains the only re-entry after a denial.
             } else if let folderID = parentID,
                       model.canResume(
                         owner: login.owner, folderID: folderID,
@@ -3168,6 +3590,10 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
+            // This is the Files root leaving the TabView/NavigationStack, not
+            // the search results subtree being temporarily covered by the
+            // native keyboard. Do not dismiss search as soon as it activates.
+            searchPresented = false
             chunked.invalidate()
             searchOptions.suspendForNavigation()
             if isHome, let current = login.owner,
@@ -3195,7 +3621,29 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedSnapshots.removeAll()
             showingBatchTrashConfirmation = false
         }
+    }
+
+    private func filesOwnerLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        filesForegroundLifecycle(returnScroll: returnScroll)
         .onChange(of: login.owner) { _ in
+            quickHistoryReadAttempted = false
+            showingAncestorsSheet = false
+            pendingJumpIndex = nil
+            pendingJumpStartedAt = nil
+            showingIndexJump = false
+            pendingQuickOperation = nil
+            showingBatchProperties = false
+            operationShortcuts.invalidate()
+            if phase == .active, let owner = login.owner {
+                quickHistoryReadAttempted = true
+                operationShortcuts.updateExpectedOwner(owner)
+                operationShortcuts.load(login: login)
+            }
+            isHomeEditing = false
+            submittedSearchRestoreQuery = nil
+            searchPresented = false
+            ancestorCrumbs = []
+            ancestorStatus = nil
             browseReturnAnchor = nil
             // Files-local section belongs to a verified Owner; a new Owner
             // must not inherit the previous account's Recent/Favorites route.
@@ -3278,8 +3726,16 @@ struct XDriveIOSNativeFilesBrowser: View {
             if isHome { restoreFilesSectionIfNeeded() }
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
-            if isHome { loadFavoriteShortcuts() }
+            homeReadAttempted = false
+            if isHome && phase == .active {
+                homeReadAttempted = true
+                reload()
+            }
         }
+    }
+
+    private func filesNavigationLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        filesOwnerLifecycle(returnScroll: returnScroll)
         .onChange(of: quickSection) { next in
             guard next == .browse, !isHome, !isGlobalSearch,
                   let folderID = parentID, let owner = login.owner,
@@ -3328,6 +3784,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 selectedSnapshots.removeValue(forKey: id)
             }
         }
+    }
+
+    private func filesArrangementLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        filesNavigationLifecycle(returnScroll: returnScroll)
         .onChange(of: sort) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: order) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: viewMode) { next in
@@ -3351,7 +3811,72 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onChange(of: grouping) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: foldersFirst) { _ in reloadKeepingArrangementAnchor() }
+    }
+
+    @ViewBuilder private func filesLoadingLifecycle(returnScroll: ScrollViewProxy) -> some View {
+        // Only a pushed folder is a protected child route. Global Search also
+        // makes isHome false on the root; treating it as a child removed the
+        // entire Files rail after Search Submit on a no-Session Owner.
+        // Root search remains mounted, while all reads fail closed via the
+        // existing authorization gate. Actual folders deny before their List.
+        if folder != nil && !login.hasLocalOwnerSession {
+            XDriveIOSNativeFilesNoSessionRoute(kind: .cloud)
+                .onAppear {
+                    // A revoked/absent local Session must retire earlier
+                    // verified rows and selection, even if the same Owner
+                    // signs in again while this child route remains open.
+                    model.invalidate()
+                    inlineFolders.invalidate()
+                    cancelSelectAllRead()
+                    selecting = false
+                    selectedIDs.removeAll()
+                    selectedSnapshots.removeAll()
+                }
+        } else {
+        filesArrangementLifecycle(returnScroll: returnScroll)
         .onChange(of: model.loading) { loading in
+            if !loading, model.verifiedPage, let target = pendingJumpIndex,
+               let expectedOwner = login.owner,
+               target >= model.startOffset,
+               target - model.startOffset < model.entries.count {
+                let node = model.entries[target - model.startOffset]
+                // Capture the *non-optional* authorized Owner before a delayed
+                // scroll. A logout while Task.yield() is pending must retire it.
+                guard let expectedFolder = parentID else { return }
+                let startedAt = pendingJumpStartedAt
+                pendingJumpIndex = nil
+                pendingJumpStartedAt = nil
+                Task { @MainActor in
+                    await Task.yield()
+                    guard parentID == expectedFolder,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                              login.owner, expectedOwner
+                          ), model.verifiedPage,
+                          model.canResume(
+                            owner: expectedOwner, folderID: expectedFolder,
+                            query: activeQuery, filters: searchFilters,
+                            sort: sort, order: order,
+                            grouping: grouping, foldersFirst: foldersFirst
+                          ),
+                          model.entries.contains(where: { $0.id == node.id })
+                    else { return }
+                    returnScroll.scrollTo(node.id, anchor: .center)
+                    lastAppearedNodeID = node.id
+                    persistVisibleAnchorSoon()
+                    // This measures receipt-to-authorized-scroll-command, not
+                    // actual FPS/visible pixels. The current Owner and sorting
+                    // still have to pass revalidation after Task.yield.
+                    if let startedAt,
+                       ProcessInfo.processInfo.arguments.contains(
+                         "-xdrive-ui-navigation-smoke"
+                       ) {
+                        let elapsed = max(0, Int(
+                            (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
+                        ))
+                        print("IOS_NATIVE_FILES_JUMP_VERIFIED_MS value=\(elapsed)")
+                    }
+                }
+            }
             if !loading && model.verifiedPage { persistVerifiedFolder() }
             guard !loading, selectedFile == nil else { return }
             if let returnID = pendingNavigationReturnNodeID,
@@ -3384,6 +3909,12 @@ struct XDriveIOSNativeFilesBrowser: View {
             lastViewedFile = nil
             returnOwner = nil
         }
+        }
+    }
+
+    var body: some View {
+        ScrollViewReader { returnScroll in
+            filesLoadingLifecycle(returnScroll: returnScroll)
         }
     }
 
@@ -3489,6 +4020,26 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedIDs.insert(entry.id)
             selectedSnapshots[entry.id] = entry.node
         }
+    }
+
+    private func jumpToItemIndex() {
+        guard !isHome, !isGlobalSearch, !selecting,
+              model.verifiedPage, !model.loading, let owner = login.owner,
+              parentID != nil,
+              let number = Int(jumpIndexDraft),
+              let page = XDriveIOSNativeFilesContinuousWindowPolicy.pageContaining(
+                itemNumber: number, total: model.total
+              ) else {
+            quickActionNotice = "序号无效；请输入当前目录总数范围内的整数。"
+            return
+        }
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+        pendingJumpIndex = number - 1
+        pendingJumpStartedAt = ProcessInfo.processInfo.systemUptime
+        pendingNavigationReturnNodeID = nil
+        lastAppearedNodeID = nil
+        offset = page
+        reload()
     }
 
     private func cancelPathLookup() {
@@ -3990,7 +4541,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             Spacer(minLength: 6)
         }
         .contentShape(Rectangle())
-        .frame(minHeight: 44)
+        // Slightly taller than a bare minimum touch target: two-line long
+        // names remain readable in Dynamic Type and match PWA's row rhythm.
+        .frame(minHeight: 52)
     }
 
     private func requestLocation(for entry: XDriveIOSNativeFilesEntry) {
@@ -4273,6 +4826,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func clearSearch() {
+        submittedSearchRestoreQuery = nil
+        searchPresented = false
         guard !activeQuery.isEmpty || !queryDraft.isEmpty ||
               searchFilters.hasActiveFilters || searchReturnOffset != nil else { return }
         let restoredOffset = searchReturnOffset ?? 0
@@ -4442,5 +4997,82 @@ struct XDriveIOSNativeFilesBrowser: View {
         model.load(login: login, folderID: parentID, offset: offset,
                    query: activeQuery, filters: searchFilters, sort: sort, order: order,
                    grouping: grouping, foldersFirst: foldersFirst)
+    }
+}
+
+    
+/// A bounded, read-only route for a locally missing Session. It bypasses
+/// *display construction* only; it never grants a token or replaces the
+/// server's authoritative Owner check after a real sign-in.
+struct XDriveIOSNativeFilesNoSessionRoute: View {
+    enum Kind { case cloud, trash, recent, favorites }
+
+    let kind: Kind
+    @Environment(\.dismiss) private var dismiss
+
+    private var routeTitle: String {
+        switch kind {
+        case .cloud: return "xDrive 云端"
+        case .trash: return "最近删除"
+        case .recent: return "最近使用"
+        case .favorites: return "收藏夹"
+        }
+    }
+
+    private var errorTitle: String {
+        if case .cloud = kind { return "无法读取当前目录" }
+        return "无法读取" + routeTitle
+    }
+
+    private var errorPageID: String {
+        switch kind {
+        case .cloud: return "native-ios-files-error-page"
+        case .trash: return "native-ios-files-trash-error-page"
+        case .recent: return "native-ios-files-recent-error-page"
+        case .favorites: return "native-ios-files-favorites-error-page"
+        }
+    }
+
+    private var errorReturnID: String {
+        switch kind {
+        case .cloud: return "native-ios-files-error-return"
+        case .trash: return "native-ios-files-trash-error-return"
+        case .recent: return "native-ios-files-recent-error-return"
+        case .favorites: return "native-ios-files-favorites-error-return"
+        }
+    }
+
+    // Distinguish Cloud/Trash/Recent/Favorites denials in real crash UI logs.
+    private var noSessionID: String {
+        switch kind {
+        case .cloud: return "native-ios-files-cloud-no-session"
+        case .trash: return "native-ios-files-trash-no-session"
+        case .recent: return "native-ios-files-recent-no-session"
+        case .favorites: return "native-ios-files-favorites-no-session"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label(errorTitle, systemImage: "lock.shield")
+                .font(.headline)
+            Text("当前没有有效的原生登录会话。请返回并登录 xDrive 后重试。")
+                .font(.subheadline).foregroundStyle(.secondary)
+                .accessibilityIdentifier(noSessionID)
+            Button {
+                dismiss()
+            } label: {
+                Label("返回文件", systemImage: "chevron.left")
+            }
+            .accessibilityIdentifier(errorReturnID)
+            .buttonStyle(.bordered)
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(errorPageID)
+        .navigationTitle(routeTitle)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

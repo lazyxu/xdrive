@@ -27,6 +27,16 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     }
 
     private var active: Session?
+
+    /// A synchronous *local* hint for rendering native no-Session routes.
+    /// This never authorizes Server reads/writes: every protected operation
+    /// must still await verifiedAuthorization() and check Owner/revision.
+    /// A synthetic Owner alone does not imply an authenticated Session.
+    var hasLocalOwnerSession: Bool {
+        guard let active, let owner else { return false }
+        return sameScope(active.verifiedOwner, owner)
+    }
+
     private var generation: UInt64 = 0
     private struct AuthorizationFlight {
         let id: UUID

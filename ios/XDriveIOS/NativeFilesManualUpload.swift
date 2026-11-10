@@ -103,6 +103,16 @@ struct XDriveIOSNativeFilesUploadReadback {
         }
     }
 
+    /// Previously created directories must retain their current exact parent.
+    func requireCreatedDirectory(_ id: UInt64, parentID: UInt64,
+                                 name: String) async throws {
+        let node = try await getNode(id)
+        guard node.id == id, node.parent_id == parentID,
+              node.type == "dir", node.name == name, node.revision > 0 else {
+            throw XDriveIOSNativeFilesManualUploadFailure.folderChanged
+        }
+    }
+
     func requireCommitted(_ receipt: XDriveNativeUploadReceipt,
                           parentID: UInt64, name: String,
                           byteCount: Int64) async throws {
@@ -251,6 +261,24 @@ private struct XDriveIOSNativeFilesFolderUploadPlan {
     }
 }
 
+private struct XDriveIOSNativeFilesConfirmedUpload {
+    let name: String
+    let receipt: XDriveNativeUploadReceipt
+    let bytes: Int64
+}
+
+/// Memory-only checkpoint, never an authorization or implicit retry grant.
+private struct XDriveIOSNativeFilesFolderCheckpoint {
+    let owner: XDriveNativeOwnerRoot
+    let parentID: UInt64
+    let parentName: String?
+    let pickedPath: String
+    let keys: [String]
+    let directoryIDs: [String: UInt64]
+    let uploadedFiles: [String: XDriveIOSNativeFilesConfirmedUpload]
+    let nextStep: Int
+}
+
 /// One or at most eight explicit foreground files. A single Owner-bound
 /// OriginalRunGate covers the whole sequential batch, and each document is
 /// staged/verified/retired separately using ONE UploadSession/CAS writer.
@@ -258,6 +286,9 @@ private struct XDriveIOSNativeFilesFolderUploadPlan {
 @MainActor
 final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
     @Published private(set) var busy = false
+    @Published private(set) var confirmedFolderSteps = 0
+    @Published private(set) var totalFolderSteps = 0
+    @Published private(set) var canResumeFolder = false
     @Published private(set) var status: String? {
         didSet {
             if let status { activity?.report(status) }
@@ -269,6 +300,7 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
     private var fileProgressTicket = UUID()
     private var lastConfirmedPercent = -1
     private var cancelRequested = false
+    private var folderCheckpoint: XDriveIOSNativeFilesFolderCheckpoint?
 
     func invalidate() {
         epoch = UUID()
@@ -276,6 +308,10 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
         fileProgressTicket = UUID()
         lastConfirmedPercent = -1
         cancelRequested = false
+        folderCheckpoint = nil
+        canResumeFolder = false
+        confirmedFolderSteps = 0
+        totalFolderSteps = 0
         running?.cancel()
         running = nil
         busy = false
@@ -327,6 +363,10 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
             status = "另一项原件上传或退出操作正在进行；本次未开始上传。"
             return
         }
+        folderCheckpoint = nil
+        canResumeFolder = false
+        confirmedFolderSteps = 0
+        totalFolderSteps = 0
         let ticket = UUID()
         epoch = ticket
         fileProgressTicket = UUID()
@@ -354,11 +394,12 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
             do {
                 for (index, fileURL) in files.enumerated() {
                     try Task.checkCancellation()
-                    let name = try await uploadOne(
+                    let uploaded = try await uploadOne(
                         fileURL: fileURL, index: index, count: files.count,
                         login: login, expected: expected, ticket: ticket,
                         parentID: parentID, expectedFolderName: expectedFolderName
                     )
+                    let name = uploaded.name
                     confirmed += 1
                     status = files.count == 1
                         ? "服务器已确认文件“\(name)”的原件收据；请在当前文件夹核对。"
@@ -372,6 +413,7 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
                 status = files.count == 1
                     ? status
                     : "全部 \(confirmed) 项已有真实服务器原件收据；正在刷新当前目录。"
+                phase = .confirmed
                 activity?.finish(.confirmed, detail: status)
                 onConfirmed()
             } catch is CancellationError {
@@ -430,12 +472,28 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
     /// uploadOne's sole gated UploadSession + SHA/readback protocol.
     func start(folderURL: URL, login: XDriveIOSNativeOwnerLoginModel,
                parentID: UInt64, expectedFolderName: String?,
+               resumeFromCheckpoint: Bool = false,
                transfers: XDriveIOSNativeTransferStore? = nil,
                onConfirmed: @MainActor @escaping () -> Void) {
         guard !busy, running == nil, parentID > 0,
               folderURL.isFileURL, let expected = login.owner else {
             status = "当前账户或选取的文件夹不可上传；请刷新。"
             return
+        }
+        let prior = resumeFromCheckpoint ? folderCheckpoint : nil
+        if resumeFromCheckpoint {
+            guard let prior, prior.parentID == parentID,
+                  prior.parentName == expectedFolderName,
+                  prior.pickedPath == folderURL.standardizedFileURL.path,
+                  XDriveIOSNativePhotoOwnerScope.matches(prior.owner, expected) else {
+                folderCheckpoint = nil
+                canResumeFolder = false
+                status = "继续上传已失效：请选择原账户、原目录和同一文件夹重新核验。"
+                return
+            }
+        } else {
+            folderCheckpoint = nil
+            canResumeFolder = false
         }
         guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
             status = "另一项原件上传或退出操作正在进行，本次未开始。"
@@ -446,22 +504,34 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
         fileProgressTicket = UUID()
         lastConfirmedPercent = -1
         cancelRequested = false
-        let activity = transfers?.begin(.upload, title: "文件夹", owner: expected)
+        confirmedFolderSteps = 0
+        totalFolderSteps = 0
+        let activity = transfers?.begin(.upload,
+            title: resumeFromCheckpoint ? "继续文件夹上传" : "文件夹",
+            owner: expected)
         self.activity = activity
         busy = true
-        status = "正在完整检查文件夹的目录、文件大小和名称；尚未上传…"
+        status = "正在完整检查文件夹的目录、文件大小和名称；尚未提交新上传…"
         running = Task { @MainActor in
             var confirmedDirectories = 0
             var confirmedFiles = 0
             var plannedFiles = 0
             var possiblySubmitted = false
             var preflightFailed = false
+            var completedAll = false
+            var safeResume = false
+            var completed = 0
+            var scanned: [XDriveIOSNativeFilesFolderUploadPlan.Step] = []
+            var directoryIDs: [String: UInt64] = ["": parentID]
+            var uploadedFiles: [String: XDriveIOSNativeFilesConfirmedUpload] = [:]
             let scope = folderURL.startAccessingSecurityScopedResource()
             defer {
                 if scope { folderURL.stopAccessingSecurityScopedResource() }
                 XDriveIOSOriginalRunGate.shared.release(gate)
                 let phase: XDriveIOSNativeTransferStore.Phase =
-                    possiblySubmitted ? .needsReview : (preflightFailed ? .failed : .stopped)
+                    completedAll ? .confirmed : safeResume ? .failed :
+                    possiblySubmitted ? .needsReview :
+                    preflightFailed ? .failed : .stopped
                 activity?.finish(phase, detail: epoch == ticket ? status : nil)
                 if epoch == ticket {
                     self.activity = nil
@@ -475,19 +545,72 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
                 }
                 let steps = try await withTaskCancellationHandler(operation: {
                     try await scanning.value
-                }, onCancel: {
-                    scanning.cancel()
-                })
+                }, onCancel: { scanning.cancel() })
+                scanned = steps
                 try Task.checkCancellation()
                 guard epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
                     throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
                 }
+                totalFolderSteps = steps.count
                 plannedFiles = steps.filter { $0.fileURL != nil }.count
-                status = "已检查 \(steps.count) 项；正在逐项创建目录并上传原件…"
-                var directoryIDs: [String: UInt64] = ["": parentID]
 
-                for step in steps {
+                if let prior {
+                    guard prior.keys == steps.map(\.key),
+                          prior.nextStep > 0, prior.nextStep < steps.count else {
+                        throw XDriveIOSNativeFilesFolderUploadFailure.invalidFolder
+                    }
+                    status = "正在逐项重新核验之前成功的目录与文件收据；暂不写入…"
+                    let auth = try await login.verifiedAuthorization()
+                    try Task.checkCancellation()
+                    guard epoch == ticket,
+                          XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
+                        throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+                    }
+                    let proof = XDriveIOSNativeFilesUploadReadback(
+                        owner: auth.owner, accessToken: auth.accessToken
+                    )
+                    for step in steps.prefix(prior.nextStep) {
+                        try Task.checkCancellation()
+                        guard let targetParent = prior.directoryIDs[step.parentKey] else {
+                            throw XDriveIOSNativeFilesFolderUploadFailure.invalidFolder
+                        }
+                        if step.fileURL != nil {
+                            guard let uploaded = prior.uploadedFiles[step.key],
+                                  uploaded.name == step.name else {
+                                throw XDriveIOSNativeFilesFolderUploadFailure.invalidFolder
+                            }
+                            try await proof.requireCommitted(
+                                uploaded.receipt, parentID: targetParent,
+                                name: uploaded.name, byteCount: uploaded.bytes
+                            )
+                            confirmedFiles += 1
+                        } else {
+                            guard let dirID = prior.directoryIDs[step.key] else {
+                                throw XDriveIOSNativeFilesFolderUploadFailure.invalidFolder
+                            }
+                            try await proof.requireCreatedDirectory(
+                                dirID, parentID: targetParent, name: step.name
+                            )
+                            confirmedDirectories += 1
+                        }
+                    }
+                    try Task.checkCancellation()
+                    guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                          epoch == ticket else {
+                        throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+                    }
+                    directoryIDs = prior.directoryIDs
+                    uploadedFiles = prior.uploadedFiles
+                    completed = prior.nextStep
+                    confirmedFolderSteps = completed
+                    possiblySubmitted = completed > 0
+                    status = "已重新核验前 \(completed) 项，继续剩余 \(steps.count - completed) 项。"
+                } else {
+                    status = "已检查 \(steps.count) 项；正在逐项创建目录并上传原件…"
+                }
+
+                for step in steps.dropFirst(completed) {
                     try Task.checkCancellation()
                     guard epoch == ticket,
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
@@ -497,17 +620,17 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
                     let parentName = step.components.count == 1
                         ? expectedFolderName
                         : step.components[step.components.count - 2]
-
                     if let pickedFile = step.fileURL {
-                        // uploadOne revalidates Owner+parent before/after
-                        // each original and verifies the exact durable SHA.
+                        // This may stage before any POST. Only a typed staging
+                        // failure authorizes a future explicit, verified resume.
                         possiblySubmitted = true
-                        _ = try await uploadOne(
+                        let uploaded = try await uploadOne(
                             fileURL: pickedFile, index: confirmedFiles,
                             count: plannedFiles, login: login, expected: expected,
                             ticket: ticket, parentID: targetParent,
                             expectedFolderName: parentName
                         )
+                        uploadedFiles[step.key] = uploaded
                         confirmedFiles += 1
                     } else {
                         let auth = try await login.verifiedAuthorization()
@@ -517,9 +640,10 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
                               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
                             throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
                         }
-                        try await XDriveIOSNativeFilesUploadReadback(
+                        let proof = XDriveIOSNativeFilesUploadReadback(
                             owner: auth.owner, accessToken: auth.accessToken
-                        ).requireDestination(targetParent, expectedName: parentName)
+                        )
+                        try await proof.requireDestination(targetParent, expectedName: parentName)
                         try Task.checkCancellation()
                         possiblySubmitted = true
                         let created = try await XDriveIOSNativeFilesDirectoryCreator(
@@ -532,30 +656,62 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
                               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
                             throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
                         }
+                        try await XDriveIOSNativeFilesUploadReadback(
+                            owner: afterward.owner, accessToken: afterward.accessToken
+                        ).requireCreatedDirectory(
+                            created, parentID: targetParent, name: step.name
+                        )
                         directoryIDs[step.key] = created
                         confirmedDirectories += 1
                     }
-                    status = "服务器已确认 \(confirmedDirectories) 个目录、\(confirmedFiles)/\(plannedFiles) 个文件；正在继续。"
+                    completed += 1
+                    confirmedFolderSteps = completed
+                    status = "服务器已确认 \(confirmedDirectories) 个目录、\(confirmedFiles)/\(plannedFiles) 个文件（\(completed)/\(steps.count) 步）。"
                 }
                 try Task.checkCancellation()
                 guard epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
                     throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
                 }
+                folderCheckpoint = nil
+                canResumeFolder = false
+                completedAll = true
                 status = "已逐项核对 \(confirmedDirectories) 个目录及全部 \(confirmedFiles) 个原件收据。"
                 activity?.finish(.confirmed, detail: status)
                 onConfirmed()
             } catch is CancellationError {
                 if epoch == ticket {
-                    status = "已确认 \(confirmedDirectories) 个目录、\(confirmedFiles) 个文件。已取消；可能有已提交的写入，请刷新后核对，勿自动重传。"
+                    folderCheckpoint = nil
+                    canResumeFolder = false
+                    status = "已确认 \(confirmedDirectories) 个目录、\(confirmedFiles) 个文件。取消时当前写入可能已提交；请核对后再操作。"
                 }
             } catch {
                 guard epoch == ticket else { return }
-                if !possiblySubmitted {
-                    preflightFailed = true
-                    status = "文件夹检查未通过：含无效/重复名称、不可读取项、链接，或超过 64 文件/32 目录/256 MiB/8 层限制。未提交写入。"
+                // Every XDriveManualDocumentStageError occurs before uploadOnce
+                // starts the current POST; previous steps have complete readbacks.
+                if error is XDriveManualDocumentStageError,
+                   completed > 0, completed < scanned.count,
+                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) {
+                    folderCheckpoint = XDriveIOSNativeFilesFolderCheckpoint(
+                        owner: expected, parentID: parentID,
+                        parentName: expectedFolderName,
+                        pickedPath: folderURL.standardizedFileURL.path,
+                        keys: scanned.map(\.key),
+                        directoryIDs: directoryIDs, uploadedFiles: uploadedFiles,
+                        nextStep: completed
+                    )
+                    canResumeFolder = true
+                    safeResume = true
+                    status = "前 \(completed) 项已确认；当前文件在写入前无法读取或暂存。修复本机文件后，重新选择同一文件夹可安全继续。"
                 } else {
-                    status = "仅确认 \(confirmedDirectories) 个目录、\(confirmedFiles)/\(plannedFiles) 个文件。操作中止；可能存在结果不确定的写入，请先刷新目录逐项核对，不要自动重传。"
+                    folderCheckpoint = nil
+                    canResumeFolder = false
+                    if !possiblySubmitted {
+                        preflightFailed = true
+                        status = "文件夹检查未通过：无效/重复名称、不可读取项、链接，或超过 128 文件/64 目录/512 MiB/8 层限制；未写入。"
+                    } else {
+                        status = "已确认 \(confirmedDirectories) 个目录、\(confirmedFiles)/\(plannedFiles) 个文件。当前写入结果可能不确定；请刷新核对，不能自动续传。"
+                    }
                 }
             }
         }
@@ -569,7 +725,7 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
         login: XDriveIOSNativeOwnerLoginModel,
         expected: XDriveNativeOwnerRoot, ticket: UUID,
         parentID: UInt64, expectedFolderName: String?
-    ) async throws -> String {
+    ) async throws -> XDriveIOSNativeFilesConfirmedUpload {
         let initial = try await login.verifiedAuthorization()
         try Task.checkCancellation()
         guard epoch == ticket,
@@ -662,6 +818,8 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
             throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
         }
-        return staged.originalName
+        return XDriveIOSNativeFilesConfirmedUpload(
+            name: staged.originalName, receipt: receipt, bytes: staged.byteCount
+        )
     }
 }

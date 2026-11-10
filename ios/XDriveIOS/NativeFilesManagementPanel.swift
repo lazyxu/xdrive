@@ -40,6 +40,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     @State private var showingImporter = false
     @State private var showingMultiImporter = false
     @State private var showingFolderImporter = false
+    @State private var showingFolderResumeImporter = false
     @State private var showingCreate = false
     @State private var showingRename = false
     @State private var showingTrash = false
@@ -419,10 +420,49 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             }
                         }
                         .accessibilityIdentifier("native-ios-files-folder-upload")
+                        if uploader.canResumeFolder {
+                            Button("核验后继续剩余文件夹上传") {
+                                showingFolderResumeImporter = true
+                            }
+                            .disabled(anyBusy || !verified)
+                            .fileImporter(
+                                isPresented: $showingFolderResumeImporter,
+                                allowedContentTypes: [.folder]
+                            ) { result in
+                                switch result {
+                                case .success(let pickedFolder):
+                                    guard verified, uploader.canResumeFolder else {
+                                        uploader.pickerFailed()
+                                        return
+                                    }
+                                    uploader.start(
+                                        folderURL: pickedFolder, login: login,
+                                        parentID: folderID, expectedFolderName: folderName,
+                                        resumeFromCheckpoint: true,
+                                        transfers: transfers, onConfirmed: finishConfirmed
+                                    )
+                                case .failure:
+                                    uploader.pickerFailed()
+                                }
+                            }
+                            .accessibilityIdentifier("native-ios-files-folder-resume")
+                            Text("仅写入前失败的项目可继续；先复查此前的每个目录与原件收据。取消、结果不确定或权限变化时不会提供继续按钮。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                         Text("完整保留选中文件夹及子目录。前台最多 128 个文件、64 个目录、总计 512 MiB、8 层；先完成整棵目录检查，失败不自动重传。")
                             .font(.footnote).foregroundStyle(.secondary)
                         Text("单文件最大 1 GiB 私有暂存；如果文件提供者授予安全读取权限，可直接上传最大 8 GiB 的文件，无需再复制一份原件。批量最多 64 个文件，逐项核对收据。失败或结果未知时停止后续上传。")
                             .font(.footnote).foregroundStyle(.secondary)
+                        if uploader.totalFolderSteps > 0 {
+                            ProgressView(
+                                value: Double(uploader.confirmedFolderSteps),
+                                total: Double(uploader.totalFolderSteps)
+                            )
+                            .accessibilityLabel("已取得并重新核验的文件夹上传步骤")
+                            .accessibilityIdentifier("native-ios-files-folder-upload-progress")
+                            Text("已确认 \(uploader.confirmedFolderSteps)/\(uploader.totalFolderSteps) 个目录或文件步骤；未核对的步骤不计入完成。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         if uploader.busy {
                             Button("取消当前上传", role: .cancel) {
                                 uploader.cancelCurrentTransfer()
@@ -573,6 +613,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         showingImporter = false
         showingMultiImporter = false
         showingFolderImporter = false
+        showingFolderResumeImporter = false
         destinationIntent = nil
         shareNode = nil
         exporter.invalidate()

@@ -37,7 +37,8 @@ test('directory and full-library search use canonical counted Owner Range', () =
   assert.match(view, /completionHandler\(nil\)/);
   assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
   assert.match(view, /private func suspendVisibleRange\(\) \{[\s\S]*?model\.suspendForNavigation\(\)/);
-  const suspension = view.slice(view.indexOf('private func suspendVisibleRange()'), view.indexOf('var body: some View', view.indexOf('private func suspendVisibleRange()')));
+  const suspension = view.slice(view.indexOf('private func suspendVisibleRange()'), view.indexOf('private func filesForegroundLifecycle(', view.indexOf('private func suspendVisibleRange()')));
+  assert.match(suspension, /model\.suspendForNavigation\(\)/)
   assert.doesNotMatch(suspension, /model\.invalidate\(\)/);
   assert.match(view, /model\.canResume\(/);
   assert.match(view, /job\?\.cancel\(\)/);
@@ -74,8 +75,9 @@ test('native Browse home uses a verified cloud location rather than automaticall
   assert.match(view, /Section\("位置"\)/)
   assert.match(view, /folderID: owner\.rootNodeID,\s*folderName: "xDrive 云端"/)
   assert.match(view, /native-ios-files-open-root-location/)
-  assert.match(view, /Section\("个人收藏"\)/)
-  assert.match(view, /Section\("快捷访问"\)/)
+  assert.match(view, /Section\("个人收藏文件夹"\)/)
+  assert.match(view, /native-ios-files-open-recent/)
+  assert.doesNotMatch(view, /Section\("快捷访问"\)/)
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
   assert.match(view, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
   assert.match(view, /XDriveIOSNativeFilesTrashScreen\(login: login\)/)
@@ -85,10 +87,18 @@ test('native Browse home uses a verified cloud location rather than automaticall
 });
 
 test('native SwiftUI search collapses in the toolbar and restores directory on clear', () => {
-  assert.match(view, /\.searchable\(\s*text: \$queryDraft,/)
+  assert.match(view, /private struct XDriveIOSNativeFilesSearchPresentation: ViewModifier/)
+  assert.match(view, /if #available\(iOS 17\.0, \*\)/)
+  assert.match(view, /content\.searchable\(\s*text: \$text, isPresented: \$presented,/)
+  assert.match(view, /content\.searchable\(\s*text: \$text,\s*placement:/)
+  assert.match(view, /\.modifier\(XDriveIOSNativeFilesSearchPresentation\(\s*text: \$queryDraft, presented: \$searchPresented/)
   assert.match(view, /placement: \.navigationBarDrawer\(displayMode: \.automatic\)/)
   assert.match(view, /prompt: "搜索全部文件"/)
-  assert.match(view, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
+  assert.match(view, /\.onSubmit\(of: \.search\) \{\s*let submitted = queryDraft\s*submitSearch\(\)[\s\S]*?submittedSearchRestoreQuery = submitted\s*dismissSearch\(\)\s*searchPresented = false\s*Task \{ @MainActor in[\s\S]*?guard submittedSearchRestoreQuery == submitted else \{ return \}\s*queryDraft = submitted\s*submittedSearchRestoreQuery = nil\s*\}\s*\}/)
+  assert.match(view, /\.onChange\(of: queryDraft\) \{ value in[\s\S]*?if submittedSearchRestoreQuery != nil \{ return \}/)
+  assert.match(view, /\.onDisappear \{[\s\S]*?searchPresented = false\s*chunked\.invalidate\(\)/)
+  // Committing a query must retain the Server-scoped search and return anchor.
+  assert.match(view, /activeQuery = query\s*reload\(resetOffset: true\)/)
   assert.match(view, /private func submitSearch\(\)/)
   assert.match(view, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
   assert.match(view, /if searchReturnOffset == nil \{\s*let saved = rememberedPosition\(\)\s*searchReturnOffset = saved\?\.pageOffset \?\? offset\s*searchReturnNodeID = saved\?\.nodeID/)
@@ -124,9 +134,9 @@ test('Browse home displays only verified favorite folders as native direct navig
   assert.match(view, /\$0\.node\.isDirectory &&\s*XDriveIOSNativeFilesCollectionsPolicy\.validItem\(\$0, kind: \.favorites\)/)
   assert.match(view, /\.prefix\(8\)/)
   const home = view.slice(view.indexOf('@ViewBuilder private var filesHome:'), view.indexOf('@ViewBuilder private var filesHeader:'))
-  assert.match(home, /Section\("个人收藏"\)/)
+  assert.match(home, /Section\("个人收藏文件夹"\)/)
   assert.match(home, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
-  assert.match(home, /ForEach\(verifiedFavoriteFolders\) \{ item in/)
+  assert.match(home, /ForEach\(isHomeEditing \? verifiedFavoriteFolders : Array\(verifiedFavoriteFolders\.prefix\(4\)\)\) \{ item in/)
   assert.match(home, /XDriveIOSNativeFilesBrowser\(\s*login: login, folderID: item\.node\.id,\s*folderName: item\.node\.name/)
   assert.match(home, /native-ios-files-favorite-folder-/)
   assert.match(home, /if favoriteShortcuts\.loading \{/)
@@ -136,7 +146,7 @@ test('Browse home displays only verified favorite folders as native direct navig
   assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?if isHome, let current = login\.owner,[\s\S]*?favoriteShortcuts\.suspendForNavigation\(\)/)
   assert.match(view, /if !sameOwner \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = owner/)
   assert.match(view, /else \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil/)
-  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*if isHome \{ loadFavoriteShortcuts\(\) \}/)
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*homeReadAttempted = false\s*if isHome && phase == \.active \{\s*homeReadAttempted = true\s*reload\(\)/)
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return/)
   assert.doesNotMatch(home, /XDriveIOSNativeFilesCollectionsTransport\(|URLSession|\/api\/v1\/file-favorites/)
 })
@@ -144,8 +154,9 @@ test('Browse home displays only verified favorite folders as native direct navig
 
 test('native Files full-library search debounces valid keyboard drafts and cancels superseded searches', () => {
   const chrome = view.slice(view.indexOf('private var filesChrome:'), view.indexOf('private var filesModals:'))
-  assert.match(chrome, /\.searchable\(\s*text: \$queryDraft,/)
-  assert.match(chrome, /\.onSubmit\(of: \.search\) \{ submitSearch\(\) \}/)
+  assert.match(chrome, /\.modifier\(XDriveIOSNativeFilesSearchPresentation\(\s*text: \$queryDraft, presented: \$searchPresented/)
+  assert.match(chrome, /\.onSubmit\(of: \.search\) \{\s*let submitted = queryDraft\s*submitSearch\(\)[\s\S]*?submittedSearchRestoreQuery = submitted\s*dismissSearch\(\)\s*searchPresented = false\s*Task \{ @MainActor in[\s\S]*?guard submittedSearchRestoreQuery == submitted else \{ return \}\s*queryDraft = submitted\s*submittedSearchRestoreQuery = nil\s*\}\s*\}/)
+  assert.match(chrome, /\.onChange\(of: queryDraft\) \{ value in[\s\S]*?if submittedSearchRestoreQuery != nil \{ return \}/)
   assert.match(chrome, /\.task\(id: queryDraft\) \{/)
   assert.match(chrome, /let query = queryDraft\.trimmingCharacters\(in: \.whitespacesAndNewlines\)/)
   assert.match(chrome, /XDriveIOSNativeFilesPagePolicy\.validSearch\(query\)/)
@@ -248,7 +259,7 @@ test('native Files child navigation retains verified source/tag filters without 
   assert.match(suspension, /epoch = UUID\(\)/);
   assert.match(suspension, /job\?\.cancel\(\)/);
   assert.doesNotMatch(suspension, /sources = \[\]|tags = \[\]|loadedOwner = nil|verified = false/);
-  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}\s*\.onDisappear \{\s*(?:chunked\.invalidate\(\)\s*)?searchOptions\.suspendForNavigation\(\)/);
+  assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?searchPresented = false\s*chunked\.invalidate\(\)\s*searchOptions\.suspendForNavigation\(\)/);
   // A genuine Owner/root change still clears options, and the visible filter
   // list checks the exact Owner before rendering cached suggestions.
   assert.match(filterModel, /func invalidate\(\) \{[\s\S]*?loadedOwner = nil[\s\S]*?sources = \[\][\s\S]*?tags = \[\]/);
