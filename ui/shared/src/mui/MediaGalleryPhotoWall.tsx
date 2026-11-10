@@ -131,13 +131,15 @@ export function XDriveMediaGalleryPhotoWall({
       sx={{
         width: '100%', minWidth: 0,
         touchAction: pinch ? 'pan-y' : undefined,
-        ...(framing ? xDriveMediaGalleryFramingStyles(framing) : {}),
-        ...(pinch ? {
-          '& [data-xdrive-media-tile] img': {
-            transform: 'scale(var(--xdrive-gallery-pinch-preview, 1))',
-            transformOrigin: 'center',
-          },
-        } : {}),
+        // Compose the touch preview with objectFit in a single MUI sx
+        // selector: two shallow spreads of the same img key lose framing.
+        ...(framing ? xDriveMediaGalleryFramingStyles(framing, Boolean(pinch))
+          : pinch ? {
+            '& [data-xdrive-media-tile] img': {
+              transform: 'scale(var(--xdrive-gallery-pinch-preview, 1))',
+              transformOrigin: 'center',
+            },
+          } : {}),
       }}
     >
       {children}
