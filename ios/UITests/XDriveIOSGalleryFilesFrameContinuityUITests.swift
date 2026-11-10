@@ -237,11 +237,35 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         assertVisiblePixels(app, route: "Originals after Files sections")
     }
 
+    /// The Files Home '整理' section is below the initial iPhone 16 fold.
+    /// The real Simulator failure was a direct accessibility lookup of an
+    /// unmounted Lazy List row, not a native Files process crash.
+    private func openFilesOperationHistoryFromBrowse(_ app: XCUIApplication) {
+        assertFiles(app)
+        let action = target("native-ios-files-open-operations", app: app)
+        let list = app.tables.firstMatch.exists ? app.tables.firstMatch :
+            app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 15),
+                      "Files Home scroll container did not mount")
+        for _ in 0..<6 {
+            if action.isHittable { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(action.waitForExistence(timeout: 10),
+                      "Files Home operation history entry was not loaded after bounded scrolling")
+        XCTAssertTrue(action.isHittable,
+                      "Files operation history entry must be visible before tapping")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-open-operations")
+        action.tap()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Native app exited opening Files operations")
+    }
+
     func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages() {
         let app = launch(syntheticOwner: true)
         tap("native-ios-tab-files", app: app)
         assertFiles(app)
-        tap("native-ios-files-open-operations", app: app)
+        openFilesOperationHistoryFromBrowse(app)
         XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
             .waitForExistence(timeout: 15),
             "The native Files operation-history sheet was not presented")
@@ -258,7 +282,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
     func testFilesOperationHistoryBackgroundThenFilesGalleryReturn() {
         let app = launch(syntheticOwner: true)
         tap("native-ios-tab-files", app: app)
-        tap("native-ios-files-open-operations", app: app)
+        openFilesOperationHistoryFromBrowse(app)
         XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
             .waitForExistence(timeout: 15))
         XCUIDevice.shared.press(.home)
