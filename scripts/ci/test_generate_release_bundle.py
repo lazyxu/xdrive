@@ -40,9 +40,36 @@ class GenerateBundleTests(unittest.TestCase):
         ios, = [x for x in items if x["platform"] == "ios"]
         self.assertEqual(android["install_mode"], "manual")
         self.assertEqual(ios["install_mode"], "manual_test_only")
+        windows, = [x for x in items if x["platform"] == "windows"]
+        self.assertEqual(windows["install_mode"], "manual_test_only")
         self.assertTrue(all(item["install_mode"] == "manual"
-                            for item in items if item["platform"] not in ("ios",)))
+                            for item in items if item["platform"] not in ("ios", "windows")))
         self.assertEqual(android["sha256"], hashlib.sha256(b"apk").hexdigest())
+
+    def test_unsigned_windows_snapshot_is_downloadable_but_never_installable(self):
+        items = module.build(self.directory, SHA, "master")["artifacts"]
+        windows, = [x for x in items if x["platform"] == "windows"]
+        self.assertEqual(windows["install_mode"], "manual_test_only")
+        self.assertEqual(windows["build_commit"], SHA)
+        self.assertEqual(windows["sha256"], hashlib.sha256(b"xDriveSetup-amd64.exe").hexdigest())
+
+    def test_exact_run_windows_signing_enables_manual_install(self):
+        items = module.build(self.directory, SHA, "master", windows_signed=True)["artifacts"]
+        windows, = [x for x in items if x["platform"] == "windows"]
+        self.assertEqual(windows["install_mode"], "manual")
+        self.assertTrue(all(x["build_commit"] == SHA for x in items))
+
+    def test_unsigned_stable_windows_release_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "stable Windows installer requires"):
+            module.build(self.directory, SHA, "stable")
+        items = module.build(self.directory, SHA, "stable", windows_signed=True)["artifacts"]
+        windows, = [x for x in items if x["platform"] == "windows"]
+        self.assertEqual(windows["install_mode"], "manual")
+
+    def test_stable_without_optional_windows_package_remains_valid(self):
+        (self.directory / "xDriveSetup-amd64.exe").unlink()
+        items = module.build(self.directory, SHA, "stable")["artifacts"]
+        self.assertNotIn("windows", {x["platform"] for x in items})
 
     def test_omit_missing_client_platform_but_keep_other_verified_artifacts(self):
         (self.directory / "xDriveSetup-amd64.exe").unlink()

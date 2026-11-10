@@ -36,6 +36,14 @@ It is intentionally not a dependency of the core Server/Snapshot publish job.
   fixed-key signed public Android APKs may be included. The `xDrive-unsigned.ipa`
   is explicitly `manual_test_only`: it can be downloaded for developer signing,
   but MUST NOT be offered as a direct or automatic iOS installer.
+  **Windows master Snapshots built without the configured production signing
+  certificate are also `manual_test_only`**, not actionable signed client
+  updates. The exact-run Windows package job checks its Authenticode signature
+  when configured signing is present; the Bundle publisher may use
+  `--windows-signed` only for that signed CI path. A signed stable Windows
+  package is required when the Windows asset is present in a stable Bundle.
+  The detached updater independently re-verifies Authenticode on the downloaded
+  installer regardless of what the Manifest advertises.
 - Existing Linux/Windows/Backup CLI/DSM publish contracts remain in place;
   separately published iOS and signed Android outputs may enter a Bundle only when the
   exact-source Release is already present and verified at Bundle publication.
