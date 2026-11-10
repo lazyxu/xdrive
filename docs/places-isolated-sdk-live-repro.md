@@ -25,6 +25,7 @@ The standalone Child sends one of the following finite reasons through the exist
 
 | Safe stage | Meaning |
 | --- | --- |
+| `child_handshake_timeout` | Trusted Parent received no valid exact-Origin/nonce `ready` from the independent Child after 12 visible seconds; the Child cannot emit this Parent-owned code |
 | `session_denied` | Child session POST explicitly rejected authentication (HTTP 401/403), before SDK |
 | `session_rate_limited` | Child session POST rate limited (HTTP 429), before SDK |
 | `session_unavailable` | Child session POST/receipt unavailable, malformed or unreachable, before SDK |
@@ -39,7 +40,7 @@ The trusted Gallery also classifies initial Owner `/cells` and Child-ticket fail
 ## Test levels
 
 - **Production-source VM injection:** Session reject/network error, real script `onerror`, missing namespace, Map constructor exception, invalid/extra message fields, no-secret echoes, and invalid Parent-Origin template.
-- **Trusted protocol/host:** Exact cross-site Origin, WindowProxy, nonce, generation and finite error-code allowlist; reject injected tokens and forged reasons.
+- **Trusted protocol/host:** Exact cross-site Origin, WindowProxy, nonce, generation and finite error-code allowlist; reject injected tokens and forged reasons. A Parent-owned 12-second visible-time watchdog refuses never-loaded/placeholder/invalid Child handshakes, never extends its deadline on untrusted reload, pauses in a hidden document and clears on valid ready/disposal.
 - **Desktop Guest:** Real probe script returns specific `unavailable:<code>`, rejects injected codes, and continues to treat no SDK-ready evidence as pending.
 - **Synthetic Chromium:** Actual cross-site HTTPS Child and hostile synthetic provider script prove browser isolation, not the real licensed Baidu service.
 - **Manual live acceptance:** Real Child site, current Browser AK, proxy, TLS, Browser CSP, 200 session, 200 loader and tiles, true BMap initialization/Viewer behavior must be verified separately.

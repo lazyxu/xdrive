@@ -7,12 +7,12 @@ import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaAsyncVideoPoster } from './MediaGalleryPreviewMedia'
 import type { MediaThumbnailLoader } from './MediaGallery'
-import type { XDriveTrustedProjectedMapCells } from '../media-gallery-baidu-isolated-frame-host'
+import type { XDriveTrustedProjectedMapCells, XDriveBaiduIsolatedFrameFailureReason } from '../media-gallery-baidu-isolated-frame-host'
 import type { MediaBaiduNativeCellsPage, MediaBaiduNativeCellSelection, MediaItem, MediaTimelineGroupSets } from '../models'
 import { xDriveMountBaiduIsolatedFrame } from '../media-gallery-baidu-isolated-frame-host'
 import { xDriveMountBaiduInlineMap } from '../media-gallery-baidu-inline-map-host'
 import type { XDriveBaiduJSAPIPrototypeConfig } from '../models'
-import type { XDriveBaiduIsolatedBounds, XDriveBaiduIsolatedFailureReason } from '../media-gallery-baidu-isolated-origin-protocol'
+import type { XDriveBaiduIsolatedBounds } from '../media-gallery-baidu-isolated-origin-protocol'
 import { xDriveRecordBaiduMapDiagnostic, xDriveClassifyBaiduMapRequestFailure } from '../media-gallery-baidu-diagnostics'
 import { xDriveValidBaiduNativeCellsPage } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-range'
@@ -751,7 +751,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         setPhase('ready')
         onReady(true)
       },
-      onMapFailure:(reason?:XDriveBaiduIsolatedFailureReason) => {
+      onMapFailure:(reason?:XDriveBaiduIsolatedFrameFailureReason) => {
         // A Child may report only a fixed, validated stage. Its raw provider
         // errors, request URLs, Owner data and one-use tickets never cross.
         if (mode==='isolated' && scope && reason)

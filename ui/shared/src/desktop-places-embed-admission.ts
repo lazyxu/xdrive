@@ -40,7 +40,8 @@ export const XDRIVE_DESKTOP_PLACES_GUEST_PROBE = `(() => {
 })()`
 
 const SAFE_MAP_CODES = new Set([
-  'server_release_blocked','isolated_origin_unavailable','client_version_mismatch',
+  'server_release_blocked','isolated_origin_unavailable','child_handshake_timeout',
+  'client_version_mismatch',
   'status_access_denied','status_unavailable','session_denied',
   'session_rate_limited','session_timeout','session_unavailable',
   'sdk_script_failed','sdk_script_timeout','sdk_namespace_missing',
