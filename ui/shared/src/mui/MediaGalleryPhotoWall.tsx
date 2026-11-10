@@ -3,6 +3,8 @@ import type { ReactNode, TouchEvent } from 'react'
 import { Box } from '@mui/material'
 import { xDriveMediaGalleryPinchColumnCount } from './MediaGalleryVirtualGrid'
 import { mediaGalleryScrollParent } from './MediaGallerySharedTiles'
+import { xDriveMediaGalleryFramingStyles } from './MediaGalleryPhotoWallFraming'
+import type { XDriveMediaGalleryFraming } from './MediaGalleryPhotoWallFraming'
 
 /** A shared photo-wall host. The Gallery and trusted Places Parent supply
  * independent Owner-authorized collections; this host owns only presentation
@@ -20,11 +22,12 @@ export type XDriveMediaGalleryPhotoWallPinch = Readonly<{
 }>
 
 export function XDriveMediaGalleryPhotoWall({
-  children, surface, pinch,
+  children, surface, pinch, framing,
 }: {
   children: ReactNode
   surface: 'gallery' | 'places'
   pinch?: XDriveMediaGalleryPhotoWallPinch
+  framing?: XDriveMediaGalleryFraming
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const gesture = useRef<{
@@ -110,6 +113,7 @@ export function XDriveMediaGalleryPhotoWall({
     <Box
       ref={hostRef}
       data-xdrive-shared-photo-wall={surface}
+      data-xdrive-shared-photo-wall-framing={framing}
       onTouchStartCapture={startPinch}
       onTouchMoveCapture={movePinch}
       onTouchEndCapture={event => {
@@ -127,6 +131,7 @@ export function XDriveMediaGalleryPhotoWall({
       sx={{
         width: '100%', minWidth: 0,
         touchAction: pinch ? 'pan-y' : undefined,
+        ...(framing ? xDriveMediaGalleryFramingStyles(framing) : {}),
         ...(pinch ? {
           '& [data-xdrive-media-tile] img': {
             transform: 'scale(var(--xdrive-gallery-pinch-preview, 1))',
