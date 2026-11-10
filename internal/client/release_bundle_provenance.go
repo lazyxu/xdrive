@@ -79,10 +79,10 @@ func verifyCurrentBundlePublisher(
 		return fmt.Errorf("published Bundle tag is not the exact 40-character Server Commit")
 	}
 	var release struct {
-		TagName    string `json:"tag_name"`
-		Draft      bool   `json:"draft"`
-		Prerelease bool   `json:"prerelease"`
-		Immutable  bool   `json:"immutable"`
+		TagName    string                 `json:"tag_name"`
+		Draft      bool                   `json:"draft"`
+		Prerelease bool                   `json:"prerelease"`
+		Immutable  bool                   `json:"immutable"`
 		Assets     []publishedBundleAsset `json:"assets"`
 	}
 	if err := fetch("/repos/lazyxu/xdrive/releases/tags/"+tag, &release); err != nil {
