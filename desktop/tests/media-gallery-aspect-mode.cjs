@@ -41,7 +41,7 @@ test('Uncropped media ratio never changes virtual layout or re-downloads thumbna
   assert.match(framing, /objectFit: fit/)
   assert.match(framing, /maskSize: fit/)
   assert.match(gallery, /xDriveMediaGalleryFramingStyles\(aspectMode\)/)
-  assert.match(host, /xDriveMediaGalleryFramingStyles\(framing\)/)
+  assert.match(host, /xDriveMediaGalleryFramingStyles\(framing, Boolean\(pinch\)\)/)
   assert.match(gallery, /<XDriveMediaAsyncThumbnail/)
   assert.match(gallery, /<XDriveMediaAsyncVideoPoster/)
   assert.match(gallery, /<MediaVirtualTileGrid/)
