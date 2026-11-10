@@ -44,7 +44,7 @@ test('04 first 48 Server items are re-verified before covered rows can be reused
   assert.match(method, /XDriveIOSNativePhotoOwnerScope.matches\(auth.owner, expected\)/)
   assert.match(method, /let fresh = try await reader.page\(offset: 0\)/)
   assert.match(method, /fresh.nodes != model.verifiedFirstPage/)
-  assert.match(model, /if start == 0 \{ model.verifiedFirstPage = reply.nodes \}/)
+  assert.match(model, /if start == 0 \{\s*model.verifiedFirstPage = reply.nodes[\s\S]*?model.thumbnailEpoch = UUID\(\)\s*\}/)
 })
 test('05 changed original IDs and revisions atomically replace prior pages', () => {
   assert.match(gallery, /struct XDriveIOSNativeCloudOriginal: Decodable, Identifiable, Equatable/)
@@ -109,4 +109,15 @@ test('15 real source exit restarts first load while Owner change hides counts an
   assert.match(wall, /needsTabRevalidation = false\s*hasActivated = false\s*model.invalidate\(\)/)
   assert.match(wall, /model.matchesOwner\(login.owner\) \? model.scanned : 0/)
   assert.match(wall, /if model.matchesOwner\(login.owner\) &&\s*model.scanned < model.total/)
+})
+
+test('16 fetching later 48-node ranges does not restart all missing visible thumbnails', () => {
+  const append = slice('    func loadNext(login:', '\n}\n\nstruct XDriveIOSNativeCloudOriginalPreview')
+  assert.match(append, /if start == 0 \{[\s\S]*?model.thumbnailEpoch = UUID\(\)\s*\}/)
+  assert.equal((append.match(/model.thumbnailEpoch = UUID\(\)/g) || []).length, 1)
+})
+test('17 a same-Owner covered-tab recheck keeps grid geometry without extra spinner row', () => {
+  assert.match(wall, /if model.busy && !model.matchesOwner\(login.owner\) \{\s*ProgressView\("正在验证并读取云端目录…"\)/)
+  assert.match(wall, /\.frame\(maxWidth: \.infinity, minHeight: 128\)/)
+  assert.doesNotMatch(wall, /if model.busy \{ ProgressView\("正在验证并读取云端目录…"\) \}/)
 })
