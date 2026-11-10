@@ -32,5 +32,8 @@ test('iOS active Owner and scene lifecycle still fence late results',()=>{
   assert.match(screen,/\.onDisappear \{ reset\(\) \}/)
   assert.match(screen,/\.task\(id: scenePhase == \.active\)/)
   assert.match(screen,/sessionGeneration == generation|generation == sessionGeneration/)
-  assert.doesNotMatch(screen,/background pasteboard/)
+  // Comments may document that background access is forbidden: inspect only
+  // executable Swift, rather than failing on the safety comment itself.
+  const executableScreen = screen.replace(/^\\s*\\/\\/.*$/gm, '')
+  assert.doesNotMatch(executableScreen, /background pasteboard/i)
 })
