@@ -90,7 +90,7 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest(method, path, strings.NewReader(payload))
 		if bearer != "" {
-			req.Header.Set("Authorization", "Bearer " + bearer)
+			req.Header.Set("Authorization", "Bearer "+bearer)
 		}
 		if id != "" {
 			req.Header.Set("X-XDrive-Device-ID", id)
@@ -255,9 +255,9 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
 		ownerABearer, "", "", targetPayload(uuid.NewString(), own.ID), http.StatusForbidden)
 
-	deviceRequest(http.MethodPost, "/api/v1/clipboard/devices/" + deviceA + "/revoke",
+	deviceRequest(http.MethodPost, "/api/v1/clipboard/devices/"+deviceA+"/revoke",
 		ownerBBearer, "", "", "", http.StatusNotFound)
-	deviceRequest(http.MethodPost, "/api/v1/clipboard/devices/" + deviceA + "/revoke",
+	deviceRequest(http.MethodPost, "/api/v1/clipboard/devices/"+deviceA+"/revoke",
 		ownerABearer, "", "", "", http.StatusNoContent)
 	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
 		ownerABearer, "", "", targetPayload(uuid.NewString(), 0), http.StatusForbidden)

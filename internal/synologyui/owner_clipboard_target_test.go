@@ -65,12 +65,12 @@ func TestDSMClipboardCGIHasExplicitSameOriginOperationAllowlist(t *testing.T) {
 			var called bool
 			handler := CGIHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				called = true
-				if r.URL.Path != "/v1/" + operation {
+				if r.URL.Path != "/v1/"+operation {
 					t.Fatalf("CGI escaped allowlist: %q", r.URL.Path)
 				}
 				w.WriteHeader(http.StatusNoContent)
 			}))
-			req := httptest.NewRequest(http.MethodGet, "https://nas.example" + DSMCGIPath + "?op=" + operation, nil)
+			req := httptest.NewRequest(http.MethodGet, "https://nas.example"+DSMCGIPath+"?op="+operation, nil)
 			req.TLS = &tls.ConnectionState{}
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -80,7 +80,7 @@ func TestDSMClipboardCGIHasExplicitSameOriginOperationAllowlist(t *testing.T) {
 		})
 	}
 	for _, old := range []string{"cloud-clipboard-vault", "cloud-clipboard-check", "cloud-clipboard-decrypt", "cloud-clipboard-device-token"} {
-		req := httptest.NewRequest(http.MethodGet, "https://nas.example" + DSMCGIPath + "?op=" + old, nil)
+		req := httptest.NewRequest(http.MethodGet, "https://nas.example"+DSMCGIPath+"?op="+old, nil)
 		req.TLS = &tls.ConnectionState{}
 		resp := httptest.NewRecorder()
 		CGIHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +96,7 @@ func TestDSMClipboardDeviceMutationMinimalOwnerScopeOnly(t *testing.T) {
 	owner := strings.Repeat("a", 64)
 	check := func(endpoint, body string, accepted bool) {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "https://nas.example/v1/" + endpoint, strings.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "https://nas.example/v1/"+endpoint, strings.NewReader(body))
 		_, err := parseDSMClipboardWrite(req)
 		if accepted && err != nil {
 			t.Fatalf("safe %s rejected: %v", endpoint, err)

@@ -24,7 +24,12 @@ func TestClipboardPlaintextTargetAndFileRefValidation(t *testing.T) {
 		func() clipboardWriteRequest { v := target; v.TargetDeviceID = "wrong"; return v }(),
 		func() clipboardWriteRequest { v := original; v.NodeID = 34; return v }(),
 		func() clipboardWriteRequest { v := original; v.Kind = "image/x-xdrive-node-ref"; return v }(),
-		func() clipboardWriteRequest { v := target; v.Kind = "application/x-xdrive-node-ref"; v.NodeID = 34; return v }(),
+		func() clipboardWriteRequest {
+			v := target
+			v.Kind = "application/x-xdrive-node-ref"
+			v.NodeID = 34
+			return v
+		}(),
 	}
 	for _, v := range invalid {
 		if validateClipboardWrite(v) == nil {

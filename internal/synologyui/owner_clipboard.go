@@ -63,7 +63,7 @@ func parseDSMClipboardWrite(r *http.Request) (dsmClipboardWrite, error) {
 	if r.ContentLength < 2 || r.ContentLength > dsmClipboardBodyMax {
 		return v, errors.New("invalid Clipboard body length")
 	}
-	raw, err := io.ReadAll(io.LimitReader(r.Body, dsmClipboardBodyMax + 1))
+	raw, err := io.ReadAll(io.LimitReader(r.Body, dsmClipboardBodyMax+1))
 	if err != nil || len(raw) > dsmClipboardBodyMax || int64(len(raw)) != r.ContentLength {
 		return v, errors.New("unbounded Clipboard body")
 	}

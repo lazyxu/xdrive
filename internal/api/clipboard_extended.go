@@ -54,7 +54,7 @@ func (s *Server) clipboardValidateTargetAndNode(db *gorm.DB, owner uint64, req c
 		if db.Where("owner_id = ? AND device_id = ? AND revoked_at IS NULL", owner, req.TargetDeviceID).
 			Take(&key).Error != nil ||
 			db.Where("owner_id = ? AND id = ? AND revoked_at IS NULL", owner, req.TargetDeviceID).
-				Take(&device).Error != nil  {
+				Take(&device).Error != nil {
 			return errClipboardForbidden
 		}
 	}

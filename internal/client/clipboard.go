@@ -33,7 +33,7 @@ type ClipboardItem struct {
 	ExpiresAt      string `json:"expires_at"`
 }
 type ClipboardDevice struct {
-	DeviceID  string `json:"device_id"`
+	DeviceID string `json:"device_id"`
 	Name     string `json:"name"`
 	Platform string `json:"platform"`
 }
@@ -44,6 +44,7 @@ type ClipboardPage struct {
 	Items      []ClipboardItem `json:"items"`
 	NextBefore *uint64         `json:"next_before"`
 }
+
 func validClipboardWrite(v ClipboardWrite) bool {
 	if uuid.Validate(v.ClientEventID) != nil || len(v.Content) < 1 ||
 		len(v.Content) > 65536 || !utf8.ValidString(v.Content) {
@@ -140,7 +141,7 @@ func (c *Client) ClipboardDelete(ctx context.Context, id uint64) error {
 	if id == 0 {
 		return errors.New("invalid clipboard item ID")
 	}
-	return c.json(ctx, http.MethodDelete, "/api/v1/clipboard/items/" + url.PathEscape(strconv.FormatUint(id, 10)), nil, nil)
+	return c.json(ctx, http.MethodDelete, "/api/v1/clipboard/items/"+url.PathEscape(strconv.FormatUint(id, 10)), nil, nil)
 }
 func (c *Client) ClipboardClear(ctx context.Context) error {
 	return c.json(ctx, http.MethodDelete, "/api/v1/clipboard/items", nil, nil)
@@ -229,5 +230,5 @@ func (c *Client) ClipboardRevokeDevice(ctx context.Context, id string) error {
 	if err != nil || parsed.String() != id {
 		return errors.New("invalid Clipboard recipient")
 	}
-	return c.json(ctx, http.MethodPost, "/api/v1/clipboard/devices/" + url.PathEscape(id) + "/revoke", nil, nil)
+	return c.json(ctx, http.MethodPost, "/api/v1/clipboard/devices/"+url.PathEscape(id)+"/revoke", nil, nil)
 }
