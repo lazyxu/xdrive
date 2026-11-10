@@ -36,6 +36,16 @@ $priorHash = if ($hadXd) { (Get-FileHash -LiteralPath $existingXd -Algorithm SHA
 $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $priorRun = [string](Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction SilentlyContinue).xDriveAgent
 
+# Stop-XDriveProcesses also removes this discovery marker. Its preservation
+# detects an unwanted shutdown/rollback triggered by rejected unsigned input.
+$discoveryPath = Join-Path $env:APPDATA "xdrive\desktop-ipc.json"
+$hadDiscovery = Test-Path -LiteralPath $discoveryPath -PathType Leaf
+if (-not $hadDiscovery) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $discoveryPath) | Out-Null
+    [IO.File]::WriteAllText($discoveryPath, "unsigned-admission-negative-fixture")
+}
+$discoveryHash = (Get-FileHash -LiteralPath $discoveryPath -Algorithm SHA256).Hash
+
 try {
     # The installed Windows PowerShell 5.1 interpreter is the real detached
     # updater's entry point. Do not mock Assert-VerifiedInstaller or bypass
@@ -81,8 +91,15 @@ try {
     if ($afterRun -ne $priorRun) {
         throw "unsigned rejection modified xDriveAgent autorun state"
     }
+    if (-not (Test-Path -LiteralPath $discoveryPath -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $discoveryPath -Algorithm SHA256).Hash -ne $discoveryHash) {
+        throw "unsigned rejection unexpectedly stopped the active Desktop discovery session"
+    }
 
     Write-Host "Windows detached updater correctly rejected unsigned installer before installation (no rollback claimed)."
 } finally {
+    if (-not $hadDiscovery) {
+        Remove-Item -LiteralPath $discoveryPath -Force -ErrorAction SilentlyContinue
+    }
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
