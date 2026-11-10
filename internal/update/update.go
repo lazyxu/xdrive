@@ -56,6 +56,9 @@ type Result struct {
 	Latest          string
 	Channel         string
 	Commit          string
+	// Only set by the explicit current-Server Windows Snapshot confirmation flow.
+	// Normal channel updates always require Authenticode publisher admission.
+	PersonalUnsigned bool
 	UpdateAvailable bool
 	ReleaseName     string
 	PublishedAt     string
