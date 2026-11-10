@@ -3668,7 +3668,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             pendingQuickOperation = nil
             showingBatchProperties = false
             operationShortcuts.invalidate()
-            if phase == .active, let owner = login.owner {
+            // A hidden Files tab must not issue another Owner's operation
+            // read. Its next visible onAppear verifies the new Owner first.
+            if filesViewVisible, phase == .active, let owner = login.owner {
                 quickHistoryReadAttempted = true
                 operationShortcuts.updateExpectedOwner(owner)
                 operationShortcuts.load(login: login)
