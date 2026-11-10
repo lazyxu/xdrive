@@ -265,6 +265,116 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         assertNotSolidScreen(app, "Gallery after unchanged PhotoKit foreground return")
     }
 
+    // Native XCTest: settled screenshot/AX checks are not device FPS evidence.
+    private func readGalleryGeneration(_ app: XCUIApplication, stage: String) -> String? {
+        let gallery = target("native-ios-unified-photo-gallery", in: app)
+        guard gallery.waitForExistence(timeout: 15),
+              let value = gallery.value as? String,
+              UUID(uuidString: value) != nil else {
+            XCTFail("Missing native Gallery generation at " + stage)
+            return nil
+        }
+        return value
+    }
+
+    private func assertGalleryGeneration(_ app: XCUIApplication,
+                                         remains expected: String, stage: String) {
+        guard let value = readGalleryGeneration(app, stage: stage) else { return }
+        XCTAssertEqual(value, expected, "Gallery wall was rebuilt at " + stage)
+        checkGallery(app)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels() {
+        let app = launch()
+        guard let generation = readGalleryGeneration(app, stage: "initial") else { return }
+        for cycle in 0..<4 {
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            assertGalleryGeneration(app, remains: generation, stage: "cycle \(cycle)")
+            assertNotSolidScreen(app, "Gallery foreground cycle \(cycle)")
+        }
+    }
+
+    func testGalleryDismissedFilterThenForegroundDoesNotRebuildWall() {
+        let app = launch()
+        select("native-ios-gallery-open-filters", in: app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        let retired = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: cancel)
+        XCTAssertEqual(XCTWaiter.wait(for: [retired], timeout: 8), .completed,
+                       "Filter sheet failed to close")
+        checkGallery(app)
+        guard let generation = readGalleryGeneration(app, stage: "filter closed") else { return }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        assertGalleryGeneration(app, remains: generation, stage: "filter and foreground")
+        assertNotSolidScreen(app, "Gallery after filter and foreground")
+    }
+
+    func testGalleryPeopleBackThenForegroundKeepsVerifiedWall() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-gallery-people", in: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
+            .waitForExistence(timeout: 15))
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        checkGallery(app)
+        guard let generation = readGalleryGeneration(app, stage: "People return") else { return }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        assertGalleryGeneration(app, remains: generation, stage: "People foreground")
+        assertNotSolidScreen(app, "Gallery after People return and foreground")
+    }
+
+    func testGallerySourceChangeThenUnchangedForegroundKeepsLatestGeneration() {
+        let app = launch()
+        select("native-ios-gallery-source-albums", in: app)
+        checkGallery(app)
+        select("native-ios-gallery-source-unified", in: app)
+        checkGallery(app)
+        guard let generation = readGalleryGeneration(app, stage: "source changed") else { return }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        assertGalleryGeneration(app, remains: generation, stage: "source then foreground")
+        assertNotSolidScreen(app, "Gallery after source and foreground")
+    }
+
+    func testGalleryFilesRoundTripThenForegroundKeepsWallGeneration() {
+        let app = launch()
+        guard let generation = readGalleryGeneration(app, stage: "before Files") else { return }
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        assertGalleryGeneration(app, remains: generation, stage: "Files return")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        assertGalleryGeneration(app, remains: generation, stage: "Files foreground")
+        assertNotSolidScreen(app, "Gallery after Files return and foreground")
+    }
+
+    func testGalleryForegroundAfterDeniedCloudFilesDoesNotLeakOrRebuild() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        select("native-ios-files-open-root-location", in: app)
+        XCTAssertTrue(target("native-ios-files-error-page", in: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertFalse(target("native-ios-files-retry", in: app).exists,
+                       "No Session must not expose protected Cloud Retry")
+        select("native-ios-files-error-return", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        checkGallery(app)
+        guard let generation = readGalleryGeneration(app, stage: "denied Cloud return") else { return }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        assertGalleryGeneration(app, remains: generation, stage: "denied Cloud foreground")
+        assertNotSolidScreen(app, "Gallery after denied Cloud and foreground")
+    }
+
     func testGalleryBackgroundResumeKeepsNativeSourceAndPixels() {
         let app = launch()
         select("native-ios-tab-gallery", in: app)

@@ -10,6 +10,7 @@ const policy = read('ios/XDriveIOS/NativeUnifiedGalleryScenePolicy.swift')
 const swiftTests = read('ios/tests/NativeUnifiedGalleryScenePolicyChecks.swift')
 const ui = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
 const workflow = read('.github/workflows/ios-unsigned-ipa.yml')
+const frameWatcher = read('ios/scripts/capture-navigation-smoke-frames.py')
 const part = (from, to) => {
   const a = gallery.indexOf(from)
   const b = gallery.indexOf(to, a + from.length)
@@ -84,4 +85,24 @@ test('new regression remains a real IPA preflight and source check, not a fake F
   assert.match(workflow, /ios\/tests\/NativeUnifiedGalleryScenePolicyChecks\.swift/)
   assert.match(workflow, /node --test desktop\/tests\/ios-native-gallery-scene-continuity\.cjs/)
   assert.doesNotMatch(ui, /ZERO_FLICKER_PASS|FPS=60|FPS=120/)
+})
+
+test('six native cross-route foreground journeys keep bounded wall identity and detect blank screens', () => {
+  const names = ["testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels","testGalleryDismissedFilterThenForegroundDoesNotRebuildWall","testGalleryPeopleBackThenForegroundKeepsVerifiedWall","testGallerySourceChangeThenUnchangedForegroundKeepsLatestGeneration","testGalleryFilesRoundTripThenForegroundKeepsWallGeneration","testGalleryForegroundAfterDeniedCloudFilesDoesNotLeakOrRebuild"];
+  for (const name of names) {
+    assert.ok(ui.includes('func ' + name + '()'), 'Missing real XCTest ' + name)
+    assert.equal(frameWatcher.split('"' + name + '"').length, 3,
+                 'Missing case-start or tap-adjacent frames for ' + name)
+  }
+  assert.match(ui, /private func readGalleryGeneration\(/)
+  assert.match(ui, /UUID\(uuidString: value\) != nil/)
+  assert.match(ui, /private func assertGalleryGeneration\(/)
+  assert.match(ui, /XCTAssertEqual\(value, expected, "Gallery wall was rebuilt at "/)
+  assert.match(ui, /for cycle in 0\.\.<4/)
+  assert.match(ui, /XCTNSPredicateExpectation\(/)
+  assert.match(ui, /native-ios-files-error-page/)
+  assert.match(ui, /XCTAssertFalse\(target\("native-ios-files-retry", in: app\)\.exists/)
+  assert.match(ui, /assertNotSolidScreen\(app, "Gallery after denied Cloud and foreground"\)/)
+  assert.match(workflow, /Verify native unified Gallery foreground page retention/)
+  assert.doesNotMatch(ui, /FPS=60|FPS=120|ZERO_FLICKER_PASS/)
 })
