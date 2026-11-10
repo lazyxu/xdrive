@@ -76,3 +76,30 @@ test('thumbnail sessions are cookie-free, non-redirecting, and shared without ca
   assert.match(tile, /completionHandler\(nil\)/)
   assert.match(tile, /Self\.session\.data\(for: request\)/)
 })
+
+
+test('PWA parity: list and grid child folder keep the current sort, direction and grouping', () => {
+  const expected = /NavigationLink\(value: XDriveIOSNativeFilesFolder\(\s*id: entry\.node\.id, name: entry\.node\.name,\s*initialSort: sort, initialOrder: order,\s*initialGrouping: grouping,\s*initialFoldersFirst: foldersFirst\s*\)\)/g
+  const links = [...browser.matchAll(expected)]
+  assert.equal(links.length, 2, 'list and icon-grid navigation must retain the same arrangement')
+  assert.match(browser, /_sort = State\(initialValue: folder\.initialSort\)/)
+  assert.match(browser, /_order = State\(initialValue: folder\.initialOrder\)/)
+  assert.match(browser, /_grouping = State\(initialValue: folder\.initialGrouping\)/)
+  assert.match(browser, /_foldersFirst = State\(initialValue: folder\.initialFoldersFirst\)/)
+})
+
+test('verified ancestor and typed-path jumps keep the active arrangement', () => {
+  const ancestor = section('private func openVerifiedAncestor(', 'private var arrangementStatusText')
+  assert.match(ancestor, /found\.contains\(crumb\), found\.last\?\.id == folder\.id/)
+  assert.match(ancestor, /pathDestination = XDriveIOSNativeFilesFolder\(\s*id: crumb\.id, name: crumb\.name,\s*initialSort: sort, initialOrder: order,\s*initialGrouping: grouping,\s*initialFoldersFirst: foldersFirst\s*\)/)
+  const typed = section('private func resolveTypedPath(', 'private func presentFileOperations(')
+  assert.match(typed, /login\.verifiedAuthorization\(\)/)
+  assert.match(typed, /reader\.namedDirectory\(/)
+  assert.match(typed, /pathDestination = XDriveIOSNativeFilesFolder\(\s*id: destinationID, name: destinationName,\s*initialSort: sort, initialOrder: order,\s*initialGrouping: grouping,\s*initialFoldersFirst: foldersFirst\s*\)/)
+})
+
+test('saved directory resume continues to use its verified saved arrangement and anchor', () => {
+  const saved = section('private func resumeLastFolderIfNeeded()', 'private func loadAncestorCrumbs()')
+  assert.match(saved, /reader\.children\([\s\S]*?sort: saved\.sort, order: saved\.order,[\s\S]*?grouping: saved\.grouping, foldersFirst: saved\.foldersFirst/)
+  assert.match(saved, /initialOffset: restoredOffset, anchorID: restoredAnchor,\s*initialSort: saved\.sort, initialOrder: saved\.order,\s*initialGrouping: saved\.grouping,\s*initialFoldersFirst: saved\.foldersFirst/)
+})
