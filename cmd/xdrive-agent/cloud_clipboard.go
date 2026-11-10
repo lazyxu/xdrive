@@ -9,21 +9,7 @@ import (
 
 // Only the existing, currently Owner-authenticated cloudClient may access
 // clipboard endpoints. Never substitute a background Device/SourceRun token.
-func (c *agentController) CloudClipboardVault(ctx context.Context) (client.ClipboardVault, error) {
-	cli, _, err := c.cloudClient()
-	if err != nil {
-		return client.ClipboardVault{}, err
-	}
-	return cli.ClipboardVault(ctx)
-}
-func (c *agentController) CloudClipboardCheck(ctx context.Context, value client.ClipboardCheck) (client.ClipboardVault, error) {
-	cli, _, err := c.cloudClient()
-	if err != nil {
-		return client.ClipboardVault{}, err
-	}
-	return cli.ClipboardCheck(ctx, value)
-}
-
+// Owner-visible recipient identities, without E2EE keys.
 // Public Owner recipient keys only; no installation token or private key.
 func (c *agentController) CloudClipboardDevices(ctx context.Context) (client.ClipboardDevices, error) {
 	cli, _, err := c.cloudClient()
@@ -38,8 +24,7 @@ func (c *agentController) CloudClipboardList(ctx context.Context, before uint64)
 	if err != nil {
 		return client.ClipboardPage{}, err
 	}
-	// Only installations with an explicitly enrolled, still active Clipboard
-	// key read v2 targeted rows. Revocation never silently downgrades to v1.
+	// Only live enrolled installations may read targeted rows.
 	return c.clipboardListWithLocalRecipient(ctx, cli, cfg, before)
 }
 func (c *agentController) CloudClipboardCreate(ctx context.Context, value client.ClipboardWrite) (client.ClipboardItem, error) {
@@ -65,9 +50,6 @@ func (c *agentController) CloudClipboardRevokeDevice(ctx context.Context, id str
 	}
 	if !clipboardCurrentAgentSession(cfg) {
 		return errors.New("Clipboard Owner changed after a potentially committed revocation")
-	}
-	if err := clipboardRetireLocalRecipient(cfg, id); err != nil {
-		return errors.New("Clipboard device revoked on Server, but local key cleanup is incomplete")
 	}
 	return nil
 }

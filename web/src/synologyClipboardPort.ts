@@ -23,7 +23,7 @@ export function createXDriveDSMClipboardPort(
       throw new Error('DSM Owner 未授权，剪贴板已不可用')
     }
     if (ownerScope !== status.owner_scope || (server && server !== status.server)) {
-      throw new Error('DSM Owner 已变化，必须重新进入并解锁剪贴板')
+      throw new Error('DSM Owner 已变化，必须重新进入剪贴板')
     }
     signal?.throwIfAborted()
     return status
@@ -39,15 +39,6 @@ export function createXDriveDSMClipboardPort(
     // A single DSM browser Host instance never persists a key; Server/Owner
     // scope is checked on every request. This key is UI lifecycle-only.
     ownerScopeKey: 'dsm:' + expectedOwnerScope,
-    claimScope(vault) {
-      if (!Number.isSafeInteger(vault.owner_id) || !vault.owner_id || !server) {
-        throw new Error('未取得经过认证的 DSM Clipboard Owner ID')
-      }
-      return new URL(server).origin + ':' + String(vault.owner_id)
-    },
-    vault: signal => checked(() => cgi.clipboardVault(signal), signal),
-    initializeCheck: (value, signal) => checked(
-      scope => cgi.clipboardCheck(scope, value, signal), signal),
     list: (before, signal) => checked(() => cgi.clipboardList(before, signal), signal),
     listDevices: signal => checked(() => cgi.clipboardDevices(signal), signal),
     revokeDevice: (id, signal) => checked(scope => cgi.clipboardRevokeDevice(scope, id, signal), signal),
@@ -64,29 +55,14 @@ export function createXDriveDSMClipboardPort(
       signal.throwIfAborted()
       await openVerifiedFile(reference, signal)
     } : undefined,
-    decryptTarget: async (id, signal) => {
-      if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Invalid recipient ID')
-      const response = await checked(scope => cgi.clipboardDecrypt(scope, id, signal), signal)
-      return response.text
-    },
-    create: (item, signal) => {
-      if (item.target_device_id) {
-        const media = item.kind === 'image/x-xdrive-node-ref' ||
-          item.kind === 'application/x-xdrive-node-ref'
-        if (!item.ephemeral_key || !item.wrapped_key ||
-            media !== (Number.isSafeInteger(item.node_id) && (item.node_id ?? 0) > 0)) {
-          throw new Error('DSM 设备定向加密消息缺少目标或 CAS 文件引用')
-        }
-        return checked(scope => cgi.clipboardCreate(scope, item, signal), signal)
+    create: async (item, signal) => {
+      const media = item.kind === 'image/x-xdrive-node-ref' ||
+        item.kind === 'application/x-xdrive-node-ref'
+      if ((media && (!item.target_device_id || !item.node_id ||
+          item.content !== 'asset:' + item.node_id)) || (!media && !!item.node_id)) {
+        throw new Error('DSM Clipboard 内容与文件引用不匹配')
       }
-      // Never downgrade media or directed encrypted envelopes to v1 broadcast.
-      if ((item.kind !== 'text/plain' && item.kind !== 'text/uri-list') ||
-          item.ephemeral_key || item.wrapped_key || item.node_id) {
-        throw new Error('DSM 不允许把设备定向密文降级广播')
-      }
-      const legacy = { client_event_id: item.client_event_id, kind: item.kind,
-        nonce: item.nonce, ciphertext: item.ciphertext }
-      return checked(scope => cgi.clipboardCreate(scope, legacy, signal), signal)
+      return checked(scope => cgi.clipboardCreate(scope, item, signal), signal)
     },
     remove: (id, signal) => checked(
       scope => cgi.clipboardDelete(scope, id, signal), signal),

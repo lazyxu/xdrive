@@ -1016,16 +1016,12 @@ const agent = Object.freeze({
   cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) =>
     ipcRenderer.invoke('agent:cloud-restore-version', nodeID, revision, versionID),
   cloudShares: (nodeID: number) => ipcRenderer.invoke('agent:cloud-shares', nodeID),
-  cloudClipboardVault: () => ipcRenderer.invoke('agent:cloud-clipboard-vault'),
-  cloudClipboardCheck: (value: { nonce: string; ciphertext: string; scope: string }) =>
-    ipcRenderer.invoke('agent:cloud-clipboard-check', value),
   cloudClipboardList: (before: number) => ipcRenderer.invoke('agent:cloud-clipboard-list', before),
   cloudClipboardDevices: () => ipcRenderer.invoke('agent:cloud-clipboard-devices'),
   cloudClipboardEnableDevice: () => ipcRenderer.invoke('agent:cloud-clipboard-enable-device'),
-  cloudClipboardDecrypt: (id: number) => ipcRenderer.invoke('agent:cloud-clipboard-decrypt', id),
   cloudClipboardRevokeDevice: (deviceID: string) => ipcRenderer.invoke('agent:cloud-clipboard-revoke-device', deviceID),
-  cloudClipboardCreate: (value: { client_event_id: string; kind: string; nonce: string; ciphertext: string;
-    target_device_id?: string; ephemeral_key?: string; wrapped_key?: string; node_id?: number }) =>
+  cloudClipboardCreate: (value: { client_event_id: string; kind: string; content: string;
+    target_device_id?: string; node_id?: number }) =>
     ipcRenderer.invoke('agent:cloud-clipboard-create', value),
   cloudClipboardDelete: (id: number) => ipcRenderer.invoke('agent:cloud-clipboard-delete', id),
   cloudClipboardClear: () => ipcRenderer.invoke('agent:cloud-clipboard-clear'),

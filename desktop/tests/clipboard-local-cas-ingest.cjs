@@ -53,7 +53,7 @@ test('Clipboard image import requires explicit browser gesture and completes fil
   assert.match(portSource, /png\.getType\('image\/png'\)/)
   assert.match(portSource, /file\.size > 64 \* 1024 \* 1024/)
   assert.match(ui, /importToOwnerFiles\(signal => port\.importImageFromClipboard!\(signal\)\)/)
-  assert.match(ui, /请检查文件，然后明确点击“加密发送”/)
+  assert.match(ui, /请检查文件，然后明确点击“发送”/)
   assert.match(ui, /if \(pending\.current\) \{/)
   assert.doesNotMatch(portSource, /api\.clipboardCreate\(.*file/)
 })

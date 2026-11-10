@@ -5322,24 +5322,8 @@ export class XDriveApi {
     }
   }
 
-  // The Browser Clipboard is Owner-private and E2EE: these endpoints receive
-  // encrypted data only, through the same revocable Owner bearer transport.
-  clipboardVault(signal?: AbortSignal) {
-    return this.request<{ salt: string; iterations: number; kdf: string;
-      check_nonce: string; check_ciphertext: string; aad_scope: string; owner_id: number }>(
-      '/api/v1/clipboard/vault', { cache: 'no-store', signal },
-    )
-  }
-
-  clipboardInitializeCheck(check: { nonce: string; ciphertext: string; scope: string }, signal?: AbortSignal) {
-    return this.request<{ salt: string; iterations: number; kdf: string;
-      check_nonce: string; check_ciphertext: string; aad_scope: string; owner_id: number }>(
-      '/api/v1/clipboard/vault/check', {
-        method: 'PUT', body: JSON.stringify(check), cache: 'no-store', signal,
-      },
-    )
-  }
-
+  // Current Owner bearer controls the short-lived plaintext mailbox.
+  // Never put Clipboard content in logs or browser persistent storage.
   clipboardDevices(signal?: AbortSignal) {
     return this.request<{ devices: import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardTargetDevice[] }>(
       '/api/v1/clipboard/devices', { cache: 'no-store', signal })
@@ -5364,12 +5348,9 @@ export class XDriveApi {
 
   clipboardCreate(item: {
     client_event_id: string
-    kind: import('../../ui/shared/src/clipboard-target-crypto').XDriveClipboardTargetKind
-    nonce: string
-    ciphertext: string
+    kind: import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardKind
+    content: string
     target_device_id?: string
-    ephemeral_key?: string
-    wrapped_key?: string
     node_id?: number
   }, signal?: AbortSignal) {
     return this.request<import('../../ui/shared/src/mui/ClipboardPage').XDriveClipboardItem>(

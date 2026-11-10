@@ -3,128 +3,82 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
 
-// These DTOs only contain ciphertext and immutable Owner vault metadata.
-// Clipboard is never authorized by a Device, SourceRun or share bearer.
-type ClipboardVault struct {
-	OwnerID         uint64 `json:"owner_id"`
-	Salt            string `json:"salt"`
-	KDF             string `json:"kdf"`
-	Iterations      int    `json:"iterations"`
-	CheckNonce      string `json:"check_nonce"`
-	CheckCiphertext string `json:"check_ciphertext"`
-	AADScope        string `json:"aad_scope"`
-}
-
-type ClipboardCheck struct {
-	Nonce      string `json:"nonce"`
-	Ciphertext string `json:"ciphertext"`
-	Scope      string `json:"scope"`
-}
-
+// Clipboard is a plaintext, Owner-scoped short-lived mailbox.
 type ClipboardWrite struct {
 	ClientEventID  string `json:"client_event_id"`
 	Kind           string `json:"kind"`
-	Nonce          string `json:"nonce"`
-	Ciphertext     string `json:"ciphertext"`
+	Content        string `json:"content"`
 	TargetDeviceID string `json:"target_device_id,omitempty"`
-	EphemeralKey   string `json:"ephemeral_key,omitempty"`
-	WrappedKey     string `json:"wrapped_key,omitempty"`
 	NodeID         uint64 `json:"node_id,omitempty"`
 }
-
 type ClipboardItem struct {
 	ID             uint64 `json:"id"`
 	ClientEventID  string `json:"client_event_id"`
 	Kind           string `json:"kind"`
-	Nonce          string `json:"nonce"`
-	Ciphertext     string `json:"ciphertext"`
+	Content        string `json:"content"`
 	TargetDeviceID string `json:"target_device_id,omitempty"`
-	EphemeralKey   string `json:"ephemeral_key,omitempty"`
-	WrappedKey     string `json:"wrapped_key,omitempty"`
 	NodeID         uint64 `json:"node_id,omitempty"`
 	CreatedAt      string `json:"created_at"`
 	ExpiresAt      string `json:"expires_at"`
 }
-
-// Public recipient keys only. No installation credential or private key
-// is transported through this Owner-controlled sender capability.
 type ClipboardDevice struct {
-	DeviceID  string `json:"device_id"`
-	Name      string `json:"name"`
-	Platform  string `json:"platform"`
-	PublicKey string `json:"public_key"`
+	DeviceID string `json:"device_id"`
+	Name     string `json:"name"`
+	Platform string `json:"platform"`
 }
-
 type ClipboardDevices struct {
 	Devices []ClipboardDevice `json:"devices"`
 }
-
 type ClipboardPage struct {
 	Items      []ClipboardItem `json:"items"`
 	NextBefore *uint64         `json:"next_before"`
 }
 
-func clipboardDecodeExact(raw string, expected int) bool {
-	data, err := base64.StdEncoding.Strict().DecodeString(raw)
-	return err == nil && len(data) == expected &&
-		base64.StdEncoding.EncodeToString(data) == raw
-}
-
-func validClipboardWrite(value ClipboardWrite) bool {
-	if uuid.Validate(value.ClientEventID) != nil ||
-		!clipboardDecodeExact(value.Nonce, 12) ||
-		len(value.Ciphertext) > base64.StdEncoding.EncodedLen(65536+16) {
+func validClipboardWrite(v ClipboardWrite) bool {
+	if uuid.Validate(v.ClientEventID) != nil || len(v.Content) < 1 ||
+		len(v.Content) > 65536 || !utf8.ValidString(v.Content) {
 		return false
 	}
-	cipher, err := base64.StdEncoding.Strict().DecodeString(value.Ciphertext)
-	if err != nil || len(cipher) < 17 || len(cipher) > 65536+16 ||
-		base64.StdEncoding.EncodeToString(cipher) != value.Ciphertext {
-		return false
-	}
-	switch value.Kind {
+	switch v.Kind {
 	case "text/plain", "text/uri-list":
-		if value.NodeID != 0 {
+		if v.NodeID != 0 {
 			return false
 		}
 	case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
-		if value.NodeID == 0 || value.TargetDeviceID == "" {
+		if v.NodeID == 0 || v.TargetDeviceID == "" ||
+			v.Content != fmt.Sprintf("asset:%d", v.NodeID) {
 			return false
 		}
 	default:
 		return false
 	}
-	if value.TargetDeviceID == "" {
-		return value.EphemeralKey == "" && value.WrappedKey == ""
+	if v.TargetDeviceID != "" {
+		id, err := uuid.Parse(v.TargetDeviceID)
+		if err != nil || id.String() != v.TargetDeviceID {
+			return false
+		}
 	}
-	target, err := uuid.Parse(value.TargetDeviceID)
-	return err == nil && target.String() == value.TargetDeviceID &&
-		clipboardDecodeExact(value.EphemeralKey, 32) &&
-		clipboardDecodeExact(value.WrappedKey, 60)
-}
-func validClipboardVault(v ClipboardVault) bool {
-	return v.OwnerID > 0 && v.KDF == "PBKDF2-SHA256" && v.Iterations == 310000 &&
-		len(v.Salt) == 24 && (v.CheckCiphertext == "" || v.CheckNonce != "")
+	return true
 }
 func validClipboardItem(v ClipboardItem) bool {
 	return v.ID > 0 && validClipboardWrite(ClipboardWrite{
-		ClientEventID: v.ClientEventID, Kind: v.Kind, Nonce: v.Nonce, Ciphertext: v.Ciphertext,
-		TargetDeviceID: v.TargetDeviceID, EphemeralKey: v.EphemeralKey,
-		WrappedKey: v.WrappedKey, NodeID: v.NodeID,
+		ClientEventID: v.ClientEventID, Kind: v.Kind, Content: v.Content,
+		TargetDeviceID: v.TargetDeviceID, NodeID: v.NodeID,
 	}) && v.CreatedAt != "" && v.ExpiresAt != ""
 }
 
-// ClipboardDevices returns a bounded public-key directory to the verified
-// Owner sender. This is NOT an API for device enrollment or receiving.
+// ClipboardDevices returns active, enrolled recipient identities.
 func (c *Client) ClipboardDevices(ctx context.Context) (ClipboardDevices, error) {
 	var out ClipboardDevices
 	if err := c.json(ctx, http.MethodGet, "/api/v1/clipboard/devices", nil, &out); err != nil {
@@ -139,7 +93,7 @@ func (c *Client) ClipboardDevices(ctx context.Context) (ClipboardDevices, error)
 		if err != nil || id.String() != device.DeviceID || seen[device.DeviceID] ||
 			len(device.Name) == 0 || len(device.Name) > 128 ||
 			len(device.Platform) == 0 || len(device.Platform) > 32 ||
-			!clipboardDecodeExact(device.PublicKey, 32) {
+			device.DeviceID == "" {
 			return ClipboardDevices{}, errors.New("invalid Owner Clipboard recipient keys")
 		}
 		seen[device.DeviceID] = true
@@ -147,29 +101,6 @@ func (c *Client) ClipboardDevices(ctx context.Context) (ClipboardDevices, error)
 	return out, nil
 }
 
-func (c *Client) ClipboardVault(ctx context.Context) (ClipboardVault, error) {
-	var out ClipboardVault
-	if err := c.json(ctx, http.MethodGet, "/api/v1/clipboard/vault", nil, &out); err != nil {
-		return out, err
-	}
-	if !validClipboardVault(out) {
-		return ClipboardVault{}, errors.New("invalid Owner clipboard vault")
-	}
-	return out, nil
-}
-func (c *Client) ClipboardCheck(ctx context.Context, check ClipboardCheck) (ClipboardVault, error) {
-	if check.Scope == "" || len(check.Scope) > 512 || len(check.Nonce) != 16 || len(check.Ciphertext) > 256 {
-		return ClipboardVault{}, errors.New("invalid Owner clipboard check")
-	}
-	var out ClipboardVault
-	if err := c.json(ctx, http.MethodPut, "/api/v1/clipboard/vault/check", check, &out); err != nil {
-		return out, err
-	}
-	if !validClipboardVault(out) {
-		return ClipboardVault{}, errors.New("invalid Owner clipboard check response")
-	}
-	return out, nil
-}
 func (c *Client) ClipboardList(ctx context.Context, before uint64) (ClipboardPage, error) {
 	path := "/api/v1/clipboard/items"
 	if before > 0 {
@@ -193,16 +124,15 @@ func (c *Client) ClipboardList(ctx context.Context, before uint64) (ClipboardPag
 }
 func (c *Client) ClipboardCreate(ctx context.Context, write ClipboardWrite) (ClipboardItem, error) {
 	if !validClipboardWrite(write) {
-		return ClipboardItem{}, errors.New("invalid encrypted clipboard item")
+		return ClipboardItem{}, errors.New("invalid clipboard item")
 	}
 	var out ClipboardItem
 	if err := c.json(ctx, http.MethodPost, "/api/v1/clipboard/items", write, &out); err != nil {
 		return out, err
 	}
 	if !validClipboardItem(out) || out.ClientEventID != write.ClientEventID ||
-		out.Kind != write.Kind || out.Nonce != write.Nonce || out.Ciphertext != write.Ciphertext ||
-		out.TargetDeviceID != write.TargetDeviceID || out.EphemeralKey != write.EphemeralKey ||
-		out.WrappedKey != write.WrappedKey || out.NodeID != write.NodeID {
+		out.Kind != write.Kind || out.Content != write.Content ||
+		out.TargetDeviceID != write.TargetDeviceID || out.NodeID != write.NodeID {
 		return ClipboardItem{}, errors.New("Owner clipboard receipt mismatch")
 	}
 	return out, nil
@@ -220,13 +150,12 @@ func (c *Client) ClipboardClear(ctx context.Context) error {
 // ClipboardEnrollSelf requires the CURRENT interactive Owner bearer plus
 // this installation's independently verified device token. A generic Agent
 // device identity never grants Clipboard rights without explicit enrollment.
-func (c *Client) ClipboardEnrollSelf(ctx context.Context, deviceID, token, publicKey string) error {
+func (c *Client) ClipboardEnrollSelf(ctx context.Context, deviceID, token string) error {
 	id, err := uuid.Parse(deviceID)
-	if err != nil || id.String() != deviceID || token == "" ||
-		!clipboardDecodeExact(publicKey, 32) {
+	if err != nil || id.String() != deviceID || token == "" {
 		return errors.New("invalid Clipboard enrollment identity")
 	}
-	payload, err := json.Marshal(map[string]string{"public_key": publicKey})
+	payload, err := json.Marshal(map[string]string{})
 	if err != nil {
 		return err
 	}
@@ -243,13 +172,12 @@ func (c *Client) ClipboardEnrollSelf(ctx context.Context, deviceID, token, publi
 	}
 	defer resp.Body.Close()
 	var reply struct {
-		DeviceID  string `json:"device_id"`
-		PublicKey string `json:"public_key"`
+		DeviceID string `json:"device_id"`
 	}
 	if err := decodeResponse(resp, &reply); err != nil {
 		return err
 	}
-	if reply.DeviceID != deviceID || reply.PublicKey != publicKey {
+	if reply.DeviceID != deviceID {
 		return errors.New("Clipboard enrollment receipt mismatched")
 	}
 	return nil

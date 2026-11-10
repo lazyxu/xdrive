@@ -427,21 +427,18 @@ declare global {
   type AgentStorageCacheCleanupKind = StorageCacheCleanupKind
   type AgentCloudVersion = FileVersion
   type AgentCloudShare = FileShare
-  type AgentClipboardVault = { owner_id: number; salt: string; kdf: string; iterations: number;
-    check_nonce: string; check_ciphertext: string; aad_scope: string }
-  type AgentClipboardCheck = { nonce: string; ciphertext: string; scope: string }
   type AgentClipboardWrite = {
     client_event_id: string
     kind: 'text/plain' | 'text/uri-list' | 'image/x-xdrive-node-ref' | 'application/x-xdrive-node-ref'
-    nonce: string; ciphertext: string
-    target_device_id?: string; ephemeral_key?: string; wrapped_key?: string; node_id?: number
+    content: string
+    target_device_id?: string
+    node_id?: number
   }
   type AgentClipboardItem = AgentClipboardWrite & { id: number; created_at: string; expires_at: string }
   type AgentClipboardDevices = { devices: {
-    device_id: string; name: string; platform: string; public_key: string
+    device_id: string; name: string; platform: string
   }[] }
   type AgentClipboardDevice = AgentClipboardDevices['devices'][number]
-  type AgentClipboardCleartext = { text: string }
   type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
   type AgentNotesSource = 'mine' | 'ios_notes'
   type AgentNotesNamespace = {
@@ -1193,12 +1190,9 @@ declare global {
         cloudVersions: (nodeID: number) => Promise<DesktopResult<AgentCloudVersion[]>>
         cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudShares: (nodeID: number) => Promise<DesktopResult<AgentCloudShare[]>>
-        cloudClipboardVault: () => Promise<DesktopResult<AgentClipboardVault>>
-        cloudClipboardCheck: (value: AgentClipboardCheck) => Promise<DesktopResult<AgentClipboardVault>>
         cloudClipboardList: (before: number) => Promise<DesktopResult<AgentClipboardPage>>
         cloudClipboardDevices: () => Promise<DesktopResult<AgentClipboardDevices>>
         cloudClipboardEnableDevice: () => Promise<DesktopResult<AgentClipboardDevice>>
-        cloudClipboardDecrypt: (id: number) => Promise<DesktopResult<AgentClipboardCleartext>>
         cloudClipboardRevokeDevice: (deviceID: string) => Promise<DesktopResult<void>>
         cloudClipboardCreate: (value: AgentClipboardWrite) => Promise<DesktopResult<AgentClipboardItem>>
         cloudClipboardDelete: (id: number) => Promise<DesktopResult<void>>

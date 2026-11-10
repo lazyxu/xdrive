@@ -429,28 +429,33 @@ enum class ApiFailureReason { UNKNOWN, CURRENT_PASSWORD_INCORRECT, DNS, CONNECTI
 
 class ApiException(val statusCode: Int, message: String, val reason: ApiFailureReason = ApiFailureReason.UNKNOWN) : IOException(message)
 
-data class OwnerClipboardVault(
-    val ownerID: Long, val salt: String, val kdf: String, val iterations: Int,
-    val checkNonce: String, val checkCiphertext: String, val aadScope: String,
-)
-data class OwnerClipboardItem(
-    val id: Long, val clientEventID: String, val kind: String,
-    val nonce: String, val ciphertext: String,
-    val createdAt: String, val expiresAt: String,
-    val targetDeviceID: String? = null, val ephemeralKey: String? = null,
-    val wrappedKey: String? = null, val nodeID: Long = 0L,
+/** Short-lived Owner-authenticated plaintext with explicitly enrolled recipients. */
+data class XDriveClipboardWrite(
+    val clientEventID: String, val kind: String, val content: String,
+    val targetDeviceID: String? = null, val nodeID: Long = 0L,
 ) {
-    val wire get() = XDriveClipboardCrypto.Wire(clientEventID,kind,nonce,ciphertext)
-    fun targetedWire(): XDriveClipboardTargetCrypto.Wire? {
-        val target = targetDeviceID?.takeIf { it.isNotBlank() } ?: return null
-        return XDriveClipboardTargetCrypto.Wire(clientEventID, target, kind,
-            nonce, ciphertext, requireNotNull(ephemeralKey),
-            requireNotNull(wrappedKey), nodeID)
+    fun valid(): Boolean {
+        if (runCatching { java.util.UUID.fromString(clientEventID).toString() == clientEventID }
+                .getOrDefault(false) != true || content.toByteArray(Charsets.UTF_8).size !in 1..65536) return false
+        if (targetDeviceID != null && runCatching {
+                java.util.UUID.fromString(targetDeviceID).toString() == targetDeviceID
+            }.getOrDefault(false) != true) return false
+        return when (kind) {
+            "text/plain", "text/uri-list" -> nodeID == 0L
+            "image/x-xdrive-node-ref", "application/x-xdrive-node-ref" ->
+                targetDeviceID != null && nodeID > 0 && content == "asset:$nodeID"
+            else -> false
+        }
     }
 }
-data class OwnerClipboardPage(val items: List<OwnerClipboardItem>,val nextBefore: Long?)
+data class OwnerClipboardItem(
+    val id: Long, val clientEventID: String, val kind: String,
+    val content: String, val createdAt: String, val expiresAt: String,
+    val targetDeviceID: String? = null, val nodeID: Long = 0L,
+)
+data class OwnerClipboardPage(val items: List<OwnerClipboardItem>, val nextBefore: Long?)
 data class OwnerClipboardDevice(
-    val deviceID: String, val name: String, val platform: String, val publicKey: String,
+    val deviceID: String, val name: String, val platform: String,
 )
 
 interface XDriveService {
@@ -506,11 +511,6 @@ interface XDriveService {
     /** Native Clipboard never borrows Photo, SourceRun or Files credentials.
      * Existing test stubs default to unsupported rather than falsely succeeding.
      */
-    suspend fun clipboardVault(accessToken: String): OwnerClipboardVault =
-        throw ApiException(501,"Owner Clipboard vault unavailable")
-    suspend fun clipboardCheck(accessToken: String, nonce: String,
-        ciphertext: String, scope: String): OwnerClipboardVault =
-        throw ApiException(501,"Owner Clipboard verifier unavailable")
     suspend fun clipboardList(accessToken: String, before: Long? = null): OwnerClipboardPage =
         throw ApiException(501,"Owner Clipboard list unavailable")
     /** Requires interactive Owner bearer + independently registered installation proof. */
@@ -518,16 +518,13 @@ interface XDriveService {
         accessToken: String, enrolled: NativeAndroidDeviceEnrollment, before: Long? = null,
     ): OwnerClipboardPage = throw ApiException(501,"Clipboard device mailbox unavailable")
     suspend fun clipboardEnrollRecipient(
-        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, publicKey: String,
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
     ) { throw ApiException(501,"Clipboard device enrollment unavailable") }
-    suspend fun clipboardCreate(accessToken: String, item: XDriveClipboardCrypto.Wire): OwnerClipboardItem =
+    suspend fun clipboardCreate(accessToken: String, item: XDriveClipboardWrite): OwnerClipboardItem =
         throw ApiException(501,"Owner Clipboard send unavailable")
-    /** Public keys only: no private key or installation credential in this list. */
+    /** Recipient identities only; no cryptographic public/private keys. */
     suspend fun clipboardDevices(accessToken: String): List<OwnerClipboardDevice> =
         throw ApiException(501, "Clipboard device directory unavailable")
-    suspend fun clipboardCreateDirected(
-        accessToken: String, item: XDriveClipboardTargetCrypto.Wire,
-    ): OwnerClipboardItem = throw ApiException(501, "Clipboard targeted send unavailable")
     suspend fun clipboardDelete(accessToken: String, id: Long) {
         throw ApiException(501,"Owner Clipboard delete unavailable")
     }
@@ -1042,68 +1039,24 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return OwnerNoteRow(id, source, title, nodeId, revision, sha, bytes, updated)
     }
 
-    private fun clipboardVaultRow(value: JsonObject): OwnerClipboardVault {
-        val row = OwnerClipboardVault(
-            ownerID = value.long("owner_id"),
-            salt = value.string("salt"),
-            kdf = value.string("kdf"),
-            iterations = value.long("iterations").toInt(),
-            checkNonce = value.string("check_nonce"),
-            checkCiphertext = value.string("check_ciphertext"),
-            aadScope = value.string("aad_scope"),
-        )
-        if (row.ownerID <= 0 || row.kdf != "PBKDF2-SHA256" || row.iterations != 310000 ||
-            runCatching { java.util.Base64.getDecoder().decode(row.salt).size }.getOrDefault(0) != 16)
-            invalidPayload()
-        return row
-    }
     private fun clipboardItemRow(value: JsonObject): OwnerClipboardItem {
-        val item = OwnerClipboardItem(
+        val row = OwnerClipboardItem(
             id = value.long("id"),
             clientEventID = value.string("client_event_id"),
             kind = value.string("kind"),
-            nonce = value.string("nonce"),
-            ciphertext = value.string("ciphertext"),
+            content = value.string("content"),
             createdAt = value.string("created_at"),
             expiresAt = value.string("expires_at"),
             targetDeviceID = (value["target_device_id"] as? JsonPrimitive)?.contentOrNull
                 ?.takeIf { it.isNotBlank() },
-            ephemeralKey = (value["ephemeral_key"] as? JsonPrimitive)?.contentOrNull
-                ?.takeIf { it.isNotBlank() },
-            wrappedKey = (value["wrapped_key"] as? JsonPrimitive)?.contentOrNull
-                ?.takeIf { it.isNotBlank() },
             nodeID = (value["node_id"] as? JsonPrimitive)?.longOrNull ?: 0L,
         )
-        if (item.id <= 0 ||
-            runCatching { java.util.UUID.fromString(item.clientEventID) }.isFailure ||
-            runCatching { java.util.Base64.getDecoder().decode(item.nonce).size }.getOrDefault(0) != 12 ||
-            item.ciphertext.length !in 24..90000) invalidPayload()
-        if (item.targetDeviceID == null) {
-            if (item.kind !in setOf("text/plain", "text/uri-list") ||
-                item.ephemeralKey != null || item.wrappedKey != null || item.nodeID != 0L) invalidPayload()
-        } else {
-            if (runCatching {
-                java.util.UUID.fromString(item.targetDeviceID).toString() == item.targetDeviceID
-            }.getOrDefault(false) != true) invalidPayload()
-            if (item.kind !in setOf("text/plain", "text/uri-list",
-                    "image/x-xdrive-node-ref", "application/x-xdrive-node-ref") ||
-                (item.nodeID > 0L) != item.kind.endsWith("-node-ref") ||
-                runCatching { java.util.Base64.getDecoder().decode(item.ephemeralKey).size }.getOrDefault(0) != 32 ||
-                runCatching { java.util.Base64.getDecoder().decode(item.wrappedKey).size }.getOrDefault(0) != 60)
-                invalidPayload()
-        }
-        return item
+        if (row.id <= 0 || !XDriveClipboardWrite(
+                row.clientEventID, row.kind, row.content, row.targetDeviceID, row.nodeID).valid() ||
+            row.createdAt.isEmpty() || row.expiresAt.isEmpty()) invalidPayload()
+        return row
     }
 
-    override suspend fun clipboardVault(accessToken: String) =
-        clipboardVaultRow(request("clipboard/vault", accessToken))
-    override suspend fun clipboardCheck(accessToken: String, nonce: String,
-        ciphertext: String, scope: String): OwnerClipboardVault {
-        require(nonce.length == 16 && ciphertext.length in 20..256 && scope.length in 1..512)
-        val value = request("clipboard/vault/check",accessToken,method="PUT",
-            values=mapOf("nonce" to nonce,"ciphertext" to ciphertext,"scope" to scope))
-        return clipboardVaultRow(value)
-    }
     override suspend fun clipboardList(accessToken: String,before: Long?): OwnerClipboardPage =
         clipboardListScoped(accessToken, before, null)
 
@@ -1127,14 +1080,11 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return OwnerClipboardPage(items,next)
     }
     override suspend fun clipboardEnrollRecipient(
-        accessToken: String, enrolled: NativeAndroidDeviceEnrollment, publicKey: String,
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
     ) {
-        require(runCatching { java.util.Base64.getDecoder().decode(publicKey).size == 32 }
-            .getOrDefault(false))
         val receipt = request("clipboard/devices/self", accessToken, method = "PUT",
-            values = mapOf("public_key" to publicKey), deviceIdentity = enrolled)
-        if (receipt.string("device_id") != enrolled.deviceId ||
-            receipt.string("public_key") != publicKey) invalidPayload()
+            values = emptyMap(), deviceIdentity = enrolled)
+        if (receipt.string("device_id") != enrolled.deviceId) invalidPayload()
     }
 
     override suspend fun clipboardDevices(accessToken: String): List<OwnerClipboardDevice> {
@@ -1147,65 +1097,35 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             val id = item.string("device_id")
             val name = item.string("name")
             val platform = item.string("platform")
-            val key = item.string("public_key")
-            if (runCatching { java.util.UUID.fromString(id).toString() == id }.getOrDefault(false) != true ||
+            if (runCatching { java.util.UUID.fromString(id).toString() == id }
+                    .getOrDefault(false) != true ||
                 !seen.add(id) || name.isBlank() || name.length > 128 ||
-                platform.isBlank() || platform.length > 32 ||
-                runCatching {
-                    val bytes = java.util.Base64.getDecoder().decode(key)
-                    bytes.size == 32 && java.util.Base64.getEncoder().encodeToString(bytes) == key &&
-                        bytes.any { it != 0.toByte() }
-                }.getOrDefault(false) != true) invalidPayload()
-            OwnerClipboardDevice(id, name, platform, key)
+                platform.isBlank() || platform.length > 32) invalidPayload()
+            OwnerClipboardDevice(id, name, platform)
         }
     }
 
-    override suspend fun clipboardCreateDirected(
-        accessToken: String, item: XDriveClipboardTargetCrypto.Wire,
+    override suspend fun clipboardCreate(
+        accessToken: String, item: XDriveClipboardWrite,
     ): OwnerClipboardItem {
-        require(item.kind in setOf("text/plain", "text/uri-list",
-            "image/x-xdrive-node-ref", "application/x-xdrive-node-ref"))
-        require(runCatching {
-            java.util.UUID.fromString(item.targetDeviceID).toString() == item.targetDeviceID &&
-                java.util.UUID.fromString(item.clientEventID).toString() == item.clientEventID
-        }.getOrDefault(false))
-        require(item.nodeID >= 0L &&
-            (item.nodeID > 0L) == item.kind.endsWith("-node-ref"))
-        require(item.ciphertext.length in 24..90000 &&
-            java.util.Base64.getDecoder().decode(item.nonce).size == 12 &&
-            java.util.Base64.getDecoder().decode(item.ephemeralKey).size == 32 &&
-            java.util.Base64.getDecoder().decode(item.wrappedKey).size == 60)
-        val values = mapOf(
-            "client_event_id" to item.clientEventID, "target_device_id" to item.targetDeviceID,
-            "kind" to item.kind, "nonce" to item.nonce, "ciphertext" to item.ciphertext,
-            "ephemeral_key" to item.ephemeralKey, "wrapped_key" to item.wrappedKey,
+        require(item.valid()) { "Invalid Owner Clipboard message" }
+        val values = mutableMapOf(
+            "client_event_id" to item.clientEventID,
+            "kind" to item.kind,
+            "content" to item.content,
         )
-        // The Node ID is a JSON number, NEVER a string or a File authorization
-        // credential. Server revalidates current Owner, live Node and CAS.
+        item.targetDeviceID?.let { values["target_device_id"] = it }
         val received = clipboardItemRow(request("clipboard/items", accessToken,
             values = values,
             numberValues = if (item.nodeID == 0L) emptyMap()
                 else mapOf("node_id" to item.nodeID)))
         if (received.clientEventID != item.clientEventID ||
+            received.kind != item.kind || received.content != item.content ||
             received.targetDeviceID != item.targetDeviceID ||
-            received.kind != item.kind || received.nodeID != item.nodeID ||
-            received.nonce != item.nonce || received.ciphertext != item.ciphertext ||
-            received.ephemeralKey != item.ephemeralKey ||
-            received.wrappedKey != item.wrappedKey) invalidPayload()
+            received.nodeID != item.nodeID) invalidPayload()
         return received
     }
 
-    override suspend fun clipboardCreate(
-        accessToken: String,item: XDriveClipboardCrypto.Wire): OwnerClipboardItem {
-        require(item.ciphertext.length in 24..90000 && item.nonce.length == 16 &&
-            item.kind in setOf("text/plain","text/uri-list"))
-        val value = clipboardItemRow(request("clipboard/items",accessToken,
-            values=mapOf("client_event_id" to item.clientEventID,"kind" to item.kind,
-                "nonce" to item.nonce,"ciphertext" to item.ciphertext)))
-        if (value.clientEventID != item.clientEventID || value.kind != item.kind ||
-            value.nonce != item.nonce || value.ciphertext != item.ciphertext) invalidPayload()
-        return value
-    }
     override suspend fun clipboardDelete(accessToken: String,id: Long) {
         require(id > 0)
         request("clipboard/items/$id",accessToken,method="DELETE",emptyResponse=true)
@@ -1215,7 +1135,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     }
 
     /** Bounded 20s server SSE on the SAME TLS/DNS-pinned Owner transport.
-     * The stream only signals invalidation. It never carries ciphertext, OS
+     * The stream only signals invalidation. It never carries plaintext, OS
      * clipboard text, credentials or a long-lived device subscription.
      */
     override suspend fun clipboardWatch(accessToken: String, after: Long,
@@ -3407,7 +3327,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         val nativeIdentityRequest = path == "devices/self" && method == null &&
             values == null
         val clipboardDeviceEnrollment = path == "clipboard/devices/self" &&
-            method == "PUT" && values?.keys == setOf("public_key")
+            method == "PUT" && values?.isEmpty() == true
         val clipboardDeviceRead = path == "clipboard/items" && method == null &&
             values == null && (query.isEmpty() || query.keys == setOf("before"))
         val nativeDestinationRequest = path == "android/photos/backup-destination" &&

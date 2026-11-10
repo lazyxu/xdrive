@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -13,21 +12,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-// Only the sender and recipient handle X25519/HKDF-SHA256/AES-GCM keys.
-// The Server never receives private keys or uses a second binary upload writer.
-func clipboardValidPublicKey(raw string) bool {
-	key, err := base64.StdEncoding.Strict().DecodeString(raw)
-	if err != nil || len(key) != 32 {
-		return false
-	}
-	for _, value := range key {
-		if value != 0 {
-			return true
-		}
-	}
-	return false
-}
 
 func clipboardVisibleToDevice(db *gorm.DB, deviceID string) *gorm.DB {
 	if deviceID == "" {
@@ -70,13 +54,13 @@ func (s *Server) clipboardValidateTargetAndNode(db *gorm.DB, owner uint64, req c
 		if db.Where("owner_id = ? AND device_id = ? AND revoked_at IS NULL", owner, req.TargetDeviceID).
 			Take(&key).Error != nil ||
 			db.Where("owner_id = ? AND id = ? AND revoked_at IS NULL", owner, req.TargetDeviceID).
-				Take(&device).Error != nil || !clipboardValidPublicKey(key.PublicKey) {
+				Take(&device).Error != nil {
 			return errClipboardForbidden
 		}
 	}
 	if req.NodeID > 0 {
 		// The original must already have finished the normal UploadSession/
-		// CAS path. Clipboard only carries an encrypted, scoped reference.
+		// CAS path. Clipboard carries only an Owner-scoped Node reference.
 		var node meta.Node
 		if db.Where(
 			"id = ? AND owner_id = ? AND deleted_at IS NULL AND trash_root_id IS NULL AND type = ?",
@@ -92,6 +76,8 @@ func (s *Server) clipboardValidateTargetAndNode(db *gorm.DB, owner uint64, req c
 	return nil
 }
 
+// The device grant requires live Owner authentication and a registered
+// installation token. Cryptographic keys are not created or exchanged.
 func (s *Server) enrollClipboardDeviceKey(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	owner := userID(c)
@@ -102,13 +88,6 @@ func (s *Server) enrollClipboardDeviceKey(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "current Owner device proof required"})
 		return
 	}
-	var payload struct {
-		PublicKey string `json:"public_key" binding:"required"`
-	}
-	if c.ShouldBindJSON(&payload) != nil || !clipboardValidPublicKey(payload.PublicKey) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Curve25519 public key"})
-		return
-	}
 	db := s.DB.WithContext(c.Request.Context())
 	var device meta.ClientDevice
 	if db.Where("owner_id = ? AND id = ? AND revoked_at IS NULL", owner, deviceID).
@@ -117,10 +96,8 @@ func (s *Server) enrollClipboardDeviceKey(c *gin.Context) {
 		return
 	}
 	now := time.Now().UTC()
-	proposed := meta.ClipboardDeviceKey{
-		OwnerID: owner, DeviceID: deviceID, PublicKey: payload.PublicKey,
-		CreatedAt: now, UpdatedAt: now,
-	}
+	proposed := meta.ClipboardDeviceKey{OwnerID: owner, DeviceID: deviceID,
+		PublicKey: "", CreatedAt: now, UpdatedAt: now}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&proposed).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "device enrollment unavailable"})
 		return
@@ -130,11 +107,11 @@ func (s *Server) enrollClipboardDeviceKey(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "device enrollment unavailable"})
 		return
 	}
-	if stored.RevokedAt != nil || stored.PublicKey != payload.PublicKey {
-		c.JSON(http.StatusConflict, gin.H{"error": "device key immutable or revoked"})
+	if stored.RevokedAt != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "device authorization revoked"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"device_id": stored.DeviceID, "public_key": stored.PublicKey})
+	c.JSON(http.StatusOK, gin.H{"device_id": stored.DeviceID})
 }
 
 func (s *Server) listClipboardDevices(c *gin.Context) {
@@ -169,7 +146,7 @@ func (s *Server) listClipboardDevices(c *gin.Context) {
 		}
 		result = append(result, gin.H{
 			"device_id": key.DeviceID, "name": device.Name,
-			"platform": device.Platform, "public_key": key.PublicKey,
+			"platform": device.Platform,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"devices": result})

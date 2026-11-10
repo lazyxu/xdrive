@@ -3,10 +3,8 @@ package localbackupipc
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -23,40 +21,6 @@ func (c *Client) requireClipboard() error {
 		return errors.New("Owner Clipboard capability unavailable")
 	}
 	return nil
-}
-func (c *Client) OwnerClipboardVault(ctx context.Context) (client.ClipboardVault, error) {
-	if err := c.requireClipboard(); err != nil {
-		return client.ClipboardVault{}, err
-	}
-	var out client.ClipboardVault
-	err := c.request(ctx, http.MethodGet, "/v1/cloud/clipboard/vault", nil, &out)
-	if err != nil || out.OwnerID == 0 || out.KDF != "PBKDF2-SHA256" || out.Iterations != 310000 {
-		return client.ClipboardVault{}, fmt.Errorf("unverified Owner Clipboard vault: %w", errOrInvalid(err))
-	}
-	return out, nil
-}
-func errOrInvalid(err error) error {
-	if err != nil {
-		return err
-	}
-	return errors.New("invalid Owner Clipboard response")
-}
-func (c *Client) OwnerClipboardCheck(ctx context.Context, in client.ClipboardCheck) (client.ClipboardVault, error) {
-	if err := c.requireClipboard(); err != nil {
-		return client.ClipboardVault{}, err
-	}
-	if in.Scope == "" || len(in.Scope) > 512 || len(in.Nonce) != 16 || len(in.Ciphertext) > 256 {
-		return client.ClipboardVault{}, errors.New("invalid Clipboard check")
-	}
-	var out client.ClipboardVault
-	err := c.request(ctx, http.MethodPut, "/v1/cloud/clipboard/check", in, &out)
-	if err != nil {
-		return out, err
-	}
-	if out.OwnerID == 0 || out.AADScope == "" {
-		return client.ClipboardVault{}, errors.New("invalid Clipboard check receipt")
-	}
-	return out, nil
 }
 func (c *Client) OwnerClipboardDevices(ctx context.Context) (client.ClipboardDevices, error) {
 	if err := c.requireClipboard(); err != nil {
@@ -98,10 +62,8 @@ func (c *Client) OwnerClipboardCreate(ctx context.Context, in client.ClipboardWr
 	if err != nil {
 		return out, err
 	}
-	if out.ID == 0 || out.ClientEventID != in.ClientEventID || out.Ciphertext != in.Ciphertext ||
-		out.Kind != in.Kind || out.Nonce != in.Nonce || out.TargetDeviceID != in.TargetDeviceID ||
-		out.EphemeralKey != in.EphemeralKey || out.WrappedKey != in.WrappedKey ||
-		out.NodeID != in.NodeID {
+	if out.ID == 0 || out.ClientEventID != in.ClientEventID || out.Content != in.Content ||
+		out.Kind != in.Kind || out.TargetDeviceID != in.TargetDeviceID || out.NodeID != in.NodeID {
 		return client.ClipboardItem{}, errors.New("Clipboard write receipt mismatch")
 	}
 	return out, nil
@@ -133,30 +95,10 @@ func (c *Client) OwnerClipboardEnableDevice(ctx context.Context) (client.Clipboa
 		map[string]any{}, &out); err != nil {
 		return client.ClipboardDevice{}, err
 	}
-	if out.DeviceID == "" || out.PublicKey == "" || out.Name == "" {
+	if out.DeviceID == "" || out.Name == "" {
 		return client.ClipboardDevice{}, errors.New("unconfirmed Clipboard device enrollment")
 	}
 	return out, nil
-}
-
-func (c *Client) OwnerClipboardDecrypt(ctx context.Context, itemID uint64) (string, error) {
-	if err := c.requireClipboard(); err != nil {
-		return "", err
-	}
-	if itemID == 0 {
-		return "", errors.New("invalid Clipboard item")
-	}
-	var out struct {
-		Text string `json:"text"`
-	}
-	if err := c.request(ctx, http.MethodPost, "/v1/cloud/clipboard/decrypt",
-		map[string]uint64{"id": itemID}, &out); err != nil {
-		return "", err
-	}
-	if len(out.Text) == 0 || len(out.Text) > 65536 || !utf8.ValidString(out.Text) {
-		return "", errors.New("invalid Clipboard decryption receipt")
-	}
-	return out.Text, nil
 }
 
 func (c *Client) OwnerClipboardRevokeDevice(ctx context.Context, deviceID string) error {
