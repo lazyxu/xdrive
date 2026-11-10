@@ -8,16 +8,16 @@ import (
 
 // Caddy AliDNS credentials are encrypted administrator staging, not host state.
 type AdminCaddyAliDNSConfig struct {
-	AccessKeyIDLength     int `json:"access_key_id_length,omitempty"`
-	AccessKeySecretLength int `json:"access_key_secret_length,omitempty"`
-	Configured     bool       `json:"configured"`
-	Revision       uint64     `json:"revision"`
-	Source         string     `json:"source"`
-	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
-	Editable       bool       `json:"editable"`
-	ApplyState     string     `json:"apply_state"`
-	ApplySupported bool       `json:"apply_supported"`
-	Requirement    string     `json:"requirement"`
+	AccessKeyIDLength     int        `json:"access_key_id_length,omitempty"`
+	AccessKeySecretLength int        `json:"access_key_secret_length,omitempty"`
+	Configured            bool       `json:"configured"`
+	Revision              uint64     `json:"revision"`
+	Source                string     `json:"source"`
+	UpdatedAt             *time.Time `json:"updated_at,omitempty"`
+	Editable              bool       `json:"editable"`
+	ApplyState            string     `json:"apply_state"`
+	ApplySupported        bool       `json:"apply_supported"`
+	Requirement           string     `json:"requirement"`
 
 	HostApplyPending bool `json:"host_apply_pending"`
 }
