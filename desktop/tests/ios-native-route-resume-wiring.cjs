@@ -74,7 +74,11 @@ test('mounted native map source picker borrows parent route hints for local MapK
   assert.match(wrapper, /@Binding var localMapPageOffset: Int/);
   assert.match(wrapper, /@Binding var localMapCamera: MKCoordinateRegion\?/);
   assert.match(wrapper, /XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset,\s*onClose: onClose,\s*cameraOnEntry: localMapCamera,\s*onLibraryCameraChange: \{ next in/);
-  assert.match(wrapper, /guard source == \.local, let expectedOwner,\s*XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, expectedOwner\s*\) else \{ return \}\s*localMapCamera = next\s*\},\s*onFocusChange: onFocusChange/);
+  const localCallback = wrapper.split('onLibraryCameraChange: { next in')[1]?.split('localMapCamera = next')[0];
+  assert.ok(localCallback,'local PhotoKit map callback must be present');
+  assert.match(localCallback,/guard source == \.local else \{ return \}/);
+  assert.match(localCallback,/if let expectedOwner \{[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, expectedOwner\s*\) else \{ return \}[\s\S]*?\} else \{\s*guard login\.owner == nil else \{ return \}\s*\}/);
+  assert.match(wrapper,/localMapCamera = next\s*\},\s*onFocusChange: onFocusChange/);
   assert.match(wrapper, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
   assert.match(wrapper, /Picker\("地图照片来源", selection: \$source\)/);
   assert.match(wrapper, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/);
