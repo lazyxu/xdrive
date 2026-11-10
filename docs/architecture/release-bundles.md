@@ -37,19 +37,51 @@ It is intentionally not a dependency of the core Server/Snapshot publish job.
   is explicitly `manual_test_only`: it can be downloaded for developer signing,
   but MUST NOT be offered as a direct or automatic iOS installer.
   **Windows master Snapshots built without the configured production signing
-  certificate are also `manual_test_only`**, not actionable signed client
-  updates. The exact-run Windows package job checks its Authenticode signature
-  when configured signing is present; the Bundle publisher may use
-  `--windows-signed` only for that signed CI path. A signed stable Windows
-  package is required when the Windows asset is present in a stable Bundle.
-  The detached updater independently re-verifies Authenticode on the downloaded
-  installer regardless of what the Manifest advertises.
+  certificate are `manual_test_only`**, never eligible for ordinary channel
+  auto-update. For a single-owner personal Desktop, the ordinary **客户端更新**
+  page may offer a *separately confirmed* private unsigned Snapshot install
+  for the exact current authenticated Server Commit. The user must acknowledge
+  the absence of Authenticode; this does not add publisher identity assurance.
+  The native path checks that it is Windows AMD64 + master channel, the fixed
+  `xDriveSetup-amd64.exe` filename, full Git Commit and public GitHub Bundle
+  tag/asset inventory, and exact size/SHA-256 before installer execution.
+  Windows PowerShell rechecks size/SHA-256 after Agent exit and confirms that
+  the package is actually unsigned. Wrong Commit, wrong platform, signed/invalid
+  package in unsigned mode, or an unconfirmed request fail closed. Other
+  signed releases retain the original Authenticode publisher checks.
+  The exact-run Windows package job verifies Authenticode when configured
+  signing is present; the publisher may use `--windows-signed` only for
+  that signed CI path. Stable Windows assets remain signed-only.
 - Existing Linux/Windows/Backup CLI/DSM publish contracts remain in place;
   separately published iOS and signed Android outputs may enter a Bundle only when the
   exact-source Release is already present and verified at Bundle publication.
   A later native build does not mutate an existing immutable manifest.
 - The existing GitHub/GitLab `snapshot` and stable channel releases are
   unchanged, so old clients retain compatibility.
+
+## Ordinary Desktop current-Server update and install acceptance
+
+The Desktop **客户端更新** page offers the same current-Commit Bundle card
+to authenticated non-admin users, but no admin-only Host cache retry action.
+The separate administrator **管理 → 系统更新** page retains cache diagnostics
+and retry. Both views are opt-in: updating Server never pushes a client install.
+
+Exact-Commit native install is supported for Windows and Debian-family Linux
+AMD64 when an applicable artifact actually exists. `xd version --json` and
+`xdrive-agent --build-info-json` expose embedded build provenance; the
+electron-builder package includes `resources/xdrive-build-info.json` from
+the same source Commit. Windows checks installed xd, authenticated Agent hello
+and the launched Electron Desktop lifecycle event against the target SHA
+before committing its last-known-good transaction. Linux checks installed
+xd, Agent and Desktop build metadata following authorized apt/PolicyKit
+installation. A textual version such as `snapshot` alone is insufficient.
+
+This source implementation is not a claim of real-device acceptance. Confirm
+the actual Windows personal unsigned installer (including its OS warning),
+rollback after a deliberately failed post-install SHA check, restart and Agent
+health. Confirm Linux `pkexec` admission, file/Commit validation, failure
+recovery and UI restart on a real authorized desktop. CI mock and packaging
+checks must be recorded separately from physical-device results.
 
 ## Noncritical Host worker
 
