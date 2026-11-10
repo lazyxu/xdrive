@@ -992,8 +992,8 @@ const agent = Object.freeze({
   retryReleaseBundle: () => ipcRenderer.invoke('agent:retry-release-bundle'),
   saveReleaseBundle: (commit: string, filename: string) =>
     ipcRenderer.invoke('agent:save-release-bundle', commit, filename),
-  installReleaseBundle: (commit: string, filename: string, confirmed: boolean) =>
-    ipcRenderer.invoke('agent:install-release-bundle', commit, filename, confirmed),
+  installReleaseBundle: (commit: string, filename: string, confirmed: boolean, personalUnsigned = false) =>
+    ipcRenderer.invoke('agent:install-release-bundle', commit, filename, confirmed, personalUnsigned),
   offlineImport: (action: 'list' | 'create' | 'get' | 'remove' | 'register' | 'finalize' | 'plan-status' | 'plan' | 'start',
     input: Record<string, unknown> = {}) =>
     ipcRenderer.invoke('agent:offline-import', action, input),
