@@ -246,6 +246,27 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 		t.Fatalf("Owner clear failed: %s", page.Body.String())
 	}
 
+	// Encrypted rows remain in the legacy schema but must never be presented
+	// as plaintext or accepted as an idempotent plaintext retry.
+	legacyID := uuid.NewString()
+	legacy := meta.ClipboardItem{
+		OwnerID: ownerA.ID, ClientEventID: legacyID, Kind: "text/plain",
+		Nonce: "legacy-encrypted-nonce", Ciphertext: "old-ciphertext-must-stay-hidden",
+		CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour),
+	}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacyPage := request(t, router, http.MethodGet, "/api/v1/clipboard/items", a, nil, http.StatusOK)
+	if err := json.Unmarshal(legacyPage.Body.Bytes(), &list); err != nil || len(list.Items) != 0 {
+		t.Fatalf("legacy encrypted row exposed in plaintext history: %s", legacyPage.Body.String())
+	}
+	request(t, router, http.MethodPost, "/api/v1/clipboard/items", a,
+		strings.NewReader(payload(legacyID, legacy.Ciphertext)), http.StatusConflict)
+	if err := db.Delete(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	// Prefill near the cap, then race real authenticated HTTP requests from
 	// the SAME Owner. A row lock must keep the final count at exactly 50.
 	for i := 0; i < 40; i++ {
