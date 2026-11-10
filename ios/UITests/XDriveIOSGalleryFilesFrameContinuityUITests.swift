@@ -243,11 +243,16 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
     private func openFilesOperationHistoryFromBrowse(_ app: XCUIApplication) {
         assertFiles(app)
         let action = target("native-ios-files-open-operations", app: app)
-        let list = app.tables.firstMatch.exists ? app.tables.firstMatch :
-            app.scrollViews.firstMatch
-        XCTAssertTrue(list.waitForExistence(timeout: 15),
-                      "Files Home scroll container did not mount")
-        for _ in 0..<6 {
+        // SwiftUI List can surface as UITableView or UICollectionView
+        // depending on iOS runtime. Keep a bounded native swipe fallback.
+        let table = app.tables.firstMatch
+        let collection = app.collectionViews.firstMatch
+        let scroll = app.scrollViews.firstMatch
+        var list: XCUIElement = app
+        if table.exists { list = table }
+        else if collection.exists { list = collection }
+        else if scroll.exists { list = scroll }
+        for _ in 0..<8 {
             if action.isHittable { break }
             list.swipeUp()
         }
