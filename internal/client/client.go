@@ -1024,6 +1024,7 @@ func (c *Client) RollbackAdminGeoNames(ctx context.Context, input AdminGeoNamesR
 type AdminBaiduMapConfig struct {
 	Enabled         bool       `json:"enabled"`
 	Configured      bool       `json:"configured"`
+	AKLength        int        `json:"ak_length,omitempty"`
 	Source          string     `json:"source"`
 	Editable        bool       `json:"editable"`
 	RequiresRestart bool       `json:"requires_restart"`
@@ -1069,6 +1070,7 @@ type AdminBaiduJSAPIConfig struct {
 	Provider        string     `json:"provider"`
 	DesiredEnabled  bool       `json:"desired_enabled"`
 	Configured      bool       `json:"configured"`
+	BrowserAKLength int        `json:"browser_ak_length,omitempty"`
 	Editable        bool       `json:"editable"`
 	Revision        uint64     `json:"revision"`
 	UpdatedAt       *time.Time `json:"updated_at,omitempty"`

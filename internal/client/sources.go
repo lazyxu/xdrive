@@ -444,7 +444,8 @@ func (c *Client) PutSourceConnectorConfig(ctx context.Context, id, revision uint
 }
 
 type SourceCredentialStatus struct {
-	Configured bool       `json:"configured"`
+	Configured bool
+	ValueLength int `json:"value_length,omitempty"`       `json:"configured"`
 	KeyVersion uint32     `json:"key_version,omitempty"`
 	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
 }

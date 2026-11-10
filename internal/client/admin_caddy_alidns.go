@@ -8,6 +8,8 @@ import (
 
 // Caddy AliDNS credentials are encrypted administrator staging, not host state.
 type AdminCaddyAliDNSConfig struct {
+	AccessKeyIDLength     int `json:"access_key_id_length,omitempty"`
+	AccessKeySecretLength int `json:"access_key_secret_length,omitempty"`
 	Configured     bool       `json:"configured"`
 	Revision       uint64     `json:"revision"`
 	Source         string     `json:"source"`
