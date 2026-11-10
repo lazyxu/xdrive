@@ -14,25 +14,20 @@ export type AgentHello = {
   capabilities: string[]
 }
 
-export type AgentClipboardVault = {
-  owner_id: number; salt: string; kdf: string; iterations: number
-  check_nonce: string; check_ciphertext: string; aad_scope: string
-}
-export type AgentClipboardCheck = { nonce: string; ciphertext: string; scope: string }
 export type AgentClipboardWrite = {
   client_event_id: string
   kind: 'text/plain' | 'text/uri-list' | 'image/x-xdrive-node-ref' | 'application/x-xdrive-node-ref'
-  nonce: string; ciphertext: string
-  target_device_id?: string; ephemeral_key?: string; wrapped_key?: string; node_id?: number
+  content: string
+  target_device_id?: string
+  node_id?: number
 }
 export type AgentClipboardItem = AgentClipboardWrite & {
   id: number; created_at: string; expires_at: string
 }
 export type AgentClipboardDevices = {
-  devices: { device_id: string; name: string; platform: string; public_key: string }[]
+  devices: { device_id: string; name: string; platform: string }[]
 }
 export type AgentClipboardDevice = AgentClipboardDevices['devices'][number]
-export type AgentClipboardCleartext = { text: string }
 export type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
 
 export type AgentNotesSource = 'mine' | 'ios_notes'
@@ -5079,13 +5074,6 @@ export class AgentIPCClient {
     return this.request<AgentCloudShare[]>('GET', `/v1/cloud/shares?${query.toString()}`)
   }
 
-  cloudClipboardVault() {
-    return this.request<AgentClipboardVault>('GET', '/v1/cloud/clipboard/vault')
-  }
-  cloudClipboardCheck(value: AgentClipboardCheck) {
-    return this.request<AgentClipboardVault>('PUT', '/v1/cloud/clipboard/check',
-      value, 30_000, undefined, false)
-  }
   cloudClipboardList(before = 0) {
     const query = before > 0 ? '?before=' + encodeURIComponent(String(before)) : ''
     return this.request<AgentClipboardPage>('GET', '/v1/cloud/clipboard/items' + query)
@@ -5096,11 +5084,6 @@ export class AgentIPCClient {
   cloudClipboardEnableDevice() {
     return this.request<AgentClipboardDevice>('POST',
       '/v1/cloud/clipboard/enable-device', {}, 30_000, undefined, false)
-  }
-  cloudClipboardDecrypt(id: number) {
-    if (!Number.isSafeInteger(id) || id <= 0) throw Error('Invalid Clipboard item ID')
-    return this.request<AgentClipboardCleartext>('POST',
-      '/v1/cloud/clipboard/decrypt', { id }, 30_000, undefined, false)
   }
   cloudClipboardRevokeDevice(deviceID: string) {
     if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(deviceID))
