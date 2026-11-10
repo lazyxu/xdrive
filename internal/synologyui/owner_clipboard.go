@@ -2,13 +2,14 @@ package synologyui
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"unicode/utf8"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -17,8 +18,6 @@ import (
 )
 
 type OwnerClipboardAgent interface {
-	OwnerClipboardVault(context.Context) (client.ClipboardVault, error)
-	OwnerClipboardCheck(context.Context, client.ClipboardCheck) (client.ClipboardVault, error)
 	OwnerClipboardList(context.Context, uint64) (client.ClipboardPage, error)
 	OwnerClipboardCreate(context.Context, client.ClipboardWrite) (client.ClipboardItem, error)
 	OwnerClipboardDelete(context.Context, uint64) error
@@ -27,10 +26,9 @@ type OwnerClipboardAgent interface {
 
 func isDSMClipboardRoute(path string) bool {
 	switch path {
-	case "/v1/cloud-clipboard-capability", "/v1/cloud-clipboard-vault",
-		"/v1/cloud-clipboard-check", "/v1/cloud-clipboard-list",
+	case "/v1/cloud-clipboard-capability", "/v1/cloud-clipboard-list",
 		"/v1/cloud-clipboard-devices", "/v1/cloud-clipboard-enable-device",
-		"/v1/cloud-clipboard-decrypt", "/v1/cloud-clipboard-file", "/v1/cloud-clipboard-create", "/v1/cloud-clipboard-delete",
+		"/v1/cloud-clipboard-file", "/v1/cloud-clipboard-create", "/v1/cloud-clipboard-delete",
 		"/v1/cloud-clipboard-clear", "/v1/cloud-clipboard-revoke-device":
 		return true
 	}
@@ -38,9 +36,9 @@ func isDSMClipboardRoute(path string) bool {
 }
 func isDSMClipboardWrite(path string) bool {
 	switch path {
-	case "/v1/cloud-clipboard-check", "/v1/cloud-clipboard-create",
+	case "/v1/cloud-clipboard-create",
 		"/v1/cloud-clipboard-delete", "/v1/cloud-clipboard-clear",
-		"/v1/cloud-clipboard-enable-device", "/v1/cloud-clipboard-decrypt",
+		"/v1/cloud-clipboard-enable-device",
 		"/v1/cloud-clipboard-revoke-device":
 		return true
 	}
@@ -50,26 +48,14 @@ func isDSMClipboardWrite(path string) bool {
 const dsmClipboardBodyMax = 128 << 10
 
 type dsmClipboardWrite struct {
-	OwnerScope     string `json:"owner_scope"`
-	Nonce          string `json:"nonce,omitempty"`
-	Ciphertext     string `json:"ciphertext,omitempty"`
-	Scope          string `json:"scope,omitempty"`
-	ClientEventID  string `json:"client_event_id,omitempty"`
-	Kind           string `json:"kind,omitempty"`
+	OwnerScope string `json:"owner_scope"`
+	Content string `json:"content,omitempty"`
+	ClientEventID string `json:"client_event_id,omitempty"`
+	Kind string `json:"kind,omitempty"`
 	TargetDeviceID string `json:"target_device_id,omitempty"`
-	DeviceID       string `json:"device_id,omitempty"`
-	EphemeralKey   string `json:"ephemeral_key,omitempty"`
-	WrappedKey     string `json:"wrapped_key,omitempty"`
-	NodeID         uint64 `json:"node_id,omitempty"`
-	ID             uint64 `json:"id,omitempty"`
-}
-
-// DSM must not forward an arbitrary binary envelope from a CGI request.
-// The canonical xDrive Server and Agent re-check the same E2EE metadata.
-func dsmClipboardKeyExact(raw string, bytes int) bool {
-	value, err := base64.StdEncoding.Strict().DecodeString(raw)
-	return err == nil && len(value) == bytes &&
-		base64.StdEncoding.EncodeToString(value) == raw
+	DeviceID string `json:"device_id,omitempty"`
+	NodeID uint64 `json:"node_id,omitempty"`
+	ID uint64 `json:"id,omitempty"`
 }
 
 func parseDSMClipboardWrite(r *http.Request) (dsmClipboardWrite, error) {
@@ -94,71 +80,45 @@ func parseDSMClipboardWrite(r *http.Request) (dsmClipboardWrite, error) {
 		return v, errors.New("invalid Clipboard Owner scope")
 	}
 	switch r.URL.Path {
-	case "/v1/cloud-clipboard-check":
-		if len(v.Nonce) != 16 || len(v.Ciphertext) < 20 || len(v.Ciphertext) > 256 ||
-			v.Scope == "" || len(v.Scope) > 512 || v.ID != 0 || v.ClientEventID != "" || v.Kind != "" ||
-			v.TargetDeviceID != "" || v.DeviceID != "" || v.EphemeralKey != "" || v.WrappedKey != "" || v.NodeID != 0 {
-			return v, errors.New("invalid Clipboard encrypted verifier")
-		}
 	case "/v1/cloud-clipboard-create":
-		if len(v.Nonce) != 16 || len(v.Ciphertext) < 20 || len(v.Ciphertext) > 90000 ||
-			uuid.Validate(v.ClientEventID) != nil || v.ID != 0 || v.Scope != "" || v.DeviceID != "" {
-			return v, errors.New("invalid encrypted Clipboard")
+		if uuid.Validate(v.ClientEventID) != nil || len(v.Content) == 0 ||
+			len(v.Content) > 65536 || !utf8.ValidString(v.Content) ||
+			v.ID != 0 || v.DeviceID != "" {
+			return v, errors.New("invalid plaintext Clipboard content")
 		}
 		switch v.Kind {
 		case "text/plain", "text/uri-list":
-			if v.NodeID != 0 {
-				return v, errors.New("text Clipboard cannot grant file access")
-			}
+			if v.NodeID != 0 { return v, errors.New("text cannot grant file access") }
 		case "image/x-xdrive-node-ref", "application/x-xdrive-node-ref":
-			if v.NodeID == 0 || v.TargetDeviceID == "" {
-				return v, errors.New("media Clipboard must target an existing Node")
+			if v.NodeID == 0 || v.TargetDeviceID == "" ||
+				v.Content != fmt.Sprintf("asset:%d", v.NodeID) {
+				return v, errors.New("invalid file reference")
 			}
-		default:
-			return v, errors.New("invalid Clipboard authenticated kind")
+		default: return v, errors.New("invalid Clipboard kind")
 		}
-		if v.TargetDeviceID == "" {
-			if v.EphemeralKey != "" || v.WrappedKey != "" {
-				return v, errors.New("v1 Clipboard cannot carry targeted keys")
-			}
-		} else {
+		if v.TargetDeviceID != "" {
 			id, err := uuid.Parse(v.TargetDeviceID)
-			if err != nil || id.String() != v.TargetDeviceID ||
-				!dsmClipboardKeyExact(v.EphemeralKey, 32) ||
-				!dsmClipboardKeyExact(v.WrappedKey, 60) {
-				return v, errors.New("invalid targeted Clipboard recipient")
+			if err != nil || id.String() != v.TargetDeviceID {
+				return v, errors.New("invalid Clipboard recipient")
 			}
 		}
-	case "/v1/cloud-clipboard-enable-device", "/v1/cloud-clipboard-decrypt":
-		if v.Nonce != "" || v.Ciphertext != "" || v.ClientEventID != "" ||
-			v.Scope != "" || v.Kind != "" || v.TargetDeviceID != "" ||
-			v.EphemeralKey != "" || v.WrappedKey != "" || v.NodeID != 0 || v.DeviceID != "" ||
-			(r.URL.Path == "/v1/cloud-clipboard-enable-device" && v.ID != 0) ||
-			(r.URL.Path == "/v1/cloud-clipboard-decrypt" && v.ID == 0) {
-			return v, errors.New("invalid Clipboard device mutation")
+	case "/v1/cloud-clipboard-enable-device", "/v1/cloud-clipboard-clear":
+		if v.ID != 0 || v.DeviceID != "" || v.Content != "" ||
+			v.ClientEventID != "" || v.Kind != "" || v.TargetDeviceID != "" || v.NodeID != 0 {
+			return v, errors.New("invalid Clipboard request")
 		}
 	case "/v1/cloud-clipboard-revoke-device":
 		id, err := uuid.Parse(v.DeviceID)
-		if err != nil || id.String() != v.DeviceID || v.ID != 0 ||
-			v.Nonce != "" || v.Ciphertext != "" || v.ClientEventID != "" ||
-			v.Scope != "" || v.Kind != "" || v.TargetDeviceID != "" ||
-			v.EphemeralKey != "" || v.WrappedKey != "" || v.NodeID != 0 {
-			return v, errors.New("invalid Clipboard recipient revocation")
+		if err != nil || id.String() != v.DeviceID || v.ID != 0 || v.Content != "" ||
+			v.ClientEventID != "" || v.Kind != "" || v.TargetDeviceID != "" || v.NodeID != 0 {
+			return v, errors.New("invalid recipient revoke")
 		}
 	case "/v1/cloud-clipboard-delete":
-		if v.ID == 0 || v.DeviceID != "" || v.Nonce != "" || v.Ciphertext != "" || v.ClientEventID != "" ||
-			v.Scope != "" || v.Kind != "" || v.TargetDeviceID != "" ||
-			v.EphemeralKey != "" || v.WrappedKey != "" || v.NodeID != 0 {
+		if v.ID == 0 || v.Content != "" || v.DeviceID != "" || v.ClientEventID != "" ||
+			v.Kind != "" || v.TargetDeviceID != "" || v.NodeID != 0 {
 			return v, errors.New("invalid Clipboard delete")
 		}
-	case "/v1/cloud-clipboard-clear":
-		if v.ID != 0 || v.DeviceID != "" || v.Nonce != "" || v.Ciphertext != "" || v.ClientEventID != "" ||
-			v.Scope != "" || v.Kind != "" || v.TargetDeviceID != "" ||
-			v.EphemeralKey != "" || v.WrappedKey != "" || v.NodeID != 0 {
-			return v, errors.New("invalid Clipboard clear")
-		}
-	default:
-		return v, errors.New("unknown Clipboard mutation")
+	default: return v, errors.New("unknown Clipboard mutation")
 	}
 	return v, nil
 }
@@ -203,12 +163,6 @@ func serveDSMOwnerClipboard(w http.ResponseWriter, r *http.Request, ctx context.
 	switch r.URL.Path {
 	case "/v1/cloud-clipboard-capability":
 		output = map[string]bool{"available": true}
-	case "/v1/cloud-clipboard-vault":
-		output, err = operations.OwnerClipboardVault(ctx)
-	case "/v1/cloud-clipboard-check":
-		output, err = operations.OwnerClipboardCheck(ctx, client.ClipboardCheck{
-			Nonce: input.Nonce, Ciphertext: input.Ciphertext, Scope: input.Scope,
-		})
 	case "/v1/cloud-clipboard-devices":
 		// An older DSM Agent does not acquire v2 through a generic proxy.
 		directory, supported := agent.(interface {
@@ -239,19 +193,6 @@ func serveDSMOwnerClipboard(w http.ResponseWriter, r *http.Request, ctx context.
 			return
 		}
 		output, err = lifecycle.OwnerClipboardEnableDevice(ctx)
-	case "/v1/cloud-clipboard-decrypt":
-		lifecycle, supported := agent.(interface {
-			OwnerClipboardDecrypt(context.Context, uint64) (string, error)
-		})
-		if !supported {
-			http.Error(w, "recipient decrypt unsupported", http.StatusNotImplemented)
-			return
-		}
-		var clear string
-		clear, err = lifecycle.OwnerClipboardDecrypt(ctx, input.ID)
-		if err == nil {
-			output = map[string]string{"text": clear}
-		}
 	case "/v1/cloud-clipboard-file":
 		// One current Owner Files node is read using the same authenticated
 		// Agent and independent Files ACL. No Clipboard item grants access.
@@ -292,9 +233,8 @@ func serveDSMOwnerClipboard(w http.ResponseWriter, r *http.Request, ctx context.
 		output = map[string]bool{"revoked": err == nil}
 	case "/v1/cloud-clipboard-create":
 		output, err = operations.OwnerClipboardCreate(ctx, client.ClipboardWrite{
-			ClientEventID: input.ClientEventID, Kind: input.Kind, Nonce: input.Nonce,
-			Ciphertext: input.Ciphertext, TargetDeviceID: input.TargetDeviceID,
-			EphemeralKey: input.EphemeralKey, WrappedKey: input.WrappedKey, NodeID: input.NodeID,
+			ClientEventID: input.ClientEventID, Kind: input.Kind,
+			Content: input.Content, TargetDeviceID: input.TargetDeviceID, NodeID: input.NodeID,
 		})
 	case "/v1/cloud-clipboard-delete":
 		err = operations.OwnerClipboardDelete(ctx, input.ID)
