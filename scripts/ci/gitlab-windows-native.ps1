@@ -41,7 +41,7 @@ try {
                 }
             }
             foreach ($scenario in @('Invoke-Transaction "snapshot-deadbeefdead"', 'Invoke-Transaction $TargetVersion')) {
-                if ($upgradeSource.Split(@($scenario), [System.StringSplitOptions]::None).Length -ne 2) {
+                if ([regex]::Matches($upgradeSource, [regex]::Escape($scenario)).Count -ne 1) {
                     throw "Windows upgrade source must contain one required $scenario scenario"
                 }
             }
