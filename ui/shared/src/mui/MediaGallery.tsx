@@ -169,6 +169,14 @@ import { xDriveMobileGalleryDockBottom, xDriveMobileGalleryGlobalInset } from '.
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { XDriveMediaGalleryPhotoWall } from './MediaGalleryPhotoWall'
+import { XDriveMediaGalleryFramingControls } from './MediaGalleryFramingControls'
+import {
+  XDRIVE_MEDIA_GALLERY_VIEW_PREFERENCES_KEY,
+  xDriveMediaGalleryFramingStyles,
+  xDriveMediaGalleryObserveFraming,
+  xDriveMediaGalleryWriteFraming,
+} from './MediaGalleryPhotoWallFraming'
+import type { XDriveMediaGalleryFraming } from './MediaGalleryPhotoWallFraming'
 import { XDriveMediaGalleryDateNavigation } from './MediaGalleryDateNavigation'
 import {
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
@@ -5128,7 +5136,7 @@ type MediaGalleryTimeScale = 'year' | 'month' | 'day' | 'all'
 
 type MediaGalleryDensityPreferences = Record<MediaGalleryTimeScale, number>
 
-type MediaGalleryAspectMode = 'crop' | 'contain'
+type MediaGalleryAspectMode = XDriveMediaGalleryFraming
 
 type MediaGalleryViewPreferences = {
   timeScale: MediaGalleryTimeScale
@@ -5136,7 +5144,6 @@ type MediaGalleryViewPreferences = {
   aspectMode: MediaGalleryAspectMode
 }
 
-const XDRIVE_MEDIA_GALLERY_VIEW_PREFERENCES_KEY = 'xdrive.gallery.view-preferences.v1'
 const XDRIVE_MEDIA_GALLERY_DEFAULT_DENSITY: MediaGalleryDensityPreferences = {
   year: 96,
   month: 144,
@@ -5658,9 +5665,13 @@ export function XDriveMediaGallery({
   const [albumDialogError, setAlbumDialogError] = useState('')
   const [deleteAlbumOpen, setDeleteAlbumOpen] = useState(false)
 
-  useEffect(() => {
-    xDriveWriteMediaGalleryViewPreferences(viewPreferences)
-  }, [viewPreferences])
+  // Framing is shared live with the trusted Places sheet, which does not
+  // control Gallery time-scale or density. Do not publish stale whole-gallery
+  // preference snapshots from a passive React effect.
+  useEffect(() => xDriveMediaGalleryObserveFraming(next => {
+    setViewPreferences(current => current.aspectMode === next
+      ? current : {...current, aspectMode: next})
+  }), [])
   // Both an opened Places sheet and a mounted Gallery may change the same
   // visual density. Listen for same-document and cross-tab preference edits;
   // do not write a stale four-scale snapshot on every Gallery re-render.
@@ -5786,6 +5797,10 @@ export function XDriveMediaGallery({
     if (nextScale === timeScale) return
     setViewAnchorRevision((current) => current + 1)
     setViewPreferences((current) => ({ ...current, timeScale: nextScale }))
+    // Narrow write: preserve the latest crop/contain choice from Places.
+    xDriveWriteMediaGalleryViewPreferences({
+      ...xDriveReadMediaGalleryViewPreferences(), timeScale: nextScale,
+    })
   }, [timeScale])
 
   const updateGalleryDensity = useCallback((value: number, anchorViewportTop?: number) => {
@@ -5820,6 +5835,11 @@ export function XDriveMediaGallery({
         [effectiveTimeScale]: normalized,
       },
     }))
+    const stored = xDriveReadMediaGalleryViewPreferences()
+    xDriveWriteMediaGalleryViewPreferences({
+      ...stored,
+      densityByScale: {...stored.densityByScale, [effectiveTimeScale]: normalized},
+    })
   }, [compactGallery, effectiveTimeScale, minTileWidth, mobileColumns, mobileWebChrome, viewAnchorRevision])
 
   const updateGalleryAspectMode = useCallback((nextMode: MediaGalleryAspectMode) => {
@@ -5827,6 +5847,7 @@ export function XDriveMediaGallery({
     // Same logical rows/columns in either mode; preserve the visible anchor.
     setViewAnchorRevision((current) => current + 1)
     setViewPreferences((current) => ({ ...current, aspectMode: nextMode }))
+    xDriveMediaGalleryWriteFraming(nextMode)
   }, [aspectMode])
 
   const jumpToTimelineGroup = useCallback((group: MediaTimelineGroupIndex) => {
@@ -6900,19 +6921,9 @@ export function XDriveMediaGallery({
       data-xdrive-gallery-aspect-mode={aspectMode}
       sx={{
         minWidth: 0,
-        // Do not change the square grid's row heights/virtual range. Only stop
-        // cropping the already-decoded still/video/Live thumbnail image.
-        '& [data-xdrive-media-tile] img': {
-          objectFit: aspectMode === 'contain' ? 'contain' : 'cover',
-          // Scale feedback now belongs to the shared Gallery/Places Host.
-          transformOrigin: 'center',
-        },
-        // The progress raster must use the same fitting rule as its final
-        // thumbnail: otherwise transparent edges drift in '完整显示' mode.
-        '& [data-xdrive-media-tile] [data-xdrive-media-loading-progress]': {
-          maskSize: aspectMode === 'contain' ? 'contain' : 'cover',
-          WebkitMaskSize: aspectMode === 'contain' ? 'contain' : 'cover',
-        },
+        // Identical presentation for Gallery and trusted Places: no media
+        // reread or geometry change when switching crop/contain.
+        ...xDriveMediaGalleryFramingStyles(aspectMode),
         // Reserve space for the wide Inspector only in the committed layout.
         // Never animate a virtual grid's width: a 160ms padding-right
         // transition repeatedly recomputes columns, offsets and scroll anchors.
@@ -7224,26 +7235,10 @@ export function XDriveMediaGallery({
                 onReturn={returnToTimelineAnchor}
               />
             ) : null}
-            <Stack direction="row" spacing={0.25} aria-label="照片墙显示比例">
-              <Button
-                size="small"
-                variant={aspectMode === 'crop' ? 'contained' : 'text'}
-                aria-pressed={aspectMode === 'crop'}
-                data-xdrive-gallery-aspect-crop
-                onClick={() => updateGalleryAspectMode('crop')}
-              >
-                方形裁切
-              </Button>
-              <Button
-                size="small"
-                variant={aspectMode === 'contain' ? 'contained' : 'text'}
-                aria-pressed={aspectMode === 'contain'}
-                data-xdrive-gallery-aspect-contain
-                onClick={() => updateGalleryAspectMode('contain')}
-              >
-                原比例完整显示
-              </Button>
-            </Stack>
+            <XDriveMediaGalleryFramingControls
+              surface="gallery" framing={aspectMode}
+              onChange={updateGalleryAspectMode}
+            />
             <Stack direction="row" spacing={1} alignItems="center">
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
                 缩略图大小
@@ -8210,6 +8205,7 @@ export function XDriveMediaGallery({
       {showPhotoCollection ? (
         <Box data-xdrive-gallery-photo-wall>
         <XDriveMediaGalleryPhotoWall surface="gallery"
+          framing={aspectMode}
           pinch={compactGallery && !selectionMode && !mobileCollectionsOverview ? {
             columns: mobileColumns,
             minColumns: XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
