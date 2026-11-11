@@ -26,7 +26,7 @@ available() {
   done
   return 1
 }
-for item in xdrive-linux-amd64 xdrive-windows-amd64 xdrive-backup-cli xdrivenas-spk; do
+for item in xdrive-linux-amd64 xdrive-windows-amd64 xdrive-backup-cli xdrive-standalone-cli xdrivenas-spk; do
   if ! available "$item"; then
     echo "::notice::No exact-run $item artifact for $GITHUB_SHA; omit this platform."
     continue

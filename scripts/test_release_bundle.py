@@ -100,6 +100,34 @@ class BundleCacheTests(unittest.TestCase):
                     _verify_sigstore_manifest(raw, sha, "master")
 
 
+    def test_strict_host_requires_platform_immutability_before_accepting_signed_manifest(self):
+        from release_bundle import _verify_published_release
+        raw = json.dumps(self.manifest, sort_keys=True).encode()
+        sha = self.manifest["commit"]
+        ref = {"ref": "refs/tags/bundle-" + sha,
+               "object": {"type": "commit", "sha": sha}}
+        asset = self.manifest["artifacts"][0]
+        release = {"tag_name": "bundle-" + sha, "draft": False,
+                   "prerelease": True, "immutable": False, "assets": [
+                       {"name": "release-bundle.json", "size": len(raw),
+                        "digest": "sha256:" + hashlib.sha256(raw).hexdigest()},
+                       {"name": asset["filename"], "size": asset["size"],
+                        "digest": "sha256:" + asset["sha256"]},
+                   ]}
+        # Existing opt-in HTTPS Host behavior remains backwards compatible.
+        _verify_published_release(sha, raw, self.manifest, ref, release)
+        # Signing alone is NOT an immutable GitHub Release.
+        with self.assertRaisesRegex(ValueError, "mutable"):
+            _verify_published_release(sha, raw, self.manifest, ref, release,
+                                      require_immutable=True)
+        release["immutable"] = True
+        _verify_published_release(sha, raw, self.manifest, ref, release,
+                                  require_immutable=True)
+        release["assets"][-1]["digest"] = "sha256:" + "0" * 64
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            _verify_published_release(sha, raw, self.manifest, ref, release,
+                                      require_immutable=True)
+
     def test_short_sha_rejected(self):
         self.manifest["commit"] = "a" * 12
         with self.assertRaises(ValueError):
