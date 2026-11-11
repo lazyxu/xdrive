@@ -523,11 +523,11 @@ func (c *agentController) Run() {
 			cancel()
 			if err == nil {
 				c.setSnapshot(func(s *agentSnapshot) {
+					// Root() proves this session can authenticate; it is not
+					// evidence that a concurrently running Mount reconciliation
+					// completed. Only Mount events may transition SyncStatus or
+					// clear a Mount error after real work succeeds.
 					s.AuthStatus = "已登录"
-					if !s.HasConflict {
-						s.SyncStatus = "同步正常"
-					}
-					s.LastError = ""
 				})
 				return
 			}

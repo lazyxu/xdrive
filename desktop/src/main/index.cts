@@ -80,14 +80,22 @@ import {
   sourceRunIsTerminal,
   sourceRunNotificationPresentation,
   sourceRunNotificationTarget,
-  mountSyncCompletionPresentation,
+  sourceRunShouldNotify,
   type SourceRunNotificationTarget,
 } from './source_run_notification.cjs'
+import {
+  MountRunNotificationTracker,
+  mountRunNotificationTarget,
+  mountRunNotificationPresentation,
+  mountRunShouldNotify,
+  type MountRunNotificationTarget,
+} from './mount_run_notification.cjs'
 import {
   defaultDesktopPreferences,
   normalizeDesktopPreferences,
   resolveWindowBounds,
   type DesktopPreferences,
+  type DesktopSyncNotificationLevel,
 } from './window_preferences.cjs'
 import {
   automaticLoginProfile,
@@ -333,7 +341,7 @@ import {
 
 
 type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'sync-activity' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
-type DesktopNavigationIntent = DesktopViewTarget | SourceRunNotificationTarget
+type DesktopNavigationIntent = DesktopViewTarget | SourceRunNotificationTarget | MountRunNotificationTarget
 
 type AgentConnectionState = {
   connected: boolean
@@ -882,6 +890,8 @@ let agentUpdateState: AgentUpdateState | null = null
 let agentMonitor: AbortController | null = null
 let transferMonitor: AbortController | null = null
 let sourceRunMonitor: AbortController | null = null
+let mountRunMonitor: AbortController | null = null
+const mountRunNotificationTracker = new MountRunNotificationTracker()
 let updateMonitor: AbortController | null = null
 const viewportRequests = new DesktopViewportRequests()
 const filePropertiesRequests = new Map<string, AbortController>()
@@ -1080,6 +1090,7 @@ function publicDesktopPreferences() {
     appearance: desktopPreferences.appearance,
     start_at_login: desktopPreferences.start_at_login,
     close_to_tray: desktopPreferences.close_to_tray,
+    sync_notification_level: desktopPreferences.sync_notification_level,
   }
 }
 
@@ -1646,6 +1657,11 @@ async function setCloseToTray(enabled: boolean) {
     close_to_tray: enabled,
     close_behavior_prompted: true,
   })
+  return publicDesktopPreferences()
+}
+
+async function setSyncNotificationLevel(level: DesktopSyncNotificationLevel) {
+  await saveDesktopPreferences({ ...desktopPreferences, sync_notification_level: level })
   return publicDesktopPreferences()
 }
 
@@ -2621,10 +2637,6 @@ function notifyAgentTransition(previous: AgentConnectionState, next: AgentConnec
   if (after.conflict_count > before.conflict_count) {
     requestTaskbarAttention()
     showDesktopNotification('xDrive 冲突', `${after.conflict_count} 个未解决冲突需要处理。`, 'conflicts')
-  } else if (before.sync_status === '正在同步' && after.sync_status === '同步正常') {
-    // Mount completion carries no changed-file receipt or byte totals.
-    const presentation = mountSyncCompletionPresentation()
-    showDesktopNotification(presentation.title, presentation.body, 'sync-activity')
   }
 
   if (before.auth_status !== after.auth_status && (after.auth_status === '登录已过期' || after.auth_status === '账户已禁用')) {
@@ -2685,15 +2697,19 @@ function publishAgentState(next: AgentConnectionState) {
       next.status.must_change_password === true
   )) closeSecureBaiduMapWindow()
   const changed = JSON.stringify(previous) !== JSON.stringify(next)
-  if (
-    previous.status &&
-    next.status &&
-    (
-      previous.status.configured !== next.status.configured ||
-      previous.status.auth_status !== next.status.auth_status
-    )
+  if (previous.status?.server !== next.status?.server ||
+      previous.status?.username !== next.status?.username) {
+    // Both histories are Owner-scoped. Never replay a terminal record or
+    // deliver another Owner's notification after a session switch.
+    resetSourceRunNotificationState()
+    mountRunNotificationTracker.reset()
+  } else if (
+    previous.status && next.status &&
+    (previous.status.configured !== next.status.configured ||
+     previous.status.auth_status !== next.status.auth_status)
   ) {
     resetSourceRunNotificationState()
+    mountRunNotificationTracker.reset()
   }
   if (changed) notifyAgentTransition(previous, next)
   agentState = next
@@ -3314,7 +3330,8 @@ function publishSourceRunSnapshot(rows: Array<{ source: AgentSource; run?: Agent
       previous.runID !== run.id ||
       !sourceRunIsTerminal(previous.status)
     )
-    if (!initializing && becameTerminal) {
+    if (!initializing && becameTerminal &&
+        sourceRunShouldNotify(run, desktopPreferences.sync_notification_level)) {
       const presentation = sourceRunNotificationPresentation(row.source, run)
       const target = sourceRunNotificationTarget(
         row.source.id, run.id, agentState.status ?? {},
@@ -3359,10 +3376,59 @@ function startSourceRunMonitor() {
   })()
 }
 
+function startMountRunMonitor() {
+  mountRunMonitor?.abort()
+  const monitor = new AbortController()
+  mountRunMonitor = monitor
+  void (async () => {
+    while (!monitor.signal.aborted) {
+      try {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        if (monitor.signal.aborted) return
+        const owner = agentState.status
+        if (!agentState.connected || !owner?.configured || owner.auth_status !== '已登录' ||
+            !owner.server || !owner.username ||
+            !hello.capabilities.includes('sync-activity-history')) {
+          // First eligible response after login/reconnect is a baseline, not
+          // permission to send notifications from old history.
+          mountRunNotificationTracker.reset()
+          await wait(5_000, monitor.signal)
+          continue
+        }
+        const identity = JSON.stringify([owner.server, owner.username])
+        const page = await requireAgentClient().syncActivityRuns(30)
+        if (monitor.signal.aborted) return
+        const current = agentState.status
+        if (!agentState.connected || !current ||
+            current.server !== owner.server || current.username !== owner.username ||
+            current.auth_status !== '已登录') continue
+        for (const run of mountRunNotificationTracker.observe(identity, page.items)) {
+          if (!mountRunShouldNotify(run, desktopPreferences.sync_notification_level)) continue
+          const target = mountRunNotificationTarget(run.run_id, owner)
+          const presentation = mountRunNotificationPresentation(run)
+          if (!target || !presentation) continue
+          if (run.status === 'failed' || run.status === 'partial' || run.status === 'interrupted') {
+            requestTaskbarAttention()
+          }
+          showDesktopNotification(presentation.title, presentation.body, target)
+        }
+        await wait(owner.sync_status === '正在同步' ? 3_000 : 10_000, monitor.signal)
+      } catch {
+        if (monitor.signal.aborted) return
+        // An unavailable Agent cannot prove a terminal run. No fallback toast
+        // is generated from an optimistic status-string transition.
+        mountRunNotificationTracker.reset()
+        await wait(5_000, monitor.signal)
+      }
+    }
+  })()
+}
+
 function restartDesktopMonitors() {
   startAgentMonitor()
   startTransferMonitor()
   startSourceRunMonitor()
+  startMountRunMonitor()
   startUpdateMonitor()
 }
 
@@ -3559,6 +3625,16 @@ function registerIPCHandlers() {
     }
     try {
       return { ok: true, data: await setCloseToTray(enabled) }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+  ipcMain.handle('desktop:set-sync-notification-level', async (_event, level: unknown) => {
+    if (level !== 'errors-only' && level !== 'changes-and-errors' && level !== 'all') {
+      return { ok: false, error: { code: 'invalid_input', message: 'invalid sync notification level.' } }
+    }
+    try {
+      return { ok: true, data: await setSyncNotificationLevel(level) }
     } catch (error) {
       return { ok: false, error: agentError(error) }
     }
@@ -9832,6 +9908,7 @@ if (!primaryInstance) {
     if (trayTransferRateTimer) clearInterval(trayTransferRateTimer)
     trayTransferRateTimer = null
     sourceRunMonitor?.abort()
+    mountRunMonitor?.abort()
     updateMonitor?.abort()
     void filePreviewProxy?.close()
   })

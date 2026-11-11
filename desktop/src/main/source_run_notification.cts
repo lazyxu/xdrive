@@ -1,4 +1,5 @@
 import { formatBytes } from './byte_format.cjs'
+import type { DesktopSyncNotificationLevel } from './window_preferences.cjs'
 
 // A Source Run has a durable identifier; a Mount status transition does not.
 export type SourceRunNotificationTarget = {
@@ -20,14 +21,6 @@ export function sourceRunNotificationTarget(
   if (!Number.isSafeInteger(sourceID) || sourceID <= 0 || !id || id.length > 128 ||
       !server || !username) return null
   return { kind: 'source-run', sourceID, runID: id, server, username }
-}
-
-// No per-file counts can be inferred from Agent's "同步正常" state.
-export function mountSyncCompletionPresentation() {
-  return {
-    title: 'xDrive · 同步检查结束',
-    body: '点击查看任务中心的现有传输记录；本轮逐项文件变更尚未记录。',
-  }
 }
 
 export type SourceRunNotificationStatus =
@@ -55,6 +48,21 @@ export type SourceRunNotificationRun = {
   skipped_items: number
   transferred_bytes: number
   failed_items: number
+}
+
+// A successful scan without mutations is not a meaningful desktop toast.
+export function sourceRunShouldNotify(
+  run: SourceRunNotificationRun, level: DesktopSyncNotificationLevel,
+): boolean {
+  if (!sourceRunIsTerminal(run.status)) return false
+  if (run.status === 'failed' || run.status === 'partial' || run.failed_items > 0) return true
+  if (run.status === 'cancelled') return level === 'all'
+  if (level === 'errors-only') return false
+  if (level === 'all') return true
+  return run.mode === 'sync' && (
+    count(run.synced_file_items) + count(run.synced_directory_items) +
+    count(run.created_items) + count(run.updated_items) > 0
+  )
 }
 
 function count(value: number) {

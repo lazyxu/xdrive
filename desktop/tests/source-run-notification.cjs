@@ -5,7 +5,7 @@ const {
   sourceRunIsTerminal,
   sourceRunNotificationPresentation,
   sourceRunNotificationTarget,
-  mountSyncCompletionPresentation,
+  sourceRunShouldNotify,
 } = require('../dist/main/source_run_notification.cjs')
 
 function run(overrides = {}) {
@@ -79,11 +79,22 @@ test('source run terminal detection excludes running state', () => {
   }
 })
 
-test('mount status notification does not invent successful file transfers', () => {
-  const message = mountSyncCompletionPresentation()
-  assert.match(message.body, /任务中心/)
-  assert.match(message.body, /尚未记录/)
-  assert.doesNotMatch(message.body, /已同步 \d+/)
+test('source-run notifications default to material sync changes or failures', () => {
+  const quiet = run({
+    synced_file_items: 0, synced_directory_items: 0,
+    created_items: 0, updated_items: 0,
+    failed_items: 0, transferred_bytes: 0,
+  })
+  assert.equal(sourceRunShouldNotify(quiet, 'changes-and-errors'), false)
+  assert.equal(sourceRunShouldNotify(quiet, 'all'), true)
+  assert.equal(sourceRunShouldNotify(run({ mode: 'scan' }), 'changes-and-errors'), false)
+  assert.equal(sourceRunShouldNotify(run({ failed_items: 4 }), 'errors-only'), true)
+  assert.equal(sourceRunShouldNotify(run({ status: 'failed', failed_items: 0 }), 'errors-only'), true)
+  assert.equal(sourceRunShouldNotify(run({ status: 'partial', failed_items: 0 }), 'errors-only'), true)
+  assert.equal(sourceRunShouldNotify(run(), 'changes-and-errors'), true)
+  assert.equal(sourceRunShouldNotify(run(), 'errors-only'), false)
+  assert.equal(sourceRunShouldNotify(run({ status: 'cancelled' }), 'changes-and-errors'), false)
+  assert.equal(sourceRunShouldNotify(run({ status: 'running' }), 'all'), false)
 })
 
 test('source-run deep links keep run identity and enforce an account scope', () => {
