@@ -181,6 +181,21 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             return
         }
         errorMessage = nil
+        // Capture the only-new boundary at the user's native confirmation,
+        // BEFORE any awaited Server preflight. Do not persist it yet: a
+        // rejected Owner/Device/Source/Target must not leave a durable queue
+        // checkpoint from a backup plan that was never enabled.
+        let consentEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
+        do {
+            if startRule == .onlyNew {
+                consentEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+            } else {
+                consentEpoch = nil
+            }
+        } catch {
+            errorMessage = "无法读取当前 PhotoKit 增量基准；自动备份未开启。"
+            return
+        }
         var configured = false
         do {
             let first = try await login.verifiedAuthorization()
@@ -226,16 +241,6 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 return
             }
             try Task.checkCancellation()
-            // Only the explicitly consented "only new" plan installs a
-            // PhotoKit cursor. This records candidates, not Server receipts.
-            // Reusing an earlier baseline is safer than skipping old edits.
-            if startRule == .onlyNew {
-                let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
-                    owner: selected
-                )
-                _ = try await changeQueue.installNewOnlyBaseline(owner: selected)
-                try Task.checkCancellation()
-            }
             // An Owner/permission switch while awaiting PhotoKit must not
             // activate a now-stale consent or create a running schedule.
             let second = try await login.verifiedAuthorization()
@@ -261,6 +266,28 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   managed.destination == expectedDestination,
                   UIApplication.shared.applicationState == .active else {
                 throw XDriveIOSNativeSessionError.staleSession
+            }
+            if let consentEpoch {
+                // Persist the original, consent-time PhotoKit token ONLY after
+                // the current managed target was authenticated. New imports
+                // or edits during Server verification remain replayable from
+                // this token, including imports with old capture dates.
+                // Existing baselines are never advanced over pending edits.
+                let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                    owner: selected
+                )
+                _ = try await changeQueue.installNewOnlyBaseline(
+                    owner: selected,
+                    consentToken: consentEpoch.serialized,
+                    consentAuthorization: consentEpoch.authorization
+                )
+                try Task.checkCancellation()
+                guard displayEpoch == uiEpoch,
+                      store.localStopGeneration == stopVersion,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                      UIApplication.shared.applicationState == .active,
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                else { throw XDriveIOSNativeSessionError.staleSession }
             }
             schedule = try store.configure(
                 owner: selected, minutes: minutes, allowICloud: allowICloud,
