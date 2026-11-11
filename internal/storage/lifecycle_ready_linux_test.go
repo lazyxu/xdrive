@@ -16,7 +16,7 @@ func TestReadyRejectsUnreadablePersistentLifecycleLocks(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("requires native non-root permission enforcement")
 	}
-	for _, relative := range []string{TempLifecycleLockFile, filepath.Join(CASLifecycleLockDir, "ab.lock"), filepath.Join(LocalPushStageLifecycleLockDir, "ab.lock")} {
+	for _, relative := range []string{TempLifecycleLockFile, ViewerCacheLifecycleLockFile, filepath.Join(CASLifecycleLockDir, "ab.lock"), filepath.Join(LocalPushStageLifecycleLockDir, "ab.lock")} {
 		t.Run(relative, func(t *testing.T) {
 			root := t.TempDir()
 			local, err := NewLocal(root)

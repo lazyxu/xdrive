@@ -152,6 +152,11 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, storage.TempLifecycleLockFile), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The Viewer eviction/read lifecycle lock must remain an active zero-byte
+	// inode across restarts; it is not a backup orphan or disposable cache.
+	if err := os.WriteFile(filepath.Join(root, storage.ViewerCacheLifecycleLockFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	// 256 persistent, zero-byte CAS lifecycle lock inodes are internal state.
 	casLockDir := filepath.Join(root, storage.CASLifecycleLockDir)
 	if err := os.MkdirAll(casLockDir, 0o750); err != nil {
@@ -190,7 +195,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	}
 	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
 		report.IgnoredTemps != 6 || report.IgnoredDerived != 0 ||
-		report.SkippedDerivedDirs != 1 || report.IgnoredCASLocks != 256 {
+		report.SkippedDerivedDirs != 1 || report.IgnoredCASLocks != 513 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {
@@ -234,6 +239,12 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		{storage.CASLifecycleLockDir + "/gg.lock", nil},
 		{storage.CASLifecycleLockDir + "/00.lock.bak", nil},
 		{storage.CASLifecycleLockDir + "/nested/00.lock", nil},
+		{storage.LocalPushStageLifecycleLockDir + "/ff.lock", []byte("unexpected")},
+		{storage.LocalPushStageLifecycleLockDir + "/gg.lock", nil},
+		{storage.LocalPushStageLifecycleLockDir + "/nested/00.lock", nil},
+		{storage.ViewerCacheLifecycleLockFile, []byte("unexpected")},
+		{storage.ViewerCacheLifecycleLockFile + ".bak", nil},
+		{"nested/" + storage.ViewerCacheLifecycleLockFile, nil},
 	}
 	for _, tc := range badCAS {
 		full := filepath.Join(root, filepath.FromSlash(tc.key))
@@ -248,7 +259,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unsafeCAS.IgnoredCASLocks != 255 {
+	if unsafeCAS.IgnoredCASLocks != 510 {
 		t.Fatalf("nonzero CAS shard lock was incorrectly ignored: %+v", unsafeCAS)
 	}
 	for _, tc := range badCAS {
@@ -263,12 +274,17 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 			t.Fatalf("unsafe CAS lock %q was not an orphan: %+v", tc.key, unsafeCAS.Orphans)
 		}
 		full := filepath.Join(root, filepath.FromSlash(tc.key))
-		if tc.key == storage.CASLifecycleLockDir+"/ff.lock" {
+		switch tc.key {
+		case storage.CASLifecycleLockDir + "/ff.lock",
+			storage.LocalPushStageLifecycleLockDir + "/ff.lock",
+			storage.ViewerCacheLifecycleLockFile:
 			if err := os.WriteFile(full, nil, 0o600); err != nil {
 				t.Fatal(err)
 			}
-		} else if err := os.Remove(full); err != nil {
-			t.Fatal(err)
+		default:
+			if err := os.Remove(full); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if len(report.HashMismatches) != 1 || report.HashMismatches[0].NodeID != hashID {
@@ -299,7 +315,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !report.OK() || report.IgnoredCASLocks != 256 || report.SkippedDerivedDirs != 1 {
+	if !report.OK() || report.IgnoredCASLocks != 513 || report.SkippedDerivedDirs != 1 {
 		t.Fatalf("repaired storage with valid shard locks / ignored caches not OK: %+v; okID=%d", report, okID)
 	}
 
@@ -558,24 +574,42 @@ func TestHashFileWithContextRejectsCancelledWork(t *testing.T) {
 	}
 }
 
-func TestIsCASLifecycleLockFileStrictShape(t *testing.T) {
+func TestRegisteredLifecycleLockKeysStrictShape(t *testing.T) {
+	keys := registeredLifecycleLockKeys()
+	registeredCount := 0
+	for _, family := range storage.LifecycleLockFamilies() {
+		registeredCount += len(family.Names)
+	}
+	if len(keys) != registeredCount {
+		t.Fatalf("duplicate or invalid registered lifecycle lock paths: %d unique, %d declared", len(keys), registeredCount)
+	}
 	for _, tc := range []struct {
 		key string
 		ok  bool
 	}{
+		{storage.TempLifecycleLockFile, true},
+		{storage.ViewerCacheLifecycleLockFile, true},
 		{storage.CASLifecycleLockDir + "/00.lock", true},
 		{storage.CASLifecycleLockDir + "/af.lock", true},
 		{storage.CASLifecycleLockDir + "/ff.lock", true},
+		{storage.LocalPushStageLifecycleLockDir + "/00.lock", true},
+		{storage.LocalPushStageLifecycleLockDir + "/ff.lock", true},
 		{storage.CASLifecycleLockDir + "/FF.lock", false},
 		{storage.CASLifecycleLockDir + "/gg.lock", false},
 		{storage.CASLifecycleLockDir + "/fff.lock", false},
 		{storage.CASLifecycleLockDir + "/ff.lock.bak", false},
 		{storage.CASLifecycleLockDir + "/nested/ff.lock", false},
 		{storage.CASLifecycleLockDir + "-copy/ff.lock", false},
+		{storage.LocalPushStageLifecycleLockDir + "/GG.lock", false},
+		{storage.LocalPushStageLifecycleLockDir + "/nested/00.lock", false},
+		{storage.ViewerCacheLifecycleLockFile + ".bak", false},
+		{"nested/" + storage.ViewerCacheLifecycleLockFile, false},
+		{".xdrive-unregistered-lifecycle.lock", false},
 		{"ff.lock", false},
 	} {
-		if got := isCASLifecycleLockFile(tc.key); got != tc.ok {
-			t.Errorf("isCASLifecycleLockFile(%q)=%t want %t", tc.key, got, tc.ok)
+		_, got := keys[tc.key]
+		if got != tc.ok {
+			t.Errorf("registered lifecycle lock %q=%t want %t", tc.key, got, tc.ok)
 		}
 	}
 }
