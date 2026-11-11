@@ -15,7 +15,7 @@ import sys
 import tarfile
 import zipfile
 
-FULL_SHA = re.compile(r"[a-f0-9]{40}\\Z")
+FULL_SHA = re.compile(r"[a-f0-9]{40}\Z")
 LINUX = ("linux-amd64/xd", "linux-amd64/xdrive-agent")
 WINDOWS = ("windows-amd64/xd.exe", "windows-amd64/xdrive-agent.exe")
 
@@ -53,7 +53,7 @@ def build(core, out, commit, readme=None):
     doc = Path(readme)
     if doc.is_symlink() or not doc.is_file():
         raise ValueError("standalone CLI instructions missing or symlinked")
-    instructions = doc.read_bytes() + ("\\nSource Git Commit: " + commit + "\\n").encode()
+    instructions = doc.read_bytes() + ("\nSource Git Commit: " + commit + "\n").encode()
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
         raise ValueError("standalone CLI output must be an empty directory")
