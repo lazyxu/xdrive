@@ -5,7 +5,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$(id -u)" == 0 ]] || { echo 'Run this fixture as root in an isolated runner.' >&2; exit 2; }
 command -v setpriv >/dev/null
-scratch="$(mktemp -d)"
+# This fixture intentionally drops from root to synthetic UID 65531. A GitHub
+# runner's RUNNER_TEMP can have mode 0700; mktemp can resolve its template to
+# an absolute pathname which the synthetic UID cannot traverse. Keep only
+# this disposable, randomly named fixture under the standard sticky /tmp,
+# not production xDrive state or the GitHub Runner's private workspace.
+[[ -d /tmp && -w /tmp && -x /tmp ]] || {
+  echo 'Caddy supplementary-group fixture requires traversable /tmp' >&2
+  exit 1
+}
+scratch="$(mktemp -d /tmp/xdrive-caddy-observer-groups.XXXXXXXX)"
 trap 'rm -rf -- "$scratch"' EXIT
 chmod 755 "$scratch"
 mkdir -p "$scratch/xd/config" "$scratch/xd/bin" "$scratch/xd/state/control"
