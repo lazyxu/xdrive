@@ -229,6 +229,31 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   const restoreLayout = useCallback((index:number,offset:number) => {
     setLayoutRestore({index,offset,revision:++layoutRevision.current})
   }, [])
+  // Capture the signed virtual viewport BEFORE collapsing to the eight-tile
+  // strip. Restore its numeric row/offset before the expanded grid repaints;
+  // the Parent owns fresh Cell authorization and a new Dialog epoch.
+  const collapseAnchor = useRef<{index:number;viewportOffset:number}|null>(null)
+  const previousExpanded = useRef(expanded)
+  const requestExpanded = (next:boolean) => {
+    if (!next && expanded && phase==='ready') {
+      const anchor=visibleAnchor.current
+      collapseAnchor.current = anchor &&
+        Number.isSafeInteger(anchor.index) && anchor.index>=0 && anchor.index<total &&
+        Number.isFinite(anchor.viewportOffset) ? {...anchor} : null
+    }
+    onExpand(next)
+  }
+  useLayoutEffect(() => {
+    const wasExpanded=previousExpanded.current
+    previousExpanded.current=expanded
+    if (phase!=='ready') { collapseAnchor.current=null; return }
+    if (expanded && !wasExpanded) {
+      const anchor=collapseAnchor.current
+      collapseAnchor.current=null
+      if (anchor && anchor.index<total)
+        restoreLayout(anchor.index,anchor.viewportOffset)
+    }
+  }, [expanded,phase,total,restoreLayout])
   const changeTimeScale = (next:TimeScale) => {
     if (next===timeScale || (next!=='all' && !timelineGroups)) return
     const anchor=visibleAnchor.current
@@ -445,7 +470,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             // Reject small motions and horizontal scrolling.
             if (Math.abs(dy)<36 || Math.abs(dy)<Math.abs(dx)*1.25) return
             suppressDragClick.current = true
-            onExpand(dy<0)
+            requestExpanded(dy<0)
           }}
           onPointerCancel={event => {
             if (dragStart.current?.pointerId !== event.pointerId) return
@@ -467,7 +492,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               event.preventDefault()
               return
             }
-            onExpand(!expanded)
+            requestExpanded(!expanded)
           }}
           sx={{width:'100%',minHeight:44,display:'grid',placeItems:'center',
             border:0,p:0,bgcolor:'transparent',color:'text.primary',
@@ -487,7 +512,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
           </Box>
           <IconButton size="small" aria-label={expanded ? '收起照片抽屉' : '展开照片抽屉'}
             data-xdrive-places-photo-drawer-expand
-            onClick={() => onExpand(!expanded)}
+            onClick={() => requestExpanded(!expanded)}
             sx={{minWidth:44,minHeight:44}}>
             {expanded ? <ExpandMoreRoundedIcon /> : <ExpandLessRoundedIcon />}
           </IconButton>

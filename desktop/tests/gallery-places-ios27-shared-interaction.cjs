@@ -46,8 +46,9 @@ test('photo drawer drag handle offers mouse/keyboard click and touch/pen swipe',
   assert.match(sheet, /suppressDragClick\.current = true/)
   assert.match(sheet, /Math\.abs\(dy\)<36/)
   assert.match(sheet, /Math\.abs\(dy\)<Math\.abs\(dx\)\*1\.25/)
-  assert.match(sheet, /onExpand\(dy<0\)/)
-  assert.match(sheet, /onExpand\(!expanded\)/)
+  assert.match(sheet, /requestExpanded\(dy<0\)/)
+  assert.match(sheet, /requestExpanded\(!expanded\)/)
+  assert.match(sheet, /const requestExpanded = \(next:boolean\) => \{[\s\S]*?onExpand\(next\)/)
   const handle = sheet.slice(sheet.indexOf('component="button" type="button"'),
     sheet.indexOf('<Stack direction="row" spacing={1}'))
   assert.doesNotMatch(handle, /<IconButton/)
