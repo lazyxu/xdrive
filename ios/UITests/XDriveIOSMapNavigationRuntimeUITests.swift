@@ -487,7 +487,16 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         coverShot.name = "native-mapkit-exact-two-photo-marker"
         coverShot.lifetime = .keepAlways
         add(coverShot)
-        marker.tap()
+        // MapKit's real MKAnnotation accessibility button may reject the
+        // generic AX scroll-to-visible action although its 68pt frame is
+        // already within the visible map. Tap its actual physical center
+        // through XCTest coordinates, never a synthetic route or fake Cell.
+        let canvas = element("native-ios-full-library-gps-map", in: app)
+        let frame = marker.frame
+        XCTAssertFalse(frame.isEmpty, "Exact-two MapKit marker must have a real frame")
+        XCTAssertTrue(frame.intersects(canvas.frame),
+                      "Real GPS marker must be inside the visible map canvas")
+        marker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let firstTile = element("native-ios-map-photo-wall-tile", in: app)
         XCTAssertTrue(firstTile.waitForExistence(timeout: 60),
                       "Map place sheet did not load the real 48-item PhotoKit wall")
