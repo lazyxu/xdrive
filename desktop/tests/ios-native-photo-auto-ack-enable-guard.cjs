@@ -73,3 +73,28 @@ test('runtime manual and automatic original runs consult global existing Owner p
   assert.match(pause, /try persist\(state, owner: owner\)/)
   assert.doesNotMatch(pause, /windowIndex =|nextDueAt =|libraryChangeEpoch =|libraryAuthorizationRaw =|disable\(/)
 })
+
+
+test('only-new consent epoch is persisted after verified managed target without skipping in-flight PhotoKit edits', () => {
+  const queue = read('ios/XDriveIOS/PhotoKitPersistentBackupQueue.swift')
+  const capture = configure.indexOf('consentEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()')
+  const firstAuth = configure.indexOf('let first = try await login.verifiedAuthorization()')
+  const managed = configure.indexOf('.readExistingForUpload(owner: selected')
+  const target = configure.indexOf('managed.destination == expectedDestination')
+  const install = configure.indexOf('.installNewOnlyBaseline(')
+  const persistPlan = configure.indexOf('schedule = try store.configure(')
+  assert.ok(capture >= 0 && capture < firstAuth)
+  assert.ok(firstAuth < managed && managed < target && target < install &&
+    install < persistPlan, 'a failed managed target may never advance the baseline')
+  assert.equal(configure.split('.installNewOnlyBaseline(').length - 1, 1)
+  assert.match(configure, /consentToken: consentEpoch\.serialized/)
+  assert.match(configure, /consentAuthorization: consentEpoch\.authorization/)
+  const overload = queue.slice(queue.indexOf('    func installNewOnlyBaseline(\n'),
+    queue.indexOf('    /// Read only, bounded'))
+  assert.match(overload, /NSKeyedUnarchiver\.unarchivedObject/)
+  assert.match(overload, /store\.installBaselineIfAbsent\(/)
+  assert.match(overload, /token: consentToken, authorization: consentAuthorization/)
+  assert.match(overload, /after\.authorization == consentAuthorization/)
+  assert.doesNotMatch(overload, /token: before\.serialized/)
+  assert.doesNotMatch(configure, /existing.*reset.*baseline/i)
+})
