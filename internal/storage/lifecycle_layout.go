@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 )
 
-// LifecycleLockFamily describes persistent zero-byte lock inodes. Register new
-// families here so preparation and runtime readiness cover the same namespaces.
+// LifecycleLockFamily describes persistent zero-byte lock inodes. Register EVERY
+// new persistent lock writer here: runtime readiness and the storage verifier
+// derive their allowlists from this same inventory. Never unlink active locks.
 type LifecycleLockFamily struct {
 	Directory string
 	Names     []string
@@ -21,7 +22,7 @@ func LifecycleLockFamilies() []LifecycleLockFamily {
 		shards[i] = fmt.Sprintf("%02x.lock", i)
 	}
 	return []LifecycleLockFamily{
-		{Names: []string{TempLifecycleLockFile}},
+		{Names: []string{TempLifecycleLockFile, ViewerCacheLifecycleLockFile}},
 		{Directory: CASLifecycleLockDir, Names: shards},
 		{Directory: LocalPushStageLifecycleLockDir, Names: shards},
 	}
