@@ -106,8 +106,6 @@ type VerifyReport struct {
 	IgnoredTemps       int                        `json:"ignored_temporary_files"`
 	IgnoredDerived     int                        `json:"ignored_derived_files"`
 	SkippedDerivedDirs int                        `json:"skipped_derived_directories"`
-	// IgnoredCASLocks is the legacy Go field name; JSON counts ALL registered
-	// non-temporary persistent lifecycle locks (CAS, LocalPush, Viewer, ...).
 	IgnoredCASLocks    int                        `json:"ignored_internal_lock_files"`
 }
 
