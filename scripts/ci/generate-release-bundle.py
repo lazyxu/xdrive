@@ -18,6 +18,8 @@ KNOWN = (
     ("windows", "xDriveSetup-amd64.exe"),
     ("cli", "xdrive-backup-linux-amd64.tar.gz"),
     ("cli", "xdrive-backup-windows-amd64.zip"),
+    ("cli", "xdrive-cli-linux-amd64.tar.gz"),
+    ("cli", "xdrive-cli-windows-amd64.zip"),
     ("dsm", "xdrivenas-armada38x-*.spk"),
     ("ios", "xDrive-unsigned.ipa"),
     ("android", "xdrive-android-*.apk"),
