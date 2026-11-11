@@ -39,10 +39,11 @@ struct NativeCurrentPhotoReceiptPolicyChecks {
         // Existing upload and ZIP64 writers accept originals beyond 1 GiB.
         // Receipt readback must not convert a valid large Node into a false
         // "unverified" result; only non-positive sizes are invalid.
-        for bytes: Int64 in [
+        let testedSizes: [Int64] = [
             1, 1_073_741_824, 1_073_741_825,
             5 * 1_073_741_824, Int64.max
-        ] {
+        ]
+        for bytes in testedSizes {
             precondition(Policy.fitsStagedPayload(bytes: bytes, isLiveArchive: false))
             precondition(Policy.fitsStagedPayload(bytes: bytes, isLiveArchive: true))
         }
