@@ -111,7 +111,7 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(cloud, /native-ios-owner-map-stale-count/)
   assert.match(cloud, /fixedSize\(horizontal: false, vertical: true\)/)
   assert.match(simulator, /func testMapCameraLayoutAndUnverifiedGestureNeverClosesTheApp\(/)
-  assert.match(simulator, /func testTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap\(/)
+  assert.match(simulator, /func testAFirstTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap\(/)
   assert.match(simulator, /map\.swipeLeft\(\)/)
   assert.match(simulator, /map\.pinch\(withScale: 1\.4, velocity: 1\.0\)/)
   assert.match(simulator, /XCUIDevice\.shared\.orientation = \.landscapeLeft/)
