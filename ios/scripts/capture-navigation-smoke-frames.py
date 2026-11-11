@@ -97,6 +97,13 @@ TARGETS = {
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
+    # New native compositional Viewer/Files/Gallery continuity journeys.
+    "testLocalPhotoDateSheetThenCloudDeniedFilesReturnsLocalChild",
+    "testCloudOriginalsHelpThenFilesSearchKeyboardReturnsOriginalsChild",
+    "testFilesOperationHistoryThenGalleryFilterReturnsSameNativeFilesRail",
+    "testFilesQuickRailLandscapeThenGalleryOriginalsPortraitKeepsChildren",
+    "testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope",
+    "testFilesSearchGalleryPeopleBackAndQuickRailRemainAccessible",
     "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",
     "testGalleryDismissedFilterThenForegroundDoesNotRebuildWall",
     "testGalleryPeopleBackThenForegroundKeepsVerifiedWall",

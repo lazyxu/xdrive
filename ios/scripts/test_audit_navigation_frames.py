@@ -137,7 +137,7 @@ class AuditTests(unittest.TestCase):
         watcher = (repo / 'ios' / 'scripts' /
                    'capture-navigation-smoke-frames.py').read_text(encoding='utf-8')
         registered = set(re.findall(r'"(test\w+)"', watcher))
-        self.assertGreaterEqual(len(cases), 70)
+        self.assertGreaterEqual(len(cases), 76)
         self.assertFalse(cases - registered,
                          'untested native routes: ' + ', '.join(sorted(cases - registered)))
         self.assertIn('FRAME_OFFSETS_SECONDS[-1:] if name in MINIMAL_TARGETS', watcher)
