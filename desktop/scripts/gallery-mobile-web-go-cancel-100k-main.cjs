@@ -6,14 +6,31 @@ const path = require('node:path')
 const { spawn, execFileSync } = require('node:child_process')
 const { performance } = require('node:perf_hooks')
 const { app, BrowserWindow } = require('electron')
+const {
+  xDriveStartViewerFirstFrameProbe,
+  xDriveReadViewerFirstFrameProbe,
+  xDriveStopViewerFirstFrameProbe,
+} = require('./viewer-first-frame-probe.cjs')
+
+const {
+  startViewerFirstFrameHTTPSProxy,
+  installPinnedViewerFixtureCertificate,
+} = require('./viewer-first-frame-https-proxy.cjs')
 
 const root = path.resolve(__dirname, '..', '..')
-const dist = path.join(root, 'web', 'dist')
+// Same signed Go fixture, same Electron runner; CI swaps only the genuine
+// production before/after Web bundle for paired first-frame measurements.
+const dist = process.env.XD_VIEWER_FF_DIST
+  ? path.resolve(process.env.XD_VIEWER_FF_DIST)
+  : path.join(root, 'web', 'dist')
 // P0-C2b1: opt-in cross-document navigation; this is not an SPA route switch.
 const p0c2PageLeaveMode = process.env.XD_PWA_P0C2_PAGELEAVE_BEFORE === '1'
 const p0c2SPAMode = process.env.XD_PWA_P0C2_SPA_BEFORE === '1'
 const p1Mode = process.env.XD_PWA_P1_100K_VIEWER_BACK === '1'
 const p1H264Mode = process.env.XD_PWA_P1_H264_VIEWER_FRAME === '1'
+const videoFirstFrameMode = process.env.XD_VIEWER_FIRST_FRAME_BENCH === '1'
+assert(!videoFirstFrameMode || p1H264Mode,
+  'first-frame benchmark requires actual Owner-signed H264 Viewer')
 const p1LiveMode = process.env.XD_PWA_P1_LIVE_MOTION_HOLD === '1'
 const p1ViewerVideoAbortMode = process.env.XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL === '1'
 // P1P is opt-in only: 100k Owner PhotoAssets backed by 115k SHA-distinct
@@ -126,20 +143,71 @@ async function visibleButtonCenter(win, label) {
   return win.webContents.executeJavaScript(`(() => {
     const label = ${JSON.stringify(label)}
     const selector = '[data-xdrive-mobile-five-slot] button'
-    const candidates = [...document.querySelectorAll(selector)].filter(button => {
+    const buttons = [...document.querySelectorAll(selector)]
+    const matching = buttons.filter(button => {
+      const accessible = button.getAttribute('aria-label') || ''
+      const text = (button.textContent || '').trim()
+      return accessible === label || text === label
+    })
+    let withinViewport = 0
+    let blockerKind = 'none'
+    let blockerTag = 'none'
+    let blockerStack = null
+    let blockerAncestorLayers = []
+    const candidates = matching.filter(button => {
       const bounds = button.getBoundingClientRect()
       const style = getComputedStyle(button)
       if (bounds.width < 2 || bounds.height < 2 || bounds.left < 0 ||
           bounds.top < 0 || bounds.right > innerWidth || bounds.bottom > innerHeight ||
           style.visibility === 'hidden' || style.pointerEvents === 'none') return false
-      const accessible = button.getAttribute('aria-label') || ''
-      const text = (button.textContent || '').trim()
-      if (accessible !== label && text !== label) return false
+      withinViewport++
       const x = bounds.left + bounds.width / 2, y = bounds.top + bounds.height / 2
       const hit = document.elementFromPoint(x, y)
-      return hit === button || button.contains(hit)
+      if (hit === button || button.contains(hit)) return true
+      // Fixed-category, anonymous obstruction telemetry. Never print actual
+      // DOM text, class strings, private Owner labels or source URLs.
+      blockerKind = !hit ? 'no-hit' :
+        hit.closest('[data-xdrive-mobile-five-slot]') ? 'inside-navigation' :
+        hit.closest('.MuiSnackbar-root') ? 'snackbar' :
+        hit.closest('.MuiBackdrop-root') ? 'modal-backdrop' :
+        hit.closest('.MuiModal-root') ? 'modal-layer' :
+        hit.closest('[role="dialog"]') ? 'dialog' :
+        hit.closest('.MuiDrawer-root') ? 'drawer' :
+        hit.closest('.MuiTooltip-popper') ? 'tooltip' :
+        hit.closest('[data-xdrive-media-gallery-virtual-grid]') ? 'gallery-grid' :
+        hit.closest('[data-xdrive-mobile-app-header]') ? 'mobile-header' :
+        hit.closest('main') ? 'main-content' :
+        hit === document.body || hit === document.documentElement ? 'document-root' : 'other'
+      blockerTag = ['DIV','MAIN','SECTION','SPAN','BUTTON','SVG','PATH','IMG','NAV','FOOTER','HEADER','ASIDE'].includes(hit?.tagName)
+        ? hit.tagName : 'other'
+      const layer = hit ? Number(getComputedStyle(hit).zIndex) : NaN
+      blockerStack = Number.isFinite(layer) && Math.abs(layer) <= 10000 ? layer : null
+      blockerAncestorLayers = []
+      for (let ancestor = hit, depth = 0; ancestor && depth < 7;
+        ancestor = ancestor.parentElement, depth++) {
+        const css = getComputedStyle(ancestor)
+        const z = Number(css.zIndex)
+        const rect = ancestor.getBoundingClientRect()
+        blockerAncestorLayers.push({
+          // Fixed enums and numbers only. Never record class names, text,
+          // attributes, Owner identities, links, auth or query details.
+          tag: ['DIV','MAIN','NAV','SECTION','FOOTER','HEADER','ASIDE','BODY','HTML'].includes(ancestor.tagName)
+            ? ancestor.tagName : 'other',
+          position: ['static','relative','absolute','fixed','sticky'].includes(css.position)
+            ? css.position : 'other',
+          z: Number.isFinite(z) && Math.abs(z) <= 10000 ? z : null,
+          large: rect.width >= innerWidth * .75 && rect.height >= innerHeight * .75,
+        })
+      }
+      return false
     })
-    if (candidates.length !== 1) return {error:'expected one visible five-slot destination '+label+'; got '+candidates.length}
+    if (candidates.length !== 1) return {
+      error:'expected one visible five-slot destination '+label+'; got '+candidates.length,
+      // Anonymous counts diagnose wrong label, geometry, or a genuine
+      // overlapping UI. Never bypass the real hit test or expose DOM text.
+      counts:{buttons:buttons.length,matching:matching.length,
+        withinViewport,unobscured:candidates.length,blockerKind,blockerTag,blockerStack,blockerAncestorLayers},
+    }
     const rect = candidates[0].getBoundingClientRect()
     return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}
   })()`, true)
@@ -154,10 +222,25 @@ function sendActualPointer(win, where) {
   win.webContents.sendInputEvent({type:'mouseUp',x:where.x,y:where.y,button:'left',clickCount:1})
 }
 async function prepareAppDestination(win, name) {
-  return until(async () => {
-    const pos = await visibleButtonCenter(win, name)
-    return pos.error ? null : pos
-  }, 25000, 'unobscured genuine five-slot destination '+name)
+  let last = null
+  try {
+    return await until(async () => {
+      const pos = await visibleButtonCenter(win, name)
+      last = pos
+      return pos.error ? null : pos
+    }, 25000, 'unobscured genuine five-slot destination '+name)
+  } catch (error) {
+    // A real UI gate remains failing. No test-only navigation or synthetic
+    // pointer is introduced. Report bounded structural flags only; never dump
+    // tokens, URLs, User/Owner data, DOM text or a private path.
+    const target = name === '文件' ? 'files' :
+      name === '图库' ? 'gallery' : 'overview'
+    const state = await safeSPARouteState(win, target)
+      .catch(() => ({rendererUnavailable:true}))
+    throw Error('P0C2_REAL_FIVE_SLOT_DIAGNOSTIC '+
+      JSON.stringify({target,buttonError:last?.error||null,hitCounts:last?.counts||null,state})+
+      ' | '+String(error))
+  }
 }
 async function safeSPARouteState(win, target) {
   return win.webContents.executeJavaScript(`(() => ({
@@ -185,16 +268,16 @@ async function switchActualApp(win, name, target) {
       ' | '+String(error))
   }
 }
-async function bootOriginalAuthenticatedApp(win, base) {
+async function bootOriginalAuthenticatedApp(win, base, fixtureControlURL = base) {
   // The token is created by the native Go fixture. It is used only in the
   // isolated Chromium session; do not log or write it to CI artifacts.
-  const response = await fetch(base + '/__perf/config', {cache:'no-store'})
+  const response = await fetch(fixtureControlURL + '/__perf/config', {cache:'no-store'})
   assert.equal(response.status, 200)
   const config = await response.json()
   assert.equal(config.logical_assets, 100000)
   assert.equal(config.physical_nodes, 115000)
   assert(typeof config.token === 'string' && config.token.length > 20)
-  const ownerResponse = await fetch(base + '/api/v1/me', {
+  const ownerResponse = await fetch(fixtureControlURL + '/api/v1/me', {
     headers: {Authorization:'Bearer '+config.token}, cache:'no-store',
   })
   assert.equal(ownerResponse.status, 200,
@@ -340,8 +423,11 @@ function p1VisiblePhotoTile() {
   const clip=host.getBoundingClientRect()
   const tiles=Array.from(grid.querySelectorAll('[data-xdrive-media-tile]'))
   for(const tile of tiles){
-    const name=tile.querySelector('.media-name')?.textContent?.trim()||''
-    if(!/^photo-\d+\.jpg$/.test(name))continue
+    // Shared production tiles expose their authentic media identity through
+    // aria-label; the old .media-name subnode was removed. Keep the genuine
+    // encoded photo fixture and tile hit test, never synthesize a click.
+    const name=tile.getAttribute('aria-label')||''
+    if(!/^photo-\d+\.jpg，照片$/.test(name))continue
     const rect=tile.getBoundingClientRect()
     if(rect.bottom<=clip.top+16||rect.top>=clip.bottom-16)continue
     const x=Math.round(rect.left+rect.width/2)
@@ -385,6 +471,27 @@ function p1ReturnedToCaller() {
   delete window.__xdriveP1Entry
   return {sameCaller:true,sameDocument:true,sameHost:true,sameGrid:true,scrollDelta:measuredScrollDelta,tiles}
 }
+// Failure-only, privacy-safe runtime evidence. Never substitute a synthetic
+// route, click or rewritten scroll position for a real Viewer Back.
+function p1GalleryReturnDiagnostic() {
+  const saved=window.__xdriveP1Entry
+  const host=document.querySelector('[data-xdrive-workspace-background] main')
+  const grid=document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+  const hasSaved=!!saved
+  const delta=hasSaved&&host instanceof HTMLElement?
+    Math.round(Math.abs(host.scrollTop-saved.scrollTop)):null
+  return {
+    hasSaved,viewerMounted:!!document.querySelector('[data-xdrive-web-viewer]'),
+    hasHost:host instanceof HTMLElement,hasGrid:grid instanceof HTMLElement,
+    sameDocument:hasSaved&&saved.document===document.documentElement,
+    sameHost:hasSaved&&saved.host===host,
+    sameGrid:hasSaved&&saved.grid===grid,
+    sameRoute:hasSaved&&saved.route===location.hash,
+    scrollDelta:delta,scrollRestored:delta!==null&&delta<=2,
+    boundedTiles:grid?grid.querySelectorAll('[data-xdrive-media-tile]').length:null,
+  }
+}
+
 async function p1MeasureRealViewerBack(win) {
   await switchActualApp(win,'图库','gallery')
   const entry=await until(async()=>win.webContents.executeJavaScript(
@@ -405,9 +512,18 @@ async function p1MeasureRealViewerBack(win) {
     '('+p1BackPoint.toString()+')()',true),12000,'real visible Viewer Back button')
   const returnedAt=performance.now()
   sendActualPointer(win,back)
-  const returned=await until(async()=>win.webContents.executeJavaScript(
-    '('+p1ReturnedToCaller.toString()+')()',true),20000,
-    'exact mounted Gallery caller route and deep scroll restoration')
+  let returned
+  try {
+    returned=await until(async()=>win.webContents.executeJavaScript(
+      '('+p1ReturnedToCaller.toString()+')()',true),20000,
+      'exact mounted Gallery caller route and deep scroll restoration')
+  } catch(error) {
+    // Do not log media identities, URLs, credentials, file names or Owner data.
+    const diagnosis=await win.webContents.executeJavaScript(
+      '('+p1GalleryReturnDiagnostic.toString()+')()',true)
+    console.error('P1_REAL_VIEWER_RETURN_DIAGNOSTIC '+JSON.stringify(diagnosis))
+    throw error
+  }
   return {passed:true,depth:entry.depth,originalDecodedMs,
     returnMs:performance.now()-returnedAt,returned,
     scope:'100k logical PhotoAssets / 115k metadata nodes, only bounded actual JPEG original',
@@ -428,8 +544,8 @@ function p1VisibleH264Tile() {
   if(extent<10000)return null
   const clip=host.getBoundingClientRect()
   for(const tile of grid.querySelectorAll('[data-xdrive-media-tile]')){
-    const name=tile.querySelector('.media-name')?.textContent?.trim()||''
-    if(!/^video-\d+\.mp4$/.test(name))continue
+    const name=tile.getAttribute('aria-label')||''
+    if(!/^video-\d+\.mp4，视频$/.test(name))continue
     const rect=tile.getBoundingClientRect()
     if(rect.bottom<=clip.top+16||rect.top>=clip.bottom-16)continue
     const x=Math.round(rect.left+rect.width/2)
@@ -534,6 +650,13 @@ async function p1MeasureRealH264ViewerMotion(win) {
   ),25000,'real 100k Owner visible deep H264 tile')
   assert(tile.depth>=0.7&&tile.tiles>0&&tile.tiles<1000,
     'real deep bounded Gallery H264 tile not visible')
+  if(videoFirstFrameMode){
+    // Install before the real pointer click to catch transient video DOM,
+    // early loadeddata and the earliest compositor-presented frame.
+    const installed=await win.webContents.executeJavaScript(
+      '('+xDriveStartViewerFirstFrameProbe.toString()+')()',true)
+    assert(installed,'real Viewer first-frame hook was not installed')
+  }
   const started=performance.now()
   sendActualPointer(win,tile)
   await until(async()=>win.webContents.executeJavaScript(
@@ -549,6 +672,22 @@ async function p1MeasureRealH264ViewerMotion(win) {
     played.presentedFrameDelta>=1&&played.width>0&&played.height>0,
     'requestVideoFrameCallback did not prove advancing decoded H264 motion')
   const presentedMs=performance.now()-started
+  const firstFrame = videoFirstFrameMode ? await win.webContents.executeJavaScript(
+    '('+xDriveReadViewerFirstFrameProbe.toString()+')()',true) : null
+  if(videoFirstFrameMode){
+    assert(firstFrame?.ready===true && firstFrame.actualSignedVideo===true &&
+      firstFrame.firstFrameMs>0 && firstFrame.firstFrameMs<=60000 &&
+      firstFrame.videoWidth>0 && firstFrame.videoHeight>0 &&
+      firstFrame.presentedFrames>0,
+      'actual authenticated H264 browser compositor first-frame measurement unavailable')
+    assert(firstFrame.urlMs>=0 && firstFrame.metadataMs>=0 &&
+      firstFrame.firstFrameMs>=firstFrame.urlMs,
+      'signed URL/metadata/first-frame chronology invalid')
+    await win.webContents.executeJavaScript(
+      '('+xDriveStopViewerFirstFrameProbe.toString()+')()',true)
+    // Log only event durations and bounded frame dimensions; never URLs.
+    console.log('XDRIVE_SIGNED_H264_FIRST_FRAME '+JSON.stringify(firstFrame))
+  }
   win.webContents.sendInputEvent({type:'mouseMove',x:18,y:20})
   const back=await until(async()=>win.webContents.executeJavaScript(
     '('+p1BackPoint.toString()+')()',true
@@ -559,6 +698,7 @@ async function p1MeasureRealH264ViewerMotion(win) {
   ),20000,'H264 Viewer Back returns to exact Gallery route and scroll')
   return {
     passed:true,deepFraction:tile.depth,presentedMs,
+    ...(videoFirstFrameMode ? {firstFrame} : {}),
     frameMediaDeltaMs:played.frameMediaDeltaMs,
     presentedFrameDelta:played.presentedFrameDelta,
     videoWidth:played.width,videoHeight:played.height,
@@ -1031,11 +1171,16 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
 }
 
 async function sampleOnce(sample, ready) {
-  let fixture = null, win = null, resourceSampler = null
+  let fixture = null, win = null, resourceSampler = null, httpsFixture = null
   try {
     fixture = await startFixture(sample, ready)
     assert.equal(fixture.config.logical_assets, 100000)
     assert.equal(fixture.config.physical_nodes, 115000)
+    if (videoFirstFrameMode) {
+      // HTTPS is mandatory for Web Owner credential restoration; never change
+      // that product invariant to make a benchmark with HTTP pass.
+      httpsFixture = await startViewerFirstFrameHTTPSProxy(fixture.config.url)
+    }
     win = new BrowserWindow({
       show: true, width: 390, height: 844,
       webPreferences: {
@@ -1044,13 +1189,17 @@ async function sampleOnce(sample, ready) {
         backgroundThrottling: false,
       },
     })
+    if (httpsFixture) {
+      installPinnedViewerFixtureCertificate(win.webContents.session, httpsFixture)
+    }
     const failures = []
     win.webContents.on('render-process-gone', (_ev, state) =>
       failures.push('renderer gone: ' + JSON.stringify(state)))
     win.webContents.on('did-fail-load', (_ev, code, message) =>
       failures.push('did-fail-load ' + code + ': ' + message))
     if (p0c2SPAMode) {
-      await bootOriginalAuthenticatedApp(win, fixture.config.url)
+      await bootOriginalAuthenticatedApp(win,
+        httpsFixture ? httpsFixture.origin : fixture.config.url, fixture.config.url)
     } else {
       await win.loadURL(fixture.config.url +
         '/?xdriveGalleryRealCold=1&xdriveRealViewportCancel=1&xdriveMediaProgress=off')
@@ -1325,6 +1474,7 @@ async function sampleOnce(sample, ready) {
   } finally {
     if (resourceSampler) clearInterval(resourceSampler)
     if (win && !win.isDestroyed()) win.destroy()
+    if (httpsFixture) await httpsFixture.close()
     if (fixture) await stopFixture(fixture)
   }
 }
@@ -1416,9 +1566,21 @@ async function main() {
       p1LivePresentedP50Ms:p1LiveMode ? rows.map(x=>x.p1LiveMotion.displayedMs).sort((a,b)=>a-b)[1] : null,
       p1H264PresentedP50Ms:p1H264Mode ? rows.map(x=>x.p1H264Frames.presentedMs).sort((a,b)=>a-b)[1] : null,
       p1OriginalDecodedP50Ms:p1Mode ? rows.map(x=>x.p1ViewerBack.originalDecodedMs).sort((a,b)=>a-b)[1] : null,
+      firstFrameBenchMode:videoFirstFrameMode,
+      firstFrameP50Ms:videoFirstFrameMode ?
+        rows.map(row=>row.p1H264Frames.firstFrame.firstFrameMs).sort((a,b)=>a-b)[1] : null,
+      firstFrameTTFBP50Ms:videoFirstFrameMode &&
+        rows.every(row=>row.p1H264Frames.firstFrame.rangeTTFBMs!==null) ?
+        rows.map(row=>row.p1H264Frames.firstFrame.rangeTTFBMs).sort((a,b)=>a-b)[1] : null,
       sampleCount: rows.length, budgetMs: 160,
       worstGoContextP50Ms: worst[1], worstGoContextMaxMs: worst[2],
       passed: rows.length === 3 && rows.every(row =>
+        (!videoFirstFrameMode || (row.p1H264Frames?.firstFrame?.ready===true &&
+          row.p1H264Frames.firstFrame.actualSignedVideo===true &&
+          row.p1H264Frames.firstFrame.firstFrameMs>0 &&
+          row.p1H264Frames.firstFrame.firstFrameMs<=60000 &&
+          row.p1H264Frames.firstFrame.videoWidth>0 &&
+          row.p1H264Frames.firstFrame.videoHeight>0)) &&
         (!p1ViewerVideoAbortMode || (row.p1ViewerRangeAbort?.passed===true &&
           row.p1ViewerRangeAbort.signedPartialContent>=1 &&
           row.p1ViewerRangeAbort.goContextDone>=1 &&
