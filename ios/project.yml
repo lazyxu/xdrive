@@ -79,6 +79,8 @@ targets:
             NSExtensionActivationRule:
               NSExtensionActivationSupportsText: true
               NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+              NSExtensionActivationSupportsFileWithMaxCount: 1
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lazyxu.xdrive.ios.ClipboardShare

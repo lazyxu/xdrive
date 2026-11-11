@@ -49,9 +49,11 @@ test('Clipboard image import requires explicit browser gesture and completes fil
   const firstRead = portSource.indexOf('const reading = navigator.clipboard.read()')
   const ownerRead = portSource.indexOf('const root = await api.root(signal)')
   assert.ok(firstRead >= 0 && ownerRead >= 0)
-  assert.match(portSource, /items\.find\(item => item\.types\.includes\('image\/png'\)\)/)
-  assert.match(portSource, /png\.getType\('image\/png'\)/)
-  assert.match(portSource, /file\.size > 64 \* 1024 \* 1024/)
+  assert.match(portSource, /imageFormats/)
+  assert.match(portSource, /image\/jpeg/)
+  assert.match(portSource, /image\/webp/)
+  assert.match(portSource, /chosen\.item\.getType\(chosen\.mime\)/)
+  assert.doesNotMatch(portSource, /file\.size > 64 \* 1024 \* 1024/)
   assert.match(ui, /importToOwnerFiles\(signal => port\.importImageFromClipboard!\(signal\)\)/)
   assert.match(ui, /请检查文件，然后明确点击“发送”/)
   assert.match(ui, /if \(pending\.current\) \{/)
@@ -138,7 +140,7 @@ test('permission denial and missing PNG never issue a Server upload', async () =
       value:{clipboard:{read:async()=>[{types:['text/plain']}]}},configurable:true,
     })
     const port=mod.exports.createXDriveWebClipboardPort(api,'https://drive.example:7')
-    await assert.rejects(port.importImageFromClipboard(new AbortController().signal),/没有可读取的 PNG/)
+    await assert.rejects(port.importImageFromClipboard(new AbortController().signal),/没有可读取的图片格式/)
     Object.defineProperty(globalThis,'navigator',{
       value:{clipboard:{read:async()=>{throw Error('NotAllowedError')}}},configurable:true,
     })
@@ -218,3 +220,49 @@ test('Clipboard import passes its retired Owner signal into the real CAS writer'
   assert.ok(source.includes("externalSignal?.removeEventListener('abort', abortFromCaller"))
   assert.ok(portSource.includes("root.id, file, 'fail', undefined, '', '', '', signal"))
 })
+
+
+test('Web Clipboard accepts JPEG without a legacy 64 MiB preflight and never posts content', async () => {
+  const compiled=ts.transpileModule(portSource,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+  })
+  const module={exports:{}}
+  new Function('module','exports','require',compiled.outputText)(
+    module,module.exports,name=>{
+      if(name==='./browserClipboard')return {xDriveBrowserCopyText:async()=>{}}
+      throw Error('unexpected dependency '+name)
+    },
+  )
+  const originalWindow=Object.getOwnPropertyDescriptor(globalThis,'window')
+  const originalNavigator=Object.getOwnPropertyDescriptor(globalThis,'navigator')
+  try {
+    Object.defineProperty(globalThis,'window',{value:{isSecureContext:true},configurable:true})
+    Object.defineProperty(globalThis,'navigator',{value:{clipboard:{read:async()=>[{
+      types:['image/jpeg'],
+      getType:async mime=>{
+        assert.equal(mime,'image/jpeg')
+        return new Blob([Uint8Array.of(0xff,0xd8,0xff)],{type:mime})
+      },
+    }]}},configurable:true})
+    const saved=[]
+    const api={
+      root:async()=>({id:7,type:'dir'}),
+      uploadWithConflictPolicy:async(parent,file,policy)=>{
+        assert.equal(parent,7);assert.equal(policy,'fail')
+        saved.push({name:file.name,size:file.size,type:file.type})
+        return {node:{id:201,parent_id:7,type:'file',revision:1},skipped:false}
+      },
+    }
+    const port=module.exports.createXDriveWebClipboardPort(api,'owner')
+    assert.deepEqual(await port.importImageFromClipboard(new AbortController().signal),{node_id:201})
+    assert.equal(saved[0].type,'image/jpeg')
+    assert.match(saved[0].name,/^Clipboard-.*\.jpg$/)
+    assert.equal(saved[0].size,3)
+  } finally {
+    for(const [name,before] of [['window',originalWindow],['navigator',originalNavigator]]){
+      if(before)Object.defineProperty(globalThis,name,before)
+      else delete globalThis[name]
+    }
+  }
+})
+

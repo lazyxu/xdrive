@@ -35,6 +35,24 @@ export function createXDriveDSMClipboardPort(
     await current(signal)
     return result
   }
+  const uploadLocalFile = async (file: File, signal: AbortSignal) => {
+    signal.throwIfAborted()
+    if (!file || !file.name.trim() || !Number.isSafeInteger(file.size) ||
+        file.size <= 0 || file.size > 4 * 1_048_576) {
+      throw new Error('DSM 单文件导入支持 1 B 至 4 MiB；更大文件请使用 Files 的正式上传入口')
+    }
+    const root = await checked(() => cgi.ownerFilesRoot(signal), signal)
+    if (root.type !== 'dir' || !Number.isSafeInteger(root.id) || root.id <= 0)
+      throw new Error('DSM Owner 文件根目录不可用')
+    // Existing DSM Owner -> Agent -> canonical Files/CAS single-file uploader.
+    const node = await checked(scope => cgi.ownerUploadSmallFile(root.id, file, scope, signal), signal)
+    if (node.type !== 'file' || node.parent_id !== root.id ||
+        !Number.isSafeInteger(node.id) || node.id <= 0 || node.revision <= 0 ||
+        node.name !== file.name || node.size !== file.size) {
+      throw new Error('DSM CAS 上传回执未确认；请到 Files 核对')
+    }
+    return { node_id: node.id }
+  }
   return {
     // A single DSM browser Host instance never persists a key; Server/Owner
     // scope is checked on every request. This key is UI lifecycle-only.
@@ -67,6 +85,76 @@ export function createXDriveDSMClipboardPort(
     remove: (id, signal) => checked(
       scope => cgi.clipboardDelete(scope, id, signal), signal),
     clear: signal => checked(scope => cgi.clipboardClear(scope, signal), signal),
+    browseFiles: {
+      root: signal => checked(() => cgi.ownerFilesRoot(signal), signal).then(root => ({
+        id: root.id, name: root.name, type: root.type, size: root.size,
+      })),
+      page: async (folderID, cursor, signal) => {
+        if (!Number.isSafeInteger(folderID) || folderID <= 0) {
+          throw new Error('无效的 DSM Owner 文件目录')
+        }
+        const page = await checked(() => cgi.ownerFilesPage(
+          folderID, 50, 'name', 'asc', cursor || '', signal), signal)
+        return {
+          items: page.items.map(node => ({
+            id: node.id, name: node.name, type: node.type, size: node.size,
+          })),
+          next_cursor: page.next_cursor,
+        }
+      },
+    },
+    uploadLocalFile,
+    importImageFromClipboard: async signal => {
+      signal.throwIfAborted()
+      if (!window.isSecureContext || typeof navigator.clipboard?.read !== 'function')
+        throw new Error('DSM 浏览器不允许用户主动读取剪贴板图片')
+      const reading = navigator.clipboard.read()
+      const items = await reading
+      signal.throwIfAborted()
+      const formats = [
+        ['image/png', 'png'], ['image/jpeg', 'jpg'], ['image/webp', 'webp'],
+        ['image/gif', 'gif'], ['image/avif', 'avif'],
+      ] as const
+      const match = formats.flatMap(([mime, ext]) =>
+        items.filter(item => item.types.includes(mime)).map(item => ({ mime, ext, item })))[0]
+      if (!match) throw new Error('剪贴板没有可读取的图片')
+      const blob = await match.item.getType(match.mime)
+      signal.throwIfAborted()
+      if (!Number.isSafeInteger(blob.size) || blob.size <= 0)
+        throw new Error('无效的本机剪贴板图片')
+      return uploadLocalFile(new File(
+        [blob], 'Clipboard-' + crypto.randomUUID() + '.' + match.ext,
+        { type: match.mime, lastModified: Date.now() }), signal)
+    },
+    // Same-Owner, same-origin foreground freshness (1.8 s) without minting a
+    // Browser Server bearer. Existing 15 s GET remains the failure fallback.
+    watchChanges: async (onChange, signal) => {
+      let previous: string | undefined
+      let wasHidden = false
+      const delay = () => new Promise<void>(resolve => {
+        if (signal.aborted) { resolve(); return }
+        const onAbort = () => { clearTimeout(timer); resolve() }
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', onAbort)
+          resolve()
+        }, 1800)
+        signal.addEventListener('abort', onAbort, { once: true })
+      })
+      while (!signal.aborted) {
+        signal.throwIfAborted()
+        if (document.visibilityState === 'visible') {
+          if (wasHidden) { wasHidden = false; onChange() }
+          const page = await checked(() => cgi.clipboardList(undefined, signal), signal)
+          const version = page.items.map(item => item.id + ':' + item.client_event_id).join('|')
+          if (previous !== undefined && version !== previous) onChange()
+          previous = version
+        } else {
+          wasHidden = true
+          previous = undefined
+        }
+        await delay()
+      }
+    },
     readText: async () => {
       if (!window.isSecureContext || typeof navigator.clipboard?.readText !== 'function') {
         throw new Error('DSM 浏览器未允许读取系统剪贴板')

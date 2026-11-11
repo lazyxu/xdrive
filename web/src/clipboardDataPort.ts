@@ -11,9 +11,8 @@ export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: stri
   }
   const uploadThroughFiles = async (file: File, signal: AbortSignal) => {
     requireActive(signal)
-    if (!file.name.trim() || !Number.isFinite(file.size) || file.size <= 0 ||
-        file.size > 64 * 1024 * 1024) {
-      throw new Error('仅支持非空且不超过 64 MiB 的本机文件。')
+    if (!file.name.trim() || !Number.isSafeInteger(file.size) || file.size <= 0) {
+      throw new Error('请选择非空、大小有效的本机文件；文件大小由现有 Files 上传及 Owner 配额控制。')
     }
     // Only the existing Owner-verified Files writer performs UploadSession/
     // CAS chunking and finalization. Clipboard cannot mint a blob grant.
@@ -42,14 +41,22 @@ export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: stri
     const reading = navigator.clipboard.read()
     const items = await reading
     requireActive(signal)
-    const png = items.find(item => item.types.includes('image/png'))
-    if (!png) throw new Error('本机剪贴板没有可读取的 PNG 图片。')
-    const blob = await png.getType('image/png')
+    const imageFormats = [
+      ['image/png', 'png'], ['image/jpeg', 'jpg'],
+      ['image/webp', 'webp'], ['image/gif', 'gif'],
+      ['image/avif', 'avif'], ['image/heic', 'heic'], ['image/heif', 'heif'],
+    ] as const
+    const chosen = imageFormats.flatMap(([mime, ext]) =>
+      items.filter(item => item.types.includes(mime)).map(item => ({ mime, ext, item })))[0]
+    if (!chosen) throw new Error('本机剪贴板没有可读取的图片格式。')
+    const blob = await chosen.item.getType(chosen.mime)
     requireActive(signal)
-    if (blob.size <= 0 || blob.size > 64 * 1024 * 1024)
-      throw new Error('剪贴板图片必须在 1 字节至 64 MiB 之间。')
-    const file = new File([blob], 'Clipboard-' + crypto.randomUUID() + '.png', {
-      type: 'image/png', lastModified: Date.now(),
+    if (!Number.isSafeInteger(blob.size) || blob.size <= 0)
+      throw new Error('剪贴板图片为空或大小无效。')
+    // The existing streaming Files/CAS writer enforces Server quota and
+    // allowed resource sizes; Clipboard does not impose a 64 MiB ceiling.
+    const file = new File([blob], 'Clipboard-' + crypto.randomUUID() + '.' + chosen.ext, {
+      type: chosen.mime, lastModified: Date.now(),
     })
     return uploadThroughFiles(file, signal)
   }
