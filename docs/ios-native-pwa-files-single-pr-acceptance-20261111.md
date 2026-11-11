@@ -138,9 +138,10 @@ contained `sampleCount:3` and p50 aggregate fields but **omitted
 from an aggregate. This is a serialization/test fixture defect, not
 a genuine decode or route failure.
 
-Fix: write the original bounded 3 Owner-signed per-sample records into
-`summary.json` **only** for `XD_VIEWER_FIRST_FRAME_BENCH`, preserving the
-genuine per-frame measurements and original Owner/route/return evidence.
+Fix: write the original three Owner-signed frame measurements as a
+**sanitized numeric projection** into `summary.json` only for
+`XD_VIEWER_FIRST_FRAME_BENCH`, preserving actual timing, frame dimensions,
+verified playback and return-drift fields without copying raw rows or identities.
 Add a regression that rejects aggregate-only fake n3 input. Baseline
 return drift remains explicitly failed, candidate strict <=2px remains,
 and no signed video, navigation or security gate is waived. Final n3/n3

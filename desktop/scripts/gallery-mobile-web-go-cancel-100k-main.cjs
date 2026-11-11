@@ -1611,11 +1611,6 @@ async function main() {
       p1H264PresentedP50Ms:p1H264Mode ? rows.map(x=>x.p1H264Frames.presentedMs).sort((a,b)=>a-b)[1] : null,
       p1OriginalDecodedP50Ms:p1Mode ? rows.map(x=>x.p1ViewerBack.originalDecodedMs).sort((a,b)=>a-b)[1] : null,
       firstFrameBenchMode:videoFirstFrameMode,
-      // Preserve the exact three genuine, Owner-scoped browser measurement
-      // rows in the signed-H264 artifact. The comparator must validate each
-      // signed compositor frame instead of inferring n3 from the medians.
-      // Other large perf modes retain their existing compact summary format.
-      ...(videoFirstFrameMode ? {samples:rows} : {}),
       historicalBaselineReturnAudit,
       viewerReturnsFullyPassed:rows.every(row =>
         (!p1Mode || row.p1ViewerBack?.passed===true) &&

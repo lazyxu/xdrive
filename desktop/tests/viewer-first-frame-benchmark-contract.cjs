@@ -243,8 +243,15 @@ test('real n3 H264 summary persists measured sanitized sample proof for the stri
 test('paired first-frame summary serializes all three genuine rows, not medians alone', () => {
   const runner = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
   const comparator = read('desktop/scripts/viewer-first-frame-compare.cjs')
-  assert.ok(runner.includes('...(videoFirstFrameMode ? {samples:rows} : {})'),
-    'signed H264 n3 source rows must appear in summary.json for strict comparator validation')
+  assert.ok(runner.includes('samples: videoFirstFrameMode ? rows.map(row => ({'),
+    'summary must project genuine H264 measurements into a bounded numeric sample schema')
+  assert.ok(!runner.includes('samples:rows') && !runner.includes('samples: rows,'),
+    'do not serialize raw workload/process/identity rows into public benchmark artifacts')
+  const summaryStart = runner.indexOf('const worst = rows.map(')
+  const summaryEnd = runner.indexOf("fs.writeFileSync(path.join(out, 'summary.json')", summaryStart)
+  const summary = runner.slice(summaryStart, summaryEnd)
+  assert.equal((summary.match(/^\s+samples:/gm) || []).length, 1,
+    'summary must contain exactly one H264 samples property, with no shadowed raw field')
   assert.ok(runner.includes("fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2)"),
     'the actual persisted summary must contain the same owner-verified samples')
   assert.ok(comparator.includes('summary.samples.length !== 3'),
