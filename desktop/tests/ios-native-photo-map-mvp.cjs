@@ -561,3 +561,17 @@ test('native Map Done works without cloud login while restored Owner Gallery sou
   assert.match(dashboard, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in[\s\S]*?openGallery\(\.map\)\s*localMapJump = jump/)
   assert.match(routing, /if source == \.map \|\| source == \.local \{ localMapJump = nil \}/)
 })
+
+test('native MapKit date picker precedes long PhotoKit year menu in real accessibility order', () => {
+  const start = map.indexOf('Button("全部日期")')
+  const picker = map.indexOf('Button("按指定日期")', start)
+  const years = map.indexOf('Section("按年份")', start)
+  const end = map.indexOf('.accessibilityIdentifier("native-ios-local-map-capture-menu")', start)
+  assert.ok(start >= 0 && picker > start && years > picker && end > years,
+    'date chooser must stay ahead of unbounded year options on a real iOS Menu')
+  assert.match(map.slice(picker, years),
+    /Button\("按指定日期"\) \{ datePickerOpen = true \}[\s\S]*?\.accessibilityIdentifier\("native-ios-local-map-select-date"\)/)
+  assert.match(map.slice(years, end), /ForEach\(recentMapYears/)
+  assert.match(map.slice(end), /\.sheet\(isPresented: \$datePickerOpen\)/)
+})
+

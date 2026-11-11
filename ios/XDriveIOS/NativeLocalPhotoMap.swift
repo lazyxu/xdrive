@@ -1586,6 +1586,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     Button("最近 30 天") {
                         setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
                     }
+                    // Keep the explicit date picker above a potentially long
+                    // PhotoKit year list. iOS 18.5 renders Menu children in
+                    // scroll order; a trailing item can become unreachable
+                    // by accessibility after decades of photo timestamps.
+                    Button("按指定日期") { datePickerOpen = true }
+                        .accessibilityIdentifier("native-ios-local-map-select-date")
                     Section("按年份") {
                         ForEach(recentMapYears, id: \.self) { year in
                             Button("\(year) 年") {
@@ -1593,8 +1599,6 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                             }
                         }
                     }
-                    Button("按指定日期") { datePickerOpen = true }
-                        .accessibilityIdentifier("native-ios-local-map-select-date")
                 } label: {
                     Label("地图日期", systemImage: "calendar")
                 }
