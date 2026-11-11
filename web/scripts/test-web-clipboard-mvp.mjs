@@ -25,7 +25,7 @@ assert.match(page,/剪贴板内容不会端到端加密/)
 assert.doesNotMatch(page,/解锁加密剪贴板|剪贴板口令|PBKDF2|EncryptForDevice|deriveKey|xDriveClipboardEncrypt/)
 assert.match(port,/create: \(item, signal\) => api\.clipboardCreate\(item, signal\)/)
 
-const activeDSMClipboardOperations = ['capability', 'list', 'devices', 'file',
+const activeDSMClipboardOperations = ['capability', 'list', 'next-event', 'devices', 'file',
   'create', 'enable-device', 'revoke-device', 'delete', 'clear']
 for (const operation of activeDSMClipboardOperations) {
   assert.match(dsmAdapter, new RegExp(`['"]cloud-clipboard-${operation}['"]`))

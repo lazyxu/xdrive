@@ -167,6 +167,29 @@ struct NativeOwnerMapSelectionPolicyChecks {
         precondition(policy.prioritizedPhotoCovers(
             (0..<65).map { facet("place:10:\($0)") }
         ).isEmpty)
+
+        // Exact signed Owner place inventory and forbidden stale Count.
+        for amount in [1, 10, 1_000, 10_000, 100_000] {
+            let candidate = facet("place:3500:13900", count: amount)
+            precondition(policy.acceptsCoverPage(
+                candidate, rangeTotal: amount, offset: 0))
+            precondition(!policy.acceptsCoverPage(
+                candidate, rangeTotal: amount + 1, offset: 0))
+            precondition(!policy.acceptsCoverPage(
+                candidate, rangeTotal: amount - 1, offset: 0))
+        }
+        let signed64 = (0..<64).map { facet("place:10:\($0)", count: 1) }
+        precondition(policy.acceptsSelectedCluster(
+            signed64, currentlyVisible: signed64))
+        let signed65 = signed64 + [facet("place:10:64", count: 1)]
+        precondition(!policy.acceptsSelectedCluster(
+            signed65, currentlyVisible: signed65))
+        precondition(!policy.acceptsSelectedCluster(
+            signed64, currentlyVisible: signed65))
+        precondition(!policy.acceptsSelectedCluster(
+            [signed64[0], signed64[0]], currentlyVisible: signed64))
+        print("IOS_OWNER_MAP_64_65_FENCE 64_allowed=1 65_denied=1")
+
         print("native Owner cloud MapKit place-range fence: PASS")
     }
 }

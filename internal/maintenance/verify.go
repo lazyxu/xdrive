@@ -318,6 +318,10 @@ func VerifyWithOptions(
 		})
 	}
 
+	// All lock creators share storage.LifecycleLockFamilies with the runtime
+	// readiness preflight. A newly registered family needs no separate verifier
+	// exception; arbitrary dotfiles and similarly named user data remain strict.
+	registeredLocks := registeredLifecycleLockKeys()
 	emit("filesystem")
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		scannedEntries++
@@ -336,7 +340,13 @@ func VerifyWithOptions(
 				if relErr != nil {
 					return relErr
 				}
-				switch filepath.ToSlash(rel) {
+				key := filepath.ToSlash(rel)
+				if _, registered := registeredLocks[key]; registered {
+					// A directory masquerading as a persistent lock is invalid.
+					report.Orphans = append(report.Orphans, OrphanBlob{StorageKey: key})
+					return filepath.SkipDir
+				}
+				switch key {
 				case ".xdrive-uploads":
 					return filepath.SkipDir
 				case ".xdrive-media":
@@ -360,34 +370,33 @@ func VerifyWithOptions(
 		if err != nil {
 			return err
 		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
 		key := filepath.ToSlash(rel)
+		if _, registered := registeredLocks[key]; registered {
+			// The inode may be actively flocked: never remove or replace it.
+			// Only an exact, empty regular file is an internal lock; bad shape,
+			// nonempty and symlink lookalikes must still fail closed.
+			if !info.Mode().IsRegular() || info.Size() != 0 {
+				report.Orphans = append(report.Orphans, OrphanBlob{StorageKey: key, Size: info.Size()})
+				return nil
+			}
+			if key == storage.TempLifecycleLockFile {
+				report.IgnoredTemps++
+			} else {
+				report.IgnoredCASLocks++
+			}
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
 		if isInternalReadinessProbe(key, info.Size()) {
-			// Readiness probes may survive a crash in the fixed CAS and
-			// LocalPush lifecycle directories, not only at the storage root.
-			// Never suppress other orphaned files or invalid probe lookalikes.
+			// Readiness probes can outlive a crash in any registered lifecycle
+			// lock directory. Unknown paths or invalid probes remain orphans.
 			report.IgnoredTemps++
-			return nil
-		}
-		if key == storage.TempLifecycleLockFile && info.Size() == 0 {
-			// The root-scoped file is held open by Local.Put and the
-			// administrator's temp cleanup across Server processes.
-			// Ignore only this exact, empty internal lockfile. Nonempty
-			// lookalikes and all other unreferenced blobs remain orphans.
-			report.IgnoredTemps++
-			return nil
-		}
-		if isCASLifecycleLockFile(key) && info.Size() == 0 {
-			// These fixed shard files are OS lock inodes, not user content.
-			// Do not unlink them: another Server process may hold a lease.
-			// Ignore only exact, empty 00..ff.lock direct children.
-			report.IgnoredCASLocks++
 			return nil
 		}
 		if isDerivedStorageKey(key) {
@@ -439,15 +448,24 @@ func isInternalReadinessProbe(key string, size int64) bool {
 	if size < 0 || size > 1 {
 		return false
 	}
-	directory := filepath.ToSlash(filepath.Dir(key))
-	switch directory {
-	case ".", storage.CASLifecycleLockDir, storage.LocalPushStageLifecycleLockDir:
-	default:
-		return false
-	}
+	// Most scanned files are real blobs, so reject ordinary filenames before
+	// consulting the lifecycle inventory (which constructs 256 shard names).
 	suffix, ok := strings.CutPrefix(filepath.Base(key), ".xdrive-ready-")
 	if !ok {
 		return false
+	}
+	directory := filepath.ToSlash(filepath.Dir(key))
+	if directory != "." {
+		registeredDirectory := false
+		for _, family := range storage.LifecycleLockFamilies() {
+			if family.Directory == directory {
+				registeredDirectory = true
+				break
+			}
+		}
+		if !registeredDirectory {
+			return false
+		}
 	}
 	if len(suffix) == 32 {
 		for _, digit := range suffix {
@@ -631,22 +649,16 @@ func isDerivedStorageKey(key string) bool {
 	return key == ".xdrive-media" || strings.HasPrefix(key, ".xdrive-media/")
 }
 
-// isCASLifecycleLockFile recognizes only direct 00..ff.lock children of
-// the fixed CAS lifecycle shard directory; unexpected files remain orphans.
-func isCASLifecycleLockFile(key string) bool {
-	prefix := storage.CASLifecycleLockDir + "/"
-	if !strings.HasPrefix(key, prefix) {
-		return false
-	}
-	name := strings.TrimPrefix(key, prefix)
-	if len(name) != len("ff.lock") || name[2:] != ".lock" {
-		return false
-	}
-	for i := 0; i < 2; i++ {
-		c := name[i]
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			return false
+// registeredLifecycleLockKeys centralizes the strict allowlist shared with
+// Local.Ready. It is built once per verification, not per scanned disk entry.
+// Only these exact relative paths can be ignored, and only as empty regular
+// files. Any future lock family must first be registered by its writer.
+func registeredLifecycleLockKeys() map[string]struct{} {
+	keys := make(map[string]struct{})
+	for _, family := range storage.LifecycleLockFamilies() {
+		for _, name := range family.Names {
+			keys[filepath.ToSlash(filepath.Join(family.Directory, name))] = struct{}{}
 		}
 	}
-	return true
+	return keys
 }

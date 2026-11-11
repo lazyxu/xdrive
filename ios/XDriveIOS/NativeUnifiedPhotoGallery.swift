@@ -38,7 +38,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     // The parent presents the existing shared MapKit route as an overlay.
     // Keeping this Gallery mounted preserves its query, grid density and
     // real PhotoKit/Owner page cursor on the return from native MapKit.
-    var onShowMap: ((XDriveIOSNativePhotoMapCaptureRange?) -> Void)? = nil
+    var onShowMap: ((XDriveIOSNativePhotoMapCaptureRange?, XDriveIOSNativePhotoMediaFilter, String) -> Void)? = nil
     @StateObject private var timeline = XDriveIOSNativeUnifiedPhotoTimeline()
     @StateObject private var wall = XDriveIOSNativeUnifiedPhotoWall()
     @StateObject private var photoObserver = XDriveIOSUnifiedPhotoObserver()
@@ -53,6 +53,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var showFilters = false
     @State private var openMapAfterFilterDismiss = false
     @State private var pendingMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
+    @State private var pendingMapMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
+    @State private var pendingMapFilenameTerm = ""
     @State private var pairing: XDriveIOSNativeUnifiedPhoto?
     @State private var indexRequest = UUID()
     @State private var retryUnavailable = false
@@ -101,6 +103,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 sourceFilter = nil; query = .init(); draft = .init()
                 openMapAfterFilterDismiss = false
                 pendingMapCaptureRange = nil
+                pendingMapMediaFilter = .all
+                pendingMapFilenameTerm = ""
                 reset()
             }
             .onChange(of: sourceFilter) { _ in resetWall() }
@@ -133,8 +137,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 guard openMapAfterFilterDismiss else { return }
                 openMapAfterFilterDismiss = false
                 let selectedRange = pendingMapCaptureRange
+                let selectedMedia = pendingMapMediaFilter
+                let selectedFilename = pendingMapFilenameTerm
                 pendingMapCaptureRange = nil
-                onShowMap?(selectedRange)
+                pendingMapMediaFilter = .all
+                pendingMapFilenameTerm = ""
+                onShowMap?(selectedRange, selectedMedia, selectedFilename)
             }) { filterEditor }
             .sheet(item: $pairing) { row in
                 XDriveIOSNativePhotoPairingDetails(
@@ -326,6 +334,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             // criteria as the map that was just opened.
                             query = draft
                             pendingMapCaptureRange = representableMapCaptureRange
+                            pendingMapMediaFilter = representableMapMediaFilter
+                            pendingMapFilenameTerm = draft.term
                             openMapAfterFilterDismiss = true
                             showFilters = false
                         } label: {
@@ -334,7 +344,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                         .disabled(mapUnavailableReason != nil || !draft.isValid)
                         .accessibilityIdentifier("native-ios-unified-gallery-show-map")
                         Text(mapUnavailableReason ??
-                             "地图按本机 PhotoKit 或当前云端 Owner 分别显示有位置照片；来源可在地图内切换，不会将两端照片误称为同一个已筛选集合。")
+                             ((draft.media != .all || !draft.term.isEmpty)
+                                 ? "本机 PhotoKit 按文件名／媒体类型精确过滤；云端缺少对应的已授权地图筛选，已锁定本机来源。"
+                                 : "地图按本机 PhotoKit 或当前云端 Owner 分别显示有位置照片；来源可在地图内切换，不会将两端照片误称为同一个已筛选集合。"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("native-ios-unified-gallery-map-scope")
@@ -361,12 +373,6 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         if !draft.isValid {
             return "请先修正日期范围或搜索条件。"
         }
-        if !draft.term.isEmpty {
-            return "地图目前不支持按文件名筛选位置。请先清除搜索文字。"
-        }
-        if draft.media != .all {
-            return "地图的本机和云端媒体类型筛选尚未统一，请先选择“所有媒体”。"
-        }
         if draft.from != nil || draft.until != nil {
             guard let from = draft.from, let until = draft.until,
                   XDriveIOSNativePhotoMapCaptureRange(
@@ -376,6 +382,15 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
         }
         return nil
+    }
+
+    private var representableMapMediaFilter: XDriveIOSNativePhotoMediaFilter {
+        switch draft.media {
+        case .all: return .all
+        case .image: return .photos
+        case .video: return .videos
+        case .live: return .livePhotos
+        }
     }
 
     private var representableMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange? {

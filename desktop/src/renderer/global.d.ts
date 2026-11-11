@@ -440,6 +440,7 @@ declare global {
   }[] }
   type AgentClipboardDevice = AgentClipboardDevices['devices'][number]
   type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
+  type AgentClipboardEvent = { cursor: number; changed: boolean }
   type AgentNotesSource = 'mine' | 'ios_notes'
   type AgentNotesNamespace = {
     system_node_id: number
@@ -1191,6 +1192,7 @@ declare global {
         cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudShares: (nodeID: number) => Promise<DesktopResult<AgentCloudShare[]>>
         cloudClipboardList: (before: number) => Promise<DesktopResult<AgentClipboardPage>>
+        cloudClipboardNextEvent: (after: number) => Promise<DesktopResult<AgentClipboardEvent>>
         cloudClipboardDevices: () => Promise<DesktopResult<AgentClipboardDevices>>
         cloudClipboardEnableDevice: () => Promise<DesktopResult<AgentClipboardDevice>>
         cloudClipboardRevokeDevice: (deviceID: string) => Promise<DesktopResult<void>>

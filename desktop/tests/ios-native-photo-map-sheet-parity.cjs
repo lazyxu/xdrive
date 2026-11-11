@@ -17,7 +17,7 @@ test('local PhotoKit map uses native medium/large place sheets without dismissin
 })
 
 test('local filtered legacy and Nearby location photo walls share the native drag affordance', () => {
-  assert.match(screen, /\.sheet\(item: \$selection, onDismiss:[\s\S]*?XDriveIOSMapPhotoAlbum\(items: chosen\.items, mediaFilter: mediaFilter\)[\s\S]*?\.presentationDetents\(\[\.medium, \.large\]\)/)
+  assert.match(screen, /\.sheet\(item: \$selection, onDismiss:[\s\S]*?XDriveIOSMapPhotoAlbum\(items: chosen\.items, mediaFilter: mediaFilter,\s*filenameTerm: filenameTerm\)[\s\S]*?\.presentationDetents\(\[\.medium, \.large\]\)/)
   assert.match(screen, /\.sheet\(item: \$nearbySelection, onDismiss: \{[\s\S]*?\}\) \{ chosen in[\s\S]*?isNearbyExpansion: true[\s\S]*?\.presentationDetents\(\[\.medium, \.large\]\)/)
   assert.match(screen, /\.sheet\(item: \$nearbySelection, onDismiss:[\s\S]*?\.presentationDragIndicator\(\.visible\)/)
 })
@@ -40,7 +40,7 @@ test('Nearby expansion still waits for the first place sheet to dismiss and chec
   assert.match(nearbyDismissal, /guard phase == \.active,[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
   assert.match(nearbyDismissal, /onLibraryCameraChange\?\(nil\)[\s\S]*?clearReturnCamera\(\)[\s\S]*?invalidate\(\)/)
   assert.match(screen, /onShowNearby: album == nil \? nil : \{[\s\S]*?pendingNearbySelection = chosen/)
-  assert.match(screen, /XDriveIOSMapSpatialSelection\([\s\S]*?mediaFilter: mediaFilter\)/)
+  assert.match(screen, /XDriveIOSMapSpatialSelection\([\s\S]*?mediaFilter: mediaFilter,\s*captureRange: activeCaptureRange,\s*filenameTerm: filenameTerm\)/)
 })
 
 test('a real single-image Viewer stays full-screen and the Owner map already uses matching native sheets', () => {

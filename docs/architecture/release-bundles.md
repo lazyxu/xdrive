@@ -65,6 +65,15 @@ The Desktop **客户端更新** page offers the same current-Commit Bundle card
 to authenticated non-admin users, but no admin-only Host cache retry action.
 The separate administrator **管理 → 系统更新** page retains cache diagnostics
 and retry. Both views are opt-in: updating Server never pushes a client install.
+The presence of a package or a `verified` Host cache is **not** a claim that
+GitHub publication has passed the independent `immutable:true` installer
+admission gate. The shared Desktop Bundle card explicitly explains this check
+before confirmation; the native Agent re-verifies the public Release, raw
+manifest bytes, full asset inventory, Commit and SHA-256 immediately before
+installation. If GitHub Release immutability has not been enabled for the
+**new** Bundle, the native install must reject the attempt without affecting
+Server or other clients. Polling the cache must not erase a prior install
+error, nor turn "install requested" into an installed/healthy success report.
 
 Exact-Commit native install is supported for Windows and Debian-family Linux
 AMD64 when an applicable artifact actually exists. `xd version --json` and

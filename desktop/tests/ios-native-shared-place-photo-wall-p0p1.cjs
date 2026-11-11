@@ -64,7 +64,8 @@ test('P0-02: revoked, deleted, edited and wrong-kind local assets never inherit 
 test('P0-03: Gallery media filters remain ANDed with the current GPS scope at scan and tap', () => {
   const { map, filter, gallery } = sources
   assert.match(map, /XDriveIOSMapCurrentPhotoKitAdmission\.allows\(/)
-  assert.match(map, /return candidate\.kind == kind && filter\.includes\(asset: asset\)/)
+  assert.match(map, /guard candidate\.kind == kind && filter\.includes\(asset: asset\) else \{\s*return false\s*\}/)
+  assert.match(map, /return filenameTerm\.isEmpty \|\| PHAssetResource\.assetResources\(for: asset\)[\s\S]*?originalFilename\.localizedStandardContains\(filenameTerm\)/)
   assert.match(map, /scanner\.startMap\([\s\S]*?album: album, mediaFilter: selection\.mediaFilter/)
   assert.match(map, /Policy\.includes\(\s*selection\.viewport,\s*latitude: asset\.latitude, longitude: asset\.longitude/)
   assert.match(map, /selectedKeys\.contains\(key\)/)

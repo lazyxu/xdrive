@@ -698,7 +698,16 @@ jobs:
             ios/tests/NativeLocalPhotoMapSpatialPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
           "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
-          node --test desktop/tests/ios-native-photo-map-mvp.cjs
+          # Deterministic 5×100k synthetic index runs; not a measured
+          # first-frame or physical PhotoKit library performance claim.
+          swiftc -swift-version 5 -O \
+            ios/XDriveIOS/NativeLocalPhotoMapSpatialPolicy.swift \
+            ios/tests/NativeLocalMap100kBenchmark.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-map-100k-benchmark"
+          "$RUNNER_TEMP/xdrive-ios-map-100k-benchmark"
+          node --test \
+            desktop/tests/ios-native-photo-map-mvp.cjs \
+            desktop/tests/ios-native-map-unified-parity.cjs
 
       - name: Verify shared Map and Gallery P0/P1 photo wall regressions
         run: |
