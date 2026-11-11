@@ -105,7 +105,14 @@ def gps_for(index: int, pattern: str) -> tuple[float, float]:
     if pattern == "dateline":
         return 10.0, 180.0 if index % 2 == 0 else -180.0
     if pattern == "distinct":
-        return -65.0 + float(index % 130), -175.0 + float((index // 130) % 350)
+        # 1,000 latitude slots × 1,000 longitude slots, with a coprime
+        # longitude permutation for world-wide coverage. The old 130 × 350
+        # grid repeated the FIRST coordinate at asset 45,500, so a 100k
+        # "distinct" run was actually testing only 45,500 unique points.
+        # All 100k supported fixture indices now have distinct WGS84 GPS.
+        row = index % 1000
+        column = ((index // 1000) * 137) % 1000
+        return -80.0 + row * 0.16, -170.0 + column * 0.34
     # A stable mix of same-location, dateline, high-latitude, and multi-city
     # GPS. This is synthetic test media, never a location of the actual user.
     slot = index % 11
