@@ -134,8 +134,19 @@ test('Desktop and DSM expose existing Owner Files picker and canonical file uplo
   assert.equal((await dsmPort.browseFiles.page(7,undefined,new AbortController().signal)).items[0].id,8)
   assert.deepEqual(await dsmPort.uploadLocalFile(file,new AbortController().signal),{node_id:8})
   assert.deepEqual(dsmCalls,['page','upload'])
-  const large=new File([new Uint8Array(4*1_048_576+1)],'too-large.bin')
-  await assert.rejects(dsmPort.uploadLocalFile(large,new AbortController().signal),/4 MiB/)
+  const large=new File([new Uint8Array(4*1_048_576+1)],'large.bin')
+  const largeOwner='b'.repeat(64)
+  // No second Clipboard writer: the existing DSM Files/CAS chunk transport
+  // returns the same verified Node shape after finalization.
+  const largeCGI={
+    ...cgi,
+    ownerUploadLargeFile:async(parent,selected,scope)=>{
+      assert.equal(parent,7);assert.equal(selected,large);assert.equal(scope,active)
+      return {...child,id:9,name:'large.bin',size:large.size}
+    },
+  }
+  const largePort=dsm.createXDriveDSMClipboardPort(largeCGI,active)
+  assert.deepEqual(await largePort.uploadLocalFile(large,new AbortController().signal),{node_id:9})
   active='b'.repeat(64)
   await assert.rejects(dsmPort.uploadLocalFile(file,new AbortController().signal),/已变化/)
   await assert.rejects(port.browseFiles.page(0,undefined,new AbortController().signal),/无效/)

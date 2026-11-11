@@ -38,14 +38,16 @@ export function createXDriveDSMClipboardPort(
   const uploadLocalFile = async (file: File, signal: AbortSignal) => {
     signal.throwIfAborted()
     if (!file || !file.name.trim() || !Number.isSafeInteger(file.size) ||
-        file.size <= 0 || file.size > 4 * 1_048_576) {
-      throw new Error('DSM 单文件导入支持 1 B 至 4 MiB；更大文件请使用 Files 的正式上传入口')
+        file.size <= 0) {
+      throw new Error('请选择有效的本机文件')
     }
     const root = await checked(() => cgi.ownerFilesRoot(signal), signal)
     if (root.type !== 'dir' || !Number.isSafeInteger(root.id) || root.id <= 0)
       throw new Error('DSM Owner 文件根目录不可用')
     // Existing DSM Owner -> Agent -> canonical Files/CAS single-file uploader.
-    const node = await checked(scope => cgi.ownerUploadSmallFile(root.id, file, scope, signal), signal)
+    const node = await checked(scope => file.size > 4 * 1_048_576
+      ? cgi.ownerUploadLargeFile(root.id, file, scope, signal)
+      : cgi.ownerUploadSmallFile(root.id, file, scope, signal), signal)
     if (node.type !== 'file' || node.parent_id !== root.id ||
         !Number.isSafeInteger(node.id) || node.id <= 0 || node.revision <= 0 ||
         node.name !== file.name || node.size !== file.size) {
