@@ -245,11 +245,14 @@ test('paired first-frame summary serializes all three genuine rows, not medians 
   const comparator = read('desktop/scripts/viewer-first-frame-compare.cjs')
   assert.ok(runner.includes('samples: videoFirstFrameMode ? rows.map(row => ({'),
     'summary must project genuine H264 measurements into a bounded numeric sample schema')
-  assert.ok(!runner.includes('samples:rows') && !runner.includes('samples: rows,'),
-    'do not serialize raw workload/process/identity rows into public benchmark artifacts')
+  // The runner also writes a separate P1P physical workload summary.
+  // Audit only the signed first-frame benchmark's own summary object:
+  // its raw samples must never leak into the n3/n3 published artifact.
   const summaryStart = runner.indexOf('const worst = rows.map(')
   const summaryEnd = runner.indexOf("fs.writeFileSync(path.join(out, 'summary.json')", summaryStart)
   const summary = runner.slice(summaryStart, summaryEnd)
+  assert.ok(!summary.includes('samples:rows') && !summary.includes('samples: rows,'),
+    'do not serialize raw workload/process/identity rows into public first-frame artifacts')
   assert.equal((summary.match(/^\s+samples:/gm) || []).length, 1,
     'summary must contain exactly one H264 samples property, with no shadowed raw field')
   assert.ok(runner.includes("fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2)"),
