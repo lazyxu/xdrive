@@ -3,6 +3,8 @@ import pathlib
 import struct
 import tempfile
 import unittest
+import subprocess
+from unittest import mock
 import zlib
 from audit_navigation_frames import analyze, score_png
 
@@ -229,6 +231,69 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(report['frames'][0]['reason'], 'capture_too_slow')
             self.assertNotIn('blank_shell_candidate', report['counts'])
             self.assertTrue((p / 'late.png').exists())
+
+    def test_tiny_screenshot_skips_unsafe_mac_png_reencoding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp)
+            make_png(p / 'tiny.png', [[(255, 255, 255)] * 120 for _ in range(140)])
+            (p / 'frame-trace.jsonl').write_text(json.dumps({
+                'test': 'tiny', 'file': 'tiny.png', 'captured': True,
+                'capture_reliable': True,
+            }) + '\n')
+            with mock.patch('audit_navigation_frames.shutil.which', return_value='sips'), \
+                 mock.patch('audit_navigation_frames.subprocess.run',
+                            side_effect=AssertionError('should not re-encode tiny PNG')):
+                report = analyze(p)
+            self.assertEqual(report['counts']['blank_shell_candidate'], 1)
+            self.assertNotIn('analysis_unavailable', report['counts'])
+
+    def test_mac_resized_png_with_unsupported_encoding_falls_back_to_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp)
+            make_png(p / 'large.png', [[(255, 255, 255)] * 240 for _ in range(220)])
+            (p / 'frame-trace.jsonl').write_text(json.dumps({
+                'test': 'large', 'file': 'large.png', 'captured': True,
+                'capture_reliable': True,
+            }) + '\n')
+
+            def unusable_reencode(command, **kwargs):
+                pathlib.Path(command[-1]).write_bytes(b'not a supported PNG')
+                return subprocess.CompletedProcess(command, 0)
+
+            with mock.patch('audit_navigation_frames.shutil.which', return_value='sips'), \
+                 mock.patch('audit_navigation_frames.subprocess.run',
+                            side_effect=unusable_reencode):
+                report = analyze(p)
+            self.assertEqual(report['counts']['blank_shell_candidate'], 1)
+            self.assertEqual(report['frames'][0]['downscale_issue'], 'ValueError')
+            self.assertNotIn('analysis_unavailable', report['counts'])
+
+    def test_mac_sips_timeout_preserves_a_classifiable_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp)
+            make_png(p / 'slow.png', [[(25, 26, 27)] * 240 for _ in range(220)])
+            (p / 'frame-trace.jsonl').write_text(json.dumps({
+                'test': 'slow', 'file': 'slow.png', 'captured': True,
+            }) + '\n')
+            with mock.patch('audit_navigation_frames.shutil.which', return_value='sips'), \
+                 mock.patch('audit_navigation_frames.subprocess.run',
+                            side_effect=subprocess.TimeoutExpired('sips', 15)):
+                report = analyze(p)
+            self.assertEqual(report['counts']['blank_shell_candidate'], 1)
+            self.assertEqual(report['frames'][0]['downscale_issue'], 'TimeoutExpired')
+
+    def test_corrupted_original_remains_unavailable_not_a_blank_shell(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp)
+            (p / 'broken.png').write_bytes(b'not a PNG')
+            (p / 'frame-trace.jsonl').write_text(json.dumps({
+                'test': 'broken', 'file': 'broken.png', 'captured': True,
+            }) + '\n')
+            with mock.patch('audit_navigation_frames.shutil.which', return_value='sips'):
+                report = analyze(p)
+            self.assertEqual(report['counts']['analysis_unavailable'], 1)
+            self.assertNotIn('blank_shell_candidate', report['counts'])
+            self.assertEqual(report['frames'][0]['reason'], 'ValueError')
 
     def test_on_time_finished_screenshot_remains_classifiable(self):
         with tempfile.TemporaryDirectory() as tmp:

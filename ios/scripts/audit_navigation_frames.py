@@ -150,14 +150,36 @@ def analyze(directory):
                 result['reason'] = entry.get('capture_unreliable_reason') or 'slow_capture'
             else:
                 try:
+                    # Tiny synthetic test frames need no sips re-encoding. That
+                    # conversion can change PNG color type on macOS, making an
+                    # otherwise valid original unreadable by our stdlib decoder.
+                    with image.open('rb') as source:
+                        header = source.read(24)
+                    resize_needed = (
+                        len(header) >= 24 and header.startswith(SIGNATURE)
+                        and header[12:16] == b'IHDR'
+                        and max(struct.unpack_from('>II', header, 16)) > 200
+                    )
                     inspect = image
-                    if shutil.which('sips'):
+                    if resize_needed and shutil.which('sips'):
                         small = pathlib.Path(tmp) / pathlib.Path(name).name
-                        subprocess.run(['sips', '-Z', '200', str(image), '--out', str(small)],
-                                       check=True, timeout=15, stdout=subprocess.DEVNULL,
-                                       stderr=subprocess.DEVNULL)
-                        inspect = small
-                    result['metrics'] = score_png(inspect)
+                        try:
+                            subprocess.run(['sips', '-Z', '200', str(image), '--out', str(small)],
+                                           check=True, timeout=15, stdout=subprocess.DEVNULL,
+                                           stderr=subprocess.DEVNULL)
+                            inspect = small
+                        except (OSError, subprocess.SubprocessError) as exc:
+                            result['downscale_issue'] = type(exc).__name__
+                    try:
+                        result['metrics'] = score_png(inspect)
+                    except (OSError, ValueError) as exc:
+                        if inspect == image:
+                            raise
+                        # A failed or unsupported re-encoding must not cause a
+                        # valid original screenshot to disappear from the audit.
+                        # Keep the failure reason for honest diagnostics.
+                        result['downscale_issue'] = type(exc).__name__
+                        result['metrics'] = score_png(image)
                     result['quality'] = (
                         'blank_shell_candidate' if result['metrics']['likely_blank_shell']
                         else 'sparse_or_empty_content'
