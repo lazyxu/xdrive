@@ -57,6 +57,20 @@ test('Chromium tests real MUI component at 320/390/1280 including fenced source 
   assert.doesNotMatch(browser, /github\.com\/releases|new WebSocket|authorization.*Bearer/i)
 })
 
+test('actual Chromium checks configured AliDNS lengths and safe replacement draft', () => {
+  assert.match(fixture, /loadCaddyAliDNSConfig: async/)
+  assert.match(fixture, /access_key_id_length: 17/)
+  assert.match(fixture, /access_key_secret_length: 31/)
+  assert.match(browser, /async function auditAliDNSConfiguredMask\(page\)/)
+  assert.match(browser, /await auditAliDNSConfiguredMask\(page\)/)
+  assert.match(browser, /await id\.fill\('ReplacementID1234'\)/)
+  assert.match(browser, /await id\.fill\(''\)/)
+  assert.match(browser, /label\.MuiInputLabel-shrink/)
+  assert.match(browser, /cannot reveal without audited API/)
+  assert.doesNotMatch(fixture, /access_key_id:\s*['"][A-Za-z0-9]/)
+  assert.doesNotMatch(fixture, /access_key_secret:\s*['"][A-Za-z0-9]/)
+})
+
 test('isolated Actions job executes accurate SHA, native Chrome and retains sanitized evidence', () => {
   assert.match(workflow, /pull_request:/)
   assert.match(workflow, /branches: \[master\]/)
