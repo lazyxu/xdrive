@@ -670,6 +670,11 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     func testCloudFilesRepeatedOfflineRetryRetainsRecoverableChildPage() {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
+        // Files retains its Quick Section across native route transitions.
+        // Explicitly enter Browse before asserting the real Owner root link;
+        // a missing Owner/root is still a hard failure, never a fake route.
+        select("native-ios-files-section-browse", in: app)
+        checkFilesHome(app)
         select("native-ios-files-open-root-location", in: app)
         XCTAssertTrue(target("native-ios-files-error-page", in: app)
             .waitForExistence(timeout: 15), "Offline cloud child did not fail closed")
@@ -802,6 +807,11 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     func testCloudDeniedThenAlbumFilterFilesRoundTripKeepsRealShells() {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
+        // Files retains its Quick Section across native route transitions.
+        // Explicitly enter Browse before asserting the real Owner root link;
+        // a missing Owner/root is still a hard failure, never a fake route.
+        select("native-ios-files-section-browse", in: app)
+        checkFilesHome(app)
         select("native-ios-files-open-root-location", in: app)
         XCTAssertTrue(target("native-ios-files-error-page", in: app)
             .waitForExistence(timeout: 15))
