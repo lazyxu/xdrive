@@ -38,6 +38,6 @@ Older encrypted Clipboard records do not become readable plaintext by changing t
 3. Owner A cannot access Owner B's content, even after A→B→A, logout/login, revoke, password reset or delayed responses. Device X cannot read content directed to device Y; a revoked device loses access.
 4. Unknown ACK retries preserve EventID/target/MIME/Node and a changed intent is rejected. Cross-Owner and trashed/foreign Files Nodes cannot be sent or opened.
 5. SSE contains only change cursors; connection loss falls back to full GET; pages do not monitor OS clipboard in background; the user explicitly confirms local uploads and viewer opening.
-6. Run the applicable Go/PostgreSQL, Web/PWA, Desktop, native iOS/Android, DSM and security regressions in available automated environments. The exact PR HEAD must pass required CI and Final Gate before merge.
+6. Run the applicable Go/PostgreSQL, Web/PWA, Desktop, native iOS/Android, DSM and security regressions in available automated environments. The exact PR HEAD must pass required CI and Final Gate before merge. Record test results on the exact PR; unavailable physical-device or production-host checks are not replacement tests or implicit merge requirements.
 
 The older implementation's crypto benchmark vectors and passphrase recovery discussions are retired historical fixtures, not current feature documentation.
