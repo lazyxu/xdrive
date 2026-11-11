@@ -3446,6 +3446,65 @@ async function testPhotoDrawerSameCellRetry(browser,mode,port){
   } finally {await context.close()}
 }
 
+
+/** Mounted React/Chromium proof in both actual SDK Hosts. Intentionally hold
+ * Owner B's /cells while Owner A's photo Drawer is open: identical filter
+ * keys must not allow one single stale Owner-A frame or a clickable Tile.
+ * The new revision is admitted only after the held signed Owner read.
+ */
+async function testOwnerSwitchHidesStaleDrawer(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',e=>errors.push(e.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>
+    route.fulfill({status:200,contentType:'text/javascript',body:sdkStub}))
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&album_dialog_28=1&owner_switch=1',
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 28 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    const drawer=page.locator('[data-xdrive-places-photo-drawer]')
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor()
+    const old=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': Owner-A Drawer starts with verified revision two',
+      old?.revision===2 && old?.items===28 && errors.length===0)
+    // External account change intentionally occurs while MUI's modal is open.
+    await page.evaluate(()=>document.getElementById('fixture-switch-owner').click())
+    await page.waitForFunction(()=>window.__mapProbe.ownerCellReadsBlocked>0)
+    const frames=await page.evaluate(async()=>{
+      const result={samples:0,oldTiles:0,oldDrawer:0,oldCovers:0}
+      for(let i=0;i<10;i++){
+        await new Promise(resolve=>requestAnimationFrame(resolve))
+        result.samples++
+        if(document.querySelector('[data-xdrive-places-photo-drawer]'))
+          result.oldDrawer++
+        if(document.querySelector('[data-xdrive-places-photo-drawer-item]'))
+          result.oldTiles++
+        if(document.querySelector('[data-xdrive-places-trusted-photo-cover]'))
+          result.oldCovers++
+      }
+      return result
+    })
+    record(mode+': same-filter Owner switch shows no prior Drawer or photo covers while fresh Cells blocked',
+      frames.samples===10 && frames.oldDrawer===0 &&
+      frames.oldTiles===0 && frames.oldCovers===0 && errors.length===0)
+    await page.locator('#fixture-release-owner-cells').click()
+    await page.getByText('当前地图可查看 28 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor()
+    const newlySigned=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': post-switch Viewer-facing tiles require new Owner Cell/Node revision',
+      newlySigned?.revision===3 && newlySigned?.items===28 &&
+      windowNotLeaked(errors))
+  }finally{await context.close()}
+}
+function windowNotLeaked(errors){return errors.length===0}
+
 async function testPhotoCellAlbumDialog28(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:390,height:844},locale:'zh-CN',
@@ -3496,9 +3555,31 @@ async function testPhotoCellAlbumDialog28(browser,mode,port){
     await expandButton.click()
     await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor({state:'visible'})
     const collapsed=await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').count()
+    await page.evaluate(()=>{
+      window.__placesExpandFrameAudit={total:0,ready:0,empty:0,done:false}
+      const sample=()=>{
+        const state=window.__placesExpandFrameAudit
+        state.total++
+        const dialog=document.querySelector('[data-xdrive-places-album-dialog]')
+        const expanded=dialog?.querySelector('[data-xdrive-places-photo-drawer-handle]')
+          ?.getAttribute('aria-expanded')==='true'
+        if(expanded){
+          state.ready++
+          if(!dialog.querySelector('[data-xdrive-media-gallery-virtual-grid]') ||
+              !dialog.querySelector('[data-xdrive-places-photo-drawer-item]'))state.empty++
+        }
+        if(state.ready>=8 || state.total>=100)state.done=true
+        else requestAnimationFrame(sample)
+      }
+      requestAnimationFrame(sample)
+    })
     await expandButton.click()
     await dialog.locator('[data-xdrive-media-gallery-virtual-grid]').waitFor({state:'visible'})
     await dialog.locator('[data-xdrive-places-photo-drawer-item]').first().waitFor({state:'visible'})
+    await page.waitForFunction(()=>window.__placesExpandFrameAudit?.done)
+    const expandedFrames=await page.evaluate(()=>window.__placesExpandFrameAudit)
+    record(mode+': collapse to eight-tile strip and expand has no ready-but-blank paint',
+      expandedFrames.ready>=8 && expandedFrames.empty===0 && errors.length===0)
     record(mode+': collapse and expand never loses authenticated thumbnail tiles',
       collapsed===0 && errors.length===0)
     const state=await page.evaluate(()=>{
@@ -4055,6 +4136,19 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       return Boolean(tiles?.length && Number(tiles[tiles.length-1].getAttribute(
         'data-xdrive-media-index'))===141)
     })
+    // A deep 142-photo scroll must survive collapse/expand without resetting
+    // the virtual window to row zero or painting unverified old items.
+    const expand=dialog.locator('[data-xdrive-places-photo-drawer-expand]')
+    await expand.click()
+    await expand.click()
+    const deepReturn=await page.waitForFunction(()=>{
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      if(!list || list.scrollTop<=0)return false
+      return Array.from(list.querySelectorAll('[data-xdrive-media-index]'))
+        .some(tile=>Number(tile.getAttribute('data-xdrive-media-index'))>=135)
+    },null,{timeout:12000}).then(()=>true).catch(()=>false)
+    record(mode+': collapse/expand preserves deep signed 142-photo viewport anchor',
+      deepReturn && errors.length===0)
     await page.locator('[data-xdrive-places-photo-drawer-item]').last().click()
     await page.locator('#fixture-viewer').waitFor({state:'visible'})
     const opened=await page.evaluate(()=>window.__mapProbe.photoOpens.at(-1))
@@ -4847,6 +4941,8 @@ async function main(){
       await testPhotoCoverWhileTouchHeld(browser,'isolated',port)
       await testPhotoCellAlbumDialog28(browser,'inline',port)
       await testPhotoCellAlbumDialog28(browser,'isolated',port)
+      await testOwnerSwitchHidesStaleDrawer(browser,'inline',port)
+      await testOwnerSwitchHidesStaleDrawer(browser,'isolated',port)
       await testPhotoDrawerSameCellRetry(browser,'inline',port)
       await testPhotoDrawerSameCellRetry(browser,'isolated',port)
       await test100kSparseRangeViewerAndResize(browser,'inline',port)
