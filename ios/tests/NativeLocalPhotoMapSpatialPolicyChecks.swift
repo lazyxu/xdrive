@@ -329,7 +329,7 @@ struct NativeLocalMapSpatialPolicyChecks {
         for amount in [64, 65] {
             var indexed = XDriveIOSNativeLocalMapSpatialIndex<Int>()
             for id in 0..<amount {
-                precondition(indexed.add(latitude: Double(id) / 100.0,
+                precondition(indexed.add(latitude: Double(id) / 4.0,
                                          longitude: 20.25, representative: id))
             }
             precondition(indexed.locatedCount == amount)
