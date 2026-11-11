@@ -8,6 +8,7 @@ on:
       - 'desktop/scripts/viewer-first-frame-*.cjs'
       - 'desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs'
       - 'desktop/tests/viewer-first-frame-benchmark-contract.cjs'
+      - 'internal/api/gallery_real_web_cold_performance_integration_test.go'
       - 'ui/shared/src/mui/FilePreviewSurface.tsx'
       - 'ui/shared/src/mui/MediaGalleryViewer.tsx'
       - 'web/src/mediaGalleryAdapter.ts'
@@ -105,11 +106,10 @@ jobs:
           mkdir -p "$OUT"
           printf 'baseline=%s\ncandidate=%s\nsource=%s\n' \
             "$VIEWER_BASE_SHA" "$VIEWER_HEAD_SHA" "$(git rev-parse HEAD)" > "$OUT/source.txt"
-          # The frozen before-build has a real mobile Snackbar (z=1400)
-          # covering Files; an obsolete baseline must not prevent measuring
-          # the proposed product fix. Keep both samples MANDATORY: candidate
-          # must genuinely navigate and render signed H264 n3, and the pair
-          # remains red if the baseline cannot produce its own real n3.
+          # Both genuine Web builds use the same signed Go/PostgreSQL fixture.
+          # The real Recent-folders table and API are prevalidated before UI:
+          # missing-schema 500 Snackbars must not poison the baseline. Keep
+          # both n3 samples and unobscured actual pointer taps mandatory.
           export XD_VIEWER_FF_DIST="$GITHUB_WORKSPACE/web/dist"
           test -s "$XD_VIEWER_FF_DIST/index.html"
           xvfb-run -a --server-args="-screen 0 1920x1200x24" \

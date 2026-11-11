@@ -160,3 +160,20 @@ test('paired workflow compiles both real production builds against the same Go/P
   assert.equal(desktop.overrides?.rollup, '4.68.0',
     'Desktop must pin the published Rollup release instead of resolving nonexistent 4.68.2')
 })
+
+test('real signed SPA Go/PG fixture migrates and reads both Recent sources before paired H264 UI', () => {
+  const go = read('internal/api/gallery_real_web_cold_performance_integration_test.go')
+  const meta = read('internal/meta/file_recent.go')
+  const workflow = read('.github/workflows/viewer-first-frame-paired-h264.yml')
+  assert.ok(go.includes('if desktopFileExplorerMixed || p0c2SPAMode'))
+  assert.ok(go.includes('&meta.FileRecentAccess{}') &&
+    go.includes('&meta.FileRecentFolderAccess{}'),
+    'both production Recent tables are required for real Files navigation')
+  assert.ok(meta.includes('func (FileRecentFolderAccess) TableName() string { return "xd_file_recent_folder_access" }'))
+  assert.ok(go.includes('"/api/v1/file-recent-folders?limit=8"') &&
+    go.includes('token, nil, http.StatusOK'),
+    'run the actual authorized Gin/PG Recent-folder read, never a stub')
+  assert.ok(workflow.includes("'internal/api/gallery_real_web_cold_performance_integration_test.go'"))
+  assert.ok(!workflow.includes('continue-on-error') &&
+    !workflow.includes('|| true'), 'do not waive the frozen baseline/real H264 n3 gate')
+})

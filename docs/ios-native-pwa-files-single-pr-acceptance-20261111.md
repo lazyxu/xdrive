@@ -65,3 +65,28 @@ telemetry rather than claiming fixed from source alone.
 * Successful earlier PR checks are historical only. The new tree is a
   semantic union of the exact source blobs and latest master; predecessor
   branches are not force-pushed or rewritten.
+
+## 2026-11-11 follow-up: real Owner/PG baseline schema root cause
+
+[#4290 failing paired H264 run 42952629973](https://github.com/lazyxu/xdrive/actions/runs/42952629973)
+shows 3/3 real signed-H264 candidate first-frame runs and real 100k logical
+Gallery/Viewer return, then the frozen baseline's genuine Files navigation
+cannot be tapped: `blockerKind=snackbar`, within viewport but unobscured=0.
+The same job's PostgreSQL log repeatedly reports
+`relation "xd_file_recent_folder_access" does not exist`.
+This is independently actionable in the **test fixture**, not an actual
+video decoding failure.
+
+The isolated `TestGalleryRealWebColdFixture100K` previously migrated
+`meta.FileRecentAccess` but not the separate `meta.FileRecentFolderAccess`
+while mounting the real Files app. It now migrates both production models
+only in the opt-in full-SPA fixture, then performs the real authenticated
+`GET /api/v1/file-recent-folders?limit=8` against Gin/PostgreSQL, requiring
+HTTP 200 before the browser. The paired workflow is triggered by changes to
+this fixture. No production migration or Owner permissions are changed and
+no baseline test, actual click or n3 comparison is bypassed.
+
+This follows a separate same-PR verified-edge real pointer diagnostic on
+the historical baseline. Both controls keep real `elementFromPoint` and
+native Electron pointer dispatch; test pass must be established on the
+new exact candidate HEAD, not inferred from source contracts.
