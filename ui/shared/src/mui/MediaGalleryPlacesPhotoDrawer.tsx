@@ -14,6 +14,13 @@ import { MediaTile, MediaVirtualTileGrid } from './MediaGallerySharedTiles'
 import type { XDriveMediaGalleryVirtualCollection } from './MediaGallerySharedTiles'
 import type { MediaThumbnailLoader, MediaPreviewURLLoader, MediaVideoPosterSaver } from './MediaGallery'
 import { XDriveMediaGalleryPhotoWall } from './MediaGalleryPhotoWall'
+import { XDriveMediaGalleryFramingControls } from './MediaGalleryFramingControls'
+import {
+  xDriveMediaGalleryReadFraming,
+  xDriveMediaGalleryObserveFraming,
+  xDriveMediaGalleryWriteFraming,
+} from './MediaGalleryPhotoWallFraming'
+import type { XDriveMediaGalleryFraming } from './MediaGalleryPhotoWallFraming'
 import { XDriveMediaGalleryDateNavigation } from './MediaGalleryDateNavigation'
 import {
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
@@ -104,6 +111,13 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   const mobile = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const [timeScale, setTimeScale] = useState<TimeScale>(
     () => initialPresentation?.timeScale ?? 'all')
+  const [framing, setFraming] = useState<XDriveMediaGalleryFraming>(
+    xDriveMediaGalleryReadFraming)
+  useEffect(() => xDriveMediaGalleryObserveFraming(setFraming), [])
+  const changeFraming = useCallback((next: XDriveMediaGalleryFraming) => {
+    setFraming(next)
+    xDriveMediaGalleryWriteFraming(next)
+  }, [])
   const [columnsByScale, setColumnsByScale] = useState<Record<TimeScale, number>>(() => {
     // Gallery/Places share only bounded visual column preferences. Viewer
     // return may override the current scale for one short-lived UI intent;
@@ -517,6 +531,14 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             />
           </Box>
         ) : null}
+        {phase==='ready' && expanded ? (
+          <Box sx={{px:1.25,pb:0.75}}>
+            <XDriveMediaGalleryFramingControls
+              surface="places" framing={framing}
+              onChange={changeFraming}
+            />
+          </Box>
+        ) : null}
       </Box>
       {phase==='loading' ? (
         <Stack role="status" direction="row" spacing={1} alignItems="center"
@@ -609,6 +631,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               overscrollBehavior:'contain',touchAction:'auto'}}>
             {thumbnailScheduler ? expanded ? (
               <XDriveMediaGalleryPhotoWall surface="places"
+                framing={framing}
                 pinch={mobile ? {
                   columns: columnsByScale[timeScale],
                   minColumns: 2,
@@ -673,7 +696,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             ) : (
               // The collapsed grip is a *preview*, not a second full list.
               // Its tiles still use Gallery's exact MediaTile component.
-              <XDriveMediaGalleryPhotoWall surface="places">
+              <XDriveMediaGalleryPhotoWall surface="places" framing={framing}>
               <Stack direction="row" spacing={1} sx={{width:'max-content'}}>
                 {items.slice(0,8).map((item,index) => (
                   <Box key={item.node.id} sx={{width:92,flex:'0 0 92px'}}>

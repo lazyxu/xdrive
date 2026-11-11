@@ -197,7 +197,9 @@ test('optional favorites stay authenticated; no cross-Owner bulk mutation is add
 
 test('collapsed preview is bounded and uses the same thumbnail and photo wall host',()=>{
   assert.match(drawer,/items\.slice\(0,8\)\.map/)
-  assert.match(drawer,/<XDriveMediaGalleryPhotoWall surface="places">/)
+  assert.match(drawer,/<XDriveMediaGalleryPhotoWall surface="places" framing=\{framing\}>/)
+  assert.match(drawer,/xDriveMediaGalleryReadFraming/)
+  assert.match(drawer,/xDriveMediaGalleryObserveFraming\(setFraming\)/)
   assert.match(drawer,/<MediaTile/)
   assert.match(drawer,/new XDriveMediaThumbnailScheduler\(loadThumbnail\)/)
   assert.match(drawer,/scheduler\.dispose\(\)/)

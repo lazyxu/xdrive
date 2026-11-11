@@ -373,12 +373,22 @@ test('Web HTTP thumbnails deliver verified alpha before first image-body byte', 
   assert.equal(opaqueResults[0], '', 'only explicitly verified JPEGs can paint the full tile')
 })
 
-test('Gallery contain mode aligns alpha mask with the thumbnail object-fit geometry', () => {
+test('Gallery and Places contain mode aligns alpha mask with thumbnail object-fit and pinch', () => {
   const gallery = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
-  const begin = gallery.indexOf('& [data-xdrive-media-tile] [data-xdrive-media-loading-progress]')
-  assert.ok(begin >= 0)
-  assert.match(gallery.slice(begin, begin + 280), /maskSize: aspectMode === 'contain' \? 'contain' : 'cover'/)
-  assert.match(gallery.slice(begin, begin + 280), /WebkitMaskSize: aspectMode === 'contain' \? 'contain' : 'cover'/)
+  const places = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'), 'utf8')
+  const sharedHost = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGalleryPhotoWall.tsx'), 'utf8')
+  const framing = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGalleryPhotoWallFraming.ts'), 'utf8')
+  const begin = framing.indexOf('& [data-xdrive-media-tile] [data-xdrive-media-loading-progress]')
+  assert.ok(begin >= 0, 'shared Gallery/Places policy must retain real progress mask')
+  assert.match(framing.slice(begin, begin + 185), /maskSize: fit/)
+  assert.match(framing.slice(begin, begin + 185), /WebkitMaskSize: fit/)
+  assert.match(framing, /const fit: 'contain' \| 'cover' = mode === 'contain' \? 'contain' : 'cover'/)
+  assert.match(framing, /objectFit: fit/)
+  assert.match(framing, /transform: 'scale\(var\(--xdrive-gallery-pinch-preview, 1\)\)'/)
+  assert.match(gallery, /xDriveMediaGalleryFramingStyles\(aspectMode\)/)
+  assert.match(gallery, /<XDriveMediaGalleryPhotoWall surface="gallery"\s+framing=\{aspectMode\}/)
+  assert.match(places, /<XDriveMediaGalleryPhotoWall surface="places"\s+framing=\{framing\}/)
+  assert.match(sharedHost, /xDriveMediaGalleryFramingStyles\(framing, Boolean\(pinch\)\)/)
 })
 
 test('shared Viewer transfer labels use accurate IEC B / KiB / MiB / GiB units', () => {
