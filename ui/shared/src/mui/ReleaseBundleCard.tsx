@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Link, Stack, Typography } from '@mui/material'
 import type { XDriveReleaseBundlePort, XDriveReleaseBundleState } from '../release-bundles'
 import { xDriveReleaseBundleDownloadSources } from '../release-bundles'
@@ -27,34 +27,59 @@ const states: Record<string, string> = {
 
 export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePort }) {
   const [state, setState] = useState<XDriveReleaseBundleState | null>(null)
-  const [error, setError] = useState('')
+  const [readError, setReadError] = useState('')
+  const [actionFeedback, setActionFeedback] = useState<{ tone: 'neutral' | 'warning' | 'bad'; message: string } | null>(null)
+  const latestRefresh = useRef(0)
+  const lastCommit = useRef<string | undefined>(undefined)
   const [retrying, setRetrying] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [pendingInstall, setPendingInstall] = useState<{ commit: string; filename: string; personalUnsigned: boolean } | null>(null)
   const refresh = useCallback(async () => {
     if (!port) return
+    const requestNumber = ++latestRefresh.current
     try {
       const result = await port.getState()
+      // Polls may overlap or finish after an Owner/Server switch.
+      if (requestNumber !== latestRefresh.current) return
+      if (lastCommit.current !== result.commit) {
+        // A result for a different Server must not retain a previous
+        // installation confirmation or error.
+        lastCommit.current = result.commit
+        setPendingInstall(null)
+        setActionFeedback(null)
+      }
       setState(result)
-      setError('')
+      setReadError('')
     } catch {
-      setError('暂时无法读取客户端安装包缓存状态，不影响服务端升级。')
+      if (requestNumber === latestRefresh.current) {
+        setReadError('暂时无法读取客户端安装包缓存状态，不影响服务端升级。')
+      }
     }
   }, [port])
   useEffect(() => {
+    latestRefresh.current++
+    lastCommit.current = undefined
+    setState(null)
+    setReadError('')
+    setActionFeedback(null)
+    setPendingInstall(null)
     if (!port) return
     void refresh()
     const ticker = setInterval(() => { void refresh() }, 10000)
-    return () => clearInterval(ticker)
+    return () => {
+      latestRefresh.current++
+      clearInterval(ticker)
+    }
   }, [port, refresh])
   const retry = async () => {
     if (!port?.retry || retrying) return
     setRetrying(true)
+    setActionFeedback(null)
     try {
       await port.retry()
       await refresh()
     } catch {
-      setError('重试请求未成功。服务端升级状态不受影响。')
+      setActionFeedback({ tone: 'warning', message: '重试请求未成功。服务端升级状态不受影响。' })
     } finally {
       setRetrying(false)
     }
@@ -83,12 +108,20 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
           </Typography> : null}
         {state?.state === 'retry_needed' ?
           <XDriveStatusAlert tone="warning">客户端安装包缓存失败，可继续使用服务端并重试同步。</XDriveStatusAlert> : null}
-        {error ? <XDriveStatusAlert tone="warning">{error}</XDriveStatusAlert> : null}
+        {readError ? <XDriveStatusAlert tone="warning">{readError}</XDriveStatusAlert> : null}
+        {actionFeedback ? <XDriveStatusAlert tone={actionFeedback.tone}>{actionFeedback.message}</XDriveStatusAlert> : null}
         {state?.artifacts?.length ? (
           <Typography variant="body2" color="text.secondary">
             {state.artifacts.filter((entry) => entry.cached).length} / {state.artifacts.length} 个安装包已校验缓存；
             其余安装包可独立重试或使用上游来源，不影响服务端状态。
           </Typography>
+        ) : null}
+        {port.installCurrent && state?.artifacts.some((artifact) => artifact.platform === port.platform) ? (
+          <XDriveStatusAlert tone="neutral">
+            安装包和缓存存在不代表已经获准安装。原生安装前必须独立验证公开的 GitHub Release 为
+            immutable:true、完整 Git Commit、发布 Manifest 与全部资产摘要；
+            若仓库未启用 Release immutability，安装会被拒绝，不影响 Server 或其他客户端。
+          </XDriveStatusAlert>
         ) : null}
         {(state?.artifacts ?? []).map((artifact) => {
           const sources = xDriveReleaseBundleDownloadSources(artifact)
@@ -118,7 +151,7 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
                 state?.commit === artifact.build_commit &&
                 (artifact.install_mode === 'manual' || personalUnsigned) && sources.length > 0 ? (
                 <XDriveActionButton intent="primary" compact disabled={installing}
-                  onClick={() => setPendingInstall({ commit: artifact.build_commit, filename: artifact.filename, personalUnsigned })}>
+                  onClick={() => { setActionFeedback(null); setPendingInstall({ commit: artifact.build_commit, filename: artifact.filename, personalUnsigned }) }}>
                   {personalUnsigned ? '安装私人未签名 Windows 版本（自愿）' : '自愿升级此设备到当前 Server Commit'}
                 </XDriveActionButton>
               ) : null}
@@ -126,7 +159,7 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
                 <XDriveActionButton onClick={() => {
                   const transfer = port.downloadCached?.(artifact.filename)
                   if (transfer) void transfer.catch(() => {
-                    setError('本机安装包下载失败，可改用 GitLab 或 GitHub。')
+                    setActionFeedback({ tone: 'bad', message: '本机安装包下载失败，可改用 GitLab 或 GitHub。' })
                   })
                 }}>本机服务器下载（优先）</XDriveActionButton>
               ) : null}
@@ -148,8 +181,8 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
         open={pendingInstall !== null}
         title={pendingInstall?.personalUnsigned ? '确认安装未经签名的个人 Windows 构建？' : '确认将本机客户端升级到 Server 当前 Commit？'}
         description={pendingInstall?.personalUnsigned
-          ? `仅供个人使用：没有 Authenticode 发布者签名，风险高于正式签名发行。目标 Commit：${pendingInstall.commit}。将独立核对 GitHub Bundle、完整 Commit、文件大小、SHA-256，安装后核对实际 Commit；仅更新本机。`
-          : `仅升级当前设备，不会强制其他客户端升级。目标 Commit：${pendingInstall?.commit ?? '—'}。将独立校验公开发布的 Commit、SHA-256 与操作系统安装包签名。`}
+          ? `仅供个人使用：没有 Authenticode 发布者签名，风险高于正式签名发行。目标 Commit：${pendingInstall.commit}。须独立验证 GitHub Release immutable:true、发布 Manifest、完整 Commit、大小和 SHA-256，安装后核对实际 Commit；仅更新本机。`
+          : `仅升级当前设备，不会强制其他客户端升级。目标 Commit：${pendingInstall?.commit ?? '—'}。安装前必须独立验证 GitHub Release immutable:true、完整 Commit、发布 Manifest、SHA-256 与平台签名。`}
         confirmLabel="验证并安装"
         confirmIntent="warning"
         loading={installing}
@@ -158,14 +191,18 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
           if (!pendingInstall || !port.installCurrent || installing) return
           if (state?.commit !== pendingInstall.commit) {
             setPendingInstall(null)
-            setError('Server Commit 已变化，请刷新后重新选择。')
+            setActionFeedback({ tone: 'warning', message: 'Server Commit 已变化，请刷新后重新选择。' })
             return
           }
           setInstalling(true)
+          setActionFeedback(null)
           void port.installCurrent(pendingInstall.commit, pendingInstall.filename, pendingInstall.personalUnsigned)
-            .then(() => { setPendingInstall(null); setError('已提交本机更新，等待安装器完成版本与健康检查。') })
+            .then(() => {
+              setPendingInstall(null)
+              setActionFeedback({ tone: 'neutral', message: '已提交本机更新；仍需等待安装器完成 Commit 和健康检查，不能据此认定升级成功。' })
+            })
             .catch((reason: unknown) => {
-              setError(reason instanceof Error ? reason.message : '当前 Server 版本安装失败。')
+              setActionFeedback({ tone: 'bad', message: reason instanceof Error ? reason.message : '当前 Server 版本安装失败。' })
             })
             .finally(() => setInstalling(false))
         }}
