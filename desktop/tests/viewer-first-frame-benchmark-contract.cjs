@@ -177,3 +177,40 @@ test('real signed SPA Go/PG fixture migrates and reads both Recent sources befor
   assert.ok(!workflow.includes('continue-on-error') &&
     !workflow.includes('|| true'), 'do not waive the frozen baseline/real H264 n3 gate')
 })
+
+test('historical baseline scroll drift is exposed, never counted as candidate Viewer return success', () => {
+  const runner = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
+  const workflow = read('.github/workflows/viewer-first-frame-paired-h264.yml')
+  assert.ok(runner.includes("XD_VIEWER_FF_BASELINE_RETURN_AUDIT === '1'"))
+  assert.ok(runner.includes('allowHistoricalBaselineDrift?96:2'),
+    'strict candidate anchor tolerance must remain 2 px')
+  assert.ok(runner.includes('baselineScrollDrift:measuredScrollDelta>2'))
+  assert.ok(runner.includes('passed:returned.scrollRestored===true'),
+    'baseline return mismatch must be reported as failed UX')
+  assert.ok(runner.includes('historicalReturnEvidence:historicalBaselineReturnAudit'))
+  assert.ok(workflow.includes('export XD_VIEWER_FF_BASELINE_RETURN_AUDIT=1'))
+  assert.ok(workflow.includes('unset XD_VIEWER_FF_BASELINE_RETURN_AUDIT'))
+  const before=evidence([120,180,240])
+  const after=evidence([130,170,210])
+  before.historicalBaselineReturnAudit=true
+  before.viewerReturnsFullyPassed=false
+  before.historicalReturnEvidence=Array.from({length:3},()=>({
+    jpegScrollDeltaPx:57, jpegRestored:false,
+    h264ScrollDeltaPx:57, h264Restored:false,
+  }))
+  before.samples[1].p1H264Frames.passed=false
+  before.samples[1].p1H264Frames.genuinePresentedFrames=true
+  before.samples[1].p1H264Frames.baselineReturnDrift=true
+  before.samples[1].p1H264Frames.restoredScrollDelta=57
+  after.viewerReturnsFullyPassed=true
+  const report=compareRealVideoFirstFrames(before,after)
+  assert.equal(report.validated,true)
+  assert.equal(report.baselineViewerReturnPassed,false)
+  assert.equal(report.candidateViewerReturnPassed,true)
+  assert.equal(report.baselineReturnEvidence[1].h264ScrollDeltaPx,57)
+  after.viewerReturnsFullyPassed=false
+  assert.throws(()=>compareRealVideoFirstFrames(before,after), /candidate.*Viewer return failure/)
+  after.viewerReturnsFullyPassed=true
+  before.samples[1].p1H264Frames.restoredScrollDelta=150
+  assert.throws(()=>compareRealVideoFirstFrames(before,after), /sample 1 invalid/)
+})

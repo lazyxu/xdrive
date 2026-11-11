@@ -90,3 +90,34 @@ This follows a separate same-PR verified-edge real pointer diagnostic on
 the historical baseline. Both controls keep real `elementFromPoint` and
 native Electron pointer dispatch; test pass must be established on the
 new exact candidate HEAD, not inferred from source contracts.
+
+## 2026-11-11 additional real H264 paired baseline diagnostic
+
+On [real run 42972976049](https://github.com/lazyxu/xdrive/actions/runs/42972976049),
+candidate passed genuine n3/3 H264 compositor first-frame motion and exact
+JPEG/H264 Viewer return. Baseline's Files button finally received a genuine
+`elementFromPoint`-verified tap. The baseline then failed after a *real JPEG*
+Viewer Back: same document/route/host/grid, real decoded original and bounded
+19 mounted tiles, but a 57px historical scroll-anchor drift instead of <=2px.
+The test aborted before measuring any baseline H264 frames. This must NOT
+be described as baseline H264 decode failure or a successful viewer return.
+
+The paired H264 runner now permits a **strictly labeled historical baseline
+return audit**, opt-in only for the before-build in signed H264 pairing.
+It accepts at most 96px *measured* same-Owner/route/host/grid drift solely
+to continue to a real H264 first-frame sample; the underlying returned
+`passed` remains **false** and all measured drift is retained in the
+report. The candidate and all independent JPEG/H264 Viewer stability
+tests still require <=2px and cannot use this mode. Wrong Owner/route,
+missing grid, unresolved Viewer, blank decoded media, excessive drift
+and missing actual H264 frame still fail closed.
+
+The H264 comparison now separately reports `baselineViewerReturnPassed`,
+`candidateViewerReturnPassed` and baseline per-sample JPEG/H264 drift,
+and never claims that a recorded baseline defect passed the UX gate.
+This keeps historical control evidence visible without falsely blaming
+candidate video performance for a baseline-only scroll regression.
+
+Status: implemented in the integrated PR; new exact-head real
+Electron/PG/CAS H264 n3/n3 run still required. Real iOS physical
+performance and screenshot pairing are not proved by Chromium.

@@ -29,6 +29,15 @@ const p0c2SPAMode = process.env.XD_PWA_P0C2_SPA_BEFORE === '1'
 const p1Mode = process.env.XD_PWA_P1_100K_VIEWER_BACK === '1'
 const p1H264Mode = process.env.XD_PWA_P1_H264_VIEWER_FRAME === '1'
 const videoFirstFrameMode = process.env.XD_VIEWER_FIRST_FRAME_BENCH === '1'
+// Strict candidate and other P1 Viewer returns stay <=2px. The genuine,
+// frozen H264 baseline may REPORT an existing bounded scroll-anchor defect;
+// this never converts a failed historical Viewer return into a passed one.
+const historicalBaselineReturnAudit = process.env.XD_VIEWER_FF_BASELINE_RETURN_AUDIT === '1'
+assert(!historicalBaselineReturnAudit ||
+  (videoFirstFrameMode && p1H264Mode && p1Mode &&
+   process.env.XD_PWA_P1_PHYSICAL_115K_VIEWER !== '1' &&
+   process.env.XD_PWA_P1_LIVE_MOTION_HOLD !== '1'),
+  'historical return audit only applies to signed H264 before/after benchmark')
 assert(!videoFirstFrameMode || p1H264Mode,
   'first-frame benchmark requires actual Owner-signed H264 Viewer')
 const p1LiveMode = process.env.XD_PWA_P1_LIVE_MOTION_HOLD === '1'
@@ -482,19 +491,25 @@ function p1BackPoint() {
   const hit=document.elementFromPoint(x,y)
   return hit===button||button.contains(hit)?{x,y}:null
 }
-function p1ReturnedToCaller() {
+function p1ReturnedToCaller(allowHistoricalBaselineDrift = false) {
   const saved=window.__xdriveP1Entry
   if(!saved||document.querySelector('[data-xdrive-web-viewer]'))return null
   const host=document.querySelector('[data-xdrive-workspace-background] main')
   const grid=document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
   if(location.hash!==saved.route||saved.document!==document.documentElement||
-    host!==saved.host||grid!==saved.grid||!saved.host.isConnected||!saved.grid.isConnected||
-    Math.abs((host?.scrollTop??-1)-saved.scrollTop)>2)return null
+    host!==saved.host||grid!==saved.grid||!saved.host.isConnected||!saved.grid.isConnected)return null
   const measuredScrollDelta=Math.abs(host.scrollTop-saved.scrollTop)
+  // The frozen baseline can have a one-row (<=96px) *measured* return
+  // defect. Never change scrollTop, route, virtual window or clicked Node.
+  // Candidate and independent P1 Viewer tests always require exact <=2px.
+  if(!Number.isFinite(measuredScrollDelta) ||
+     measuredScrollDelta>(allowHistoricalBaselineDrift?96:2))return null
   const tiles=grid.querySelectorAll('[data-xdrive-media-tile]').length
   if(tiles<1||tiles>=1000)return null
   delete window.__xdriveP1Entry
-  return {sameCaller:true,sameDocument:true,sameHost:true,sameGrid:true,scrollDelta:measuredScrollDelta,tiles}
+  return {sameCaller:true,sameDocument:true,sameHost:true,sameGrid:true,
+    scrollDelta:measuredScrollDelta,scrollRestored:measuredScrollDelta<=2,
+    baselineScrollDrift:measuredScrollDelta>2,tiles}
 }
 // Failure-only, privacy-safe runtime evidence. Never substitute a synthetic
 // route, click or rewritten scroll position for a real Viewer Back.
@@ -540,7 +555,7 @@ async function p1MeasureRealViewerBack(win) {
   let returned
   try {
     returned=await until(async()=>win.webContents.executeJavaScript(
-      '('+p1ReturnedToCaller.toString()+')()',true),20000,
+      '('+p1ReturnedToCaller.toString()+')('+historicalBaselineReturnAudit+')',true),20000,
       'exact mounted Gallery caller route and deep scroll restoration')
   } catch(error) {
     // Do not log media identities, URLs, credentials, file names or Owner data.
@@ -549,8 +564,9 @@ async function p1MeasureRealViewerBack(win) {
     console.error('P1_REAL_VIEWER_RETURN_DIAGNOSTIC '+JSON.stringify(diagnosis))
     throw error
   }
-  return {passed:true,depth:entry.depth,originalDecodedMs,
+  return {passed:returned.scrollRestored===true,depth:entry.depth,originalDecodedMs,
     returnMs:performance.now()-returnedAt,returned,
+    baselineReturnDrift:returned.baselineScrollDrift===true,
     scope:'100k logical PhotoAssets / 115k metadata nodes, only bounded actual JPEG original',
     notMeasured:'dynamic H264 or Live motion, full 115k physical CAS, installed iOS Safari'}
 }
@@ -719,10 +735,13 @@ async function p1MeasureRealH264ViewerMotion(win) {
   ),12000,'actual video Viewer chrome Back')
   sendActualPointer(win,back)
   const returned=await until(async()=>win.webContents.executeJavaScript(
-    '('+p1ReturnedToCaller.toString()+')()',true
+    '('+p1ReturnedToCaller.toString()+')('+historicalBaselineReturnAudit+')',true
   ),20000,'H264 Viewer Back returns to exact Gallery route and scroll')
   return {
-    passed:true,deepFraction:tile.depth,presentedMs,
+    passed:returned.scrollRestored===true,
+    genuinePresentedFrames:true,
+    baselineReturnDrift:returned.baselineScrollDrift===true,
+    deepFraction:tile.depth,presentedMs,
     ...(videoFirstFrameMode ? {firstFrame} : {}),
     frameMediaDeltaMs:played.frameMediaDeltaMs,
     presentedFrameDelta:played.presentedFrameDelta,
@@ -1592,6 +1611,16 @@ async function main() {
       p1H264PresentedP50Ms:p1H264Mode ? rows.map(x=>x.p1H264Frames.presentedMs).sort((a,b)=>a-b)[1] : null,
       p1OriginalDecodedP50Ms:p1Mode ? rows.map(x=>x.p1ViewerBack.originalDecodedMs).sort((a,b)=>a-b)[1] : null,
       firstFrameBenchMode:videoFirstFrameMode,
+      historicalBaselineReturnAudit,
+      viewerReturnsFullyPassed:rows.every(row =>
+        (!p1Mode || row.p1ViewerBack?.passed===true) &&
+        (!p1H264Mode || row.p1H264Frames?.passed===true)),
+      historicalReturnEvidence:historicalBaselineReturnAudit ? rows.map(row=>({
+        jpegScrollDeltaPx:row.p1ViewerBack?.returned?.scrollDelta??null,
+        jpegRestored:row.p1ViewerBack?.passed===true,
+        h264ScrollDeltaPx:row.p1H264Frames?.restoredScrollDelta??null,
+        h264Restored:row.p1H264Frames?.passed===true,
+      })) : [],
       firstFrameP50Ms:videoFirstFrameMode ?
         rows.map(row=>row.p1H264Frames.firstFrame.firstFrameMs).sort((a,b)=>a-b)[1] : null,
       firstFrameTTFBP50Ms:videoFirstFrameMode &&
@@ -1627,7 +1656,12 @@ async function main() {
           row.p1LiveMotion.sameCaller && row.p1LiveMotion.sameDocument &&
           row.p1LiveMotion.sameHost && row.p1LiveMotion.sameGrid &&
           row.p1LiveMotion.restoredScrollDelta<=2)) &&
-        (!p1H264Mode || (row.p1H264Frames?.passed===true &&
+        (!p1H264Mode || ((row.p1H264Frames?.passed===true ||
+          (historicalBaselineReturnAudit &&
+            row.p1H264Frames?.genuinePresentedFrames===true &&
+            row.p1H264Frames?.baselineReturnDrift===true &&
+            row.p1H264Frames?.restoredScrollDelta>2 &&
+            row.p1H264Frames?.restoredScrollDelta<=96)) &&
           row.p1H264Frames.deepFraction>=0.7 &&
           row.p1H264Frames.presentedMs>0 &&
           row.p1H264Frames.presentedMs<=60000 &&
@@ -1635,8 +1669,16 @@ async function main() {
           row.p1H264Frames.frameMediaDeltaMs>5 &&
           row.p1H264Frames.sameCaller && row.p1H264Frames.sameDocument &&
           row.p1H264Frames.sameHost && row.p1H264Frames.sameGrid &&
-          row.p1H264Frames.restoredScrollDelta<=2)) &&
-        (!p1Mode || (row.p1ViewerBack?.passed === true && row.p1ViewerBack.depth >= 0.7 &&
+          (row.p1H264Frames.restoredScrollDelta<=2 ||
+            (historicalBaselineReturnAudit &&
+             row.p1H264Frames.baselineReturnDrift===true &&
+             row.p1H264Frames.restoredScrollDelta<=96)))) &&
+        (!p1Mode || ((row.p1ViewerBack?.passed === true ||
+          (historicalBaselineReturnAudit &&
+            row.p1ViewerBack?.baselineReturnDrift===true &&
+            row.p1ViewerBack?.returned?.scrollDelta>2 &&
+            row.p1ViewerBack?.returned?.scrollDelta<=96)) &&
+          row.p1ViewerBack.depth >= 0.7 &&
           row.p1ViewerBack.originalDecodedMs > 0 && row.p1ViewerBack.originalDecodedMs <= 30000 &&
           row.p1ViewerBack.returnMs > 0 && row.p1ViewerBack.returnMs <= 20000 &&
           row.p1ViewerBack.returned.sameCaller && row.p1ViewerBack.returned.sameDocument &&
@@ -1658,7 +1700,9 @@ async function main() {
         row.go.canceled === row.streamCount && row.go.contextDone === row.streamCount &&
         row.go.stillActiveAt160ms === 0 &&
         row.go.wastedBytesAfterScroll === 0 && row.go.worstContextNotificationMs <= 160),
-      limits: p1ViewerVideoAbortMode ? 'n3 real Owner 390px 100k Gallery signed H264 preview Range in actual Viewer, native Back unmount -> Go Context.Done <=160ms with 0 stale response bytes and same virtual grid/anchor. Reuses original JPEG/H264/Live checks. NOT owner switch, installed iOS or full 115k physical CAS' : p1LiveMode ? 'n3 authentic 390px Owner 100k Live still + real signed motion CAS, held pointer via shared LivePhotoSurface RVFC two advancing frames, release pause/restore, Viewer Back exact virtual anchor; parent H264/JPEG/Go Abort gates retained, not physical iOS touch or full 115k physical files' : p1H264Mode ? 'n3 real authenticated 390px 100k Gallery -> original H264 Viewer, requestVideoFrameCallback two advancing frames after play(), Back same document/deep anchor; preserves original 4-6 Go JPEG abort under 160ms and zero bytes. NOT Live motion, actual iOS/installed PWA, full CAS or video Range abort' : p1Mode ? 'n3 actual 390px Owner 100k Gallery JPEG Viewer decoded original + Back to exact virtual anchor, original Go abort <=160ms; NOT dynamic video/Live, physical iOS, or 115k physical CAS' : p0c2SPAMode ?
+      limits: historicalBaselineReturnAudit ?
+        'Historical frozen Web Viewer baseline: genuine signed H264 first frames and actual same Owner/route/grid Viewer Back are tested. A bounded (<=96px) preexisting JPEG/H264 scroll drift is recorded as return FAIL, never a Viewer stability PASS. Candidate remains strict <=2px. Not an iPhone or causal speedup claim.' :
+        p1ViewerVideoAbortMode ? 'n3 real Owner 390px 100k Gallery signed H264 preview Range in actual Viewer, native Back unmount -> Go Context.Done <=160ms with 0 stale response bytes and same virtual grid/anchor. Reuses original JPEG/H264/Live checks. NOT owner switch, installed iOS or full 115k physical CAS' : p1LiveMode ? 'n3 authentic 390px Owner 100k Live still + real signed motion CAS, held pointer via shared LivePhotoSurface RVFC two advancing frames, release pause/restore, Viewer Back exact virtual anchor; parent H264/JPEG/Go Abort gates retained, not physical iOS touch or full 115k physical files' : p1H264Mode ? 'n3 real authenticated 390px 100k Gallery -> original H264 Viewer, requestVideoFrameCallback two advancing frames after play(), Back same document/deep anchor; preserves original 4-6 Go JPEG abort under 160ms and zero bytes. NOT Live motion, actual iOS/installed PWA, full CAS or video Range abort' : p1Mode ? 'n3 actual 390px Owner 100k Gallery JPEG Viewer decoded original + Back to exact virtual anchor, original Go abort <=160ms; NOT dynamic video/Live, physical iOS, or 115k physical CAS' : p0c2SPAMode ?
         'Actual Web App.tsx real Files→Gallery→Files same-document route click in Chromium 390px, true Go/Gin/PG17/CAS, 100k logical Gallery/115k nodes, 4-6 active JPEG requests, exact Context.Done + RSS/CPU; not iPhone/Safari, 100k independent originals or durable transfer.' :
         p0c2PageLeaveMode ?
         'P0-C2b1 cross-document pageleave, true Chromium/Go/PG17/CAS, 100k logical and 115k metadata, 4-6 actual JPEG streams; Go Context.Done and RSS/CPU, not iOS, SPA route or 100k originals.' :

@@ -14,7 +14,15 @@ function validatedRows(summary, label) {
       summary.samples.length !== 3) throw Error(label + ': real H264 n3 gate missing')
   const rows = summary.samples.map((row, index) => {
     const frame = row?.p1H264Frames?.firstFrame
-    if (row?.p1H264Frames?.passed !== true || frame?.ready !== true ||
+    const knownBaselineDrift = label === 'baseline' &&
+      summary.historicalBaselineReturnAudit === true &&
+      row?.p1H264Frames?.passed === false &&
+      row?.p1H264Frames?.genuinePresentedFrames === true &&
+      row?.p1H264Frames?.baselineReturnDrift === true &&
+      row?.p1H264Frames?.restoredScrollDelta > 2 &&
+      row?.p1H264Frames?.restoredScrollDelta <= 96
+    if (!(row?.p1H264Frames?.passed === true || knownBaselineDrift) ||
+        frame?.ready !== true ||
         frame.actualSignedVideo !== true || !(frame.videoWidth > 0) ||
         !(frame.videoHeight > 0) || !(frame.presentedFrames > 0) ||
         !Number.isFinite(frame.firstFrameMs) || frame.firstFrameMs <= 0 ||
@@ -39,6 +47,14 @@ function validatedRows(summary, label) {
 function compareRealVideoFirstFrames(before, after, metadata = {}) {
   const baseline = validatedRows(before, 'baseline')
   const candidate = validatedRows(after, 'candidate')
+  if (after.viewerReturnsFullyPassed === false) {
+    throw Error('candidate: signed H264 measurement cannot hide Viewer return failure')
+  }
+  if (before.historicalBaselineReturnAudit === true &&
+      (!Array.isArray(before.historicalReturnEvidence) ||
+       before.historicalReturnEvidence.length !== 3)) {
+    throw Error('baseline: missing genuine historical Viewer return drift evidence')
+  }
   const metrics = ['urlMs', 'metadataMs', 'loadedDataMs', 'rangeTTFBMs', 'firstFrameMs']
   const observed = Object.fromEntries(metrics.map(name => {
     const base = baseline.map(row => row[name])
@@ -66,6 +82,11 @@ function compareRealVideoFirstFrames(before, after, metadata = {}) {
     metrics: observed,
     baselineSamples: baseline,
     candidateSamples: candidate,
+    candidateViewerReturnPassed: after.viewerReturnsFullyPassed !== false,
+    baselineViewerReturnPassed: before.viewerReturnsFullyPassed !== false,
+    baselineHistoricalReturnAudit: before.historicalBaselineReturnAudit === true,
+    baselineReturnEvidence: before.historicalBaselineReturnAudit === true ?
+      before.historicalReturnEvidence : [],
     observedFirstFrameDirection: firstFrame.deltaP50Ms < 0 ? 'candidate-faster-observed' :
       firstFrame.deltaP50Ms > 0 ? 'candidate-slower-observed' : 'no-p50-change-observed',
     statisticallyEstablishedSpeedup: false,
@@ -73,6 +94,7 @@ function compareRealVideoFirstFrames(before, after, metadata = {}) {
       'Sequential n3/n3 cannot establish a statistically significant causal gain or eliminate thermal/network variance',
       'Authentic signed H264 in shared Web Viewer under Electron Chromium, not installed Windows Desktop Agent IPC, remote WAN, HEVC or real production dataset',
       'Optional Range TTFB and metadata metrics are null when the browser does not expose them; never fabricate measurements',
+      'Historical baseline JPEG/H264 Viewer return drift is recorded as failure, never reported as a baseline UX pass; first-frame comparison requires genuine decoded frames for both versions and exact candidate return',
     ],
   }
 }
