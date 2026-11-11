@@ -111,7 +111,12 @@ enum XDriveIOSNativePhotoWallTimeScale: String, CaseIterable, Identifiable {
         let validated = calendar.dateComponents([.year, .month, .day], from: date)
         guard validated.year == year, validated.month == month, validated.day == day
         else { return "unknown" }
-        return key(year: year, month: month, day: day)
+        // Interpret the *instant* in the same device calendar as native
+        // Gallery, not the RFC3339 string's original UTC calendar day.
+        guard let instant = try? Date(value, strategy: .iso8601) else {
+            return "unknown"
+        }
+        return key(for: instant)
     }
 
     private func key(year: Int, month: Int, day: Int) -> String {

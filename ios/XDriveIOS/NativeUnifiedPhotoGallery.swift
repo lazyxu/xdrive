@@ -48,7 +48,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var showingThumbnailCache = false
     @State private var sourceFilter: XDriveIOSNativeGalleryPresence?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
-    @State private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .day
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()

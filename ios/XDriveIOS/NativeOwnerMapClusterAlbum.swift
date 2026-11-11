@@ -83,7 +83,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // prior signed place page. No guessed place or cached media identities.
     @State private var pendingViewerCross: XDriveIOSOwnerClusterCursor?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
-    @State private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
 
     init(login: XDriveIOSNativeOwnerLoginModel,
