@@ -79,6 +79,19 @@ const sourceA: XDriveServiceDependenciesPort = {
     probe.hostChecks += 1
     return { ...photoHostPreflight }
   },
+  // Authorized synthetic status contains only lengths, never saved key bytes.
+  // Mount the shipped AliDNS editor rather than a second mock input.
+  loadCaddyAliDNSConfig: async () => ({
+    configured: true,
+    access_key_id_length: 17,
+    access_key_secret_length: 31,
+    revision: 7,
+    source: 'saved' as const,
+    editable: true,
+    apply_state: 'pending' as const,
+    apply_supported: false as const,
+    requirement: 'Synthetic configured lengths only; no saved credentials present.',
+  }),
   loadPhotoAutoConfig: async () => ({ ...policy }),
   loadPhotoAutoRevisions: async () => ({ items: [] }),
   // Only enables a local unsaved switch. No test requests this mutation.
