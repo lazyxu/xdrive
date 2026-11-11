@@ -646,6 +646,55 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             .waitForExistence(timeout: 60))
         XCTAssertTrue(element("native-ios-map-verified-count", in: app)
             .waitForExistence(timeout: 90))
+
+        // Verify the genuine iOS Selected/Limited Photos permission too.
+        // This is not simulatable by a fake PHAuthorizationStatus or by the
+        // legacy simctl "photos-add" grant (which is add-only).
+        let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        settings.activate()
+        if !xDriveSettingsDetailVisible(settings) &&
+           !settings.navigationBars["Photos"].firstMatch.exists {
+            openRealXDriveSettingsPage(settings, in: app)
+        }
+        let selectedLabel = NSPredicate(
+            format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS %@ OR label CONTAINS %@",
+            "Selected Photos", "Limited Access", "所选照片", "有限访问"
+        )
+        var limited = settings.cells.matching(selectedLabel).firstMatch
+        if !limited.exists { limited = settings.buttons.matching(selectedLabel).firstMatch }
+        if !limited.exists { limited = settings.staticTexts.matching(selectedLabel).firstMatch }
+        if !limited.waitForExistence(timeout: 10) {
+            print("MAP_P0_LIMITED_CHOICE_MISSING AX tree:\n\(settings.debugDescription)")
+            diagnose("Real iOS Photos Selected/Limited permission option missing", in: app)
+        }
+        XCTAssertTrue(limited.exists, "Limited Photos must be selectable on real Settings")
+        limited.tap()
+        // Some iOS releases offer a follow-up photo selection sheet; finish
+        // that native UI, never synthesize a PhotoKit permission in the app.
+        for name in ["Done", "完成", "OK"] {
+            let button = settings.buttons[name].firstMatch
+            if button.exists && button.isHittable {
+                button.tap()
+                break
+            }
+        }
+        app.activate()
+        let limitedBlock = element("native-ios-map-open-photo-settings", in: app)
+        if !limitedBlock.waitForExistence(timeout: 20) {
+            recordActualPhotoKitReadback(app, stage: "after-limited-settings")
+            diagnose("MapKit failed to revoke location pins for Limited Photos", in: app)
+        }
+        XCTAssertTrue(limitedBlock.exists)
+        XCTAssertFalse(element("native-ios-full-library-gps-map", in: app).exists,
+            "Limited Photos may not render a misleading partial location map")
+        XCTAssertFalse(element("native-ios-map-verified-count", in: app).exists)
+        let readback = element("native-ios-map-photo-auth-readback", in: app)
+        XCTAssertTrue(readback.waitForExistence(timeout: 10))
+        XCTAssertTrue(readback.label.contains("rw=4"),
+            "Only real PhotoKit .limited readWrite may pass this branch: \(readback.label)")
+        authorizeFullPhotosInSettings(app)
+        XCTAssertTrue(element("native-ios-full-library-gps-map", in: app)
+            .waitForExistence(timeout: 65))
         XCTAssertEqual(app.state, .runningForeground)
     }
 
