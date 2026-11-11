@@ -297,6 +297,17 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
             context.coordinator.focusRequestID = focusID
             map.setRegion(focusCamera, animated: true)
         }
+        // Owner A → B can render an empty scope before SwiftUI's onChange
+        // invalidation advances revision. Remove any previous Owner's GPS
+        // annotations *even when revision is unchanged*; marking them inert
+        // is insufficient because old coordinates must not remain visible.
+        if overview == nil {
+            map.removeAnnotations(map.annotations.filter {
+                $0 is XDriveIOSOwnerPlaceAnnotation
+            })
+            context.coordinator.revision = nil
+            return
+        }
         guard context.coordinator.revision != revision else { return }
         context.coordinator.revision = revision
         map.removeAnnotations(map.annotations.filter {
