@@ -54,11 +54,11 @@ test('automatic paging uses the exact Owner and per-place validation of the manu
   assert.match(album, /else if target\.placeIndex \+ 1 < selection\.places\.count/)
   // The current bounded cover worker first validates the signed Range, then
   // refills a three-request task group from the verified thumbnail-only window.
-  assert.match(album, /let pending = fetched\\.items\\.filter \\{ \\$0\\.metadata\\.has_thumbnail \\}/)
+  assert.match(album, /let pending = fetched\.items\.filter \{ \$0\.metadata\.has_thumbnail \}/)
   assert.match(album, /let maximumConcurrentCovers = 3/)
-  assert.match(album, /for _ in 0\\.\\.<min\\(maximumConcurrentCovers, pending\\.count\\)/)
-  assert.match(album, /let request = XDriveIOSOwnerClusterCoverRead\\(\\s*reader: reader, item: item\\)/)
-  assert.match(album, /group\\.addTask \\{ await request\\.perform\\(\\) \\}/)
+  assert.match(album, /for _ in 0\.\.<min\(maximumConcurrentCovers, pending\.count\)/)
+  assert.match(album, /let request = XDriveIOSOwnerClusterCoverRead\(\s*reader: reader, item: item\)/)
+  assert.match(album, /group\.addTask \{ await request\.perform\(\) \}/)
   assert.match(album, /private func advanceIfVisible\(\)[\s\S]*?guard XDriveIOSNativePhotoWallWindowPolicy\.shouldAdvance\([\s\S]*?footVisible: scrollFootVisible,[\s\S]*?hasNext: page != nil && next != nil,[\s\S]*?busy: busy,[\s\S]*?failed: error != nil, viewerOpen: viewing != nil,[\s\S]*?scopeActive: activeOwner[\s\S]*?\), let next else \{ return \}/)
   assert.match(album, /load\(next, history: earlier \+ \[cursor\], autoAdvance: true\)/)
   assert.match(album, /Button\("重新核对当前位置照片"\) \{[\s\S]*?load\(cursor, history: earlier\)/)
@@ -165,11 +165,11 @@ test('slow decorative thumbnails cannot block verified Owner Range paging', () =
   // The worker owns cancellation around the actual signed derivative read;
   // the MainActor parent independently rejects stale Owner, cursor and Range
   // before publishing a completed cover or replenishing the bounded group.
-  assert.match(album, /private struct XDriveIOSOwnerClusterCoverRead:[\\s\\S]*?try Task\\.checkCancellation\\(\\)[\\s\\S]*?reader\\.thumbnail\\(item\\)[\\s\\S]*?try Task\\.checkCancellation\\(\\)/)
-  assert.match(load, /guard !Task\\.isCancelled, generation == ticket,[\\s\\S]*?activeOwner, cursor == target,[\\s\\S]*?page\\?\\.sameVisibleSnapshot\\(as: fetched\\) == true/)
-  assert.match(load, /case \\.ready\\(let nodeID, let image\\):[\\s\\S]*?coverImages\\[nodeID\\] = image/)
-  assert.match(load, /group\\.cancelAll\\(\\)/)
-  assert.match(load, /if nextIndex < pending\\.count \\{[\\s\\S]*?group\\.addTask \\{ await request\\.perform\\(\\) \\}/)
+  assert.match(album, /private struct XDriveIOSOwnerClusterCoverRead:[\s\S]*?try Task\.checkCancellation\(\)[\s\S]*?reader\.thumbnail\(item\)[\s\S]*?try Task\.checkCancellation\(\)/)
+  assert.match(load, /guard !Task\.isCancelled, generation == ticket,[\s\S]*?activeOwner, cursor == target,[\s\S]*?page\?\.sameVisibleSnapshot\(as: fetched\) == true/)
+  assert.match(load, /case \.ready\(let nodeID, let image\):[\s\S]*?coverImages\[nodeID\] = image/)
+  assert.match(load, /group\.cancelAll\(\)/)
+  assert.match(load, /if nextIndex < pending\.count \{[\s\S]*?group\.addTask \{ await request\.perform\(\) \}/)
   assert.match(album, /if generation == ticket \{\s*coverLoading = false[\s\S]*?advanceIfVisible\(\)/)
   assert.doesNotMatch(album, /URLSession\(|UploadSession|PHAssetResourceManager/)
 })
