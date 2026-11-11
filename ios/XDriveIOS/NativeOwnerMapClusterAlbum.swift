@@ -14,6 +14,38 @@ private struct XDriveIOSOwnerClusterCursor: Equatable {
     let offset: Int
 }
 
+/// Immutable, Owner-scoped thumbnail request; only its MainActor parent may
+/// publish the image after checking the live page, Owner and generation.
+private enum XDriveIOSOwnerClusterCoverOutcome: @unchecked Sendable {
+    case ready(UInt64, UIImage)
+    case revoked
+    case unavailable
+}
+
+private struct XDriveIOSOwnerClusterCoverRead: @unchecked Sendable {
+    let reader: XDriveIOSNativeMediaGalleryReader
+    let item: XDriveIOSNativeMediaItem
+
+    func perform() async -> XDriveIOSOwnerClusterCoverOutcome {
+        do {
+            try Task.checkCancellation()
+            let image = try await reader.thumbnail(item)
+            try Task.checkCancellation()
+            return .ready(item.id, image)
+        } catch is CancellationError {
+            return .unavailable
+        } catch let failure as XDriveIOSNativeMediaReadFailure {
+            if case .response(let code) = failure, code == 401 || code == 403 {
+                return .revoked
+            }
+            return .unavailable
+        } catch {
+            // A missing or slow derivative must never hide a valid original.
+            return .unavailable
+        }
+    }
+}
+
 /// Each page is ONE signed 48-asset place Range. The explicit next/previous
 /// cursor walks every exact place in the selected visual cluster. No all-Owner
 /// photo query, asset-ID cache, original download, or new Server API is used.
@@ -692,30 +724,48 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                             advanceIfVisible()
                         }
                     }
-                    // At most 48 sequential thumbnails; no original download.
-                    // Finish this bounded window before rotating it out.
-                    for item in fetched.items where item.metadata.has_thumbnail {
-                        guard !Task.isCancelled, generation == ticket,
-                              activeOwner, cursor == target else { return }
-                        do {
-                            let thumb = try await reader.thumbnail(item)
-                            try Task.checkCancellation()
-                            guard generation == ticket, activeOwner,
-                                  cursor == target else { return }
-                            coverImages[item.id] = thumb
-                        } catch is CancellationError {
-                            return
-                        } catch let failure as XDriveIOSNativeMediaReadFailure {
-                            if case .response(let code) = failure,
-                               code == 401 || code == 403 {
-                                if generation == ticket {
-                                    invalidate()
-                                    error = "Owner 权限已变化，请返回地图刷新。"
-                                }
+                    // Stream a maximum of three verified thumbnail reads at
+                    // once. Refill on each completion, not after an entire
+                    // batch: one slow first image must not block other covers.
+                    // Keep only this signed 48-item window; no originals.
+                    let pending = fetched.items.filter { $0.metadata.has_thumbnail }
+                    let maximumConcurrentCovers = 3
+                    await withTaskGroup(
+                        of: XDriveIOSOwnerClusterCoverOutcome.self
+                    ) { group in
+                        var nextIndex = 0
+                        for _ in 0..<min(maximumConcurrentCovers, pending.count) {
+                            let item = pending[nextIndex]
+                            nextIndex += 1
+                            let request = XDriveIOSOwnerClusterCoverRead(
+                                reader: reader, item: item)
+                            group.addTask { await request.perform() }
+                        }
+                        for await completed in group {
+                            // Older Owner/page/scene callbacks have no right
+                            // to publish images or dispatch another request.
+                            guard !Task.isCancelled, generation == ticket,
+                                  activeOwner, cursor == target,
+                                  page?.sameVisibleSnapshot(as: fetched) == true
+                            else { group.cancelAll(); return }
+                            switch completed {
+                            case .ready(let nodeID, let image):
+                                coverImages[nodeID] = image
+                            case .revoked:
+                                group.cancelAll()
+                                invalidate()
+                                error = "Owner 权限已变化，请返回地图刷新。"
                                 return
+                            case .unavailable:
+                                break
                             }
-                        } catch {
-                            // Missing thumbnail isn't a missing original.
+                            if nextIndex < pending.count {
+                                let item = pending[nextIndex]
+                                nextIndex += 1
+                                let request = XDriveIOSOwnerClusterCoverRead(
+                                    reader: reader, item: item)
+                                group.addTask { await request.perform() }
+                            }
                         }
                     }
                 }
