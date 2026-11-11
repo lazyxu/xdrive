@@ -55,7 +55,7 @@ test('P0-4 every published Owner map is bound to the exact verified Owner, and H
   assert.equal((picked.match(/XDriveIOSNativePhotoOwnerScope\.matches\(\s*expected, verifiedOverviewOwner\)/g) || []).length, 2)
   assert.match(cloud, /verifiedOverviewOwner = expected\s*displayedOverviewOwner = expected\s*verifiedBounds = bounds/)
   assert.match(cloud, /private var displayedOverviewMatchesLogin: Bool \{[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(/)
-  assert.match(cloud, /coverImages: displayedOverviewMatchesLogin \? coverImages : \[\]/)
+  assert.match(cloud, /coverImages:\s*displayedOverviewMatchesLogin \? coverImages : \[\]/)
   assert.match(cloud, /if let overview, displayedOverviewMatchesLogin/)
   assert.match(cloud, /displayedOverviewOwner = nil/)
   assert.match(cloud, /verifiedOverviewOwner = nil[\s\S]*?verifiedBounds = nil/)
