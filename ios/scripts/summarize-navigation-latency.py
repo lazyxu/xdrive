@@ -37,7 +37,7 @@ PAGE_PERF_PATTERN = re.compile(
     re.MULTILINE,
 )
 PAGE_PERF_REQUIRED = (
-    ("app.launcher", "cold"),
+    ("app.gallery", "cold"),
     ("tab.files", "warm"),
     ("tab.gallery", "warm"),
     ("tab.mine", "warm"),

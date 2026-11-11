@@ -32,6 +32,31 @@ final class XDriveIOSPagePerformanceUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+
+    // The real Launcher is a lazy vertical list. Prepare each actual button
+    // before starting the navigation stopwatch: otherwise offscreen grid
+    // discovery/swipes would be silently counted as page render latency.
+    // No coordinates, fake routes or synthetic response bodies.
+    private func revealLauncherEntry(_ identifier: String, in app: XCUIApplication) {
+        tap("native-ios-tab-launcher", in: app)
+        let target = view(identifier, in: app)
+        let host = app.scrollViews.firstMatch
+        guard host.waitForExistence(timeout: 15) else {
+            XCTFail("Real launcher scroll host did not mount")
+            return
+        }
+        for _ in 0..<7 {
+            if target.exists && target.isHittable { return }
+            host.swipeUp()
+        }
+        for _ in 0..<7 {
+            if target.exists && target.isHittable { return }
+            host.swipeDown()
+        }
+        XCTAssertTrue(target.exists && target.isHittable,
+                      "Real Launcher entry cannot be reached by scrolling: \(identifier)")
+    }
+
     private func measure(
         _ route: String, phase: String = "warm", trial: Int,
         app: XCUIApplication, ready id: String,
@@ -53,12 +78,12 @@ final class XDriveIOSPagePerformanceUITests: XCTestCase {
         print("IOS_NATIVE_PAGE_PERF_MS route=\(route) phase=\(phase) trial=\(trial) value=\(elapsed)")
     }
 
-    func testColdLaunchLauncherN3() {
+    func testColdLaunchGalleryN3() {
         for trial in 1...3 {
             let app = XCUIApplication()
             app.launchArguments = ["-xdrive-ui-navigation-smoke"]
-            measure("app.launcher", phase: "cold", trial: trial, app: app,
-                    ready: "native-ios-launcher-files") { app.launch() }
+            measure("app.gallery", phase: "cold", trial: trial, app: app,
+                    ready: "native-ios-unified-photo-gallery" { app.launch() }
             app.terminate()
         }
     }
@@ -170,26 +195,26 @@ final class XDriveIOSPagePerformanceUITests: XCTestCase {
     func testNativeToolPagesN3() {
         let app = launch()
         for trial in 1...3 {
+            revealLauncherEntry("native-ios-launcher-notes", in: app)
             measure("tool.notes", trial: trial, app: app,
                     ready: "native-ios-notes-page") {
                 tap("native-ios-launcher-notes", in: app)
             }
-            tap("native-ios-tab-launcher", in: app)
+            revealLauncherEntry("native-ios-launcher-clipboard", in: app)
             measure("tool.clipboard", trial: trial, app: app,
                     ready: "ios-clipboard-draft") {
                 tap("native-ios-launcher-clipboard", in: app)
             }
-            tap("native-ios-tab-launcher", in: app)
+            revealLauncherEntry("native-ios-launcher-backup", in: app)
             measure("tool.backup", trial: trial, app: app,
                     ready: "native-ios-backup-overview") {
                 tap("native-ios-launcher-backup", in: app)
             }
-            tap("native-ios-tab-launcher", in: app)
+            revealLauncherEntry("native-ios-launcher-transfers", in: app)
             measure("tool.transfers", trial: trial, app: app,
                     ready: "native-ios-transfer-overview") {
                 tap("native-ios-launcher-transfers", in: app)
             }
-            tap("native-ios-tab-launcher", in: app)
         }
     }
 }

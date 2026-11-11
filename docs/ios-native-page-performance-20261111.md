@@ -15,7 +15,7 @@ is refused, never fabricated.
 
 These are XCUITest + AX-idling wall times, NOT first composited frame, FPS,
 CPU, peak RSS, actual Server Range, network throughput or a real signed
-iPhone run. The PR code is not a benchmark measurement; current numeric
+iPhone run. The initial candidate job ran 14/19 routes (42 samples) but failed on wrongly expecting Launcher instead of the actual default Gallery and on offscreen Launcher buttons; these invalid assumptions are corrected, not treated as product slowness. Current complete-route numeric
 samples remain n=0 until the exact-HEAD job produces its raw artifact.
 No baseline/candidate performance change is claimed: speedup N/A.
 
@@ -23,7 +23,7 @@ No baseline/candidate performance change is claimed: speedup N/A.
 
 | Surface | Required route keys (3 trials per key) | Native readiness |
 | --- | --- | --- |
-| Launch | app.launcher (cold) | Real launcher |
+| Launch | app.gallery (cold) | Actual default Gallery after a new process launch |
 | Main navigation | tab.files, tab.gallery, tab.mine, tab.launcher | Native tab and owning page |
 | Files | files.recent, files.favorites, files.browse | Actual selected rail section |
 | Gallery sources | gallery.originals, gallery.unified, gallery.local | Native Originals, unified Gallery and PhotoKit timeline |
