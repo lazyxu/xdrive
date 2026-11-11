@@ -451,7 +451,11 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
-    func testTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap() {
+    // Run the fixture-isolation test before the independent camera/gesture
+    // journey. Earlier CI observed five extra GPS assets by the second case,
+    // although simctl seeded only two on a newly erased device. Preserve the
+    // STRICT exact-two requirement, rather than masking an unsafe library.
+    func testAFirstTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap() {
         let app = openLocalMap()
         let verified = element("native-ios-map-verified-count", in: app)
         if !verified.waitForExistence(timeout: 90) {
