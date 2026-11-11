@@ -442,8 +442,19 @@ test('only-new foreground consent installs its durable PhotoKit baseline and rep
   const changeQueue = read('ios/XDriveIOS/PhotoKitPersistentBackupQueue.swift')
   const configure = schedule.slice(schedule.indexOf('func configure('), schedule.indexOf('func disable('))
   const automatic = schedule.slice(schedule.indexOf('private func start(login:'), schedule.indexOf('private func runFocused('))
-  assert.match(configure, /if startRule == \.onlyNew[\s\S]*?installNewOnlyBaseline\(owner: selected\)/)
-  assert.ok(configure.indexOf('installNewOnlyBaseline(owner: selected)') < configure.indexOf('schedule = try store.configure('))
+  // Consent-time PhotoKit token is captured BEFORE asynchronous Server
+  // verification; persisting it is allowed only after the managed target is
+  // authenticated and still belongs to the same Owner.
+  assert.match(configure, /if startRule == \.onlyNew \{[\s\S]*?XDriveIOSPhotoKitLibraryEpoch\.capture\(\)/)
+  assert.match(configure, /if let consentEpoch \{[\s\S]*?installNewOnlyBaseline\([\s\S]*?owner: selected,[\s\S]*?consentToken: consentEpoch\.serialized,[\s\S]*?consentAuthorization: consentEpoch\.authorization/)
+  const capture = configure.indexOf('XDriveIOSPhotoKitLibraryEpoch.capture()')
+  const firstAuth = configure.indexOf('let first = try await login.verifiedAuthorization()')
+  const managedTarget = configure.indexOf('.readExistingForUpload(owner: selected')
+  const install = configure.indexOf('.installNewOnlyBaseline(')
+  const persist = configure.indexOf('schedule = try store.configure(')
+  assert.ok(capture >= 0 && capture < firstAuth && firstAuth < managedTarget &&
+    managedTarget < install && install < persist,
+    'only-new baseline must use consent-time token after Owner target verification, before saving plan')
   assert.match(configure, /let second = try await login\.verifiedAuthorization\(\)/)
   assert.match(automatic, /activePlan\.backupStartRule == \.onlyNew/)
   const replay = automatic.indexOf('changeQueue.replay(')

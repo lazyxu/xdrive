@@ -67,7 +67,11 @@ test('proof policy does not mistake a matching local receipt for remotely verifi
   assert.match(policy, /kind == "image" \|\| \(kind == "video" && !isLive\)/)
   assert.match(policy, /static func canPublishCurrentProof\(/)
   assert.match(policy, /ownerNodeReadbackSucceeded && sourceStillSame/)
-  assert.doesNotMatch(policy, /URLSession|UploadSession|PHAsset|import Photos|import Security/)
+  // Documentation may refer to the canonical UploadSession writer; the
+  // read-only policy's executable code must never perform any upload or
+  // PhotoKit/Security operation.
+  const policyCode = policy.replace(/\/\/[^\n]*/g, '')
+  assert.doesNotMatch(policyCode, /URLSession|UploadSession|PHAsset|import Photos|import Security/)
   assert.match(screen, /此结果仅代表核验时刻，不能据此宣布全部照片已备份/)
   assert.match(screen, /\.onDisappear \{[\s\S]*?originalProof\.cancel\(\)/)
   assert.match(screen, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?originalProof\.cancel\(\)/)
