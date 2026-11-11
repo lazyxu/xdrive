@@ -61,6 +61,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var explicitOriginalAudit = false
     @State private var viewerReturnAnchor: String?
     @State private var viewerReturnPage = 0
+    // Page that opened Viewer; the filmstrip may navigate to another page.
+    @State private var viewerOpeningPage: Int?
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var started = false
     @Environment(\.scenePhase) private var phase
@@ -208,11 +210,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                          phase != .active || !isTabActive,
                                     open: { payload, position in
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+                                        viewerOpeningPage = payload.number
                                         selected = .init(owner: owner, page: payload, position: position)
                                     }, loaded: {
                                         if selected == nil, let anchor = viewerReturnAnchor, viewerReturnPage == page.id {
                                             scroll.scrollTo(anchor, anchor: .center)
                                             viewerReturnAnchor = nil
+                                            viewerOpeningPage = nil
                                         }
                                     }, pairing: { pairing = $0 })
                                     .id("unified-page-\(page.id)")
@@ -230,7 +234,15 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     }
                 )
                 .onChange(of: selected?.id) { selection in
-                    if selection == nil, viewerReturnAnchor != nil {
+                    guard selection == nil, phase == .active, isTabActive,
+                          let anchor = viewerReturnAnchor else { return }
+                    if viewerOpeningPage == viewerReturnPage {
+                        // A retained verified page must not jump to its top
+                        // before the exact row-center loaded() restoration.
+                        scroll.scrollTo(anchor, anchor: .center)
+                    } else {
+                        // The Viewer filmstrip advanced to a different lazy
+                        // page. Materialize it before restoring the exact row.
                         scroll.scrollTo("unified-page-\(viewerReturnPage)", anchor: .top)
                     }
                 }
@@ -431,7 +443,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         }
     }
 
-    private func resetWall() { selected = nil; viewerReturnAnchor = nil; wall.reset() }
+    private func resetWall() {
+        selected = nil
+        viewerReturnAnchor = nil
+        viewerOpeningPage = nil
+        wall.reset()
+    }
     private func requestOriginalAudit(retryUnavailable: Bool) {
         // An explicit diagnostic is independent from upload scheduling.
         self.retryUnavailable = retryUnavailable
