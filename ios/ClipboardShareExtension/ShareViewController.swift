@@ -4,7 +4,8 @@ import UniformTypeIdentifiers
 /// User-triggered iOS Share Extension for selected text and URLs.
 /// No stored plaintext, no background upload, no E2EE/Owner secrets crossing
 /// process boundaries. The only handoff is an explicit, expiring, local-only
-/// system paste operation. xDrive's native screen performs encryption itself.
+/// system paste operation. The native Clipboard page reads it on an explicit
+/// paste tap and sends plaintext only after a separate user confirmation.
 final class ShareViewController: UIViewController {
     private let status = UILabel()
     private let copyButton = UIButton(type: .system)
@@ -60,7 +61,7 @@ final class ShareViewController: UIViewController {
                 self.copyButton.isEnabled = accepted != nil
                 self.status.text = accepted == nil
                     ? "所选内容不支持，或超过 64 KiB。"
-                    : "点击复制后，打开 xDrive → 剪贴板 → 解锁 → 从系统剪贴板读取 → 加密发送。"
+                    : "复制后 2 分钟内，打开 xDrive → 剪贴板 → 从本机粘贴 → 发送。消息不加密，请勿发送密码或验证码。"
             }
         }
     }

@@ -1,6 +1,6 @@
 # xDrive Clipboard — current plaintext design
 
-**Current source status (2026-11-10):** PR [#4262](https://github.com/lazyxu/xdrive/pull/4262) migrates Clipboard from the prior independent-password/E2EE implementation to a single **plaintext Owner-scoped mailbox** on Server. This is a development candidate until its exact-HEAD CI, Final Gate, and platform acceptance finish; the prior merged #4124/#4224 encrypted implementation remains historical context, not the desired product contract.
+**Current source status (2026-11-11):** [#4262](https://github.com/lazyxu/xdrive/pull/4262) and the DSM allowlist cleanup [#4285](https://github.com/lazyxu/xdrive/pull/4285) have **merged into `master`**. Clipboard is a single **plaintext Owner-scoped mailbox** on Server, with no separate unlock or E2EE. Prior #4124 E2EE behavior is historical, not a current product requirement. Future Clipboard changes are validated through the applicable repository tests, CI and exact-HEAD Final Gate specified in `AGENTS.md`.
 
 ## Product behavior
 
@@ -19,7 +19,7 @@ Clipboard is a short-lived cross-device channel for manual text and links and di
 
 Only the current revocable Owner session can use the API; SourceRun, Photo backup, public-share and generic Agent credentials do not inherit Clipboard permissions. Directed delivery requires an enrolled installation identity and Clipboard grant; device revocation and Owner/session changes invalidate future access. HTTP responses are `Cache-Control: no-store`; redirects and unauthenticated Owner/Device requests fail closed. Data copied to an OS pasteboard cannot be remotely revoked.
 
-On mobile, read/write of the OS clipboard requires explicit user interaction; no continuous background pasteboard observer. Desktop's system clipboard watcher is optional and **off by default**; when explicitly enabled it runs only for the visible Clipboard page, with session/Owner cancellation. Web/PWA never silently monitors the browser clipboard. iOS Share Extension can pass user-selected text/links into a draft but does not automatically send.
+On mobile, read/write of the OS clipboard requires explicit user interaction; no continuous background pasteboard observer. Desktop's system clipboard watcher is optional and **off by default**; when explicitly enabled it runs only for the visible Clipboard page, with session/Owner cancellation. Web/PWA never silently monitors the browser clipboard. The iOS Share Extension explicitly copies selected text/links to a **local-only OS pasteboard for two minutes**; the user then opens xDrive → 剪贴板 → 从本机粘贴 → 发送. The extension never silently sends or stores Owner credentials.
 
 Older encrypted Clipboard records do not become readable plaintext by changing the API. Legacy ciphertext rows must not be sent as text or shown in the new mailbox. There is no production data migration requirement for this project.
 
@@ -31,13 +31,13 @@ Older encrypted Clipboard records do not become readable plaintext by changing t
 - DSM: `web/src/synologyClipboardPort.ts` and same-origin CGI allowlist, Owner/session proof, no decryption operation.
 - iOS/Android: native Clipboard pages using verified Owner bearer, explicit installed-device enrollment, directed content, CAS and existing Viewer.
 
-## Acceptance tests for PR #4262
+## Automated validation contract
 
 1. All platforms show Clipboard immediately without any independent passphrase, unlock or encryption claim; send/list/copy/delete/clear work.
 2. Text, URL, image/file Node references and direct-to-device messages use exactly the `content` wire contract, not `nonce`, `ciphertext`, wrapped or public keys.
 3. Owner A cannot access Owner B's content, even after A→B→A, logout/login, revoke, password reset or delayed responses. Device X cannot read content directed to device Y; a revoked device loses access.
 4. Unknown ACK retries preserve EventID/target/MIME/Node and a changed intent is rejected. Cross-Owner and trashed/foreign Files Nodes cannot be sent or opened.
 5. SSE contains only change cursors; connection loss falls back to full GET; pages do not monitor OS clipboard in background; the user explicitly confirms local uploads and viewer opening.
-6. Go/PostgreSQL, Web/PWA, Desktop, iOS, Android and DSM tests and full CI/Final Gate pass for the precise PR HEAD. Real device/server testing remains separate from simulated tests.
+6. Run the applicable Go/PostgreSQL, Web/PWA, Desktop, native iOS/Android, DSM and security regressions in available automated environments. The exact PR HEAD must pass required CI and Final Gate before merge. Record test results on the exact PR; unavailable physical-device or production-host checks are not replacement tests or implicit merge requirements.
 
 The older implementation's crypto benchmark vectors and passphrase recovery discussions are retired historical fixtures, not current feature documentation.
