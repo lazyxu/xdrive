@@ -19,8 +19,9 @@ const time='2026-11-11T00:00:00Z'
 const requestURL='https://nas.example/webman/3rdparty/xdrivenas/backup.cgi'
 const large=new File([Buffer.alloc(4*1_048_576+19,42)],'large.mov')
 const stage=[]
+const mod={exports:{}}
 const ctx=vm.createContext({
-  module:{exports:{}},exports:{},URL,URLSearchParams,Uint8Array,TextEncoder,crypto:webcrypto,
+  module:mod,exports:mod.exports,URL,URLSearchParams,Uint8Array,TextEncoder,crypto:webcrypto,
   btoa:input=>Buffer.from(input,'binary').toString('base64'),
   window:{location:{href:requestURL,origin:'https://nas.example'}},
   fetch:async(url,options)=>{
@@ -65,7 +66,7 @@ const ctx=vm.createContext({
   },
 })
 vm.runInContext(code.outputText,ctx,{filename:file,timeout:1000})
-const client=ctx.module.exports.createXDriveSynologyBackupLocalClient(requestURL)
+const client=mod.exports.createXDriveSynologyBackupLocalClient(requestURL)
 test('DSM Clipboard >4 MiB uses canonical 4 MiB Server UploadSession parts, no second writer',async()=>{
   const result=await client.ownerUploadLargeFile(7,large,owner)
   assert.equal(result.id,1234)

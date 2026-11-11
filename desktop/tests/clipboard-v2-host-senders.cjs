@@ -135,8 +135,7 @@ test('Desktop and DSM expose existing Owner Files picker and canonical file uplo
   assert.deepEqual(await dsmPort.uploadLocalFile(file,new AbortController().signal),{node_id:8})
   assert.deepEqual(dsmCalls,['page','upload'])
   const large=new File([new Uint8Array(4*1_048_576+1)],'large.bin')
-  const largeOwner='b'.repeat(64)
-  // No second Clipboard writer: the existing DSM Files/CAS chunk transport
+   // No second Clipboard writer: the existing DSM Files/CAS chunk transport
   // returns the same verified Node shape after finalization.
   const largeCGI={
     ...cgi,
