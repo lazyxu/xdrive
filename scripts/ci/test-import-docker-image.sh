@@ -93,4 +93,85 @@ fi
 if grep -E '^(tag|push|build|save)' "$XD_TEST_DOCKER_RECORD"; then
   echo 'import attempted unrelated Docker mutation' >&2; exit 1
 fi
+
+# Real regression: the builder's containerd-backed docker inspect .Id may be
+# an OCI INDEX digest while docker save contains a PLATFORM CONFIG blob.
+# Import must still compare against the exact config digest; no weaker check.
+EXPORT="$ROOT/scripts/ci/export-docker-image.sh"
+bash -n "$EXPORT"
+mkdir -p "$TMP/export-bin"
+python3 - "$TMP/export-source.tar" "$TMP/export-config.id" <<'PY_EXPORT_FIXTURE'
+import hashlib
+import io
+import json
+import pathlib
+import sys
+import tarfile
+
+archive_path, id_path = map(pathlib.Path, sys.argv[1:])
+config = json.dumps({
+    "architecture": "amd64",
+    "os": "linux",
+    "rootfs": {"type": "layers", "diff_ids": []},
+    "config": {},
+}, sort_keys=True).encode()
+digest = hashlib.sha256(config).hexdigest()
+name = "blobs/sha256/" + digest
+manifest = json.dumps([{
+    "Config": name, "RepoTags": ["xdrive/server:test"], "Layers": [],
+}]).encode()
+with tarfile.open(archive_path, "w") as archive:
+    for entry_name, payload in ((name, config), ("manifest.json", manifest)):
+        item = tarfile.TarInfo(entry_name)
+        item.size = len(payload)
+        item.mode = 0o644
+        archive.addfile(item, io.BytesIO(payload))
+id_path.write_text("sha256:" + digest + "\n")
+PY_EXPORT_FIXTURE
+cat > "$TMP/export-bin/docker" <<'MOCK_EXPORT'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  "image inspect --format {{.Id}} xdrive/server:test")
+    # This is intentionally the OCI index ID, NOT the platform config ID.
+    printf 'sha256:%064d\n' 7
+    ;;
+  "save xdrive/server:test") cat "$XD_TEST_EXPORT_TAR" ;;
+  *) exit 8 ;;
+esac
+MOCK_EXPORT
+chmod 700 "$TMP/export-bin/docker"
+export XD_TEST_EXPORT_TAR="$TMP/export-source.tar"
+PATH="$TMP/export-bin:$PATH" bash "$EXPORT" xdrive/server:test "$TMP/exported" > "$TMP/export.log"
+cmp "$TMP/export-config.id" "$TMP/exported/image.id"
+gzip -t "$TMP/exported/image.tar.gz"
+grep -Fq 'Exported exact Docker platform image' "$TMP/export.log"
+if grep -Fxq "sha256:$(printf '%064d' 7)" "$TMP/exported/image.id"; then
+  echo 'export incorrectly used OCI index digest as loadable image ID' >&2
+  exit 1
+fi
+# A forged tag or config path must fail. Repack the same tiny fixture with a
+# non-matching RepoTag; do not accept "some Linux config" from wrong identity.
+python3 - "$TMP/export-source.tar" <<'PY_BAD_TAG'
+import io, json, tarfile, pathlib, sys
+p=pathlib.Path(sys.argv[1])
+with tarfile.open(p) as t:
+    manifest=json.load(t.extractfile("manifest.json"))
+    config=t.extractfile(manifest[0]["Config"]).read()
+    name=manifest[0]["Config"]
+manifest[0]["RepoTags"]=["xdrive/other:test"]
+raw=json.dumps(manifest).encode()
+with tarfile.open(p,"w") as t:
+    for n, data in ((name, config), ("manifest.json", raw)):
+        member=tarfile.TarInfo(n)
+        member.size=len(data)
+        t.addfile(member,io.BytesIO(data))
+PY_BAD_TAG
+if PATH="$TMP/export-bin:$PATH" bash "$EXPORT" xdrive/server:test "$TMP/bad-export" > "$TMP/bad-export.log" 2>&1; then
+  echo 'export accepted an archive with a mismatched image tag' >&2
+  exit 1
+fi
+test ! -e "$TMP/bad-export/image.id"
+echo 'Docker archive platform-config identity: builder index is not loaded image ID; bad tag refused'
+
 echo 'Bounded exact Docker image import: success, SHA, CRC, timeout and safe artifact tests passed'
