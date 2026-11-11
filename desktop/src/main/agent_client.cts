@@ -29,6 +29,7 @@ export type AgentClipboardDevices = {
 }
 export type AgentClipboardDevice = AgentClipboardDevices['devices'][number]
 export type AgentClipboardPage = { items: AgentClipboardItem[]; next_before: number | null }
+export type AgentClipboardEvent = { cursor: number; changed: boolean }
 
 export type AgentNotesSource = 'mine' | 'ios_notes'
 export type AgentNotesNamespace = {
