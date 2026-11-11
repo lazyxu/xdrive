@@ -579,6 +579,10 @@ struct XDriveIOSNativePhotosDashboard: View {
                             // PhotoKit reader cannot run without authorization.
                             Label("备份计划已保存：照片权限不可用",
                                   systemImage: "exclamationmark.triangle")
+                        } else if photoAuthorization == .limited &&
+                                  state.backupStartRule == .onlyNew {
+                            Label("仅新增备份已暂停：需要所有照片权限",
+                                  systemImage: "exclamationmark.triangle")
                         } else if photoAuthorization == .limited {
                             Label("自动备份只覆盖当前选定的照片（Limited）",
                                   systemImage: "exclamationmark.triangle")

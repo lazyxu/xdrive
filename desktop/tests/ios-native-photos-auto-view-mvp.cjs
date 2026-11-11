@@ -113,7 +113,7 @@ test('native manual, auto and receipt-resume consent is pinned to the exact veri
   assert.match(ui, /autoConsentOwner = login\.owner/)
   assert.match(ui, /resumeConsentOwner = login\.owner/)
   assert.match(ui, /manualConsentAllowICloud = allowICloud/)
-  assert.match(ui, /autoConsentMinutes = interval/)
+  assert.match(ui, /autoConsentMinutes = autoStartRule == \.resumePrevious[\s\S]*?\? \(controller\.schedule\?\.intervalMinutes \?\? interval\) : interval/)
   assert.match(ui, /autoConsentAllowICloud = autoStartRule == \.resumePrevious/)
   assert.match(ui, /controller\.startManual\(\s*login: login, expectedOwner: expected/)
   assert.match(ui, /login: login, expectedOwner: expected,\s*expectedDestination: approvedDestination,\s*minutes: autoConsentMinutes/)

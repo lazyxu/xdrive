@@ -1183,6 +1183,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         Label("已暂停：需核对收据", systemImage: "exclamationmark.triangle")
                     } else if photoAuthorization != .authorized && photoAuthorization != .limited {
                         Label("备份计划已保存：照片权限不可用", systemImage: "exclamationmark.triangle")
+                    } else if photoAuthorization == .limited &&
+                              active.backupStartRule == .onlyNew {
+                        Label("仅新增备份已暂停：需要所有照片权限",
+                              systemImage: "exclamationmark.triangle")
                     } else if photoAuthorization == .limited {
                         Label("自动备份范围：仅当前已授权照片", systemImage: "info.circle")
                     } else {
