@@ -5,7 +5,7 @@ Date: 2026-11-11. One master-target candidate: PR #4298. This document distingui
 ## Already present in master before this PR
 
 - #4260: bounded verified Gallery/Files tab return, Viewer pending-first-frame path, and 70 real native UI journeys; #4290: Native/PWA Viewer and H264/SPA follow-up.
-- The Native Files Recent/Browse/Favorites 44pt touch rail already works inside pushed folders, with Owner-scoped section restore. **Do not create a second app-wide bottom bar.**
+- The Native Files Recent/Browse/Favorites 44pt rail already supports pushed folders and Owner-scoped section restore. This candidate **moves the existing rail ABOVE Files content** (not an extra bottom bar); it stays mounted but disabled during selection to avoid vertical layout jumps.
 - Owner/Node/revision fences, a 64-row ranged read / bounded retained window, and native PDFKit/AVPlayer/Share Sheet are existing implementations, not claims newly fixed here.
 
 ## Additions in this unified candidate
@@ -25,7 +25,7 @@ Date: 2026-11-11. One master-target candidate: PR #4298. This document distingui
 | P0 | #4298 six new real Simulator tests | XCUITest source, frame watcher, required candidate Gallery/Files gate | Full exact-HEAD macOS Xcode run 76/76 + Navigation + No-Session + B9 + no-crash audit + CI/Final Gate |
 | P1 | Native/PWA same-data eight screenshot states | Shared file metadata rules, Native screenshot capture and existing 390px PWA browser harness | Capture paired Browse/List/Grid/Menu/Selection/Empty/Dark/Viewer, same iOS device/Owner/directory/data/locale/scale; review image-by-image |
 | P1 | 100k iPhone performance | Existing bounded Native Range/anchor and Browser 100k logical/115k physical fixtures | Actual signed iPhone with 100k authorized files: long scroll, sort, group, Viewer return; P50/P95 response, FPS, peak RSS/CPU, hardware details |
-| P1 | Native recent/browse/favorites quick access | Existing `native-ios-files-quick-rail` within Files view, 44pt touch area | Real user touch, forced focus, landscape, VoiceOver; must not add a second app-wide tab bar |
+| P1 | Native recent/browse/favorites quick access | Existing `native-ios-files-quick-rail` moved above Files list, 44pt and disabled during selection | Real user touch, forced focus, landscape, VoiceOver; must not add a second app-wide tab bar |
 | P1 | Folder-upload direct menu | This PR routes new button to existing Owner-scoped picker; full limits displayed | Xcode compilation and signed iPhone picker test: good folder, 129 files, 65 dirs, >512MiB, depth 9, revoke mid-import |
 | P2 | Visual system alignment | One Native metadata projection for list/grid, unchanged existing thumbnail crop, VoiceOver selection state | Same-data screenshots/dark mode/Dynamic Type and actual accessibility checks; do not demand pixel equality from system controls |
 
