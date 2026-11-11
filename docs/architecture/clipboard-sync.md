@@ -1,6 +1,6 @@
 # xDrive Clipboard — current plaintext design
 
-**Current source status (2026-11-11):** [#4262](https://github.com/lazyxu/xdrive/pull/4262) and the DSM allowlist cleanup [#4285](https://github.com/lazyxu/xdrive/pull/4285) have **merged into `master`**. Clipboard is a single **plaintext Owner-scoped mailbox** on Server, with no separate unlock or E2EE. Prior #4124 E2EE behavior is historical, not a current product requirement. Source-level CI and PR Final Gate are separate from **unverified real Server, signed mobile device and actual DSM/Desktop Host acceptance**, tracked in [#4246](https://github.com/lazyxu/xdrive/issues/4246).
+**Current source status (2026-11-11):** [#4262](https://github.com/lazyxu/xdrive/pull/4262) and the DSM allowlist cleanup [#4285](https://github.com/lazyxu/xdrive/pull/4285) have **merged into `master`**. Clipboard is a single **plaintext Owner-scoped mailbox** on Server, with no separate unlock or E2EE. Prior #4124 E2EE behavior is historical, not a current product requirement. Future Clipboard changes are validated through the applicable repository tests, CI and exact-HEAD Final Gate specified in `AGENTS.md`.
 
 ## Product behavior
 
@@ -31,13 +31,13 @@ Older encrypted Clipboard records do not become readable plaintext by changing t
 - DSM: `web/src/synologyClipboardPort.ts` and same-origin CGI allowlist, Owner/session proof, no decryption operation.
 - iOS/Android: native Clipboard pages using verified Owner bearer, explicit installed-device enrollment, directed content, CAS and existing Viewer.
 
-## Contract and outstanding real-deployment acceptance
+## Automated validation contract
 
 1. All platforms show Clipboard immediately without any independent passphrase, unlock or encryption claim; send/list/copy/delete/clear work.
 2. Text, URL, image/file Node references and direct-to-device messages use exactly the `content` wire contract, not `nonce`, `ciphertext`, wrapped or public keys.
 3. Owner A cannot access Owner B's content, even after A→B→A, logout/login, revoke, password reset or delayed responses. Device X cannot read content directed to device Y; a revoked device loses access.
 4. Unknown ACK retries preserve EventID/target/MIME/Node and a changed intent is rejected. Cross-Owner and trashed/foreign Files Nodes cannot be sent or opened.
 5. SSE contains only change cursors; connection loss falls back to full GET; pages do not monitor OS clipboard in background; the user explicitly confirms local uploads and viewer opening.
-6. Go/PostgreSQL, Web/PWA, Desktop, iOS, Android and DSM tests and full CI/Final Gate pass for the precise PR HEAD. Real device/server testing remains separate from simulated tests.
+6. Run the applicable Go/PostgreSQL, Web/PWA, Desktop, native iOS/Android, DSM and security regressions in available automated environments. The exact PR HEAD must pass required CI and Final Gate before merge.
 
 The older implementation's crypto benchmark vectors and passphrase recovery discussions are retired historical fixtures, not current feature documentation.
