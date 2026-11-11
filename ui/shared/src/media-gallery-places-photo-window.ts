@@ -225,6 +225,7 @@ export function xDrivePlacesPhotoLegacyCompleteTimeline(
       date.toISOString().slice(0, 10) === day ? day : 'unknown'
   })
   const known = days.filter(day => day !== 'unknown')
+  if (known.length === 0) return null
   const descending = known.length < 2 || known[0] >= known[known.length - 1]
   if (known.some((day, i) => i > 0 &&
     (descending ? day > known[i - 1] : day < known[i - 1]))) return null

@@ -86,7 +86,7 @@ test('location sheets keep exact paging, map camera, Viewer and visible sentinel
   assert.match(map, /\.presentationDragIndicator\(\.visible\)/)
   assert.match(map, /onLibraryCameraChange\?\(nil\)/)
   assert.match(map, /if hasNext \{[\s\S]*?scrollFootVisible = true/)
-  assert.match(cluster, /if let next \{[\s\S]*?scrollFootVisible = true/)
+  assert.match(cluster, /if activeOwner, let next \{[\s\S]*?scrollFootVisible = true/)
   assert.match(map, /restoreViewerTile\(using: returnScroll\)/)
   assert.match(cluster, /returnScroll\.scrollTo\(anchor\.id, anchor: \.center\)/)
   assert.match(cluster, /\@State private var priorWindow: XDriveIOSNativeMediaRange\?/)
@@ -108,7 +108,11 @@ test('local, album and cloud ranges share skeleton cells; only chronological pag
   assert.match(local, /XDriveIOSNativePhotoWallDayHeader\(\s*title: section.title, topPadding: 4/)
   assert.match(album, /XDriveIOSNativePhotoWallDayHeader\(title: section.title\)/)
   assert.doesNotMatch(map, /XDriveIOSNativePhotoWallDayHeader\(/)
-  assert.doesNotMatch(cluster, /XDriveIOSNativePhotoWallDayHeader\(/)
+  // Owner MapKit now uses headings only for verified visible windows; it never
+  // claims that the sparse 48-item prefix is the entire location date index.
+  assert.match(cluster, /XDriveIOSNativePhotoWallDayHeader\(/)
+  assert.match(cluster, /仅对当前已授权、已加载的照片分组/)
+  assert.match(cluster, /if activeOwner \{\s*if wallTimeScale == \.all/)
 })
 
 test('all five Gallery/place surfaces use the same density options, retaining each source scope', () => {
