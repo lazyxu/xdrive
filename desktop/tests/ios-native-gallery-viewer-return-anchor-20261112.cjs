@@ -50,3 +50,27 @@ test('Viewer onViewed reports actual visible photo and page', () => {
   assert.match(gallery, /onViewed: \{ page, id in viewerReturnPage = page; viewerReturnAnchor = id \}/);
   assert.match(viewer, /\.onAppear \{ onViewed\(page\.number, row\.id\) \}/);
 });
+
+
+const nativeNavigation = fs.readFileSync(
+  path.join(__dirname, '../../ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'), 'utf8'
+);
+const frameWatcher = fs.readFileSync(
+  path.join(__dirname, '../../ios/scripts/capture-navigation-smoke-frames.py'), 'utf8'
+);
+const sixJourneys = [
+  'testSavedSearchesSheetOriginalsAndFilesReturnKeepsContent',
+  'testOperationsHistoryGalleryPeopleAndFilesReturnKeepsContent',
+  'testTrashDenialGalleryFilterCancelAndFilesReturnKeepsContent',
+  'testFilesHomeEditGallerySourceRoundtripKeepsBrowse',
+  'testFilesSearchKeyboardMineCacheReturnKeepsFiles',
+  'testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent',
+];
+test('six real native cross-page journeys are both XCTest-executable and frame-watched', () => {
+  for (const name of sixJourneys) {
+    assert.ok(nativeNavigation.includes('func ' + name + '()'), 'Missing XCTest ' + name);
+    assert.ok(frameWatcher.includes('"' + name + '"'), 'Missing video/PNG watcher ' + name);
+  }
+  assert.ok(nativeNavigation.includes('IOS_NATIVE_NAV_TAP_START route='));
+  assert.match(nativeNavigation, /XCTAttachment\(screenshot: app\.screenshot\(\)\)/);
+});
