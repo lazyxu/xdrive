@@ -832,7 +832,10 @@ export default function App({
       window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData),
   }), [])
   const releaseBundlePort = useMemo<import('../../../ui/shared/src/release-bundles').XDriveReleaseBundlePort | undefined>(() => {
-    if (!agent.hello?.capabilities.includes('release-bundle-current')) return undefined
+    // Release Bundle state is Owner- and Server-scoped; the authenticated
+    // Agent identity must outlive every outstanding poll/action of this port.
+    if (!agent.connected || !configured || !status?.server || !status?.username ||
+        !agent.hello?.capabilities.includes('release-bundle-current')) return undefined
     const platform = info?.platform === 'win32' ? 'windows'
       : info?.platform === 'linux' ? 'linux' : undefined
     return {
@@ -865,7 +868,7 @@ export default function App({
         setClientUpdate(result.data)
       } : undefined,
     }
-  }, [agent.hello?.capabilities, info?.platform, clientUpdate?.manual_install_supported])
+  }, [agent.connected, configured, status?.server, status?.username, status?.auth_status, agent.hello?.capabilities, info?.platform, clientUpdate?.manual_install_supported])
   // Ordinary Desktop users may install their own current-Server package but
   // cannot submit the admin-only Host package-cache retry operation.
   const clientReleaseBundlePort = useMemo(() => releaseBundlePort
