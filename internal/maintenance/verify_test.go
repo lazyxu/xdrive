@@ -175,6 +175,14 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := os.MkdirAll(pushLockDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
+	// The registry includes all 256 LocalPush stage shard locks. Exercise
+	// their real on-disk shape rather than claiming they were ignored when
+	// the fixture had not created them.
+	for shard := 0; shard < 256; shard++ {
+		if err := os.WriteFile(filepath.Join(pushLockDir, fmt.Sprintf("%02x.lock", shard)), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.WriteFile(filepath.Join(pushLockDir, ".xdrive-ready-fedcba9876543210fedcba9876543210"), []byte{0}, 0o600); err != nil {
 		t.Fatal(err)
 	}
