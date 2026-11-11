@@ -30,7 +30,7 @@ enum XDriveIOSNativeCurrentPhotoReceiptPolicy {
         return validSourceFilename(name) ? name : nil
     }
 
-    // The canonical UploadSession writer and Live ZIP64 archive no longer
+    // The canonical original-upload writer and Live ZIP64 archive no longer
     // impose a per-original 1 GiB ceiling. The read-only receipt verifier
     // must accept the same representable byte lengths as the writer, while
     // still checking actual on-disk bytes, SHA-256 and current Owner Node.

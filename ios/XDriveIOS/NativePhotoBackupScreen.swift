@@ -272,7 +272,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
         } message: {
-            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证") · 目录：\(autoConsentDestination?.targetPath ?? "未验证")。\(autoConsentStartRule == .onlyNew ? "仅自动备份启用后拍摄或编辑的照片；无法判断拍摄和修改日期的项目仍标记不可用。" : "自动检查所有已授权的照片和视频。") 首次积压未扫完时仅在前台约每分钟继续一轮，完成扫描后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
+            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证") · 目录：\(autoConsentDestination?.targetPath ?? "未验证")。\(autoConsentStartRule == .resumePrevious ? "仅恢复旧 Owner/Source/Target 绑定的持久任务与原有范围；不重新建立增量基准。" : (autoConsentStartRule == .onlyNew ? "仅自动备份启用后拍摄或编辑的照片；无法判断拍摄和修改日期的项目仍标记不可用。" : "自动检查所有已授权的照片和视频。")) 首次积压未扫完时仅在前台约每分钟继续一轮，完成扫描后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
         }
         .confirmationDialog("确认恢复当前 Owner 的前台自动备份？",
                             isPresented: $showResumeConsent, titleVisibility: .visible) {
@@ -693,9 +693,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
 
     @ViewBuilder
     private var automaticBackupStatus: some View {
-        if photoAuthorization != .authorized {
+        if photoAuthorization != .authorized && photoAuthorization != .limited {
             backupStatus("自动备份已暂停", icon: "pause.circle",
-                         detail: "请为 xDrive 开启「所有照片」访问权限。")
+                         detail: "请为 xDrive 开启照片访问权限。")
             Button("恢复照片访问") { page = .setup }
         } else if destination.confirmed == nil {
             backupStatus("备份目录待确认", icon: "exclamationmark.triangle",
@@ -709,6 +709,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 backupStatus("自动备份目录已变化", icon: "exclamationmark.triangle",
                              detail: "请在详情关闭旧计划，再为当前目录重新启用。")
                 Button("查看前台自动备份设置") { openDetails(.automatic) }
+            } else if !schedule.enabled {
+                backupStatus("已暂停并保留旧任务", icon: "pause.circle",
+                             detail: "可在备份范围中选择「恢复之前的任务」，复核后继续使用旧游标与收据。")
+                Button("打开恢复设置") { openDetails(.automatic) }
             } else {
                 backupStatus("前台自动备份已开启", icon: "checkmark.circle",
                              detail: schedule.backupStartRule == .onlyNew
@@ -751,9 +755,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     destinationNameField
                     saveDestinationButton
                 }
-            } else if photoAuthorization != .authorized {
-                Section("3. 允许访问所有照片") {
-                    Text("备份原件需要「所有照片」访问权限。开启后，仍由你选择要备份的范围。")
+            } else if photoAuthorization != .authorized &&
+                      photoAuthorization != .limited {
+                Section("3. 允许访问照片") {
+                    Text("可选择所有照片或仅选定的照片。Limited 模式只会扫描当前授权的子集，不代表整机相册已备份。")
                     Button(photoAuthorization == .notDetermined ? "允许访问照片" : "打开 iOS 设置") {
                         if photoAuthorization == .notDetermined {
                             Task {
@@ -772,9 +777,11 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             } else {
                 Section("4. 选择范围并启用") {
                     backupScopePicker
-                    Text(autoStartRule == .onlyNew
-                         ? "备份启用后新增或编辑的照片和视频。"
-                         : "分批扫描已有和新增的照片及视频。")
+                    Text(autoStartRule == .resumePrevious
+                         ? "恢复之前暂停保留的任务；不重置已保存的游标、范围和收据。"
+                         : (autoStartRule == .onlyNew
+                             ? "备份启用后新增或编辑的照片和视频。"
+                             : "分批扫描当前获得授权的照片和视频。"))
                         .foregroundStyle(.secondary)
                     if let path = destination.confirmed?.targetPath {
                         LabeledContent("备份目录", value: path)
@@ -862,6 +869,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         Picker("备份范围", selection: $autoStartRule) {
             Text("扫描并备份全部照片").tag(XDriveIOSPhotoAutoStartRule.everything)
             Text("仅备份新照片").tag(XDriveIOSPhotoAutoStartRule.onlyNew)
+                .disabled(photoAuthorization == .limited)
+            if controller.schedule?.enabled == false {
+                Text("恢复之前的任务").tag(XDriveIOSPhotoAutoStartRule.resumePrevious)
+            }
         }
         .disabled(controller.busy || enablingAutomaticBackup || controller.schedule?.enabled == true)
         .accessibilityIdentifier("native-ios-photo-auto-start-rule")
@@ -870,7 +881,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     private var canEnableAutomaticBackup: Bool {
         !controller.busy && !background.busy && !enablingAutomaticBackup &&
             controller.schedule?.enabled != true && login.owner != nil &&
-            destination.confirmedForCurrentName && photoAuthorization == .authorized
+            destination.confirmedForCurrentName &&
+            (photoAuthorization == .authorized || photoAuthorization == .limited) &&
+            (photoAuthorization != .limited || autoStartRule != .onlyNew) &&
+            (autoStartRule != .resumePrevious || controller.schedule?.enabled == false)
     }
 
     private var enableAutomaticBackupButton: some View {
@@ -879,8 +893,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             consentError = nil
             autoConsentOwner = login.owner
             autoConsentDestination = destination.confirmed
-            autoConsentMinutes = interval
-            autoConsentAllowICloud = autoAllowICloud
+            autoConsentMinutes = autoStartRule == .resumePrevious
+                ? (controller.schedule?.intervalMinutes ?? interval) : interval
+            autoConsentAllowICloud = autoStartRule == .resumePrevious
+                ? (controller.schedule?.allowICloudOriginals ?? false) : autoAllowICloud
             autoConsentStartRule = autoStartRule
             autoConsentEnabledAt = Date()
             showAutoConsent = autoConsentOwner != nil && autoConsentDestination != nil
@@ -950,8 +966,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-photos-manual-window")
                     .id(Detail.progress)
-                if photoAuthorization != .authorized {
-                    Text("需要 iOS“所有照片”访问权限才能备份原件。仅部分照片授权暂不支持，请在系统设置中授予完整访问。")
+                if photoAuthorization == .limited {
+                    Text("当前已获得 Limited Photos 授权：仅备份当前选定的照片和视频，不能声称整个 iPhone 相册已备份。")
                         .font(.footnote).foregroundStyle(.orange)
                         .accessibilityIdentifier("native-ios-photos-manual-permission-blocked")
                 }
@@ -963,7 +979,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                     .disabled(controller.busy || background.busy || login.owner == nil ||
                               !destination.confirmedForCurrentName ||
-                              (photoAuthorization != .authorized))
+                              (photoAuthorization != .authorized && photoAuthorization != .limited))
                     .accessibilityIdentifier("native-ios-photos-manual-start")
                 Button("集中备份授权照片（仅前台连续）") {
                     consentError = nil
@@ -973,7 +989,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                 .disabled(controller.busy || background.busy || login.owner == nil ||
                           !destination.confirmedForCurrentName ||
-                          (photoAuthorization != .authorized))
+                          (photoAuthorization != .authorized && photoAuthorization != .limited))
                 .accessibilityIdentifier("native-ios-photos-focused-start")
                 Text("适用于首次大量备份：连续处理已授权的分段，每段最多新增 20 个原件。停止或重启后可从已完整扫描的分段继续，但必须重新验证当前账户、相册版本、授权范围和 iCloud 设置；不确定收据仍须先核对。扫描进度不代表全部云端原件已备份。")
                 Text("本页面运行集中备份时暂时阻止自动锁屏，约 10 秒后进入深色专注显示；轻点恢复，离开页面、进入后台或任务停止即恢复原有锁屏设置。")
@@ -1082,7 +1098,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .font(.footnote).foregroundStyle(.orange)
                         .accessibilityIdentifier("native-ios-photos-auto-permission-blocked")
                 } else if photoAuthorization == .limited {
-                    Label("当前仅授权部分照片：备份需要“所有照片”权限，自动备份已暂停。请在 iOS 设置中授予完整访问。",
+                    Label("仅部分照片权限：自动备份仅覆盖 Apple 当前授权给本 App 的照片。仅新照片增量模式需先升级为所有照片权限。",
                           systemImage: "info.circle")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("native-ios-photos-auto-permission-limited")
@@ -1146,7 +1162,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                                     }
                                 }
                                 .disabled(controller.busy || background.busy || login.owner == nil ||
-                                          (photoAuthorization != .authorized))
+                                          (photoAuthorization != .authorized && photoAuthorization != .limited))
                                 .accessibilityIdentifier("native-ios-photo-history-recovery-confirm")
                             } else {
                                 Text("请先完成上传收据核对，再确认全库恢复。")
@@ -1168,7 +1184,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     } else if photoAuthorization != .authorized && photoAuthorization != .limited {
                         Label("备份计划已保存：照片权限不可用", systemImage: "exclamationmark.triangle")
                     } else if photoAuthorization == .limited {
-                        Label("自动备份已暂停：需要“所有照片”权限", systemImage: "exclamationmark.triangle")
+                        Label("自动备份范围：仅当前已授权照片", systemImage: "info.circle")
                     } else {
                         Label("前台自动备份已开启", systemImage: "checkmark.circle")
                     }
@@ -1202,6 +1218,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     }
                     Text("新启用的前台自动备份默认加速首次积压；既有计划保留此前的加速选择。仅 App 前台且收据正常时，每轮最多新增 20 个原件；未扫描完时约 60 秒后继续，完成整库一遍扫描后恢复所选间隔。")
                         .font(.caption).foregroundStyle(.secondary)
+                    Button("暂停并保留之前的任务") {
+                        controller.pausePreserving(owner: login.owner)
+                    }
+                    .accessibilityIdentifier("native-ios-photos-auto-pause-preserve")
                     Button("关闭当前账户自动备份", role: .destructive) {
                         controller.disable(owner: login.owner)
                     }.accessibilityIdentifier("native-ios-photos-auto-disable")
@@ -1210,7 +1230,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 } else {
                     enableAutomaticBackupButton
                 }
-                Text("自动计划采用启用时确认的备份范围、检查间隔、iCloud 设置和首次积压策略；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
+                Text("「暂停并保留」可保留原任务供独立「恢复之前的任务」选项使用；永久关闭仍会删除本机计划但绝不删除已上传原件或未知 ACK。自动计划采用启用时确认的范围、检查间隔、iCloud 设置和首次积压策略；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
     }
@@ -1509,7 +1529,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
 
     private func syncSavedAutomaticSettings() {
         controller.refresh(owner: login.owner)
-        if let active = controller.schedule, active.enabled {
+        if let active = controller.schedule {
             interval = active.intervalMinutes
             autoAllowICloud = active.allowICloudOriginals
             autoStartRule = active.backupStartRule ?? .everything

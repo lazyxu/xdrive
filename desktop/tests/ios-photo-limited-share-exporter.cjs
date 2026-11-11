@@ -28,7 +28,7 @@ test('native local Share and read-only per-item original proof preserve Limited 
 test('manual backup and original preparation never opt into partial photo access', () => {
   assert.match(manualBackup, /XDrivePhotoKitOriginalExporter\.stage\(/)
   assert.doesNotMatch(manualBackup, /allowLimitedPhotoAccess: true/)
-  assert.match(backupPreparer, /guard authorization == \.authorized,/)
-  assert.match(backupPreparer, /guard access == \.authorized,/)
+  assert.match(backupPreparer, /guard \(authorization == \.authorized \|\| authorization == \.limited\),/)
+  assert.match(backupPreparer, /guard \(access == \.authorized \|\| access == \.limited\),/)
   assert.doesNotMatch(backupPreparer, /allowLimitedPhotoAccess: true/)
 })

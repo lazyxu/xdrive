@@ -44,7 +44,7 @@ test('2: queue and authorized library are independently paged with strict Owner/
   assert.match(taskModel, /Self\.changePageSize \+ 1/)
   assert.match(taskModel, /let scanner = XDrivePhotoKitBoundedSnapshotScanner\(\)/)
   assert.match(taskModel, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, owner\)/)
-  assert.match(taskModel, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
+  assert.match(taskModel, /\[\.authorized, \.limited\]\.contains\(/)
   assert.match(tasks, /Button\("上一页"\)/)
   assert.match(tasks, /Button\("下一页"\)/)
   assert.match(tasks, /item\.state == "failed" \? "核对并重试" : "优先处理"/)

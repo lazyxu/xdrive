@@ -296,6 +296,38 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
     }
 
 
+    /// Automatic retry is only for a small, bounded set of item-local
+    /// pre-write failures. The outer foreground/BG runner must already hold
+    /// the shared original gate and have proven zero uncertain receipts,
+    /// current Owner, managed target, authorization and caught-up history.
+    func retrySafeFailedCandidates(owner: XDriveNativeOwnerRoot,
+                                   limit: Int = 4) throws -> Int {
+        guard (1...4).contains(limit) else { throw Failure.invalidReplayLimit }
+        try verifyOwner(owner)
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard let baseline = try store.baseline(),
+              baseline.authorization == epoch.authorization,
+              XDriveIOSPhotoKitLibraryEpoch.matches(baseline.token, as: epoch.token)
+        else { throw Failure.unauthorizedOrChanged }
+        let eligible = try store.automaticRetryCandidates(limit: limit)
+        var retried = 0
+        for candidate in eligible {
+            try Task.checkCancellation()
+            try verifyAuthorization(stillMatches: epoch)
+            // Limited Photos and revoked items can be absent. Never retry
+            // private IDs that are no longer visible in the current grant.
+            guard PHAsset.fetchAssets(
+                withLocalIdentifiers: [candidate.localIdentifier], options: nil
+            ).firstObject != nil else { continue }
+            if try store.retryFailedAutomatically(
+                candidate, expectedBaselineToken: baseline.token,
+                authorization: epoch.authorization
+            ) { retried += 1 }
+        }
+        try verifyAuthorization(stillMatches: epoch)
+        return retried
+    }
+
     /// Recover only explicit PhotoKit network-access-required rows, at most
     /// four per foreground pass. The caller must already have current
     /// Owner/Device proof and a user-approved iCloud download policy.
