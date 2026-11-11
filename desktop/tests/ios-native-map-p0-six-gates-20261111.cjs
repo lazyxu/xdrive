@@ -56,6 +56,16 @@ test('P0-4 every published Owner map is bound to the exact verified Owner, and H
   assert.match(cloud, /verifiedOverviewOwner = expected\s*displayedOverviewOwner = expected\s*verifiedBounds = bounds/)
   assert.match(cloud, /private var displayedOverviewMatchesLogin: Bool \{[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(/)
   assert.match(cloud, /overview:\s*displayedOverviewMatchesLogin \? overview : nil/)
+  // UIKit must clear old Owner coordinates even when a SwiftUI Owner switch
+  // reaches updateUIView before the onChange closure increments revision.
+  const ownerUIView = cloud.slice(cloud.indexOf('func updateUIView(_ map: MKMapView, context: Context)'),
+    cloud.indexOf('static func dismantleUIView(_ map: MKMapView'))
+  assert.ok(ownerUIView.indexOf('if overview == nil {') > -1)
+  assert.ok(ownerUIView.indexOf('map.removeAnnotations(map.annotations.filter') >
+    ownerUIView.indexOf('if overview == nil {'))
+  assert.ok(ownerUIView.indexOf('if overview == nil {') <
+    ownerUIView.indexOf('guard context.coordinator.revision != revision'))
+  assert.match(ownerUIView, /context\.coordinator\.revision = nil\s*return/)
   assert.match(cloud, /coverImages:\s*displayedOverviewMatchesLogin \? coverImages : \[:\]/)
   assert.match(cloud, /if let overview, displayedOverviewMatchesLogin/)
   assert.match(cloud, /displayedOverviewOwner = nil/)
