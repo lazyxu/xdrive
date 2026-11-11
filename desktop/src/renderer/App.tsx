@@ -171,6 +171,7 @@ export default function App({
     appearance: 'system',
     start_at_login: true,
     close_to_tray: true,
+    sync_notification_level: 'changes-and-errors',
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [windowMaximized, setWindowMaximized] = useState(false)
@@ -213,6 +214,10 @@ export default function App({
   >(undefined)
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
   const [syncActivityFromNotification, setSyncActivityFromNotification] = useState(false)
+  const mountRunFocusSequenceRef = useRef(0)
+  const [mountRunFocus, setMountRunFocus] = useState<{
+    runID: string; server: string; username: string; requestID: number
+  } | null>(null)
   const sourceRunFocusSequenceRef = useRef(0)
   const [sourceRunFocus, setSourceRunFocus] = useState<{
     sourceID: number; runID: string; server: string; username: string; requestID: number
@@ -231,6 +236,7 @@ export default function App({
     else if (syncActivityPageVisitedRef.current) {
       syncActivityPageVisitedRef.current = false
       setSyncActivityFromNotification(false)
+      setMountRunFocus(null)
     }
   }, [view])
   const [busy, setBusy] = useState('')
@@ -1431,8 +1437,21 @@ export default function App({
         setView('remote-pull')
         return
       }
+      if (typeof target === 'object' && target?.kind === 'mount-run') {
+        // Main validates the origin and identity on notification click.
+        // Renderer also fences Owner, and sends only a typed run ID to the
+        // existing authenticated Agent IPC (never a URL or arbitrary path).
+        if (!/^[0-9a-f-]{36}$/i.test(target.runID) ||
+            typeof target.server !== 'string' || typeof target.username !== 'string') return
+        mountRunFocusSequenceRef.current += 1
+        setMountRunFocus({ ...target, requestID: mountRunFocusSequenceRef.current })
+        setSyncActivityFromNotification(false)
+        setTransferPopoverOpen(false)
+        setView('transfers')
+        return
+      }
       if (target === 'sync-activity') {
-        // The completion notification must open the persistent Task Center,
+        // Legacy navigation still opens the persistent Task Center,
         // not the existing quick-transfer popover shortcut.
         setTransferPopoverOpen(false)
         setSyncActivityFromNotification(true)
@@ -1703,6 +1722,18 @@ export default function App({
     Reflect.set(setDesktopPreferences, revisionKey, (Reflect.get(setDesktopPreferences, revisionKey) ?? 0) + 1)
     setDesktopPreferences(result.data)
     setNotice(enabled ? '关闭窗口时将继续在系统托盘后台运行。' : '关闭窗口时将退出 xDrive 桌面版。')
+  }
+
+  const changeSyncNotificationLevel = async (level: DesktopSyncNotificationLevel) => {
+    const result = await window.xdriveDesktop.setSyncNotificationLevel(level)
+    if (!result.ok) {
+      setError(result.error.message)
+      return
+    }
+    const revisionKey = Symbol.for('xdrive.desktop.preferencesUserWriteRevision')
+    Reflect.set(setDesktopPreferences, revisionKey, (Reflect.get(setDesktopPreferences, revisionKey) ?? 0) + 1)
+    setDesktopPreferences(result.data)
+    setNotice('已保存 Windows 同步通知偏好。')
   }
 
   const changeAppearance = async (next: XDriveAppearance) => {
@@ -3299,9 +3330,15 @@ export default function App({
       taskCenterPage: {
     ...taskCenter.pageProps,
     syncActivity: syncActivityDataSource,
-    syncActivitySessionKey: JSON.stringify([status?.server ?? '', status?.username ?? '']),
+    // Each notification click focuses the exact persisted run, even when the
+    // Task Center was already mounted on a different history page.
+    syncActivitySessionKey: JSON.stringify([status?.server ?? '', status?.username ?? '',
+      mountRunFocus?.requestID ?? 0]),
+    syncActivityFocusRunID: mountRunFocus &&
+      mountRunFocus.server === status?.server &&
+      mountRunFocus.username === status?.username ? mountRunFocus.runID : undefined,
     subtitle: syncActivityFromNotification && view === 'transfers' && !syncActivityDataSource
-      ? '本轮 Mount 同步检查已结束。以下是已记录的任务与传输，不代表本轮完整的文件变更清单；逐项同步历史尚未接入。'
+      ? '同步状态不等于逐项变更证明；请在本机同步活动中查看已记录的真实批次，未知的结果不会误报为无变化。'
       : taskCenter.pageProps.subtitle,
     globalTasksEnabled: status?.role === 'admin',
     globalTasksAvailable: Boolean(taskCenter.pageProps.globalTasksEnabled),
@@ -3642,6 +3679,7 @@ export default function App({
             onRestartAgent={() => { void restartAgent() }}
             onStartAtLoginChange={(enabled) => { void changeStartAtLogin(enabled) }}
             onCloseToTrayChange={(enabled) => { void changeCloseToTray(enabled) }}
+            onSyncNotificationLevelChange={(level) => { void changeSyncNotificationLevel(level) }}
             settings={settings}
             mountPath={mountPath}
             cacheLimit={cacheLimit}

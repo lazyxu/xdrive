@@ -6,11 +6,13 @@ export type DesktopWindowBounds = {
 }
 
 export type DesktopAppearance = 'system' | 'light' | 'dark'
+export type DesktopSyncNotificationLevel = 'errors-only' | 'changes-and-errors' | 'all'
 
 export type DesktopPreferences = {
   appearance: DesktopAppearance
   start_at_login: boolean
   close_to_tray: boolean
+  sync_notification_level: DesktopSyncNotificationLevel
   close_behavior_prompted: boolean
   window_bounds?: DesktopWindowBounds
   window_maximized: boolean
@@ -21,6 +23,7 @@ export function defaultDesktopPreferences(): DesktopPreferences {
     appearance: 'system',
     start_at_login: true,
     close_to_tray: true,
+    sync_notification_level: 'changes-and-errors',
     close_behavior_prompted: false,
     window_maximized: false,
   }
@@ -57,6 +60,9 @@ export function normalizeDesktopPreferences(value: unknown): DesktopPreferences 
       : defaults.appearance,
     start_at_login: typeof candidate.start_at_login === 'boolean' ? candidate.start_at_login : defaults.start_at_login,
     close_to_tray: typeof candidate.close_to_tray === 'boolean' ? candidate.close_to_tray : defaults.close_to_tray,
+    sync_notification_level: candidate.sync_notification_level === 'errors-only' ||
+      candidate.sync_notification_level === 'changes-and-errors' || candidate.sync_notification_level === 'all'
+      ? candidate.sync_notification_level : defaults.sync_notification_level,
     close_behavior_prompted: typeof candidate.close_behavior_prompted === 'boolean'
       ? candidate.close_behavior_prompted
       : defaults.close_behavior_prompted,
