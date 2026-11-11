@@ -166,29 +166,31 @@ func (h *desktopIPCHandler) cloudClipboardRevokeDevice(w http.ResponseWriter, r 
 // Cloud Clipboard events are Owner-authenticated Server SSE converted into
 // one bounded change cursor. Never relay the Server bearer or message bytes.
 func (h *desktopIPCHandler) cloudClipboardNextEvent(w http.ResponseWriter, r *http.Request) {
-  if _, ok := h.clipboardPort(w); !ok { return }
-  notifier, ok := h.ctrl.(interface {
-    CloudClipboardWaitForChange(context.Context, uint64) (client.ClipboardChangeEvent, error)
-  })
-  if !ok {
-    writeDesktopIPCError(w, http.StatusNotImplemented, "clipboard_events_unavailable", "Clipboard event stream unavailable")
-    return
-  }
-  query := r.URL.Query()
-  if len(query) != 1 || len(query["after"]) != 1 {
-    writeDesktopIPCError(w, http.StatusBadRequest, "invalid_clipboard_cursor", "invalid Clipboard event selector")
-    return
-  }
-  raw := query.Get("after")
-  cursor, err := strconv.ParseUint(raw, 10, 64)
-  if err != nil || cursor > 1<<53-1 || strconv.FormatUint(cursor, 10) != raw {
-    writeDesktopIPCError(w, http.StatusBadRequest, "invalid_clipboard_cursor", "invalid Clipboard event cursor")
-    return
-  }
-  event, err := notifier.CloudClipboardWaitForChange(r.Context(), cursor)
-  if err != nil {
-    writeDesktopIPCControllerError(w, err)
-    return
-  }
-  writeDesktopIPCJSON(w, http.StatusOK, event)
+	if _, ok := h.clipboardPort(w); !ok {
+		return
+	}
+	notifier, ok := h.ctrl.(interface {
+		CloudClipboardWaitForChange(context.Context, uint64) (client.ClipboardChangeEvent, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "clipboard_events_unavailable", "Clipboard event stream unavailable")
+		return
+	}
+	query := r.URL.Query()
+	if len(query) != 1 || len(query["after"]) != 1 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_clipboard_cursor", "invalid Clipboard event selector")
+		return
+	}
+	raw := query.Get("after")
+	cursor, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || cursor > 1<<53-1 || strconv.FormatUint(cursor, 10) != raw {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_clipboard_cursor", "invalid Clipboard event cursor")
+		return
+	}
+	event, err := notifier.CloudClipboardWaitForChange(r.Context(), cursor)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, event)
 }

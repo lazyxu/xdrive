@@ -442,7 +442,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		timeout = 45 * time.Second // Agent TLS login has its own 30s budget.
 	} else if r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" {
 		timeout = 90 * time.Second // Existing native Root binding and Server Source creation.
-	} else if (r.URL.Path == "/v1/cloud-upload-file" || isDSMOwnerLargeUploadPath(r.URL.Path)) {
+	} else if r.URL.Path == "/v1/cloud-upload-file" || isDSMOwnerLargeUploadPath(r.URL.Path) {
 		timeout = 120 * time.Second // Bounded original CAS upload.
 	} else if r.URL.Path == "/v1/recovery-review" {
 		timeout = 80 * time.Second // Existing owning Agent historical read has a 60s bound.
