@@ -93,4 +93,55 @@ fi
 if grep -E '^(tag|push|build|save)' "$XD_TEST_DOCKER_RECORD"; then
   echo 'import attempted unrelated Docker mutation' >&2; exit 1
 fi
+
+# Docker 29 may inspect an index digest while Rootless Docker loads config.
+# Test that the exporter records the archive config ID, not an index ID.
+mkdir -p "$TMP/bin-export"
+python3 - "$TMP" <<'PY'
+import hashlib, io, json, pathlib, sys, tarfile
+root = pathlib.Path(sys.argv[1])
+config = b'{"architecture":"amd64","config":{"Env":["XDRIVE_TEST=1"]},"os":"linux"}'
+digest = hashlib.sha256(config).hexdigest()
+(root / "expected-config-id").write_text("sha256:" + digest + "\n")
+for tag, output in [
+    ("xdrive/caddy:test", "docker-image-fixture.tar"),
+    ("other/image:test", "wrong-tag-fixture.tar"),
+]:
+    manifest = json.dumps([{
+        "Config": digest + ".json",
+        "RepoTags": [tag],
+        "Layers": [],
+    }], separators=(",", ":")).encode()
+    with tarfile.open(root / output, "w") as tf:
+        for name, body in [(digest + ".json", config), ("manifest.json", manifest)]:
+            info = tarfile.TarInfo(name)
+            info.size = len(body)
+            tf.addfile(info, io.BytesIO(body))
+PY
+cat > "$TMP/bin-export/docker" <<'MOCK_EXPORT'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == image && "$2" == inspect ]]; then
+  [[ "$3" == xdrive/caddy:test ]] || exit 3
+  printf 'sha256:%064d\n' 5
+elif [[ "$1" == save && "$2" == xdrive/caddy:test ]]; then
+  cat "$XD_TEST_DOCKER_SAVE_TAR"
+else
+  exit 3
+fi
+MOCK_EXPORT
+chmod 700 "$TMP/bin-export/docker"
+export XD_TEST_DOCKER_SAVE_TAR="$TMP/docker-image-fixture.tar"
+PATH="$TMP/bin-export:$PATH" bash "$ROOT/scripts/ci/export-docker-image.sh" \
+  xdrive/caddy:test "$TMP/exported" > "$TMP/exported.log"
+cmp "$TMP/expected-config-id" "$TMP/exported/image.id"
+grep -Fq 'Exported exact Docker image xdrive/caddy:test' "$TMP/exported.log"
+export XD_TEST_DOCKER_SAVE_TAR="$TMP/wrong-tag-fixture.tar"
+if PATH="$TMP/bin-export:$PATH" bash "$ROOT/scripts/ci/export-docker-image.sh" \
+  xdrive/caddy:test "$TMP/export-bad" > "$TMP/export-bad.log" 2>&1; then
+  echo 'Docker save accepted an archive for a different image' >&2
+  exit 1
+fi
+grep -Fq 'archive must contain exactly the requested image/tag' "$TMP/export-bad.log"
+
 echo 'Bounded exact Docker image import: success, SHA, CRC, timeout and safe artifact tests passed'
