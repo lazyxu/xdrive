@@ -1,3 +1,7 @@
+## iOS Native page-by-page benchmark parity — 2026-11-11
+
+- A distinct macOS Simulator candidate-performance arm measures 19 native routes with n≥3 XCUITest tap/launch-to-AX-ready samples, strict completeness, p50/p95/max JSON and exact source SHA. **Current actual measured n=0 until CI completes.** These are NOT Web's real Chromium 100k/H264/Live/4GiB/Go-CAS workload and not native FPS/CPU/RSS. See [page parity inventory](ios-native-page-performance-20261111.md).
+
 ## P068 · 2026-10-22 真实客户端与 100k Sync CURRENT 覆盖
 
 - **Wide Web Chromium + OPFS**：真实 4 GiB 高熵 SHA/完整下载×3，P50 upload/download **47.878/17.515s**，PASS；**Native Electron Desktop Renderer→Main→Agent**：真实 4 GiB SHA/原件下载×3，P50 **36.185/14.647s**，PASS；**Go Client signed 100k Sync**：75k upserts/25k tombstones/100页 ×3，P50 **6.444s**，PASS。测量 `20ee9c596515d985e3918d5f93b8151435921afa`，[Web](https://github.com/lazyxu/xdrive/actions/runs/39625778550) / [Desktop](https://github.com/lazyxu/xdrive/actions/runs/39625778369) / [Sync](https://github.com/lazyxu/xdrive/actions/runs/39625781574)；[机器数据](performance-evidence/p068-platform-current/README.md)；无优化候选，AFTER=N/A。**未覆盖：**真实 iOS/Android 手机及 OS 安装态 PWA、Windows/macOS 原生 Desktop、本地慢网/WAN/断点恢复、100k 图库媒体播放/GUI 持久 Sync/Delete。归档新 HEAD 自己的完整 CI 仍必需。

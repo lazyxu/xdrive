@@ -1,3 +1,8 @@
+## IOS-PERF-NAV · Native per-page performance baseline harness (2026-11-11)
+
+- Added a dedicated macOS Simulator candidate-performance test arm measuring 19 actual native app routes, three distinct trials each, cold/warm launch or tap to AX-ready. Script emits p50/p95/max, fails missing/duplicate trials, and preserves raw JSON in the workflow artifact. **Current measured n=0 until exact-HEAD Simulator CI has completed.** No production performance optimization or speedup is claimed.
+- Existing Web Chromium 100k/mixed-media/4GiB and Desktop performance evidence is NOT iOS; the unauthed native Simulator only validates native shell responsiveness and denied Owner pages. Real signed iPhone, 10k/100k content, media frames, RSS/CPU, network and 60/120Hz are unmeasured. [Coverage and acceptance](ios-native-page-performance-20261111.md).
+
 ## Viewer VFF-20261109 · signed H.264 first-frame A/B (#4192 original, corrected successor pending)
 
 - **Status: probe committed; n=0 valid completed paired measurements.** Original #4192 exact HEAD `63c82c5bf4d8a59447177d977cca4031edbf1fee` failed in [Actions #42595974932](https://github.com/lazyxu/xdrive/actions/runs/42595974932) **before running any H.264 playback**: `npm --prefix desktop ci` requires a missing `desktop/package-lock.json`. The corrected successor uses the existing real-H.264 workflow's `npm --prefix desktop install` while preserving `npm ci` for both locked Web worktrees. No accepted before/after latency, P50 gain, or Windows/iPhone Safari performance claim.

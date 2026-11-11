@@ -60,5 +60,48 @@ class NavigationSummaryTests(unittest.TestCase):
         self.assertEqual(payload["video_first_displayed_frame"]["p50_ms"], 28)
 
 
+    def test_native_page_n3_complete_percentiles(self):
+        logs = "\n".join(
+            "IOS_NATIVE_PAGE_PERF_MS route=%s phase=%s trial=%d value=%d"
+            % (route, phase, trial, 20 + trial * 10)
+            for route, phase in module.PAGE_PERF_REQUIRED
+            for trial in (1, 2, 3)
+        )
+        report = module.summarize(logs)["page_performance"]
+        self.assertTrue(report["complete"])
+        self.assertEqual(report["required_route_count"], 19)
+        self.assertEqual(len(report["samples"]), 19)
+        self.assertEqual(report["missing_or_incomplete"], [])
+        for row in report["samples"]:
+            self.assertEqual(row["samples"], 3)
+            self.assertEqual(row["p50_ms"], 40)
+            self.assertEqual(row["p95_ms"], 50)
+            self.assertTrue(row["complete_n3"])
+        self.assertFalse(report["is_frame_time_or_fps"])
+
+    def test_native_page_duplicate_and_missing_samples_are_not_success(self):
+        route, phase = module.PAGE_PERF_REQUIRED[0]
+        logs = "\n".join(
+            f"IOS_NATIVE_PAGE_PERF_MS route={route} phase={phase} trial={n} value=12"
+            for n in (1, 1, 2)
+        )
+        report = module.summarize(logs)["page_performance"]
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["samples"][0]["distinct_trials"], 2)
+        self.assertFalse(report["samples"][0]["complete_n3"])
+        self.assertEqual(len(module.summarize("")["page_performance"]["missing_or_incomplete"]), 19)
+
+    def test_native_page_unregistered_or_invalid_sample_is_rejected(self):
+        route, phase = module.PAGE_PERF_REQUIRED[0]
+        logs = (
+            f"IOS_NATIVE_PAGE_PERF_MS route={route} phase={phase} trial=1 value=999999\n"
+            "IOS_NATIVE_PAGE_PERF_MS route=unknown phase=warm trial=1 value=20\n"
+        )
+        report = module.summarize(logs)["page_performance"]
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["rejected_timing_count"], 1)
+        self.assertEqual(report["unexpected_routes"], [{"route": "unknown", "phase": "warm"}])
+
+
 if __name__ == "__main__":
     unittest.main()
