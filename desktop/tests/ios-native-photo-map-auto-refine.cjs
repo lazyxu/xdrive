@@ -40,7 +40,7 @@ test('auto refinement keeps the old inert MapKit camera while a bounded PhotoKit
   assert.match(map, /preserveCurrentMap: Bool = false/)
   assert.match(map, /let keepOldMap = preserveCurrentMap && viewport != nil && globalComplete/)
   assert.match(map, /if keepOldMap \{[\s\S]*?suspendForSheet\(\)[\s\S]*?globalCameraMoving = true/)
-  assert.match(map, /if keepOldMap \{[\s\S]*?globalCameraMoving = false[\s\S]*?else \{\s*globalCells = \[\]/)
+  assert.match(map, /if keepOldMap \{[\s\S]*?globalCameraMoving = true[\s\S]*?mapRevision = UUID\(\)[\s\S]*?else \{\s*globalCells = \[\]/)
   assert.match(map, /globalCells = index\.cells[\s\S]*?globalViewport = viewport[\s\S]*?globalComplete = true/)
   assert.match(map, /private var refinedViewportIsCurrent: Bool \{[\s\S]*?containsViewport\(/)
   assert.match(map, /canSelectCells: refinedViewportIsCurrent/)
@@ -57,6 +57,23 @@ test('auto refinement keeps the old inert MapKit camera while a bounded PhotoKit
   assert.doesNotMatch(mapCover, /PHAssetResourceManager|requestData\(/)
   assert.doesNotMatch(refinement, /isNetworkAccessAllowed = true|PHAssetResourceManager|requestData\(/)
   assert.doesNotMatch(map, /localStorage|CoreData/)
+})
+
+test('failed PhotoKit refinement never restores an old location or VoiceOver selection lease', () => {
+  const start = map.indexOf('    private func scanFullLibrary(')
+  const end = map.indexOf('\n    private func refresh(', start)
+  assert.ok(start >= 0 && end > start)
+  const scan = map.slice(start, end)
+  const failed = scan.slice(scan.indexOf('} catch is CancellationError {'))
+  assert.match(failed, /if generation == ticket \{\s*let live = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(failed, /if live != \.authorized \{[\s\S]*?authorization = live[\s\S]*?invalidate\(\)[\s\S]*?return/)
+  assert.match(failed, /if keepOldMap \{[\s\S]*?globalCameraMoving = true[\s\S]*?mapRevision = UUID\(\)/)
+  assert.doesNotMatch(failed, /globalCameraMoving = false/)
+  assert.match(map, /guard !globalCameraMoving, let current = globalCamera else/)
+  assert.match(map, /guard !XDriveIOSNativeLocalMapAutoRefinePolicy\.shouldRefine\(\s*visible, scanned: globalViewport/)
+  assert.match(map, /return XDriveIOSNativeLocalMapSpatialPolicy\.containsViewport\(\s*scanned, current: visible/)
+  assert.match(map, /canSelectCells: refinedViewportIsCurrent/)
+  assert.match(map, /cover\.accessibilityElementsHidden = !canSelectCells/)
 })
 
 test('PhotoKit WGS84 auto-refine policy has executed Swift fixtures for coverage, zoom, dateline and cancellation gates', () => {
