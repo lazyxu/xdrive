@@ -73,6 +73,37 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         return installed
     }
 
+    /// Install the PhotoKit token captured at the user's native only-new
+    /// consent after managed Owner/Device/Source/Target proof completes.
+    /// Saving the later token would skip old-dated imports or edits made
+    /// while the Server was being verified. Never overwrite older baselines.
+    func installNewOnlyBaseline(
+        owner: XDriveNativeOwnerRoot,
+        consentToken: Data,
+        consentAuthorization: Int
+    ) throws -> Bool {
+        try verifyOwner(owner)
+        guard !consentToken.isEmpty, consentToken.count <= 65_536,
+              (try? NSKeyedUnarchiver.unarchivedObject(
+                  ofClass: PHPersistentChangeToken.self, from: consentToken
+              )) != nil else { throw Failure.invalidArchivedToken }
+        let before = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard before.authorization == consentAuthorization else {
+            throw Failure.authorizationChanged
+        }
+        // The SQLite insert-if-absent preserves previous pending revisions.
+        // PhotoKit may advance legitimately between consent and this write:
+        // later replay must start at the consent-time token, not "before".
+        let installed = try store.installBaselineIfAbsent(
+            token: consentToken, authorization: consentAuthorization
+        )
+        let after = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        guard after.authorization == consentAuthorization else {
+            throw Failure.authorizationChanged
+        }
+        return installed
+    }
+
     /// Read only, bounded to 64 candidate IDs per call. Priority is freshly
     /// inserted originals, then previously edited originals; every candidate
     /// still requires current authorized PHAsset + exact Server receipt proof.
