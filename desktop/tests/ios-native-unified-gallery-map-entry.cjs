@@ -12,20 +12,21 @@ const mapPolicy = read('ios/XDriveIOS/NativePhotoMapPolicy.swift')
 const nativeUITests = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
 
 test('default unified Gallery filter sheet exposes actual existing native map entry', () => {
-  assert.match(gallery, /var onShowMap: \(\(XDriveIOSNativePhotoMapCaptureRange\?\) -> Void\)\? = nil/)
+  assert.match(gallery, /var onShowMap: \(\(XDriveIOSNativePhotoMapCaptureRange\?, XDriveIOSNativePhotoMediaFilter, String\) -> Void\)\? = nil/)
   assert.match(gallery, /Section\("地图"\)/)
   assert.match(gallery, /Label\("显示地图", systemImage: "map"\)/)
   assert.match(gallery, /native-ios-unified-gallery-show-map/)
   assert.match(dashboard, /case \.unified:\s*XDriveIOSNativeUnifiedPhotoGallery\(/)
-  assert.match(dashboard, /onShowMap: \{ range in/)
+  assert.match(dashboard, /onShowMap: \{ range, media, filename in/)
 })
 
 test('unsupported unified source, filenames and media predicates never silently show an unfiltered map', () => {
   assert.match(gallery, /private var mapUnavailableReason: String\?/)
   assert.match(gallery, /if sourceFilter != nil \{/)
   assert.match(gallery, /if !draft\.isValid \{/)
-  assert.match(gallery, /if !draft\.term\.isEmpty \{/)
-  assert.match(gallery, /if draft\.media != \.all \{/)
+  assert.match(gallery, /private var representableMapMediaFilter: XDriveIOSNativePhotoMediaFilter/)
+  assert.match(gallery, /pendingMapFilenameTerm = draft\.term/)
+  assert.match(dashboard, /cloudSourceAllowed: unifiedMapMediaFilter\.isAll && unifiedMapFilenameTerm\.isEmpty/)
   assert.match(gallery, /\.disabled\(mapUnavailableReason != nil \|\| !draft\.isValid\)/)
   assert.match(gallery, /native-ios-unified-gallery-map-scope/)
   assert.match(gallery, /来源可在地图内切换/)
@@ -44,11 +45,11 @@ test('the only date predicate mapped to both native map sources is the exact bou
 test('filter sheet is fully dismissed before existing MapKit is presented', () => {
   assert.match(gallery, /\.sheet\(isPresented: \$showFilters, onDismiss: \{/)
   assert.match(gallery, /guard openMapAfterFilterDismiss else \{ return \}/)
-  assert.match(gallery, /onShowMap\?\(selectedRange\)/)
-  assert.match(gallery, /query = draft\s*pendingMapCaptureRange = representableMapCaptureRange\s*openMapAfterFilterDismiss = true\s*showFilters = false/)
+  assert.match(gallery, /onShowMap\?\(selectedRange, selectedMedia, selectedFilename\)/)
+  assert.match(gallery, /query = draft\s*pendingMapCaptureRange = representableMapCaptureRange\s*pendingMapMediaFilter = representableMapMediaFilter\s*pendingMapFilenameTerm = draft\.term\s*openMapAfterFilterDismiss = true\s*showFilters = false/)
   assert.match(dashboard, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap, onDismiss:/)
   assert.match(dashboard, /NavigationStack \{\s*XDriveIOSNativePhotoMapsScreen\(/)
-  assert.doesNotMatch(dashboard, /onShowMap: \{ range in[\s\S]*?gallerySource = \.map/)
+  assert.doesNotMatch(dashboard, /onShowMap: \{ range, media, filename in[\s\S]*?gallerySource = \.map/)
 })
 
 test('one shared native PhotoKit/Owner map, not a duplicate map or a second writer', () => {
@@ -56,9 +57,9 @@ test('one shared native PhotoKit/Owner map, not a duplicate map or a second writ
   assert.equal(refs.length, 2, 'existing Gallery .map and modal unified Gallery must reuse same map View')
   assert.match(dashboard, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(/)
   assert.match(dashboard, /onClose: \{ presentingUnifiedMap = false \}/)
-  assert.match(dashboard, /mediaFilter: \.all,\s*inheritedCaptureRange: unifiedMapCaptureRange/)
+  assert.match(dashboard, /mediaFilter: unifiedMapMediaFilter,\s*filenameTerm: unifiedMapFilenameTerm,\s*cloudSourceAllowed: unifiedMapMediaFilter\.isAll && unifiedMapFilenameTerm\.isEmpty,\s*inheritedCaptureRange: unifiedMapCaptureRange/)
   assert.match(map, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
-  assert.match(map, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(/)
+  assert.match(map, /case \.cloud:\s*if cloudSourceAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(/)
   assert.doesNotMatch(gallery, /PHPhotoLibrary\.shared\(\)\.performChanges|UploadSession\(/)
 })
 
