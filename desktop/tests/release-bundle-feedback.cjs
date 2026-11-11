@@ -51,3 +51,13 @@ test('current-Server install warning preserves immutable public admission and ex
   assert.ok(provenance.includes('!release.Immutable'), 'mutable releases must remain rejected')
   assert.ok(docs.includes('Polling the cache must not erase a prior install'))
 })
+
+test('stale retry, download and install responses cannot paint a new Owner/Server', () => {
+  assert.ok(card.includes('const actionGeneration = useRef(0)'))
+  assert.ok(card.includes('actionGeneration.current++'))
+  assert.ok(card.includes('const actionNumber = actionGeneration.current'))
+  assert.ok((card.match(/if \(actionNumber !== actionGeneration\.current\) return/g) || []).length >= 3)
+  assert.ok(card.includes('if (actionNumber === actionGeneration.current) setRetrying(false)'))
+  assert.ok(card.includes('if (actionNumber === actionGeneration.current) setInstalling(false)'))
+  assert.ok(card.includes('setRetrying(false)') && card.includes('setInstalling(false)'))
+})

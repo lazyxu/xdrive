@@ -31,6 +31,8 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
   const [actionFeedback, setActionFeedback] = useState<{ tone: 'neutral' | 'warning' | 'bad'; message: string } | null>(null)
   const latestRefresh = useRef(0)
   const lastCommit = useRef<string | undefined>(undefined)
+  // An old Agent response must not overwrite a new Owner/Server's action UI.
+  const actionGeneration = useRef(0)
   const [retrying, setRetrying] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [pendingInstall, setPendingInstall] = useState<{ commit: string; filename: string; personalUnsigned: boolean } | null>(null)
@@ -45,8 +47,11 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
         // A result for a different Server must not retain a previous
         // installation confirmation or error.
         lastCommit.current = result.commit
+        actionGeneration.current++
         setPendingInstall(null)
         setActionFeedback(null)
+        setRetrying(false)
+        setInstalling(false)
       }
       setState(result)
       setReadError('')
@@ -58,11 +63,14 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
   }, [port])
   useEffect(() => {
     latestRefresh.current++
+    actionGeneration.current++
     lastCommit.current = undefined
     setState(null)
     setReadError('')
     setActionFeedback(null)
     setPendingInstall(null)
+    setRetrying(false)
+    setInstalling(false)
     if (!port) return
     void refresh()
     const ticker = setInterval(() => { void refresh() }, 10000)
@@ -73,15 +81,19 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
   }, [port, refresh])
   const retry = async () => {
     if (!port?.retry || retrying) return
+    const actionNumber = actionGeneration.current
     setRetrying(true)
     setActionFeedback(null)
     try {
       await port.retry()
+      if (actionNumber !== actionGeneration.current) return
       await refresh()
     } catch {
-      setActionFeedback({ tone: 'warning', message: '重试请求未成功。服务端升级状态不受影响。' })
+      if (actionNumber === actionGeneration.current) {
+        setActionFeedback({ tone: 'warning', message: '重试请求未成功。服务端升级状态不受影响。' })
+      }
     } finally {
-      setRetrying(false)
+      if (actionNumber === actionGeneration.current) setRetrying(false)
     }
   }
   if (!port) return null
@@ -157,9 +169,12 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
               ) : null}
               {artifact.cached && port.downloadCached ? (
                 <XDriveActionButton onClick={() => {
+                  const actionNumber = actionGeneration.current
                   const transfer = port.downloadCached?.(artifact.filename)
                   if (transfer) void transfer.catch(() => {
-                    setActionFeedback({ tone: 'bad', message: '本机安装包下载失败，可改用 GitLab 或 GitHub。' })
+                    if (actionNumber === actionGeneration.current) {
+                      setActionFeedback({ tone: 'bad', message: '本机安装包下载失败，可改用 GitLab 或 GitHub。' })
+                    }
                   })
                 }}>本机服务器下载（优先）</XDriveActionButton>
               ) : null}
@@ -194,17 +209,22 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
             setActionFeedback({ tone: 'warning', message: 'Server Commit 已变化，请刷新后重新选择。' })
             return
           }
+          const actionNumber = actionGeneration.current
           setInstalling(true)
           setActionFeedback(null)
           void port.installCurrent(pendingInstall.commit, pendingInstall.filename, pendingInstall.personalUnsigned)
             .then(() => {
+              if (actionNumber !== actionGeneration.current) return
               setPendingInstall(null)
               setActionFeedback({ tone: 'neutral', message: '已提交本机更新；仍需等待安装器完成 Commit 和健康检查，不能据此认定升级成功。' })
             })
             .catch((reason: unknown) => {
+              if (actionNumber !== actionGeneration.current) return
               setActionFeedback({ tone: 'bad', message: reason instanceof Error ? reason.message : '当前 Server 版本安装失败。' })
             })
-            .finally(() => setInstalling(false))
+            .finally(() => {
+              if (actionNumber === actionGeneration.current) setInstalling(false)
+            })
         }}
       />
     </Box>
