@@ -76,6 +76,29 @@ class MapKitP0GPSFixtureTests(unittest.TestCase):
             self.assertAlmostEqual(decoded[0], lat, places=4)
             self.assertAlmostEqual(decoded[1], lon, places=4)
 
+    def test_100k_distinct_positions_and_exif_never_alias(self):
+        # A unique JPEG nonce does not imply a unique GPS location.
+        # Check the full supported 100k cardinality, including the old
+        # 45,500-item wrap and EXIF round-trip for boundary samples.
+        positions = [GEN.gps_for(i, "distinct") for i in range(100_000)]
+        self.assertEqual(len(set(positions)), 100_000)
+        self.assertNotEqual(positions[0], positions[45_500])
+        self.assertTrue(all(
+            math.isfinite(lat) and math.isfinite(lon)
+            and abs(lat) <= 90 and abs(lon) <= 180
+            for lat, lon in positions
+        ))
+        indices = (0, 64, 999, 1000, 45_499, 45_500, 99_999)
+        decoded = []
+        for i in indices:
+            lat, lon = positions[i]
+            image = b"\xff\xd8" + GEN.exif_gps_segment(lat, lon) + b"\xff\xd9"
+            actual = parse_gps(image)
+            self.assertAlmostEqual(actual[0], lat, places=4)
+            self.assertAlmostEqual(actual[1], lon, places=4)
+            decoded.append((round(actual[0], 5), round(actual[1], 5)))
+        self.assertEqual(len(set(decoded)), len(indices))
+
     def test_65_distinct_places_and_antimeridian_same_physical_meridian(self):
         positions = [GEN.gps_for(i, "distinct") for i in range(65)]
         self.assertEqual(len(set(positions)), 65)
