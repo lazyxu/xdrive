@@ -118,9 +118,14 @@ jobs:
           mv desktop/pwa-p1-owner-100k-h264-viewer-results "$OUT/candidate"
           export XD_VIEWER_FF_DIST="$VIEWER_BASE_DIR/web/dist"
           test -s "$XD_VIEWER_FF_DIST/index.html"
+          # Baseline remains byte-for-byte frozen: only permit a genuine
+          # elementFromPoint-verified tap near the edge of the SAME button
+          # when an old Snackbar blocks its center. Candidate has no waiver.
+          export XD_VIEWER_FF_BASELINE_EDGE_TAP=1
           xvfb-run -a --server-args="-screen 0 1920x1200x24" \
             ./desktop/node_modules/.bin/electron --no-sandbox \
             desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs
+          unset XD_VIEWER_FF_BASELINE_EDGE_TAP
           mv desktop/pwa-p1-owner-100k-h264-viewer-results "$OUT/baseline"
           node desktop/scripts/viewer-first-frame-compare.cjs \
             "$OUT/baseline/summary.json" "$OUT/candidate/summary.json" \

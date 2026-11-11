@@ -55,3 +55,88 @@ test('real signed H264 fixture only clicks an unobscured actual button and diagn
   assert.ok(harness.includes("win.webContents.sendInputEvent({type:'mouseUp'"))
   assert.ok(!harness.includes("window.location.hash = '#/app/files'"))
 })
+
+
+const vm = require('node:vm')
+
+async function probeActualFiveSlot({ baseline = false, blocker = 'snackbar', openBottom = true } = {}) {
+  const harness = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
+  const start = harness.indexOf('async function visibleButtonCenter(win, label) {')
+  const end = harness.indexOf('\nfunction sendActualPointer', start)
+  assert.ok(start >= 0 && end > start, 'use the actual production test-harness function')
+  const sourceFunction = harness.slice(start, end)
+  const visibleButtonCenter = vm.runInNewContext('(' + sourceFunction + ')', {
+    process: { env: { XD_VIEWER_FF_BASELINE_EDGE_TAP: baseline ? '1' : '' } }, JSON,
+  })
+  const button = {
+    textContent: '文件',
+    tagName: 'BUTTON',
+    getAttribute: () => '',
+    contains: node => node === button,
+    getBoundingClientRect: () => ({
+      left: 228, top: 761, width: 78, height: 56, right: 306, bottom: 817,
+    }),
+  }
+  const over = {
+    tagName: 'DIV', parentElement: null,
+    getBoundingClientRect: () => ({width:370,height:100}),
+    closest: selector => selector ===
+      (blocker === 'snackbar' ? '.MuiSnackbar-root' : '.MuiModal-root') ? over : null,
+  }
+  const document = {
+    querySelectorAll: selector => selector === '[data-xdrive-mobile-five-slot] button' ? [button] : [],
+    elementFromPoint: (_x, y) => blocker === 'none' || (openBottom && y > 799) ? button : over,
+  }
+  const win = { webContents: {executeJavaScript: code => vm.runInNewContext(code, {
+    document, innerWidth:390, innerHeight:817, JSON,
+    getComputedStyle: node => ({visibility:'visible',pointerEvents:'auto',
+      position:node === over ? 'fixed' : 'relative', zIndex:node === over ? '1400' : '1100'}),
+  })} }
+  return visibleButtonCenter(win, '文件')
+}
+
+test('actual five-slot center hit is mandatory for candidate even when Snackbar blocks it', async () => {
+  const pos = await probeActualFiveSlot({baseline:false,blocker:'snackbar'})
+  assert.match(pos.error, /got 0/)
+  assert.equal(pos.counts.blockerKind, 'snackbar')
+  assert.equal(pos.counts.unobscured, 0)
+})
+test('frozen baseline may use only a real unobscured lower point on the SAME Files button', async () => {
+  const pos = await probeActualFiveSlot({baseline:true,blocker:'snackbar'})
+  assert.equal(pos.error, undefined)
+  assert.equal(pos.baselineEdgeHit, true)
+  assert.equal(pos.x, 267)
+  assert.ok(pos.y > 799 && pos.y < 817)
+})
+test('normal Files center tap remains unchanged in both candidate and frozen baseline', async () => {
+  for (const baseline of [true,false]) {
+    const pos = await probeActualFiveSlot({baseline,blocker:'none'})
+    assert.equal(pos.error, undefined)
+    assert.equal(pos.baselineEdgeHit, false)
+    assert.equal(pos.x, 267)
+    assert.equal(pos.y, 789)
+  }
+})
+test('a modal or entirely blocked Files button cannot be bypassed on frozen baseline', async () => {
+  for (const attempt of [
+    {baseline:true,blocker:'modal',openBottom:true},
+    {baseline:true,blocker:'snackbar',openBottom:false},
+  ]) {
+    const pos = await probeActualFiveSlot(attempt)
+    assert.match(pos.error, /got 0/)
+    assert.equal(pos.counts.unobscured, 0)
+  }
+})
+test('benchmark only enables verified edge tapping in baseline and preserves real pointer gate', () => {
+  const workflow = read('.github/workflows/viewer-first-frame-paired-h264.yml')
+  assert.ok(workflow.includes('export XD_VIEWER_FF_BASELINE_EDGE_TAP=1'))
+  assert.ok(workflow.includes('unset XD_VIEWER_FF_BASELINE_EDGE_TAP'))
+  assert.ok(workflow.indexOf('export XD_VIEWER_FF_BASELINE_EDGE_TAP=1') >
+    workflow.indexOf('mv desktop/pwa-p1-owner-100k-h264-viewer-results "$OUT/candidate"'))
+  const harness = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
+  assert.ok(harness.includes("hit?.closest('.MuiSnackbar-root')"))
+  assert.ok(harness.includes('const edgeHit = document.elementFromPoint(x, edgeY)'))
+  assert.ok(harness.includes('if (edgeHit === button || button.contains(edgeHit))'))
+  assert.ok(harness.includes("process.env.XD_VIEWER_FF_BASELINE_EDGE_TAP === '1'"))
+  assert.ok(!harness.includes("window.location.hash = '#/app/files'"))
+})

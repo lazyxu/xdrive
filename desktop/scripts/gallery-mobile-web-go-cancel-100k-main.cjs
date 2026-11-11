@@ -154,6 +154,7 @@ async function visibleButtonCenter(win, label) {
     let blockerTag = 'none'
     let blockerStack = null
     let blockerAncestorLayers = []
+    const validatedPoints = []
     const candidates = matching.filter(button => {
       const bounds = button.getBoundingClientRect()
       const style = getComputedStyle(button)
@@ -163,7 +164,27 @@ async function visibleButtonCenter(win, label) {
       withinViewport++
       const x = bounds.left + bounds.width / 2, y = bounds.top + bounds.height / 2
       const hit = document.elementFromPoint(x, y)
-      if (hit === button || button.contains(hit)) return true
+      if (hit === button || button.contains(hit)) {
+        validatedPoints.push({x:Math.round(x),y:Math.round(y),baselineEdgeHit:false})
+        return true
+      }
+      // The frozen *baseline* can have a persistent MUI Snackbar over the
+      // CENTER of the real Files button. Measure H264 on that exact build
+      // only when an alternative point on that SAME rendered button is
+      // confirmed by elementFromPoint to be genuinely clickable. The
+      // candidate still requires its normal center to be unobstructed.
+      // No router mutation, synthetic DOM click, or obstructed pointer.
+      if (${JSON.stringify(process.env.XD_VIEWER_FF_BASELINE_EDGE_TAP === '1')} &&
+          hit?.closest('.MuiSnackbar-root')) {
+        for (const fraction of [0.85, 0.93]) {
+          const edgeY = bounds.top + bounds.height * fraction
+          const edgeHit = document.elementFromPoint(x, edgeY)
+          if (edgeHit === button || button.contains(edgeHit)) {
+            validatedPoints.push({x:Math.round(x),y:Math.round(edgeY),baselineEdgeHit:true})
+            return true
+          }
+        }
+      }
       // Fixed-category, anonymous obstruction telemetry. Never print actual
       // DOM text, class strings, private Owner labels or source URLs.
       blockerKind = !hit ? 'no-hit' :
@@ -208,8 +229,7 @@ async function visibleButtonCenter(win, label) {
       counts:{buttons:buttons.length,matching:matching.length,
         withinViewport,unobscured:candidates.length,blockerKind,blockerTag,blockerStack,blockerAncestorLayers},
     }
-    const rect = candidates[0].getBoundingClientRect()
-    return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}
+    return validatedPoints[0]
   })()`, true)
 }
 function sendActualPointer(win, where) {
@@ -224,11 +244,16 @@ function sendActualPointer(win, where) {
 async function prepareAppDestination(win, name) {
   let last = null
   try {
-    return await until(async () => {
+    const point = await until(async () => {
       const pos = await visibleButtonCenter(win, name)
       last = pos
       return pos.error ? null : pos
     }, 25000, 'unobscured genuine five-slot destination '+name)
+    if (point.baselineEdgeHit) {
+      // No private text, auth, coordinates or media paths in CI diagnostics.
+      console.log('P0C2_BASELINE_REAL_BUTTON_EDGE_HIT verified')
+    }
+    return point
   } catch (error) {
     // A real UI gate remains failing. No test-only navigation or synthetic
     // pointer is introduced. Report bounded structural flags only; never dump
