@@ -524,11 +524,11 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     /// hard-coded "two photos globally" assumption or mock permission.
     func testP0RealPhotoKitIndependentGPSCountMatchesCurrentMap() {
         let app = openLocalMap()
-        let verified = element("native-ios-map-verified-count", in: app)
-        XCTAssertTrue(verified.waitForExistence(timeout: 90),
-                      "Live PhotoKit MapKit index did not finish")
+        // Empty baseline PhotoKit libraries legitimately have no count row:
+        // the independent audit action appears after the complete scan even
+        // when the GPS count is zero. Seeded runs will have verified counts.
         let trigger = element("native-ios-map-p0-audit-trigger", in: app)
-        XCTAssertTrue(trigger.waitForExistence(timeout: 15),
+        XCTAssertTrue(trigger.waitForExistence(timeout: 120),
                       "Independent GPS audit must be available only in the real Debug test route")
         trigger.tap()
         let independentlyVerified = element("native-ios-map-p0-independent-count", in: app)
