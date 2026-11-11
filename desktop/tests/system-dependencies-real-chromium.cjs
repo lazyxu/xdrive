@@ -75,6 +75,7 @@ test('isolated Actions job executes accurate SHA, native Chrome and retains sani
   assert.match(workflow, /pull_request:/)
   assert.match(workflow, /branches: \[master\]/)
   assert.match(workflow, /ui\/shared\/src\/mui\/ServiceDependenciesPage\.tsx/)
+  assert.match(workflow, /ui\/shared\/src\/mui\/SensitiveField\.tsx/)
   assert.match(workflow, /system-dependencies-real-chromium\.cjs/)
   assert.match(workflow, /git rev-parse HEAD/)
   assert.match(workflow, /playwright-core@1\.56\.1/)
