@@ -246,8 +246,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     var showsUserDot = false
     var provisional = false
     var canSelectCells = true
-    // Only previously viewport-filtered cells need instant gesture revocation.
-    // All-library overview and normal photo page remain directly selectable.
+    // Every full-library GPS Cell needs synchronous gesture revocation,
+    // including the initial world overview before the first viewport scan.
+    // Plain 64-photo pages use a separate membership lease.
     var cameraBoundCells = false
     var onCells: (([Cell], MKCoordinateRegion) -> Void)? = nil
     var onCamera: ((MKCoordinateRegion) -> Void)? = nil
@@ -1365,7 +1366,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         showsUserDot: currentLocation.showsUserDot,
                         provisional: !globalComplete && !provisionalCells.isEmpty,
                         canSelectCells: refinedViewportIsCurrent,
-                        cameraBoundCells: globalViewport != nil,
+                        cameraBoundCells: mapScope == .library,
                         onCells: { cells, _ in
                             // A MapKit cluster may contain several spatial cells.
                             // Admit only the exact complete set still held by
@@ -1440,7 +1441,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                 // scan before the next settled viewport wins.
                                 suspendForSheet()
                             }
-                            if globalViewport != nil { globalCameraMoving = true }
+                            // Revoke all world/viewport cells *before* the
+                            // first UIKit gesture callback can select an
+                            // old aggregate from the previous camera.
+                            globalCameraMoving = true
                         },
                         onOpen: { _, _ in }
                     )
@@ -1821,7 +1825,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                   let target = currentLocation.camera else { return }
             // Before MapKit's animated camera callback, disable any prior
             // viewport-bound Cell lease; the normal settled scan revalidates.
-            if globalViewport != nil { globalCameraMoving = true }
+            globalCameraMoving = true
             globalCamera = target
             onLibraryCameraChange?(target)
         }
