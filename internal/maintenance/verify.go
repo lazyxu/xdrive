@@ -450,6 +450,12 @@ func isInternalReadinessProbe(key string, size int64) bool {
 	if size < 0 || size > 1 {
 		return false
 	}
+	// Most scanned files are real blobs, so reject ordinary filenames before
+	// consulting the lifecycle inventory (which constructs 256 shard names).
+	suffix, ok := strings.CutPrefix(filepath.Base(key), ".xdrive-ready-")
+	if !ok {
+		return false
+	}
 	directory := filepath.ToSlash(filepath.Dir(key))
 	if directory != "." {
 		registeredDirectory := false
@@ -462,10 +468,6 @@ func isInternalReadinessProbe(key string, size int64) bool {
 		if !registeredDirectory {
 			return false
 		}
-	}
-	suffix, ok := strings.CutPrefix(filepath.Base(key), ".xdrive-ready-")
-	if !ok {
-		return false
 	}
 	if len(suffix) == 32 {
 		for _, digit := range suffix {
