@@ -568,7 +568,7 @@ jobs:
                 if [[ ! -f "release/$old_asset_name" ]] &&
                    { [[ "$old_asset_name" =~ ^xdrivenas-armada38x-[0-9][0-9A-Za-z.-]*\.spk(\.sha256)?$ ]] ||
                      [[ "$old_asset_name" =~ ^xdrive-source-agent-linux-(amd64|arm64|armv7)$ ]] ||
-                     [[ "$old_asset_name" =~ ^(xdrive-linux-amd64\.deb|xDriveSetup-amd64\.exe|xDrive-unsigned\.ipa(\.sha256)?|xdrive-backup-linux-amd64\.tar\.gz|xdrive-backup-windows-amd64\.zip)$ ]] ||
+                     [[ "$old_asset_name" =~ ^(xdrive-linux-amd64\.deb|xDriveSetup-amd64\.exe|xDrive-unsigned\.ipa(\.sha256)?|xdrive-backup-linux-amd64\.tar\.gz|xdrive-backup-windows-amd64\.zip|xdrive-cli-linux-amd64\.tar\.gz|xdrive-cli-windows-amd64\.zip)$ ]] ||
                      [[ "$old_asset_name" =~ ^xdrive-android-[1-9][0-9]{0,9}-[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\.apk$ ]]; }; then
                   [[ "$old_asset_id" =~ ^[0-9]+$ ]] || {
                     echo "Invalid superseded Snapshot asset ID." >&2
