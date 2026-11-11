@@ -249,7 +249,8 @@ test('390px trusted photo drawer uses safe-area layout and touch-only pointer gr
   }
   const click=grip.slice(grip.indexOf('onClick='),grip.indexOf('sx={{'))
   assert.match(click,/event\.detail > 0 && suppressDragClick\.current/)
-  assert.match(click,/onExpand\(!expanded\)/)
+  assert.match(click,/requestExpanded\(!expanded\)/)
+  assert.match(sheet,/const requestExpanded = \(next:boolean\) => \{[\s\S]*?onExpand\(next\)/)
   assert.match(sheet,/onPointerDown=/)
   assert.match(sheet,/setPointerCapture\(event\.pointerId\)/)
   assert.match(sheet,/onPointerUp=/)
