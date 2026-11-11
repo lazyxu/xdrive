@@ -42,9 +42,11 @@ class PortableStandaloneCLITests(unittest.TestCase):
         linux, windows = self.build()
         with tarfile.open(linux, "r:gz") as archive:
             self.assertEqual(set(archive.getnames()), {
-                "xdrive-cli/", "xdrive-cli/README.md",
+                "xdrive-cli", "xdrive-cli/README.md",
                 "xdrive-cli/xd", "xdrive-cli/xdrive-agent",
             })
+            self.assertTrue(archive.getmember("xdrive-cli").isdir(),
+                            "archive root must be an actual directory entry")
             self.assertEqual(archive.extractfile("xdrive-cli/xd").read(),
                              (self.core / "linux-amd64/xd").read_bytes())
             self.assertIn(SHA.encode(), archive.extractfile("xdrive-cli/README.md").read())
