@@ -211,6 +211,7 @@ import {
   type AgentClipboardItem,
   type AgentClipboardWrite,
   type AgentClipboardPage,
+  type AgentClipboardEvent,
   type AgentClipboardDevices,
   type AgentClipboardDevice,
   type AgentNotesNamespace,
