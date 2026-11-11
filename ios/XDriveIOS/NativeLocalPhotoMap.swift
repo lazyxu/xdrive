@@ -1246,16 +1246,29 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         // Scanned-incomplete cells must never become tappable, even before
         // MapKit receives its first fully verified PhotoKit snapshot.
         guard globalComplete, !busy else { return false }
+        // A failed or in-flight refinement keeps the old MapKit canvas, but
+        // never reactivates the old Cell/VoiceOver selection lease.
+        guard !globalCameraMoving, let current = globalCamera else {
+            // The initial full-library overview precedes the first camera
+            // delegate callback; this is not a viewport-bound refinement.
+            return !globalCameraMoving && globalCamera == nil &&
+                globalViewport == nil
+        }
+        guard let visible = XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
+            latitude: current.center.latitude,
+            longitude: current.center.longitude,
+            latitudeSpan: current.span.latitudeDelta,
+            longitudeSpan: current.span.longitudeDelta
+        ) else { return false }
+        // Even when the old overscan contains the new camera, a >=4x zoom
+        // needs finer Cell counts. Until that PhotoKit scan completes, do not
+        // let an old aggregate open the wrong set of photos.
+        guard !XDriveIOSNativeLocalMapAutoRefinePolicy.shouldRefine(
+            visible, scanned: globalViewport
+        ) else { return false }
         guard let scanned = globalViewport else { return true }
-        guard !globalCameraMoving, let current = globalCamera else { return false }
         return XDriveIOSNativeLocalMapSpatialPolicy.containsViewport(
-            scanned,
-            current: XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
-                latitude: current.center.latitude,
-                longitude: current.center.longitude,
-                latitudeSpan: current.span.latitudeDelta,
-                longitudeSpan: current.span.longitudeDelta
-            )
+            scanned, current: visible
         )
     }
 
@@ -2171,10 +2184,22 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             } catch is CancellationError {
             } catch {
                 if generation == ticket {
+                    let live = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                    if live != .authorized {
+                        // A permission loss during a bounded rescan must
+                        // remove old GPS covers, not only disable their taps.
+                        authorization = live
+                        onLibraryCameraChange?(nil)
+                        clearReturnCamera()
+                        invalidate()
+                        return
+                    }
                     if keepOldMap {
-                        // Preserve only inert older pins until another settled
-                        // viewport or explicit retry; do not claim fresh data.
-                        globalCameraMoving = false
+                        // Retain the existing MapKit canvas without
+                        // reauthorizing old Cell counts or VoiceOver pins.
+                        // The user can retry via the existing Map actions.
+                        globalCameraMoving = true
+                        mapRevision = UUID()
                     } else {
                         globalCells = []
                         provisionalCells = []
