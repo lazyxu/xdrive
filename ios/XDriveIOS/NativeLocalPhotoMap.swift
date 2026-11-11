@@ -2195,11 +2195,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         return
                     }
                     if keepOldMap {
-                        // Retain the existing MapKit canvas without
+                        // Retain the same MapKit view and camera, without
                         // reauthorizing old Cell counts or VoiceOver pins.
+                        // updateUIView disables covers *before* its revision
+                        // guard, so no remove/add or auto-fit is needed here.
                         // The user can retry via the existing Map actions.
                         globalCameraMoving = true
-                        mapRevision = UUID()
                     } else {
                         globalCells = []
                         provisionalCells = []
