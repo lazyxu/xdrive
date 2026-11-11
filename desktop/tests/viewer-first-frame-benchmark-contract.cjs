@@ -128,7 +128,7 @@ test('paired workflow compiles both real production builds against the same Go/P
   const baselineRun = flow.indexOf('export XD_VIEWER_FF_DIST="$VIEWER_BASE_DIR/web/dist"')
   assert.ok(candidateRun >= 0 && baselineRun > candidateRun,
     'candidate real signed video n3 must run before a potentially broken historical baseline')
-  assert.ok(flow.indexOf('viewer-first-frame-compare.cjs') > baselineRun,
+  assert.ok(flow.indexOf('node desktop/scripts/viewer-first-frame-compare.cjs', baselineRun) > baselineRun,
     'do not claim n3/n3 comparison until both actual Web builds were measured')
   assert.ok(flow.includes('set -euo pipefail'),
     'candidate failure and baseline failure must still fail the paired workflow')
