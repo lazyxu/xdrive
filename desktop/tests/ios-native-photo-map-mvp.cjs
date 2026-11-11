@@ -371,7 +371,7 @@ test('verified native Viewer GPS opens the existing Gallery local map and nearby
   assert.match(map, /onChange\(of: incomingMapJump\?\.id\)/)
   assert.match(dashboard, /@State private var localMapJump: XDriveIOSNativeLocalMapJump\?/)
   assert.match(dashboard, /ownerScopeKey == expectedRouteOwnerKey[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?openGallery\(\.map\)\s+localMapJump = jump\s+localMapCamera = jump\.camera\s+localMapScope = \.library\s+mapSource = \.local/)
-  assert.match(dashboard, /localMapJump = nil\s+galleryMapCaptureRange = nil\s+presentingUnifiedMap = false\s+unifiedMapCaptureRange = nil\s+mapSource = \.local/)
+  assert.match(dashboard, /localMapJump = nil\s+galleryMapCaptureRange = nil\s+presentingUnifiedMap = false\s+unifiedMapCaptureRange = nil\s+unifiedMapMediaFilter = \.all\s+unifiedMapFilenameTerm = ""\s+mapSource = \.local/);
   assert.doesNotMatch(map, /WKWebView|URLSession\(|UploadSession|UserDefaults/)
 })
 

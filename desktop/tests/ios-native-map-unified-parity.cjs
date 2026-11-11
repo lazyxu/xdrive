@@ -252,6 +252,7 @@ test('candidate MapKit uses a newly created Simulator Photos library and checks 
   assert.match(simulator, /app\.descendants\(matching: \.any\)/)
   assert.match(simulator, /MAP_DATE_MENU_MISSING AX tree/)
   assert.match(simulator, /MapKit actual capture-date menu item is not accessible/)
-  assert.match(simulator, /MAP_FRESH_PHOTOS_VERIFIED_COUNT/)
+  assert.match(simulator, /MAP_REAL_PHOTOKIT_GLOBAL_GPS_COUNT/);
+  assert.match(simulator, /MAP_FIXTURE_CELL_EXACT_TWO/);
   assert.match(simulator, /verified\.label\.contains\("2 张"\)/)
 })
