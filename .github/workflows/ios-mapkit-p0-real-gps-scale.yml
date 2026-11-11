@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/ios-mapkit-p0-real-gps-scale.yml'
       - 'ios/scripts/generate-mapkit-p0-gps-fixtures.py'
+      - 'ios/scripts/test_generate_mapkit_p0_gps_fixtures.py'
       - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
       - 'ios/XDriveIOS/NativeLocalPhotoMap.swift'
   workflow_dispatch:
@@ -46,6 +47,7 @@ jobs:
           fi
           xcodebuild -version
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          python3 -m unittest discover -s ios/scripts -p 'test_generate_mapkit_p0_gps_fixtures.py' -v
           python3 ios/scripts/prepare-navigation-runtime-smoke.py "$GITHUB_WORKSPACE"
           bash ios/scripts/prepare-assets.sh
           (cd ios && xcodegen generate --spec project.yml)
