@@ -70,6 +70,78 @@ enum XDriveIOSNativePhotoWallFraming: String, CaseIterable, Identifiable {
 }
 
 
+/// Shared *visible-window* date grouping. This changes presentation only:
+/// an Owner's whole place is never inferred from its first 48-item page.
+enum XDriveIOSNativePhotoWallTimeScale: String, CaseIterable, Identifiable {
+    case all, year, month, day
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "全部"
+        case .year: return "年"
+        case .month: return "月"
+        case .day: return "日"
+        }
+    }
+
+    func key(for date: Date?) -> String {
+        guard self != .all else { return "all" }
+        guard let date else { return "unknown" }
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        guard let year = parts.year, let month = parts.month, let day = parts.day else {
+            return "unknown"
+        }
+        return key(year: year, month: month, day: day)
+    }
+
+    func key(forISO8601 value: String?) -> String {
+        guard self != .all else { return "all" }
+        guard let value else { return "unknown" }
+        let parts = String(value.prefix(10)).split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].count == 4, parts[1].count == 2,
+              parts[2].count == 2,
+              let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
+              year > 0, month >= 1, month <= 12, day >= 1, day <= 31
+        else { return "unknown" }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = DateComponents(year: year, month: month, day: day)
+        guard let date = calendar.date(from: components) else { return "unknown" }
+        let validated = calendar.dateComponents([.year, .month, .day], from: date)
+        guard validated.year == year, validated.month == month, validated.day == day
+        else { return "unknown" }
+        return key(year: year, month: month, day: day)
+    }
+
+    private func key(year: Int, month: Int, day: Int) -> String {
+        let yearText = String(format: "%04d", year)
+        let monthText = String(format: "%02d", month)
+        let dayText = String(format: "%02d", day)
+        switch self {
+        case .all: return "all"
+        case .year: return yearText
+        case .month: return yearText + "-" + monthText
+        case .day: return yearText + "-" + monthText + "-" + dayText
+        }
+    }
+
+    func label(for key: String) -> String {
+        if key == "unknown" { return "拍摄日期未知" }
+        switch self {
+        case .all: return "全部"
+        case .year: return key + " 年"
+        case .month:
+            let parts = key.split(separator: "-")
+            return parts.count == 2 ? "\(parts[0]) 年 \(parts[1]) 月" : key
+        case .day:
+            let parts = key.split(separator: "-")
+            return parts.count == 3
+                ? "\(parts[0]) 年 \(parts[1]) 月 \(parts[2]) 日" : key
+        }
+    }
+}
+
 /// Shared state-only auto-advance gate. No platform permissions, PhotoKit scan,
 /// signed Owner range or Viewer is ever started by the shared presentation.
 enum XDriveIOSNativePhotoWallWindowPolicy {

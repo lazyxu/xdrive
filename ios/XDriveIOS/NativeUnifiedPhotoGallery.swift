@@ -48,6 +48,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var showingThumbnailCache = false
     @State private var sourceFilter: XDriveIOSNativeGalleryPresence?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @State private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .day
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
@@ -168,7 +170,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 Spacer()
                 if query != .init() { Button("清除") { query = .init() } }
                 Menu {
-                    xdrivePhotoWallDensityButtons($wallDensity)
+                    Section("照片大小") { xdrivePhotoWallDensityButtons($wallDensity) }
+                    Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
                 } label: {
                     Image(systemName: "square.grid.3x3")
                 }
@@ -190,6 +193,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 .accessibilityIdentifier("native-ios-gallery-explicit-audit")
             }.padding(.horizontal, 12).padding(.vertical, 4)
             filters.padding(.horizontal, 12).padding(.vertical, 4)
+            XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                .padding(.horizontal, 12).padding(.vertical, 4)
             Divider()
             ScrollViewReader { scroll in
                 ScrollView {
@@ -199,6 +204,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             ForEach(wall.index.pages) { page in
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
                                     filter: sourceFilter, query: query, density: wallDensity,
+                                    framing: wallFraming, timeScale: wallTimeScale,
                                     displayActive: selected == nil && phase == .active && isTabActive,
                                      // A tab switch covers a loaded 48-row
                                      // window; ordinary off-screen scrolling
@@ -223,11 +229,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 }
                 .refreshable { reset() }
-                .simultaneousGesture(
-                    MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                        guard selected == nil, phase == .active, !showFilters else { return }
-                        wallDensity = wallDensity.applyingPinch(scale)
-                    }
+                .xdrivePhotoWallPinch(
+                    density: $wallDensity,
+                    enabled: selected == nil && phase == .active && !showFilters && isTabActive
                 )
                 .onChange(of: selected?.id) { selection in
                     if selection == nil, viewerReturnAnchor != nil {
@@ -495,6 +499,7 @@ struct XDriveIOSUnifiedPhotoTile: View {
     let presentingOwner: XDriveNativeOwnerRoot
     let displayActive: Bool
     let retainWhileCovered: Bool
+    let framing: XDriveIOSNativePhotoWallFraming
     @StateObject private var local = XDriveIOSPhotoImageLoader()
     @State private var remote: UIImage?
     @State private var fallback: Task<Void, Never>?
@@ -538,7 +543,8 @@ struct XDriveIOSUnifiedPhotoTile: View {
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, presentingOwner),
                    retainedKey == thumbnailKey,
                    let image = local.image ?? retainedLocal ?? remote {
-                    Image(uiImage: image).resizable().scaledToFill()
+                    Image(uiImage: image).resizable()
+                        .aspectRatio(contentMode: framing == .complete ? .fit : .fill)
                 } else {
                     Image(systemName: row.isVideo ? "play.rectangle" : "photo")
                         .foregroundStyle(.secondary)

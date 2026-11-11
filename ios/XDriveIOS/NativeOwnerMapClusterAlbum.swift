@@ -83,6 +83,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // prior signed place page. No guessed place or cached media identities.
     @State private var pendingViewerCross: XDriveIOSOwnerClusterCursor?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @State private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
 
     init(login: XDriveIOSNativeOwnerLoginModel,
          selection: XDriveIOSOwnerMapChosenCluster) {
@@ -97,6 +99,35 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
 
     private var selectedPhotoCount: Int {
         selection.places.reduce(0) { $0 + $1.item_count }
+    }
+
+    private struct VisibleTile: Identifiable {
+        let item: XDriveIOSNativeMediaItem
+        let origin: XDriveIOSNativeMediaRange
+        var id: UInt64 { item.id }
+    }
+    private struct VisibleSection: Identifiable {
+        let key: String
+        var tiles: [VisibleTile]
+        var id: String { key }
+    }
+
+    // Retain only the two current, Owner-signed 48-item windows; date headings
+    // describe exactly these loaded tiles, never a fabricated 100k-place index.
+    private var visibleSections: [VisibleSection] {
+        let tiles: [VisibleTile] =
+            (priorWindow.map { range in range.items.map { VisibleTile(item: $0, origin: range) } } ?? []) +
+            (page.map { range in range.items.map { VisibleTile(item: $0, origin: range) } } ?? [])
+        var sections: [VisibleSection] = []
+        for tile in tiles {
+            let key = wallTimeScale.key(forISO8601: tile.item.metadata.captured_at)
+            if !sections.isEmpty && sections[sections.count - 1].key == key {
+                sections[sections.count - 1].tiles.append(tile)
+            } else {
+                sections.append(VisibleSection(key: key, tiles: [tile]))
+            }
+        }
+        return sections
     }
 
     var body: some View {
@@ -123,23 +154,48 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             if busy {
                 XDriveIOSNativePhotoWallLoadingMessage(message: "核对当前 Owner 的地点照片…")
             }
+            XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                .padding(.horizontal, 12)
+                .disabled(!activeOwner || busy || viewing != nil)
+            if wallTimeScale != .all {
+                Text("仅对当前已授权、已加载的照片分组；更远照片仍按需加载。")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+            }
             ScrollViewReader { returnScroll in
             ScrollView {
                 XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                    if let priorWindow {
-                        ForEach(priorWindow.items) { item in
-                            photoTile(item, from: priorWindow)
-                        }
-                    }
-                    if let page {
-                        ForEach(page.items) { item in
-                            photoTile(item, from: page)
+                    // Fail closed during Owner switch *in body*, before the
+                    // onChange invalidation effect can clear the old UIImage.
+                    if activeOwner {
+                        if wallTimeScale == .all {
+                            if let priorWindow {
+                                ForEach(priorWindow.items) { item in
+                                    photoTile(item, from: priorWindow)
+                                }
+                            }
+                            if let page {
+                                ForEach(page.items) { item in
+                                    photoTile(item, from: page)
+                                }
+                            }
+                        } else {
+                            ForEach(Array(visibleSections.enumerated()), id: \.offset) { _, section in
+                                Section {
+                                    ForEach(section.tiles) { entry in
+                                        photoTile(entry.item, from: entry.origin)
+                                    }
+                                } header: {
+                                    XDriveIOSNativePhotoWallDayHeader(
+                                        title: wallTimeScale.label(for: section.key))
+                                }
+                            }
                         }
                     }
                     // The lazy-grid foot advances the verified Owner Range
                     // when it approaches the viewport, like native Photos.
                     // It remains guarded by Owner, busy, cover and error state.
-                    if let next {
+                    if activeOwner, let next {
                         Color.clear
                             .frame(height: 24)
                             .id("\(next.placeIndex):\(next.offset)")
@@ -201,6 +257,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     .disabled(busy || !activeOwner || viewing != nil)
                     Section("照片网格") {
                         xdrivePhotoWallDensityButtons($wallDensity)
+                    }
+                    Section("显示比例") {
+                        xdrivePhotoWallFramingButtons($wallFraming)
                     }
                 } label: {
                     Label("位置照片操作", systemImage: "ellipsis.circle")
@@ -467,7 +526,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     Rectangle().fill(Color(uiColor: .tertiarySystemFill))
                     if let image = coverImages[item.id] {
                         Image(uiImage: image)
-                            .resizable().scaledToFill()
+                            .resizable()
+                            .aspectRatio(contentMode: wallFraming == .complete ? .fit : .fill)
                             .frame(width: tile.size.width,
                                    height: tile.size.height)
                             .clipped()
