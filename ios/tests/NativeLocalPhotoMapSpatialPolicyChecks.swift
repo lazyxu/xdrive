@@ -289,6 +289,56 @@ struct NativeLocalMapSpatialPolicyChecks {
         precondition(Auto.scanPercentiles([-1]) == nil)
         precondition(Auto.scanPercentiles(Array(repeating: 1, count: 33)) == nil)
 
+
+        // Conservation over synthetic local metadata at five scales.
+        // Reconstruct all expected cell member counts independently from
+        // original GPS coordinates at the final grid level.
+        for amount in [1, 10, 1_000, 10_000, 100_000] {
+            var indexed = XDriveIOSNativeLocalMapSpatialIndex<Int>()
+            var coordinates: [(Double, Double)] = []
+            coordinates.reserveCapacity(amount)
+            let sites: [(Double, Double)] = [
+                (35.6812, 139.7671), (22.3193, 114.1694),
+                (37.5665, 126.9780), (-33.8688, 151.2093),
+                (89.99, 179.98), (-89.99, -179.98),
+                (10.0, 180.0), (10.0, -180.0)
+            ]
+            for id in 0..<amount {
+                let point = id % 11 == 0 ? (35.6812, 139.7671) :
+                    sites[id % sites.count]
+                coordinates.append(point)
+                precondition(indexed.add(latitude: point.0,
+                    longitude: point.1, representative: id))
+            }
+            precondition(indexed.locatedCount == amount)
+            precondition(indexed.cells.count <= Policy.maximumCells)
+            precondition(indexed.cells.reduce(0) { $0 + $1.count } == amount)
+            var expected: [String: Int] = [:]
+            for point in coordinates {
+                let key = Policy.key(latitude: point.0,
+                                     longitude: point.1,
+                                     level: indexed.level)!
+                expected[key.id, default: 0] += 1
+            }
+            precondition(expected.count == indexed.cells.count)
+            precondition(indexed.cells.allSatisfy {
+                expected[$0.id] == $0.count
+            }, "missing or duplicate GPS cell membership: \(amount)")
+            print("IOS_MAP_GPS_COUNT_MATRIX n=\(amount) members=\(indexed.locatedCount) exact=1")
+        }
+        for amount in [64, 65] {
+            var indexed = XDriveIOSNativeLocalMapSpatialIndex<Int>()
+            for id in 0..<amount {
+                precondition(indexed.add(latitude: Double(id) / 100.0,
+                                         longitude: 20.25, representative: id))
+            }
+            precondition(indexed.locatedCount == amount)
+            precondition(indexed.cells.count <= 64)
+            precondition(indexed.cells.reduce(0) { $0 + $1.count } == amount)
+            if amount == 64 { precondition(indexed.cells.count == 64) }
+            if amount == 65 { precondition(indexed.level > 0) }
+        }
+
         print("native PhotoKit global GPS spatial policy: PASS")
     }
 }
