@@ -739,6 +739,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                     XDriveIOSNativeUnifiedPhotoGallery(
                         login: login, openBackup: { openBackup(.overview) },
                         priorityBackup: { id in requestPriorityBackup(id: id, failed: false) },
+                        // A different tab covers, but does not scroll-evict,
+                        // this bounded verified Gallery wall.
+                        isTabActive: tab == .gallery,
                         onShowMap: { range in
                             // A dismissed filter sheet may invoke this later.
                             // It cannot present an old Owner's map on a new
@@ -792,7 +795,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .originals:
                     XDriveIOSNativeCloudOriginalGallery(
                         login: login,
-                        confirmedOriginalUpdate: backup.confirmedOriginalUpdate
+                        confirmedOriginalUpdate: backup.confirmedOriginalUpdate,
+                        isTabActive: tab == .gallery
                     )
                 case .map:
                     XDriveIOSNativePhotoMapsScreen(

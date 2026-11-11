@@ -49,7 +49,8 @@ test('only visible mounted 64 ID page receives reason detail and invalidates on 
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(backupBadgeOwner, owner\)/)
   assert.match(wall, /photoQueueScenePhase == \.active/)
   assert.match(wall, /visibleBackupQueueStates = \[:\]/)
-  assert.match(wall, /failureReasonCode: visibleBackupQueueStates\[candidate\.id\]\?\.failureReasonCode/)
+  assert.match(wall, /failureReasonCode: badgeProofValid\s*\?\s*visibleBackupQueueStates\[candidate\.id\]\?\.failureReasonCode : nil/)
+  assert.match(wall, /verifiedBadgeIdentifiers == current\.items\.map\(\\\.id\)/)
   // Both a refresh and the initial page-load await must fence results to
   // the same mounted IDs; a reused page offset cannot show old item reasons.
   const initial = wall.slice(wall.indexOf('let initialBadgeEpoch = UUID()'))

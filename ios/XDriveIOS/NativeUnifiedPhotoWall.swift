@@ -109,15 +109,24 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     private func readVisibleQueueBadges() async {
         let epoch = UUID()
         badgeReadEpoch = epoch
-        queueHistoryCurrent = false
         // The unified wall holds at most 48 current rows; only read local IDs.
         let ids = model.rows.compactMap { $0.local?.id }
-        guard ids.count <= 48, visible, displayActive,
-              XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner),
-              !ids.isEmpty else {
-            queueBadges = [:]
+        let sameOwner = XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner) &&
+            XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+        guard ids.count <= 48, visible, displayActive, sameOwner, !ids.isEmpty else {
+            // A Viewer/People/tab cover must not remove verified badge pixels
+            // only to reinsert them after the asynchronous return read.
+            // True offscreen eviction, disabled backup, changed Owner or empty
+            // range still clears the old statuses before they can be displayed.
+            if !retainWhileCovered || !sameOwner || ids.isEmpty || ids.count > 48 {
+                queueBadges = [:]
+                queueHistoryCurrent = false
+            }
             return
         }
+        // A same-Owner visible refresh keeps its last verified badges until
+        // the current epoch finishes; the async result below atomically
+        // updates both the state and caught-up flag.
         do {
             let queue = try XDriveIOSPhotoKitPersistentBackupQueue(owner: owner)
             let fetched = try await queue.visibleStatusDetails(
@@ -130,8 +139,23 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                   model.rows.compactMap({ $0.local?.id }) == ids else { return }
             queueBadges = fetched
             queueHistoryCurrent = isCurrent
+        } catch is CancellationError {
+            // Covering a verified page cancels its in-flight queue read.
+            // Cancellation alone is not evidence that the last committed
+            // same-Owner badges expired; keep them until the next visible read.
+            // Revoked Owner or true offscreen eviction must still clear them.
+            if badgeReadEpoch == epoch &&
+                (!retainWhileCovered ||
+                 !XDriveIOSNativePhotoOwnerScope.matches(backupBadgeOwner, owner) ||
+                 !XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)) {
+                queueBadges = [:]
+                queueHistoryCurrent = false
+            }
         } catch {
-            if badgeReadEpoch == epoch { queueBadges = [:] }
+            if badgeReadEpoch == epoch {
+                queueBadges = [:]
+                queueHistoryCurrent = false
+            }
         }
     }
 

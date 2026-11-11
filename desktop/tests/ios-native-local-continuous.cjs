@@ -327,3 +327,53 @@ test('manual edge navigation and stale PhotoKit snapshots cannot replay a pendin
   assert.match(source, /\.onChange\(of: mediaFilter\) \{ _ in\s*calendarMapRange = nil\s*exactDateTarget = nil/)
   assert.match(source, /if value != \.active \{\s*calendarMapRange = nil\s*exactDateTarget = nil/)
 })
+
+
+// Source lifecycle regressions for an exact Owner/64-ID backed-up status
+// projection. These tests detect deterministic SwiftUI state gaps; they are
+// NOT signed-iPhone, live PhotoKit, actual FPS or pixel-capture evidence.
+const localBadgeRegressions = [
+  ['same-window writer refresh keeps verified pixels until an atomic replacement',
+    /let sameWindow = verifiedBadgeOwner\.map \{[\s\S]*?verifiedBadgeIdentifiers == identifiers\s*if !sameWindow \{ clearBadgeProof\(\) \}/],
+  ['successful queue read publishes its Owner, identifiers, states and caught-up flag together',
+    /verifiedBadgeOwner = owner\s*verifiedBadgeIdentifiers = identifiers\s*visibleBackupQueueStates = states\s*queueHistoryCurrent = isCurrent/],
+  ['late async queue result cannot replace a newer Owner/page or revoked PhotoKit grant',
+    /guard badgeReadEpoch == token,\s*photoQueueScenePhase == \.active,[\s\S]*?matches\(backupBadgeOwner, owner\),[\s\S]*?authorizationStatus\(for: \.readWrite\) == \.authorized,[\s\S]*?page\?\.items\.map\(\\\.id\) == identifiers/],
+  ['cancelled covered-page refresh retains proven same-window badges, not revoked permission',
+    /catch is CancellationError \{[\s\S]*?photoQueueScenePhase != \.active[\s\S]*?matches\(backupBadgeOwner, owner\)[\s\S]*?page\?\.items\.map\(\\\.id\) != identifiers/],
+  ['genuinely unreadable queue clears both status and completed-history proof',
+    /catch \{\s*\/\/ Genuine unreadable[\s\S]*?if badgeReadEpoch == token \{ clearBadgeProof\(\) \}/],
+  ['Viewer or tab cover does not retire status proof; real lazy offscreen eviction does',
+    /if !retainWhileCovered \{\s*page = nil[\s\S]*?retainedGeneration = nil\s*clearBadgeProof\(\)\s*\}\s*\/\/ Reject late replies/],
+  ['disabled or switched Owner immediately drops previous badge projection before reread',
+    /\.onChange\(of: backupBadgeOwner\) \{ _ in\s*badgeReadEpoch = UUID\(\)\s*clearBadgeProof\(\)\s*Task/],
+  ['new page resets prior proof before reading another PhotoKit range',
+    /retainedGeneration = nil\s*badgeReadEpoch = UUID\(\)\s*page = nil\s*precedingCapturedAt = nil\s*clearBadgeProof\(\)/],
+  ['initial fresh 64-item queue read records exact Owner and identifiers',
+    /verifiedBadgeOwner = owner\s*verifiedBadgeIdentifiers = loaded\.items\.map\(\\\.id\)\s*visibleBackupQueueStates = states/],
+  ['failure retry context menu never reads stale previous-Owner failed status',
+    /Button\(badgeProofValid && visibleBackupQueueStates\[candidate\.id\]\?\.state == "failed"[\s\S]*?priorityAction\(\s*candidate\.id,\s*badgeProofValid &&/]
+]
+for (const [name, pattern] of localBadgeRegressions) {
+  test('local Gallery no-flicker regression: ' + name, () => {
+    assert.match(source, pattern)
+  })
+}
+test('local Gallery same-scope refresh does not synchronously erase status before SQLite answers', () => {
+  const start = source.indexOf('private func refreshVisibleBackupQueueStatuses() async')
+  const end = source.indexOf('private var placeholderTile: some View', start)
+  assert.ok(start >= 0 && end > start)
+  const refresh = source.slice(start, end)
+  assert.doesNotMatch(refresh, /badgeReadEpoch = token\s*visibleBackupQueueStates = \[:\]/)
+  assert.match(refresh, /if !sameWindow \{ clearBadgeProof\(\) \}/)
+})
+
+
+test('local PhotoKit Gallery/Files native Simulator tests cover repeated tab and scene returns', () => {
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift')
+  assert.match(ui, /func testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels\(\)/)
+  assert.match(ui, /func testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank\(\)/)
+  assert.match(ui, /native-ios-gallery-source-menu/)
+  assert.match(ui, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(ui, /assertVisiblePixels\(app, route: "Local Photos after foreground and Files"\)/)
+})

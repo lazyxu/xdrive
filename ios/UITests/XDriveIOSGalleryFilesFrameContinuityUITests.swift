@@ -70,6 +70,239 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         XCTAssertGreaterThan(unique.count, 8, "Uniform/blank screen at \(route)")
     }
 
+    private func openLocalPhotoSource(_ app: XCUIApplication) {
+        tap("native-ios-gallery-source-menu", app: app)
+        let local = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(local.waitForExistence(timeout: 15),
+                      "Native PhotoKit source was missing from the Gallery menu")
+        local.tap()
+        XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
+            .waitForExistence(timeout: 15), "Local PhotoKit source did not mount")
+    }
+
+    // A colorful tab bar does not prove that the local PhotoKit child has
+    // rendered. Verify the actual child controls AND one explicit permission
+    // state before accepting a nonblank whole-screen screenshot.
+    private func assertLocalPhotoContent(_ app: XCUIApplication) {
+        XCTAssertTrue(target("native-ios-local-timeline-open", app: app)
+            .waitForExistence(timeout: 15), "Local PhotoKit child was not mounted")
+        let authorized = target("native-ios-local-gallery-media-filter", app: app).exists
+        let requesting = app.buttons["允许查看本机相册"].firstMatch.exists
+        let denied = app.staticTexts["相册权限不可用，请在 iOS 设置中允许访问。"]
+            .firstMatch.exists
+        XCTAssertTrue(authorized || requesting || denied,
+                      "PhotoKit must render an authorized, request or denied state")
+    }
+
+    func testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent() {
+        let app = launch()
+        openLocalPhotoSource(app)
+        assertLocalPhotoContent(app)
+        tap("native-ios-local-timeline-open", app: app)
+        let done = app.navigationBars.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15),
+                      "Local PhotoKit timeline date Sheet was not presented")
+        done.tap()
+        assertLocalPhotoContent(app)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertLocalPhotoContent(app)
+        assertVisiblePixels(app, route: "Local dates dismissed after Files return")
+    }
+
+    func testLocalPhotoWithFilesQuickSectionsPreservesLocalChild() {
+        let app = launch(syntheticOwner: true)
+        openLocalPhotoSource(app)
+        assertLocalPhotoContent(app)
+        tap("native-ios-tab-files", app: app)
+        for section in ["recent", "favorites", "browse", "recent", "browse"] {
+            tap("native-ios-files-section-\(section)", app: app)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
+            .waitForExistence(timeout: 15))
+        assertLocalPhotoContent(app)
+        assertVisiblePixels(app, route: "Local Photos after Files sections")
+    }
+
+    func testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels() {
+        let app = launch()
+        openLocalPhotoSource(app)
+        assertGallery(app)
+        assertLocalPhotoContent(app)
+        assertVisiblePixels(app, route: "Local PhotoKit initial")
+        for index in 0..<3 {
+            tap("native-ios-tab-files", app: app)
+            assertFiles(app)
+            assertVisiblePixels(app, route: "Files after local Photos \(index)")
+            tap("native-ios-tab-gallery", app: app)
+            assertGallery(app)
+            XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
+                .waitForExistence(timeout: 15), "Local source was reset by Files")
+            assertLocalPhotoContent(app)
+            assertVisiblePixels(app, route: "Local Photos after Files \(index)")
+        }
+    }
+
+    func testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank() {
+        let app = launch()
+        openLocalPhotoSource(app)
+        assertLocalPhotoContent(app)
+        assertVisiblePixels(app, route: "Local Photos before background")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Local Photos after foreground")
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
+            .waitForExistence(timeout: 15))
+        assertLocalPhotoContent(app)
+        assertVisiblePixels(app, route: "Local Photos after foreground and Files")
+    }
+
+    private func assertCloudOriginalsChild(_ app: XCUIApplication) {
+        XCTAssertTrue(target("native-ios-cloud-original-layout-help", app: app)
+            .waitForExistence(timeout: 15), "Cloud Originals native child did not mount")
+        // These smoke runs intentionally have no authenticated Server token.
+        // They must never manufacture a protected cloud tile in the UI.
+        XCTAssertFalse(target("native-ios-cloud-original-tile", app: app).exists,
+                       "No-session test leaked cloud Original thumbnail rows")
+    }
+
+    func testCloudOriginalsFilesRapidReturnKeepsNativeChild() {
+        let app = launch()
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        assertVisiblePixels(app, route: "Originals initial child")
+        for index in 0..<3 {
+            tap("native-ios-tab-files", app: app)
+            assertFiles(app)
+            tap("native-ios-tab-gallery", app: app)
+            assertGallery(app)
+            assertCloudOriginalsChild(app)
+            assertVisiblePixels(app, route: "Originals after Files \(index)")
+        }
+    }
+
+    func testCloudOriginalsBackgroundFilesReturnKeepsNativeChild() {
+        let app = launch()
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertCloudOriginalsChild(app)
+        assertVisiblePixels(app, route: "Originals foreground Files return")
+    }
+
+    func testCloudOriginalsHelpDismissFilesReturnKeepsChild() {
+        let app = launch()
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-cloud-original-layout-help", app: app)
+        let info = app.alerts["云端备份原件说明"].firstMatch
+        XCTAssertTrue(info.waitForExistence(timeout: 15), "Originals help alert missing")
+        info.buttons["完成"].tap()
+        assertCloudOriginalsChild(app)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertCloudOriginalsChild(app)
+        assertVisiblePixels(app, route: "Originals after help and Files")
+    }
+
+    func testCloudOriginalsFilesQuickSectionsReturnKeepsChild() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-tab-files", app: app)
+        for section in ["recent", "favorites", "browse", "recent", "browse"] {
+            tap("native-ios-files-section-\(section)", app: app)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app: app)
+        assertCloudOriginalsChild(app)
+        assertVisiblePixels(app, route: "Originals after Files sections")
+    }
+
+    /// The Files Home '整理' section is below the initial iPhone 16 fold.
+    /// The real Simulator failure was a direct accessibility lookup of an
+    /// unmounted Lazy List row, not a native Files process crash.
+    private func openFilesOperationHistoryFromBrowse(_ app: XCUIApplication) {
+        assertFiles(app)
+        let action = target("native-ios-files-open-operations", app: app)
+        // SwiftUI List can surface as UITableView or UICollectionView
+        // depending on iOS runtime. Keep a bounded native swipe fallback.
+        let table = app.tables.firstMatch
+        let collection = app.collectionViews.firstMatch
+        let scroll = app.scrollViews.firstMatch
+        var list: XCUIElement = app
+        if table.exists { list = table }
+        else if collection.exists { list = collection }
+        else if scroll.exists { list = scroll }
+        for _ in 0..<8 {
+            if action.isHittable { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(action.waitForExistence(timeout: 10),
+                      "Files Home operation history entry was not loaded after bounded scrolling")
+        XCTAssertTrue(action.isHittable,
+                      "Files operation history entry must be visible before tapping")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-open-operations")
+        action.tap()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Native app exited opening Files operations")
+    }
+
+    func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        openFilesOperationHistoryFromBrowse(app)
+        XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+            .waitForExistence(timeout: 15),
+            "The native Files operation-history sheet was not presented")
+        let done = target("native-ios-files-operation-history-done", app: app)
+        XCTAssertTrue(done.waitForExistence(timeout: 15),
+                      "Operation history has no close action after denial")
+        done.tap()
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Gallery after denied Files operation history")
+    }
+
+    func testFilesOperationHistoryBackgroundThenFilesGalleryReturn() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app: app)
+        openFilesOperationHistoryFromBrowse(app)
+        XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+            .waitForExistence(timeout: 15))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        let done = target("native-ios-files-operation-history-done", app: app)
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        assertFiles(app)
+        assertVisiblePixels(app, route: "Files after operations foreground")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Gallery after operations foreground")
+    }
+
     func testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels() {
         let app = launch()
         for index in 0..<4 {

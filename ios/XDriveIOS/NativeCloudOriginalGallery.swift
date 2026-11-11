@@ -7,7 +7,7 @@ import Photos
 import SwiftUI
 import UIKit
 
-struct XDriveIOSNativeCloudOriginal: Decodable, Identifiable {
+struct XDriveIOSNativeCloudOriginal: Decodable, Identifiable, Equatable {
     let id: UInt64
     let name: String
     let type: String
@@ -577,6 +577,17 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
     // Never persisted or sent to a URL/JS: one current-Owner bearer in RAM
     // from the last independently verified page request.
     private var currentReader: XDriveIOSNativeCloudOriginalReader?
+    // A tab-covered wall may retain only entries proven for this Owner. The
+    // first Server range is a bounded 48-node comparison on return.
+    private var verifiedPageOwner: XDriveNativeOwnerRoot?
+    private var verifiedFirstPage: [XDriveIOSNativeCloudOriginal] = []
+    @Published private(set) var thumbnailEpoch = UUID()
+    @Published private(set) var coveredRetryRequired = false
+
+    func matchesOwner(_ owner: XDriveNativeOwnerRoot?) -> Bool {
+        guard let owner, let verifiedPageOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(owner, verifiedPageOwner)
+    }
 
     /// Opening L3 Viewer retires *all* in-flight page/thumbnail generations
     /// while retaining the verified 48-item wall and visible scroll anchor.
@@ -637,12 +648,86 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
         seenNodeIDs.removeAll()
         total = 0
         scanned = 0
+        verifiedPageOwner = nil
+        verifiedFirstPage = []
+        coveredRetryRequired = false
+        thumbnailEpoch = UUID()
         error = nil
     }
 
     func reload(login: XDriveIOSNativeOwnerLoginModel) {
         invalidate()
         loadNext(login: login)
+    }
+
+    /// Recheck the same Owner's first 48-root-node range on tab return
+    /// without publishing a temporary empty list. A changed first page or
+    /// total atomically replaces the previous snapshot. Old signed thumbnail
+    /// credentials were retired on tab leave and are never reused.
+    func revalidateCoveredTab(login: XDriveIOSNativeOwnerLoginModel) {
+        guard let expected = login.owner,
+              matchesOwner(expected), scanned > 0 else {
+            reload(login: login)
+            return
+        }
+        cancel()
+        let ticket = epoch
+        busy = true
+        coveredRetryRequired = false
+        error = nil
+        work = Task { @MainActor [weak self] in
+            defer {
+                if self?.epoch == ticket {
+                    self?.busy = false
+                    self?.work = nil
+                }
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard self?.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { throw XDriveIOSNativeCloudReadError.invalidScope }
+                let reader = XDriveIOSNativeCloudOriginalReader(
+                    owner: expected, accessToken: auth.accessToken
+                )
+                let fresh = try await reader.page(offset: 0)
+                try Task.checkCancellation()
+                guard let model = self, model.epoch == ticket,
+                      model.matchesOwner(login.owner) else { return }
+                // No blind reuse if the first page, total or Node revision
+                // changed while the user viewed Files/another tab.
+                if fresh.total != model.total ||
+                   fresh.nodes != model.verifiedFirstPage {
+                    model.nodes = fresh.nodes
+                    model.seenNodeIDs = Set(fresh.nodes.map(\.id))
+                    model.total = fresh.total
+                    model.scanned = min(fresh.total, 48)
+                }
+                model.verifiedPageOwner = expected
+                model.verifiedFirstPage = fresh.nodes
+                model.currentReader = reader
+                model.coveredRetryRequired = false
+                model.error = nil
+                // Re-request thumbnail placeholders using a newly verified
+                // bearer, without re-fetching already decoded same-Owner tiles.
+                model.thumbnailEpoch = UUID()
+            } catch is CancellationError {
+            } catch {
+                guard let model = self, model.epoch == ticket else { return }
+                if XDriveIOSNativeCloudOriginalModel.canRetainPage(after: error),
+                   model.matchesOwner(login.owner) {
+                    // Temporary 429/503/network failures keep previously
+                    // verified Owner rows, but require explicit Retry.
+                    model.coveredRetryRequired = true
+                    model.error = "当前云端原件暂时无法重新核验；旧列表未更新，请重试。"
+                } else {
+                    model.invalidate()
+                    model.error = "云端原件授权或内容已变化；旧列表已清除，请重新验证。"
+                }
+            }
+        }
     }
 
     func loadNext(login: XDriveIOSNativeOwnerLoginModel) {
@@ -691,6 +776,15 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
                 model.currentReader = XDriveIOSNativeCloudOriginalReader(
                     owner: expected, accessToken: auth.accessToken
                 )
+                if start == 0 {
+                    model.verifiedFirstPage = reply.nodes
+                    // A cold reader can now admit missing visible thumbnails.
+                    // Later 48-node pages mount their own tiles; bumping the
+                    // global key on every append re-requests every failed tile.
+                    model.thumbnailEpoch = UUID()
+                }
+                model.verifiedPageOwner = expected
+                model.coveredRetryRequired = false
                 // Uploads can move older nodes into both adjacent pages.
                 // Retain the first visible occurrence of each node ID.
                 for node in reply.nodes {
@@ -1573,6 +1667,7 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
     let node: XDriveIOSNativeCloudOriginal
     // A full-screen Viewer must outrank even an already-composed tile.
     let viewerActive: Bool
+    let isTabActive: Bool
     @ObservedObject var model: XDriveIOSNativeCloudOriginalModel
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @State private var thumb: UIImage?
@@ -1609,10 +1704,12 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
         .accessibilityLabel(node.isLiveArchive
             ? "已备份的 Live ZIP：\(node.name)" : node.isVideo
             ? "已备份视频：\(node.name)" : "已备份照片：\(node.name)")
-        .task(id: "\(node.id)-\(node.revision)-\(viewerActive)") {
-            // Task-ID transition cancels this request even when fullScreenCover
-            // keeps the underlying LazyVGrid mounted.
-            guard !viewerActive, thumb == nil,
+        .task(id: "\(node.id)-\(node.revision)-\(viewerActive)-\(isTabActive)-\(model.thumbnailEpoch)") {
+            // Never fetch while another Tab is visible, nor reuse a reader
+            // retired on tab leave. A successful Owner recheck advances the
+            // thumbnailEpoch, retrying only still-missing thumbnails.
+            guard isTabActive, !viewerActive,
+                  model.matchesOwner(login.owner), thumb == nil,
                   node.isImage || node.isVideo else { return }
             do {
                 let image = try await model.thumbnail(node, login: login)
@@ -1624,9 +1721,10 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
             }
         }
         .onDisappear {
-            // Preserve an already decoded <=280px tile under Viewer; discard
-            // it on real navigation, while owner changes rebuild the wall.
-            if !viewerActive { thumb = nil }
+            // Preserve verified decoded pixels under Viewer or a Files tab
+            // cover; genuine active-tab scroll eviction still releases them.
+            // Node revision/Owner changes separately rebuild tile identity.
+            if !viewerActive && isTabActive { thumb = nil }
         }
     }
 }
@@ -1636,6 +1734,7 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
 struct XDriveIOSNativeCloudOriginalGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let confirmedOriginalUpdate: XDriveIOSNativePhotoBackupController.ConfirmedOriginalUpdate?
+    var isTabActive: Bool = true
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingGalleryHelp = false
@@ -1650,6 +1749,8 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
     // An OS BGTask can commit a new original without a foreground writer
     // notification. Revalidate once after returning from an inactive scene.
     @State private var needsForegroundReload = false
+    @State private var needsTabRevalidation = false
+    @State private var hasActivated = false
     @State private var scanTailVisible = false
     @State private var lastAutoScanOffset: Int?
     @State private var lastObservedOriginalCount = 0
@@ -1712,6 +1813,25 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
         return (target, window)
     }
 
+    // Only the first active source mount loads cold. When the Files tab covers
+    // a previously verified Original wall, revalidate its bounded first range
+    // instead of invalidating all rows before the Server replies.
+    private func activateIfNeeded() {
+        guard phase == .active, isTabActive, selected == nil else { return }
+        if needsForegroundReload {
+            needsForegroundReload = false
+            needsTabRevalidation = false
+            hasActivated = true
+            model.reload(login: login)
+        } else if !hasActivated {
+            hasActivated = true
+            model.reload(login: login)
+        } else if needsTabRevalidation {
+            needsTabRevalidation = false
+            model.revalidateCoveredTab(login: login)
+        }
+    }
+
     var body: some View {
         ScrollViewReader { returnScroll in
         GeometryReader { viewport in
@@ -1725,16 +1845,18 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     Text("当前账户已备份的 iPhone 原件，向下滚动时自动查找后续照片和视频。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                Text("已检查根目录 \(model.scanned) / \(model.total) 项")
+                Text("已检查根目录 \(model.matchesOwner(login.owner) ? model.scanned : 0) / \(model.matchesOwner(login.owner) ? model.total : 0) 项")
                     .font(.footnote).monospacedDigit()
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 5)],
                     spacing: 9
                 ) {
+                    if model.matchesOwner(login.owner) {
                     ForEach(model.nodes) { node in
                         Button { openViewer(node) } label: {
                             XDriveIOSNativeCloudOriginalTile(
                                 node: node, viewerActive: selected != nil,
+                                isTabActive: isTabActive,
                                 model: model, login: login
                             )
                             // Reset @State thumbnail pixels if an in-place
@@ -1754,18 +1876,31 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                             }
                         }
                     }
+                    }
                 }
                 if !compactGallery {
                     Text("仅可见项目请求 Server 缩略图；若尚未生成则保留文件图标，不下载大体积原件填充缩略图。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                if model.busy { ProgressView("正在验证并读取云端目录…") }
+                // A returning, already verified Owner wall must not gain a
+                // new row-height spinner on a quiet first-page recheck.
+                // Later ranges have their stable 128pt tail placeholder.
+                if model.busy && !model.matchesOwner(login.owner) {
+                    ProgressView("正在验证并读取云端目录…")
+                }
                 if let error = model.error {
                     Text(error).foregroundStyle(.red)
-                    Button("重试") { model.loadNext(login: login) }
+                    Button("重试") {
+                        if model.coveredRetryRequired {
+                            model.revalidateCoveredTab(login: login)
+                        } else {
+                            model.loadNext(login: login)
+                        }
+                    }
                         .buttonStyle(.bordered)
                 }
-                if model.scanned < model.total && model.error == nil {
+                if model.matchesOwner(login.owner) &&
+                   model.scanned < model.total && model.error == nil {
                     VStack(spacing: 8) {
                         if model.busy {
                             ProgressView()
@@ -1784,7 +1919,8 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     }
                     .onDisappear { scanTailVisible = false }
                 }
-                if model.scanned > 0 && model.nodes.isEmpty {
+                if model.matchesOwner(login.owner) &&
+                   model.scanned > 0 && model.nodes.isEmpty {
                     Text("当前已检查范围没有找到 iPhone 备份原件；继续向下滚动查找，不能据此认为云端没有文件。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
@@ -1902,11 +2038,19 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             }
         }
         .task {
-            guard phase == .active else {
-                needsForegroundReload = true
-                return
+            if phase != .active { needsForegroundReload = true }
+            else { activateIfNeeded() }
+        }
+        .onAppear { activateIfNeeded() }
+        .onChange(of: isTabActive) { active in
+            if !active, selected == nil, phase == .active {
+                // A Files tab cover is not a real Gallery source eviction.
+                // Drop signed reader/requests but keep exact Owner-bound rows.
+                needsTabRevalidation = true
+                model.cancel()
+            } else if active {
+                activateIfNeeded()
             }
-            model.reload(login: login)
         }
         .onChange(of: phase) { state in
             if state != .active {
@@ -1917,8 +2061,12 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                 model.cancel()
                 return
             }
-            guard needsForegroundReload else { return }
+            // A hidden tab must not issue cloud reads in the foreground.
+            // Defer changed BG/Owner state until the Gallery is selected.
+            guard needsForegroundReload,
+                  isTabActive || selected != nil else { return }
             needsForegroundReload = false
+            needsTabRevalidation = false
             guard login.owner != nil else {
                 refreshAfterViewer = false
                 model.invalidate()
@@ -1937,7 +2085,10 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             guard let update,
                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, update.owner)
             else { return }
-            if phase != .active {
+            if phase != .active || !isTabActive {
+                // A completed upload invalidates the old cloud snapshot.
+                // Even when hidden, the next active entry reloads rather
+                // than mistaking old rows for an upload-success receipt.
                 needsForegroundReload = true
                 if selected != nil { refreshAfterViewer = true }
                 return
@@ -1956,30 +2107,44 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             viewerLoadedNodes = []
             viewerReturnNode = nil
             accessibilityFocusedNodeID = nil
+            needsTabRevalidation = false
+            needsForegroundReload = false
+            hasActivated = false
             model.invalidate()
             if login.owner != nil {
-                if phase == .active {
-                    model.reload(login: login)
+                if phase == .active && isTabActive {
+                    activateIfNeeded()
                 } else {
                     needsForegroundReload = true
                 }
             }
         }
         .onDisappear {
-            // Presenting a full-screen Viewer may make the wall disappear.
-            // Its selected identity must survive that presentation; Owner
-            // changes independently clear selection and invalidate the model.
+            // A Files tab cover is not a real eviction. Preserve only same-
+            // Owner verified rows, drop signed reader and invalidate work.
+            // Switching Gallery *sources* or revoking Owner still clears.
             if selected == nil {
                 refreshAfterViewer = false
-                model.invalidate()
+                if phase == .active, !isTabActive,
+                   model.matchesOwner(login.owner) {
+                    needsTabRevalidation = true
+                    model.cancel()
+                } else {
+                    // A genuine Gallery source eviction is not a tab cover.
+                    // If SwiftUI reuses this view, its next mount must load.
+                    needsTabRevalidation = false
+                    hasActivated = false
+                    model.invalidate()
+                }
             }
         }
         }
     }
 
     private func requestMoreOnScroll() {
-        guard phase == .active, selected == nil, scanTailVisible,
-              login.owner != nil, !model.busy, model.error == nil,
+        guard phase == .active, isTabActive, selected == nil, scanTailVisible,
+              model.matchesOwner(login.owner),
+              !model.busy, model.error == nil,
               model.scanned < model.total,
               consecutiveEmptyScans < maxAutomaticEmptyScans,
               lastAutoScanOffset != model.scanned else { return }
@@ -1988,7 +2153,8 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
     }
 
     private func openViewer(_ node: XDriveIOSNativeCloudOriginal) {
-        guard phase == .active, let owner = login.owner,
+        guard phase == .active, isTabActive, let owner = login.owner,
+              model.matchesOwner(owner),
               let index = model.nodes.firstIndex(where: {
                 $0.id == node.id && $0.revision == node.revision
               }) else { return }

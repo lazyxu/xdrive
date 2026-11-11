@@ -139,7 +139,7 @@ test('native manual, auto and receipt-resume consent is pinned to the exact veri
 test('native cloud original list and preview clear stale media across Owner switches', () => {
   // Server/Owner logout or switch must immediately remove the old filenames
   // and stop the AVPlayer, not merely protect a future page response.
-  assert.match(cloud, /func invalidate\(\) \{\s*cancel\(\)\s*nodes = \[\]\s*seenNodeIDs\.removeAll\(\)\s*total = 0\s*scanned = 0\s*error = nil/)
+  assert.match(cloud, /func invalidate\(\) \{\s*cancel\(\)\s*nodes = \[\]\s*seenNodeIDs\.removeAll\(\)\s*total = 0\s*scanned = 0\s*verifiedPageOwner = nil\s*verifiedFirstPage = \[\]\s*coveredRetryRequired = false\s*thumbnailEpoch = UUID\(\)\s*error = nil/)
   assert.match(cloud, /func reload\(login: XDriveIOSNativeOwnerLoginModel\) \{\s*invalidate\(\)/)
   const preview = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
     cloud.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
@@ -147,10 +147,10 @@ test('native cloud original list and preview clear stale media across Owner swit
   const gallery = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
   // Owner switch clears old rows synchronously. A foreground scene reloads
   // immediately; an inactive scene defers the same verified read until active.
-  assert.match(gallery, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?refreshAfterViewer = false[\s\S]*?selected = nil\s*viewerOwner = nil\s*viewerLoadedNodes = \[\]\s*viewerReturnNode = nil\s*accessibilityFocusedNodeID = nil\s*model\.invalidate\(\)/)
-  assert.match(gallery, /if login\.owner != nil \{\s*if phase == \.active \{\s*model\.reload\(login: login\)\s*\} else \{\s*needsForegroundReload = true/)
+  assert.match(gallery, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?refreshAfterViewer = false[\s\S]*?selected = nil\s*viewerOwner = nil\s*viewerLoadedNodes = \[\]\s*viewerReturnNode = nil\s*accessibilityFocusedNodeID = nil\s*needsTabRevalidation = false\s*needsForegroundReload = false\s*hasActivated = false\s*model\.invalidate\(\)/)
+  assert.match(gallery, /if login\.owner != nil \{\s*if phase == \.active && isTabActive \{\s*activateIfNeeded\(\)\s*\} else \{\s*needsForegroundReload = true/)
   assert.match(gallery, /\.fullScreenCover\(item: \$selected, onDismiss:/)
-  assert.match(gallery, /\.onDisappear \{[\s\S]*?if selected == nil \{\s*refreshAfterViewer = false\s*model\.invalidate\(\)/)
+  assert.match(gallery, /\.onDisappear \{[\s\S]*?if selected == nil \{\s*refreshAfterViewer = false\s*if phase == \.active, !isTabActive,\s*model\.matchesOwner\(login.owner\) \{\s*needsTabRevalidation = true\s*model\.cancel\(\)\s*\} else \{[\s\S]*?model\.invalidate\(\)/)
 })
 
 test('native Photos exposes an Owner-bound backup status and cloud-originals route', () => {

@@ -34,6 +34,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let openBackup: () -> Void
     let priorityBackup: (String) -> Void
+    let isTabActive: Bool
     // The parent presents the existing shared MapKit route as an overlay.
     // Keeping this Gallery mounted preserves its query, grid density and
     // real PhotoKit/Owner page cursor on the return from native MapKit.
@@ -190,10 +191,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             ForEach(wall.index.pages) { page in
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
                                     filter: sourceFilter, query: query, density: wallDensity,
-                                    displayActive: selected == nil && phase == .active,
+                                    displayActive: selected == nil && phase == .active && isTabActive,
+                                     // A tab switch covers a loaded 48-row
+                                     // window; ordinary off-screen scrolling
+                                     // while the Gallery is active still evicts.
                                      retainWhileCovered: selected != nil ||
                                          showingPeople || showingThumbnailCache ||
-                                         phase != .active,
+                                         phase != .active || !isTabActive,
                                     open: { payload, position in
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
                                         selected = .init(owner: owner, page: payload, position: position)
