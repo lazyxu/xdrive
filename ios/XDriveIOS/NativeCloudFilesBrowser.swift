@@ -1978,6 +1978,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .buttonStyle(.plain)
             .disabled(!canSelectPage)
+            .accessibilityValue(selectedIDs.contains(entry.id) ? "已选中" : "未选中")
             .accessibilityIdentifier("native-ios-files-select-\(entry.id)")
         } else if entry.node.isDirectory {
             // Disclosure is a sibling of NavigationLink: tapping the 44-pt
@@ -2839,6 +2840,18 @@ struct XDriveIOSNativeFilesBrowser: View {
                               batchExport.busy || !batchExport.prepared.isEmpty ||
                               login.owner == nil || !activeQuery.isEmpty)
                     .accessibilityIdentifier("native-ios-files-quick-multi-upload")
+                    Button {
+                        openManagement(for: nil, quickAction: .uploadFolder)
+                    } label: {
+                        Label("上传文件夹（最多 512 MiB）",
+                              systemImage: "folder.badge.plus")
+                    }
+                    .disabled(model.loading || !model.verifiedPage || selecting ||
+                              batchTrash.busy || batchTarget.busy ||
+                              batchExport.busy || !batchExport.prepared.isEmpty ||
+                              login.owner == nil || !activeQuery.isEmpty)
+                    .accessibilityHint("前台最多 128 个文件、64 个文件夹、512 MiB、8 层；完整限制在上传页面显示。")
+                    .accessibilityIdentifier("native-ios-files-quick-folder-upload")
                     if isGlobalSearch {
                         Button { presentSavedSearches() } label: {
                             Label("保存或管理智能文件夹", systemImage: "folder.badge.gearshape")
@@ -4523,6 +4536,41 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
+    /// PWA parity for the file subtitle: an authoritative search path takes
+    /// priority; ordinary rows use local-calendar date then decimal file size.
+    /// This only formats the already-verified Node and never requests media.
+    private func filesDisplayMetadata(_ entry: XDriveIOSNativeFilesEntry) -> String? {
+        if let path = entry.path?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !path.isEmpty {
+            return path
+        }
+        var dateLabel: String?
+        if let modifiedDate = entry.node.modifiedDate {
+            let calendar = Calendar.current
+            let parts = calendar.dateComponents([.year, .month, .day], from: modifiedDate)
+            if let year = parts.year, let month = parts.month, let day = parts.day {
+                dateLabel = "\(year)/\(month)/\(day)"
+            }
+            if entry.node.isDirectory {
+                let days = calendar.dateComponents(
+                    [.day], from: calendar.startOfDay(for: modifiedDate),
+                    to: calendar.startOfDay(for: Date())
+                ).day
+                switch days {
+                case 0: dateLabel = "今天"
+                case 1: dateLabel = "昨天"
+                case 2: dateLabel = "前天"
+                default: break
+                }
+            }
+        }
+        if entry.node.isDirectory { return dateLabel }
+        let sizeLabel = ByteCountFormatter.string(
+            fromByteCount: entry.node.size, countStyle: .file
+        )
+        return [dateLabel, sizeLabel].compactMap { $0 }.joined(separator: " - ")
+    }
+
     private func gridLabel(_ entry: XDriveIOSNativeFilesEntry) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topTrailing) {
@@ -4542,14 +4590,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .font(.footnote)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
-            Text(entry.path ?? (entry.node.isDirectory ? "文件夹" :
-                ByteCountFormatter.string(fromByteCount: entry.node.size,
-                                          countStyle: .file)))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            if let modifiedDate = entry.node.modifiedDate {
-                Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
+            if let metadata = filesDisplayMetadata(entry) {
+                Text(metadata)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -4570,22 +4612,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             )
             VStack(alignment: .leading, spacing: 3) {
                 Text(entry.node.name).lineLimit(2)
-                if let path = entry.path {
-                    Text(path).font(.caption).foregroundStyle(.secondary)
+                if let metadata = filesDisplayMetadata(entry) {
+                    Text(metadata)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                }
-                HStack(spacing: 8) {
-                    if !entry.node.isDirectory {
-                        Text(ByteCountFormatter.string(
-                            fromByteCount: entry.node.size, countStyle: .file
-                        )).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let modifiedDate = entry.node.modifiedDate {
-                        Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
                 }
             }
             Spacer(minLength: 6)
