@@ -96,6 +96,12 @@ struct XDriveIOSNativeClipboardScreen: View {
                             pickerKind = referenceKind
                             filePickerOpen = true
                         }.disabled(busy || pending != nil)
+                        Button("从分享内容导入") {
+                            guard !busy, pending == nil else { return }
+                            Task { await importSharedPasteboard() }
+                        }.disabled(busy || pending != nil)
+                        Text("分享扩展复制的图片/文件仅保留 2 分钟；先选择目标及图片/文件类型，再手动导入。导入不会自动发送。")
+                            .font(.caption).foregroundStyle(.secondary)
                         Text("上传只创建当前 Owner 文件。确认 Node ID 后再次点击定向发送。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -334,6 +340,47 @@ struct XDriveIOSNativeClipboardScreen: View {
         } catch {
             if generation == sessionGeneration {
                 message = "无法打开云端文件：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// A temporary local-only Share Extension handoff. Never reads the
+    /// pasteboard in the background or sends without an explicit second tap.
+    @MainActor
+    private func importSharedPasteboard() async {
+        guard !busy, pending == nil, !targetID.isEmpty, referenceKind != "text" else { return }
+        let generation = sessionGeneration
+        let pasteboard = UIPasteboard.general
+        let bytesType = "com.lazyxu.xdrive.clipboard.file.bytes"
+        let nameType = "com.lazyxu.xdrive.clipboard.file.name"
+        let kindType = "com.lazyxu.xdrive.clipboard.file.kind"
+        guard let data = pasteboard.data(forPasteboardType: bytesType),
+              data.count > 0 && data.count <= 64 * 1_048_576,
+              let name = pasteboard.value(forPasteboardType: nameType) as? String,
+              let kind = pasteboard.value(forPasteboardType: kindType) as? String,
+              kind == referenceKind,
+              !name.isEmpty && name == name.trimmingCharacters(in: .whitespacesAndNewlines),
+              name != "." && name != ".." && name.utf8.count <= 255,
+              !name.contains("/") && !name.contains("\\") &&
+              !name.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 })
+        else {
+            message = "未找到有效的 2 分钟分享文件，或图片/文件类型不匹配；请重新分享。"
+            return
+        }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xdrive-share-" + UUID().uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory,
+                withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent(name, isDirectory: false)
+            try data.write(to: url, options: .atomic)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            guard generation == sessionGeneration else { return }
+            // Existing verified File stager and single UploadSession/CAS writer.
+            await importLocalFile(url, generation: generation)
+        } catch {
+            if generation == sessionGeneration {
+                message = "分享文件暂存失败，请改用“选择本机文件并上传 CAS”。"
             }
         }
     }

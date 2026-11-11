@@ -19,16 +19,16 @@ Clipboard is a short-lived cross-device channel for manual text and links and di
 
 Only the current revocable Owner session can use the API; SourceRun, Photo backup, public-share and generic Agent credentials do not inherit Clipboard permissions. Directed delivery requires an enrolled installation identity and Clipboard grant; device revocation and Owner/session changes invalidate future access. HTTP responses are `Cache-Control: no-store`; redirects and unauthenticated Owner/Device requests fail closed. Data copied to an OS pasteboard cannot be remotely revoked.
 
-On mobile, read/write of the OS clipboard requires explicit user interaction; no continuous background pasteboard observer. Desktop's system clipboard watcher is optional and **off by default**; when explicitly enabled it runs only for the visible Clipboard page, with session/Owner cancellation. Web/PWA never silently monitors the browser clipboard. The iOS Share Extension explicitly copies selected text/links to a **local-only OS pasteboard for two minutes**; the user then opens xDrive → 剪贴板 → 从本机粘贴 → 发送. The extension never silently sends or stores Owner credentials.
+On mobile, read/write of the OS clipboard requires explicit user interaction; no continuous background pasteboard observer. Desktop's system clipboard watcher is optional and **off by default**; when explicitly enabled it runs only for the visible Clipboard page, with session/Owner cancellation. Web/PWA never silently monitors the browser clipboard. The iOS Share Extension copies selected text/links to a **local-only OS pasteboard for two minutes**, followed by xDrive → 剪贴板 → 从本机粘贴 → 发送. For one image/file (up to 64 MiB) it copies bytes plus a bounded name/type under private pasteboard types; the native screen requires an explicit **从分享内容导入** action, reuses the existing verified Files UploadSession/CAS writer, and then requires a separate directed **发送**. The extension never silently sends or stores Owner credentials.
 
 Older encrypted Clipboard records do not become readable plaintext by changing the API. Legacy ciphertext rows must not be sent as text or shown in the new mailbox. There is no production data migration requirement for this project.
 
 ## Implementation boundaries
 
 - Server: `internal/api/clipboard.go`, `internal/api/clipboard_extended.go`, `internal/meta/clipboard.go`. The existing schema may temporarily retain legacy column names while new API fields are `content` and no encryption parameters appear on the wire.
-- Web/PWA: `ui/shared/src/mui/ClipboardPage.tsx`, `web/src/clipboardDataPort.ts`, `web/src/api.ts`.
-- Desktop: `desktop/src/renderer/desktopClipboardDataPort.ts`, restricted Agent IPC. No Browser vault, private key export or general OS clipboard proxy.
-- DSM: `web/src/synologyClipboardPort.ts` and same-origin CGI allowlist, Owner/session proof, no decryption operation.
+- Web/PWA: `ui/shared/src/mui/ClipboardPage.tsx`, `web/src/clipboardDataPort.ts`, `web/src/api.ts`. User-gesture clipboard images support PNG/JPEG/WebP/GIF/AVIF/HEIC/HEIF where the browser exposes these types. Local uploads reuse Files/CAS and Server Owner limits, without a separate Clipboard 64 MiB cap.
+- Desktop: `desktop/src/renderer/desktopClipboardDataPort.ts`, restricted Agent IPC, existing Files root/paged read and UploadSession/CAS file writer. User-gesture local imports; visible-page 1.8 s Owner-checked change check with 15 s fallback. No Browser vault, private key export or general OS clipboard proxy.
+- DSM: `web/src/synologyClipboardPort.ts`, same-origin CGI, Owner Files root/paged read and existing small-file CAS writer (4 MiB maximum per upload). Visible-page 1.8 s Owner-checked change check; no Server bearer in the browser and no decryption operation.
 - iOS/Android: native Clipboard pages using verified Owner bearer, explicit installed-device enrollment, directed content, CAS and existing Viewer.
 
 ## Automated validation contract
@@ -38,6 +38,6 @@ Older encrypted Clipboard records do not become readable plaintext by changing t
 3. Owner A cannot access Owner B's content, even after A→B→A, logout/login, revoke, password reset or delayed responses. Device X cannot read content directed to device Y; a revoked device loses access.
 4. Unknown ACK retries preserve EventID/target/MIME/Node and a changed intent is rejected. Cross-Owner and trashed/foreign Files Nodes cannot be sent or opened.
 5. SSE contains only change cursors; connection loss falls back to full GET; pages do not monitor OS clipboard in background; the user explicitly confirms local uploads and viewer opening.
-6. Run the applicable Go/PostgreSQL, Web/PWA, Desktop, native iOS/Android, DSM and security regressions in available automated environments. The exact PR HEAD must pass required CI and Final Gate before merge. Record test results on the exact PR; unavailable physical-device or production-host checks are not replacement tests or implicit merge requirements.
+6. Run the applicable Go/PostgreSQL, Web/PWA, Desktop, native iOS/Android, DSM and security regressions in available automated environments. The exact PR HEAD must pass required CI and Final Gate before merge.
 
 The older implementation's crypto benchmark vectors and passphrase recovery discussions are retired historical fixtures, not current feature documentation.

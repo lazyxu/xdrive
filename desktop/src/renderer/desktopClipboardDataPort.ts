@@ -8,7 +8,7 @@ export function createDesktopClipboardDataPort(
     'cloudClipboardList' |
     'cloudClipboardCreate' | 'cloudClipboardDelete' | 'cloudClipboardClear' |
     'cloudClipboardDevices' | 'cloudClipboardEnableDevice' |
-    'cloudClipboardRevokeDevice'>,
+    'cloudClipboardRevokeDevice' | 'cloudRoot' | 'cloudChildrenPage' | 'cloudUploadFile'>,
   ownerScopeKey: string,
   _server: string,
   ownerCurrent: () => boolean,
@@ -29,6 +29,28 @@ export function createDesktopClipboardDataPort(
     return unwrap(result)
   }
   const observation = new XDriveDesktopClipboardObservationGate()
+  const project = (node: AgentCloudNode, parentID?: number) => {
+    if (!Number.isSafeInteger(node.id) || node.id <= 0 ||
+        !['dir', 'file'].includes(node.type) ||
+        !Number.isFinite(node.size) || node.size < 0 ||
+        (parentID !== undefined && node.parent_id !== parentID)) {
+      throw new Error('无效的当前 Owner 云端文件身份')
+    }
+    return { id: node.id, name: node.name, type: node.type, size: node.size }
+  }
+  const uploadLocalFile = async (file: File, signal: AbortSignal) => {
+    verify(signal)
+    if (!file || !file.name.trim() || !Number.isSafeInteger(file.size) || file.size <= 0)
+      throw new Error('请选择有效的本机文件')
+    const root = await run(() => agent.cloudRoot(), signal)
+    if (root.type !== 'dir') throw new Error('云端文件根目录不可用')
+    const uploaded = await run(() => agent.cloudUploadFile(root.id, file, 'fail'), signal)
+    if (uploaded.skipped || uploaded.node.type !== 'file' ||
+        uploaded.node.parent_id !== root.id || uploaded.node.revision <= 0) {
+      throw new Error('文件上传回执不完整，请在 Files 中核对后再发送')
+    }
+    return { node_id: project(uploaded.node, root.id).id }
+  }
   return {
     ownerScopeKey,
     list: (before, signal) => run(() => agent.cloudClipboardList(before ?? 0), signal),
@@ -58,6 +80,83 @@ export function createDesktopClipboardDataPort(
     },
     remove: (id, signal) => run(() => agent.cloudClipboardDelete(id), signal),
     clear: signal => run(() => agent.cloudClipboardClear(), signal),
+    browseFiles: {
+      root: async signal => {
+        const root = await run(() => agent.cloudRoot(), signal)
+        if (root.type !== 'dir') throw new Error('当前 Owner 云端文件根目录不可用')
+        return project(root)
+      },
+      page: async (folderID, cursor, signal) => {
+        if (!Number.isSafeInteger(folderID) || folderID <= 0 ||
+            (cursor !== undefined && (cursor.length > 1024 || /[\u0000\r\n]/.test(cursor)))) {
+          throw new Error('无效的当前 Owner 文件目录')
+        }
+        const page = await run(() => agent.cloudChildrenPage(
+          folderID, { limit: 50, cursor, sort: 'name', order: 'asc' }), signal)
+        if (!Array.isArray(page.items) || page.items.length > 50) {
+          throw new Error('无效的云端文件分页回执')
+        }
+        const items = page.items.map(node => project(node, folderID))
+        if (new Set(items.map(item => item.id)).size !== items.length) {
+          throw new Error('重复的云端文件节点')
+        }
+        return { items, next_cursor: page.next_cursor }
+      },
+    },
+    uploadLocalFile,
+    importImageFromClipboard: async signal => {
+      verify(signal)
+      if (!window.isSecureContext || typeof navigator.clipboard?.read !== 'function') {
+        throw new Error('Desktop 当前环境不允许用户主动读取剪贴板图片')
+      }
+      // The browser permission read starts in the actual button click.
+      const reading = navigator.clipboard.read()
+      const items = await reading
+      verify(signal)
+      const formats = [
+        ['image/png', 'png'], ['image/jpeg', 'jpg'], ['image/webp', 'webp'],
+        ['image/gif', 'gif'], ['image/avif', 'avif'],
+      ] as const
+      const match = formats.flatMap(([mime, ext]) =>
+        items.filter(item => item.types.includes(mime)).map(item => ({ mime, ext, item })))[0]
+      if (!match) throw new Error('剪贴板没有可读取的图片')
+      const blob = await match.item.getType(match.mime)
+      verify(signal)
+      if (!Number.isSafeInteger(blob.size) || blob.size <= 0)
+        throw new Error('无效的本机剪贴板图片')
+      return uploadLocalFile(new File(
+        [blob], 'Clipboard-' + crypto.randomUUID() + '.' + match.ext,
+        { type: match.mime, lastModified: Date.now() }), signal)
+    },
+    // A bounded Owner-checked foreground change observer: 1.8 s vs the
+    // shared page's unchanged 15 s full-GET fallback; not an SSE claim.
+    watchChanges: async (onChange, signal) => {
+      let previous: string | undefined
+      let wasHidden = false
+      const delay = () => new Promise<void>(resolve => {
+        if (signal.aborted) { resolve(); return }
+        const onAbort = () => { clearTimeout(timer); resolve() }
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', onAbort)
+          resolve()
+        }, 1800)
+        signal.addEventListener('abort', onAbort, { once: true })
+      })
+      while (!signal.aborted) {
+        verify(signal)
+        if (document.visibilityState === 'visible') {
+          if (wasHidden) { wasHidden = false; onChange() }
+          const page = await run(() => agent.cloudClipboardList(0), signal)
+          const version = page.items.map(item => item.id + ':' + item.client_event_id).join('|')
+          if (previous !== undefined && version !== previous) onChange()
+          previous = version
+        } else {
+          wasHidden = true
+          previous = undefined
+        }
+        await delay()
+      }
+    },
     readText: async () => {
       verify()
       const text = window.xdriveDesktop.readClipboardText()

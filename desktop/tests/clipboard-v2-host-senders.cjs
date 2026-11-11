@@ -85,3 +85,74 @@ test('Enrollment/revocation stay separate from message text and device keys',asy
  assert.equal(count,2)
  assert.equal('public_key' in recipient,false)
 })
+
+
+test('Desktop and DSM expose existing Owner Files picker and canonical file upload',async()=>{
+  const ok=data=>({ok:true,data})
+  const root={id:7,name:'owner',type:'dir',size:0,revision:1}
+  const child={id:8,parent_id:7,name:'image.jpg',type:'file',size:3,revision:1}
+  const file=new File([Uint8Array.of(1,2,3)],'image.jpg',{type:'image/jpeg'})
+  const calls=[]
+  const agent={
+    cloudRoot:async()=>ok(root),
+    cloudChildrenPage:async(parent,options)=>{
+      calls.push('desktop-page')
+      assert.equal(parent,7)
+      assert.deepEqual(options,{limit:50,cursor:undefined,sort:'name',order:'asc'})
+      return ok({items:[child],next_cursor:undefined,has_more:false,sort:'name',order:'asc'})
+    },
+    cloudUploadFile:async(parent,selected,policy)=>{
+      calls.push('desktop-upload')
+      assert.equal(parent,7);assert.equal(selected,file);assert.equal(policy,'fail')
+      return ok({node:child,skipped:false,transferred_bytes:3})
+    },
+  }
+  const port=desktop.createDesktopClipboardDataPort(agent,'desktop-owner','https://drive.example/',()=>true)
+  assert.equal((await port.browseFiles.root(new AbortController().signal)).id,7)
+  assert.equal((await port.browseFiles.page(7,undefined,new AbortController().signal)).items[0].id,8)
+  assert.deepEqual(await port.uploadLocalFile(file,new AbortController().signal),{node_id:8})
+  assert.deepEqual(calls,['desktop-page','desktop-upload'])
+  let active='a'.repeat(64)
+  const dsmCalls=[]
+  const cgi={
+    serverConnection:async()=>({configured:true,must_change_password:false,
+      server:'https://drive.example/',username:'owner',owner_scope:active}),
+    ownerFilesRoot:async()=>root,
+    ownerFilesPage:async(parent,limit,sort,order,cursor)=>{
+      dsmCalls.push('page')
+      assert.deepEqual([parent,limit,sort,order,cursor],[7,50,'name','asc',''])
+      return {items:[child],has_more:false,sort,order}
+    },
+    ownerUploadSmallFile:async(parent,selected,scope)=>{
+      dsmCalls.push('upload')
+      assert.equal(scope,active);assert.equal(parent,7);assert.equal(selected,file)
+      return child
+    },
+  }
+  const dsmPort=dsm.createXDriveDSMClipboardPort(cgi,active)
+  assert.equal((await dsmPort.browseFiles.root(new AbortController().signal)).id,7)
+  assert.equal((await dsmPort.browseFiles.page(7,undefined,new AbortController().signal)).items[0].id,8)
+  assert.deepEqual(await dsmPort.uploadLocalFile(file,new AbortController().signal),{node_id:8})
+  assert.deepEqual(dsmCalls,['page','upload'])
+  const large=new File([new Uint8Array(4*1_048_576+1)],'too-large.bin')
+  await assert.rejects(dsmPort.uploadLocalFile(large,new AbortController().signal),/4 MiB/)
+  active='b'.repeat(64)
+  await assert.rejects(dsmPort.uploadLocalFile(file,new AbortController().signal),/已变化/)
+  await assert.rejects(port.browseFiles.page(0,undefined,new AbortController().signal),/无效/)
+})
+test('Desktop and DSM use bounded foreground change checking and preserve 15s fallback',()=>{
+  const fs=require('node:fs'),path=require('node:path')
+  const root=path.resolve(__dirname,'../..')
+  for(const file of ['desktop/src/renderer/desktopClipboardDataPort.ts',
+    'web/src/synologyClipboardPort.ts']){
+    const source=fs.readFileSync(path.join(root,file),'utf8')
+    assert.match(source,/watchChanges: async \(onChange, signal\)/)
+    assert.match(source,/document\.visibilityState === 'visible'/)
+    assert.match(source,/signal\.aborted/)
+    assert.match(source,/1800/)
+    assert.doesNotMatch(source,/localStorage|sessionStorage/)
+  }
+  const ui=fs.readFileSync(path.join(root,'ui/shared/src/mui/ClipboardPage.tsx'),'utf8')
+  assert.match(ui,/15000/)
+})
+

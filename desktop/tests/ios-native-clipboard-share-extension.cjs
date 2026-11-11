@@ -19,7 +19,7 @@ test('share extension accepts only an explicit local and time-limited paste, nev
   assert.match(source,/\.localOnly: true/)
   assert.match(source,/\.expirationDate: Date\(\)\.addingTimeInterval\(120\)/)
   assert.match(source,/XDriveIOSClipboardSharePolicy\.acceptable/)
-  assert.doesNotMatch(source,/UserDefaults|Keychain|accessToken|Authorization|clipboard\/items|URLSession|Data\(contentsOf|write\(to:/)
+  assert.doesNotMatch(source,/UserDefaults|Keychain|accessToken|Authorization|clipboard\/items|URLSession|URLRequest|fetch\(/)
 })
 
 test('share instructions match the current unencrypted native Clipboard UI',()=>{
@@ -31,3 +31,32 @@ test('share instructions match the current unencrypted native Clipboard UI',()=>
   assert.match(nativePage,/Button\("从本机粘贴"\)/)
   assert.match(nativePage,/Button\("发送"\)/)
 })
+
+
+test('iOS Share Extension file/image uses 2-minute private pasteboard and explicit native CAS import',()=>{
+  const native=read('ios/XDriveIOS/NativeClipboardScreen.swift')
+  const policy=read('ios/ClipboardShareExtension/ClipboardSharePolicy.swift')
+  assert.match(project,/NSExtensionActivationSupportsImageWithMaxCount: 1/)
+  assert.match(project,/NSExtensionActivationSupportsFileWithMaxCount: 1/)
+  assert.match(source,/loadFileRepresentation\(forTypeIdentifier:/)
+  assert.match(source,/loadDataRepresentation\(forTypeIdentifier:/)
+  assert.match(source,/acceptableFileSize/)
+  assert.match(source,/acceptableFileName/)
+  assert.match(source,/\.localOnly: true/)
+  assert.match(source,/addingTimeInterval\(120\)/)
+  for(const type of [
+    'com.lazyxu.xdrive.clipboard.file.bytes',
+    'com.lazyxu.xdrive.clipboard.file.name',
+    'com.lazyxu.xdrive.clipboard.file.kind']){
+    assert.ok(source.includes(type))
+    assert.ok(native.includes(type))
+  }
+  assert.match(native,/Button\("从分享内容导入"\)/)
+  assert.match(native,/private func importSharedPasteboard\(\) async/)
+  assert.match(native,/pasteboard\.data\(forPasteboardType: bytesType\)/)
+  assert.match(native,/await importLocalFile\(url, generation: generation\)/)
+  assert.match(native,/XDriveNativeUploadSessionTransport/)
+  assert.match(policy,/maxFileBytes = 64 \* 1_048_576/)
+  assert.doesNotMatch(source,/api\/v1|Server bearer|encryptSend|recipientPrivateKey/)
+})
+
