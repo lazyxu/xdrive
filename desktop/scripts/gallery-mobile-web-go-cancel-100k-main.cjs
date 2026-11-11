@@ -471,6 +471,27 @@ function p1ReturnedToCaller() {
   delete window.__xdriveP1Entry
   return {sameCaller:true,sameDocument:true,sameHost:true,sameGrid:true,scrollDelta:measuredScrollDelta,tiles}
 }
+// Failure-only, privacy-safe runtime evidence. Never substitute a synthetic
+// route, click or rewritten scroll position for a real Viewer Back.
+function p1GalleryReturnDiagnostic() {
+  const saved=window.__xdriveP1Entry
+  const host=document.querySelector('[data-xdrive-workspace-background] main')
+  const grid=document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+  const hasSaved=!!saved
+  const delta=hasSaved&&host instanceof HTMLElement?
+    Math.round(Math.abs(host.scrollTop-saved.scrollTop)):null
+  return {
+    hasSaved,viewerMounted:!!document.querySelector('[data-xdrive-web-viewer]'),
+    hasHost:host instanceof HTMLElement,hasGrid:grid instanceof HTMLElement,
+    sameDocument:hasSaved&&saved.document===document.documentElement,
+    sameHost:hasSaved&&saved.host===host,
+    sameGrid:hasSaved&&saved.grid===grid,
+    sameRoute:hasSaved&&saved.route===location.hash,
+    scrollDelta:delta,scrollRestored:delta!==null&&delta<=2,
+    boundedTiles:grid?grid.querySelectorAll('[data-xdrive-media-tile]').length:null,
+  }
+}
+
 async function p1MeasureRealViewerBack(win) {
   await switchActualApp(win,'图库','gallery')
   const entry=await until(async()=>win.webContents.executeJavaScript(
@@ -491,9 +512,18 @@ async function p1MeasureRealViewerBack(win) {
     '('+p1BackPoint.toString()+')()',true),12000,'real visible Viewer Back button')
   const returnedAt=performance.now()
   sendActualPointer(win,back)
-  const returned=await until(async()=>win.webContents.executeJavaScript(
-    '('+p1ReturnedToCaller.toString()+')()',true),20000,
-    'exact mounted Gallery caller route and deep scroll restoration')
+  let returned
+  try {
+    returned=await until(async()=>win.webContents.executeJavaScript(
+      '('+p1ReturnedToCaller.toString()+')()',true),20000,
+      'exact mounted Gallery caller route and deep scroll restoration')
+  } catch(error) {
+    // Do not log media identities, URLs, credentials, file names or Owner data.
+    const diagnosis=await win.webContents.executeJavaScript(
+      '('+p1GalleryReturnDiagnostic.toString()+')()',true)
+    console.error('P1_REAL_VIEWER_RETURN_DIAGNOSTIC '+JSON.stringify(diagnosis))
+    throw error
+  }
   return {passed:true,depth:entry.depth,originalDecodedMs,
     returnMs:performance.now()-returnedAt,returned,
     scope:'100k logical PhotoAssets / 115k metadata nodes, only bounded actual JPEG original',
