@@ -187,7 +187,10 @@ export function XDriveMobileFiveSlotNavigation({
     <>
       <Box component="nav" aria-label="移动端五个功能入口" data-xdrive-mobile-five-slot
         sx={{
-          flexShrink: 0, borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper',
+          // Fixed L1 navigation must remain above the scrollable Gallery surface.
+          // MUI Dialog/Drawer portals retain their higher modal z-index.
+          flexShrink: 0, position: 'relative', zIndex: (theme) => theme.zIndex.appBar,
+          borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper',
           pb: 'env(safe-area-inset-bottom)',
           pl: 'env(safe-area-inset-left)', pr: 'env(safe-area-inset-right)',
         }}>

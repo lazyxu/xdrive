@@ -77,6 +77,8 @@ async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false,
   let view
   let clicked = 0
   let closed = 0
+  let previousCount = 0
+  let nextCount = 0
   try {
     const props = {
       open: true,
@@ -87,8 +89,8 @@ async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false,
       quickLook: !immersive,
       canPrevious,
       canNext,
-      onPrevious() {},
-      onNext() {},
+      onPrevious() { previousCount++ },
+      onNext() { nextCount++ },
       actions: React.createElement('button', {
         'data-shared-media-action': true,
         onClick() { clicked++ },
@@ -103,6 +105,8 @@ async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false,
       view, timers, FakeHTMLElement,
       get clicks() { return clicked },
       get closes() { return closed },
+      get previousCount() { return previousCount },
+      get nextCount() { return nextCount },
       runTimeout(delay) {
         const matching = [...timers].find(([, timer]) => timer.delay === delay)
         assert.ok(matching, 'missing real timer ' + delay)
@@ -402,4 +406,48 @@ test('P1 reduced-motion shared Viewer chrome removes opacity animation without c
       const strip = findData(view, 'data-xdrive-preview-mobile-filmstrip')[0]
       assert.equal(strip.props.sx['@media (prefers-reduced-motion: reduce)'].transition, 'none')
     })
+})
+
+test('P0 video Viewer keeps next/previous and filmstrip visible through slow metadata and first-frame playback', async () => {
+  // Before the fix, Gallery passed keepChromeVisible=false for ordinary video.
+  // This test exercises the real shared chrome, including its 2200ms timer.
+  assert.ok(viewerSource.includes("keepChromeVisible={slideshowKind === 'video' ||"))
+
+  for (const mode of [
+    { width: 1200, coarse: false, mobileEdgeToEdge: true },
+    { width: 390, coarse: false, mobileEdgeToEdge: true },
+    { width: 390, coarse: true, mobileEdgeToEdge: true },
+  ]) {
+    await withPreview({
+      ...mode, immersive: true, keepChromeVisible: true,
+      canPrevious: true, canNext: true,
+    }, async (h) => {
+      const { view, timers } = h
+      assert.equal([...timers.values()].some(timer => timer.delay === 2200), false,
+        'video playback must not arm chrome auto-hide while waiting for a first frame')
+      const header = findData(view, 'data-xdrive-preview-chrome').find(n => n.props['data-xdrive-preview-chrome'] === 'header')
+      assert.ok(header)
+      assert.equal(header.props.sx.visibility, 'visible')
+      const buttons = view.root.findAll(n => n.type === 'iconbutton' &&
+        (n.props['aria-label'] === '预览下一个项目' || n.props['aria-label'] === '预览上一个项目'))
+      assert.equal(buttons.length, 2, 'active videos must keep adjacent navigation reachable')
+      for (const button of buttons) {
+        assert.equal(button.props.disabled, false)
+        if (button.props.sx) {
+          assert.equal(button.props.sx.visibility, 'visible')
+          assert.equal(button.props.sx.pointerEvents, 'auto')
+        }
+      }
+      const next = buttons.find(n => n.props['aria-label'] === '预览下一个项目')
+      await act(async () => { next.props.onClick() })
+      const previous = buttons.find(n => n.props['aria-label'] === '预览上一个项目')
+      await act(async () => { previous.props.onClick() })
+      assert.equal(h.nextCount, 1, 'next button must invoke actual Gallery navigation')
+      assert.equal(h.previousCount, 1, 'previous button must remain usable on video')
+      assert.equal(findData(view, 'data-xdrive-preview-mobile-filmstrip').length,
+        mode.width < 900 ? 1 : 0)
+      assert.equal([...timers.values()].some(timer => timer.delay === 2200), false,
+        'loading events and navigation must not restart a video auto-hide timer')
+    })
+  }
 })

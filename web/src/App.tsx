@@ -1497,46 +1497,13 @@ function FileManager({
     const wasViewerActive = previousViewerActiveRef.current
     previousViewerActiveRef.current = viewerActive
     if (viewerActive) {
-      const saved = galleryViewerScrollRef.current
-      // The click's scrollTop can precede browser focus and Gallery layout
-      // settling. Capture the actual *active Viewer* entry position, while
-      // the original virtual scroll host and viewport are still intact.
-      if (wasViewerActive || !saved || appView !== 'gallery' ||
-          Math.abs(window.innerWidth - saved.viewportWidth) > 1) return
-      // Browser focus, virtual rows and decoded media can settle on different
-      // frames after the click. Observe only this already-mounted Gallery
-      // scroll host until the *first* viewport width change; then freeze the
-      // original Viewer-entry snapshot so breakpoint layout cannot rewrite it.
-      let frozen = false
-      const captureEntry = () => {
-        if (frozen) return
-        const host = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
-        if (galleryViewerScrollRef.current !== saved || host !== saved.host ||
-            !saved.host.isConnected) return
-        if (Math.abs(window.innerWidth - saved.viewportWidth) > 1) {
-          frozen = true
-          return
-        }
-        saved.offset = saved.host.scrollTop
-      }
-      const freezeCapture = () => {
-        if (Math.abs(window.innerWidth - saved.viewportWidth) > 1) frozen = true
-        else captureEntry()
-      }
-      saved.host.addEventListener('scroll', captureEntry, { passive: true })
-      window.addEventListener('resize', freezeCapture)
-      captureEntry()
-      let afterLayout: number | null = null
-      const frame = window.requestAnimationFrame(() => {
-        captureEntry()
-        afterLayout = window.requestAnimationFrame(captureEntry)
-      })
-      return () => {
-        window.cancelAnimationFrame(frame)
-        if (afterLayout !== null) window.cancelAnimationFrame(afterLayout)
-        saved.host.removeEventListener('scroll', captureEntry)
-        window.removeEventListener('resize', freezeCapture)
-      }
+      // Keep the exact onOpenViewer tile-click offset as the return anchor.
+      // The mounted Gallery can reflow while the routed Viewer overlays it:
+      // reading its scrollTop again would replace the trusted click anchor
+      // with a browser-adjusted position (observed +57px in real Electron).
+      // The return guard below restores this frozen offset only for the same
+      // connected host, Owner API, route and viewport, and yields to user input.
+      return
     }
     if (!wasViewerActive) return
     const saved = galleryViewerScrollRef.current
