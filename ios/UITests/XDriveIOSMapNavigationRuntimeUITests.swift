@@ -518,4 +518,135 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             .waitForExistence(timeout: 20))
         XCTAssertEqual(app.state, .runningForeground)
     }
+    /// A second real PHFetchResult enumeration in the *target application*
+    /// must independently agree with the streaming MapKit grid count.
+    /// This uses the installed Simulator's actual GPS assets, not a
+    /// hard-coded "two photos globally" assumption or mock permission.
+    func testP0RealPhotoKitIndependentGPSCountMatchesCurrentMap() {
+        let app = openLocalMap()
+        let verified = element("native-ios-map-verified-count", in: app)
+        XCTAssertTrue(verified.waitForExistence(timeout: 90),
+                      "Live PhotoKit MapKit index did not finish")
+        let trigger = element("native-ios-map-p0-audit-trigger", in: app)
+        XCTAssertTrue(trigger.waitForExistence(timeout: 15),
+                      "Independent GPS audit must be available only in the real Debug test route")
+        trigger.tap()
+        let independentlyVerified = element("native-ios-map-p0-independent-count", in: app)
+        if !independentlyVerified.waitForExistence(timeout: 150) {
+            diagnose("Second real PhotoKit enumeration did not finish", in: app)
+        }
+        XCTAssertTrue(independentlyVerified.exists)
+        let fields = independentlyVerified.label.split(separator: " ")
+        XCTAssertGreaterThanOrEqual(fields.count, 7,
+            "Expected independent actual PhotoKit GPS and MapKit count readbacks")
+        let real = fields.count > 2 ? Int(fields[2]) : nil
+        let indexed = fields.count > 5 ? Int(fields[5]) : nil
+        XCTAssertNotNil(real)
+        XCTAssertNotNil(indexed)
+        XCTAssertEqual(real, indexed, "Real PHAsset.location enumeration disagrees with indexed MapKit count")
+        XCTAssertFalse(independentlyVerified.label.contains("不一致"))
+        XCTAssertTrue(independentlyVerified.label.contains("一致"))
+        XCTAssertEqual(app.state, .runningForeground)
+        print("MAP_P0_REAL_PHOTOKIT_INDEPENDENT_COUNT \(independentlyVerified.label)")
+    }
+
+    /// Deliberately exercises the actual MapKit annotation, medium/large
+    /// native place sheet and real Viewer multiple times. This does not use
+    /// a fabricated direct Viewer route; screenshot attachments are
+    /// diagnostic samples, not a 60/120 Hz frame-rate certificate.
+    func testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted() {
+        let app = openLocalMap()
+        let map = element("native-ios-full-library-gps-map", in: app)
+        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
+            .waitForExistence(timeout: 90))
+        for pass in 0..<3 {
+            let marker = app.descendants(matching: .any)
+                .matching(NSPredicate(
+                    format: "label CONTAINS %@", "已扫描图库区域有2张带定位照片"))
+                .firstMatch
+            XCTAssertTrue(marker.waitForExistence(timeout: 25),
+                          "Iteration \(pass) lost the exact seeded two-photo location")
+            XCTAssertTrue(marker.isEnabled, "A fresh verified marker must be selectable")
+            XCTAssertFalse(marker.frame.isEmpty)
+            XCTAssertTrue(marker.frame.intersects(map.frame))
+            marker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            let tile = element("native-ios-map-photo-wall-tile", in: app)
+            XCTAssertTrue(tile.waitForExistence(timeout: 45),
+                          "Iteration \(pass) failed to show real place photos")
+            let sheetShot = XCTAttachment(screenshot: app.screenshot())
+            sheetShot.name = "p0-map-place-sheet-\(pass)"
+            sheetShot.lifetime = .keepAlways
+            add(sheetShot)
+            tile.tap()
+            let back = element("native-ios-local-viewer-back", in: app)
+            XCTAssertTrue(back.waitForExistence(timeout: 30),
+                          "Iteration \(pass) failed Viewer route")
+            back.tap()
+            XCTAssertTrue(tile.waitForExistence(timeout: 25),
+                          "Iteration \(pass) did not return to the same place wall")
+            let closeSheet = element("native-ios-map-place-dismiss", in: app)
+            XCTAssertTrue(closeSheet.waitForExistence(timeout: 15))
+            closeSheet.tap()
+            XCTAssertTrue(map.waitForExistence(timeout: 25),
+                          "Iteration \(pass) detached the native map canvas")
+            XCTAssertFalse(element("native-ios-local-viewer-back", in: app).exists,
+                           "Stale Viewer must not remain after returning to MapKit")
+            let returnShot = XCTAttachment(screenshot: app.screenshot())
+            returnShot.name = "p0-map-after-viewer-return-\(pass)"
+            returnShot.lifetime = .keepAlways
+            add(returnShot)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        // Rapid camera changes must revoke old-cell AX activation at the
+        // gesture boundary, then either show a recheck or verified new count.
+        map.pinch(withScale: 2.5, velocity: 1.0)
+        map.swipeRight()
+        map.pinch(withScale: 1.5, velocity: 1.0)
+        XCTAssertTrue(map.waitForExistence(timeout: 25))
+        XCTAssertFalse(element("native-ios-map-photo-auth-readback", in: app).exists,
+                       "No denied/Limited stale authorization UI should appear")
+        let done = element("native-ios-map-dismiss", in: app)
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        XCTAssertTrue(element("native-ios-tab-gallery", in: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    /// Run ONLY after the dedicated workflow explicitly executes
+    /// simctl privacy revoke photos com.lazyxu.xdrive.ios.
+    /// The primary Full-Access MapKit shard skips this method. The test
+    /// checks the target's real denied UI, then uses real Settings to
+    /// restore Full Access. No fake PhotoKit authorization or Owner token.
+    func testZP0ExternallyRevokedPhotosRejectOldMapAndRecover() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        let launcher = element("native-ios-tab-launcher", in: app)
+        XCTAssertTrue(launcher.waitForExistence(timeout: 15))
+        launcher.tap()
+        let route = element("native-ios-launcher-map", in: app)
+        XCTAssertTrue(route.waitForExistence(timeout: 15))
+        route.tap()
+        XCTAssertTrue(element("native-ios-map-source-selector", in: app)
+            .waitForExistence(timeout: 20))
+        let denied = element("native-ios-map-open-photo-settings", in: app)
+        if !denied.waitForExistence(timeout: 20) {
+            recordActualPhotoKitReadback(app, stage: "after-external-revoke")
+            diagnose("Real simctl Photo Library denial did not reach target app", in: app)
+        }
+        XCTAssertTrue(denied.exists, "Denied Photos must fail closed")
+        XCTAssertFalse(element("native-ios-full-library-gps-map", in: app).exists)
+        XCTAssertFalse(element("native-ios-map-verified-count", in: app).exists)
+        XCTAssertFalse(element("native-ios-map-p0-independent-count", in: app).exists)
+        recordActualPhotoKitReadback(app, stage: "verified-denied")
+        authorizeFullPhotosInSettings(app)
+        XCTAssertTrue(element("native-ios-full-library-gps-map", in: app)
+            .waitForExistence(timeout: 60))
+        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
+            .waitForExistence(timeout: 90))
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
 }
