@@ -575,3 +575,21 @@ test('native MapKit date picker precedes long PhotoKit year menu in real accessi
   assert.match(map.slice(end), /\.sheet\(isPresented: \$datePickerOpen\)/)
 })
 
+
+test('MapKit real GPS fixture wipes only its freshly created isolated Simulator before adding exactly two images', () => {
+  const ci = read('.github/workflows/ios-native-navigation-runtime.yml')
+  const created = ci.indexOf('xcrun","simctl","create"')
+  const guard = ci.indexOf('if [[ "${MAPKIT_FRESH:-false}" == "true" ]]; then')
+  const lease = ci.indexOf('test -n "$fresh" && test "$SMOKE_SIM" = "$fresh"', guard)
+  const erase = ci.indexOf('xcrun simctl erase "$SMOKE_SIM"', lease)
+  const boot = ci.indexOf('xcrun simctl boot "$SMOKE_SIM"', erase)
+  const add = ci.indexOf('xcrun simctl addmedia "$SMOKE_SIM"', boot)
+  assert.ok(created >= 0 && guard > created && lease > guard &&
+    erase > lease && boot > erase && add > boot,
+    'only exact newly created MapKit Simulator may be erased before native Photos import')
+  assert.match(ci.slice(add, add + 300),
+    /synthetic-gps-map\.jpg[\s\S]*synthetic-gps-map-second\.jpg/)
+  assert.match(ci, /test "\$SMOKE_SIM" = "\$MAPKIT_CREATED_SIM"/,
+    'seeding must also be restricted to the same freshly created device')
+})
+

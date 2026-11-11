@@ -134,6 +134,15 @@ jobs:
           SMOKE_SIM="$(sed -n 's/^SMOKE_SIM=//p' "$GITHUB_ENV" | tail -1)"
           test -n "$SMOKE_SIM"
           export SMOKE_SIM
+          if [[ "${MAPKIT_FRESH:-false}" == "true" ]]; then
+            # CoreSimulator's newly created runtime may still contain
+            # bundled/sample Photos. Reset ONLY this exact new device, while
+            # shut down, before importing precisely two EXIF-GPS assets.
+            fresh="$(sed -n 's/^MAPKIT_CREATED_SIM=//p' "$GITHUB_ENV" | tail -1)"
+            test -n "$fresh" && test "$SMOKE_SIM" = "$fresh"
+            xcrun simctl erase "$SMOKE_SIM"
+            echo "MAPKIT_FRESH_ERASED_BEFORE_GPS_SEED device=$SMOKE_SIM"
+          fi
           xcrun simctl boot "$SMOKE_SIM"
           # Fail as infrastructure failure instead of waiting indefinitely
           # for an incompatible/failed CoreSimulator runtime.
