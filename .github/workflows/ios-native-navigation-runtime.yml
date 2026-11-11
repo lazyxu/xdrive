@@ -21,6 +21,8 @@ on:
       - 'ios/scripts/capture-navigation-smoke-frames.py'
       - 'ios/scripts/audit_navigation_frames.py'
       - 'ios/scripts/test_audit_navigation_frames.py'
+      - 'ios/scripts/assert_native_ios_no_crash.py'
+      - 'ios/scripts/test_assert_native_ios_no_crash.py'
       - 'ios/scripts/summarize-navigation-latency.py'
       - 'ios/XDriveIOS/NativeOwnerLoginModel.swift'
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
@@ -134,6 +136,8 @@ jobs:
             -p 'test_summarize_navigation_latency.py' -v
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
             -p 'test_audit_navigation_frames.py' -v
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
+            -p 'test_assert_native_ios_no_crash.py' -v
           # Keep a few frames from the LIVE failed route, not SpringBoard after
           # xcodebuild exits. Never use AX queries from this observer.
           if [[ "${{ matrix.source }}" != "release-c83" ]]; then
@@ -162,6 +166,7 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests") ;;
             *) echo "Unsupported UI suite" >&2; exit 2 ;;
           esac
+          touch "$RUNNER_TEMP/native-navigation-results/xcodebuild-start.marker"
           xcodebuild test \
             -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
             -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
@@ -210,6 +215,17 @@ jobs:
               --output-path "$RUNNER_TEMP/native-navigation-results/diagnostics/failure-attachments" \
               --only-failures > /dev/null 2>&1 || true
           fi
+      - name: Reject candidate xDriveIOS process crash reports
+        if: ${{ always() && matrix.source != 'release-c83' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sim_reports="$HOME/Library/Developer/CoreSimulator/Devices/${SMOKE_SIM:-unknown}/data/Library/Logs"
+          python3 "$GITHUB_WORKSPACE/ios/scripts/assert_native_ios_no_crash.py" \
+            --marker "$RUNNER_TEMP/native-navigation-results/xcodebuild-start.marker" \
+            --output "$RUNNER_TEMP/native-navigation-results/diagnostics/app-process-crash-audit.json" \
+            "$HOME/Library/Logs/DiagnosticReports" \
+            "$sim_reports/CrashReporter" "$sim_reports/DiagnosticReports"
       - name: Upload runtime logs and crash evidence
         if: always()
         uses: actions/upload-artifact@v4
