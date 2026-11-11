@@ -1294,6 +1294,8 @@ jobs:
           bash -n scripts/ci/gitlab-package-linux-client.sh
           bash -n scripts/ci/gitlab-server-validation.sh
           bash -n scripts/ci/export-docker-image.sh
+          bash -n scripts/ci/test-export-docker-image.sh
+          bash scripts/ci/test-export-docker-image.sh
           bash -n scripts/ci/import-docker-image.sh
           bash -n scripts/ci/test-import-docker-image.sh
           bash scripts/ci/test-import-docker-image.sh
