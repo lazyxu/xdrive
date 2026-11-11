@@ -307,8 +307,8 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
         with patch.object(audit, "check_release", return_value=(self.manifest, self.raw)), \
              patch.object(audit, "server_listing", return_value=listing), \
              patch.object(audit, "check_server_listing", return_value=2), \
-             patch.object(audit, "check_authenticated_range_download", return_value=True) as transfer, \\
-             patch.object(audit, "check_unauthenticated_denial", return_value=2) as denial, \\
+             patch.object(audit, "check_authenticated_range_download", return_value=True) as transfer, \
+             patch.object(audit, "check_unauthenticated_denial", return_value=2) as denial, \
              patch.dict(audit.os.environ, {"XD_BUNDLE_OWNER_TOKEN": "fixture"}), \
              patch("sys.stdout", new_callable=StringIO) as output:
             result = audit.main(["--commit", COMMIT, "--server-url", "https://example.test",
@@ -324,7 +324,7 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
         with patch.object(audit, "check_release", return_value=(self.manifest, self.raw)), \
              patch.object(audit, "server_listing", return_value=listing), \
              patch.object(audit, "check_server_listing", return_value=1), \
-             patch.object(audit, "check_authenticated_range_download") as transfer, \\
+             patch.object(audit, "check_authenticated_range_download") as transfer, \
              patch("sys.stderr", new_callable=StringIO) as errors:
             result = audit.main(["--commit", COMMIT, "--server-url", "https://example.test",
                                  "--check-server-download"])
