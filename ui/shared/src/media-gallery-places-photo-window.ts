@@ -214,16 +214,29 @@ export function xDrivePlacesPhotoLegacyCompleteTimeline(
       page.total_count < 1 || page.total_count > XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT ||
       !Array.isArray(page.items) || page.items.length !== page.total_count ||
       page.timeline_group_sets != null) return null
+  let invalidDate = false
   const days = page.items.map(item => {
     const raw = item.metadata?.captured_at
+    // Truly missing capture timestamps belong to an unknown group.
+    // An explicitly malformed date is different: fail closed rather than
+    // manufacturing a chronology for legacy servers.
+    if (raw == null) return 'unknown'
     const matched = typeof raw === 'string'
       ? /^(\d{4}-\d{2}-\d{2})(?:T|$)/.exec(raw) : null
-    if (!matched) return 'unknown'
+    if (!matched) {
+      invalidDate = true
+      return 'unknown'
+    }
     const day = matched[1]
     const date = new Date(day + 'T00:00:00Z')
-    return Number.isFinite(date.getTime()) &&
-      date.toISOString().slice(0, 10) === day ? day : 'unknown'
+    if (!Number.isFinite(date.getTime()) ||
+        date.toISOString().slice(0, 10) !== day) {
+      invalidDate = true
+      return 'unknown'
+    }
+    return day
   })
+  if (invalidDate) return null
   const known = days.filter(day => day !== 'unknown')
   if (known.length === 0) return null
   const descending = known.length < 2 || known[0] >= known[known.length - 1]

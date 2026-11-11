@@ -36,10 +36,12 @@ const sharedMediaEdit = read('ui', 'shared', 'src', 'media-edit.ts')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
 const sharedGalleryVirtualTimeline = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualTimeline.ts')
 const sharedGalleryDateNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDateNavigation.tsx')
+const sharedGalleryTimeScaleControls = read('ui', 'shared', 'src', 'mui', 'MediaGalleryTimeScaleControls.tsx')
 const sharedGalleryThumbnailScheduler = read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts')
 const sharedVirtualCollectionController = read('ui', 'shared', 'src', 'mui', 'VirtualCollectionController.ts')
 const sharedGallery = [
   sharedGalleryMain,
+  sharedGalleryTimeScaleControls,
   sharedGalleryDetails,
   sharedGalleryInspector,
   sharedGalleryPreview,

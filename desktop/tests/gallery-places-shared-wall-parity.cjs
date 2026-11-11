@@ -377,6 +377,15 @@ test('legacy Places date index is allowed only for complete sorted Owner page (n
   assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
     '2026-11-11','2026-02-30',
   ])), null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','bad-date',
+  ])), null)
+  assert.deepEqual(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','unknown',
+  ])).day,[
+    {key:'2026-11-11',item_count:1,start_index:0},
+    {key:'unknown',item_count:1,start_index:1},
+  ])
   assert.equal(policy.xDrivePlacesPhotoTimelineGroups({
     ...full(days), total_count: 100000,
   }),null)
