@@ -35,6 +35,7 @@ import {
   xDrivePlacesPhotoWindowSeek, xDrivePlacesPhotoTimelineGroups,
 } from '../media-gallery-places-photo-window'
 import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDrawer'
+import { xDrivePlacesSignedScopeIsCurrent } from '../media-gallery-places-owner-fence'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import {
   xDriveVerifiedMapPhotoProjections,
@@ -153,7 +154,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const scopeSnapshot = xDriveCopyBaiduMapPhotoScope(mapPhotoScope)
   const filterRef = useRef({key:currentFilterKey,snapshot:scopeSnapshot})
   filterRef.current = {key:currentFilterKey,snapshot:scopeSnapshot}
-  const acceptedScope = useRef<{key:string;scope:XDriveBaiduMapPhotoScope}|null>(null)
+  const acceptedScope = useRef<{owner:string;key:string;scope:XDriveBaiduMapPhotoScope}|null>(null)
   const failedCellsScopeRef = useRef<{owner:string;key:string} | null>(null)
   const acceptedCells = useRef<MediaBaiduNativeCellSelection[]>([])
   // A former photo cover is an interaction hint, never an Owner grant. A
@@ -204,6 +205,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const [error,setError] = useState(false)
   const [failedCellsScope,setFailedCellsScope] = useState<{owner:string;key:string} | null>(null)
   type DrawerView = {
+    epoch: number
     selection: MediaBaiduNativeCellSelection
     key: string
     phase: 'loading' | 'ready' | 'error'
@@ -221,6 +223,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     returnPresentation?: XDrivePlacesDrawerPresentation
   }
   const [drawer,setDrawer] = useState<DrawerView | null>(null)
+  // Every Cell open/retry needs fresh scroll/date/thumbnail state. React can
+  // batch setDrawer(null) with the next open and otherwise reuse the old Dialog.
+  const drawerEpoch = useRef(0)
   // A resize return is a short-lived trusted Parent UI intent. It never
   // authorizes media, crosses the isolated Child, or reuses the old Cell
   // selector. Both Hosts can use the same Parent DOM/Owner check.
@@ -242,6 +247,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     setDrawer(null)
   }
   const hasAcceptedCell = (selection: MediaBaiduNativeCellSelection): boolean =>
+    xDrivePlacesSignedScopeIsCurrent(acceptedScope.current,scope,currentFilterKey) &&
     acceptedCells.current.some(fresh =>
       xDriveBaiduCellReturnMatchesFreshSelection(selection, fresh))
   const selectCell = (selection: MediaBaiduNativeCellSelection,
@@ -270,7 +276,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         latestDrawerVisibleAnchor.current?.nodeID!==cell.node_id ||
         latestDrawerVisibleAnchor.current?.revision!==cell.node_revision)
       latestDrawerVisibleAnchor.current=null
-    setDrawer({selection:cell,key,phase:'loading',items:[],
+    setDrawer({epoch:++drawerEpoch.current,selection:cell,key,phase:'loading',items:[],
       windowStart:0,loadedDepth:0,total:cell.photo_count,expanded:presentation?.expanded ?? true,
       loadingMore:false,pageError:false,returnPresentation:presentation})
     void preview(cell,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,0,{
@@ -305,7 +311,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   }
   selectCellRef.current=selectCell
   const activeDrawer = drawer && phase === 'ready' &&
-    acceptedScope.current?.key === drawer.key && hasAcceptedCell(drawer.selection)
+    xDrivePlacesSignedScopeIsCurrent(acceptedScope.current,scope,drawer.key) &&
+    hasAcceptedCell(drawer.selection)
     ? drawer : null
   // Never capture a speculative React render as the previous visible sheet.
   useLayoutEffect(() => { committedDrawer.current=activeDrawer },[activeDrawer])
@@ -506,7 +513,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       presentation)
     closeDrawer()
   }
-  const scopeIsCurrent = acceptedScope.current?.key === currentFilterKey
+  const scopeIsCurrent = xDrivePlacesSignedScopeIsCurrent(
+    acceptedScope.current,scope,currentFilterKey)
   const trustedSummary = scopeIsCurrent ? summary : null
   // Commit only a real, current, fully signed Owner camera presentation.
   // The old representative IDs stay in this trusted Parent; the isolated
@@ -855,7 +863,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         // camera-scoped response replaces them.
         if(!frame.replaceAuthorizedCells(cells,liveCamera)) throw new Error('map_cells_unavailable')
         if(approved.key!==filterRef.current.key || run!==generation)return false
-        acceptedScope.current={key:approved.key,scope:verifiedScope}
+        acceptedScope.current={owner:scope??'',key:approved.key,scope:verifiedScope}
         acceptedCells.current=cells.map(item=>item.selection)
         // A fresh, Owner-signed EMPTY camera supersedes all visual remnants
         // of the previous pan. Waiting for a new SDK projection here can
@@ -1442,6 +1450,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         ) : null}
         {activeDrawer && loadThumbnail ? (
           <XDriveMediaGalleryPlacesPhotoDrawer
+            key={activeDrawer.epoch}
             items={activeDrawer.items} total={activeDrawer.total}
             windowStart={activeDrawer.windowStart} loadedDepth={activeDrawer.loadedDepth}
             phase={activeDrawer.phase} expanded={activeDrawer.expanded}
