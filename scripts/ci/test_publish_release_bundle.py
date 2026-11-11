@@ -154,6 +154,8 @@ class PublishCurrentCommitBundleTests(unittest.TestCase):
         result, state = self.run_case("new")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(state["create_count"], 1)
+        self.assertIn("platform immutability awaits independent acceptance", result.stdout)
+        self.assertNotIn("verified immutable", result.stdout)
         self.assertEqual(state["ref"], COMMIT)
         self.assertEqual({x["name"] for x in state["assets"]},
                          {"release-bundle.json", "installer.pkg"})
