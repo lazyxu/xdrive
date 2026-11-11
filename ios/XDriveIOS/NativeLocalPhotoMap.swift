@@ -1225,6 +1225,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     // Bounded, non-sensitive in-session performance samples for debugging.
     @State private var recentScanMilliseconds: [Double] = []
     @State private var globalCameraMoving = false
+    // A failed authoritative rescan must not be undone by the next camera
+    // callback or by a still-cached snapshot from before the failure.
+    @State private var refinementFailureRequiresRefresh = false
     @State private var autoRefineTask: Task<Void, Never>?
     @State private var handledMapJumpID: UUID?
 
@@ -1245,7 +1248,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     private var refinedViewportIsCurrent: Bool {
         // Scanned-incomplete cells must never become tappable, even before
         // MapKit receives its first fully verified PhotoKit snapshot.
-        guard globalComplete, !busy else { return false }
+        guard globalComplete, !busy, !refinementFailureRequiresRefresh
+        else { return false }
         // A failed or in-flight refinement keeps the old MapKit canvas, but
         // never reactivates the old Cell/VoiceOver selection lease.
         guard !globalCameraMoving, let current = globalCamera else {
@@ -2005,7 +2009,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // Navigating back to a previously verified same-session viewport
             // must not re-enumerate 100k PhotoKit rows. Scope-changing events
             // always call invalidate(), which discards these snapshots.
-            if let cached = recentVerifiedWindows.first(where: { item in
+            if !refinementFailureRequiresRefresh,
+               let cached = recentVerifiedWindows.first(where: { item in
                 XDriveIOSNativeLocalMapAutoRefinePolicy.canReuse(
                     cached: item.viewport, camera: finalViewport
                 )
@@ -2022,6 +2027,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 globalLocated = cached.located
                 globalComplete = true
                 globalCameraMoving = false
+                refinementFailureRequiresRefresh = false
                 error = nil
                 mapRevision = UUID()
                 #if DEBUG
@@ -2147,6 +2153,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 globalViewport = viewport
                 globalComplete = true
                 globalCameraMoving = false
+                refinementFailureRequiresRefresh = false
                 if let viewport {
                     // Keep only two exact, completed windows in the current
                     // active PhotoKit generation. Never cache a provisional
@@ -2201,6 +2208,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         // guard, so no remove/add or auto-fit is needed here.
                         // The user can retry via the existing Map actions.
                         globalCameraMoving = true
+                        refinementFailureRequiresRefresh = true
                     } else {
                         globalCells = []
                         provisionalCells = []
@@ -2317,6 +2325,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         recentVerifiedWindows = []
         recentScanMilliseconds = []
         globalCameraMoving = false
+        refinementFailureRequiresRefresh = false
         error = nil
         mapRevision = UUID()
     }
