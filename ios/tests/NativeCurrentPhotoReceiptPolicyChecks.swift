@@ -36,25 +36,20 @@ struct NativeCurrentPhotoReceiptPolicyChecks {
         precondition(Policy.liveDestinationName(tag: tag, sha256: "bad") == nil)
         precondition(!Policy.canVerifyOriginal(kind: "unsupported", isLive: false))
 
-        precondition(Policy.fitsStagedPayload(
-            bytes: Policy.maximumOriginalBytes, isLiveArchive: false
-        ))
-        precondition(!Policy.fitsStagedPayload(
-            bytes: Policy.maximumOriginalBytes + 1, isLiveArchive: false
-        ))
-        precondition(Policy.fitsStagedPayload(
-            bytes: Policy.maximumOriginalBytes + 1, isLiveArchive: true
-        ))
-        precondition(Policy.fitsStagedPayload(
-            bytes: Policy.maximumOriginalBytes + Policy.maximumLiveZIPOverhead,
-            isLiveArchive: true
-        ))
-        precondition(!Policy.fitsStagedPayload(
-            bytes: Policy.maximumOriginalBytes + Policy.maximumLiveZIPOverhead + 1,
-            isLiveArchive: true
-        ))
+        // Existing upload and ZIP64 writers accept originals beyond 1 GiB.
+        // Receipt readback must not convert a valid large Node into a false
+        // "unverified" result; only non-positive sizes are invalid.
+        for bytes: Int64 in [
+            1, 1_073_741_824, 1_073_741_825,
+            5 * 1_073_741_824, Int64.max
+        ] {
+            precondition(Policy.fitsStagedPayload(bytes: bytes, isLiveArchive: false))
+            precondition(Policy.fitsStagedPayload(bytes: bytes, isLiveArchive: true))
+        }
+        precondition(!Policy.fitsStagedPayload(bytes: 0, isLiveArchive: false))
         precondition(!Policy.fitsStagedPayload(bytes: 0, isLiveArchive: true))
-        precondition(!Policy.fitsStagedPayload(bytes: Int64.max, isLiveArchive: true))
+        precondition(!Policy.fitsStagedPayload(bytes: -1, isLiveArchive: false))
+        precondition(!Policy.fitsStagedPayload(bytes: -1, isLiveArchive: true))
 
         for mask in 0..<32 {
             let allowed = Policy.canPublishCurrentProof(
