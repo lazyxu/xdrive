@@ -214,3 +214,28 @@ test('historical baseline scroll drift is exposed, never counted as candidate Vi
   before.samples[1].p1H264Frames.restoredScrollDelta=150
   assert.throws(()=>compareRealVideoFirstFrames(before,after), /sample 1 invalid/)
 })
+
+
+test('real n3 H264 summary persists measured sanitized sample proof for the strict comparator', () => {
+  const runner = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
+  const comparator = read('desktop/scripts/viewer-first-frame-compare.cjs')
+  const summaryStart = runner.indexOf('const worst = rows.map(')
+  const summaryEnd = runner.indexOf("fs.writeFileSync(path.join(out, 'summary.json')", summaryStart)
+  assert.ok(summaryStart >= 0 && summaryEnd > summaryStart)
+  const summary = runner.slice(summaryStart, summaryEnd)
+  assert.match(summary, /samples: videoFirstFrameMode \? rows\.map\(row => \(\{/)
+  for (const field of [
+    'passed', 'genuinePresentedFrames', 'baselineReturnDrift', 'restoredScrollDelta',
+    'ready', 'actualSignedVideo', 'firstFrameMs', 'urlMs', 'metadataMs',
+    'loadedDataMs', 'rangeTTFBMs', 'navigationVisible',
+    'videoWidth', 'videoHeight', 'presentedFrames',
+  ]) assert.ok(summary.includes(field + ': row.p1H264Frames.'),
+    'n3 compositor proof missing: ' + field)
+  assert.ok(comparator.includes('Array.isArray(summary.samples)') &&
+    comparator.includes('summary.samples.length !== 3'),
+    'do not relax the independent n3/n3 benchmark admission')
+  assert.ok(!summary.includes('certificatePEM') &&
+    !summary.includes('signedURL:') &&
+    !summary.includes('currentSrc:'),
+    'timing JSON must never persist an Owner-scoped signed media URL')
+})

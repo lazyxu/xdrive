@@ -1626,6 +1626,31 @@ async function main() {
       firstFrameTTFBP50Ms:videoFirstFrameMode &&
         rows.every(row=>row.p1H264Frames.firstFrame.rangeTTFBMs!==null) ?
         rows.map(row=>row.p1H264Frames.firstFrame.rangeTTFBMs).sort((a,b)=>a-b)[1] : null,
+      // Compare the actual before/after n=3 signed compositor frames.
+      // Only the bounded numeric proof crosses into benchmark JSON: never
+      // serialize Owner IDs, Node names, signed URLs, credentials or IPC.
+      // Aggregate-only summaries cannot satisfy the independent comparator.
+      samples: videoFirstFrameMode ? rows.map(row => ({
+        p1H264Frames: {
+          passed: row.p1H264Frames.passed,
+          genuinePresentedFrames: row.p1H264Frames.genuinePresentedFrames,
+          baselineReturnDrift: row.p1H264Frames.baselineReturnDrift,
+          restoredScrollDelta: row.p1H264Frames.restoredScrollDelta,
+          firstFrame: {
+            ready: row.p1H264Frames.firstFrame.ready,
+            actualSignedVideo: row.p1H264Frames.firstFrame.actualSignedVideo,
+            firstFrameMs: row.p1H264Frames.firstFrame.firstFrameMs,
+            urlMs: row.p1H264Frames.firstFrame.urlMs,
+            metadataMs: row.p1H264Frames.firstFrame.metadataMs,
+            loadedDataMs: row.p1H264Frames.firstFrame.loadedDataMs,
+            rangeTTFBMs: row.p1H264Frames.firstFrame.rangeTTFBMs,
+            navigationVisible: row.p1H264Frames.firstFrame.navigationVisible,
+            videoWidth: row.p1H264Frames.firstFrame.videoWidth,
+            videoHeight: row.p1H264Frames.firstFrame.videoHeight,
+            presentedFrames: row.p1H264Frames.firstFrame.presentedFrames,
+          },
+        },
+      })) : undefined,
       sampleCount: rows.length, budgetMs: 160,
       worstGoContextP50Ms: worst[1], worstGoContextMaxMs: worst[2],
       passed: rows.length === 3 && rows.every(row =>
