@@ -552,7 +552,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             XDriveIOSOwnerMapSurface(
-                overview: overview,
+                // Before an A → B switch's onChange cleanup, not even A's
+                // coordinate-only pins may remain mounted for B. Keep the
+                // same Owner's inert map during a normal viewport refresh.
+                overview: displayedOverviewMatchesLogin ? overview : nil,
                 coverImages: displayedOverviewMatchesLogin ? coverImages : [:],
                 markersEnabled: mapMarkersEnabled,
                 revision: revision, mapType: mapType,
