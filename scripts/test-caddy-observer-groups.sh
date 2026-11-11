@@ -5,7 +5,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$(id -u)" == 0 ]] || { echo 'Run this fixture as root in an isolated runner.' >&2; exit 2; }
 command -v setpriv >/dev/null
-# CI may set TMPDIR to the runner\u0027s private 0700 directory. The\n# setpriv users 65531/65532 cannot traverse that parent, even after chmod\n# of the child fixture. Use the shared sticky /tmp; mktemp still creates a\n# unique directory and all security/group assertions below remain intact.\nscratch="$(mktemp -d /tmp/xdrive-caddy-observer-groups.XXXXXXXX)"
+# CI may set TMPDIR to the runner's private 0700 directory. The
+# setpriv users 65531/65532 cannot traverse that parent, even after chmod
+# of the child fixture. Use the shared sticky /tmp; mktemp still creates a
+# unique directory and all security/group assertions below remain intact.
+scratch="$(mktemp -d /tmp/xdrive-caddy-observer-groups.XXXXXXXX)"
 trap 'rm -rf -- "$scratch"' EXIT
 chmod 755 "$scratch"
 mkdir -p "$scratch/xd/config" "$scratch/xd/bin" "$scratch/xd/state/control"
