@@ -1229,6 +1229,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     // A failed authoritative rescan must not be undone by the next camera
     // callback or by a still-cached snapshot from before the failure.
     @State private var refinementFailureRequiresRefresh = false
+    #if DEBUG
+    // Test-only, independent, metadata-only PhotoKit inventory: no ID/cache
+    // persistence, no thumbnails, no bypass of Full Photos authorization.
+    @State private var p0IndependentGPSAuditRunning = false
+    @State private var p0IndependentGPSAuditResult: String?
+    #endif
     @State private var autoRefineTask: Task<Void, Never>?
     @State private var handledMapJumpID: UUID?
 
@@ -1469,6 +1475,23 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     ProgressView(album == nil ? "正在读取照片位置…" : "正在读取相册位置…")
                         .accessibilityIdentifier(album == nil ? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress")
                 }
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke"),
+                   album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
+                   activeCaptureRange == nil, globalViewport == nil,
+                   globalComplete && !busy {
+                    Button("独立核对 PhotoKit GPS") {
+                        runP0IndependentGPSAudit()
+                    }
+                    .disabled(p0IndependentGPSAuditRunning)
+                    .accessibilityIdentifier("native-ios-map-p0-audit-trigger")
+                    if let p0IndependentGPSAuditResult {
+                        Text(p0IndependentGPSAuditResult)
+                            .font(.caption).monospacedDigit()
+                            .accessibilityIdentifier("native-ios-map-p0-independent-count")
+                    }
+                }
+                #endif
                 if !globalComplete && !provisionalCells.isEmpty && !compactMap {
                     Text("位置封面正在核对，完整数量确认前暂不可打开。")
                         .font(.caption).foregroundStyle(.secondary)
@@ -2043,6 +2066,57 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
     }
 
+    #if DEBUG
+    /// A second *independent* real PhotoKit enumeration runs only when a
+    /// user/test explicitly taps the debug audit action. The production map
+    /// remains bounded and does not persist full-library GPS or identifiers.
+    /// This checks actual PHAsset.location for every accessible image/video
+    /// against the separately completed MapKit streaming-index count.
+    private func runP0IndependentGPSAudit() {
+        guard !p0IndependentGPSAuditRunning, mapScope == .library,
+              album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
+              activeCaptureRange == nil, globalViewport == nil,
+              globalComplete, !busy, phase == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+        else { return }
+        let ticket = generation
+        let expected = globalLocated
+        p0IndependentGPSAuditRunning = true
+        p0IndependentGPSAuditResult = nil
+        Task { @MainActor in
+            let assets = PHAsset.fetchAssets(with: PHFetchOptions())
+            var independentlyLocated = 0
+            for index in 0..<assets.count {
+                if index % 256 == 0 {
+                    await Task.yield()
+                    guard generation == ticket, phase == .active,
+                          PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                    else {
+                        if generation == ticket { p0IndependentGPSAuditRunning = false }
+                        return
+                    }
+                }
+                let asset = assets.object(at: index)
+                guard asset.mediaType == .image || asset.mediaType == .video,
+                      let coordinate = asset.location?.coordinate,
+                      XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                          latitude: coordinate.latitude, longitude: coordinate.longitude
+                      )
+                else { continue }
+                independentlyLocated += 1
+            }
+            guard generation == ticket, phase == .active,
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+            else { return }
+            p0IndependentGPSAuditRunning = false
+            // Numbers only; never place GPS values, filenames, local IDs,
+            // screenshots or photo bytes into log output.
+            p0IndependentGPSAuditResult = "独立 GPS \\(independentlyLocated) 地图 GPS \\(expected) \\(independentlyLocated == expected ? "一致" : "不一致")"
+            print("IOS_MAP_P0_REAL_PHOTOKIT_COUNT independent=\(independentlyLocated) map=\(expected) match=\(independentlyLocated == expected)")
+        }
+    }
+    #endif
+
     private func openPhotoSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
@@ -2330,6 +2404,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         recentScanMilliseconds = []
         globalCameraMoving = false
         refinementFailureRequiresRefresh = false
+        #if DEBUG
+        p0IndependentGPSAuditRunning = false
+        p0IndependentGPSAuditResult = nil
+        #endif
         error = nil
         mapRevision = UUID()
     }
