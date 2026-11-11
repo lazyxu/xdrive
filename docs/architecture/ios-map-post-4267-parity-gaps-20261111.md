@@ -7,6 +7,21 @@
 - 目标参照：Apple iOS 27《按位置浏览照片和视频》：https://support.apple.com/zh-cn/guide/iphone/iph390138909/ios 。官方明确包括图库→显示地图、地图聚合照片、照片资料里的位置/附近照片、最近的日子/旅程精选集→显示地图。参照《按日期查找照片和视频》：https://support.apple.com/guide/iphone/find-photos-and-videos-by-date-iph0ea0234e0/27/ios/27 。
 - “未实现”与“有代码但缺真机/运行时证据”严格区分；不可触及的真实设备和生产账户验收标记 **跳过（未验收）**，不伪造结果，也不阻塞可控源码/CI 修复。
 
+## 2026-11-11 P0-1..P0-6 同一 PR #4305 合并执行（覆盖下表旧状态）
+
+**单 PR**：https://github.com/lazyxu/xdrive/pull/4305 。已有 #4267 合成统计、位置墙和本机筛选保留；不建立第二套地图/认证通道。
+
+| P0 | 本 PR 实际源码/测试变动 | 验收边界 |
+| --- | --- | --- |
+| 1 失败后旧标记 | scanFullLibrary 保留惰性旧画布，异常维持 refinementFailureRequiresRefresh，禁止旧缓存和 VoiceOver 激活，Full Access 撤销清除全部 | 最新 HEAD real candidate-mapkit + 失败路径尚须通过 |
+| 2 快速缩放 | 初始全局与有界视窗所有 MapKit Cell 在 regionWillChange 同步失去操作权；4x 深缩放须真实核对再恢复 | 真正快速触控/逐帧不能由源码契约代替 |
+| 3 真实 1/10/1k/10k/100k | Debug 手动读取独立 PHAsset.location，核对 MapKit 扫描数量；独立 macOS Simulator 从未导入基线 → 真 EXIF GPS JPEG 批量导入 → 再次真实读取，必须 exact N 增量。新 workflow PR 默认 65 位置，手动支持 1/10/65/1000/10000/100000 和同地/日期线/离散/混合分布 | **仅真实已执行规模**可标绿；iPhone 物理 100k 未验收；合成 Swift 100k 不算实物 PhotoKit |
+| 4 Owner/401/403 | 云端已发表概览记录 verifiedOverviewOwner，旧 Owner A 数据不能在 B 当前登录下选择；保留旧 Range epoch/相机/401/403 全量撤销 | 双真实账户、真实延迟响应故障注入尚未跑通，保持未验收 |
+| 5 权限 | 分片正常路径真实 Full Access + 真实设置；新增独立 simctl revoke 后 XCUITest 证明读权限拒绝、无旧地图、从系统设置恢复；继续选择真实 Limited 并拒绝局部地图，随后 Full 恢复 | 运行时 UI 需完整验证；扫描中实时 revoke 还需更大样本注入 |
+| 6 往返 | 三次真实 Marker/地点墙/Viewer/返回 + 每轮 Sheet/返回截图，连续 pan/pinch、图库出口、进程崩溃门禁 | 截图/AX 不是 60/120Hz 真机逐帧无闪烁证明 |
+
+更改范围：NativeLocalPhotoMap / NativeOwnerPhotoMapGallery、MapNavigationRuntimeUITests、两套 MapKit workflow、独立 EXIF 生成器与解析回归、六项 Node 源码契约。**截至准确 HEAD CI 运行成功之前，全部列为“代码提交／待验收”，不得写“六项实机已通过”。** 真实生产 Owner、实体设备、云端受限媒体和物理 100k 继续依既定规则「跳过（未验收）」。
+
 ## 仅剩缺口
 
 | ID | 优先级 | 具体缺口 | 状态/达标证据 |
