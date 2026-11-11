@@ -254,5 +254,11 @@ test('candidate MapKit uses a newly created Simulator Photos library and checks 
   assert.match(simulator, /MapKit actual capture-date menu item is not accessible/)
   assert.match(simulator, /MAP_REAL_PHOTOKIT_GLOBAL_GPS_COUNT/);
   assert.match(simulator, /MAP_FIXTURE_CELL_EXACT_TWO/);
-  assert.match(simulator, /verified\.label\.contains\("2 张"\)/)
+  // The real global PhotoKit GPS count can include stock OS images.
+  // Preserve numeric >=2 admission AND the exact fixture Cell membership;
+  // never replace the two-fixture assertion with a global count >=2 alone.
+  assert.match(simulator, /verified\.label\.split\(separator: " "\)\.first/)
+  assert.match(simulator, /XCTAssertGreaterThanOrEqual\(count \?\? 0, 2,/)
+  assert.match(simulator, /format: "label CONTAINS %@", "已扫描图库区域有2张带定位照片"/)
+  assert.match(simulator, /XCTAssertTrue\(marker\.waitForExistence\(timeout: 30\)/)
 })
