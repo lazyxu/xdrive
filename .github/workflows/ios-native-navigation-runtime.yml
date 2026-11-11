@@ -183,7 +183,7 @@ jobs:
             fi
             echo "::warning title=CoreSimulator PhotoKit not ready::Failed real import attempt $attempt; resetting only isolated simulator."
             test "$SMOKE_SIM" = "$MAPKIT_CREATED_SIM" && test -n "$MAPKIT_CREATED_SIM"
-            xcrun simctl shutdown "$SMOKE_SIM" || true
+            xcrun simctl shutdown "$SMOKE_SIM"
             xcrun simctl erase "$SMOKE_SIM"
             xcrun simctl boot "$SMOKE_SIM"
             python3 - <<'PY'
