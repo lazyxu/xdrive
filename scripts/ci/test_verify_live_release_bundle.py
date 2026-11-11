@@ -290,5 +290,85 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
             audit.validate(doc, expected_commit=COMMIT)
 
 
+    def test_live_download_requires_a_real_cached_package_and_respects_partial_cache(self):
+        cached = dict(self.item, cached=True)
+        upstream_only = dict(self.item, filename="optional-dsm.spk", cached=False)
+        self.assertEqual(audit.require_verified_cached_artifacts(
+            {"artifacts": [cached, upstream_only]}), [cached])
+        for items in ([], [upstream_only]):
+            with self.assertRaisesRegex(audit.GateError, "no verified"):
+                audit.require_verified_cached_artifacts({"artifacts": items})
+
+    def test_live_cli_never_calls_range_on_upstream_only_platform(self):
+        from io import StringIO
+        cached = dict(self.item, cached=True)
+        pending = dict(self.item, filename="optional-dsm.spk", cached=False)
+        listing = {"commit": COMMIT, "artifacts": [cached, pending]}
+        with patch.object(audit, "check_release", return_value=(self.manifest, self.raw)), \
+             patch.object(audit, "server_listing", return_value=listing), \
+             patch.object(audit, "check_server_listing", return_value=2), \
+             patch.object(audit, "check_authenticated_range_download", return_value=True) as transfer, \\
+             patch.object(audit, "check_unauthenticated_denial", return_value=2) as denial, \\
+             patch.dict(audit.os.environ, {"XD_BUNDLE_OWNER_TOKEN": "fixture"}), \
+             patch("sys.stdout", new_callable=StringIO) as output:
+            result = audit.main(["--commit", COMMIT, "--server-url", "https://example.test",
+                                 "--check-server-download", "--check-auth-denial"])
+            self.assertEqual(result, 0)
+            self.assertEqual(transfer.call_count, 1)
+            self.assertEqual(transfer.call_args.args[2]["filename"], cached["filename"])
+            self.assertEqual(denial.call_count, 1)
+            report = json.loads(output.getvalue())
+            self.assertEqual(report["range_verified_packages"], 1)
+            self.assertEqual(report["guest_denial"], "verified")
+        listing["artifacts"] = [dict(cached, cached=False)]
+        with patch.object(audit, "check_release", return_value=(self.manifest, self.raw)), \
+             patch.object(audit, "server_listing", return_value=listing), \
+             patch.object(audit, "check_server_listing", return_value=1), \
+             patch.object(audit, "check_authenticated_range_download") as transfer, \\
+             patch("sys.stderr", new_callable=StringIO) as errors:
+            result = audit.main(["--commit", COMMIT, "--server-url", "https://example.test",
+                                 "--check-server-download"])
+            self.assertEqual(result, 1)
+            transfer.assert_not_called()
+            self.assertIn("no verified", errors.getvalue())
+
+    def test_real_guest_metadata_and_cached_installer_are_denied(self):
+        requests = []
+        class Server(BaseHTTPRequestHandler):
+            expose = False
+            missing = False
+            def log_message(self, *_args):
+                return
+            def do_GET(self):
+                requests.append((self.path, self.headers.get("Authorization")))
+                if self.expose and self.path.endswith("/current"):
+                    self.send_response(200)
+                elif self.missing and "/artifacts/" in self.path:
+                    self.send_response(404)
+                else:
+                    self.send_response(401)
+                self.end_headers()
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            origin = "http://127.0.0.1:" + str(server.server_port)
+            self.assertEqual(audit.check_unauthenticated_denial(
+                origin, sample_cached=self.item), 2)
+            self.assertEqual(len(requests), 2)
+            self.assertTrue(all(auth is None for _, auth in requests))
+            Server.expose = True
+            with self.assertRaisesRegex(audit.GateError, "exposed"):
+                audit.check_unauthenticated_denial(origin, sample_cached=self.item)
+            Server.expose = False
+            Server.missing = True
+            with self.assertRaisesRegex(audit.GateError, "HTTP 404"):
+                audit.check_unauthenticated_denial(origin, sample_cached=self.item)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+
 if __name__ == "__main__":
     unittest.main()
