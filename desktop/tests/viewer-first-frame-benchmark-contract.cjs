@@ -124,6 +124,14 @@ test('paired workflow compiles both real production builds against the same Go/P
     'if: always()',
     'cancel-in-progress: false',
   ]) assert.ok(flow.includes(marker), 'paired before/after workflow missing: ' + marker)
+  const candidateRun = flow.indexOf('export XD_VIEWER_FF_DIST="$GITHUB_WORKSPACE/web/dist"')
+  const baselineRun = flow.indexOf('export XD_VIEWER_FF_DIST="$VIEWER_BASE_DIR/web/dist"')
+  assert.ok(candidateRun >= 0 && baselineRun > candidateRun,
+    'candidate real signed video n3 must run before a potentially broken historical baseline')
+  assert.ok(flow.indexOf('viewer-first-frame-compare.cjs') > baselineRun,
+    'do not claim n3/n3 comparison until both actual Web builds were measured')
+  assert.ok(flow.includes('set -euo pipefail'),
+    'candidate failure and baseline failure must still fail the paired workflow')
   assert.ok(!flow.includes('|| true'), 'a failed real sample must not become a success')
   assert.ok(!flow.includes('npm --prefix desktop ci'),
     'Desktop has no package-lock; CI must not attempt npm ci for it')
