@@ -1248,8 +1248,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     private var refinedViewportIsCurrent: Bool {
         // Scanned-incomplete cells must never become tappable, even before
         // MapKit receives its first fully verified PhotoKit snapshot.
-        guard globalComplete, !busy, !refinementFailureRequiresRefresh
-        else { return false }
+        guard globalComplete, !busy else { return false }
+        guard !refinementFailureRequiresRefresh else { return false }
         // A failed or in-flight refinement keeps the old MapKit canvas, but
         // never reactivates the old Cell/VoiceOver selection lease.
         guard !globalCameraMoving, let current = globalCamera else {
