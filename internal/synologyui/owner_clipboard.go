@@ -27,6 +27,7 @@ type OwnerClipboardAgent interface {
 func isDSMClipboardRoute(path string) bool {
 	switch path {
 	case "/v1/cloud-clipboard-capability", "/v1/cloud-clipboard-list",
+		"/v1/cloud-clipboard-next-event",
 		"/v1/cloud-clipboard-devices", "/v1/cloud-clipboard-enable-device",
 		"/v1/cloud-clipboard-file", "/v1/cloud-clipboard-create", "/v1/cloud-clipboard-delete",
 		"/v1/cloud-clipboard-clear", "/v1/cloud-clipboard-revoke-device":
@@ -177,8 +178,29 @@ func serveDSMOwnerClipboard(w http.ResponseWriter, r *http.Request, ctx context.
 			return
 		}
 		output, err = directory.OwnerClipboardDevices(ctx)
-	case "/v1/cloud-clipboard-list":
-		raw := r.URL.Query().Get("before")
+  case "/v1/cloud-clipboard-next-event":
+    params, parseErr := url.ParseQuery(r.URL.RawQuery)
+    if parseErr != nil || len(params) != 1 || len(params["after"]) != 1 {
+      http.Error(w, "invalid Clipboard event selector", http.StatusBadRequest)
+      return
+    }
+    raw := params.Get("after")
+    after, parseErr := strconv.ParseUint(raw, 10, 64)
+    if parseErr != nil || after > 1<<53-1 ||
+       strconv.FormatUint(after, 10) != raw {
+      http.Error(w, "invalid Clipboard event cursor", http.StatusBadRequest)
+      return
+    }
+    notifier, supported := agent.(interface {
+      OwnerClipboardWaitForChange(context.Context, uint64) (client.ClipboardChangeEvent, error)
+    })
+    if !supported {
+      http.Error(w, "Clipboard event stream unavailable", http.StatusNotImplemented)
+      return
+    }
+    output, err = notifier.OwnerClipboardWaitForChange(ctx, after)
+  case "/v1/cloud-clipboard-list":
+    raw := r.URL.Query().Get("before")
 		after := uint64(0)
 		if raw != "" {
 			after, err = strconv.ParseUint(raw, 10, 64)

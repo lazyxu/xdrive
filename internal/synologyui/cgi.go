@@ -37,7 +37,7 @@ func CGIHandler(next http.Handler) http.Handler {
 			"cloud-live-motion", "nas-shares", "nas-share-preflight",
 			"local-source", "local-source-rename", "local-target", "local-mode", "local-rules", "local-bound-remove",
 			"cloud-clipboard-capability",
-			"cloud-clipboard-list", "cloud-clipboard-devices", "cloud-clipboard-file", "cloud-clipboard-create",
+			"cloud-clipboard-list", "cloud-clipboard-next-event", "cloud-clipboard-devices", "cloud-clipboard-file", "cloud-clipboard-create",
 			"cloud-clipboard-enable-device",
 			"cloud-clipboard-revoke-device",
 			"cloud-clipboard-delete", "cloud-clipboard-clear",

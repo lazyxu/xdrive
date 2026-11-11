@@ -618,6 +618,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
 	// Clipboard is a separate Owner-scoped API; it never uses Files copy/paste.
 	mux.HandleFunc("GET /v1/cloud/clipboard/items", h.cloudClipboardList)
+	mux.HandleFunc("GET /v1/cloud/clipboard/next-event", h.cloudClipboardNextEvent)
 	mux.HandleFunc("GET /v1/cloud/clipboard/devices", h.cloudClipboardDevices)
 	mux.HandleFunc("POST /v1/cloud/clipboard/enable-device", h.cloudClipboardEnableDevice)
 	mux.HandleFunc("POST /v1/cloud/clipboard/revoke-device", h.cloudClipboardRevokeDevice)

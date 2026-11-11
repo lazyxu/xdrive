@@ -436,7 +436,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	timeout := 20 * time.Second
-	if r.URL.Path == "/v1/server-login" {
+	if r.URL.Path == "/v1/cloud-clipboard-next-event" {
+		timeout = 30 * time.Second // Authenticated Agent waits for short Server SSE events.
+	} else if r.URL.Path == "/v1/server-login" {
 		timeout = 45 * time.Second // Agent TLS login has its own 30s budget.
 	} else if r.URL.Path == "/v1/nas-share-create" || r.URL.Path == "/v1/nas-draft-bind" {
 		timeout = 90 * time.Second // Existing native Root binding and Server Source creation.
