@@ -203,11 +203,64 @@ export function xDrivePlacesPhotoWindowMissingOffset(
  * missing date boundaries and could make a 100k location appear smaller.
  * This index is display-only and cannot authorize an unloaded photo.
  */
+/** Old servers can omit the date index. Only infer it from a COMPLETE,
+ * Owner-verified <=48-item page; never invent groups for a sparse 100k range.
+ * Unknown dates are allowed at the beginning or end, not in the middle.
+ */
+export function xDrivePlacesPhotoLegacyCompleteTimeline(
+  page: MediaItemRange,
+): MediaTimelineGroupSets | null {
+  if (page?.offset !== 0 || !Number.isSafeInteger(page.total_count) ||
+      page.total_count < 1 || page.total_count > XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT ||
+      !Array.isArray(page.items) || page.items.length !== page.total_count ||
+      page.timeline_group_sets != null) return null
+  const days = page.items.map(item => {
+    const raw = item.metadata?.captured_at
+    const matched = typeof raw === 'string'
+      ? /^(\\d{4}-\\d{2}-\\d{2})(?:T|$)/.exec(raw) : null
+    if (!matched) return 'unknown'
+    const day = matched[1]
+    const date = new Date(day + 'T00:00:00Z')
+    return Number.isFinite(date.getTime()) &&
+      date.toISOString().slice(0, 10) === day ? day : 'unknown'
+  })
+  const known = days.filter(day => day !== 'unknown')
+  const descending = known.length < 2 || known[0] >= known[known.length - 1]
+  if (known.some((day, i) => i > 0 &&
+    (descending ? day > known[i - 1] : day < known[i - 1]))) return null
+  const seenKnown = days.map((v, i) => v === 'unknown' ? i : -1).filter(i => i >= 0)
+  if (seenKnown.length && seenKnown.some((index, i) => i > 0 &&
+    index !== seenKnown[i - 1] + 1)) return null
+  const unknownFirst = seenKnown[0] ?? -1
+  if (unknownFirst > 0 && unknownFirst + seenKnown.length < days.length) return null
+  const output = {} as MediaTimelineGroupSets
+  for (const scale of ['year', 'month', 'day'] as const) {
+    const groups: MediaTimelineGroupIndex[] = []
+    const keys = new Set<string>()
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i]
+      const key = day === 'unknown' ? day :
+        scale === 'year' ? day.slice(0, 4) :
+        scale === 'month' ? day.slice(0, 7) : day
+      const last = groups[groups.length - 1]
+      if (last?.key === key) last.item_count++
+      else {
+        if (keys.has(key)) return null
+        keys.add(key)
+        groups.push({key, item_count: 1, start_index: i})
+      }
+    }
+    output[scale] = groups
+  }
+  return output
+}
+
 export function xDrivePlacesPhotoTimelineGroups(
   page: MediaItemRange,
 ): MediaTimelineGroupSets | null {
   if (page?.offset !== 0 || !Number.isSafeInteger(page.total_count) ||
-      page.total_count < 1 || !page.timeline_group_sets) return null
+      page.total_count < 1) return null
+  if (page.timeline_group_sets == null) return xDrivePlacesPhotoLegacyCompleteTimeline(page)
   const input = page.timeline_group_sets
   const output = {} as MediaTimelineGroupSets
   const formats: ReadonlyArray<keyof MediaTimelineGroupSets> = ['year','month','day']
