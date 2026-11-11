@@ -607,6 +607,7 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   clipboardList(before?: number, signal?: AbortSignal): Promise<{
     items: import('./mui/ClipboardPage').XDriveClipboardItem[]; next_before: number | null
   }>
+  clipboardNextEvent(after: number, signal?: AbortSignal): Promise<{cursor: number; changed: boolean}>
   clipboardDevices(signal?: AbortSignal): Promise<{
     devices: import('./mui/ClipboardPage').XDriveClipboardTargetDevice[]
   }>
@@ -858,7 +859,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
        'cloud-live-motion', 'nas-shares',
        'local-source', 'local-source-rename', 'local-target', 'local-mode', 'local-rules', 'local-bound-remove',
        'cloud-clipboard-capability',
-        'cloud-clipboard-list', 'cloud-clipboard-devices', 'cloud-clipboard-file', 'cloud-clipboard-create',
+        'cloud-clipboard-list', 'cloud-clipboard-next-event', 'cloud-clipboard-devices', 'cloud-clipboard-file', 'cloud-clipboard-create',
         'cloud-clipboard-enable-device', 'cloud-clipboard-revoke-device',
         'cloud-clipboard-delete', 'cloud-clipboard-clear',
         'cloud-notes-capability', 'cloud-notes-namespace', 'cloud-notes-list', 'cloud-notes-read', 'cloud-notes-create',
@@ -971,6 +972,20 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       }
       const query = before ? '?before=' + encodeURIComponent(String(before)) : ''
       return request('/v1/cloud-clipboard-list' + query, 'GET', undefined, signal)
+    },
+    async clipboardNextEvent(after, signal) {
+      if (!Number.isSafeInteger(after) || after < 0)
+        throw new Error('无效的 Clipboard 云端事件游标')
+      const event = await request<{cursor: number; changed: boolean}>(
+        '/v1/cloud-clipboard-next-event?after=' + String(after),
+        'GET', undefined, signal)
+      if (!Number.isSafeInteger(event.cursor) || event.cursor < after ||
+          typeof event.changed !== 'boolean' ||
+          (event.changed && event.cursor <= after) ||
+          (!event.changed && event.cursor !== after)) {
+        throw new Error('DSM Clipboard 事件回执无效')
+      }
+      return event
     },
     clipboardDevices(signal) {
       // Recipient identities only; CGI and Agent re-check current Owner.

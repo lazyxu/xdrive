@@ -5078,6 +5078,11 @@ export class AgentIPCClient {
     const query = before > 0 ? '?before=' + encodeURIComponent(String(before)) : ''
     return this.request<AgentClipboardPage>('GET', '/v1/cloud/clipboard/items' + query)
   }
+  cloudClipboardNextEvent(after = 0) {
+    if (!Number.isSafeInteger(after) || after < 0) throw Error('Invalid Clipboard event cursor')
+    return this.request<AgentClipboardEvent>('GET',
+      '/v1/cloud/clipboard/next-event?after=' + String(after), undefined, 20_000)
+  }
   cloudClipboardDevices() {
     return this.request<AgentClipboardDevices>('GET', '/v1/cloud/clipboard/devices')
   }

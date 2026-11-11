@@ -156,3 +156,37 @@ test('Desktop and DSM use bounded foreground change checking and preserve 15s fa
   assert.match(ui,/15000/)
 })
 
+
+test('Server-originated Desktop and DSM change cursor triggers one Owner-scoped refresh',async()=>{
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'document')
+  Object.defineProperty(globalThis,'document',{value:{visibilityState:'visible'},configurable:true})
+  try {
+    const ok=data=>({ok:true,data})
+    const dAbort=new AbortController()
+    const dEvents=[]
+    const port=desktop.createDesktopClipboardDataPort({
+      cloudClipboardNextEvent:async after=>{
+        assert.equal(after,0)
+        return ok({cursor:14,changed:true})
+      },
+    },'desktop-owner','https://drive.example/',()=>true)
+    await port.watchChanges(()=>{dEvents.push(14);dAbort.abort()},dAbort.signal)
+    assert.deepEqual(dEvents,[14])
+    const owner='a'.repeat(64),sAbort=new AbortController()
+    const sEvents=[]
+    const dsmPort=dsm.createXDriveDSMClipboardPort({
+      serverConnection:async()=>({configured:true,must_change_password:false,
+        server:'https://drive.example/',username:'owner',owner_scope:owner}),
+      clipboardNextEvent:async after=>{
+        assert.equal(after,0)
+        return {cursor:15,changed:true}
+      },
+    },owner)
+    await dsmPort.watchChanges(()=>{sEvents.push(15);sAbort.abort()},sAbort.signal)
+    assert.deepEqual(sEvents,[15])
+  }finally{
+    if(previous)Object.defineProperty(globalThis,'document',previous)
+    else delete globalThis.document
+  }
+})
+

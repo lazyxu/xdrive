@@ -1017,6 +1017,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-restore-version', nodeID, revision, versionID),
   cloudShares: (nodeID: number) => ipcRenderer.invoke('agent:cloud-shares', nodeID),
   cloudClipboardList: (before: number) => ipcRenderer.invoke('agent:cloud-clipboard-list', before),
+  cloudClipboardNextEvent: (after: number) =>
+    ipcRenderer.invoke('agent:cloud-clipboard-next-event', after),
   cloudClipboardDevices: () => ipcRenderer.invoke('agent:cloud-clipboard-devices'),
   cloudClipboardEnableDevice: () => ipcRenderer.invoke('agent:cloud-clipboard-enable-device'),
   cloudClipboardRevokeDevice: (deviceID: string) => ipcRenderer.invoke('agent:cloud-clipboard-revoke-device', deviceID),

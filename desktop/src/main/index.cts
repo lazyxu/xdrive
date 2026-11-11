@@ -9109,6 +9109,9 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:cloud-clipboard-list', (_event, before: unknown) =>
     runAgentAction<AgentClipboardPage>(async () =>
       (await requireClipboardAgent()).cloudClipboardList(clipboardIndex(before, true)), false))
+  ipcMain.handle('agent:cloud-clipboard-next-event', (_event, after: unknown) =>
+    runAgentAction<AgentClipboardEvent>(async () =>
+      (await requireClipboardAgent()).cloudClipboardNextEvent(clipboardIndex(after, true)), false))
   ipcMain.handle('agent:cloud-clipboard-devices', () =>
     runAgentAction<AgentClipboardDevices>(async () =>
       (await requireClipboardAgent()).cloudClipboardDevices(), false))
