@@ -24,6 +24,8 @@ on:
       - 'ios/XDriveIOS/NativePhotoWallDensityPolicy.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
       - 'ios/scripts/capture-navigation-smoke-frames.py'
+      - 'ios/scripts/navigation_video_probe.py'
+      - 'ios/scripts/test_navigation_video_probe.py'
       - 'ios/scripts/audit_navigation_frames.py'
       - 'ios/scripts/test_audit_navigation_frames.py'
       - 'ios/scripts/assert_native_ios_no_crash.py'
@@ -226,7 +228,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
-          python3 -m py_compile "$GITHUB_WORKSPACE/ios/scripts/capture-navigation-smoke-frames.py" \
+          python3 -m py_compile "$GITHUB_WORKSPACE/ios/scripts/navigation_video_probe.py" \
+            "$GITHUB_WORKSPACE/ios/scripts/test_navigation_video_probe.py" \
+            "$GITHUB_WORKSPACE/ios/scripts/capture-navigation-smoke-frames.py" \
             "$GITHUB_WORKSPACE/ios/scripts/audit_navigation_frames.py" \
             "$GITHUB_WORKSPACE/ios/scripts/test_audit_navigation_frames.py" \
             "$GITHUB_WORKSPACE/ios/scripts/summarize-navigation-latency.py" \
@@ -236,10 +240,22 @@ jobs:
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
             -p 'test_audit_navigation_frames.py' -v
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
+            -p 'test_navigation_video_probe.py' -v
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
             -p 'test_assert_native_ios_no_crash.py' -v
-          # Keep a few frames from the LIVE failed route, not SpringBoard after
-          # xcodebuild exits. Never use AX queries from this observer.
-          if [[ "${{ matrix.source }}" != "release-c83" ]]; then
+          # Serial PNG screenshots previously missed 220/438 scheduled frames
+          # and are too sparse for a strict Gallery/Files transition gate.
+          # Only the Gallery/Files shard uses bounded authentic Simulator H264.
+          # Other candidate shards retain existing screenshot diagnostics.
+          if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
+            command -v ffprobe >/dev/null 2>&1 || brew install ffmpeg
+            python3 "$SMOKE_ROOT/ios/scripts/navigation_video_probe.py" record \
+              "$SMOKE_SIM" \
+              "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
+              "$RUNNER_TEMP/native-navigation-results/diagnostics/navigation-video" &
+            video_watcher=$!
+            trap 'kill -TERM "$video_watcher" >/dev/null 2>&1 || true; wait "$video_watcher" >/dev/null 2>&1 || true' EXIT
+          elif [[ "${{ matrix.source }}" != "release-c83" ]]; then
             python3 "$SMOKE_ROOT/ios/scripts/capture-navigation-smoke-frames.py" \
               "$SMOKE_SIM" \
               "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
@@ -280,6 +296,19 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             "${native_test_args[@]}" \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
+          if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
+            kill -TERM "$video_watcher" >/dev/null 2>&1 || true
+            wait "$video_watcher"
+          fi
+      - name: Assert six distinct real recorded Gallery/Files journeys
+        if: ${{ always() && matrix.source == 'candidate-gallery-files' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/ios/scripts/navigation_video_probe.py" audit \
+            "$RUNNER_TEMP/native-navigation-results/diagnostics/navigation-video" \
+            "$RUNNER_TEMP/native-navigation-results/diagnostics/video-frame-evidence.json" \
+            --required 6
       - name: Verify native PhotoKit MapKit in dark mode
         if: matrix.source == 'candidate-mapkit'
         shell: bash
