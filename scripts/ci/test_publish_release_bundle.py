@@ -42,16 +42,24 @@ if args[:2] == ["release", "create"]:
     state["tag"] = True
     state["release"] = True
     state["ref"] = target
+    # gh release create accepts assets followed by flags. --title and
+    # --notes are metadata, not paths; never stat option values as files.
+    if "--repo" not in args or args.index("--repo") <= 3:
+        sys.exit(33)
+    if args[args.index("--repo") + 1] != "lazyxu/xdrive":
+        sys.exit(34)
+    assets = args[3:args.index("--repo")]
     state["assets"] = []
-    for entry in args[3:]:
+    for entry in assets:
         file = Path(entry)
-        if file.is_file():
-            body = file.read_bytes()
-            state["assets"].append({
-                "name": file.name,
-                "digest": "sha256:" + hashlib.sha256(body).hexdigest(),
-                "size": len(body),
-            })
+        if not file.is_file():
+            sys.exit("missing release asset: " + entry)
+        body = file.read_bytes()
+        state["assets"].append({
+            "name": file.name,
+            "digest": "sha256:" + hashlib.sha256(body).hexdigest(),
+            "size": len(body),
+        })
     state["create_count"] += 1
     save()
     sys.exit(0)
