@@ -107,9 +107,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         var id: UInt64 { item.id }
     }
     private struct VisibleSection: Identifiable {
+        let id: Int
         let key: String
         var tiles: [VisibleTile]
-        var id: String { key }
     }
 
     // Retain only the two current, Owner-signed 48-item windows; date headings
@@ -124,7 +124,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             if !sections.isEmpty && sections[sections.count - 1].key == key {
                 sections[sections.count - 1].tiles.append(tile)
             } else {
-                sections.append(VisibleSection(key: key, tiles: [tile]))
+                sections.append(VisibleSection(id: sections.count, key: key, tiles: [tile]))
             }
         }
         return sections
@@ -132,6 +132,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
 
     var body: some View {
         VStack(spacing: 8) {
+            if activeOwner {
             Text("\(selection.places.count) 个位置 · \(selectedPhotoCount) 张已索引照片")
                 .font(.footnote).foregroundStyle(.secondary)
                 .accessibilityIdentifier("native-ios-owner-cluster-count")
@@ -142,7 +143,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         "当前位置 \(cursor.placeIndex + 1)/\(selection.places.count)，已读取 \($0.offset + $0.items.count)/\($0.total_count)"
                     } ?? "正在读取位置照片"
                 )
-            if let error {
+            } else {
+                XDriveIOSNativePhotoWallStatusMessage(
+                    message: "正在核对当前账户的地点照片…")
+            }
+            if activeOwner, let error {
                 XDriveIOSNativePhotoWallRetryMessage(
                     message: error, buttonTitle: "重试读取照片",
                     canRetry: !busy && activeOwner && viewing == nil,
@@ -180,7 +185,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                                 }
                             }
                         } else {
-                            ForEach(Array(visibleSections.enumerated()), id: \.offset) { _, section in
+                            ForEach(visibleSections) { section in
                                 Section {
                                     ForEach(section.tiles) { entry in
                                         photoTile(entry.item, from: entry.origin)

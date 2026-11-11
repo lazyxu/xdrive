@@ -340,3 +340,50 @@ test('two entrances share framing, dated wall, thumbnail Tile, Live/video badges
   assert.match(parent,/xDrivePlacesDrawerValidRange/)
   assert.match(parent,/controller\.signal\.aborted/)
 })
+
+
+test('legacy Places date index is allowed only for complete sorted Owner page (never a sparse 100k prefix)', () => {
+  const item = (id, day) => ({
+    node: {id,revision:1},
+    metadata: {captured_at: day === 'unknown' ? undefined : day + 'T12:34:56Z'},
+  })
+  const full = days => ({
+    items: days.map((day,i)=>item(i+1,day)),
+    offset: 0, total_count: days.length, limit: 48,
+  })
+  const days = ['2026-11-11','2026-11-11','2026-11-10','2026-10-01']
+  const accepted = policy.xDrivePlacesPhotoTimelineGroups(full(days))
+  assert.deepEqual(accepted.year,[{key:'2026',item_count:4,start_index:0}])
+  assert.deepEqual(accepted.month,[
+    {key:'2026-11',item_count:3,start_index:0},
+    {key:'2026-10',item_count:1,start_index:3},
+  ])
+  assert.deepEqual(accepted.day,[
+    {key:'2026-11-11',item_count:2,start_index:0},
+    {key:'2026-11-10',item_count:1,start_index:2},
+    {key:'2026-10-01',item_count:1,start_index:3},
+  ])
+  const ascending = policy.xDrivePlacesPhotoTimelineGroups(full([...days].reverse()))
+  assert.equal(ascending.day[0].key, '2026-10-01')
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','unknown','2026-11-10',
+  ])), null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','2026-10-01','2026-11-10',
+  ])), null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','2026-02-30',
+  ])), null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups({
+    ...full(days), total_count: 100000,
+  }),null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups({
+    ...full(days), total_count: 49,
+  }),null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups({
+    ...full(days), offset: 48,
+  }),null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups({
+    ...full(days), timeline_group_sets:{year:[],month:[],day:[]},
+  }),null)
+})

@@ -217,7 +217,7 @@ export function xDrivePlacesPhotoLegacyCompleteTimeline(
   const days = page.items.map(item => {
     const raw = item.metadata?.captured_at
     const matched = typeof raw === 'string'
-      ? /^(\\d{4}-\\d{2}-\\d{2})(?:T|$)/.exec(raw) : null
+      ? /^(\d{4}-\d{2}-\d{2})(?:T|$)/.exec(raw) : null
     if (!matched) return 'unknown'
     const day = matched[1]
     const date = new Date(day + 'T00:00:00Z')
