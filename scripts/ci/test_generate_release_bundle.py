@@ -18,13 +18,14 @@ class GenerateBundleTests(unittest.TestCase):
         for name in (
             "xdrive-linux-amd64.deb", "xDriveSetup-amd64.exe",
             "xdrive-backup-linux-amd64.tar.gz", "xdrive-backup-windows-amd64.zip",
+            "xdrive-cli-linux-amd64.tar.gz", "xdrive-cli-windows-amd64.zip",
             "xdrivenas-armada38x-0.1.0-1234.spk",
         ):
             (self.directory / name).write_bytes(name.encode())
 
     def test_missing_optional_platforms_are_not_synthesized(self):
         result = module.build(self.directory, SHA, "master")
-        self.assertEqual(len(result["artifacts"]), 5)
+        self.assertEqual(len(result["artifacts"]), 7)
         self.assertEqual({x["platform"] for x in result["artifacts"]},
                          {"linux", "windows", "cli", "dsm"})
         self.assertTrue(all(x["build_commit"] == SHA for x in result["artifacts"]))
@@ -35,7 +36,7 @@ class GenerateBundleTests(unittest.TestCase):
         (self.directory / "xDrive-unsigned.ipa").write_bytes(b"ios")
         (self.directory / "xdrive-android-12-0.1.2.apk").write_bytes(b"apk")
         items = module.build(self.directory, SHA, "master")["artifacts"]
-        self.assertEqual(len(items), 7)
+        self.assertEqual(len(items), 9)
         android, = [x for x in items if x["platform"] == "android"]
         ios, = [x for x in items if x["platform"] == "ios"]
         self.assertEqual(android["install_mode"], "manual")
@@ -74,7 +75,7 @@ class GenerateBundleTests(unittest.TestCase):
     def test_omit_missing_client_platform_but_keep_other_verified_artifacts(self):
         (self.directory / "xDriveSetup-amd64.exe").unlink()
         result = module.build(self.directory, SHA, "master")
-        self.assertEqual(len(result["artifacts"]), 4)
+        self.assertEqual(len(result["artifacts"]), 6)
         self.assertNotIn("windows", {a["platform"] for a in result["artifacts"]})
         self.assertTrue(all(a["build_commit"] == SHA for a in result["artifacts"]))
 
