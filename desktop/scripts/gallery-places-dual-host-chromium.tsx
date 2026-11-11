@@ -46,6 +46,10 @@ const mixedMarkerMap = !genuineGin &&
 // 28 through the bounded 48-item Owner Range rather than previewing 12.
 const albumDialog28 = !genuineGin &&
   new URLSearchParams(location.search).get('album_dialog_28') === '1'
+// Deliberately hold a second Owner's signed /cells while the old Drawer
+// remains mounted, to catch a stale first frame before effect cleanup.
+const ownerSwitchMode = !genuineGin &&
+  new URLSearchParams(location.search).get('owner_switch') === '1'
 // Real Chromium + mounted Gallery virtual host, synthetic Owner-signed page
 // fixtures. The first signed page reports 100k; only 48 identities per read.
 const largePlace100k = !genuineGin &&
@@ -75,6 +79,9 @@ if(fullDocumentHandoff)xDriveRestoreMapReferrerAfterScrub(window)
 let derivedLocationReady = !delayedBD09
 let partialLocationReady = false
 let savedSyntheticPoster: Blob | null = null
+let holdOwnerCells = false
+let syntheticOwnerRevision = 2
+const releaseHeldOwnerCells: Array<() => void> = []
 // An opt-in synthetic failure during a *post-ready* restricted Owner query.
 // The next identical retry must recover without remounting either SDK Host.
 const cellsFailureParams = new URLSearchParams(location.search)
@@ -135,6 +142,7 @@ const probe = ((window as any).__mapProbe = {
   }>,
   galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
   photoPreviewRanges:[] as any[], photoPreviewFailures:[] as any[],
+  ownerCellReadsBlocked:0,
   photoOpens:[] as any[],
   bd09Completions:0,failedOwnerCellsReads:[] as any[],
   h264:{misses:0,warm:0,previewURLs:0,puts:0,putBytes:0},
@@ -168,7 +176,8 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
   const count = largePlace100k ? 100_000 : albumDialog28 ? 28 : favorite ? 3 :
     partialBD09 && !partialLocationReady ? 3 : 9
   const first={cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
-    node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
+    node_revision:ownerSwitchMode?syntheticOwnerRevision:2,
+    latitude:locationPoint.latitude,longitude:locationPoint.longitude,
     ...(videoPosterMode?{media_kind:'video' as const}:{})}
   const otherX=separateFiveCover?0:(x+3)%8
   const otherY=separateFiveCover?0:(y+3)%8
@@ -181,6 +190,18 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
 }
 const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey:string)=>{
   if(signal.aborted)throw Error('aborted')
+  if(ownerSwitchMode && holdOwnerCells){
+    probe.ownerCellReadsBlocked++
+    await new Promise<void>((resolve,reject)=>{
+      const onAbort=()=>{signal.removeEventListener('abort',onAbort)
+        reject(Error('cancelled Owner Cells'))}
+      signal.addEventListener('abort',onAbort,{once:true})
+      releaseHeldOwnerCells.push(()=>{
+        signal.removeEventListener('abort',onAbort); resolve()
+      })
+    })
+    if(signal.aborted)throw Error('cancelled Owner Cells')
+  }
   if((albumKey!==''&&(!combinedAlbumHandoff||albumKey!=='manual:Family'))||
     (combinedAlbumHandoff&&albumKey!=='manual:Family')||
     (filters?.favorite!==undefined&&filters.favorite!==true))
@@ -280,6 +301,7 @@ const listOwnerCellItems=async(selection:any,limit:number,offset:number,
       })}
   }
   probe.photoPreviewRanges.push({limit,offset,total:range.total_count,
+    revision:selection.node_revision,
     items:range.items?.length||0,realGin:genuineGin,
     gridScheme:selection.grid_scheme??'legacy'})
   return range
@@ -549,6 +571,7 @@ function FullGalleryPage(){
 }
 function TestApp(){
   const [favorite,setFavorite]=useState(false)
+  const [ownerScope,setOwnerScope]=useState('synthetic-private-owner')
   const [viewerItem,setViewerItem]=useState<any|null>(null)
   const [drawerViewer,setDrawerViewer]=useState<number|null>(null)
   const scope:Scope={albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',
@@ -608,6 +631,17 @@ function TestApp(){
     <button type="button" id="toggle-favorite" onClick={()=>setFavorite(x=>!x)}>
       Switch Owner favorite scope
     </button>
+    {ownerSwitchMode ? <>
+      <button id="fixture-switch-owner" type="button" onClick={()=>{
+        holdOwnerCells=true
+        syntheticOwnerRevision=3
+        setOwnerScope('synthetic-next-owner')
+      }}>Switch synthetic Owner without changing photo filters</button>
+      <button id="fixture-release-owner-cells" type="button" onClick={()=>{
+        holdOwnerCells=false
+        releaseHeldOwnerCells.splice(0).forEach(release=>release())
+      }}>Release next Owner Cell verification</button>
+    </> : null}
     <div id="private-parent">PRIVATE_PARENT_DOM_SENTINEL</div>
     {drawerViewer!==null ? <section id="fixture-viewer" aria-label="Fixture photo viewer">
       <button type="button" id="fixture-viewer-back" onClick={()=>setDrawerViewer(null)}>
@@ -615,7 +649,7 @@ function TestApp(){
       </button>
     </section> : <XDriveMediaGalleryBaiduIsolatedPhotoSurface
       mode={mode} childOrigin={childOrigin} mapPhotoScope={scope}
-      scope="synthetic-private-owner" getInlinePrototypeConfig={getInlinePrototypeConfig}
+      scope={ownerScope} getInlinePrototypeConfig={getInlinePrototypeConfig}
       getInlineSignedStatus={getInlineSignedStatus}
       mintChildTicket={mintChildTicket} listOwnerCells={listOwnerCells}
       listOwnerCellItems={listOwnerCellItems} loadThumbnail={loadThumbnail}
