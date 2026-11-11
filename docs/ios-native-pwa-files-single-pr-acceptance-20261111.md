@@ -121,3 +121,27 @@ candidate video performance for a baseline-only scroll regression.
 Status: implemented in the integrated PR; new exact-head real
 Electron/PG/CAS H264 n3/n3 run still required. Real iOS physical
 performance and screenshot pairing are not proved by Chromium.
+
+## 2026-11-11 real paired-H264 n3 serialization regression
+
+[Exact head paired workflow 42983942883](https://github.com/lazyxu/xdrive/actions/runs/42983942883)
+ran authentic signed Go/PG/CAS Viewer frames on **both** candidates:
+candidate signed H264 first frame 3/3, baseline signed H264 first frame
+3/3. The historical baseline JPEG return drift was 57px in all 3 samples,
+honestly `passed:false`; baseline H264 returned with 0px drift, while
+candidate returned with 0px drift. Both per-sample workload reports exist.
+
+The final `viewer-first-frame-compare.cjs` then failed
+`baseline: real H264 n3 gate missing` because the main benchmark summary
+contained `sampleCount:3` and p50 aggregate fields but **omitted
+`samples`**. The strict comparator correctly refused to infer samples
+from an aggregate. This is a serialization/test fixture defect, not
+a genuine decode or route failure.
+
+Fix: write the original bounded 3 Owner-signed per-sample records into
+`summary.json` **only** for `XD_VIEWER_FIRST_FRAME_BENCH`, preserving the
+genuine per-frame measurements and original Owner/route/return evidence.
+Add a regression that rejects aggregate-only fake n3 input. Baseline
+return drift remains explicitly failed, candidate strict <=2px remains,
+and no signed video, navigation or security gate is waived. Final n3/n3
+comparison on the new SHA must still execute to be accepted.

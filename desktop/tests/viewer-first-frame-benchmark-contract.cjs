@@ -239,3 +239,19 @@ test('real n3 H264 summary persists measured sanitized sample proof for the stri
     !summary.includes('currentSrc:'),
     'timing JSON must never persist an Owner-scoped signed media URL')
 })
+
+test('paired first-frame summary serializes all three genuine rows, not medians alone', () => {
+  const runner = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
+  const comparator = read('desktop/scripts/viewer-first-frame-compare.cjs')
+  assert.ok(runner.includes('...(videoFirstFrameMode ? {samples:rows} : {})'),
+    'signed H264 n3 source rows must appear in summary.json for strict comparator validation')
+  assert.ok(runner.includes("fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2)"),
+    'the actual persisted summary must contain the same owner-verified samples')
+  assert.ok(comparator.includes('summary.samples.length !== 3'),
+    'never silently replace missing real samples with p50-only aggregates')
+  const complete = evidence([140, 160, 180])
+  assert.equal(compareRealVideoFirstFrames(complete, complete).sampleCountEach, 3)
+  const aggregateOnly = { ...complete, samples: undefined }
+  assert.throws(() => compareRealVideoFirstFrames(aggregateOnly, complete), /baseline: real H264 n3 gate missing/)
+  assert.throws(() => compareRealVideoFirstFrames(complete, aggregateOnly), /candidate: real H264 n3 gate missing/)
+})
