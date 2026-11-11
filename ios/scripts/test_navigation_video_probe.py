@@ -105,7 +105,7 @@ class VideoEvidenceTests(unittest.TestCase):
         bad = self.clip('testCloudOriginalsHelpDismissFilesReturnKeepsChild',
                         first_tap_offset_s=8.2)
         (self.root / 'trace.jsonl').write_text(
-            '\\n'.join(json.dumps(x) for x in [good, bad]) + '\\n',
+            '\n'.join(json.dumps(x) for x in [good, bad]) + '\n',
             encoding='utf-8')
         report = audit(self.root, required=6, probe=self.probe)
         self.assertFalse(report['pass'])
