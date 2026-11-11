@@ -40,8 +40,10 @@ test('real signed H264 fixture only clicks an unobscured actual button and diagn
   const harness = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
   assert.ok(harness.includes("const selector = '[data-xdrive-mobile-five-slot] button'"))
   assert.ok(harness.includes('const hit = document.elementFromPoint(x, y)'))
-  assert.ok(harness.includes('if (hit === button || button.contains(hit)) return true'),
-    'a real navigation destination is clickable only after the strict DOM hit test')
+  assert.ok(harness.includes('if (hit === button || button.contains(hit)) {') &&
+    harness.includes('validatedPoints.push({x:Math.round(x),y:Math.round(y),baselineEdgeHit:false})') &&
+    harness.includes('return validatedPoints[0]'),
+    'a real destination must be pointer-targeted only after an exact unobscured DOM hit test')
   assert.ok(harness.includes('matching:matching.length'))
   assert.ok(harness.includes('withinViewport,unobscured:candidates.length'))
   assert.ok(harness.includes('blockerKind ='), 'must distinguish real blocking UI families')
