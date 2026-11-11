@@ -27,13 +27,13 @@ class PortableStandaloneCLITests(unittest.TestCase):
             file = self.core / relative
             file.parent.mkdir(parents=True, exist_ok=True)
             if relative in module.LINUX:
-                file.write_text("#!/usr/bin/env python3\\nimport json\\n"
-                                "print(json.dumps({'commit':'" + SHA + "'}))\\n")
+                file.write_text("#!/usr/bin/env python3\nimport json\n"
+                                "print(json.dumps({'commit':'" + SHA + "'}))\n")
                 file.chmod(file.stat().st_mode | stat.S_IXUSR)
             else:
                 file.write_bytes(("ORIGINAL:" + relative).encode())
         self.doc = self.root / "README.md"
-        self.doc.write_text("Manual CLI only. No Desktop.\\n")
+        self.doc.write_text("Manual CLI only. No Desktop.\n")
 
     def build(self, sha=SHA):
         return module.build(self.core, self.dest, sha, readme=self.doc)
@@ -67,8 +67,8 @@ class PortableStandaloneCLITests(unittest.TestCase):
             self.build()
         (self.core / "linux-amd64/xd").unlink()
         (self.core / "linux-amd64/xd").write_text(
-            "#!/usr/bin/env python3\\nimport json\\nprint(json.dumps({'commit':'" +
-            "b" * 40 + "'}))\\n")
+            "#!/usr/bin/env python3\nimport json\nprint(json.dumps({'commit':'" +
+            "b" * 40 + "'}))\n")
         (self.core / "linux-amd64/xd").chmod(0o755)
         with self.assertRaisesRegex(ValueError, "source Commit mismatch"):
             self.build()
