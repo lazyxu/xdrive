@@ -722,7 +722,11 @@ func TestClientSpacesYikeAPIRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.apiMinInterval = 30 * time.Millisecond
+	// The slot is reserved before the HTTP transport. On a loaded Windows
+	// runner, first-request arrival can lag reservation and shorten the
+	// server-observed gap. Use a wider interval with explicit jitter headroom
+	// while still requiring a substantial, observable real request delay.
+	client.apiMinInterval = 100 * time.Millisecond
 
 	if _, err := client.UserInfo(context.Background()); err != nil {
 		t.Fatal(err)
@@ -736,8 +740,8 @@ func TestClientSpacesYikeAPIRequests(t *testing.T) {
 	if len(seen) != 2 {
 		t.Fatalf("requests=%d want=2", len(seen))
 	}
-	if delta := seen[1].Sub(seen[0]); delta < 25*time.Millisecond {
-		t.Fatalf("request spacing=%s want at least ~30ms", delta)
+	if delta := seen[1].Sub(seen[0]); delta < 70*time.Millisecond {
+		t.Fatalf("request spacing=%s want >=70ms with 100ms reserved API slot", delta)
 	}
 }
 

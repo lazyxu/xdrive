@@ -8,6 +8,7 @@ const read=p=>readFileSync(resolve(root,p),'utf8')
 const page=read('ui/shared/src/mui/ClipboardPage.tsx')
 const api=read('web/src/api.ts')
 const port=read('web/src/clipboardDataPort.ts')
+const dsmAdapter=read('ui/shared/src/synology-backup-adapter.ts')
 const code=ts.transpileModule(page,{fileName:'ClipboardPage.tsx',reportDiagnostics:true,
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}})
 assert.deepEqual((code.diagnostics??[]).filter(x=>x.category===ts.DiagnosticCategory.Error),[])
@@ -23,6 +24,16 @@ assert.match(page,/setMonitorEnabled\(false\)/)
 assert.match(page,/剪贴板内容不会端到端加密/)
 assert.doesNotMatch(page,/解锁加密剪贴板|剪贴板口令|PBKDF2|EncryptForDevice|deriveKey|xDriveClipboardEncrypt/)
 assert.match(port,/create: \(item, signal\) => api\.clipboardCreate\(item, signal\)/)
+
+const activeDSMClipboardOperations = ['capability', 'list', 'devices', 'file',
+  'create', 'enable-device', 'revoke-device', 'delete', 'clear']
+for (const operation of activeDSMClipboardOperations) {
+  assert.match(dsmAdapter, new RegExp(`['"]cloud-clipboard-${operation}['"]`))
+}
+// The Server and DSM CGI have removed these old encryption routes; the
+// browser's same-origin operation whitelist must reject them as well.
+assert.doesNotMatch(dsmAdapter, /['"]cloud-clipboard-(?:vault|check|decrypt)['"]/)
+
 assert.match(api,/clipboardCreate\(item: \{/)
 assert.match(api,/content: string/)
 const fence='ui/shared/src/clipboard-action-fence.ts'

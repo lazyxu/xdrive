@@ -145,6 +145,53 @@ async function auditAllDependencyWidths(page, width) {
   await page.locator('[data-xdrive-system-dependencies-overview]').waitFor()
 }
 
+// Test the actual shipped AliDNS panel and shared MUI editor without any
+// real Server, API secret, reveal endpoint or side-effectful Save operation.
+async function auditAliDNSConfiguredMask(page) {
+  await page.locator('[data-xdrive-system-dependency-overview-card="caddy"]').click()
+  const panel = page.locator('[data-xdrive-admin-caddy-alidns]')
+  await panel.waitFor()
+  const inputs = panel.locator('input')
+  await page.waitForFunction(() => {
+    const root = document.querySelector('[data-xdrive-admin-caddy-alidns]')
+    const items = root?.querySelectorAll('input')
+    return items?.length === 2 && items[0].value === '*'.repeat(17)
+  })
+  const id = inputs.nth(0)
+  const secret = inputs.nth(1)
+  record('real AliDNS MUI masks retain independent actual ID and Secret lengths',
+    await id.inputValue() === '*'.repeat(17) &&
+    await secret.inputValue() === '*'.repeat(31))
+  record('real AliDNS configured masks shrink the labels above the inputs',
+    await panel.locator('label.MuiInputLabel-shrink').count() === 2)
+  record('real AliDNS stored secrets cannot reveal without audited API',
+    await panel.getByRole('button', { name: '显示' }).count() === 2 &&
+    await panel.getByRole('button', { name: '显示' }).first().isDisabled())
+  await id.focus()
+  await page.waitForFunction(() => {
+    const input = document.querySelector('[data-xdrive-admin-caddy-alidns] input')
+    return input?.value === ''
+  })
+  record('real AliDNS focus clears only visual mask, not the other credential',
+    await id.inputValue() === '' && await secret.inputValue() === '*'.repeat(31))
+  await id.fill('ReplacementID1234')
+  await id.evaluate(element => element.blur())
+  record('real AliDNS replacement stays editable after blur, without using saved value',
+    await id.inputValue() === 'ReplacementID1234' &&
+    await secret.inputValue() === '*'.repeat(31))
+  await id.focus()
+  await id.fill('')
+  await id.evaluate(element => element.blur())
+  await page.waitForFunction(() => {
+    const input = document.querySelector('[data-xdrive-admin-caddy-alidns] input')
+    return input?.value === '*'.repeat(17)
+  })
+  record('real AliDNS empty replacement restores display-only saved mask',
+    await id.inputValue() === '*'.repeat(17) &&
+    await secret.inputValue() === '*'.repeat(31))
+  record('real AliDNS masked editor does not overflow document', await noOverflow(page))
+}
+
 async function checkWidth(width, port) {
   const mobile = width <= 390
   const context = await browser.newContext({
@@ -181,6 +228,7 @@ async function checkWidth(width, port) {
           .getAttribute('data-xdrive-fixture-theme') === 'dark')
     }
     await auditAllDependencyWidths(page, width)
+    if (width === 1740) await auditAliDNSConfiguredMask(page)
     if (width === 899 || width === 900) {
       await page.locator('[data-xdrive-system-dependency-overview-card="baidu-map"]').click()
       const localNavigation = page.locator('nav[aria-label="系统依赖页内导航"]')

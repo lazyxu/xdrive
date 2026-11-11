@@ -1418,9 +1418,15 @@ test('P87 shared Gallery Inspector never animates its virtual-grid layout geomet
   assert.doesNotMatch(root, /transition:\s*['"`][^'"`]*(?:padding|margin|width|height|top|left)/,
     'animated layout properties cause repeated virtual grid resize and anchor movement')
   assert.doesNotMatch(root, /animation:\s*['"`][^'"`]*(?:padding|margin|width|height|top|left)/)
-  assert.match(root, /data-xdrive-media-loading-progress/,
+  // The visual policy is now shared with Places. Validate its actual
+  // progress mask and Gallery's connection, not the retired inline JSX.
+  const framing = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPhotoWallFraming.ts')
+  assert.match(root, /xDriveMediaGalleryFramingStyles\(aspectMode\)/)
+  assert.match(framing, /\[data-xdrive-media-tile\] \[data-xdrive-media-loading-progress\]/,
     'real thumbnail progress fitting must remain intact')
-  assert.match(root, /data-xdrive-media-tile/,
+  assert.match(framing, /maskSize: fit/)
+  assert.match(framing, /WebkitMaskSize: fit/)
+  assert.match(root, /data-xdrive-gallery-aspect-mode=\{aspectMode\}/,
     'reuse the existing shared media tile instead of introducing a separate layout')
 })
 
@@ -1629,7 +1635,10 @@ test('Gallery time-scale preferences persist per scale and preserve the browsing
     'window.localStorage.setItem',
   ]) {
     const source = token === 'data-xdrive-gallery-timeline-jump'
-      ? sharedGalleryDateNavigation : sharedGalleryMain
+      ? sharedGalleryDateNavigation
+      : token === 'xdrive.gallery.view-preferences.v1'
+        ? read('ui', 'shared', 'src', 'mui', 'MediaGalleryPhotoWallFraming.ts')
+        : sharedGalleryMain
     assert.ok(source.includes(token), `Gallery date-browsing memory missing: ${token}`)
   }
   assert.ok(

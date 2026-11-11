@@ -977,6 +977,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var showingBatchProperties = false
     @State private var showingAncestorsSheet = false
     @State private var quickHistoryReadAttempted = false
+    @State private var filesViewVisible = false
     @State private var managementWriteConfirmed = false
     @State private var versionRestoreConfirmed = false
     @State private var showingPathPrompt = false
@@ -3544,6 +3545,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func filesForegroundLifecycle(returnScroll: ScrollViewProxy) -> some View {
         filesModals
         .onAppear {
+            filesViewVisible = true
             restoreFilesSectionIfNeeded()
             if phase == .active, let owner = login.owner,
                !quickHistoryReadAttempted {
@@ -3598,6 +3600,15 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
+            filesViewVisible = false
+            // Undo/redo operation metadata is optional. A cancelled first
+            // read must not permanently latch the shortcuts as "attempted".
+            // Busy mutations are never cancelled by this navigation path.
+            if quickHistoryReadAttempted && operationShortcuts.loading &&
+               !operationShortcuts.verified && operationShortcuts.status == nil {
+                quickHistoryReadAttempted = false
+            }
+            operationShortcuts.suspendReadForNavigation()
             // This is the Files root leaving the TabView/NavigationStack, not
             // the search results subtree being temporarily covered by the
             // native keyboard. Do not dismiss search as soon as it activates.
@@ -3607,6 +3618,15 @@ struct XDriveIOSNativeFilesBrowser: View {
             if isHome, let current = login.owner,
                let retained = favoriteShortcutsOwner,
                XDriveIOSNativePhotoOwnerScope.matches(current, retained) {
+                // A first Home Favorites GET can be cancelled by an immediate
+                // Gallery/Files tab switch. It has no verified rows and no
+                // terminal error; release the first-read latch so the next
+                // Home appearance really retries. Proven same-Owner rows and
+                // failed/denied terminal reads must not auto-loop.
+                if homeReadAttempted && favoriteShortcuts.loading &&
+                   !favoriteShortcuts.verified && favoriteShortcuts.error == nil {
+                    homeReadAttempted = false
+                }
                 favoriteShortcuts.suspendForNavigation()
             } else {
                 favoriteShortcuts.invalidate()
@@ -3629,6 +3649,20 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedSnapshots.removeAll()
             showingBatchTrashConfirmation = false
         }
+        .onChange(of: phase) { next in
+            if next != .active {
+                if quickHistoryReadAttempted && operationShortcuts.loading &&
+                   !operationShortcuts.verified && operationShortcuts.status == nil {
+                    quickHistoryReadAttempted = false
+                }
+                operationShortcuts.suspendReadForNavigation()
+            } else if filesViewVisible, !quickHistoryReadAttempted,
+                      let owner = login.owner {
+                quickHistoryReadAttempted = true
+                operationShortcuts.updateExpectedOwner(owner)
+                operationShortcuts.load(login: login)
+            }
+        }
     }
 
     private func filesOwnerLifecycle(returnScroll: ScrollViewProxy) -> some View {
@@ -3642,7 +3676,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             pendingQuickOperation = nil
             showingBatchProperties = false
             operationShortcuts.invalidate()
-            if phase == .active, let owner = login.owner {
+            // A hidden Files tab must not issue another Owner's operation
+            // read. Its next visible onAppear verifies the new Owner first.
+            if filesViewVisible, phase == .active, let owner = login.owner {
                 quickHistoryReadAttempted = true
                 operationShortcuts.updateExpectedOwner(owner)
                 operationShortcuts.load(login: login)

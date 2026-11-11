@@ -105,6 +105,12 @@ jobs:
           node --test desktop/tests/ios-native-unified-photo-gallery.cjs
           # Navigation regressions guard bounded Gallery/Files native returns.
           node --test desktop/tests/ios-native-navigation-continuity.cjs
+          # Native Originals must preserve only exact Owner-verified pages
+          # and re-check the Server before reusing covered Gallery pixels.
+          node --test desktop/tests/ios-native-cloud-original-tab-continuity-20261110.cjs
+          # A fast first-load tab switch must never latch an unfinished
+          # PhotoKit/Files Home read or skip real Simulator frame coverage.
+          node --test desktop/tests/ios-native-gallery-files-cold-return-20261110.cjs
 
       - name: Verify cold launch recovery and BG registration safety
         run: |
@@ -833,6 +839,10 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-operations"
           "$RUNNER_TEMP/xdrive-ios-files-operations"
           node --test desktop/tests/ios-native-files-undo-redo.cjs
+          # New cold read can be cancelled by an immediate Gallery tab
+          # switch; it must retry visibly, never cancel a queued write.
+          node --test desktop/tests/ios-native-files-operation-history-lifecycle.cjs \
+            desktop/tests/ios-native-files-operation-cold-return-20261110.cjs
 
       - name: Verify native Files inline folder 115k bounded bidirectional paging
         run: |

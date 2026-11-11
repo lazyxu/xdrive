@@ -57,7 +57,7 @@ test('Gallery refresh is exact Owner scoped and deferred during full-screen prev
   assert.match(gallery, /XDriveIOSNativePhotoOwnerScope\.matches\(login.owner, update.owner\)/)
   assert.match(gallery, /if selected != nil \{\s*refreshAfterViewer = true\s*\} else \{\s*model\.reload\(login: login\)/)
   assert.match(gallery, /\.fullScreenCover\(item: \$selected, onDismiss: \{[\s\S]*if refreshAfterViewer \{[\s\S]*model\.reload\(login: login\)/)
-  assert.match(gallery, /\.onChange\(of: login.owner\) \{ _ in[\s\S]*?refreshAfterViewer = false[\s\S]*?selected = nil\s*viewerOwner = nil\s*viewerLoadedNodes = \[\]\s*viewerReturnNode = nil\s*accessibilityFocusedNodeID = nil\s*model\.invalidate\(\)/)
+  assert.match(gallery, /\.onChange\(of: login.owner\) \{ _ in[\s\S]*?refreshAfterViewer = false[\s\S]*?selected = nil\s*viewerOwner = nil\s*viewerLoadedNodes = \[\]\s*viewerReturnNode = nil\s*accessibilityFocusedNodeID = nil\s*needsTabRevalidation = false\s*needsForegroundReload = false\s*hasActivated = false\s*model\.invalidate\(\)/)
   assert.match(controller, /!XDriveIOSNativePhotoOwnerScope\.matches\(owner, last.owner\) \{\s*confirmedOriginalUpdate = nil/)
   assert.match(authScope, /current\.instanceID == expected\.instanceID/)
   assert.doesNotMatch(gallery, /UploadSessionTransport|window\.webkit|localStorage/)
@@ -77,14 +77,14 @@ test('native cloud originals recheck after scene return without treating BG writ
     gallery.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'));
   assert.match(wall, /@Environment\(\\\.scenePhase\) private var phase/);
   assert.match(wall, /@State private var needsForegroundReload = false/);
-  assert.match(wall, /\.task \{[\s\S]*?guard phase == \.active else \{[\s\S]*?needsForegroundReload = true/);
+  assert.match(wall, /\.task \{\s*if phase != \.active \{ needsForegroundReload = true \}\s*else \{ activateIfNeeded\(\) \}/);
   assert.match(wall, /\.onChange\(of: phase\) \{ state in/);
   assert.match(wall, /if state != \.active \{[\s\S]*?needsForegroundReload = true[\s\S]*?model\.cancel\(\)/);
-  assert.match(wall, /guard needsForegroundReload else \{ return \}/);
+  assert.match(wall, /guard needsForegroundReload,\s*isTabActive \|\| selected != nil else \{ return \}/);
   assert.match(wall, /guard login\.owner != nil else \{[\s\S]*?model\.invalidate\(\)/);
   assert.match(wall, /if selected != nil \{[\s\S]*?refreshAfterViewer = true[\s\S]*?\} else \{[\s\S]*?model\.reload\(login: login\)/);
-  assert.match(wall, /if phase != \.active \{[\s\S]*?needsForegroundReload = true[\s\S]*?return/);
-  assert.match(wall, /if login\.owner != nil \{[\s\S]*?if phase == \.active \{[\s\S]*?model\.reload\(login: login\)/);
+  assert.match(wall, /if phase != \.active \|\| !isTabActive \{[\s\S]*?needsForegroundReload = true[\s\S]*?return/);
+  assert.match(wall, /if login\.owner != nil \{\s*if phase == \.active && isTabActive \{\s*activateIfNeeded\(\)\s*\} else \{\s*needsForegroundReload = true/);
   // A failed login/root re-verification must drop the prior page immediately:
   // requiring a bare `let auth = try` would forbid that stronger fail-closed path.
   assert.match(model, /let auth: \(owner: XDriveNativeOwnerRoot, accessToken: String\)/);

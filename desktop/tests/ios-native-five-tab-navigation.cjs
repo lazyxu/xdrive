@@ -40,7 +40,9 @@ test('Gallery owns local, albums, cloud and map subroutes; media uses native ful
   assert.match(albums, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
   const cloud = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
   assert.match(cloud, /\.fullScreenCover\(item: \$selected, onDismiss:/);
-  assert.match(cloud, /if selected == nil \{\s*refreshAfterViewer = false\s*model\.invalidate\(\)/);
+  // An inactive Gallery tab preserves verified same-Owner Originals only.
+  // Switching sources or losing Owner still discards them, not just a blank shell.
+  assert.match(cloud, /if selected == nil \{\s*refreshAfterViewer = false\s*if phase == \.active, !isTabActive,[\s\S]*?model\.matchesOwner\(login\.owner\) \{\s*needsTabRevalidation = true\s*model\.cancel\(\)\s*\} else \{[\s\S]*?hasActivated = false\s*model\.invalidate\(\)/);
   assert.match(cloud, /\.onChange\(of: login.owner\)/);
   assert.match(local, /if value != \.active \{[\s\S]*?invalidate\(with: nil\)/);
   assert.match(albums, /if selected != nil \|\| showingAlbumMap \|\|\s*\(phase == \.active && albumAuthorized\) \{\s*suspendForViewer\(\)/);

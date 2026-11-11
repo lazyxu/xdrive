@@ -29,7 +29,10 @@ test('stale asynchronous badge results never cross Owners, pages or inactive sce
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(backupBadgeOwner, owner\)/)
   assert.match(wall, /\.onChange\(of: backupBadgeOwner\) \{ _ in[\s\S]*?badgeReadEpoch = UUID\(\)/)
   assert.match(wall, /\.onChange\(of: photoQueueScenePhase\) \{ state in/)
-  assert.match(wall, /\.onDisappear \{[\s\S]*?let verifiedEpoch = retainedGeneration[\s\S]*?page\?\.totalAccessibleAssets == expectedTotal[\s\S]*?if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*\}[\s\S]*?queueHistoryCurrent = false\s*visibleBackupQueueStates = \[:\]\s*badgeReadEpoch = UUID\(\)/)
+  assert.match(wall, /\.onDisappear \{[\s\S]*?let verifiedEpoch = retainedGeneration[\s\S]*?page\?\.totalAccessibleAssets == expectedTotal[\s\S]*?if !retainWhileCovered \{\s*page = nil\s*precedingCapturedAt = nil[\s\S]*?retainedGeneration = nil\s*clearBadgeProof\(\)\s*\}[\s\S]*?badgeReadEpoch = UUID\(\)/)
+  // Covered Viewer/TabView pages retain proven pixels, genuine lazy eviction
+  // clears them; a late async response can never repopulate a stale page.
+  assert.match(wall, /private func clearBadgeProof\(\) \{\s*visibleBackupQueueStates = \[:\]\s*queueHistoryCurrent = false/)
   assert.match(wall, /onPageHidden\(offset, verifiedEpoch, verifiedPage\)/)
   assert.match(wall, /pageEpoch == generation/)
   assert.match(wall, /phase == \.active && authorized/)

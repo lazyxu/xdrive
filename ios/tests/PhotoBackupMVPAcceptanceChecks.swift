@@ -29,6 +29,26 @@ enum XDriveIOSPhotoBackupMVPAcceptanceChecks {
             capturedAt: nil, modifiedAt: nil, since: since
         ) == .unknownDates)
 
+        // Exact 20-before / 3-after first-enable fixture. This is an
+        // executable policy check, not a synthetic PhotoKit or Server ACK.
+        // Only the three consented additions may enter the positional
+        // "only new" path; old-dated *new imports* are separately handled by
+        // the durable PhotoKit insert queue and its epoch fences.
+        let oldAtEnable = (0..<20).map { offset -> (created: Date, modified: Date) in
+            let oldStamp = since.addingTimeInterval(-TimeInterval(offset + 1))
+            return (created: oldStamp, modified: oldStamp)
+        }
+        let newAfterEnable = (0..<3).map { offset -> (created: Date, modified: Date) in
+            let newStamp = since.addingTimeInterval(TimeInterval(offset + 1))
+            return (created: newStamp, modified: newStamp)
+        }
+        let eligible = (oldAtEnable + newAfterEnable).filter { asset in
+            auto.newOnlyCandidate(
+                capturedAt: asset.created, modifiedAt: asset.modified, since: since
+            ) == .eligible
+        }
+        precondition(eligible.count == 3)
+
         // P0: Historical queue totals and a positional cursor become invalid
         // when the PhotoKit token, authorization or baseline changes.
         precondition(epoch.canShowChangeQueueSnapshot(
