@@ -46,6 +46,26 @@ test('n3/n3 pair compares real first-frame medians and does not invent a causal 
   assert.equal(slower.observedFirstFrameDirection, 'candidate-slower-observed')
   assert.equal(slower.metrics.firstFrameMs.deltaP50Ms, 400)
 })
+test('real deep Gallery JPEG/H264 tile lookup uses the current accessible photo-wall DOM, never stale .media-name', () => {
+  const wall = read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
+  const runner = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
+  assert.ok(wall.includes('data-xdrive-media-tile'))
+  assert.ok(wall.includes('aria-label={`${item.node.name}，${livePhoto ?'),
+    'production Gallery tiles must expose the actual file name and type')
+  assert.ok(!wall.includes('media-name'),
+    'the former child caption is no longer an authoritative tile selector')
+  assert.ok(runner.includes("tile.getAttribute('aria-label')"),
+    'real H264/JPEG benchmark must inspect a genuine accessible tile')
+  assert.ok(runner.includes('/^photo-\\d+\\.jpg，照片$/'))
+  assert.ok(runner.includes('/^video-\\d+\\.mp4，视频$/'))
+  assert.ok(!runner.includes("tile.querySelector('.media-name')"),
+    'do not hang for 30s on an absent legacy caption subnode')
+  assert.ok(runner.includes('document.elementFromPoint(x,y)'),
+    'keep exact hit-testing of the real mounted tile')
+  assert.ok(!runner.includes("location.hash = '#/app/media-viewer'"),
+    'do not bypass actual navigational click to fabricate a first frame')
+})
+
 test('paired H264 result rejects missing frames, wrong Owner proof, and incomplete n3', () => {
   const before = evidence([120, 180, 250])
   const after = evidence([130, 160, 190])

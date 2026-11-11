@@ -423,8 +423,11 @@ function p1VisiblePhotoTile() {
   const clip=host.getBoundingClientRect()
   const tiles=Array.from(grid.querySelectorAll('[data-xdrive-media-tile]'))
   for(const tile of tiles){
-    const name=tile.querySelector('.media-name')?.textContent?.trim()||''
-    if(!/^photo-\d+\.jpg$/.test(name))continue
+    // Shared production tiles expose their authentic media identity through
+    // aria-label; the old .media-name subnode was removed. Keep the genuine
+    // encoded photo fixture and tile hit test, never synthesize a click.
+    const name=tile.getAttribute('aria-label')||''
+    if(!/^photo-\d+\.jpg，照片$/.test(name))continue
     const rect=tile.getBoundingClientRect()
     if(rect.bottom<=clip.top+16||rect.top>=clip.bottom-16)continue
     const x=Math.round(rect.left+rect.width/2)
@@ -511,8 +514,8 @@ function p1VisibleH264Tile() {
   if(extent<10000)return null
   const clip=host.getBoundingClientRect()
   for(const tile of grid.querySelectorAll('[data-xdrive-media-tile]')){
-    const name=tile.querySelector('.media-name')?.textContent?.trim()||''
-    if(!/^video-\d+\.mp4$/.test(name))continue
+    const name=tile.getAttribute('aria-label')||''
+    if(!/^video-\d+\.mp4，视频$/.test(name))continue
     const rect=tile.getBoundingClientRect()
     if(rect.bottom<=clip.top+16||rect.top>=clip.bottom-16)continue
     const x=Math.round(rect.left+rect.width/2)
