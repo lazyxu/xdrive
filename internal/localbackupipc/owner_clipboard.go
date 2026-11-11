@@ -112,3 +112,25 @@ func (c *Client) OwnerClipboardRevokeDevice(ctx context.Context, deviceID string
 	return c.request(ctx, http.MethodPost, "/v1/cloud/clipboard/revoke-device",
 		map[string]string{"device_id": deviceID}, nil)
 }
+
+// OwnerClipboardWaitForChange waits for the existing Server-side SSE event
+// through the authenticated owning Agent, returning only cursor metadata.
+func (c *Client) OwnerClipboardWaitForChange(ctx context.Context, after uint64) (client.ClipboardChangeEvent, error) {
+	if err := c.requireClipboard(); err != nil {
+		return client.ClipboardChangeEvent{}, err
+	}
+	if after > 1<<53-1 {
+		return client.ClipboardChangeEvent{}, errors.New("invalid Clipboard event cursor")
+	}
+	path := "/v1/cloud/clipboard/next-event?after=" + strconv.FormatUint(after, 10)
+	var event client.ClipboardChangeEvent
+	if err := c.request(ctx, http.MethodGet, path, nil, &event); err != nil {
+		return client.ClipboardChangeEvent{}, err
+	}
+	if event.Cursor < after || event.Cursor > 1<<53-1 ||
+		(event.Changed && event.Cursor <= after) ||
+		(!event.Changed && event.Cursor != after) {
+		return client.ClipboardChangeEvent{}, errors.New("invalid Owner Clipboard event reply")
+	}
+	return event, nil
+}

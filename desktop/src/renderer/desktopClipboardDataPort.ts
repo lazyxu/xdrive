@@ -8,7 +8,8 @@ export function createDesktopClipboardDataPort(
     'cloudClipboardList' |
     'cloudClipboardCreate' | 'cloudClipboardDelete' | 'cloudClipboardClear' |
     'cloudClipboardDevices' | 'cloudClipboardEnableDevice' |
-    'cloudClipboardRevokeDevice' | 'cloudRoot' | 'cloudChildrenPage' | 'cloudUploadFile'>,
+    'cloudClipboardRevokeDevice' | 'cloudRoot' | 'cloudChildrenPage' | 'cloudUploadFile' |
+    'cloudClipboardNextEvent'>,
   ownerScopeKey: string,
   _server: string,
   ownerCurrent: () => boolean,
@@ -128,33 +129,57 @@ export function createDesktopClipboardDataPort(
         [blob], 'Clipboard-' + crypto.randomUUID() + '.' + match.ext,
         { type: match.mime, lastModified: Date.now() }), signal)
     },
-    // A bounded Owner-checked foreground change observer: 1.8 s vs the
-    // shared page's unchanged 15 s full-GET fallback; not an SSE claim.
+    // The canonical Server SSE is read only by the authenticated Agent.
+    // The Host sees an invalidation cursor, never a Server token or content.
     watchChanges: async (onChange, signal) => {
+      let cursor = 0
       let previous: string | undefined
+      let failedAt = 0
       let wasHidden = false
-      const delay = () => new Promise<void>(resolve => {
+      const delay = (ms: number) => new Promise<void>(resolve => {
         if (signal.aborted) { resolve(); return }
         const onAbort = () => { clearTimeout(timer); resolve() }
         const timer = setTimeout(() => {
           signal.removeEventListener('abort', onAbort)
           resolve()
-        }, 1800)
+        }, ms)
         signal.addEventListener('abort', onAbort, { once: true })
       })
       while (!signal.aborted) {
         verify(signal)
-        if (document.visibilityState === 'visible') {
-          if (wasHidden) { wasHidden = false; onChange() }
-          const page = await run(() => agent.cloudClipboardList(0), signal)
-          const version = page.items.map(item => item.id + ':' + item.client_event_id).join('|')
-          if (previous !== undefined && version !== previous) onChange()
-          previous = version
-        } else {
+        if (document.visibilityState !== 'visible') {
           wasHidden = true
           previous = undefined
+          await delay(1000)
+          continue
         }
-        await delay()
+        if (wasHidden) { wasHidden = false; onChange() }
+        if (failedAt === 0 || Date.now() - failedAt >= 15000) {
+          try {
+            const event = await run(() => agent.cloudClipboardNextEvent(cursor), signal)
+            if (!Number.isSafeInteger(event.cursor) || event.cursor < cursor ||
+                (event.changed && event.cursor <= cursor)) {
+              throw new Error('无效的 Clipboard 云端事件')
+            }
+            cursor = event.cursor
+            failedAt = 0
+            previous = undefined
+            verify(signal)
+            if (event.changed && document.visibilityState === 'visible') onChange()
+            continue
+          } catch (error) {
+            verify(signal)
+            // An older offline Agent still gets the unchanged 15s GET page
+            // fallback; 1.8s foreground polling is temporary, never SSE.
+            failedAt = Date.now()
+          }
+        }
+        const page = await run(() => agent.cloudClipboardList(0), signal)
+        const version = page.items.map(item => item.id + ':' + item.client_event_id).join('|')
+        if (previous !== undefined && previous !== version &&
+            document.visibilityState === 'visible') onChange()
+        previous = version
+        await delay(1800)
       }
     },
     readText: async () => {

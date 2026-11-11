@@ -39,6 +39,7 @@ func desktopIPCCapabilitiesForRuntime(backupOnly bool) []string {
 			capability == "cloud-owner-search-read",
 			capability == "cloud-folder-create",
 			capability == "cloud-owner-small-upload",
+			capability == "cloud-owner-chunk-upload",
 			capability == "cloud-node-rename",
 			capability == "cloud-node-delete",
 			capability == "cloud-node-move",
@@ -89,6 +90,10 @@ var backupOnlyAllowedIPCRoutes = map[string]struct{}{
 	"GET /v1/cloud/children":                                    {},
 	"POST /v1/cloud/directories":                                {},
 	"POST /v1/cloud/owner-small-upload":                         {},
+	"POST /v1/cloud/owner-upload/start":                         {},
+	"POST /v1/cloud/owner-upload/part":                          {},
+	"POST /v1/cloud/owner-upload/finish":                        {},
+	"POST /v1/cloud/owner-upload/abort":                         {},
 	"PATCH /v1/cloud/nodes":                                     {},
 	"DELETE /v1/cloud/nodes":                                    {},
 	"PATCH /v1/cloud/move":                                      {},
@@ -185,11 +190,12 @@ func validBackupOnlyNoteID(value string) bool {
 // operations; a path prefix alone never admits unrelated cloud methods.
 func backupOnlyAllowedClipboardRequest(method, path string) bool {
 	switch path {
-	case "/v1/cloud/clipboard/vault", "/v1/cloud/clipboard/items":
-		return method == http.MethodGet || (path == "/v1/cloud/clipboard/items" &&
-			(method == http.MethodPost || method == http.MethodDelete))
-	case "/v1/cloud/clipboard/check":
-		return method == http.MethodPut
+	case "/v1/cloud/clipboard/items":
+		return method == http.MethodGet || method == http.MethodPost || method == http.MethodDelete
+	case "/v1/cloud/clipboard/next-event", "/v1/cloud/clipboard/devices":
+		return method == http.MethodGet
+	case "/v1/cloud/clipboard/enable-device", "/v1/cloud/clipboard/revoke-device":
+		return method == http.MethodPost
 	case "/v1/cloud/clipboard-file":
 		// Narrow Owner Files identity projection; no general node-location
 		// permission or arbitrary URL/Path is granted to Backup-only.

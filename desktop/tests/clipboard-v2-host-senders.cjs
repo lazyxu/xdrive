@@ -134,8 +134,18 @@ test('Desktop and DSM expose existing Owner Files picker and canonical file uplo
   assert.equal((await dsmPort.browseFiles.page(7,undefined,new AbortController().signal)).items[0].id,8)
   assert.deepEqual(await dsmPort.uploadLocalFile(file,new AbortController().signal),{node_id:8})
   assert.deepEqual(dsmCalls,['page','upload'])
-  const large=new File([new Uint8Array(4*1_048_576+1)],'too-large.bin')
-  await assert.rejects(dsmPort.uploadLocalFile(large,new AbortController().signal),/4 MiB/)
+  const large=new File([new Uint8Array(4*1_048_576+1)],'large.bin')
+   // No second Clipboard writer: the existing DSM Files/CAS chunk transport
+  // returns the same verified Node shape after finalization.
+  const largeCGI={
+    ...cgi,
+    ownerUploadLargeFile:async(parent,selected,scope)=>{
+      assert.equal(parent,7);assert.equal(selected,large);assert.equal(scope,active)
+      return {...child,id:9,name:'large.bin',size:large.size}
+    },
+  }
+  const largePort=dsm.createXDriveDSMClipboardPort(largeCGI,active)
+  assert.deepEqual(await largePort.uploadLocalFile(large,new AbortController().signal),{node_id:9})
   active='b'.repeat(64)
   await assert.rejects(dsmPort.uploadLocalFile(file,new AbortController().signal),/已变化/)
   await assert.rejects(port.browseFiles.page(0,undefined,new AbortController().signal),/无效/)
@@ -154,5 +164,39 @@ test('Desktop and DSM use bounded foreground change checking and preserve 15s fa
   }
   const ui=fs.readFileSync(path.join(root,'ui/shared/src/mui/ClipboardPage.tsx'),'utf8')
   assert.match(ui,/15000/)
+})
+
+
+test('Server-originated Desktop and DSM change cursor triggers one Owner-scoped refresh',async()=>{
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'document')
+  Object.defineProperty(globalThis,'document',{value:{visibilityState:'visible'},configurable:true})
+  try {
+    const ok=data=>({ok:true,data})
+    const dAbort=new AbortController()
+    const dEvents=[]
+    const port=desktop.createDesktopClipboardDataPort({
+      cloudClipboardNextEvent:async after=>{
+        assert.equal(after,0)
+        return ok({cursor:14,changed:true})
+      },
+    },'desktop-owner','https://drive.example/',()=>true)
+    await port.watchChanges(()=>{dEvents.push(14);dAbort.abort()},dAbort.signal)
+    assert.deepEqual(dEvents,[14])
+    const owner='a'.repeat(64),sAbort=new AbortController()
+    const sEvents=[]
+    const dsmPort=dsm.createXDriveDSMClipboardPort({
+      serverConnection:async()=>({configured:true,must_change_password:false,
+        server:'https://drive.example/',username:'owner',owner_scope:owner}),
+      clipboardNextEvent:async after=>{
+        assert.equal(after,0)
+        return {cursor:15,changed:true}
+      },
+    },owner)
+    await dsmPort.watchChanges(()=>{sEvents.push(15);sAbort.abort()},sAbort.signal)
+    assert.deepEqual(sEvents,[15])
+  }finally{
+    if(previous)Object.defineProperty(globalThis,'document',previous)
+    else delete globalThis.document
+  }
 })
 

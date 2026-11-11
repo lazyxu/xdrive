@@ -607,6 +607,7 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   clipboardList(before?: number, signal?: AbortSignal): Promise<{
     items: import('./mui/ClipboardPage').XDriveClipboardItem[]; next_before: number | null
   }>
+  clipboardNextEvent(after: number, signal?: AbortSignal): Promise<{cursor: number; changed: boolean}>
   clipboardDevices(signal?: AbortSignal): Promise<{
     devices: import('./mui/ClipboardPage').XDriveClipboardTargetDevice[]
   }>
@@ -684,6 +685,8 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
   /** Single file (including zero-byte files) <=4 MiB; existing Agent stages and uses original CAS upload. */
   ownerUploadSmallFile(parentID: number, file: File, ownerScope: string,
+    signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
+  ownerUploadLargeFile(parentID: number, file: File, ownerScope: string,
     signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
   /** Bounded Server Owner Gallery wall and album read; never full Desktop Media RPC. */
   ownerGalleryItemsRange(
@@ -852,13 +855,13 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
-      'cloud-root', 'cloud-children', 'cloud-search', 'cloud-create-folder', 'cloud-rename-node', 'cloud-delete-node', 'cloud-move-node', 'cloud-copy-node', 'cloud-upload-file', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
+      'cloud-root', 'cloud-children', 'cloud-search', 'cloud-create-folder', 'cloud-rename-node', 'cloud-delete-node', 'cloud-move-node', 'cloud-copy-node', 'cloud-upload-file', 'cloud-upload-start', 'cloud-upload-part', 'cloud-upload-finish', 'cloud-upload-abort', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
        'local-source', 'local-source-rename', 'local-target', 'local-mode', 'local-rules', 'local-bound-remove',
        'cloud-clipboard-capability',
-        'cloud-clipboard-list', 'cloud-clipboard-devices', 'cloud-clipboard-file', 'cloud-clipboard-create',
+        'cloud-clipboard-list', 'cloud-clipboard-next-event', 'cloud-clipboard-devices', 'cloud-clipboard-file', 'cloud-clipboard-create',
         'cloud-clipboard-enable-device', 'cloud-clipboard-revoke-device',
         'cloud-clipboard-delete', 'cloud-clipboard-clear',
         'cloud-notes-capability', 'cloud-notes-namespace', 'cloud-notes-list', 'cloud-notes-read', 'cloud-notes-create',
@@ -971,6 +974,20 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       }
       const query = before ? '?before=' + encodeURIComponent(String(before)) : ''
       return request('/v1/cloud-clipboard-list' + query, 'GET', undefined, signal)
+    },
+    async clipboardNextEvent(after, signal) {
+      if (!Number.isSafeInteger(after) || after < 0)
+        throw new Error('无效的 Clipboard 云端事件游标')
+      const event = await request<{cursor: number; changed: boolean}>(
+        '/v1/cloud-clipboard-next-event?after=' + String(after),
+        'GET', undefined, signal)
+      if (!Number.isSafeInteger(event.cursor) || event.cursor < after ||
+          typeof event.changed !== 'boolean' ||
+          (event.changed && event.cursor <= after) ||
+          (!event.changed && event.cursor !== after)) {
+        throw new Error('DSM Clipboard 事件回执无效')
+      }
+      return event
     },
     clipboardDevices(signal) {
       // Recipient identities only; CGI and Agent re-check current Owner.
@@ -1547,6 +1564,87 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       }, signal)
       if (signal?.aborted) throw new Error('Owner upload acknowledgement cancelled')
       return xDriveValidateSynologyOwnerUploadedFile(response, parentID, name, size)
+    },
+    ownerUploadLargeFile: async (parentID, file, ownerScope, signal) => {
+      const name = file?.name
+      const size = file?.size
+      if (!Number.isSafeInteger(parentID) || parentID <= 0 ||
+          typeof name !== 'string' || !name || name !== name.trim() ||
+          name === '.' || name === '..' ||
+          /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+          new TextEncoder().encode(name).length > 255 ||
+          !Number.isSafeInteger(size) || size <= 4 * 1_048_576 ||
+          size > 16 * 1_073_741_824 ||
+          !/^[0-9a-f]{64}$/.test(ownerScope) ||
+          typeof file.slice !== 'function') {
+        throw new Error('DSM 大文件必须经过 Owner 授权的 Files/CAS 分块上传')
+      }
+      signal?.throwIfAborted()
+      if (!globalThis.crypto?.subtle) throw new Error('DSM 缺少安全 SHA-256 分块校验')
+      const scope = notesOwnerScope(ownerScope)
+      const created = await request<{
+        id: string; size: number; chunk_size: number; chunk_count: number
+      }>('/v1/cloud-upload-start', 'POST', {
+        owner_scope: scope, parent_id: parentID, name, size,
+      }, signal)
+      if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(created.id) ||
+          created.size !== size || created.chunk_size !== 4 * 1_048_576 ||
+          created.chunk_count !== Math.ceil(size / created.chunk_size)) {
+        throw new Error('DSM Server UploadSession 创建回执不匹配，请到 Files 核对')
+      }
+      let finalizing = false
+      try {
+        for (let index = 0; index < created.chunk_count; index++) {
+          signal?.throwIfAborted()
+          const begin = index * created.chunk_size
+          const raw = new Uint8Array(await file.slice(
+            begin, Math.min(size, begin + created.chunk_size)).arrayBuffer())
+          signal?.throwIfAborted()
+          const expected = Math.min(created.chunk_size, size - begin)
+          if (raw.byteLength !== expected)
+            throw new Error('DSM 上传分块字节数不匹配')
+          const digest = Array.from(new Uint8Array(
+            await crypto.subtle.digest('SHA-256', raw)),
+            value => value.toString(16).padStart(2, '0')).join('')
+          signal?.throwIfAborted()
+          const part = await request<{
+            index: number; size: number; sha256: string
+          }>('/v1/cloud-upload-part', 'POST', {
+            owner_scope: scope, id: created.id, index,
+            sha256: digest, data: notesBase64(raw),
+          }, signal)
+          if (part.index !== index || part.size !== expected ||
+              part.sha256 !== digest) {
+            throw new Error('DSM CAS 分块回执不匹配')
+          }
+        }
+        signal?.throwIfAborted()
+        finalizing = true
+        const raw = await request<unknown>('/v1/cloud-upload-finish', 'POST', {
+          owner_scope: scope, id: created.id, parent_id: parentID, name, size,
+        }, signal)
+        signal?.throwIfAborted()
+        if (!validOwnerFileNode(raw, parentID)) {
+          throw new Error('DSM Files/CAS 完成回执无效')
+        }
+        const node = raw as XDriveSynologyOwnerFileNode
+        if (node.type !== 'file' || node.name !== name || node.size !== size ||
+            !Number.isSafeInteger(node.revision) || node.revision <= 0) {
+          throw new Error('DSM Files/CAS 原件收据不匹配')
+        }
+        return node
+      } catch (failure) {
+        // Unknown finalize acknowledgement could mean the Server committed
+        // the file. Never silently retry/finalize/abort that outcome.
+        if (!finalizing && !signal?.aborted) {
+          try {
+            await request('/v1/cloud-upload-abort', 'POST', {
+              owner_scope: scope, id: created.id,
+            }, signal)
+          } catch { /* cleanup best effort; Server expires unfinished sessions */ }
+        }
+        throw failure
+      }
     },
     ownerDeleteNode: async (nodeID, revision, parentID, kind, name, ownerScope, signal) => {
       if (![nodeID, revision, parentID].every(value =>

@@ -38,14 +38,16 @@ export function createXDriveDSMClipboardPort(
   const uploadLocalFile = async (file: File, signal: AbortSignal) => {
     signal.throwIfAborted()
     if (!file || !file.name.trim() || !Number.isSafeInteger(file.size) ||
-        file.size <= 0 || file.size > 4 * 1_048_576) {
-      throw new Error('DSM 单文件导入支持 1 B 至 4 MiB；更大文件请使用 Files 的正式上传入口')
+        file.size <= 0) {
+      throw new Error('请选择有效的本机文件')
     }
     const root = await checked(() => cgi.ownerFilesRoot(signal), signal)
     if (root.type !== 'dir' || !Number.isSafeInteger(root.id) || root.id <= 0)
       throw new Error('DSM Owner 文件根目录不可用')
     // Existing DSM Owner -> Agent -> canonical Files/CAS single-file uploader.
-    const node = await checked(scope => cgi.ownerUploadSmallFile(root.id, file, scope, signal), signal)
+    const node = await checked(scope => file.size > 4 * 1_048_576
+      ? cgi.ownerUploadLargeFile(root.id, file, scope, signal)
+      : cgi.ownerUploadSmallFile(root.id, file, scope, signal), signal)
     if (node.type !== 'file' || node.parent_id !== root.id ||
         !Number.isSafeInteger(node.id) || node.id <= 0 || node.revision <= 0 ||
         node.name !== file.name || node.size !== file.size) {
@@ -126,33 +128,56 @@ export function createXDriveDSMClipboardPort(
         [blob], 'Clipboard-' + crypto.randomUUID() + '.' + match.ext,
         { type: match.mime, lastModified: Date.now() }), signal)
     },
-    // Same-Owner, same-origin foreground freshness (1.8 s) without minting a
-    // Browser Server bearer. Existing 15 s GET remains the failure fallback.
+    // The DSM CGI waits on the owning Agent's authenticated Server SSE.
+    // Only an Owner-scoped invalidation cursor reaches the browser.
     watchChanges: async (onChange, signal) => {
+      let cursor = 0
       let previous: string | undefined
+      let failedAt = 0
       let wasHidden = false
-      const delay = () => new Promise<void>(resolve => {
+      const delay = (ms: number) => new Promise<void>(resolve => {
         if (signal.aborted) { resolve(); return }
         const onAbort = () => { clearTimeout(timer); resolve() }
         const timer = setTimeout(() => {
           signal.removeEventListener('abort', onAbort)
           resolve()
-        }, 1800)
+        }, ms)
         signal.addEventListener('abort', onAbort, { once: true })
       })
       while (!signal.aborted) {
         signal.throwIfAborted()
-        if (document.visibilityState === 'visible') {
-          if (wasHidden) { wasHidden = false; onChange() }
-          const page = await checked(() => cgi.clipboardList(undefined, signal), signal)
-          const version = page.items.map(item => item.id + ':' + item.client_event_id).join('|')
-          if (previous !== undefined && version !== previous) onChange()
-          previous = version
-        } else {
+        if (document.visibilityState !== 'visible') {
           wasHidden = true
           previous = undefined
+          await delay(1000)
+          continue
         }
-        await delay()
+        if (wasHidden) { wasHidden = false; onChange() }
+        if (failedAt === 0 || Date.now() - failedAt >= 15000) {
+          try {
+            const event = await checked(() => cgi.clipboardNextEvent(cursor, signal), signal)
+            if (!Number.isSafeInteger(event.cursor) || event.cursor < cursor ||
+                (event.changed && event.cursor <= cursor)) {
+              throw new Error('无效的 DSM Clipboard 云端事件')
+            }
+            cursor = event.cursor
+            failedAt = 0
+            previous = undefined
+            if (!signal.aborted && document.visibilityState === 'visible' && event.changed) onChange()
+            continue
+          } catch (error) {
+            signal.throwIfAborted()
+            // Old Agent/CGI deployments retain existing bounded foreground
+            // poll and the shared page's independent 15s GET fallback.
+            failedAt = Date.now()
+          }
+        }
+        const page = await checked(() => cgi.clipboardList(undefined, signal), signal)
+        const version = page.items.map(item => item.id + ':' + item.client_event_id).join('|')
+        if (previous !== undefined && previous !== version &&
+            document.visibilityState === 'visible') onChange()
+        previous = version
+        await delay(1800)
       }
     },
     readText: async () => {
