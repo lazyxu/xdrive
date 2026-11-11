@@ -69,6 +69,8 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     // Shared Gallery media selection applies only to the local PhotoKit map.
     // Cloud Owner Map remains governed by its signed Server PhotoScope.
     var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
+    var filenameTerm: String = ""
+    var cloudSourceAllowed = true
     var inheritedCaptureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
 
     var body: some View {
@@ -98,10 +100,12 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                     },
                     onFocusChange: onFocusChange,
                     mediaFilter: mediaFilter,
+                    filenameTerm: filenameTerm,
                     inheritedCaptureRange: inheritedCaptureRange
                 )
             case .cloud:
-                XDriveIOSNativeOwnerPhotoMapScreen(
+                if cloudSourceAllowed {
+                    XDriveIOSNativeOwnerPhotoMapScreen(
                     login: login, onFocusChange: onFocusChange,
                     cameraReturn: cloudMapCamera,
                     onCameraChange: { next in
@@ -112,6 +116,10 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                         cloudMapCamera = next
                     },
                     inheritedCaptureRange: inheritedCaptureRange)
+                } else {
+                    Text("当前文件名或媒体筛选仅允许查看本机位置地图。")
+                        .accessibilityIdentifier("native-ios-map-cloud-filter-unavailable")
+                }
             }
         }
         .toolbar {
@@ -126,7 +134,9 @@ struct XDriveIOSNativePhotoMapsScreen: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Picker("地图照片来源", selection: $source) {
-                        ForEach(XDriveIOSNativePhotoMapSource.allCases, id: \.self) { item in
+                        ForEach(XDriveIOSNativePhotoMapSource.allCases.filter {
+                            cloudSourceAllowed || $0 == .local
+                        }, id: \.self) { item in
                             Text(item.label).tag(item)
                         }
                     }

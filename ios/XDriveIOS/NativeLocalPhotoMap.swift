@@ -10,7 +10,8 @@ import UIKit
 private enum XDriveIOSMapCurrentPhotoKitAdmission {
     static func allows(
         _ candidate: XDrivePhotoKitScanCandidate,
-        filter: XDriveIOSNativePhotoMediaFilter
+        filter: XDriveIOSNativePhotoMediaFilter,
+        filenameTerm: String = ""
     ) -> Bool {
         guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               let asset = PHAsset.fetchAssets(
@@ -22,7 +23,11 @@ private enum XDriveIOSMapCurrentPhotoKitAdmission {
         case .video: kind = "video"
         default: return false
         }
-        return candidate.kind == kind && filter.includes(asset: asset)
+        guard candidate.kind == kind && filter.includes(asset: asset) else {
+            return false
+        }
+        return filenameTerm.isEmpty || PHAssetResource.assetResources(for: asset)
+            .contains { $0.originalFilename.localizedStandardContains(filenameTerm) }
     }
 }
 
@@ -542,6 +547,7 @@ private enum XDriveIOSNativeMapViewerAdmission {
 private struct XDriveIOSMapPhotoAlbum: View {
     let items: [XDrivePhotoKitScanCandidate]
     var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
+    var filenameTerm: String = ""
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State private var selected: XDrivePhotoKitScanCandidate?
@@ -565,7 +571,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
                             guard XDriveIOSNativeMapViewerAdmission.allows(
                                 item, in: previewItems, sceneActive: phase == .active
                             ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
-                                item, filter: mediaFilter
+                                item, filter: mediaFilter, filenameTerm: filenameTerm
                             ) else { return }
                             viewerReturnID = item.id
                             focusedTileID = nil
@@ -650,6 +656,7 @@ private struct XDriveIOSMapSpatialSelection: Identifiable {
     // Freeze the same Gallery filter as the verified map Cell count.
     let mediaFilter: XDriveIOSNativePhotoMediaFilter
     let captureRange: XDriveIOSNativePhotoMapCaptureRange?
+    let filenameTerm: String
 }
 
 /// On-demand bounded local-only cell paging. Re-scan the lazy PhotoKit
@@ -736,7 +743,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
                   XDriveIOSNativeMapViewerAdmission.allows(
                     item, in: loaded, sceneActive: phase == .active
                   ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
-                    item, filter: selection.mediaFilter
+                    item, filter: selection.mediaFilter,
+                    filenameTerm: selection.filenameTerm
                   ) else { return }
             viewerReturnID = item.id
             viewerItems = loaded
@@ -1002,7 +1010,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
             do {
                 let total = try await scanner.startMap(
                     atOffset: 0, album: album, mediaFilter: selection.mediaFilter,
-                    captureRange: selection.captureRange
+                    captureRange: selection.captureRange,
+                    filenameTerm: selection.filenameTerm
                 )
                 let result = try await readWindow(
                     scanner: scanner, pending: [], pendingIndex: 0,
@@ -1164,6 +1173,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     var onFocusChange: ((Bool) -> Void)?
     // The local map is a projection of the calling Gallery's exact media scope.
     var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
+    var filenameTerm: String = ""
     var inheritedCaptureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -1374,14 +1384,16 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                     candidate, in: [candidate],
                                     sceneActive: phase == .active
                                 ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
-                                    candidate, filter: mediaFilter
+                                    candidate, filter: mediaFilter,
+                                    filenameTerm: filenameTerm
                                 ) else { return }
                                 singleViewer = candidate
                             } else {
                                 globalSelection = XDriveIOSMapSpatialSelection(
                                     cells: cells, viewport: globalViewport,
                                     mediaFilter: mediaFilter,
-                                    captureRange: activeCaptureRange)
+                                    captureRange: activeCaptureRange,
+                                    filenameTerm: filenameTerm)
                             }
                         },
                         onCamera: { current in
@@ -1473,7 +1485,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                           ),
                           selected.allSatisfy({
                             XDriveIOSMapCurrentPhotoKitAdmission.allows(
-                                $0, filter: mediaFilter
+                                $0, filter: mediaFilter,
+                                filenameTerm: filenameTerm
                             )
                           }) else { return }
                     cameraReturn = region
@@ -1681,7 +1694,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if phase == .active { refresh(at: offset) }
             else { invalidate() }
         }) { chosen in
-            XDriveIOSMapPhotoAlbum(items: chosen.items, mediaFilter: mediaFilter)
+            XDriveIOSMapPhotoAlbum(items: chosen.items, mediaFilter: mediaFilter,
+                                  filenameTerm: filenameTerm)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -1813,6 +1827,13 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             } else {
                 invalidate()
             }
+        }
+        .onChange(of: filenameTerm) { _ in
+            onLibraryCameraChange?(nil)
+            clearReturnCamera()
+            invalidate()
+            if phase == .active && mapScope == .library { scanFullLibrary() }
+            else if phase == .active { refresh(at: 0) }
         }
         .onChange(of: mapScope) { next in
             if next == .page { onLibraryCameraChange?(nil) }
@@ -2048,7 +2069,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             do {
                 let total = try await worker.startMap(
                     atOffset: 0, album: album, mediaFilter: mediaFilter,
-                    captureRange: activeCaptureRange
+                    captureRange: activeCaptureRange,
+                    filenameTerm: filenameTerm
                 )
                 var index = XDriveIOSNativeLocalMapSpatialIndex<XDrivePhotoKitLocatedCandidate>()
                 var scanned = 0
@@ -2194,7 +2216,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             do {
                 _ = try await worker.startMap(
                     atOffset: max(0, requested), mediaFilter: mediaFilter,
-                    captureRange: activeCaptureRange
+                    captureRange: activeCaptureRange,
+                    filenameTerm: filenameTerm
                 )
                 var next = try await worker.nextLocatedPage()
                 var pagesRead = 1

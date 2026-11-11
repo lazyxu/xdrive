@@ -149,6 +149,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     // and Viewer return anchor alive instead of switching Gallery sources.
     @State private var presentingUnifiedMap = false
     @State private var unifiedMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
+    @State private var unifiedMapMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
+    @State private var unifiedMapFilenameTerm = ""
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
     // Keep the active local Photos filter when a Viewer opens the map route.
@@ -742,7 +744,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                         // A different tab covers, but does not scroll-evict,
                         // this bounded verified Gallery wall.
                         isTabActive: tab == .gallery,
-                        onShowMap: { range in
+                        onShowMap: { range, media, filename in
                             // A dismissed filter sheet may invoke this later.
                             // It cannot present an old Owner's map on a new
                             // tab, after another source or after scene loss.
@@ -752,6 +754,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                                   focusGeneration == galleryFocusGeneration
                             else { return }
                             unifiedMapCaptureRange = range
+                            unifiedMapMediaFilter = media
+                            unifiedMapFilenameTerm = filename
                             // The default unified wall represents its full
                             // bounded Gallery, not a previously selected
                             // 64-photo local-map page or stale Viewer GPS.
@@ -822,6 +826,8 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .fullScreenCover(isPresented: $presentingUnifiedMap, onDismiss: {
             unifiedMapCaptureRange = nil
+            unifiedMapMediaFilter = .all
+            unifiedMapFilenameTerm = ""
         }) {
             // This is the SAME native local/cloud MapKit component used by
             // Gallery's normal Map source, not a second map or media reader.
@@ -835,7 +841,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                     cloudMapCamera: $cloudMapCamera,
                     localMapCamera: $localMapCamera,
                     onClose: { presentingUnifiedMap = false },
-                    mediaFilter: .all,
+                    mediaFilter: unifiedMapMediaFilter,
+                    filenameTerm: unifiedMapFilenameTerm,
+                    cloudSourceAllowed: unifiedMapMediaFilter.isAll && unifiedMapFilenameTerm.isEmpty,
                     inheritedCaptureRange: unifiedMapCaptureRange
                 )
             }
@@ -1172,6 +1180,8 @@ struct XDriveIOSNativePhotosDashboard: View {
         galleryMapCaptureRange = nil
         presentingUnifiedMap = false
         unifiedMapCaptureRange = nil
+        unifiedMapMediaFilter = .all
+        unifiedMapFilenameTerm = ""
         mapSource = .local
         cloudMapCamera = nil
         localMapCamera = nil
