@@ -153,6 +153,48 @@ import Foundation
             }
             precondition(windowsChecked <= 391)
         }
+        // Deterministic long-session/cancel/restart gate for 10k/100k:
+        // only fully scanned, clean windows may be persisted; a mid-window
+        // 20-upload cap or unknown ACK never advances a resume cursor.
+        for librarySize in [10_000, 100_000] {
+            let stopWindow = 7
+            var safeCheckpoint = 0
+            for index in 0..<stopWindow {
+                let offset = XDrivePhotoBackupScanWindow.offset(for: index)!
+                let capacity = XDrivePhotoBackupScanWindow.capacity(
+                    visibleTotal: librarySize, offset: offset
+                )
+                precondition(p.afterWindow(
+                    index: index, visibleTotal: librarySize,
+                    scanned: 20, uploaded: 20, needsReview: false
+                ) == .repeatWindow(index))
+                precondition(!p.canSaveCheckpoint(
+                    completedWindow: index, nextWindow: index + 1,
+                    visibleTotal: librarySize, hadUnavailable: true
+                ))
+                precondition(p.afterWindow(
+                    index: index, visibleTotal: librarySize,
+                    scanned: capacity, uploaded: 20, needsReview: false
+                ) == .nextWindow(index + 1))
+                precondition(p.canSaveCheckpoint(
+                    completedWindow: index, nextWindow: index + 1,
+                    visibleTotal: librarySize, hadUnavailable: false
+                ))
+                safeCheckpoint = index + 1
+            }
+            precondition(safeCheckpoint == stopWindow)
+            precondition(p.afterWindow(
+                index: stopWindow, visibleTotal: librarySize,
+                scanned: 1, uploaded: 1, needsReview: true
+            ) == .pausedForReview)
+            precondition(resume(safeCheckpoint, librarySize, librarySize) == safeCheckpoint)
+            precondition(resume(safeCheckpoint, librarySize, librarySize, 3, 3, false) == 0)
+            precondition(resume(safeCheckpoint, librarySize, librarySize + 1) == 0)
+            precondition(!p.canSaveCheckpoint(
+                completedWindow: stopWindow, nextWindow: stopWindow + 1,
+                visibleTotal: librarySize, hadUnavailable: true
+            ))
+        }
         print("iOS focused PhotoKit window progression and unsafe-retry stops: PASS")
     }
 }

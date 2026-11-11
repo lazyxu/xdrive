@@ -11,6 +11,17 @@ on:
       # Changes to the Photos incremental MVP policy or native backup UI
       # must run real candidate iPhone Simulator navigation, not only IPA.
       - 'ios/UITests/XDriveIOSPhotoBackupMVPScenarioUITests.swift'
+      - 'ios/XDriveIOS/PhotoQueueSummarySection.swift'
+      - 'ios/XDriveIOS/NativeVisiblePhotoQueueBadgePolicy.swift'
+      - 'ios/XDriveIOS/NativePhotoTaskStatusPolicy.swift'
+      - 'ios/XDriveIOS/PhotoKitScanPreviewScreen.swift'
+      - 'ios/XDriveIOS/PhotoKitReadOnlyPerformanceModel.swift'
+      - 'ios/XDriveIOS/PhotoKitReadOnlyPerformancePolicy.swift'
+      - 'ios/XDriveIOS/NativePhotoWholeLibraryAudit.swift'
+      - 'ios/XDriveIOS/PhotoFocusedResumeStore.swift'
+      - 'ios/tests/PhotoFocusedBackupPolicyChecks.swift'
+      - 'ios/tests/PhotoKitReadOnlyPerformancePolicyChecks.swift'
+      - 'ios/tests/NativePhotoTaskStatusPolicyChecks.swift'
       - 'ios/tests/PhotoBackupMVPAcceptanceChecks.swift'
       - 'ios/XDriveIOS/PhotoAutoSchedulePolicy.swift'
       - 'ios/XDriveIOS/PhotoBackupChangeQueueStore.swift'

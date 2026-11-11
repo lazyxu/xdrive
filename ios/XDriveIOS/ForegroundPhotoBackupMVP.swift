@@ -241,7 +241,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                             owner: owner
                         )
                     }
-                    report.activeLocalIdentifier = nil
+                    if !report.stoppedForReview { report.activeLocalIdentifier = nil }
                     await publish(report)
                     if report.stoppedForReview { break }
                 }
@@ -358,7 +358,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         )
                         report.stage = "有照片原件无法确认，请查看备份汇总"
                     }
-                    report.activeLocalIdentifier = nil
+                    if !report.stoppedForReview { report.activeLocalIdentifier = nil }
                     await publish(report)
                     if report.stoppedForReview { break scanning }
                 }
@@ -478,7 +478,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             report.stage = "所选原件暂不可用或不支持，未将其计作备份成功"
         }
         try Task.checkCancellation()
-        report.activeLocalIdentifier = nil
+        if !report.stoppedForReview { report.activeLocalIdentifier = nil }
         await publish(report)
         return report
     }

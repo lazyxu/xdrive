@@ -18,6 +18,9 @@ enum XDriveIOSNativeVisiblePhotoQueueBadgePolicy {
         case "processing":
             return .init(title: "处理中", symbol: "arrow.triangle.2.circlepath",
                          explanation: "正在读取、核验或上传原件；云端写入尚未确认")
+        case "needsReconciliation":
+            return .init(title: "待核对", symbol: "exclamationmark.shield",
+                         explanation: "此原件的写入确认不确定，必须核对当前服务器收据；不可自动重传或标为成功")
         case "matched":
             return .init(title: "来源匹配", symbol: "checkmark.seal",
                          explanation: "图库本次核对找到本机与云端相同原件；不代表未来无需复验服务器 Node")

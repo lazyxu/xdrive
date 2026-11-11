@@ -17,7 +17,13 @@ test('green library-wide audit stays under live PhotoKit invalidation until scre
   assert.match(source, /completeAt = nil/)
   // Actor cleanup can suspend: an obsolete audit must not re-publish green.
   assert.match(source, /await scanner\.reset\(\)[\s\S]*?try Task\.checkCancellation\(\)[\s\S]*?guard self\.epoch == token,[\s\S]*?try self\.verifyGeneration\(/)
-  assert.match(source, /if audit\.completeAt != nil/)
+  // Green state is bound to a completed current-Node snapshot, with its
+  // explicit as-of time visible to the user; never weaken live invalidation.
+  // SwiftUI now binds the exact completion Date; a stale empty optional is never green.
+  assert.match(source, /if let completedAt = audit\.completeAt \{/)
+  assert.match(source, /completedAt\.formatted\(date: \.abbreviated, time: \.standard\)/)
+  assert.match(source, /native-ios-photo-whole-audit-as-of/)
+  assert.match(source, /不代表此刻仍为 100% 或未来不需复验/)
   assert.match(source, /\.onDisappear \{ audit\.reset\(\) \}/)
   assert.match(source, /\.onChange\(of: login\.owner\) \{ _ in audit\.reset\(\) \}/)
   assert.doesNotMatch(source, /UploadSessionTransport|uploadPrepared|finalize\(|deleteNode|\.settle\(/)

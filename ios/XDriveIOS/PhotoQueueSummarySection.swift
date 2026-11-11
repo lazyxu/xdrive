@@ -212,7 +212,16 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
                                     Text("拍摄时间未知").font(.caption).foregroundStyle(.secondary)
                                 }
                                 if let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy.badge(
-                                    for: model.verifiedPageIDs.contains(item.id) ? "matched" : item.state,
+                                    for: XDriveIOSNativePhotoTaskStatusPolicy.displayedState(
+                                        rowState: item.state, rowID: item.id,
+                                        currentPageVerified: model.verifiedPageIDs.contains(item.id),
+                                        currentOwnerMatched: controller.canShowTransferStatus(for: login.owner),
+                                        uploadBusy: controller.busy,
+                                        activeLocalIdentifier: controller.progress?.activeLocalIdentifier,
+                                        stoppedForUnknownReceipt:
+                                            controller.progress?.stoppedForReview == true &&
+                                            (controller.progress?.needsReview ?? 0) > 0
+                                    ),
                                     failureReasonCode: item.failureReasonCode
                                 ) {
                                     Label(badge.title, systemImage: badge.symbol)
