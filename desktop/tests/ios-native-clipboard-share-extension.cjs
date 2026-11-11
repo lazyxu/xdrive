@@ -21,3 +21,13 @@ test('share extension accepts only an explicit local and time-limited paste, nev
   assert.match(source,/XDriveIOSClipboardSharePolicy\.acceptable/)
   assert.doesNotMatch(source,/UserDefaults|Keychain|accessToken|Authorization|clipboard\/items|URLSession|Data\(contentsOf|write\(to:/)
 })
+
+test('share instructions match the current unencrypted native Clipboard UI',()=>{
+  assert.match(source,/复制后 2 分钟内/)
+  assert.match(source,/xDrive → 剪贴板 → 从本机粘贴 → 发送/)
+  assert.match(source,/消息不加密，请勿发送密码或验证码/)
+  assert.doesNotMatch(source,/解锁|加密发送|performs encryption itself/)
+  const nativePage = read('ios/XDriveIOS/NativeClipboardScreen.swift')
+  assert.match(nativePage,/Button\("从本机粘贴"\)/)
+  assert.match(nativePage,/Button\("发送"\)/)
+})
