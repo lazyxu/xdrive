@@ -83,7 +83,7 @@ final class XDriveIOSPagePerformanceUITests: XCTestCase {
             let app = XCUIApplication()
             app.launchArguments = ["-xdrive-ui-navigation-smoke"]
             measure("app.gallery", phase: "cold", trial: trial, app: app,
-                    ready: "native-ios-unified-photo-gallery" { app.launch() }
+                    ready: "native-ios-unified-photo-gallery") { app.launch() }
             app.terminate()
         }
     }
