@@ -23,6 +23,14 @@ TEST_ROUTES = {
     'testGalleryFilesRotateLandscapeAndReturnPortrait': 'rotate-return',
     'testSyntheticOwnerFilesAndGalleryRelaunchDoesNotRetainOldScope': 'owner-relaunch',
     'testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes': 'search-filter-return',
+    'testGalleryFilesAlternationRetainsNonBlankSettledFrames': 'gallery-files-nonblank',
+    'testGalleryFilterCancelAfterTabAndSourceRoundTrips': 'gallery-filter-tabs',
+    'testFilesQuickRailAlternatingSectionsReturnsToBrowse': 'files-rail-alternating',
+    'testNativeFilesQuickRailAfterLandscapeGalleryReturnNoBlank': 'landscape-files-rail',
+    'testCloudFilesRepeatedOfflineRetryRetainsRecoverableChildPage': 'cloud-denied-recovery',
+    'testGalleryPeopleAfterFilesQuickRailReturnKeepsUnifiedWall': 'people-files-return',
+    'testFilesSearchFocusThenGalleryReturnPreservesShell': 'files-search-return',
+    'testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank': 'foreground-roundtrip',
 }
 START = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 FINISH = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
@@ -150,11 +158,21 @@ def audit(directory, required=6, probe=frame_timeline):
                 return {'pass': False, 'reason': 'malformed_video_trace',
                         'usable_routes': 0, 'required_routes': required, 'clips': []}
     clips = [assess_clip(item, directory, probe=probe) for item in rows]
+    # Deterministic bounded reason counts: a real VFR movie with no post-tap
+    # encoded frame is NOT a successful transition video, even if XCTest passed.
+    # Report precise failure classes rather than weakening --required 6.
+    rejected = {}
+    for item in clips:
+        if not item['usable']:
+            reason = item.get('reason', 'unknown')
+            rejected[reason] = rejected.get(reason, 0) + 1
     routes = {item['route_group'] for item in clips if item['usable']}
     accepted = len(routes) >= required
     return {
         'pass': accepted, 'usable_routes': len(routes),
         'required_routes': required,
+        'rejected_by_reason': dict(sorted(rejected.items())),
+        'registered_routes': len(set(TEST_ROUTES.values())),
         'reason': ('required_real_recordings_present' if accepted
                    else 'inadequate_real_recorded_route_coverage'),
         'expected_route_groups': sorted(TEST_ROUTES.values()),
@@ -315,8 +333,9 @@ def main():
         pathlib.Path(opts.report).write_text(
             json.dumps(result, ensure_ascii=False, indent=2) + '\n',
             encoding='utf-8')
-        print('IOS_VIDEO_EVIDENCE usable_routes=%d required=%d pass=%s' % (
-            result['usable_routes'], result['required_routes'], result['pass']))
+        print('IOS_VIDEO_EVIDENCE usable_routes=%d required=%d pass=%s rejected=%s' % (
+            result['usable_routes'], result['required_routes'], result['pass'],
+            json.dumps(result.get('rejected_by_reason', {}), sort_keys=True)))
         if not result['pass']:
             raise SystemExit(1)
 

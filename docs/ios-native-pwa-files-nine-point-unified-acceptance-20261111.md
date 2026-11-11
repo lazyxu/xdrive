@@ -36,3 +36,14 @@ Each hardware pair: attach the two raw images, timestamp, iPhone model, iOS vers
 No credentials/Owner identifiers, signed URLs, private filenames or media bytes in logs. Use two genuine, separately authorized test Owners and captured 401/403/abort traces. Cancelled/unknown-ACK mutation outcomes are never silently retried.
 
 Do not mark **DONE** or merge merely because static Node checks pass. This candidate should remain **Draft** until exact-HEAD full CI, unsigned IPA, real candidate Simulator journeys and Final Gate succeed. Real iPhone signoff requires external physical hardware with a signed app and actual Owner data; if unavailable, explicitly keep it **NOT VERIFIED**, even after code merge.
+
+
+## 2026-11-11 video-gate evidence diagnosis and broader true route coverage
+
+A separate completed **real** macOS Simulator run on former #4311 (run 43015878253) executed **70/70 real XCUITest** but the new video audit rejected the six-route gate: **3/8 usable**. Review of its attached `video-frame-evidence.json` (not guessed from log status) identified:
+- `cloud-originals`, `operations-gallery`, `local-date-sheet`: recorded H.264 clips existed but their last *encoded* frame PTS preceded tap+2s; **no proven post-tap video**. VFR idle frames must not be fabricated.
+- `rotate-return`: `ffprobe` contains a 3.200s -> 1.123333s timestamp rollback. Keep it rejected as a discontinuous timeline until a reproducible valid capture exists; do not sort/deduplicate PTS to force green.
+- `owner-relaunch`: one encoded video frame only; unusable.
+- `files-quick-sections`, `search-filter-return`, `gallery-files-tabs`: usable, still not real-device FPS or proof of zero flicker.
+
+This PR **retains the original required 6 distinct valid recordings** and the same strict per-clip post-tap and monotonicity verification, but expands source-selected real native UI recording targets from 8 to 16 across nonblank tab returns, filters, quick sections, landscape, cloud-denial recovery, People, Search and foreground journeys. It reports sorted aggregate rejection reason counts into the CI summary (no private paths/data), so future shortfalls are actionable without suppressing the failure. Native XCUITest count remains 76. Unit tests verify registered test methods truly exist and rejected clips cannot satisfy the six-route gate. No performance/FPS/Owner claims are made from encoded PTS alone.

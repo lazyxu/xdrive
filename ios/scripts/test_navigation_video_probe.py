@@ -77,6 +77,43 @@ class VideoEvidenceTests(unittest.TestCase):
         self.assertGreaterEqual(len(set(TEST_ROUTES.values())), 8)
         self.assertEqual(len(set(TEST_ROUTES)), len(TEST_ROUTES))
 
+    def test_extended_recording_routes_are_real_native_xctest_journeys(self):
+        # Candidate routes must exist as runnable real native UI methods.
+        # No static placeholder, synthetic Server authentication, or fabricated
+        # playback samples can satisfy the six-route video evidence gate.
+        stability = (pathlib.Path(__file__).resolve().parents[1] /
+                     'UITests/XDriveIOSGalleryFilesStabilityUITests.swift').read_text(
+                         encoding='utf-8')
+        self.assertEqual(len(TEST_ROUTES), 16)
+        self.assertEqual(len(TEST_ROUTES), len(set(TEST_ROUTES.values())))
+        for method in TEST_ROUTES:
+            if method in (
+                'testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent',
+                'testCloudOriginalsHelpDismissFilesReturnKeepsChild',
+                'testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages',
+                'testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail',
+            ):
+                path = (pathlib.Path(__file__).resolve().parents[1] /
+                        'UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift')
+                target = path.read_text(encoding='utf-8')
+            else:
+                target = stability
+            self.assertIn('func ' + method + '()', target)
+
+    def test_rejection_diagnostics_do_not_weaken_required_six_video_routes(self):
+        good = self.clip()
+        bad = self.clip('testCloudOriginalsHelpDismissFilesReturnKeepsChild',
+                        first_tap_offset_s=8.2)
+        (self.root / 'trace.jsonl').write_text(
+            '\\n'.join(json.dumps(x) for x in [good, bad]) + '\\n',
+            encoding='utf-8')
+        report = audit(self.root, required=6, probe=self.probe)
+        self.assertFalse(report['pass'])
+        self.assertEqual(report['usable_routes'], 1)
+        self.assertEqual(report['required_routes'], 6)
+        self.assertEqual(report['registered_routes'], 16)
+        self.assertEqual(report['rejected_by_reason'], {'no_post_tap_video': 1})
+
     def test_video_timestamp_duplicate_negative_and_nan_fail(self):
         for raw in ['0.0\n0.0', '0.1\n0.09', '-0.1\n0.0',
                     'nan', 'inf', '0.0\nnot-time']:
