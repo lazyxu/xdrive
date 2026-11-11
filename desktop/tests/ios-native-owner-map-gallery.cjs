@@ -257,11 +257,29 @@ test('cluster album pages all real places with one verified 48-item Range and Vi
   assert.match(clusterAlbum, /earlier = history[\s\S]*?next = following[\s\S]*?page = fetched/)
   assert.match(clusterAlbum, /XDriveIOSNativeServerMediaPreview\(/)
   assert.match(clusterAlbum, /loadedItems: page\?\.items \?\? \[\],\s*loadedRange: page,\s*openedOwner: selection\.owner/)
-  assert.match(clusterAlbum, /for item in fetched\.items where item\.metadata\.has_thumbnail/)
+  assert.match(clusterAlbum, /let pending = fetched\.items\.filter \{ \$0\.metadata\.has_thumbnail \}/)
   assert.match(clusterAlbum, /reader\.thumbnail\(item\)/)
   assert.doesNotMatch(clusterAlbum, /isNetworkAccessAllowed = true|POST|UploadSession|map-region:q:|URLSession\(/)
 })
 
+
+test('Owner cluster image requests keep a three-task sliding window and revoke on 401/403', () => {
+  const request = clusterAlbum.slice(
+    clusterAlbum.indexOf('private struct XDriveIOSOwnerClusterCoverRead:'),
+    clusterAlbum.indexOf('struct XDriveIOSNativeOwnerMapClusterAlbum: View'))
+  const scheduler = clusterAlbum.slice(clusterAlbum.indexOf('// Stream a maximum of three verified thumbnail reads'))
+  assert.match(request, /try Task\.checkCancellation\(\)[\s\S]*?reader\.thumbnail\(item\)[\s\S]*?try Task\.checkCancellation\(\)/)
+  assert.match(request, /if case \.response\(let code\) = failure, code == 401 \|\| code == 403 \{[\s\S]*?return \.revoked/)
+  assert.match(scheduler, /let maximumConcurrentCovers = 3/)
+  assert.match(scheduler, /await withTaskGroup\([\s\S]*?of: XDriveIOSOwnerClusterCoverOutcome\.self/)
+  assert.match(scheduler, /for _ in 0\.\.<min\(maximumConcurrentCovers, pending\.count\)/)
+  assert.match(scheduler, /for await completed in group \{[\s\S]*?if nextIndex < pending\.count \{[\s\S]*?group\.addTask/)
+  assert.match(scheduler, /guard !Task\.isCancelled, generation == ticket,[\s\S]*?activeOwner, cursor == target,[\s\S]*?page\?\.sameVisibleSnapshot\(as: fetched\) == true/)
+  assert.match(scheduler, /case \.revoked:[\s\S]*?group\.cancelAll\(\)[\s\S]*?invalidate\(\)/)
+  assert.match(scheduler, /case \.ready\(let nodeID, let image\):[\s\S]*?coverImages\[nodeID\] = image/)
+  assert.doesNotMatch(clusterAlbum, /for item in fetched\.items where item\.metadata\.has_thumbnail/)
+  assert.doesNotMatch(scheduler, /for start in stride\(/)
+})
 
 test('single exact Owner map place opens L3 after fresh Owner-scoped Range, not a one-item location sheet', () => {
   assert.match(map, /@State private var singleViewer: XDriveIOSNativeMediaItem\?/)
