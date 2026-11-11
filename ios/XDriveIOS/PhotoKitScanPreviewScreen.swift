@@ -123,6 +123,7 @@ struct XDrivePhotoKitScanPreviewScreen: View {
     @State private var monitor: XDriveIOSNativeScanPreviewChangeMonitor?
     @State private var busy = false
     @State private var errorMessage: String?
+    @StateObject private var performance = XDriveIOSPhotoKitReadOnlyPerformanceModel()
 
     var body: some View {
         NavigationStack {
@@ -177,8 +178,39 @@ struct XDrivePhotoKitScanPreviewScreen: View {
                     }
                     Button("重新扫描") { begin() }
                         .buttonStyle(.bordered)
-                        .disabled(busy || (permission != .authorized && permission != .limited))
+                        .disabled(busy || performance.busy ||
+                                  (permission != .authorized && permission != .limited))
                         .accessibilityIdentifier("native-photokit-scan-restart")
+                    Divider()
+                    Text("真实设备只读扫描性能：逐个使用生产备份的 256 项稳定窗口和 64 项读取页，测量耗时及进程峰值内存。不会上传、读取原件或记录照片 ID；仅在全量完成且 PhotoKit 版本未变化时出结果。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if performance.busy {
+                        ProgressView("正在测量 \(performance.scanned)/\(performance.total) 项")
+                            .accessibilityIdentifier("native-photokit-performance-progress")
+                        Button("停止测量") { performance.cancel() }
+                    } else {
+                        Button("实测当前授权图库的完整扫描") { performance.run() }
+                            .buttonStyle(.bordered)
+                            .disabled(busy || permission != .authorized || total == nil ||
+                                      scenePhase != .active)
+                            .accessibilityIdentifier("native-photokit-performance-run")
+                    }
+                    if let measured = performance.sample, measured.complete {
+                        Text("本机实测截至 \(measured.measuredAt.formatted(date: .abbreviated, time: .standard))：\(measured.total) 项、\(measured.windows) 个窗口、\(measured.pages) 页")
+                            .monospacedDigit()
+                            .accessibilityIdentifier("native-photokit-performance-sample")
+                        Text("总计 \(String(format: "%.1f", measured.elapsedMS)) ms · 首个 64 项读取 \(String(format: "%.1f", measured.firstPageMS)) ms · 最慢页 \(String(format: "%.1f", measured.slowestPageMS)) ms")
+                            .font(.footnote).monospacedDigit()
+                        if let bytes = measured.peakResidentBytes {
+                            Text("进程历史峰值常驻内存 \(String(format: "%.1f", Double(bytes) / 1_048_576)) MiB（整个 App，非 PhotoKit 独占内存）")
+                                .font(.footnote).monospacedDigit()
+                        }
+                        Text("这是真实扫描元数据的测量，不是界面帧率、重启恢复时间或云端备份完成率；这些需另行真机验收。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let failure = performance.failure {
+                        Text(failure).font(.footnote).foregroundStyle(.orange)
+                    }
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -240,6 +272,7 @@ struct XDrivePhotoKitScanPreviewScreen: View {
     }
 
     private func invalidate() {
+        performance.cancel()
         generation = UUID()
         scanTask?.cancel()
         scanTask = nil

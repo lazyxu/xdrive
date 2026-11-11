@@ -39,6 +39,8 @@ jobs:
           persist-credentials: false
       - name: Test direct IPA publisher, SHA validation, and immutable release safety
         run: bash scripts/ci/test-ios-unsigned-release.sh
+      - name: Verify independent NAS original readback checker rejects false physical proof
+        run: python3 ios/scripts/test_verify_nas_photo_original.py
 
   unsigned-ipa:
     runs-on: macos-15
@@ -306,6 +308,21 @@ jobs:
             ios/tests/PhotoBackupDestinationCursorPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-photo-managed-cursor-check"
           "$RUNNER_TEMP/xdrive-ios-photo-managed-cursor-check"
+
+      - name: Verify iOS Photos P1 scan telemetry and truthful task-status overlay
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/PhotoBackupScanWindow.swift \
+            ios/XDriveIOS/PhotoKitReadOnlyPerformancePolicy.swift \
+            ios/tests/PhotoKitReadOnlyPerformancePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-performance"
+          "$RUNNER_TEMP/xdrive-ios-photo-performance"
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativePhotoTaskStatusPolicy.swift \
+            ios/tests/NativePhotoTaskStatusPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-task-status"
+          "$RUNNER_TEMP/xdrive-ios-photo-task-status"
 
       - name: Verify focused first-pass native PhotoKit window progression
         run: |

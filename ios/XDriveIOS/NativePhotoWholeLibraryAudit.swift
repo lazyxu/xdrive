@@ -471,9 +471,12 @@ struct XDriveIOSNativePhotoWholeLibraryAuditSection: View {
                         .accessibilityLabel("逐项核验扫描进度，非备份完成率")
                 }
             }
-            if audit.completeAt != nil {
-                Label("本轮当前图库原件核验全部通过", systemImage: "checkmark.shield")
+            if let completedAt = audit.completeAt {
+                Label("截至 \(completedAt.formatted(date: .abbreviated, time: .standard))，本轮当前图库逐项原件核验全部通过", systemImage: "checkmark.shield")
                     .accessibilityIdentifier("native-ios-photo-whole-audit-confirmed")
+                Text("这是上述时间点的受管 Source/Node 原件核验结果，不代表此刻仍为 100% 或未来不需复验。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-photo-whole-audit-as-of")
             }
             Text(audit.message)
                 .font(.footnote).foregroundStyle(.secondary)
