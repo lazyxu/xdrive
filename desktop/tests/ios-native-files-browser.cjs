@@ -51,7 +51,19 @@ test('native Files decodes and displays Server modification timestamps in list a
   assert.match(page, /var updated_at: String\? = nil/)
   assert.match(page, /enum XDriveIOSNativeFilesDatePolicy/)
   assert.match(page, /fractionDigits\.utf8\.count <= 9/)
-  assert.equal((view.match(/XDriveIOSNativeFilesDatePolicy\.display\(modifiedDate\)/g) || []).length, 2)
+  // Both native list and grid rows now use one verified metadata formatter.
+  // Keep the Server timestamp/date decode assertion while forbidding drift
+  // between two independently formatted (and potentially flickering) labels.
+  const display = view.slice(view.indexOf('private func filesDisplayMetadata('),
+    view.indexOf('private func gridLabel(', view.indexOf('private func filesDisplayMetadata(')))
+  assert.match(display, /if let modifiedDate = entry\.node\.modifiedDate/)
+  assert.match(display, /dateLabel = "\\\(year\)\/\\\(month\)\/\\\(day\)"/)
+  assert.match(display, /case 0: dateLabel = "今天"/)
+  assert.match(display, /case 1: dateLabel = "昨天"/)
+  assert.match(display, /case 2: dateLabel = "前天"/)
+  assert.match(display, /if entry\.node\.isDirectory \{ return dateLabel \}/)
+  assert.match(display, /ByteCountFormatter\.string\(/)
+  assert.equal((view.match(/if let metadata = filesDisplayMetadata\(entry\)/g) || []).length, 2)
   assert.match(management, /file\.modifiedDate/)
   assert.match(management, /directory\.modifiedDate/)
 })

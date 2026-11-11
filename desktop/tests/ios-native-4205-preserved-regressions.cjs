@@ -53,6 +53,25 @@ for (const id of accepted) {
         assert.match(source, /report_missed\(key, missed_starts, missed_taps\)/)
         continue
       }
+      if (id === 116 && check.file === 'f') {
+        // #4205 predated the newer single Files-only TOP rail. Preserve its
+        // intent (Recent/Browse/Favorites remains accessible in pushed
+        // folders) without forcing the obsolete content-first layout.
+        // Explicitly reject a second bottom rail and geometry jumps.
+        const start = source.indexOf('@ViewBuilder private var filesMain: some View')
+        const end = source.indexOf('private var filesModals: some View', start)
+        assert.ok(start >= 0 && end > start, 'native Files page/rail missing')
+        const main = source.slice(start, end)
+        assert.match(main, /VStack\(spacing: 0\) \{\s*\/\/ One compact Files-only TOP selector/)
+        assert.ok(main.indexOf('native-ios-files-quick-rail') >= 0)
+        assert.ok(main.indexOf('native-ios-files-quick-rail') < main.indexOf('switch quickSection'),
+          'Files-only top rail must precede every section child')
+        assert.match(main, /switch quickSection \{\s*case \.recent:[\s\S]*?case \.browse:[\s\S]*?case \.favorites:/)
+        assert.match(main, /guard !selecting, !batchTrash\.busy, !batchTarget\.busy/)
+        assert.match(main, /\.disabled\(selecting\)/)
+        assert.match(main, /resumeStore\.saveSection\(option\.rawValue, owner: owner\)/)
+        continue
+      }
       if ((id === 96 || id === 141) && check.file === 'j') {
         // Keep all four historical native Simulator shards in the original
         // order. Permit only the stricter fifth candidate-mapkit shard, not
