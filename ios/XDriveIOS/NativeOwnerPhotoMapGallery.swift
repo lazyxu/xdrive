@@ -472,6 +472,9 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var coverImages: [String: UIImage] = [:]
     @State private var coverTask: Task<Void, Never>?
     @State private var verifiedBounds: XDriveIOSNativeOwnerMapBounds?
+    // Bound to the *published* signed overview, not merely the current login.
+    // A switch from Owner A to B can precede SwiftUI's onChange cleanup.
+    @State private var verifiedOverviewOwner: XDriveNativeOwnerRoot?
     @State private var requestedBounds: XDriveIOSNativeOwnerMapBounds?
     @State private var cameraGesturePending = false
     @State private var cameraSettleTask: Task<Void, Never>?
@@ -515,7 +518,9 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     }
 
     private var mapMarkersEnabled: Bool {
-        guard phase == .active, !busy, login.owner != nil,
+        guard phase == .active, !busy, let verifiedOverviewOwner,
+              XDriveIOSNativePhotoOwnerScope.matches(
+                  login.owner, verifiedOverviewOwner),
               selected == nil, selectedCluster == nil,
               singleViewer == nil, singleTask == nil,
               let verifiedBounds else { return false }
@@ -566,6 +571,9 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                           selected == nil, selectedCluster == nil,
                           singleViewer == nil, singleTask == nil,
                           let expected = login.owner,
+                          let verifiedOverviewOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                              expected, verifiedOverviewOwner),
                           let overview, let verifiedBounds,
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             verifiedBounds, current: currentBounds()),
@@ -595,6 +603,9 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                           selected == nil, selectedCluster == nil,
                           singleViewer == nil, singleTask == nil,
                           let expected = login.owner,
+                          let verifiedOverviewOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                              expected, verifiedOverviewOwner),
                           let overview, let verifiedBounds,
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             verifiedBounds, current: currentBounds()
@@ -1053,6 +1064,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         singleOwner = nil
         task?.cancel()
         task = nil
+        verifiedOverviewOwner = nil
         verifiedBounds = nil
         requestedBounds = nil
         if overview != nil || busy {
@@ -1077,6 +1089,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         task?.cancel()
         task = nil
         overview = nil
+        verifiedOverviewOwner = nil
         verifiedBounds = nil
         requestedBounds = nil
         error = nil
@@ -1111,6 +1124,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         // refresh. They are visual-only: busy and the revoked viewport fence
         // disable both touch and VoiceOver activation until a fresh response.
         verifiedBounds = nil
+        verifiedOverviewOwner = nil
         requestedBounds = bounds
         error = nil
         busy = true
@@ -1142,6 +1156,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 // reused as the current place's photo.
                 coverImages = [:]
                 overview = result
+                verifiedOverviewOwner = expected
                 verifiedBounds = bounds
                 revision = UUID()
                 loadCurrentOwnerCovers(result, reader: reader,
@@ -1153,6 +1168,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 // A failed authorization or failed map response cannot keep
                 // old Owner GPS covers displayed indefinitely.
                 overview = nil
+                verifiedOverviewOwner = nil
                 coverImages = [:]
                 revision = UUID()
                 self.error = "当前 Owner 地图范围或权限已失效，请核对账户并重试。"
