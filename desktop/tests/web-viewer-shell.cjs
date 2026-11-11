@@ -577,16 +577,16 @@ test('P1-2c Gallery Viewer return scroll snapshot belongs to same Web route, hos
   assert.match(app, /galleryViewerScrollRef = useRef/)
   assert.match(app, /useLayoutEffect\(\(\) => \{/)
   assert.match(app, /const wasViewerActive = previousViewerActiveRef\.current/)
-  assert.match(app, /if \(viewerActive\) \{/)
-  assert.match(app, /if \(wasViewerActive \|\| !saved \|\| appView !== 'gallery'/)
-  assert.match(app, /saved\.offset = saved\.host\.scrollTop/)
+  assert.match(app, /if \(viewerActive\) \{[\s\S]*?return\s*\}/)
+  // The routed Viewer must preserve the onOpenViewer click anchor, not a
+  // partial-row browser scroll adjustment during its foreground layout.
+  const entry = app.slice(
+    app.indexOf('const previousViewerActiveRef = useRef(viewerActive)'),
+    app.indexOf('if (!wasViewerActive) return'),
+  )
+  assert.match(entry, /if \(viewerActive\) \{/)
+  assert.doesNotMatch(entry, /saved\.offset\s*=|captureEntry|addEventListener\('scroll'/)
   assert.match(app, /overflowAnchor: appView === 'gallery' \? 'none' : undefined/)
-
-  assert.match(app, /saved\.host\.addEventListener\('scroll', captureEntry, \{ passive: true \}\)/)
-  assert.match(app, /window\.addEventListener\('resize', freezeCapture\)/)
-  assert.match(app, /saved\.host\.removeEventListener\('scroll', captureEntry\)/)
-  assert.match(app, /window\.removeEventListener\('resize', freezeCapture\)/)
-  assert.match(app, /window\.requestAnimationFrame\(captureEntry\)/)
   assert.match(app, /if \(!wasViewerActive\) return/)
   assert.match(app, /window\.location\.hash !== saved\.callerHash/)
   assert.match(app, /Math\.abs\(window\.innerWidth - saved\.viewportWidth\) > 1/)
