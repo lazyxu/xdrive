@@ -1,0 +1,36 @@
+name: Release Bundle immutable publication acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Exact 40-character source Git Commit of an ALREADY published Bundle"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  attestations: read
+
+jobs:
+  verify-public-release:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Validate exact immutable published Commit and Sigstore proof
+        shell: bash
+        env:
+          TARGET_COMMIT: ${{ inputs.commit }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_COMMIT" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "::error::A full 40-character Git source Commit is required."
+            exit 1
+          }
+          python3 scripts/ci/verify-live-release-bundle.py \
+            --commit "$TARGET_COMMIT" --require-immutable --require-sigstore
