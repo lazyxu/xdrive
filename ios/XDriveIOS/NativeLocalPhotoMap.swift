@@ -2111,7 +2111,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             p0IndependentGPSAuditRunning = false
             // Numbers only; never place GPS values, filenames, local IDs,
             // screenshots or photo bytes into log output.
-            p0IndependentGPSAuditResult = "独立 GPS \\(independentlyLocated) 地图 GPS \\(expected) \\(independentlyLocated == expected ? "一致" : "不一致")"
+            p0IndependentGPSAuditResult = "独立 GPS \(independentlyLocated) 地图 GPS \(expected) \(independentlyLocated == expected ? "一致" : "不一致")"
             print("IOS_MAP_P0_REAL_PHOTOKIT_COUNT independent=\(independentlyLocated) map=\(expected) match=\(independentlyLocated == expected)")
         }
     }
