@@ -53,8 +53,30 @@ for (const id of accepted) {
         assert.match(source, /report_missed\(key, missed_starts, missed_taps\)/)
         continue
       }
-      assert.match(source, new RegExp(check.pattern, check.flags || ''),
-        'historical '+id+' fails on '+historical.sources[check.file])
+      if ((id === 96 || id === 141) && check.file === 'j') {
+        // Keep all four historical native Simulator shards in the original
+        // order. Permit only the stricter fifth candidate-mapkit shard, not
+        // an arbitrary rearrangement or an omitted no-Session test.
+        assert.equal(check.pattern,
+          'source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]')
+        assert.match(source,
+          /source:\s*\[release-c83,\s*candidate-navigation,\s*candidate-gallery-files,\s*candidate-no-session(?:,\s*candidate-mapkit)?\s*\]/,
+          'historical '+id+' requires all original native UI shards')
+        assert.match(source,
+          /candidate-no-session\)[\s\S]*?XDriveIOSFilesSessionRecoveryUITests/,
+          'the real no-Session native child remains a mandatory shard')
+        if (source.includes('candidate-mapkit')) {
+          assert.match(source,
+            /candidate-mapkit\)[\s\S]*?XDriveIOSMapNavigationRuntimeUITests/,
+            'candidate MapKit must really run the native UI suite')
+          assert.match(source,
+            /continue-on-error:\s*\$\{\{\s*matrix\.source == 'release-c83'\s*\}\}/,
+            'new MapKit must fail on errors; only the old baseline can be optional')
+        }
+      } else {
+        assert.match(source, new RegExp(check.pattern, check.flags || ''),
+          'historical '+id+' fails on '+historical.sources[check.file])
+      }
     }
   })
 }

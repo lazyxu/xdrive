@@ -264,6 +264,81 @@ struct NativeLocalMapSpatialPolicyChecks {
             latitudeSpan: .nan, longitudeSpan: 4
         ) == nil)
 
+        // A 100k library must never be re-enumerated merely because the user
+        // returns to a previously verified viewport in the same PhotoKit
+        // observer generation. A deeper zoom or a different geographic
+        // region is NOT valid for reusing a coarser Cell count.
+        precondition(Auto.maximumCachedWindows == 2)
+        precondition(Auto.canReuse(cached: expandedSF, camera: sanFrancisco))
+        precondition(Auto.canReuse(cached: expandedSF, camera: nearby))
+        precondition(!Auto.canReuse(cached: sanFrancisco, camera: expandedSF))
+        precondition(!Auto.canReuse(cached: expandedSF, camera: zoomed))
+        precondition(!Auto.canReuse(cached: expandedSF, camera: farAway))
+        precondition(!Auto.canReuse(cached: dateLine!, camera: sanFrancisco))
+
+        // Real scan-duration instrumentation uses empirical nearest-rank
+        // percentiles, not guessed elapsed times inferred from 100k rows.
+        precondition(Auto.maximumLatencySamples == 32)
+        let percentiles = Auto.scanPercentiles([10, 40, 20, 30, 50])
+        precondition(percentiles?.p50 == 30 && percentiles?.p95 == 50)
+        let twoDurations = Auto.scanPercentiles([1, 2])
+        precondition(twoDurations?.p50 == 1 && twoDurations?.p95 == 2)
+        precondition(Auto.scanPercentiles([]) == nil)
+        precondition(Auto.scanPercentiles([.nan]) == nil)
+        precondition(Auto.scanPercentiles([-.infinity]) == nil)
+        precondition(Auto.scanPercentiles([-1]) == nil)
+        precondition(Auto.scanPercentiles(Array(repeating: 1, count: 33)) == nil)
+
+
+        // Conservation over synthetic local metadata at five scales.
+        // Reconstruct all expected cell member counts independently from
+        // original GPS coordinates at the final grid level.
+        for amount in [1, 10, 1_000, 10_000, 100_000] {
+            var indexed = XDriveIOSNativeLocalMapSpatialIndex<Int>()
+            var coordinates: [(Double, Double)] = []
+            coordinates.reserveCapacity(amount)
+            let sites: [(Double, Double)] = [
+                (35.6812, 139.7671), (22.3193, 114.1694),
+                (37.5665, 126.9780), (-33.8688, 151.2093),
+                (89.99, 179.98), (-89.99, -179.98),
+                (10.0, 180.0), (10.0, -180.0)
+            ]
+            for id in 0..<amount {
+                let point = id % 11 == 0 ? (35.6812, 139.7671) :
+                    sites[id % sites.count]
+                coordinates.append(point)
+                precondition(indexed.add(latitude: point.0,
+                    longitude: point.1, representative: id))
+            }
+            precondition(indexed.locatedCount == amount)
+            precondition(indexed.cells.count <= Policy.maximumCells)
+            precondition(indexed.cells.reduce(0) { $0 + $1.count } == amount)
+            var expected: [String: Int] = [:]
+            for point in coordinates {
+                let key = Policy.key(latitude: point.0,
+                                     longitude: point.1,
+                                     level: indexed.level)!
+                expected[key.id, default: 0] += 1
+            }
+            precondition(expected.count == indexed.cells.count)
+            precondition(indexed.cells.allSatisfy {
+                expected[$0.id] == $0.count
+            }, "missing or duplicate GPS cell membership: \(amount)")
+            print("IOS_MAP_GPS_COUNT_MATRIX n=\(amount) members=\(indexed.locatedCount) exact=1")
+        }
+        for amount in [64, 65] {
+            var indexed = XDriveIOSNativeLocalMapSpatialIndex<Int>()
+            for id in 0..<amount {
+                precondition(indexed.add(latitude: Double(id) / 4.0,
+                                         longitude: 20.25, representative: id))
+            }
+            precondition(indexed.locatedCount == amount)
+            precondition(indexed.cells.count <= 64)
+            precondition(indexed.cells.reduce(0) { $0 + $1.count } == amount)
+            if amount == 64 { precondition(indexed.cells.count == 64) }
+            if amount == 65 { precondition(indexed.level > 0) }
+        }
+
         print("native PhotoKit global GPS spatial policy: PASS")
     }
 }

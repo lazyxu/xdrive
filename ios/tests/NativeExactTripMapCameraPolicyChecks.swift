@@ -73,6 +73,49 @@ struct NativeExactTripMapCameraPolicyChecks {
         precondition(Policy.fit(maximum) != nil)
         precondition(Policy.fit(maximum + [Point(latitude: 11, longitude: 21)]) == nil)
 
+        // Server aggregates may span many degrees while their sample pin
+        // occupies only one coordinate. Initial fit must show the full region.
+        let aggregateRegion = Point(
+            latitude: 35, longitude: 139,
+            displayBounds: XDriveIOSNativeExactTripMapBounds(
+                west: 130, south: 30, east: 150, north: 45))
+        let fittedRegion = Policy.fitIncludingDisplayBounds([aggregateRegion])
+        precondition(fittedRegion != nil)
+        precondition(fittedRegion!.latitudeSpan >= 18.7)
+        precondition(fittedRegion!.longitudeSpan >= 25)
+
+        // Cover both sides of the antimeridian, not a 340-degree detour.
+        let datelineRegion = Point(
+            latitude: 0, longitude: 179,
+            displayBounds: XDriveIOSNativeExactTripMapBounds(
+                west: 170, south: -10, east: -170, north: 10))
+        let fittedDatelineRegion = Policy.fitIncludingDisplayBounds([datelineRegion])
+        precondition(fittedDatelineRegion != nil)
+        precondition(fittedDatelineRegion!.longitudeSpan >= 25)
+        precondition(fittedDatelineRegion!.longitudeSpan < 35)
+        precondition(abs(fittedDatelineRegion!.longitude) >= 170)
+
+        // Real 360-degree display bounds must not be shrunk to a sample dot.
+        let worldRegion = Point(
+            latitude: 0, longitude: 0,
+            displayBounds: XDriveIOSNativeExactTripMapBounds(
+                west: -180, south: -80, east: 180, north: 80))
+        let fittedWorld = Policy.fitIncludingDisplayBounds([worldRegion])
+        precondition(fittedWorld != nil)
+        precondition(fittedWorld!.longitudeSpan == 360)
+        precondition(fittedWorld!.latitudeSpan == 180)
+
+        let invalidRegion = Point(
+            latitude: 0, longitude: 0,
+            displayBounds: XDriveIOSNativeExactTripMapBounds(
+                west: 50, south: 0, east: 50, north: 1))
+        precondition(Policy.fitIncludingDisplayBounds([invalidRegion]) == nil)
+        precondition(Policy.fitIncludingDisplayBounds(
+            Array(repeating: aggregateRegion, count: 65)) == nil)
+        let plainFit = Policy.fitIncludingDisplayBounds(multiContinent)
+        precondition(plainFit?.longitudeSpan == multiFrame?.longitudeSpan)
+        precondition(plainFit?.longitude == multiFrame?.longitude)
+
         print("exact Owner trip WGS84 circular camera and dateline policy PASS")
     }
 }

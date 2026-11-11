@@ -77,6 +77,7 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
     private var authorization: PHAuthorizationStatus?
     private var changeVersion: UInt64 = 0
     private var nextOffset = 0
+    private var mapFilenameTerm = ""
     // Transient backup-only mapping; at most one 256-item window is retained.
     // The snapshot, IDs and this mapping are discarded by reset().
     private var stableBoundaryPhysicalIndices: [Int: Int] = [:]
@@ -101,23 +102,40 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
     /// start() with its original all-media ordering and stable resume rules.
     /// A partially authorized PhotoKit library must never produce a map.
     func startMap(atOffset requestedOffset: Int = 0,
-                  album: XDriveLocalPhotoAlbumSummary? = nil,
-                  mediaFilter: XDriveIOSNativePhotoMediaFilter,
-                  captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil) throws -> Int {
+                   album: XDriveLocalPhotoAlbumSummary? = nil,
+                   mediaFilter: XDriveIOSNativePhotoMediaFilter,
+                   captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil) throws -> Int {
+        return try startMap(atOffset: requestedOffset, album: album,
+                            mediaFilter: mediaFilter, captureRange: captureRange,
+                            filenameTerm: "")
+    }
+
+    /// Applies exact originalFilename matching to a transient local map only.
+    /// The Owner-cloud map cannot claim this unsupported Server-side filter.
+    func startMap(atOffset requestedOffset: Int = 0,
+                   album: XDriveLocalPhotoAlbumSummary? = nil,
+                   mediaFilter: XDriveIOSNativePhotoMediaFilter,
+                   captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil,
+                   filenameTerm: String) throws -> Int {
+        let term = filenameTerm.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard term.count <= 120 else {
+            reset()
+            throw XDrivePhotoKitScanFailure.invalidOffset
+        }
         guard captureRange == nil || captureRange!.valid else {
             reset()
             throw XDrivePhotoKitScanFailure.snapshotChanged
         }
         guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
-            // Never retain an earlier scan after Full Access has been revoked.
             reset()
             throw XDrivePhotoKitScanFailure.notAuthorized
         }
-        return try startConfigured(atOffset: requestedOffset,
-                                   requireStableResume: false,
-                                   album: album, mediaFilter: mediaFilter,
-                                   requireFullLibrary: true,
-                                   captureRange: captureRange)
+        let count = try startConfigured(
+            atOffset: requestedOffset, requireStableResume: false,
+            album: album, mediaFilter: mediaFilter,
+            requireFullLibrary: true, captureRange: captureRange)
+        mapFilenameTerm = term
+        return count
     }
 
     private func startConfigured(atOffset requestedOffset: Int,
@@ -325,6 +343,12 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
                 throw XDrivePhotoKitScanFailure.snapshotChanged
             }
             guard candidate.kind != "unsupported", let location = asset.location else { continue }
+            if !mapFilenameTerm.isEmpty {
+                // Metadata only; no original bytes or iCloud download.
+                guard PHAssetResource.assetResources(for: asset).contains(where: {
+                    $0.originalFilename.localizedStandardContains(mapFilenameTerm)
+                }) else { continue }
+            }
             let latitude = location.coordinate.latitude
             let longitude = location.coordinate.longitude
             if XDriveIOSNativePhotoMapPolicy.validCoordinate(
@@ -349,6 +373,7 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         authorization = nil
         nextOffset = 0
         changeVersion = 0
+        mapFilenameTerm = ""
         stableBoundaryPhysicalIndices.removeAll()
         if listening {
             PHPhotoLibrary.shared().unregisterChangeObserver(observer)

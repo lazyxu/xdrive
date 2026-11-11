@@ -1287,7 +1287,7 @@ const scenarios = [
     "checks": [
       {
         "file": "j",
-        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]",
+        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session, candidate-mapkit\\]",
         "flags": ""
       },
       {
