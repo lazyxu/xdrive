@@ -116,12 +116,12 @@ func TestGitLabChecksumEnablesServerFirstOnlyForExactRelease(t *testing.T) {
 	listing := client.ReleaseBundleListing{
 		Commit: commit, Channel: xupdate.ChannelMaster,
 		ServerVersion: "snapshot",
-		Artifacts: []client.ReleaseBundleArtifact{artifact},
+		Artifacts:     []client.ReleaseBundleArtifact{artifact},
 	}
 	release := xupdate.Result{
 		Current: "snapshot", Latest: "snapshot", Commit: commit,
 		Channel: xupdate.ChannelMaster, UpdateAvailable: true,
-		Asset: xupdate.Asset{Name: artifact.Filename},
+		Asset:     xupdate.Asset{Name: artifact.Filename},
 		Checksums: xupdate.Asset{Name: "SHA256SUMS.txt", URL: server.URL + "/SHA256SUMS.txt"},
 	}
 	matched := matchCurrentServerBundleWithGitLabChecksum(
