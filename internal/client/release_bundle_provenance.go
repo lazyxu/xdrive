@@ -84,7 +84,7 @@ func verifyCurrentBundlePublisher(
 	if err := fetch("/repos/lazyxu/xdrive/releases/tags/"+tag, &release); err != nil {
 		return err
 	}
-	if release.TagName != tag || release.Draft || !release.Prerelease || 
+	if release.TagName != tag || release.Draft || !release.Prerelease ||
 		len(release.Assets) < 1 || len(release.Assets) > 31 {
 		return fmt.Errorf("Bundle Release is unpublished or has invalid identity")
 	}
