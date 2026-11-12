@@ -19,6 +19,10 @@ case "$1" in
       *) cat > "$XD_TEST_DOCKER_STREAM" ;;
     esac
     ;;
+  save)
+    [[ "$2" == xdrive/server:test ]] || exit 3
+    cat "$XD_TEST_DOCKER_SAVE_TAR"
+    ;;
   image)
     [[ "${2:-}" == inspect && "${3:-}" == --format && "${4:-}" == '{{.Id}}' && "${5:-}" == xdrive/server:test ]] || exit 3
     printf '%s\n' "$XD_TEST_IMAGE_ID"
@@ -105,6 +109,7 @@ digest = hashlib.sha256(config).hexdigest()
 (root / "expected-config-id").write_text("sha256:" + digest + "\n")
 for tag, output in [
     ("xdrive/caddy:test", "docker-image-fixture.tar"),
+    ("xdrive/server:test", "docker-import-verify.tar"),
     ("other/image:test", "wrong-tag-fixture.tar"),
 ]:
     manifest = json.dumps([{
@@ -144,4 +149,28 @@ if PATH="$TMP/bin-export:$PATH" bash "$ROOT/scripts/ci/export-docker-image.sh" \
 fi
 grep -Fq 'archive must contain exactly the requested image/tag' "$TMP/export-bad.log"
 
-echo 'Bounded exact Docker image import: success, SHA, CRC, timeout and safe artifact tests passed'
+
+# Index-id and config-id differ under some Docker 29/containerd stores.
+# Verify the exact loaded tag's config bytes instead of trusting inspect .Id.
+rm -f "$TMP/artifact/image.tar.gz"
+gzip -c "$TMP/payload" > "$TMP/artifact/image.tar.gz"
+cp "$TMP/expected-config-id" "$TMP/artifact/image.id"
+export XD_TEST_IMAGE_ID="sha256:$(printf 'b%.0s' {1..64})"
+export XD_TEST_DOCKER_SAVE_TAR="$TMP/docker-import-verify.tar"
+bash "$IMPORT" "$TMP/artifact" xdrive/server:test > "$TMP/index-digest.log"
+grep -Fq 'Verified re-saved Docker image config SHA-256' "$TMP/index-digest.log"
+
+# A tag that claims an unrelated expected config must fail closed.
+printf 'sha256:%064d\n' 7 > "$TMP/artifact/image.id"
+if bash "$IMPORT" "$TMP/artifact" xdrive/server:test > "$TMP/false-config.log" 2>&1; then
+  echo 'Wrong config accepted after OCI-index mismatch' >&2; exit 1
+fi
+
+# Re-saving an unrelated tag must not satisfy a matching config digest.
+cp "$TMP/expected-config-id" "$TMP/artifact/image.id"
+export XD_TEST_DOCKER_SAVE_TAR="$TMP/wrong-tag-fixture.tar"
+if bash "$IMPORT" "$TMP/artifact" xdrive/server:test > "$TMP/false-tag.log" 2>&1; then
+  echo 'Wrong saved image tag accepted after OCI-index mismatch' >&2; exit 1
+fi
+
+echo 'Bounded exact Docker image import: SHA, CRC, bounded timeout, OCI index/config, tag and negative tests passed'
