@@ -2547,6 +2547,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                 filesBatchOperations
             }
         }
+        // Identify the exact Files List for AX scrolling. A retained Gallery
+        // tab may have a different collectionView earlier in the AX tree.
+        .accessibilityIdentifier(isHome ? "native-ios-files-home-list" : "native-ios-files-folder-list")
     }
 
     /// Non-reflowing feedback shares one native location for progress,

@@ -292,21 +292,18 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     private func openHomeShortcut(_ id: String, _ app: XCUIApplication) {
         let item = element(id, app)
         if !item.exists {
-            // SwiftUI List is exposed as a table or collection depending
-            // on Simulator/iOS version; do not assume the AX container type.
-            let collection = app.collectionViews.firstMatch
-            let list = collection.exists ? collection : app.tables.firstMatch
-            if list.exists {
-                // A prior child can leave the Home list below Recent.
-                // Search in both directions with a bounded swipe budget.
-                for _ in 0..<5 {
-                    if item.exists { break }
-                    list.swipeUp()
-                }
-                for _ in 0..<10 {
-                    if item.exists { break }
-                    list.swipeDown()
-                }
+            // Scroll the actual Files Home List, never a retained Gallery
+            // collection from the process-wide accessibility hierarchy.
+            let list = element("native-ios-files-home-list", app)
+            XCTAssertTrue(list.waitForExistence(timeout: 15),
+                          "Visible native Files Home List did not mount")
+            for _ in 0..<8 {
+                if item.exists && item.isHittable { break }
+                list.swipeUp()
+            }
+            for _ in 0..<12 {
+                if item.exists && item.isHittable { break }
+                list.swipeDown()
             }
         }
         tap(id, app)
@@ -493,9 +490,9 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     // The synthetic Owner is deliberately not authenticated; these tests must
     // never claim private cloud data, a successful Server read, or 60/120Hz FPS.
     private func homeAction(_ id: String, _ app: XCUIApplication) -> XCUIElement {
-        let list = app.collectionViews.firstMatch
+        let list = element("native-ios-files-home-list", app)
         XCTAssertTrue(list.waitForExistence(timeout: 12),
-                      "Files Home collection did not mount")
+                      "Visible native Files Home List did not mount")
         let action = app.buttons.matching(identifier: id).firstMatch
         for _ in 0..<6 {
             if action.exists && action.isHittable { return action }

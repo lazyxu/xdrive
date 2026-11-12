@@ -159,8 +159,11 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
                 ready(marker, app: app)
             }
             tap("native-ios-tab-dynamic", app: app)
-            XCTAssertTrue(app.buttons["打开地图"].firstMatch.waitForExistence(timeout: 12),
-                          "Default dynamic tab did not render its actual Map route")
+            let map = app.descendants(matching: .any).matching(
+                identifier: "native-ios-map-source-selector"
+            ).firstMatch
+            XCTAssertTrue(map.waitForExistence(timeout: 12),
+                          "Dynamic tab did not mount the actual native MapKit route")
             XCUIDevice.shared.press(.home)
             app.activate()
             XCTAssertEqual(app.state, .runningForeground, "Failed to resume dynamic tab")
