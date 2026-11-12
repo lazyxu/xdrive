@@ -91,10 +91,11 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
     )
 
     private var currentProof: Bool {
-        phase == .active && !busy && error == nil &&
-        PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized &&
-        XDriveIOSNativePhotoOwnerScope.matches(login.owner, provedOwner) &&
-        provedLibrary.map(XDriveIOSNativePhotoFingerprintIndex.isCurrent) == true
+        guard let provedOwner else { return false }
+        return phase == .active && !busy && error == nil &&
+            PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized &&
+            XDriveIOSNativePhotoOwnerScope.matches(login.owner, provedOwner) &&
+            provedLibrary.map(XDriveIOSNativePhotoFingerprintIndex.isCurrent) == true
     }
 
     var body: some View {
