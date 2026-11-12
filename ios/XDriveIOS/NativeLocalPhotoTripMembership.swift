@@ -192,6 +192,7 @@ struct XDriveIOSNativeLocalRecentDaysAndTrips: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.dismiss) private var dismiss
     @State private var request = UUID()
+    @State private var loadTask: Task<Void, Never>?
     @State private var busy = false
     @State private var error: String?
     @State private var days: [XDriveIOSLocalRecentDay] = []
@@ -264,6 +265,10 @@ struct XDriveIOSNativeLocalRecentDaysAndTrips: View {
 
     private func invalidate() {
         request = UUID()
+        // Cancel the actual in-flight Task. A stale token alone would leave
+        // the detached 250k PhotoKit metadata scanner running offscreen.
+        loadTask?.cancel()
+        loadTask = nil
         busy = false
         days = []
         trips = []
@@ -274,7 +279,8 @@ struct XDriveIOSNativeLocalRecentDaysAndTrips: View {
         guard phase == .active else { return }
         let ticket = request
         busy = true
-        Task { @MainActor in
+        loadTask = Task { @MainActor in
+            defer { if request == ticket { loadTask = nil } }
             let worker = Task.detached(priority: .userInitiated) {
                 try XDriveIOSNativeLocalTripDiscovery.scan()
             }
