@@ -260,7 +260,44 @@ case "${1:-}" in
   save)
     shift
     ref="${1:?image ref required}"
-    read_image "$ref"
+    if [[ "$ref" == "xdrive/photo-face:test" ]]; then
+      # The canonical exporter verifies manifest.json and Config SHA bytes.
+      # Runtime CACHE archives intentionally retain the original fake format.
+      line="$(read_image "$ref")"
+      IFS='|' read -r saved_ref runtime_hash version revision id <<<"$line"
+      python3 - "$ref" "$runtime_hash" "$version" "$revision" <<'PY_FAKE_DOCKER_ARCHIVE'
+import hashlib
+import io
+import json
+import sys
+import tarfile
+
+ref, runtime_hash, version, revision = sys.argv[1:]
+config = json.dumps({
+    "architecture": "amd64",
+    "os": "linux",
+    "rootfs": {"type": "layers", "diff_ids": []},
+    "config": {"Labels": {
+        "io.github.lazyxu.xdrive.photo-face.runtime-contract": runtime_hash,
+        "org.opencontainers.image.version": version,
+        "org.opencontainers.image.revision": revision,
+    }},
+}, sort_keys=True, separators=(",", ":")).encode()
+digest = hashlib.sha256(config).hexdigest()
+config_name = "blobs/sha256/" + digest
+manifest = json.dumps([{
+    "Config": config_name, "RepoTags": [ref], "Layers": [],
+}]).encode()
+with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+    for name, payload in (("manifest.json", manifest), (config_name, config)):
+        member = tarfile.TarInfo(name)
+        member.mode = 0o644
+        member.size = len(payload)
+        archive.addfile(member, io.BytesIO(payload))
+PY_FAKE_DOCKER_ARCHIVE
+    else
+      read_image "$ref"
+    fi
     printf 'save|%s\n' "$ref" >>"$events"
     ;;
   load)
@@ -294,12 +331,51 @@ runtime_build_count() {
 }
 
 assert_exact_artifact() {
-  local artifact_dir="$1" expected_hash="$2" record
-  local ref runtime_hash version revision image_id
-  record="$(gzip -dc "$artifact_dir/image.tar.gz")"
-  IFS='|' read -r ref runtime_hash version revision image_id <<<"$record"
-  [[ "$ref" == xdrive/photo-face:test && "$runtime_hash" == "$expected_hash" ]]
-  [[ "$(cat "$artifact_dir/image.ref")" == "$ref" && "$(cat "$artifact_dir/image.id")" == "$image_id" ]] || {
+  local artifact_dir="$1" expected_hash="$2" image_id
+  # Runtime cache archives still use an internal fake record, but the final
+  # exported artifact must be an actual content-addressed Docker archive.
+  image_id="$(python3 - "$artifact_dir/image.tar.gz" "$expected_hash" <<'PY_VERIFY'
+import hashlib
+import json
+import re
+import sys
+import tarfile
+
+archive_path, expected_hash = sys.argv[1:]
+with tarfile.open(archive_path, mode="r:gz") as archive:
+    manifest = json.load(archive.extractfile("manifest.json"))
+    if not isinstance(manifest, list) or len(manifest) != 1:
+        raise SystemExit("expected one tagged Docker manifest")
+    image = manifest[0]
+    if image.get("RepoTags") != ["xdrive/photo-face:test"]:
+        raise SystemExit("wrong final image tag")
+    config_name = image.get("Config")
+    if not isinstance(config_name, str) or not re.fullmatch(
+        r"blobs/sha256/[0-9a-f]{64}", config_name
+    ):
+        raise SystemExit("invalid content-addressed config path")
+    config_bytes = archive.extractfile(config_name).read()
+    digest = hashlib.sha256(config_bytes).hexdigest()
+    if config_name != "blobs/sha256/" + digest:
+        raise SystemExit("final config digest mismatch")
+    config = json.loads(config_bytes)
+    if config.get("os") != "linux" or config.get("architecture") != "amd64":
+        raise SystemExit("invalid final image platform")
+    labels = config.get("config", {}).get("Labels", {})
+    if labels.get("io.github.lazyxu.xdrive.photo-face.runtime-contract") != expected_hash:
+        raise SystemExit("final image lost verified runtime contract")
+    if not labels.get("org.opencontainers.image.version") or not labels.get(
+        "org.opencontainers.image.revision"
+    ):
+        raise SystemExit("final image lost release labels")
+    print("sha256:" + digest)
+PY_VERIFY
+)" || {
+    echo "photo-face test archive did not preserve verified config bytes" >&2
+    exit 1
+  }
+  [[ "$(cat "$artifact_dir/image.ref")" == "xdrive/photo-face:test" &&
+     "$(cat "$artifact_dir/image.id")" == "$image_id" ]] || {
     echo "exported artifact must preserve the exact validated final image identity" >&2
     exit 1
   }
