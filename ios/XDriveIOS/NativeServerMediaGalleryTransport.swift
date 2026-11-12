@@ -61,11 +61,26 @@ struct XDriveIOSNativeMediaAlbum: Decodable, Identifiable {
     let item_count: Int
 }
 
+struct XDriveIOSNativeMediaDateGroup: Decodable, Equatable {
+    let key: String
+    let item_count: Int
+    let start_index: Int
+}
+
+struct XDriveIOSNativeMediaDateGroupSets: Decodable {
+    let year: [XDriveIOSNativeMediaDateGroup]
+    let month: [XDriveIOSNativeMediaDateGroup]
+    let day: [XDriveIOSNativeMediaDateGroup]
+}
+
 struct XDriveIOSNativeMediaRange: Decodable {
     let items: [XDriveIOSNativeMediaItem]
     let total_count: Int
     let offset: Int
     let limit: Int
+    // Complete Owner-filtered timeline from offset-zero Server Range only.
+    // Date indices never authorize opening a media Node.
+    let timeline_group_sets: XDriveIOSNativeMediaDateGroupSets?
 }
 
 /// Exact per-item identity for a resumed native cloud Viewer. A matching
