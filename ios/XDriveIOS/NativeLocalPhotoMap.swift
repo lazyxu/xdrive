@@ -657,6 +657,15 @@ enum XDriveIOSNativeLocalMapScope: String, CaseIterable {
     }
 }
 
+// A photo map membership lease is not defined by its date bounds alone:
+// two trips and the unrestricted timeline can share identical [from, to)
+// while containing different GPS members. Compare the trip identity together
+// with the date scope to invalidate stale counts and selectable annotations.
+private struct XDriveIOSNativeLocalMapMembership: Equatable {
+    let captureRange: XDriveIOSNativePhotoMapCaptureRange?
+    let tripID: UUID?
+}
+
 private struct XDriveIOSMapSpatialSelection: Identifiable {
     let id = UUID()
     let cells: [XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>]
@@ -1253,6 +1262,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     private var activeCaptureRange: XDriveIOSNativePhotoMapCaptureRange? {
         if let chosenLocalTrip { return chosenLocalTrip.captureRange }
         return usingCaptureOverride ? captureOverride : inheritedCaptureRange
+    }
+
+    private var activeMapMembership: XDriveIOSNativeLocalMapMembership {
+        .init(captureRange: activeCaptureRange, tripID: chosenLocalTrip?.id)
     }
 
     private func setCaptureRange(_ range: XDriveIOSNativePhotoMapCaptureRange?) {
@@ -1862,7 +1875,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             globalCamera = target
             onLibraryCameraChange?(target)
         }
-        .onChange(of: activeCaptureRange) { _ in
+        .onChange(of: activeMapMembership) { _ in
+            // Even when capture timestamps are unchanged, a new trip's
+            // verified GPS day/cell set is a different map. One Equatable
+            // membership key coalesces a simultaneous date + trip change
+            // into a single cancellation and PhotoKit re-scan.
             onLibraryCameraChange?(nil)
             clearReturnCamera()
             if phase == .active && mapScope == .library { scanFullLibrary() }
