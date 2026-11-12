@@ -217,4 +217,107 @@ final class XDriveIOSPagePerformanceUITests: XCTestCase {
             }
         }
     }
+    // Additional accessible native pages, measured with the same AX/idling
+    // contract as the original 19 routes. No fake Owner data is constructed.
+    private func performanceFilesHomeEntry(_ id: String, app: XCUIApplication) -> XCUIElement {
+        let entry = app.buttons.matching(identifier: id).firstMatch
+        let host = app.collectionViews.firstMatch
+        XCTAssertTrue(host.waitForExistence(timeout: 15), "Actual Files Home list did not mount")
+        for _ in 0..<6 {
+            if entry.exists && entry.isHittable { return entry }
+            host.swipeUp()
+        }
+        for _ in 0..<8 {
+            if entry.exists && entry.isHittable { return entry }
+            host.swipeDown()
+        }
+        XCTAssertTrue(entry.exists && entry.isHittable,
+                      "Existing Files child entry not reachable: \(id)")
+        return entry
+    }
+
+    func testAdditionalGallerySourcesN3() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-gallery", in: app)
+        for trial in 1...3 {
+            measure("gallery.albums", trial: trial, app: app,
+                    ready: "native-ios-album-create") {
+                tap("native-ios-gallery-source-albums", in: app)
+            }
+            tap("native-ios-gallery-source-unified", in: app)
+            XCTAssertTrue(view("native-ios-unified-photo-gallery", in: app)
+                .waitForExistence(timeout: 15))
+            measure("gallery.cloud", trial: trial, app: app,
+                    ready: "native-ios-server-gallery-search") {
+                tap("native-ios-gallery-source-menu", in: app)
+                let cloud = app.buttons["云端图库"].firstMatch
+                XCTAssertTrue(cloud.waitForExistence(timeout: 15))
+                cloud.tap()
+            }
+            tap("native-ios-gallery-source-unified", in: app)
+            XCTAssertTrue(view("native-ios-unified-photo-gallery", in: app)
+                .waitForExistence(timeout: 15))
+        }
+    }
+
+    func testAdditionalFilesHomeChildrenN3() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", in: app)
+        for trial in 1...3 {
+            let saved = performanceFilesHomeEntry("native-ios-files-open-saved-searches", app: app)
+            measure("files.saved-searches", trial: trial, app: app,
+                    ready: "native-ios-files-saved-searches-page") { saved.tap() }
+            let savedDone = app.buttons["完成"].firstMatch
+            XCTAssertTrue(savedDone.waitForExistence(timeout: 15))
+            savedDone.tap()
+            XCTAssertTrue(view("native-ios-files-section-browse", in: app)
+                .waitForExistence(timeout: 15))
+            let history = performanceFilesHomeEntry("native-ios-files-open-operations", app: app)
+            measure("files.operation-history", trial: trial, app: app,
+                    ready: "native-ios-files-operation-history-page") { history.tap() }
+            let historyDone = app.buttons["完成"].firstMatch
+            XCTAssertTrue(historyDone.waitForExistence(timeout: 15))
+            historyDone.tap()
+            XCTAssertTrue(view("native-ios-files-section-browse", in: app)
+                .waitForExistence(timeout: 15))
+        }
+    }
+
+    func testAdditionalFilesSearchInputN3() {
+        // This is a genuine native SearchField interaction, NOT a benchmark
+        // of authenticated Server queries or a populated 100k result list.
+        for trial in 1...3 {
+            let app = launch()
+            tap("native-ios-tab-files", in: app)
+            let search = app.searchFields["搜索全部文件"].firstMatch
+            XCTAssertTrue(search.waitForExistence(timeout: 15))
+            let query = "q\(trial)"
+            measure("files.search-input", trial: trial, app: app,
+                    ready: "native-ios-files-section-browse") {
+                search.tap()
+                search.typeText(query)
+                XCTAssertTrue((search.value as? String ?? "").contains(query),
+                              "Native Files search editor lost typed input")
+            }
+            app.terminate()
+        }
+    }
+
+    func testAdditionalMineThumbnailCacheN3() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-mine", in: app)
+        for trial in 1...3 {
+            let button = app.buttons["缩略图缓存"].firstMatch
+            let link = button.waitForExistence(timeout: 8)
+                ? button : app.staticTexts["缩略图缓存"].firstMatch
+            XCTAssertTrue(link.waitForExistence(timeout: 15))
+            measure("mine.thumbnail-cache", trial: trial, app: app,
+                    ready: "native-ios-gallery-thumbnail-cache") { link.tap() }
+            let back = app.navigationBars["缩略图缓存"].buttons.element(boundBy: 0)
+            XCTAssertTrue(back.waitForExistence(timeout: 15))
+            back.tap()
+            XCTAssertTrue(view("native-ios-mine-server-account", in: app)
+                .waitForExistence(timeout: 15))
+        }
+    }
 }

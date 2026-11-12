@@ -15,9 +15,19 @@ is refused, never fabricated.
 
 These are XCUITest + AX-idling wall times, NOT first composited frame, FPS,
 CPU, peak RSS, actual Server Range, network throughput or a real signed
-iPhone run. The initial candidate job ran 14/19 routes (42 samples) but failed on wrongly expecting Launcher instead of the actual default Gallery and on offscreen Launcher buttons; these invalid assumptions are corrected, not treated as product slowness. Current complete-route numeric
-samples remain n=0 until the exact-HEAD job produces its raw artifact.
-No baseline/candidate performance change is claimed: speedup N/A.
+iPhone run. An earlier candidate attempt completed 14/19 routes; after fixing Launcher
+visibility, the original PR commit `810014b4a4dd92daebee77edba8ad9bd4333a79e` passed the dedicated
+[Simulator candidate-performance job](https://github.com/lazyxu/xdrive/actions/runs/43047764998/job/130637852644)
+with **19/19 native AX-ready routes and 57/57 genuine UI samples** (6 XCTest
+methods, 0 failures; strict complete). Its actual per-trial numbers are
+[archived here](performance-evidence/ios-native-page-navigation-43047764998.json).
+This follow-up adds six further native routes (albums, cloud media wall,
+Files saved searches, operation history, Files search editor and Mine cache):
+**25 routes × 3 = 75 samples are required, but not yet validated on the
+new HEAD**. No native first-frame or FPS measurements are implied, and no
+performance speedup is claimed. The original full PR CI failed in unrelated
+Server Validation, rootless image identity, and one Files no-session test;
+its successful performance shard does not make the overall PR green.
 
 ## Pages measured by the dedicated Simulator gate
 
@@ -28,8 +38,11 @@ No baseline/candidate performance change is claimed: speedup N/A.
 | Files | files.recent, files.favorites, files.browse | Actual selected rail section |
 | Gallery sources | gallery.originals, gallery.unified, gallery.local | Native Originals, unified Gallery and PhotoKit timeline |
 | Gallery children | gallery.filters, gallery.people | True editor sheet and People page |
+| Other Gallery sources | gallery.albums, gallery.cloud | Actual native albums page and cloud search toolbar; no signed media |
 | Protected Files children | files.cloud-denied, files.trash-denied | Actual signed-out fail-closed recovery screens |
+| Files tools | files.saved-searches, files.operation-history, files.search-input | Native child sheets and search editor, not indexed Owner search |
 | Dynamic tools | tool.notes, tool.clipboard, tool.backup, tool.transfers | Native notes editor list, clipboard, backup overview, transfers |
+| Mine child | mine.thumbnail-cache | Real native cache page under synthetic no-Session Owner |
 
 The workflow captures xcodebuild.log, xcresult, screenshots and the structured
 navigation-latency/page-performance JSON artifact. The registered route list

@@ -56,6 +56,12 @@ PAGE_PERF_REQUIRED = (
     ("tool.clipboard", "warm"),
     ("tool.backup", "warm"),
     ("tool.transfers", "warm"),
+    ("gallery.albums", "warm"),
+    ("gallery.cloud", "warm"),
+    ("files.saved-searches", "warm"),
+    ("files.operation-history", "warm"),
+    ("files.search-input", "warm"),
+    ("mine.thumbnail-cache", "warm"),
 )
 
 

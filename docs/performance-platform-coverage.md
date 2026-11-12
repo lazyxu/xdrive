@@ -1,6 +1,6 @@
 ## iOS Native page-by-page benchmark parity — 2026-11-11
 
-- A distinct macOS Simulator candidate-performance arm measures 19 native routes with n≥3 XCUITest tap/launch-to-AX-ready samples, strict completeness, p50/p95/max JSON and exact source SHA. **Current actual measured n=0 until CI completes.** These are NOT Web's real Chromium 100k/H264/Live/4GiB/Go-CAS workload and not native FPS/CPU/RSS. See [page parity inventory](ios-native-page-performance-20261111.md).
+- A distinct macOS Simulator candidate-performance arm measures 19 native routes with n≥3 XCUITest tap/launch-to-AX-ready samples, strict completeness, p50/p95/max JSON and exact source SHA. **Original 19/19 routes ×3 =57/57 real Simulator samples passed** at `810014b4a4dd92daebee77edba8ad9bd4333a79e` ([source run](https://github.com/lazyxu/xdrive/actions/runs/43047764998)); the expanded 25 ×3 =75 matrix still needs exact new HEAD CI. These are NOT Web's real Chromium 100k/H264/Live/4GiB/Go-CAS workload and not native FPS/CPU/RSS. See [page parity inventory](ios-native-page-performance-20261111.md).
 
 ## P068 · 2026-10-22 真实客户端与 100k Sync CURRENT 覆盖
 
