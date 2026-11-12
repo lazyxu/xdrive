@@ -12,7 +12,7 @@ test('P1 B real 100k Owner Gallery opens original H264 Viewer with two distinct 
     "XD_PWA_P1_H264_VIEWER_FRAME === '1'",
     "assert(!p1H264Mode || p1Mode",
     "p1VisibleH264Tile",
-    '/^video-\\d+\\.mp4$/.test(name)',
+    '/^video-\\d+\\.mp4，视频$/.test(name)',
     "p1ObserveAdvancingVideoFrames",
     "signed.origin===location.origin",
     "signed.searchParams.has('ticket')",
