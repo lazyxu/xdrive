@@ -142,7 +142,9 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
             artifact.install_mode === 'manual_test_only'
           return <Box key={artifact.filename} sx={{ borderTop: 1, borderColor: 'divider', pt: 1 }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1}>
-              <Typography variant="body2">{labels[artifact.platform] || artifact.platform} · {artifact.filename}</Typography>
+              <Typography variant="body2">{artifact.platform === 'cli' && artifact.filename.startsWith('xdrive-cli-')
+                ? '独立 xd/Agent CLI'
+                : (labels[artifact.platform] || artifact.platform)} · {artifact.filename}</Typography>
               <Typography variant="caption" color="text.secondary">
                 {cacheStates[artifact.cache_status] || (artifact.cached ? '已缓存' : '本机未缓存')} ·
                 {(artifact.size / 1024 / 1024).toFixed(1)} MB

@@ -236,7 +236,7 @@ def _github_release_json(url, lock_path, marker=None):
     return parsed
 
 
-def _verify_published_release(sha, raw, document, ref, release):
+def _verify_published_release(sha, raw, document, ref, release, *, require_immutable=False):
     """Bind remote manifest bytes AND every package to the exact Git commit.
 
     GitHub tag/ref and asset digests are authenticated by the GitHub HTTPS API.
@@ -252,6 +252,13 @@ def _verify_published_release(sha, raw, document, ref, release):
         release.get("draft") is not False or release.get("prerelease") is not True
     ):
         raise ValueError("GitHub Bundle Release identity is invalid")
+    # A Host explicitly configured for strict independent Sigstore must also
+    # refuse platform-mutable Releases. A signed Manifest alone cannot prevent
+    # a privileged publisher from replacing already published assets.
+    # Legacy HTTPS-only Host caches keep their existing compatibility policy;
+    # native installers and CI enforce immutability independently.
+    if require_immutable and release.get("immutable") is not True:
+        raise ValueError("GitHub Release is mutable: enable release immutability")
     assets = release.get("assets")
     if not isinstance(assets, list) or len(assets) > 31:
         raise ValueError("invalid published asset inventory")
@@ -335,7 +342,9 @@ def _fetch_manifest(sha, lock_path, marker=None, require_sigstore=False):
     if len(raw) > MAX_MANIFEST:
         raise ValueError("oversized manifest")
     document = validate(json.loads(raw.decode("utf-8")), sha)
-    _verify_published_release(sha, raw, document, ref, release)
+    _verify_published_release(
+        sha, raw, document, ref, release, require_immutable=require_sigstore
+    )
     if require_sigstore:
         _verify_sigstore_manifest(raw, sha, document["channel"])
     return document

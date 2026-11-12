@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -179,6 +181,106 @@ func TestClipboardTargetedDeviceOwnerAndRevocationPostgres(t *testing.T) {
 	if strings.Contains(inboxAAgain.Body.String(), deviceA2Event) {
 		t.Fatal("directed A2 item leaked to target device A")
 	}
+	// A high-water SSE cursor must be selected AFTER the same Owner/device
+	// visibility filter used for /items. A newer sibling-device event, even
+	// one hidden behind dozens of historical events, must never advance A.
+	broadcastPayload := fmt.Sprintf(
+		`{"client_event_id":%q,"kind":"text/plain","content":"visible broadcast"}`, uuid.NewString())
+	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
+		ownerABearer, "", "", broadcastPayload, http.StatusCreated)
+	deviceRequest(http.MethodPost, "/api/v1/clipboard/items",
+		ownerABearer, "", "", targetPayload(uuid.NewString(), 0), http.StatusCreated)
+	burst := make([]meta.ClipboardChange, 80)
+	for i := range burst {
+		burst[i] = meta.ClipboardChange{
+			OwnerID: ownerA.ID, TargetDeviceID: deviceA2,
+			Kind: "create", CreatedAt: time.Now().UTC(),
+		}
+	}
+	if err := db.Create(&burst).Error; err != nil {
+		t.Fatal(err)
+	}
+	foreignCursor := meta.ClipboardChange{
+		OwnerID: ownerB.ID, Kind: "create", CreatedAt: time.Now().UTC(),
+	}
+	if err := db.Create(&foreignCursor).Error; err != nil {
+		t.Fatal(err)
+	}
+	newestVisible := func(device string) uint64 {
+		t.Helper()
+		where := "owner_id = ? AND (target_device_id = '' OR target_device_id IS NULL)"
+		args := []any{ownerA.ID}
+		if device != "" {
+			where = "owner_id = ? AND (target_device_id = '' OR target_device_id IS NULL OR target_device_id = ?)"
+			args = append(args, device)
+		}
+		var cursor uint64
+		if err := db.Raw("SELECT COALESCE(MAX(id), 0) FROM xd_clipboard_changes WHERE "+where,
+			args...).Scan(&cursor).Error; err != nil {
+			t.Fatal(err)
+		}
+		return cursor
+	}
+	broadcastCursor := newestVisible("")
+	deviceACursor := newestVisible(deviceA)
+	deviceA2Cursor := newestVisible(deviceA2)
+	if broadcastCursor == 0 || !(broadcastCursor < deviceACursor &&
+		deviceACursor < deviceA2Cursor && deviceA2Cursor < foreignCursor.ID) {
+		t.Fatalf("invalid high-cursor fixture: public=%d A=%d A2=%d foreign=%d",
+			broadcastCursor, deviceACursor, deviceA2Cursor, foreignCursor.ID)
+	}
+	eventServer := httptest.NewServer(router)
+	defer eventServer.Close()
+	firstEventCursor := func(device, token string, after uint64) uint64 {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			fmt.Sprintf("%s/api/v1/clipboard/events?after=%d", eventServer.URL, after), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+ownerABearer)
+		req.Header.Set("Accept", "text/event-stream")
+		if device != "" {
+			req.Header.Set("X-XDrive-Device-ID", device)
+			req.Header.Set("X-XDrive-Device-Token", token)
+		}
+		response, err := eventServer.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK ||
+			!strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
+			t.Fatalf("SSE rejected authorized device %q: status=%d", device, response.StatusCode)
+		}
+		scanner := bufio.NewScanner(response.Body)
+		for scanner.Scan() {
+			if strings.HasPrefix(scanner.Text(), "id: ") {
+				var cursor uint64
+				if _, err := fmt.Sscanf(scanner.Text(), "id: %d", &cursor); err != nil {
+					t.Fatal(err)
+				}
+				return cursor
+			}
+		}
+		t.Fatalf("missing SSE cursor for device %q: %v", device, scanner.Err())
+		return 0
+	}
+	if actual := firstEventCursor("", "", 0); actual != broadcastCursor {
+		t.Fatalf("unauthenticated device read a targeted cursor: got=%d public=%d",
+			actual, broadcastCursor)
+	}
+	if actual := firstEventCursor(deviceA, deviceSecret, broadcastCursor); actual != deviceACursor {
+		t.Fatalf("device A's SSE cursor advanced into sibling event: got=%d A=%d",
+			actual, deviceACursor)
+	}
+	if actual := firstEventCursor(deviceA2, deviceSecret, deviceACursor); actual != deviceA2Cursor {
+		t.Fatalf("device A2's SSE did not coalesce its 80 historical changes: got=%d A2=%d",
+			actual, deviceA2Cursor)
+	}
+
 	// The same idempotency ID cannot be reused with another recipient even
 	// when Owner and content are otherwise identical.
 	retargeted := strings.Replace(targetPayload(targetEvent, 0), deviceA, deviceA2, 1)
