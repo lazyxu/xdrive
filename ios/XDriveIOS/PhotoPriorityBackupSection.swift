@@ -27,7 +27,9 @@ struct XDriveIOSPhotoPriorityBackupSection: View {
             }
             .disabled(controller.busy || login.owner == nil ||
                       !destination.confirmedForCurrentName ||
-                      PHPhotoLibrary.authorizationStatus(for: .readWrite) != .authorized)
+                      ![.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                ))
             .accessibilityIdentifier("native-ios-photo-priority-picker")
             if let errorMessage {
                 Text(errorMessage).font(.footnote).foregroundStyle(.orange)
@@ -45,7 +47,9 @@ struct XDriveIOSPhotoPriorityBackupSection: View {
                 guard let id = localIdentifier,
                       let expected = consentOwner,
                       destination.confirmedForCurrentName,
-                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                ),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
                     errorMessage = "服务器、账户或受管目标已变化；未上传所选原件。"
                     return

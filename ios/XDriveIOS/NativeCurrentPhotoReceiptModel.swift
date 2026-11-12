@@ -168,9 +168,10 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                 let staged = try await XDrivePhotoKitOriginalExporter.stage(
                     localIdentifier: localIdentifier,
                     allowICloudDownload: allowICloudOriginals,
-                    maximumBytesPerResource: stamp.isLive
-                        ? XDriveIOSLiveOriginalArchive.maximumPartBytes
-                        : 1_073_741_824,
+                    // Match the unlimited original writer. A large video
+                    // must remain eligible for current Node proof and the
+                    // whole-library audit after a successful upload.
+                    maximumBytesPerResource: .max,
                     allowLimitedPhotoAccess: true
                 )
                 defer { staged.delete() }
