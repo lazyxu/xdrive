@@ -187,6 +187,24 @@ MINIMAL_TARGETS = {
 }
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
+TARGETS.update({
+    "testLauncherMapPageDoesNotCrash",
+    "testLauncherCloudPageDoesNotCrash",
+    "testLauncherClipboardPageDoesNotCrash",
+    "testFiveTabsWithForegroundReturnDoNotCrash",
+    "testDynamicRecentPickerSwitchAndDismissDoesNotCrash",
+    "testFilesDeniedThenNotesClipboardTransfersDoesNotCrash",
+    "testSignedOutMineOwnerControlsFailClosedWithoutCrash",
+    "testToolPagesBackgroundAndRotationDoNotCrash",
+})
+TARGETS.update({
+    "testSavedSearchesSheetOriginalsAndFilesReturnKeepsContent",
+    "testOperationsHistoryGalleryPeopleAndFilesReturnKeepsContent",
+    "testTrashDenialGalleryFilterCancelAndFilesReturnKeepsContent",
+    "testFilesHomeEditGallerySourceRoundtripKeepsBrowse",
+    "testFilesSearchKeyboardMineCacheReturnKeepsFiles",
+    "testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent",
+})
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
