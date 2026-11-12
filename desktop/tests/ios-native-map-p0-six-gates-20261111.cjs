@@ -78,7 +78,7 @@ test('P0-4 every published Owner map is bound to the exact verified Owner, and H
 test('P0-5 real Full, externally revoked Denied and system Limited remain distinct; no synthetic authorization', () => {
   assert.match(local, /authorization == \.limited \{/)
   assert.match(local, /authorization == \.denied \|\| authorization == \.restricted/)
-  assert.match(local, /guard live == \.authorized else \{ return \}/)
+  assert.match(local, /guard live == \.authorized else \{\s*recheckExplicitSettingsAuthorization\(\)\s*return\s*\}/)
   assert.match(ui, /func testZP0ExternallyRevokedPhotosRejectOldMapAndRecover\(\)/)
   assert.match(ui, /Limited Photos must be selectable on real Settings/)
   assert.match(ui, /readback\.label\.contains\("rw=4"\)/)
