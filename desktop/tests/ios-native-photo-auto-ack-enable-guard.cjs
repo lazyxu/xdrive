@@ -67,7 +67,10 @@ test('runtime manual and automatic original runs consult global existing Owner p
   assert.match(runner, /try Task\.checkCancellation\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   assert.match(runner, /if olderPending > 0 \{[\s\S]*?\.pauseForPendingReceipts\(owner: selected\)/)
   assert.match(runner, /当前账户已有 \\?\(olderPending\) 项不确定原件收据/)
-  const pause = store.slice(store.indexOf('func pauseForPendingReceipts('),store.indexOf('func disable('))
+  // Scope only the receipt-pause method. The subsequent explicit trusted
+  // review/resume method legitimately updates nextDueAt after consent.
+  const pause = store.slice(store.indexOf('func pauseForPendingReceipts('),
+    store.indexOf('func resumeAfterTrustedReview('))
   assert.match(pause, /guard var state = status\(owner: owner\), state\.enabled else \{ return nil \}/)
   assert.match(pause, /state\.pausedForReview = true/)
   assert.match(pause, /try persist\(state, owner: owner\)/)
