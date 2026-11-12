@@ -498,8 +498,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "Docker image artifact importer", dockerImageImport,
 		"gzip -dc",
 		"docker load",
-		"loaded Docker image/config mismatch",
-		"verify-loaded-docker-config.py",
+		"loaded Docker image ID mismatch",
+		"config bytes do not match their content-addressed path",
 	)
 
 	if strings.Contains(gitlabRaw, "$ErrorActionPreference") ||
