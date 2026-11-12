@@ -19,6 +19,8 @@ const time='2026-11-11T00:00:00Z'
 const requestURL='https://nas.example/webman/3rdparty/xdrivenas/backup.cgi'
 const large=new File([Buffer.alloc(4*1_048_576+19,42)],'large.mov')
 const stage=[]
+let failureMode='normal'
+let cancelDuringPart=null
 const mod={exports:{}}
 const ctx=vm.createContext({
   module:mod,exports:mod.exports,URL,URLSearchParams,Uint8Array,TextEncoder,crypto:webcrypto,
@@ -52,6 +54,11 @@ const ctx=vm.createContext({
       const raw=Buffer.from(body.data,'base64')
       assert.equal(raw.length,body.index===0?4*1_048_576:19)
       assert.equal(createHash('sha256').update(raw).digest('hex'),body.sha256)
+      if(failureMode==='cancel-during-part' && body.index===0)cancelDuringPart.abort()
+      if(failureMode==='expired-session' && body.index===0)
+        return result({error:'expired UploadSession'},409)
+      if(failureMode==='bad-part-receipt' && body.index===0)
+        return result({index:body.index,size:raw.length,sha256:'0'.repeat(64)})
       return result({index:body.index,size:raw.length,sha256:body.sha256})
     }
     if(op==='cloud-upload-finish'){
@@ -59,8 +66,17 @@ const ctx=vm.createContext({
       assert.equal(body.parent_id,7)
       assert.equal(body.name,'large.mov')
       assert.equal(body.size,large.size)
+      if(failureMode==='unknown-finalize')
+        throw Error('finalize committed but acknowledgement lost')
+      if(failureMode==='invalid-finish-receipt')
+        return result({id:1234,parent_id:999,name:'large.mov',type:'file',
+          size:large.size,revision:2,created_at:time,updated_at:time})
       return result({id:1234,parent_id:7,name:'large.mov',type:'file',
         size:large.size,revision:2,created_at:time,updated_at:time})
+    }
+    if(op==='cloud-upload-abort'){
+      assert.equal(body.id,id)
+      return result({aborted:true})
     }
     throw Error('unexpected UploadSession operation: '+op)
   },
@@ -79,6 +95,51 @@ test('DSM large File upload rejects bad Owner and invalid sizes before network',
   await assert.rejects(()=>client.ownerUploadLargeFile(7,new File([Uint8Array.of(1)],'small.txt'),owner),/大文件/)
   assert.equal(stage.length,count)
 })
+
+test('DSM chunk digest mismatch aborts the unfinalized canonical session without sending',async()=>{
+  stage.length=0;failureMode='bad-part-receipt'
+  try{
+    await assert.rejects(()=>client.ownerUploadLargeFile(7,large,owner),/分块回执/)
+    assert.deepEqual(stage,['cloud-upload-start','cloud-upload-part','cloud-upload-abort'])
+    assert.equal(stage.includes('cloud-upload-finish'),false)
+  }finally{failureMode='normal'}
+})
+test('DSM expired UploadSession aborts before finalize; no implicit re-create',async()=>{
+  stage.length=0;failureMode='expired-session'
+  try{
+    await assert.rejects(()=>client.ownerUploadLargeFile(7,large,owner),/rejected|expired/)
+    assert.deepEqual(stage,['cloud-upload-start','cloud-upload-part','cloud-upload-abort'])
+  }finally{failureMode='normal'}
+})
+test('DSM cancellation after an in-flight chunk cannot finalize or silently send',async()=>{
+  stage.length=0;failureMode='cancel-during-part'
+  const controller=new AbortController()
+  cancelDuringPart=controller
+  try{
+    await assert.rejects(()=>client.ownerUploadLargeFile(7,large,owner,controller.signal))
+    assert.equal(controller.signal.aborted,true)
+    assert.deepEqual(stage,['cloud-upload-start','cloud-upload-part'])
+  }finally{failureMode='normal';cancelDuringPart=null}
+})
+test('DSM unknown finalize ACK is never retried or aborted as an uncommitted session',async()=>{
+  stage.length=0;failureMode='unknown-finalize'
+  try{
+    await assert.rejects(()=>client.ownerUploadLargeFile(7,large,owner),/acknowledgement lost/)
+    assert.deepEqual(stage,[
+      'cloud-upload-start','cloud-upload-part','cloud-upload-part','cloud-upload-finish'])
+    assert.equal(stage.filter(op=>op==='cloud-upload-finish').length,1)
+  }finally{failureMode='normal'}
+})
+test('DSM malformed finalized Node receipt fails closed without second finalize or send',async()=>{
+  stage.length=0;failureMode='invalid-finish-receipt'
+  try{
+    await assert.rejects(()=>client.ownerUploadLargeFile(7,large,owner),/回执|收据/)
+    assert.deepEqual(stage,[
+      'cloud-upload-start','cloud-upload-part','cloud-upload-part','cloud-upload-finish'])
+    assert.equal(stage.filter(op=>op==='cloud-upload-finish').length,1)
+  }finally{failureMode='normal'}
+})
+
 test('no Clipboard-specific Server writer or plaintext broadcast added for large uploads',()=>{
   const source=fs.readFileSync(file,'utf8')
   assert.match(source,/ownerUploadLargeFile: async/)
