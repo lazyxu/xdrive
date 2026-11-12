@@ -130,9 +130,10 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
         ) : null}
         {port.installCurrent && state?.artifacts.some((artifact) => artifact.platform === port.platform) ? (
           <XDriveStatusAlert tone="neutral">
-            安装包和缓存存在不代表已经获准安装。原生安装前必须独立验证公开的 GitHub Release 为
-            immutable:true、完整 Git Commit、发布 Manifest 与全部资产摘要；
-            若仓库未启用 Release immutability，安装会被拒绝，不影响 Server 或其他客户端。
+            仅在登录当前 Server 后提供自愿升级。优先下载该 Server 已校验缓存中的安装包，
+            其次尝试同 Commit 的 GitLab，最后使用 GitHub；每个来源都必须通过完整 Commit、大小和 SHA-256 校验。
+            GitHub Release immutable:true 暂不是安装前置条件：此模式信任当前已登录 Server 的包清单，
+            不等同于不可变公开发布。仍需用户确认、平台签名及系统安装授权。
           </XDriveStatusAlert>
         ) : null}
         {(state?.artifacts ?? []).map((artifact) => {
@@ -198,8 +199,8 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
         open={pendingInstall !== null}
         title={pendingInstall?.personalUnsigned ? '确认安装未经签名的个人 Windows 构建？' : '确认将本机客户端升级到 Server 当前 Commit？'}
         description={pendingInstall?.personalUnsigned
-          ? `仅供个人使用：没有 Authenticode 发布者签名，风险高于正式签名发行。目标 Commit：${pendingInstall.commit}。须独立验证 GitHub Release immutable:true、发布 Manifest、完整 Commit、大小和 SHA-256，安装后核对实际 Commit；仅更新本机。`
-          : `仅升级当前设备，不会强制其他客户端升级。目标 Commit：${pendingInstall?.commit ?? '—'}。安装前必须独立验证 GitHub Release immutable:true、完整 Commit、发布 Manifest、SHA-256 与平台签名。`}
+          ? `仅供个人使用：没有 Authenticode 发布者签名，风险高于正式签名发行。目标 Commit：${pendingInstall.commit}。信任当前已登录 Server 的完整 Commit 和包 SHA-256；优先已验证 Server 缓存，然后 GitLab、GitHub。GitHub Release 不可变性暂不作为门禁；安装后核对实际 Commit，且仅更新本机。`
+          : `仅升级当前设备，不会强制其他客户端升级。目标 Commit：${pendingInstall?.commit ?? '—'}。使用已登录 Server 的完整 Commit、SHA-256、大小校验下载安装包，按 Server 缓存、GitLab、GitHub 顺序尝试；仍需平台签名和系统授权。`}
         confirmLabel="验证并安装"
         confirmIntent="warning"
         loading={installing}

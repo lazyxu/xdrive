@@ -252,11 +252,9 @@ def _verify_published_release(sha, raw, document, ref, release, *, require_immut
         release.get("draft") is not False or release.get("prerelease") is not True
     ):
         raise ValueError("GitHub Bundle Release identity is invalid")
-    # A Host explicitly configured for strict independent Sigstore must also
-    # refuse platform-mutable Releases. A signed Manifest alone cannot prevent
-    # a privileged publisher from replacing already published assets.
-    # Legacy HTTPS-only Host caches keep their existing compatibility policy;
-    # native installers and CI enforce immutability independently.
+    # Platform Release Immutability is an optional future/diagnostic gate.
+    # Strict Host Sigstore still verifies a pinned, signed source Commit and
+    # does not reject signed artifacts solely because immutable:false.
     if require_immutable and release.get("immutable") is not True:
         raise ValueError("GitHub Release is mutable: enable release immutability")
     assets = release.get("assets")
@@ -342,9 +340,7 @@ def _fetch_manifest(sha, lock_path, marker=None, require_sigstore=False):
     if len(raw) > MAX_MANIFEST:
         raise ValueError("oversized manifest")
     document = validate(json.loads(raw.decode("utf-8")), sha)
-    _verify_published_release(
-        sha, raw, document, ref, release, require_immutable=require_sigstore
-    )
+    _verify_published_release(sha, raw, document, ref, release)
     if require_sigstore:
         _verify_sigstore_manifest(raw, sha, document["channel"])
     return document
