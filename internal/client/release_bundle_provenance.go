@@ -10,12 +10,9 @@ import (
 	"time"
 )
 
-// VerifyCurrentBundlePublisher is an independent public-GitHub provenance
-// check before a *user-requested* same-Server-Commit native installation. An
-// authenticated Server may offer cache bytes but cannot invent the SHA-256
-// trust root. The published immutable Release must agree on ref, size,
-// filename, digest, actual manifest bytes and the full published asset inventory
-// before any package may become executable.
+// VerifyCurrentBundlePublisher is an optional public audit (not native install
+// admission). Mutable GitHub Releases may be audited if the exact tag, raw
+// Manifest and every published asset SHA-256 match. No Owner bearer is sent.
 func VerifyCurrentBundlePublisher(ctx context.Context, commit string, item ReleaseBundleArtifact) error {
 	httpClient := &http.Client{
 		Timeout: 15 * time.Second,
@@ -31,7 +28,7 @@ func verifyCurrentBundlePublisher(
 	commit string, item ReleaseBundleArtifact,
 ) error {
 	if !bundleFullCommit.MatchString(commit) || !validCurrentBundleArtifact(commit, item) {
-		return fmt.Errorf("invalid immutable Server Bundle identity")
+		return fmt.Errorf("invalid Server Bundle identity")
 	}
 	tag := "bundle-" + commit
 	fetch := func(path string, into any) error {
@@ -49,7 +46,7 @@ func verifyCurrentBundlePublisher(
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("immutable publisher returned HTTP %d", resp.StatusCode)
+			return fmt.Errorf("public publisher returned HTTP %d", resp.StatusCode)
 		}
 		limited := io.LimitReader(resp.Body, 2*1024*1024+1)
 		body, err := io.ReadAll(limited)
@@ -57,10 +54,10 @@ func verifyCurrentBundlePublisher(
 			return err
 		}
 		if len(body) > 2*1024*1024 {
-			return fmt.Errorf("immutable publisher metadata exceeds 2 MiB")
+			return fmt.Errorf("public publisher metadata exceeds 2 MiB")
 		}
 		if err := json.Unmarshal(body, into); err != nil {
-			return fmt.Errorf("invalid immutable publisher JSON: %w", err)
+			return fmt.Errorf("invalid public publisher JSON: %w", err)
 		}
 		return nil
 	}
@@ -82,15 +79,14 @@ func verifyCurrentBundlePublisher(
 		TagName    string                 `json:"tag_name"`
 		Draft      bool                   `json:"draft"`
 		Prerelease bool                   `json:"prerelease"`
-		Immutable  bool                   `json:"immutable"`
 		Assets     []publishedBundleAsset `json:"assets"`
 	}
 	if err := fetch("/repos/lazyxu/xdrive/releases/tags/"+tag, &release); err != nil {
 		return err
 	}
-	if release.TagName != tag || release.Draft || !release.Prerelease || !release.Immutable ||
+	if release.TagName != tag || release.Draft || !release.Prerelease || 
 		len(release.Assets) < 1 || len(release.Assets) > 31 {
-		return fmt.Errorf("Bundle Release is unpublished, mutable or has invalid identity")
+		return fmt.Errorf("Bundle Release is unpublished or has invalid identity")
 	}
 	matches, manifestCount := 0, 0
 	var manifestAsset publishedBundleAsset
@@ -107,7 +103,7 @@ func verifyCurrentBundlePublisher(
 		}
 	}
 	if matches != 1 || manifestCount != 1 {
-		return fmt.Errorf("immutable Release is missing exactly one requested package or manifest")
+		return fmt.Errorf("public Release is missing exactly one requested package or manifest")
 	}
 	return verifyPublishedCurrentBundleManifest(ctx, apiBase, httpClient, commit,
 		item, manifestAsset, release.Assets)

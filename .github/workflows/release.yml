@@ -426,7 +426,7 @@ jobs:
               exit 1
               ;;
           esac
-      - name: Publish verified immutable commit Release Bundle
+      - name: Publish verified full-commit Release Bundle
         # Immutable per-commit publication is allowed for superseded master sources;
         # it never advances snapshot, GHCR edge, or DSM floating channels.
         shell: bash
