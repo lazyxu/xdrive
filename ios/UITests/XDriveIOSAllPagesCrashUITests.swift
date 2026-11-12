@@ -159,11 +159,12 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
                 ready(marker, app: app)
             }
             tap("native-ios-tab-dynamic", app: app)
-            // The dynamic slot can legitimately restore Notes, Clipboard,
-            // Backup or Transfers after the preceding Launcher journeys.
-            // Its empty state offers "打开地图"; MapKit opens only AFTER that
-            // button is tapped. Never demand a hidden Gallery MapKit child.
+            // An unused dynamic slot is a DIRECT native MapKit shortcut;
+            // with a previously chosen feature it is the real Notes,
+            // Clipboard, Backup or Transfers page. A fallback may instead
+            // display an explicit "打开地图" control. Test every real state.
             let eligible: [XCUIElement] = [
+                element("native-ios-map-source-selector", app: app),
                 app.buttons["打开地图"].firstMatch,
                 element("native-ios-backup-overview", app: app),
                 element("ios-clipboard-status", app: app),

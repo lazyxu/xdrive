@@ -216,6 +216,16 @@ TARGETS.update({
     "testOrganizeHomeThenFilesQuickRailAndGalleryAlternation",
     "testOrganizeHomeSignoutRelaunchNeverRestoresPrivilegedSheet",
 })
+# Six additional real native Gallery/Files edge-navigation cases.
+# Screenshots are diagnostic; do not interpret samples as 60/120 Hz FPS.
+TARGETS.update({
+    "testPeopleChildDeniedFilesReturnKeepsGalleryTree",
+    "testCloudOriginalsHelpFilesSearchReturnRetainsChild",
+    "testGalleryFilterCancelFilesSectionsKeepsUnifiedWall",
+    "testLocalPhotoPermissionFilesForegroundReturnKeepsChild",
+    "testFilesRootDenialLandscapeGalleryAlbumsReturn",
+    "testOriginalsAlbumsFilesQuickRailThreeCyclesKeepsPages",
+})
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")

@@ -162,7 +162,27 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             .matching(identifier: "native-ios-login-server").firstMatch
         if !field.waitForExistence(timeout: 16) { record(app, "login-not-mounted") }
         XCTAssertTrue(field.exists)
-        Thread.sleep(forTimeInterval: 4)
+        // The candidate's real startup checkpoint is set only after the
+        // visible login/workspace has remained active for its readiness
+        // interval. An arbitrary four-second sleep can interrupt that state
+        // and correctly open recovery on the next launch: not an app crash.
+        // Historical published b9 lacks this AX readiness value; keep the
+        // legacy observational delay only for that baseline.
+        let build = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-prelogin-build").firstMatch
+        if build.waitForExistence(timeout: 12),
+           let state = build.value as? String,
+           state == "mounting" || state == "ready" {
+            let ready = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "ready"),
+                object: build
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30),
+                           .completed, "Native startup never entered the real ready state")
+        } else {
+            print("B9_CRASH published baseline lacks readiness AX marker")
+            Thread.sleep(forTimeInterval: 4)
+        }
         alive(app, "startup-stabilized")
         app.terminate()
         app.launchArguments = []

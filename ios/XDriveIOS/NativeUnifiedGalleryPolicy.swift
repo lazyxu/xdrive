@@ -59,6 +59,12 @@ struct XDriveIOSNativeUnifiedPageIndex<Cursor: Equatable> {
             return previousCount == count && pages[page].end == next
         }
         guard page == pages.count - 1 else { return false }
+        // Reject an A→B→A (or longer) cursor cycle before mutating this
+        // page. Checking only next != current start admits unbounded repeat
+        // pages and repeatedly mounts the same thumbnails on scroll.
+        if let next {
+            guard !pages.contains(where: { $0.start == next }) else { return false }
+        }
         pages[page].count = count
         pages[page].end = next
         if let next { pages.append(Page(id: pages.count, start: next)) }

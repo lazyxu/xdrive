@@ -44,6 +44,10 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         // is mounted; all Home/Organizer tests explicitly enter Browse.
         if (browse.value as? String) != "已选择" {
             tap("native-ios-files-section-browse", app)
+            let selected = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "已选择"), object: browse)
+            XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 10), .completed,
+                           "Files Browse did not become selected after a real tap")
         }
         XCTAssertEqual(browse.value as? String, "已选择",
                        "Files Home tests must enter the actual Browse route")
@@ -325,6 +329,8 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
                 list.swipeDown()
             }
         }
+        XCTAssertTrue(item.exists && item.isHittable,
+                      "Files Home shortcut was not actually reachable: \(id)")
         tap(id, app)
     }
 
@@ -509,17 +515,27 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     // The synthetic Owner is deliberately not authenticated; these tests must
     // never claim private cloud data, a successful Server read, or 60/120Hz FPS.
     private func homeAction(_ id: String, _ app: XCUIApplication) -> XCUIElement {
+        let browse = element("native-ios-files-section-browse", app)
+        XCTAssertEqual(browse.value as? String, "已选择",
+                       "Organizer belongs to the actual Browse Home")
         let list = element("native-ios-files-home-list", app)
         XCTAssertTrue(list.waitForExistence(timeout: 12),
                       "Visible native Files Home List did not mount")
         let action = app.buttons.matching(identifier: id).firstMatch
-        for _ in 0..<6 {
+        for _ in 0..<9 {
             if action.exists && action.isHittable { return action }
             list.swipeUp()
         }
-        XCTAssertTrue(action.waitForExistence(timeout: 12),
-                      "Files Home did not render \(id)")
-        XCTAssertTrue(action.isHittable, "Files Home action is not tappable: \(id)")
+        for _ in 0..<12 {
+            if action.exists && action.isHittable { return action }
+            list.swipeDown()
+        }
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = "unreachable-browse-home-" + id
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertTrue(action.exists && action.isHittable,
+                      "Files Browse Home action missing/unreachable: \(id)")
         return action
     }
 

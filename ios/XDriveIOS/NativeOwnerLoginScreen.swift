@@ -91,6 +91,10 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                                 .accessibilityIdentifier("native-ios-prelogin-build")
+                                // Non-secret readiness state for the real
+                                // cold-restart UI test. No fake credentials or
+                                // test-only success transition is introduced.
+                                .accessibilityValue(startupReady ? "ready" : "mounting")
                             // Stop-only operation remains available even
                             // when login/Keychain or the Server is unavailable.
                             Button("紧急停止本机相册自动备份", role: .destructive) {

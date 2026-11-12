@@ -41,10 +41,14 @@ test('landscape screenshot guard resolves real UI text rather than removing the 
 test('dynamic tab checks real selected feature or Map shortcut, not a nonexistent MapKit child', () => {
   const source = read('ios/UITests/XDriveIOSAllPagesCrashUITests.swift')
   const suite = source.slice(source.indexOf('func testFiveTabsWithForegroundReturnDoNotCrash'), source.indexOf('func testDynamicRecentPicker'))
-  for (const id of ['native-ios-backup-overview', 'ios-clipboard-status', 'native-ios-transfer-overview', '笔记来源', '打开地图']) {
+  // The unused dynamic slot opens MapKit DIRECTLY; once configured it
+  // can show the selected feature or an explicit fallback Map button.
+  for (const id of ['native-ios-map-source-selector', 'native-ios-backup-overview',
+                    'ios-clipboard-status', 'native-ios-transfer-overview',
+                    '笔记来源', '打开地图']) {
     assert.ok(suite.includes(id), 'Missing actual dynamic destination ' + id)
   }
-  assert.doesNotMatch(suite, /native-ios-map-source-selector/)
+  assert.match(suite, /eligible\.contains\(where: \{ \$0\.exists \}\)/)
   assert.match(suite, /app\.activate\(\)/)
 })
 

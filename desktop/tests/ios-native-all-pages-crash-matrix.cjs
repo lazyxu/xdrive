@@ -57,3 +57,40 @@ test('tool, Owner, lifecycle and native top-tab crash cases run in mandatory Sim
   assert.ok(swift.includes('IOS_NATIVE_NAV_TAP_START route='));
   assert.ok(swift.includes('XCTAttachment(screenshot: app.screenshot())'));
 });
+
+
+test('native dynamic slot accepts direct MapKit or the actual selected feature', () => {
+  const route = swift.slice(swift.indexOf('func testFiveTabsWithForegroundReturnDoNotCrash'),
+                            swift.indexOf('func testDynamicRecentPicker'));
+  assert.match(dashboard, /if destination == \.dynamic && emptyDynamicMapFallback \{\s*openGallery\(\.map\)/);
+  for (const actual of [
+    'native-ios-map-source-selector', 'native-ios-backup-overview',
+    'ios-clipboard-status', 'native-ios-transfer-overview', '笔记来源', '打开地图'
+  ]) assert.ok(route.includes(actual), 'Uncovered dynamic destination: ' + actual);
+  assert.match(route, /eligible\.contains\(where: \{ \$0\.exists \}\)/);
+  assert.doesNotMatch(route, /XCTAssertTrue\(app\.buttons\["打开地图"\]/);
+});
+
+test('normal cold restart requires real visible startup readiness and preserves recovery', () => {
+  const login = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8');
+  const recovery = fs.readFileSync(path.join(root, 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'), 'utf8');
+  assert.match(login, /\.onChange\(of: restoreFinished\) \{ finished in\s*if finished \{ armReadinessAfterMount\(\) \}/);
+  assert.match(login, /\.accessibilityValue\(startupReady \? "ready" : "mounting"\)/);
+  assert.match(login, /XDriveIOSNativeLaunchCheckpoint\.mark\(\.ready\)/);
+  assert.match(recovery, /XCTNSPredicateExpectation\([\s\S]*?predicate: NSPredicate\(format: "value == %@", "ready"\)/);
+  assert.match(recovery, /Native startup never entered the real ready state/);
+  assert.match(recovery, /Normal restart entered recovery or failed to mount/);
+});
+
+test('no-session Files cases select actual Browse and retain strict screenshot rejection', () => {
+  const files = fs.readFileSync(path.join(root, 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'), 'utf8');
+  assert.match(files, /private func files\(_ app: XCUIApplication\)[\s\S]*?browse\.value as\? String\) != "已选择"[\s\S]*?tap\("native-ios-files-section-browse", app\)/);
+  assert.match(files, /Files Browse did not become selected after a real tap/);
+  assert.match(files, /native-ios-files-home-list/);
+  assert.match(files, /Files Home shortcut was not actually reachable/);
+  assert.match(files, /Organizer belongs to the actual Browse Home/);
+  assert.match(files, /Files Browse Home action missing\/unreachable/);
+  assert.match(files, /let width = 96, height = 64/);
+  assert.match(files, /XCTAssertGreaterThan\(colors\.count, 8/);
+  assert.match(files, /XCUIDevice\.shared\.orientation = \.portrait/);
+});
