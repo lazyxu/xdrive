@@ -518,4 +518,108 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             .waitForExistence(timeout: 20))
         XCTAssertEqual(app.state, .runningForeground)
     }
+
+    // Exercise two genuine EXIF-seeded PhotoKit assets via the actual MapKit
+    // place wall and native full-screen Viewer; no synthetic Owner/Viewer.
+    private func openRealSeededPhotoViewer(_ app: XCUIApplication) {
+        let gps = element("native-ios-map-verified-count", in: app)
+        XCTAssertTrue(gps.waitForExistence(timeout: 90),
+                      "Real PhotoKit did not index the two GPS JPEG fixtures")
+        let pair = app.descendants(matching: .any)
+            .matching(NSPredicate(
+                format: "label CONTAINS %@", "已扫描图库区域有2张带定位照片"))
+            .firstMatch
+        XCTAssertTrue(pair.waitForExistence(timeout: 30),
+                      "Two-photo actual MapKit marker was not visible")
+        let map = element("native-ios-full-library-gps-map", in: app)
+        XCTAssertFalse(pair.frame.isEmpty)
+        XCTAssertTrue(pair.frame.intersects(map.frame),
+                      "Exact PhotoKit marker must be in the real map")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-map-photo-marker")
+        pair.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let tile = element("native-ios-map-photo-wall-tile", in: app)
+        XCTAssertTrue(tile.waitForExistence(timeout: 60),
+                      "Real PhotoKit place wall did not load")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-map-photo-wall-tile")
+        tile.tap()
+        XCTAssertTrue(element("native-ios-local-viewer-back", in: app)
+            .waitForExistence(timeout: 30), "Actual PhotoKit Viewer did not open")
+    }
+
+    private func assertPhotoRoutePixels(_ app: XCUIApplication, stage: String) {
+        guard let image = app.screenshot().image.cgImage else {
+            XCTFail("No real screenshot at \(stage)")
+            return
+        }
+        let w = 64, h = 96
+        var buffer = [UInt8](repeating: 0, count: w * h * 4)
+        let rendered = buffer.withUnsafeMutableBytes { bytes -> Bool in
+            guard let addr = bytes.baseAddress,
+                  let ctx = CGContext(
+                    data: addr, width: w, height: h,
+                    bitsPerComponent: 8, bytesPerRow: w * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  ) else { return false }
+            ctx.interpolationQuality = .low
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        XCTAssertTrue(rendered, "Could not inspect true native pixels")
+        guard rendered else { return }
+        let colors = Set(stride(from: 0, to: buffer.count, by: 4).map { i in
+            (Int(buffer[i]) << 16) | (Int(buffer[i+1]) << 8) | Int(buffer[i+2])
+        })
+        XCTAssertGreaterThan(colors.count, 8,
+                             "Blank settled native screen at \(stage)")
+    }
+
+    func testBRealPhotoKitViewerFilesGalleryReturnRemainsMounted() {
+        let app = openLocalMap()
+        openRealSeededPhotoViewer(app)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-local-viewer-back")
+        element("native-ios-local-viewer-back", in: app).tap()
+        XCTAssertTrue(element("native-ios-map-photo-wall-tile", in: app)
+            .waitForExistence(timeout: 30),
+            "Viewer lost the real place photo wall on Back")
+        element("native-ios-map-place-dismiss", in: app).tap()
+        XCTAssertTrue(element("native-ios-full-library-gps-map", in: app)
+            .waitForExistence(timeout: 20))
+        let close = element("native-ios-map-dismiss", in: app)
+        XCTAssertTrue(close.waitForExistence(timeout: 15))
+        close.tap()
+        XCTAssertTrue(element("native-ios-unified-photo-gallery", in: app)
+            .waitForExistence(timeout: 20),
+            "Closing Map must restore the real native Gallery")
+        let files = element("native-ios-tab-files", in: app)
+        XCTAssertTrue(files.waitForExistence(timeout: 15))
+        files.tap()
+        XCTAssertTrue(element("native-ios-files-section-browse", in: app)
+            .waitForExistence(timeout: 20))
+        element("native-ios-tab-gallery", in: app).tap()
+        XCTAssertTrue(element("native-ios-unified-photo-gallery", in: app)
+            .waitForExistence(timeout: 20))
+        assertPhotoRoutePixels(app, stage: "Real PhotoKit Viewer Files Gallery return")
+    }
+
+    func testCRealPhotoKitViewerBackgroundRetiresOldSheet() {
+        let app = openLocalMap()
+        openRealSeededPhotoViewer(app)
+        let viewerBack = element("native-ios-local-viewer-back", in: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        // The real local place wall deliberately dismisses private Viewer
+        // on scene retirement; it must not expose an old asset after resume.
+        let dismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: viewerBack
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 20),
+                       .completed, "Old PhotoKit Viewer survived scene retirement")
+        XCTAssertTrue(element("native-ios-full-library-gps-map", in: app)
+            .waitForExistence(timeout: 25),
+            "Foreground return lost the verified MapKit route")
+        assertPhotoRoutePixels(app, stage: "PhotoKit Viewer scene return")
+    }
+
 }

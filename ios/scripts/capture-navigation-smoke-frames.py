@@ -236,6 +236,19 @@ NAV_TARGETS.update({
     "testLocalPhotosFilesRecentOriginalsThenLocalReturn",
 })
 TARGETS.update(NAV_TARGETS)
+# Four more actual Gallery/Files journeys plus two seeded-PhotoKit Viewer
+# journeys. The MapKit shard uses a separate real GPS-photo Simulator.
+NAV_TARGETS.update({
+    "testFilesSearchKeyboardGalleryAlbumsThenBrowseNoBlank",
+    "testFilterCancelFilesQuickRailPeopleKeepsWallGeneration",
+    "testFilesDeniedForegroundOriginalsAndBrowseRecovery",
+    "testAlbumsOriginalsUnifiedFilesThreeCyclesKeepVisibleShells",
+})
+TARGETS.update(NAV_TARGETS)
+TARGETS.update({
+    "testBRealPhotoKitViewerFilesGalleryReturnRemainsMounted",
+    "testCRealPhotoKitViewerBackgroundRetiresOldSheet",
+})
 # Cross-feature native crash reproduction and two-cycle Operation History foreground regression.
 # This records tap-adjacent diagnostics; it is not a physical FPS claim.
 TARGETS.update({

@@ -335,4 +335,102 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
             .waitForExistence(timeout: 15))
         assertPixels(app, "Local Photos after Originals and Files")
     }
+
+    // Additional real, cross-page XCUITest transitions. These use the native
+    // keyboard/sheets/Photos sources, not fabricated Owner media.
+    func testFilesSearchKeyboardGalleryAlbumsThenBrowseNoBlank() {
+        let app = launch()
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        let search = app.searchFields["搜索全部文件"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        search.tap()
+        search.typeText("ab")
+        if app.keyboards.buttons["Search"].exists {
+            app.keyboards.buttons["Search"].tap()
+        } else if app.keyboards.buttons["完成"].exists {
+            app.keyboards.buttons["完成"].tap()
+        } else {
+            search.typeText("\n")
+        }
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-albums", app)
+        assertGallery(app)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        assertFiles(app)
+        assertPixels(app, "Files search to Albums and Browse")
+    }
+
+    func testFilterCancelFilesQuickRailPeopleKeepsWallGeneration() {
+        let app = launch(syntheticOwner: true)
+        let wall = target("native-ios-unified-photo-gallery", app)
+        XCTAssertTrue(wall.waitForExistence(timeout: 15))
+        let oldGeneration = wall.value as? String
+        XCTAssertNotNil(oldGeneration.flatMap(UUID.init(uuidString:)))
+        tap("native-ios-gallery-open-filters", app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        for section in ["recent", "favorites", "browse", "recent", "browse"] {
+            tap("native-ios-files-section-\(section)", app)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app)
+        XCTAssertTrue(wall.waitForExistence(timeout: 15))
+        XCTAssertEqual(wall.value as? String, oldGeneration,
+                       "Unchanged Owner/filter rebuilt the verified Gallery wall")
+        tap("native-ios-gallery-people", app)
+        closePeople(app)
+        XCTAssertEqual(wall.value as? String, oldGeneration,
+                       "People child return unnecessarily rebuilt the wall")
+        assertPixels(app, "Gallery filter Files rail People return")
+    }
+
+    func testFilesDeniedForegroundOriginalsAndBrowseRecovery() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        tap("native-ios-files-open-root-location", app)
+        XCTAssertTrue(target("native-ios-files-error-page", app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-files-error-return", app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-originals", app)
+        XCTAssertTrue(target("native-ios-cloud-original-layout-help", app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        XCTAssertFalse(target("native-ios-files-error-page", app).exists,
+                       "Old denied child remained on top after real return")
+        assertPixels(app, "Denied Files foreground Originals Browse recovery")
+    }
+
+    func testAlbumsOriginalsUnifiedFilesThreeCyclesKeepVisibleShells() {
+        let app = launch(syntheticOwner: true)
+        for cycle in 0..<3 {
+            tap("native-ios-gallery-source-albums", app)
+            assertGallery(app)
+            tap("native-ios-gallery-source-originals", app)
+            XCTAssertTrue(target("native-ios-cloud-original-layout-help", app)
+                .waitForExistence(timeout: 15))
+            tap("native-ios-gallery-source-unified", app)
+            XCTAssertTrue(target("native-ios-unified-photo-gallery", app)
+                .waitForExistence(timeout: 15))
+            tap("native-ios-tab-files", app)
+            enterBrowseHome(app)
+            for section in ["favorites", "recent", "browse"] {
+                tap("native-ios-files-section-\(section)", app)
+            }
+            tap("native-ios-tab-gallery", app)
+            assertGallery(app)
+            assertPixels(app, "Albums Originals Unified Files cycle \(cycle)")
+        }
+    }
+
 }

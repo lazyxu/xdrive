@@ -107,3 +107,23 @@ test('Originals to Local Photos returns via the real visible source menu', () =>
   assert.doesNotMatch(route.slice(originals), /tap\("native-ios-gallery-source-local", app\)/,
     'The hidden Local chip cannot be tapped from Originals')
 })
+
+test('four added Gallery/Files journeys retain real keyboard, filters, denial and three-source cycles', () => {
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  const watcher = read('ios/scripts/capture-navigation-smoke-frames.py')
+  for (const method of [
+    'testFilesSearchKeyboardGalleryAlbumsThenBrowseNoBlank',
+    'testFilterCancelFilesQuickRailPeopleKeepsWallGeneration',
+    'testFilesDeniedForegroundOriginalsAndBrowseRecovery',
+    'testAlbumsOriginalsUnifiedFilesThreeCyclesKeepVisibleShells',
+  ]) {
+    assert.ok(ui.includes('func ' + method + '()'), 'Missing real XCTest: ' + method)
+    assert.ok(watcher.includes('"' + method + '"'), 'Unregistered real frame evidence: ' + method)
+  }
+  assert.match(ui, /app\.searchFields\["搜索全部文件"\]/)
+  assert.match(ui, /XCTAssertEqual\(wall\.value as\? String, oldGeneration/)
+  assert.match(ui, /native-ios-files-error-page/)
+  assert.match(ui, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(ui, /native-ios-gallery-source-originals/)
+  assert.match(ui, /native-ios-unified-photo-gallery/)
+})

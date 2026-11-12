@@ -28,3 +28,24 @@ test('fresh MapKit PhotoKit import retries only an isolated erased simulator and
   assert.ok(!seed.includes('continue-on-error') && !seed.includes('|| true') &&
     !seed.includes('simctl privacy grant'), 'PhotoKit import must not be waived or faked')
 })
+
+test('PhotoKit Viewer return and scene retirement use real GPS-seeded MapKit media', () => {
+  const map = fs.readFileSync(path.resolve(__dirname,
+    '../../ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'), 'utf8')
+  const watcher = fs.readFileSync(path.resolve(__dirname,
+    '../../ios/scripts/capture-navigation-smoke-frames.py'), 'utf8')
+  for (const name of [
+    'testBRealPhotoKitViewerFilesGalleryReturnRemainsMounted',
+    'testCRealPhotoKitViewerBackgroundRetiresOldSheet',
+  ]) {
+    assert.ok(map.includes('func ' + name + '()'), 'Missing seeded PhotoKit Viewer journey: ' + name)
+    assert.ok(watcher.includes('"' + name + '"'), 'Missing Viewer screenshot registration: ' + name)
+  }
+  assert.match(map, /private func openRealSeededPhotoViewer\(_ app: XCUIApplication\)/)
+  assert.match(map, /native-ios-map-photo-wall-tile/)
+  assert.match(map, /native-ios-local-viewer-back/)
+  assert.match(map, /native-ios-files-section-browse/)
+  assert.match(map, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(map, /XCTAssertGreaterThan\(colors\.count, 8/)
+  assert.doesNotMatch(map, /mockPhotoKit|fakeToken|simctl privacy grant/)
+})
