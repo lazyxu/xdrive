@@ -374,3 +374,34 @@ func TestMediaQueryCalendarDateBoundariesMatchMapUIAndDST(t *testing.T) {
 		t.Fatalf("existing RFC3339 support changed: %v %v", got, err)
 	}
 }
+
+func TestMediaQueryFromRequestLiteralMapFilename(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, input := range []struct {
+		query string
+		valid bool
+		filename string
+	}{
+		{"filename=IMG_0001.HEIC&kind=image", true, "IMG_0001.HEIC"},
+		{"filename=100%25_video.mov&asset_kind=live_photo", true, "100%_video.mov"},
+		{"filename=one&filename=two", false, ""},
+		{"filename=", false, ""},
+		{"filename=%00", false, ""},
+		{"filename=%20padded%20", false, ""},
+		{"filename=" + strings.Repeat("X", 121), false, ""},
+	} {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest("GET", "/api/v1/media/items?"+input.query, nil)
+		options, ok := mediaQueryFromRequest(ctx)
+		if ok != input.valid {
+			t.Fatalf("filename %q valid=%t expected %t (HTTP %d)", input.query, ok, input.valid, recorder.Code)
+		}
+		if ok && options.FileName != input.filename {
+			t.Fatalf("filename %q mapped to %q, want %q", input.query, options.FileName, input.filename)
+		}
+		if !ok && recorder.Code != http.StatusBadRequest {
+			t.Fatalf("filename %q must reject with HTTP 400, got %d", input.query, recorder.Code)
+		}
+	}
+}
