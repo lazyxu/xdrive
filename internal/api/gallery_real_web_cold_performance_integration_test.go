@@ -53,11 +53,12 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	desktopFileExplorerMixed := os.Getenv("XD_GALLERY_DESKTOP_FILES_MIXED_PHYSICAL_100K_PERF") == "1"
 	p0c2SPAMode := os.Getenv("XD_PWA_P0C2_SPA_BEFORE") == "1"
 	if desktopFileExplorerMixed || p0c2SPAMode {
-		// The production owner /me/quota path now reads active local Push quota holds.
-		// Include its model in this opt-in fixture; an absent test schema is not
-		// a 100k Grid/Details rendering or transfer performance failure.
+		// Use the real Owner Files/Recent schema for this opt-in signed SPA
+		// benchmark. Without FileRecentFolderAccess, authenticated reads produce
+		// recurring 500-feedback Snackbars and block real baseline dock taps.
+		// The production Server and its migrations remain unchanged.
 		if err := db.AutoMigrate(&meta.LocalPushQuotaHold{}, &meta.FileVersion{}, &meta.FileRecentAccess{},
-			&meta.FileFavorite{}, &meta.FileQuickAccess{}, &meta.FileSavedSearch{},
+			&meta.FileRecentFolderAccess{}, &meta.FileFavorite{}, &meta.FileQuickAccess{}, &meta.FileSavedSearch{},
 			&meta.FileTag{}, &meta.FileNodeTag{}, &meta.NodeChange{},
 			&meta.FileOperation{}, &meta.PhotoIntelligenceReanalyzeIntent{},
 			&meta.UploadSession{}, &meta.BackgroundOwnerCancellation{},
@@ -108,6 +109,13 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	}
 	router := server.Router()
 	token := createTestUser(t, db, router, "gallery-web-cold-100k", "browser-performance-password")
+	if p0c2SPAMode {
+		// Real signed Files mounts before Gallery in the paired first-frame
+		// harness. Fail early on missing schema, rather than accidentally
+		// measuring persistent 500-feedback overlays as video/navigation time.
+		request(t, router, http.MethodGet, "/api/v1/file-recent-folders?limit=8",
+			token, nil, http.StatusOK)
+	}
 	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
 	folder := requestNode(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
