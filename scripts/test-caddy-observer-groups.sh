@@ -5,7 +5,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$(id -u)" == 0 ]] || { echo 'Run this fixture as root in an isolated runner.' >&2; exit 2; }
 command -v setpriv >/dev/null
-scratch="$(mktemp -d)"
+# The fixture intentionally drops to a synthetic UID, which cannot traverse
+# RUNNER_TEMP when its parent is private (0700). Only disposable test scratch
+# belongs under sticky, traversable /tmp; production Caddy paths are unchanged.
+[[ -d /tmp && -w /tmp && -x /tmp ]] || {
+  echo 'Caddy supplementary-group fixture requires traversable /tmp' >&2
+  exit 1
+}
+scratch="$(mktemp -d /tmp/xdrive-caddy-observer-groups.XXXXXXXX)"
 trap 'rm -rf -- "$scratch"' EXIT
 chmod 755 "$scratch"
 mkdir -p "$scratch/xd/config" "$scratch/xd/bin" "$scratch/xd/state/control"
