@@ -10,14 +10,18 @@ const app = read('desktop', 'src', 'renderer', 'App.tsx')
 const sourceManager = read('ui', 'shared', 'src', 'mui', 'SourceManager.tsx')
 const sourceDetails = read('ui', 'shared', 'src', 'mui', 'SourceManagerDetailsDialog.tsx')
 
-test('Mount terminal status opens a full task page with a truthful scope notice', () => {
-  assert.match(main, /mountSyncCompletionPresentation\(\)/)
-  assert.match(main, /'sync-activity'\)/)
-  assert.match(app, /target === 'sync-activity'/)
-  assert.match(app, /setSyncActivityFromNotification\(true\)/)
+test('Mount native notifications come from persisted run receipts, not status text', () => {
+  assert.match(main, /mountRunNotificationTracker\.observe\(identity, page\.items\)/)
+  assert.match(main, /mountRunShouldNotify\(run, desktopPreferences\.sync_notification_level\)/)
+  assert.match(main, /mountRunNotificationTarget\(run\.run_id, owner\)/)
+  assert.match(main, /mountRunNotificationPresentation\(run\)/)
+  assert.doesNotMatch(main, /before\.sync_status === '正在同步' && after\.sync_status === '同步正常'/)
+  assert.match(app, /target\?\.kind === 'mount-run'/)
+  assert.match(app, /syncActivityFocusRunID: mountRunFocus/)
+  assert.match(app, /mountRunFocus\.server === status\?\.server/)
+  assert.match(app, /mountRunFocus\.username === status\?\.username/)
   assert.match(app, /setView\('transfers'\)/)
-  assert.match(app, /逐项同步历史尚未接入/)
-  assert.doesNotMatch(main, /'同步已完成。', 'transfers'/)
+  assert.match(app, /target === 'sync-activity'/)
 })
 
 test('Source-run notification is account scoped and routes into its actual run', () => {

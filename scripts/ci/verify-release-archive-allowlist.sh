@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Allow only exact Backup CLI archives, the CI-built Caddy fallback archive,
+# Allow exact Backup and standalone CLI archives, the CI-built Caddy fallback,
 # and the verified armada38x SPK.
 set -euo pipefail
 
@@ -22,7 +22,7 @@ done
 shopt -s nullglob dotglob
 for file in "$release_dir"/*.zip "$release_dir"/*.tar.gz "$release_dir"/*.tgz "$release_dir"/*.spk; do
   case "${file##*/}" in
-    xdrive-backup-linux-amd64.tar.gz|xdrive-backup-windows-amd64.zip|xdrive-caddy-image.tar.gz|xdrivenas-armada38x-*.spk)
+    xdrive-backup-linux-amd64.tar.gz|xdrive-backup-windows-amd64.zip|xdrive-cli-linux-amd64.tar.gz|xdrive-cli-windows-amd64.zip|xdrive-caddy-image.tar.gz|xdrivenas-armada38x-*.spk)
       [[ -f "$file" && -s "$file" && ! -L "$file" ]] || {
         echo "release archive verification: invalid Backup CLI artifact: $file" >&2
         exit 1

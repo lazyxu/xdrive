@@ -1,5 +1,9 @@
 import {
+  FormControl,
   FormControlLabel,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   Switch,
   Typography,
@@ -17,6 +21,7 @@ export function DesktopSettingsContent({
   onRestartAgent,
   onStartAtLoginChange,
   onCloseToTrayChange,
+  onSyncNotificationLevelChange,
   settings,
   mountPath,
   cacheLimit,
@@ -33,6 +38,7 @@ export function DesktopSettingsContent({
   onRestartAgent: () => void
   onStartAtLoginChange: (enabled: boolean) => void
   onCloseToTrayChange: (enabled: boolean) => void
+  onSyncNotificationLevelChange: (level: DesktopSyncNotificationLevel) => void
   settings: AgentSettings | null
   mountPath: string
   cacheLimit: string
@@ -87,9 +93,24 @@ export function DesktopSettingsContent({
         <Typography variant="caption" color="text.secondary" sx={{ pl: 6 }}>
           开启后，点击关闭按钮只隐藏主窗口并继续同步；关闭后将直接退出 xDrive 桌面版。
         </Typography>
+        <FormControl size="small" sx={{ ml: 6, mt: 1, minWidth: 250, maxWidth: 430 }}>
+          <InputLabel id="desktop-sync-notification-level-label">Windows 同步通知</InputLabel>
+          <Select
+            labelId="desktop-sync-notification-level-label"
+            label="Windows 同步通知"
+            value={desktopPreferences.sync_notification_level}
+            onChange={(event) => onSyncNotificationLevelChange(event.target.value as DesktopSyncNotificationLevel)}
+          >
+            <MenuItem value="errors-only">仅失败和冲突</MenuItem>
+            <MenuItem value="changes-and-errors">有文件变更或错误（推荐）</MenuItem>
+            <MenuItem value="all">全部已记录同步批次</MenuItem>
+          </Select>
+        </FormControl>
+        <Typography variant="caption" color="text.secondary" sx={{ pl: 6 }}>
+          默认不弹出无变化的后台检查通知。所有模式都保留登录失效及重要安全提醒；
+          “全部”仅包括有真实记录的批次，不会把健康检查误作同步。
+        </Typography>
       </Stack>
-
-
 
       {!settings ? (
         <XDriveStatePanel loading message="正在加载设置…" />

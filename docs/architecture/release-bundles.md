@@ -152,9 +152,11 @@ checks must be recorded separately from physical-device results.
   set `XD_RELEASE_BUNDLE_VERIFY_SIGSTORE=required` in its Host `.env`.
   The Worker then pins the OIDC signer workflow, full source Commit, master
   source ref (when applicable), and immutable GitHub repository ID 1382670236.
-  Missing tools or invalid attestations fail only the optional client cache,
-  never the Server upgrade. Without this setting Host Sigstore enforcement is
-  explicitly **not active**.
+  Missing tools, mutable GitHub Releases, or invalid attestations fail only
+  the optional client cache, never the Server upgrade. Strict mode requires
+  **both** platform `immutable:true` and the pinned independent signature;
+  signed-but-mutable Releases are rejected. Without this setting Host Sigstore
+  enforcement is explicitly **not active**.
 
 
 ## Authenticated distribution
@@ -189,9 +191,15 @@ package-cache success. No client must update merely because the Server
 upgraded. Release Bundle publication needs its own exact-head CI/Final Gate
 before it is considered shipped.
 
-The bundled `cli` artifacts are currently **Backup-only CLI** archives; a separate
-standalone `xd`/Agent installation is not represented until its independent
-source-exact package build exists. Do not advertise these as all CLI variants.
+The `cli` artifact family contains **two different manual download types** when
+both are available in the same exact-source CI run: `xdrive-backup-*` remains
+the existing Backup-only CLI, while `xdrive-cli-*` is a distinct portable
+`xd`/Agent pair built from the **same verified client-core bytes**, without
+Desktop, OS service installation or automatic client updating. A package
+missing from a CI run is omitted. Both variants require manual extraction,
+source-Commit verification and normal authorization for remote operations;
+a portable CLI archive is not proof of a validated OS native upgrade. See
+`docs/xd-standalone-cli.md`.
 
 ## Read-only live release and Host acceptance gate
 
@@ -218,8 +226,12 @@ explicit acceptance gate, not proof that every installed Host has the CLI.
 
 For a real authenticated download and resume SHA-256 check add
 `--check-server-download` (requires `--server-url` and Owner token). This
-performs two actual HTTP `Range` transfers per cached artifact, recombines the
-bytes in order and compares the full hash. It never installs a package.
+performs two actual HTTP `Range` transfers per **verified cached artifact**,
+recombines the bytes in order and compares the full hash. A zero-verified
+cache fails the live transfer acceptance, while missing optional artifacts
+are not falsely counted as downloaded. `--check-auth-denial` also performs
+unauthenticated requests for both Bundle metadata and a cached installer;
+both must return 401/403. Neither option installs a package.
 
 Host acceptance treats the documented `retry_needed` **partial verified cache**
 as usable when at least one package passed full disk SHA-256; unavailable
@@ -242,3 +254,8 @@ service, or Android production signing system. Native updates must still use
 their platform's own verified installation flow. The fallback addresses can
 return 404 if that mirror has not published the same exact CI bytes; a hash
 mismatch is a failed mirror, never authorization to install unverified bytes.
+
+
+For the complete P0/P1/P2 external-Host, Windows/Linux, DSM, iOS/Android
+and compatibility acceptance matrix, see
+`docs/architecture/release-bundle-closeout-20261111.md`.
