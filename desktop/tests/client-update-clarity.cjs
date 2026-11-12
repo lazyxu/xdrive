@@ -17,6 +17,8 @@ test('the Desktop update summary comes first and snapshot labels cannot establis
   assert.ok(panel.includes('更新通道报告没有新版本'))
   assert.ok(panel.includes('缺少完整 Commit'))
   assert.ok(app.includes('currentCommit: info?.commit'))
+  assert.ok(app.includes('currentVersion: info?.version || status?.version'))
+  assert.ok(panel.includes("{currentVersion || clientUpdate.current_version || '未知'}"))
 })
 
 test('only actionable buttons are visible and settings and raw release info are folded', () => {

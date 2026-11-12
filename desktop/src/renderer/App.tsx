@@ -3064,7 +3064,7 @@ export default function App({
   // UI-owned JSX for migrated routes is composed by the shared XDriveAppRouteContent.
   const desktopClientUpdateProps = {
     busy, updateSupported, clientUpdate, updateOperationBusy, updateCancelling,
-    updateCancelSupported, updateProgress, currentVersion: status?.version,
+    updateCancelSupported, updateProgress, currentVersion: info?.version || status?.version,
     currentCommit: info?.commit,
     onUpdateSourceChange: (source: AgentUpdateSource) => { void changeUpdateSource(source) },
     onUpdateModeChange: (mode: AgentUpdateMode) => { void changeUpdateMode(mode) },

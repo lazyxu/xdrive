@@ -14,12 +14,13 @@ const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src',
 const metricCards = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MetricCards.tsx'), 'utf8')
 const sectionHeader = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
 const localStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
+const desktopClientUpdatePanel = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopClientUpdatePanel.tsx'), 'utf8')
 const desktopApp = [
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8'),
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8'),
   localStorage,
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8'),
-  fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopClientUpdatePanel.tsx'), 'utf8'),
+  desktopClientUpdatePanel,
 ].join('\n')
 const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
 const sharedOutlet = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
@@ -100,7 +101,9 @@ test('Local storage is one shared Web/Desktop/DSM page with platform-specific se
   assert.ok(webApp.includes('localStorage: localStorageSource') &&
     sharedOutlet.includes('<XDriveLocalStoragePage key={revision} source={services.localStorage} />'))
   assert.ok(desktopApp.includes('localStorage: localStorageSource') && sharedOutlet.includes('<XDriveLocalStoragePage'))
-  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 4, 'DSM shares Local Storage; diagnostics must not add another metric grid')
+  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 3, 'Desktop shares Local Storage and the update page no longer has a metric grid')
+  assert.equal((desktopClientUpdatePanel.match(/<XDriveMetricGrid\b/g) || []).length, 0, 'client update must not recreate the eight-field metric dashboard')
+  assert.equal((desktopClientUpdatePanel.match(/<XDriveMetricCard\b/g) || []).length, 0, 'client update must not recreate metric cards')
   assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 19, 'DSM shares Local Storage; diagnostics must not add pass/warn/fail metric cards')
   assert.equal(desktopApp.includes('className="cloud-quota-grid"'), false)
   assert.equal(desktopApp.includes('className="cache-metrics"'), false)

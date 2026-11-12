@@ -141,7 +141,7 @@ export function DesktopClientUpdatePanel({
             <MuiBox sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="caption" color="text.secondary">当前 Desktop</Typography>
               <Typography variant="body1" fontWeight={600}>
-                {clientUpdate.current_version || currentVersion || '未知'}
+                {currentVersion || clientUpdate.current_version || '未知'}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
                 Commit：{installedCommit ? installedCommit.slice(0, 12) : '未提供'}
