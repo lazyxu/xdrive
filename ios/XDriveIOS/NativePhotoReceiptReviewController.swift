@@ -350,6 +350,12 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
                     scope: scope, limit: 0
                 ).pending
                 try Task.checkCancellation()
+                // Re-prove the existing managed Source/Target read-only.
+                // An Owner root alone cannot authorize an outdated target.
+                let managed = try await XDriveIOSNativePhotoBackupDestinationModel
+                    .readExistingForUpload(
+                        owner: expected, accessToken: verified.accessToken
+                    )
                 // A zero saved count alone is insufficient: re-prove Owner,
                 // scope, PhotoKit authorization, active scene and local stop
                 // generation immediately before the only schedule write.
@@ -365,18 +371,20 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
                       ),
                       let current = scheduleStore.status(owner: expected),
                       current.enabled, current.pausedForReview,
-                      let savedRule = current.backupStartRule,
-                      let sourceID = current.targetSourceID,
-                      let targetNodeID = current.targetNodeID
+                       let savedRule = current.backupStartRule,
+                       let sourceID = current.targetSourceID,
+                       let targetNodeID = current.targetNodeID,
+                       managed.destination.sourceID == sourceID,
+                       managed.destination.targetNodeID == targetNodeID,
+                       (savedRule != .onlyNew ||
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized)
                 else { throw XDriveIOSNativeSessionError.staleSession }
-                // Receipt review only resumes the existing Owner plan. Never
-                // create a new "only new" baseline or broaden it to "all".
-                _ = try scheduleStore.configure(
-                    owner: expected, minutes: current.intervalMinutes,
-                    allowICloud: current.allowICloudOriginals,
-                    startRule: savedRule,
-                    enabledAt: current.newOnlySince ?? Date(),
-                    sourceID: sourceID, targetNodeID: targetNodeID
+                // A read-only receipt review resumes this exact paused plan,
+                // preserving its generation/cursor. New backup selections
+                // instead call configure() and start from window zero.
+                _ = try scheduleStore.resumeAfterTrustedReview(
+                    owner: expected, sourceID: sourceID, targetNodeID: targetNodeID,
+                    trustedPending: count, expectedStopGeneration: stopGeneration
                 )
                 self.pending = 0
                 self.hasLedgerScope = true

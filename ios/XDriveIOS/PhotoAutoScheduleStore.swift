@@ -156,6 +156,33 @@ final class XDriveIOSPhotoAutoScheduleStore {
         return state
     }
 
+    /// Resume ONLY the same Owner and managed target after an explicit,
+    /// read-only unknown-receipt review. This is distinct from selecting a
+    /// new backup scope, and retains the prior PhotoKit epoch/cursor.
+    /// The caller holds the shared writer gate, proves zero pending receipts
+    /// and checks the exact stop generation immediately before this write.
+    @discardableResult
+    func resumeAfterTrustedReview(
+        owner: XDriveNativeOwnerRoot,
+        sourceID: UInt64, targetNodeID: UInt64,
+        trustedPending: Int, expectedStopGeneration: UInt64
+    ) throws -> State {
+        guard trustedPending == 0,
+              expectedStopGeneration == localStopGeneration,
+              sourceID > 0, targetNodeID > 0,
+              targetNodeID != owner.rootNodeID,
+              var previous = status(owner: owner),
+              previous.enabled, previous.pausedForReview,
+              previous.backupStartRule != nil,
+              previous.targetSourceID == sourceID,
+              previous.targetNodeID == targetNodeID
+        else { throw XDriveIOSPhotoAutoScheduleError.invalidStartRule }
+        previous.pausedForReview = false
+        previous.nextDueAt = Date()
+        try persist(previous, owner: owner)
+        return previous
+    }
+
     /// Local pause retains the prior start rule, PhotoKit cursor and
     /// managed target so the user can explicitly select "Resume previous".
     /// This never deletes the sealed receipt journal or authorizes a write.

@@ -66,7 +66,13 @@ test('existing emergency all-Owner stop also deletes opaque generation with its 
   assert.match(emergency, /localStopGeneration &\+= 1/)
   assert.match(emergency, /UserDefaults\.standard\.removeObject\(forKey: key\)/)
   assert.match(emergency, /suffix\.utf8\.count == 64/)
-  assert.match(store, /libraryChangeEpoch: sameTarget \? existing\?\.libraryChangeEpoch : nil/)
+  const freshStart = store.indexOf('let state = State(')
+  const fresh = store.slice(freshStart, store.indexOf('try persist(state, owner: owner)', freshStart))
+  assert.match(fresh, /libraryChangeEpoch: nil,/)
+  assert.match(fresh, /libraryAuthorizationRaw: nil,/)
+  const exact = store.slice(store.indexOf('func resumeAfterTrustedReview('),
+    store.indexOf('func pausePreservingPrevious('))
+  assert.doesNotMatch(exact, /libraryChangeEpoch =|libraryAuthorizationRaw =/)
 })
 test('PhotoKit native fetches avoid unsupported localIdentifier sort and fence ambiguous backup offsets', () => {
   const scanner = read('ios/XDriveIOS/PhotoKitBoundedSnapshotScanner.swift')

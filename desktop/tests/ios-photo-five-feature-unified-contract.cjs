@@ -119,3 +119,22 @@ test('a newly selected photo backup scope never inherits an older positional cur
   assert.doesNotMatch(fresh, /sameTarget \?/,
     'only explicitly resuming an old plan may reuse an old scan window')
 })
+
+test('receipt-reviewed paused backup resumes exact cursor and does not silently select a fresh scope', () => {
+  const store = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
+  const review = read('ios/XDriveIOS/NativePhotoReceiptReviewController.swift')
+  const exact = store.slice(store.indexOf('func resumeAfterTrustedReview('),
+    store.indexOf('func pausePreservingPrevious('))
+  assert.match(exact, /trustedPending == 0/)
+  assert.match(exact, /expectedStopGeneration == localStopGeneration/)
+  assert.match(exact, /previous\.targetSourceID == sourceID/)
+  assert.match(exact, /previous\.targetNodeID == targetNodeID/)
+  assert.match(exact, /previous\.pausedForReview = false/)
+  assert.doesNotMatch(exact, /windowIndex =|libraryChangeEpoch =|backupStartRuleRaw =/)
+  const restore = review.slice(review.indexOf('func resumePausedAuto('))
+  assert.match(restore, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
+  assert.match(restore, /readExistingForUpload\(/)
+  assert.match(restore, /pendingReceiptSnapshot\(/)
+  assert.match(restore, /scheduleStore\.resumeAfterTrustedReview\(/)
+  assert.doesNotMatch(restore, /scheduleStore\.configure\(/)
+})
