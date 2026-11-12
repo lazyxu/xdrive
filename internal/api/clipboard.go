@@ -179,10 +179,14 @@ func (s *Server) streamClipboardEvents(c *gin.Context) {
 				return
 			}
 		}
+		// Change events are invalidations, not an item replay log. Return
+		// the newest *visible* cursor in one frame, so a Host reopened after
+		// a burst does not reconnect and GET /items once per old change.
+		// Device visibility is applied before the descending limit.
 		var ids []uint64
 		query := s.DB.WithContext(c.Request.Context()).Model(&meta.ClipboardChange{}).
 			Where("owner_id = ? AND id > ?", uid, after)
-		err := clipboardVisibleToDevice(query, deviceID).Order("id ASC").Limit(64).Pluck("id", &ids).Error
+		err := clipboardVisibleToDevice(query, deviceID).Order("id DESC").Limit(1).Pluck("id", &ids).Error
 		if err != nil {
 			return
 		}
@@ -203,9 +207,6 @@ func (s *Server) streamClipboardEvents(c *gin.Context) {
 		}
 		if len(ids) > 0 {
 			c.Writer.Flush()
-		}
-		if len(ids) == 64 {
-			continue
 		}
 		select {
 		case <-c.Request.Context().Done():

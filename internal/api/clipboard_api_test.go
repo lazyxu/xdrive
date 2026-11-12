@@ -346,6 +346,56 @@ func TestClipboardOwnerMailboxPostgres(t *testing.T) {
 	request(t, router, http.MethodGet, "/api/v1/clipboard/items", b, nil, http.StatusUnauthorized)
 	request(t, router, http.MethodGet, "/api/v1/clipboard/items", a, nil, http.StatusOK)
 
+	// A freshly mounted Host must reconcile a burst with one latest visible
+	// cursor, not open an SSE connection and GET /items for each old change.
+	// A newer change from another Owner must never advance Owner A's cursor.
+	var latestOwnerChange uint64
+	if err := db.Raw("SELECT COALESCE(MAX(id), 0) FROM xd_clipboard_changes WHERE owner_id = ?",
+		ownerA.ID).Scan(&latestOwnerChange).Error; err != nil || latestOwnerChange == 0 {
+		t.Fatalf("cannot inspect Owner A's latest Clipboard change: %v id=%d", err, latestOwnerChange)
+	}
+	foreignChange := meta.ClipboardChange{
+		OwnerID: ownerB.ID, Kind: "clear", CreatedAt: time.Now().UTC(),
+	}
+	if err := db.Create(&foreignChange).Error; err != nil || foreignChange.ID <= latestOwnerChange {
+		t.Fatalf("cannot seed newer foreign Owner change: %v foreign=%d owner=%d",
+			err, foreignChange.ID, latestOwnerChange)
+	}
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			streamServer.URL+"/api/v1/clipboard/events?after=0", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+a)
+		response, err := streamServer.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("Owner SSE burst returned HTTP %d", response.StatusCode)
+		}
+		scanner := bufio.NewScanner(response.Body)
+		var firstCursor uint64
+		for scanner.Scan() {
+			if strings.HasPrefix(scanner.Text(), "id: ") {
+				if _, err := fmt.Sscanf(scanner.Text(), "id: %d", &firstCursor); err != nil {
+					t.Fatal(err)
+				}
+				break
+			}
+		}
+		if err := scanner.Err(); err != nil || firstCursor != latestOwnerChange {
+			t.Fatalf("SSE must coalesce to latest visible Owner cursor: %v first=%d latest=%d",
+				err, firstCursor, latestOwnerChange)
+		}
+		cancel()
+		_ = response.Body.Close()
+	}
+
 	// Revocation during a live SSE connection must close it without waiting for
 	// the 20-second maximum duration or sending any new Owner data.
 	var lastChangeID uint64
