@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,24 +23,41 @@ import (
 type mediaCaptureBounds struct {
 	From time.Time
 	To   time.Time
+	Filename string
+	MediaKind string
+	AssetKind string
 }
 
 func (s *mediaCaptureBounds) valid() bool {
-	return s != nil && !s.From.IsZero() && !s.To.IsZero() &&
-		s.From.Before(s.To)
+	return s != nil &&
+		((s.From.IsZero() && s.To.IsZero()) ||
+		(!s.From.IsZero() && !s.To.IsZero() && s.From.Before(s.To))) &&
+		(s.MediaKind == "" || s.MediaKind == "image" || s.MediaKind == "video") &&
+		(s.AssetKind == "" || s.AssetKind == "live_photo") &&
+		len([]rune(s.Filename)) <= 120 &&
+		!strings.ContainsRune(s.Filename, 0)
 }
 
 func mediaMapCaptureFilter(query *gorm.DB, scope *mediaCaptureBounds) *gorm.DB {
 	if scope == nil {
 		return query
 	}
-	// The date-scoped map is a projection of the SAME current logical
-	// PhotoAsset rows as /media/items?range=true: a stale primary binding
-	// or missing photo metadata must not become a tappable date-map facet.
-	return query.Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
-		Where(photoasset.CurrentContentBindingSQL("pa")).
-		Where("xd_media_metadata.captured_at >= ? AND xd_media_metadata.captured_at < ?",
+	// All optional native Map filters reuse one current logical Owner
+	// PhotoAsset predicate, never a decorative client-only map filter.
+	query = query.Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
+		Where(photoasset.CurrentContentBindingSQL("pa"))
+	if !scope.From.IsZero() {
+		query = query.Where(
+			"xd_media_metadata.captured_at >= ? AND xd_media_metadata.captured_at < ?",
 			scope.From, scope.To)
+	}
+	if scope.MediaKind != "" {
+		query = query.Where("xd_media_metadata.media_kind = ?", scope.MediaKind)
+	}
+	if scope.AssetKind != "" {
+		query = query.Where("pa.kind = ?", scope.AssetKind)
+	}
+	return applyMediaFilenameFilter(query, scope.Filename)
 }
 
 func parseMediaMapOverviewScopedQuery(raw string) (
@@ -65,6 +83,29 @@ func parseMediaMapOverviewScopedQuery(raw string) (
 	}
 	values.Del("captured_from")
 	values.Del("captured_to")
+	selection := &mediaCaptureBounds{}
+	for _, key := range []string{"filename", "kind", "asset_kind"} {
+		if entries, present := values[key]; present {
+			if len(entries) != 1 || entries[0] == "" {
+				return mediaPlaceViewportBounds{}, false, nil, fmt.Errorf("invalid map filter")
+			}
+			switch key {
+			case "filename":
+				if strings.TrimSpace(entries[0]) != entries[0] {
+					return mediaPlaceViewportBounds{}, false, nil, fmt.Errorf("invalid filename")
+				}
+				selection.Filename = entries[0]
+			case "kind":
+				selection.MediaKind = entries[0]
+			case "asset_kind":
+				selection.AssetKind = entries[0]
+			}
+		}
+		values.Del(key)
+	}
+	if !selection.valid() {
+		return mediaPlaceViewportBounds{}, false, nil, fmt.Errorf("invalid map filter")
+	}
 	bounds, detail, err := parseMediaMapOverviewQuery(values.Encode())
 	if err != nil {
 		return bounds, detail, nil, err
@@ -74,6 +115,9 @@ func parseMediaMapOverviewScopedQuery(raw string) (
 			if _, _, err := mediaIANAZone(zone); err != nil {
 				return bounds, detail, nil, err
 			}
+		}
+		if selection.Filename != "" || selection.MediaKind != "" || selection.AssetKind != "" {
+			return bounds, detail, selection, nil
 		}
 		return bounds, detail, nil, nil
 	}
@@ -85,11 +129,11 @@ func parseMediaMapOverviewScopedQuery(raw string) (
 	if err != nil {
 		return bounds, detail, nil, err
 	}
-	scope := &mediaCaptureBounds{From: from, To: to}
-	if !scope.valid() {
+	selection.From, selection.To = from, to
+	if !selection.valid() {
 		return bounds, detail, nil, fmt.Errorf("invalid capture window")
 	}
-	return bounds, detail, scope, nil
+	return bounds, detail, selection, nil
 }
 
 const mediaMapOverviewAxis = 8
