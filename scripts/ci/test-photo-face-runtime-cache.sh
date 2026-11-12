@@ -26,6 +26,94 @@ REQUIREMENTS="$ROOT/services/photo-face-analyzer/requirements.txt"
 mkdir -p "$TMP/bin" "$TMP/state/images" "$TMP/cache"
 export FAKE_DOCKER_STATE="$TMP/state"
 
+# Model real Docker image archives, not the legacy pipe-delimited text fixture.
+# The production exporter validates digest-addressed config bytes and manifest.
+export FAKE_DOCKER_ARCHIVE="$TMP/bin/docker-archive.py"
+cat > "$FAKE_DOCKER_ARCHIVE" <<'PY_FAKE_ARCHIVE'
+#!/usr/bin/env python3
+import hashlib
+import io
+import json
+import re
+import sys
+import tarfile
+
+RUNTIME_LABEL = "io.github.lazyxu.xdrive.photo-face.runtime-contract"
+VERSION_LABEL = "org.opencontainers.image.version"
+REVISION_LABEL = "org.opencontainers.image.revision"
+BLOB = re.compile(r"blobs/sha256/[0-9a-f]{64}\Z")
+
+
+def emit(ref, runtime, version, revision):
+    config = json.dumps({
+        "architecture": "amd64", "os": "linux",
+        "rootfs": {"type": "layers", "diff_ids": []},
+        "config": {"Labels": {
+            RUNTIME_LABEL: runtime, VERSION_LABEL: version,
+            REVISION_LABEL: revision,
+        }},
+    }, separators=(",", ":"), sort_keys=True).encode()
+    digest = hashlib.sha256(config).hexdigest()
+    name = "blobs/sha256/" + digest
+    manifest = json.dumps([{
+        "Config": name, "RepoTags": [ref], "Layers": [],
+    }]).encode()
+    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+        for key, value in ((name, config), ("manifest.json", manifest)):
+            member = tarfile.TarInfo(key)
+            member.size = len(value)
+            member.mode = 0o644
+            archive.addfile(member, io.BytesIO(value))
+
+
+def inspect(fileobj, mode):
+    manifest = None
+    configs = {}
+    with tarfile.open(fileobj=fileobj, mode=mode) as archive:
+        for member in archive:
+            if not member.isfile() or not 0 < member.size <= 1024 * 1024:
+                raise ValueError("unsafe fake image archive member")
+            if member.name == "manifest.json":
+                if manifest is not None:
+                    raise ValueError("duplicate manifest")
+                manifest = json.load(archive.extractfile(member))
+            elif BLOB.fullmatch(member.name):
+                if member.name in configs:
+                    raise ValueError("duplicate config")
+                configs[member.name] = archive.extractfile(member).read()
+            else:
+                raise ValueError("unexpected fake image member")
+    if not isinstance(manifest, list) or len(manifest) != 1:
+        raise ValueError("unexpected manifest")
+    item = manifest[0]
+    if not isinstance(item, dict) or not isinstance(item.get("RepoTags"), list) or len(item["RepoTags"]) != 1:
+        raise ValueError("unsafe fake image tag")
+    ref = item["RepoTags"][0]
+    name = item.get("Config")
+    if not isinstance(name, str) or not BLOB.fullmatch(name) or name not in configs:
+        raise ValueError("missing digest-addressed config")
+    digest = hashlib.sha256(configs[name]).hexdigest()
+    if digest != name.rsplit("/", 1)[-1]:
+        raise ValueError("fake image config digest mismatch")
+    config = json.loads(configs[name])
+    if config.get("architecture") != "amd64" or config.get("os") != "linux" or config.get("rootfs", {}).get("type") != "layers":
+        raise ValueError("invalid Linux image config")
+    labels = config["config"]["Labels"]
+    print("|".join([ref, labels[RUNTIME_LABEL], labels[VERSION_LABEL], labels[REVISION_LABEL], "sha256:" + digest]))
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 6 and sys.argv[1] == "save":
+        emit(*sys.argv[2:])
+    elif len(sys.argv) == 2 and sys.argv[1] == "load":
+        inspect(sys.stdin.buffer, "r|")
+    elif len(sys.argv) == 3 and sys.argv[1] == "inspect":
+        with open(sys.argv[2], "rb") as stream:
+            inspect(stream, "r:gz")
+    else:
+        raise SystemExit("invalid fake Docker archive arguments")
+PY_FAKE_ARCHIVE
+
 cat >"$TMP/bin/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -260,11 +348,13 @@ case "${1:-}" in
   save)
     shift
     ref="${1:?image ref required}"
-    read_image "$ref"
+    line="$(read_image "$ref")" || exit 1
+    IFS='|' read -r saved_ref runtime_hash version revision id <<<"$line"
+    python3 "$FAKE_DOCKER_ARCHIVE" save "$ref" "$runtime_hash" "$version" "$revision"
     printf 'save|%s\n' "$ref" >>"$events"
     ;;
   load)
-    line="$(cat)"
+    line="$(python3 "$FAKE_DOCKER_ARCHIVE" load)" || exit 1
     IFS='|' read -r ref runtime_hash version revision id <<<"$line"
     [[ -n "$ref" ]] || {
       echo "fake docker load missing image record" >&2
@@ -296,7 +386,7 @@ runtime_build_count() {
 assert_exact_artifact() {
   local artifact_dir="$1" expected_hash="$2" record
   local ref runtime_hash version revision image_id
-  record="$(gzip -dc "$artifact_dir/image.tar.gz")"
+  record="$(python3 "$FAKE_DOCKER_ARCHIVE" inspect "$artifact_dir/image.tar.gz")"
   IFS='|' read -r ref runtime_hash version revision image_id <<<"$record"
   [[ "$ref" == xdrive/photo-face:test && "$runtime_hash" == "$expected_hash" ]]
   [[ "$(cat "$artifact_dir/image.ref")" == "$ref" && "$(cat "$artifact_dir/image.id")" == "$image_id" ]] || {
