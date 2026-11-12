@@ -16,50 +16,48 @@ const queueSummary = read('ios/XDriveIOS/NativePhotoQueueSummaryModel.swift')
 const screen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
 const priority = read('ios/XDriveIOS/PhotoPriorityBackupSection.swift')
 
-test('PhotoKit backup scans and durable change cursors require all-photos authorization', () => {
-  assert.match(epoch, /guard authorization == \.authorized else/)
-  assert.doesNotMatch(epoch, /authorization == \.authorized \|\| authorization == \.limited/)
-  assert.match(scanner, /status == \.authorized \|\| \(!requireStableResume && album == nil && status == \.limited\)/)
+test('Limited Photos uses its own bounded, revocable PhotoKit generation; maps remain Full-only', () => {
+  assert.match(epoch, /authorization == \.authorized \|\| authorization == \.limited/)
+  assert.match(scanner, /status == \.authorized \|\| \(album == nil && status == \.limited\)/)
   assert.match(read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift'),
     /atOffset: startOffset, requireStableResume: true/)
-  // Gallery's read-only local timeline can still show the permitted subset.
-  assert.match(scanner, /if requireStableResume \{/)
+  assert.match(scanner, /guard !requireFullLibrary \|\| status == \.authorized/)
   assert.match(scanner, /limitedAuthorization: initialAuthorization == \.limited/)
+  assert.match(controller, /if startRule == \.onlyNew &&[\s\S]*?== \.limited/)
+  assert.match(screen, /onlyNew/)
+  assert.match(screen, /当前获得授权的照片和视频/)
 })
 
-test('every original byte export and revision recheck rejects partial Photos access', () => {
-  assert.match(exporter, /return status == \.authorized/)
-  assert.doesNotMatch(exporter, /return status == \.authorized \|\| status == \.limited/)
-  assert.match(preparer, /guard authorization == \.authorized,/)
-  assert.match(preparer, /guard access == \.authorized,/)
-  assert.doesNotMatch(preparer, /authorization == \.authorized \|\| authorization == \.limited/)
+test('scoped original exporter and preparer check visible asset on every resource', () => {
+  assert.match(exporter, /allowLimitedPhotoAccess: Bool = false/)
+  assert.match(exporter, /return status == \.authorized \|\|\s*\(allowLimitedPhotoAccess && status == \.limited\)/)
+  assert.match(exporter, /guard authorized\(allowLimitedPhotoAccess: allowLimitedPhotoAccess\)/)
+  assert.match(preparer, /guard \(authorization == \.authorized \|\| authorization == \.limited\),/)
+  assert.match(preparer, /guard \(access == \.authorized \|\| access == \.limited\),/)
+  assert.match(preparer, /PHAsset\.fetchAssets\(/)
+  assert.match(read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift'), /allowLimitedPhotoAccess: true/)
 })
 
-test('auto scheduling, manual/priority starts and BG grant admission use full library scope', () => {
-  assert.equal((controller.match(/\[\.authorized\]\.contains\(/g) || []).length, 7)
+test('foreground only supports Limited; BG grant and OS scheduled task remain Full-only', () => {
+  assert.equal((controller.match(/\[\.authorized, \.limited\]\.contains\(/g) || []).length, 7)
   assert.equal((bgControls.match(/\[\.authorized\]\.contains\(/g) || []).length, 5)
-  assert.equal((queueSummary.match(/\[\.authorized\]\.contains\(/g) || []).length, 2)
-  for (const source of [controller, bgControls, queueSummary]) {
-    assert.doesNotMatch(source, /\[\.authorized, \.limited\]\.contains\(/)
-  }
-  assert.match(priority, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) != \.authorized/)
-  assert.match(priority, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
+  assert.match(bgControls, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(queueSummary, /\[\.authorized, \.limited\]\.contains\(/)
+  assert.match(priority, /\[\.authorized, \.limited\]\.contains\(/)
+  const bg = read('ios/XDriveIOS/BackgroundPhotoTask.swift')
+  assert.match(bg, /guard access == \.authorized else/)
+  assert.match(bg, /fullPhotosPermission: PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
 })
 
-test('native Photo Backup UI blocks uploads under Limited while leaving read-only coverage', () => {
-  const marker = '    @ViewBuilder\n    private var backupStatusSections'
-  const split = screen.indexOf(marker)
-  assert.ok(split > 0)
-  const backupControls = screen.slice(0, split)
-  const readOnly = screen.slice(split)
-  assert.match(backupControls, /仅部分照片授权暂不支持/)
-  assert.match(backupControls, /备份需要“所有照片”权限，自动备份已暂停/)
-  assert.match(backupControls, /自动备份已暂停：需要“所有照片”权限/)
-  assert.doesNotMatch(backupControls, /\[\.authorized, \.limited\]\.contains\(/)
-  assert.match(readOnly, /snapshot\.limitedAuthorization/)
-  assert.match(readOnly, /当前为 iOS 部分照片授权/)
-  assert.match(screen, /photoAuthorization != \.authorized\)\s*\.accessibilityIdentifier\("native-ios-photo-background-enable"\)/)
-  const gallery = read('ios/XDriveIOS/NativePhotosDashboard.swift')
-  assert.match(gallery, /自动备份已暂停：需要“所有照片”权限/)
-  assert.doesNotMatch(gallery, /前台自动备份：仅处理已授权照片/)
+test('Limited consent exposes authorized-only backup and never reports whole iPhone coverage', () => {
+  assert.match(screen, /Limited Photos/)
+  assert.match(screen, /仅备份当前选定/)
+  assert.match(screen, /仅新照片增量模式需先升级/)
+  assert.match(screen, /photoAuthorization != \.limited \|\| autoStartRule != \.onlyNew/)
+  assert.match(screen, /恢复之前的任务/)
+  assert.match(screen, /native-ios-photos-auto-pause-preserve/)
+  const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
+  assert.match(dashboard, /自动备份只覆盖当前选定的照片/)
+  assert.match(screen, /当前为 iOS 部分照片授权/)
+  assert.match(screen, /当前已授权媒体/)
 })

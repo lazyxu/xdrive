@@ -20,9 +20,11 @@ test('iCloud PhotoKit failure and limited-share original exporter integrate with
   assert.equal((exporter.match(/guard authorized\(allowLimitedPhotoAccess: allowLimitedPhotoAccess\)/g) || []).length, 3)
   assert.match(sharing, /allowLimitedPhotoAccess: true/)
   assert.match(receipt, /allowLimitedPhotoAccess: true/)
-  assert.doesNotMatch(foreground, /allowLimitedPhotoAccess: true/)
-  assert.match(foreground, /if allowICloudOriginals, case \.managedForeground = authorization/)
-  assert.match(background, /allowICloudOriginals: false/)
+  assert.match(foreground, /allowLimitedPhotoAccess: true/)
+  assert.match(foreground, /case \.managedForeground, \.background:/)
+  assert.match(background, /allowICloudOriginals: downloadICloudInBG/)
+  assert.match(background, /network\.mayDownloadICloudInBackground/)
+  assert.match(foreground, /requireWiFiWhileDownloading: sourceWiFiOnly && allowICloud/)
 })
 
 test('the same Owner queue includes iCloud wait and bounded visible-photo statuses', () => {

@@ -24,7 +24,7 @@ test('auto enable serializes verified ledger inspection with original writers', 
   assert.match(configure, /defer \{ XDriveIOSOriginalRunGate\.shared\.release\(gate\) \}/)
   assert.match(configure, /guard pending == 0 else \{/)
   assert.match(configure, /if store\.status\(owner: selected\)\?\.pausedForReview == true/)
-  assert.match(configure, /else if store\.status\(owner: selected\)\?\.enabled == true/)
+  assert.match(configure, /else if store\.status\(owner: selected\) != nil/)
   assert.doesNotMatch(configure, /\.localScopeAndTag\(|\.installationKey\(|\.uploadPrepared\(/)
 })
 
@@ -67,9 +67,54 @@ test('runtime manual and automatic original runs consult global existing Owner p
   assert.match(runner, /try Task\.checkCancellation\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   assert.match(runner, /if olderPending > 0 \{[\s\S]*?\.pauseForPendingReceipts\(owner: selected\)/)
   assert.match(runner, /当前账户已有 \\?\(olderPending\) 项不确定原件收据/)
-  const pause = store.slice(store.indexOf('func pauseForPendingReceipts('),store.indexOf('func disable('))
+  // Scope only the receipt-pause method. The subsequent explicit trusted
+  // review/resume method legitimately updates nextDueAt after consent.
+  const pause = store.slice(store.indexOf('func pauseForPendingReceipts('),
+    store.indexOf('func resumeAfterTrustedReview('))
   assert.match(pause, /guard var state = status\(owner: owner\), state\.enabled else \{ return nil \}/)
   assert.match(pause, /state\.pausedForReview = true/)
   assert.match(pause, /try persist\(state, owner: owner\)/)
   assert.doesNotMatch(pause, /windowIndex =|nextDueAt =|libraryChangeEpoch =|libraryAuthorizationRaw =|disable\(/)
+})
+
+
+test('only-new consent epoch is persisted after verified managed target without skipping in-flight PhotoKit edits', () => {
+  const queue = read('ios/XDriveIOS/PhotoKitPersistentBackupQueue.swift')
+  const capture = configure.indexOf('consentEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()')
+  const firstAuth = configure.indexOf('let first = try await login.verifiedAuthorization()')
+  const managed = configure.indexOf('.readExistingForUpload(owner: selected')
+  const target = configure.indexOf('managed.destination == expectedDestination')
+  const install = configure.indexOf('.installNewOnlyBaseline(')
+  const persistPlan = configure.indexOf('schedule = try store.configure(')
+  assert.ok(capture >= 0 && capture < firstAuth)
+  assert.ok(firstAuth < managed && managed < target && target < install &&
+    install < persistPlan, 'a failed managed target may never advance the baseline')
+  assert.equal(configure.split('.installNewOnlyBaseline(').length - 1, 1)
+  assert.match(configure, /consentToken: consentEpoch\.serialized/)
+  assert.match(configure, /consentAuthorization: consentEpoch\.authorization/)
+  const overload = queue.slice(queue.indexOf('    func installNewOnlyBaseline(\n'),
+    queue.indexOf('    /// Read only, bounded'))
+  assert.match(overload, /NSKeyedUnarchiver\.unarchivedObject/)
+  assert.match(overload, /store\.installBaselineIfAbsent\(/)
+  assert.match(overload, /token: consentToken, authorization: consentAuthorization/)
+  assert.match(overload, /after\.authorization == consentAuthorization/)
+  assert.doesNotMatch(overload, /token: before\.serialized/)
+  assert.doesNotMatch(configure, /existing.*reset.*baseline/i)
+})
+
+test('paused plan cannot bypass a missing Owner ledger by resuming or changing backup scope', () => {
+  const scope = configure.indexOf('.existingLocalScope(owner: selected)')
+  const checkPending = configure.indexOf('guard pending == 0 else')
+  const missingLedger = configure.indexOf('else if store.status(owner: selected) != nil')
+  const authority = configure.indexOf('let second = try await login.verifiedAuthorization()')
+  assert.ok(scope >= 0 && checkPending > scope &&
+    missingLedger > checkPending && authority > missingLedger,
+    'both paused and running saved plans must prove old receipts before new consent')
+  const guard = configure.slice(missingLedger, authority)
+  assert.match(guard, /旧任务保持暂停/)
+  assert.match(guard, /return/)
+  assert.doesNotMatch(guard, /\?\.enabled == true/)
+  assert.match(configure, /if startRule == \.resumePrevious/)
+  assert.match(configure, /previous\.enabled == false/)
+  assert.doesNotMatch(configure, /clearLedger|resetLedger|deleteReceipt/)
 })

@@ -41,7 +41,7 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
     /// PhotoKit baseline and each exact row revision before changing state.
     func retryFailed(login: XDriveIOSNativeOwnerLoginModel) {
         guard !busy, let selected = login.owner else { return }
-        guard [.authorized].contains(
+        guard [.authorized, .limited].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "恢复失败项需要当前账户的照片访问权限。"
@@ -107,7 +107,7 @@ final class XDriveIOSNativePhotoQueueSummaryModel: ObservableObject {
     func refresh(login: XDriveIOSNativeOwnerLoginModel) {
         cancel()
         guard let selected = login.owner else { return }
-        guard [.authorized].contains(
+        guard [.authorized, .limited].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "读取照片变更队列需要当前账户的照片访问权限。"
@@ -260,7 +260,9 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
         guard !loading, !verifyingPage, pageChecked < rows.count,
               let expectedOwner = login.owner,
               UIApplication.shared.applicationState == .active,
-              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+              [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                )
         else { return }
         let chosen = Array(rows.dropFirst(pageChecked).prefix(8))
         let ticketAtStart = ticket
@@ -297,7 +299,9 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                     guard self.ticket == ticketAtStart,
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
                           UIApplication.shared.applicationState == .active,
-                          PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                          [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                )
                     else { throw CancellationError() }
                     let latest = try XDriveIOSPhotoKitLibraryEpoch.capture()
                     guard XDriveIOSPhotoKitLibraryEpoch.matches(
@@ -383,10 +387,12 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
         errorMessage = nil
         notice = nil
         guard let owner = login.owner,
-              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+              [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                ),
               UIApplication.shared.applicationState == .active else {
             clearPage() // Never retain a previous page after permission loss.
-            notice = "需要已验证账户、App 前台与“所有照片”权限；未读取队列。"
+            notice = "需要已验证账户、App 前台及照片读取权限；Limited 模式只显示已授权的照片。"
             return
         }
         let id = ticket
@@ -492,7 +498,9 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                 try Task.checkCancellation()
                 guard self.ticket == id else { return }
                 guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
-                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                ),
                       UIApplication.shared.applicationState == .active else {
                     self.clearPage()
                     self.notice = "账户或相册权限已变化，旧任务页不再显示。"
@@ -517,7 +525,9 @@ final class XDriveIOSNativePhotoTaskListModel: ObservableObject {
                 guard self.ticket == id else { return }
                 self.clearPage()
                 guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
-                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                ),
                       UIApplication.shared.applicationState == .active else {
                     self.notice = "账户、图库权限或前台状态已经变化；旧任务页已清除。"
                     return
