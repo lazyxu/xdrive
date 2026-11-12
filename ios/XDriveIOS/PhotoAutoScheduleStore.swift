@@ -70,6 +70,13 @@ final class XDriveIOSPhotoAutoScheduleStore {
         return "xdrive.ios.photos.auto.v1." +
             hash.map { String(format: "%02x", $0) }.joined()
     }
+    /// Raw presence is independent of JSON decoding. An unreadable previous
+    /// Owner plan must not be mistaken for an unconfigured new backup.
+    /// This never creates a credential, erases a receipt or mutates the plan.
+    func hasSavedRecord(owner: XDriveNativeOwnerRoot) -> Bool {
+        UserDefaults.standard.object(forKey: key(for: owner)) != nil
+    }
+
     func status(owner: XDriveNativeOwnerRoot) -> State? {
         guard let bytes = UserDefaults.standard.data(forKey: key(for: owner)),
               let state = try? JSONDecoder().decode(State.self, from: bytes),
@@ -97,6 +104,11 @@ final class XDriveIOSPhotoAutoScheduleStore {
             throw XDriveIOSPhotoAutoScheduleError.invalidStartRule
         }
         let existing = status(owner: owner)
+        // A corrupt or unsupported saved schedule cannot be reset to a fresh
+        // scope without first resolving the old plan/receipt uncertainty.
+        guard existing != nil || !hasSavedRecord(owner: owner) else {
+            throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable
+        }
         let sameTarget = XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(
             savedSourceID: existing?.targetSourceID,
             savedTargetNodeID: existing?.targetNodeID,
