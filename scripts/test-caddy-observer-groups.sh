@@ -5,10 +5,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$(id -u)" == 0 ]] || { echo 'Run this fixture as root in an isolated runner.' >&2; exit 2; }
 command -v setpriv >/dev/null
-# CI may set TMPDIR to the runner's private 0700 directory. The
-# setpriv users 65531/65532 cannot traverse that parent, even after chmod
-# of the child fixture. Use the shared sticky /tmp; mktemp still creates a
-# unique directory and all security/group assertions below remain intact.
+# The fixture intentionally drops to a synthetic UID, which cannot traverse
+# RUNNER_TEMP when its parent is private (0700). Only disposable test scratch
+# belongs under sticky, traversable /tmp; production Caddy paths are unchanged.
+[[ -d /tmp && -w /tmp && -x /tmp ]] || {
+  echo 'Caddy supplementary-group fixture requires traversable /tmp' >&2
+  exit 1
+}
 scratch="$(mktemp -d /tmp/xdrive-caddy-observer-groups.XXXXXXXX)"
 trap 'rm -rf -- "$scratch"' EXIT
 chmod 755 "$scratch"
