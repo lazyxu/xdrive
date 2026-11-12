@@ -255,10 +255,15 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     errorMessage = "当前账户还有 \(pending) 项结果不确定的上传收据，请先核对；自动备份未开启。"
                     return
                 }
-            } else if store.status(owner: selected)?.enabled == true {
-                // A previously enabled schedule with no verifiable ledger is
-                // not evidence that the old backup has safely completed.
-                errorMessage = "已有计划的加密账本不可验证，未重置或绕过旧收据。"
+            } else if store.status(owner: selected) != nil {
+                // An existing plan may have been paused with enabled=false.
+                // Missing Keychain/ledger scope is NOT proof that its earlier
+                // uploads all received a confirmed Server ACK. Never revive
+                // or replace an existing plan without reading its sealed
+                // journal, including the explicit "resume previous" path.
+                // A genuine first-time plan (no saved state) may create its
+                // own ledger on the first authorized original write.
+                errorMessage = "已有计划的加密账本不可验证，旧任务保持暂停；请先核对收据。"
                 return
             }
             try Task.checkCancellation()

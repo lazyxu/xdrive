@@ -24,7 +24,7 @@ test('auto enable serializes verified ledger inspection with original writers', 
   assert.match(configure, /defer \{ XDriveIOSOriginalRunGate\.shared\.release\(gate\) \}/)
   assert.match(configure, /guard pending == 0 else \{/)
   assert.match(configure, /if store\.status\(owner: selected\)\?\.pausedForReview == true/)
-  assert.match(configure, /else if store\.status\(owner: selected\)\?\.enabled == true/)
+  assert.match(configure, /else if store\.status\(owner: selected\) != nil/)
   assert.doesNotMatch(configure, /\.localScopeAndTag\(|\.installationKey\(|\.uploadPrepared\(/)
 })
 
@@ -100,4 +100,21 @@ test('only-new consent epoch is persisted after verified managed target without 
   assert.match(overload, /after\.authorization == consentAuthorization/)
   assert.doesNotMatch(overload, /token: before\.serialized/)
   assert.doesNotMatch(configure, /existing.*reset.*baseline/i)
+})
+
+test('paused plan cannot bypass a missing Owner ledger by resuming or changing backup scope', () => {
+  const scope = configure.indexOf('.existingLocalScope(owner: selected)')
+  const checkPending = configure.indexOf('guard pending == 0 else')
+  const missingLedger = configure.indexOf('else if store.status(owner: selected) != nil')
+  const authority = configure.indexOf('let second = try await login.verifiedAuthorization()')
+  assert.ok(scope >= 0 && checkPending > scope &&
+    missingLedger > checkPending && authority > missingLedger,
+    'both paused and running saved plans must prove old receipts before new consent')
+  const guard = configure.slice(missingLedger, authority)
+  assert.match(guard, /旧任务保持暂停/)
+  assert.match(guard, /return/)
+  assert.doesNotMatch(guard, /\?\.enabled == true/)
+  assert.match(configure, /if startRule == \.resumePrevious/)
+  assert.match(configure, /previous\.enabled == false/)
+  assert.doesNotMatch(configure, /clearLedger|resetLedger|deleteReceipt/)
 })
