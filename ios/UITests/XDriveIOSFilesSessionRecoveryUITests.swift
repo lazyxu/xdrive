@@ -487,4 +487,202 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         XCTAssertFalse(element("native-ios-files-trash-error-page", app).exists)
     }
 
+
+    // Seven additional *real* tap-driven iOS Simulator journeys exercise the
+    // Organizer's nested native routes and their return to both product tabs.
+    // The synthetic Owner is deliberately not authenticated; these tests must
+    // never claim private cloud data, a successful Server read, or 60/120Hz FPS.
+    private func homeAction(_ id: String, _ app: XCUIApplication) -> XCUIElement {
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 12),
+                      "Files Home collection did not mount")
+        let action = app.buttons.matching(identifier: id).firstMatch
+        for _ in 0..<6 {
+            if action.exists && action.isHittable { return action }
+            list.swipeUp()
+        }
+        XCTAssertTrue(action.waitForExistence(timeout: 12),
+                      "Files Home did not render \(id)")
+        XCTAssertTrue(action.isHittable, "Files Home action is not tappable: \(id)")
+        return action
+    }
+
+    private func openOrganizer(_ app: XCUIApplication) {
+        let action = homeAction("native-ios-files-organize-home", app)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-organize-home")
+        action.tap()
+        expect("native-ios-files-organize-home-sheet", app)
+    }
+
+    private func organizerChild(_ id: String, _ app: XCUIApplication) {
+        let control = element(id, app)
+        let sheet = element("native-ios-files-organize-home-sheet", app)
+        for _ in 0..<4 {
+            if control.exists && control.isHittable { break }
+            XCTAssertTrue(sheet.exists, "Organizer disappeared before child")
+            sheet.swipeUp()
+        }
+        tap(id, app)
+    }
+
+    private func completeOrganizer(_ app: XCUIApplication) {
+        let done = app.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 12))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-organize-home-done")
+        done.tap()
+        // Validate the actual native return, not just the persistent tab bar.
+        expect("native-ios-files-section-browse", app)
+        let dismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: element("native-ios-files-organize-home-sheet", app)
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 12), .completed,
+                       "Organizer sheet remained over Files Home")
+    }
+
+    private func attachPage(_ app: XCUIApplication, name: String) {
+        assertNonuniformFrame(app, name)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = name
+        image.lifetime = .keepAlways
+        add(image)
+    }
+
+    func testOrganizeNestedSavedSearchesGalleryOriginalsFilesReturn() {
+        let app = launch()
+        files(app)
+        openOrganizer(app)
+        organizerChild("native-ios-files-organize-saved-searches", app)
+        expect("native-ios-files-saved-searches-page", app)
+        attachPage(app, name: "organizer-saved-search-child")
+        tap("native-ios-files-saved-searches-done", app)
+        expect("native-ios-files-organize-home-sheet", app)
+        completeOrganizer(app)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-originals", app)
+        expect("native-ios-cloud-original-layout-help", app)
+        attachPage(app, name: "organizer-saved-search-originals")
+        files(app)
+        XCTAssertFalse(element("native-ios-files-saved-searches-page", app).exists)
+    }
+
+    func testOrganizeNestedTagsGalleryPeopleFilesReturn() {
+        let app = launch()
+        files(app)
+        openOrganizer(app)
+        organizerChild("native-ios-files-organize-tags", app)
+        expect("native-ios-files-tag-management", app)
+        attachPage(app, name: "organizer-tag-management-child")
+        let tagDone = app.navigationBars["标签"].buttons["完成"].firstMatch
+        XCTAssertTrue(tagDone.waitForExistence(timeout: 12))
+        tagDone.tap()
+        expect("native-ios-files-organize-home-sheet", app)
+        completeOrganizer(app)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-people", app)
+        expect("native-ios-gallery-people-page", app)
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        files(app)
+        XCTAssertFalse(element("native-ios-files-tag-management", app).exists)
+    }
+
+    func testOrganizeHomeRotationGalleryFilesRoundtrip() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        files(app)
+        openOrganizer(app)
+        device.orientation = .landscapeLeft
+        expect("native-ios-files-organize-home-sheet", app)
+        attachPage(app, name: "organizer-landscape")
+        device.orientation = .portrait
+        completeOrganizer(app)
+        tap("native-ios-tab-gallery", app)
+        expect("native-ios-gallery-source-unified", app)
+        files(app)
+        attachPage(app, name: "files-return-after-organizer-rotation")
+    }
+
+    func testOrganizeHomeReopenAfterNestedChildrenHasNoGhostSheet() {
+        let app = launch()
+        files(app)
+        openOrganizer(app)
+        organizerChild("native-ios-files-organize-saved-searches", app)
+        expect("native-ios-files-saved-searches-page", app)
+        tap("native-ios-files-saved-searches-done", app)
+        expect("native-ios-files-organize-home-sheet", app)
+        organizerChild("native-ios-files-organize-tags", app)
+        expect("native-ios-files-tag-management", app)
+        let tagDone = app.navigationBars["标签"].buttons["完成"].firstMatch
+        XCTAssertTrue(tagDone.waitForExistence(timeout: 12))
+        tagDone.tap()
+        completeOrganizer(app)
+        openOrganizer(app)
+        expect("native-ios-files-organize-home-sheet", app)
+        XCTAssertFalse(element("native-ios-files-tag-management", app).exists)
+        XCTAssertFalse(element("native-ios-files-saved-searches-page", app).exists)
+        attachPage(app, name: "organizer-reopen-after-two-children")
+        completeOrganizer(app)
+    }
+
+    func testOrganizeHomeDeniedCloudRecoveryThenGalleryFilter() {
+        let app = launch()
+        files(app)
+        openOrganizer(app)
+        completeOrganizer(app)
+        // The Organizer action lives below the fold; explicitly return to
+        // the top of Files Home before tapping its protected Cloud child.
+        let homeList = app.collectionViews.firstMatch
+        for _ in 0..<5 { homeList.swipeDown() }
+        tap("native-ios-files-open-root-location", app)
+        expect("native-ios-files-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        tap("native-ios-files-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-open-filters", app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        expect("native-ios-gallery-source-unified", app)
+        files(app)
+        XCTAssertFalse(element("native-ios-files-error-page", app).exists)
+        attachPage(app, name: "organizer-cloud-denial-files-recovery")
+    }
+
+    func testOrganizeHomeThenFilesQuickRailAndGalleryAlternation() {
+        let app = launch()
+        files(app)
+        openOrganizer(app)
+        completeOrganizer(app)
+        for _ in 0..<2 {
+            for section in ["recent", "favorites", "browse"] {
+                tap("native-ios-files-section-\(section)", app)
+            }
+            tap("native-ios-tab-gallery", app)
+            tap("native-ios-gallery-source-albums", app)
+            tap("native-ios-gallery-source-unified", app)
+            files(app)
+            XCTAssertFalse(element("native-ios-files-organize-home-sheet", app).exists)
+        }
+        attachPage(app, name: "organizer-rail-gallery-repeat")
+    }
+
+    func testOrganizeHomeSignoutRelaunchNeverRestoresPrivilegedSheet() {
+        let app = launch()
+        files(app)
+        openOrganizer(app)
+        completeOrganizer(app)
+        app.terminate()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        files(app)
+        XCTAssertFalse(element("native-ios-files-open-root-location", app).exists)
+        XCTAssertFalse(element("native-ios-files-organize-home-sheet", app).exists)
+        tap("native-ios-tab-gallery", app)
+        expect("native-ios-gallery-source-unified", app)
+        attachPage(app, name: "organizer-signed-out-relaunch-gallery")
+    }
 }

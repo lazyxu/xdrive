@@ -50,7 +50,7 @@ test('06 Files screen visibility is measured from actual parent route, not infer
   assert.match(foreground, /\.onDisappear \{\s*filesViewVisible = false/)
 })
 test('07 background scene retires optional GET and re-arms on a real visible foreground return', () => {
-  assert.match(foreground, /\.onChange\(of: phase\) \{ next in\s*if next != \.active \{[\s\S]*?operationShortcuts.suspendReadForNavigation\(\)/)
+  assert.match(foreground, /\.onChange\(of: phase\) \{ next in\s*if next == \.active, filesViewVisible, isHome \{\s*restoreFilesSectionIfNeeded\(\)\s*\}\s*if next != \.active \{[\s\S]*?operationShortcuts.suspendReadForNavigation\(\)/)
   assert.match(foreground, /\} else if filesViewVisible, !quickHistoryReadAttempted,\s*let owner = login.owner \{\s*quickHistoryReadAttempted = true\s*operationShortcuts.updateExpectedOwner\(owner\)\s*operationShortcuts.load\(login: login\)/)
 })
 test('08 hidden Files tab never requests another login Owners operation history', () => {

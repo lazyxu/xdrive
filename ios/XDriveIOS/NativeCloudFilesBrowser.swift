@@ -2998,7 +2998,17 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var filesModals: some View {
         filesMain
         .sheet(isPresented: $showingOrganizeHome, onDismiss: {
+            // Sheet dismissal can race a tab or Owner switch. Never issue a
+            // new Owner's requests from the now-hidden, old Owner sheet.
+            let sameOwner = organizeHomeOwner.map {
+                XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+            } ?? false
             organizeHomeOwner = nil
+            guard sameOwner,
+                  XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                    visible: filesViewVisible, active: phase == .active,
+                    hasOwner: login.owner != nil
+                  ) else { return }
             quickAccess.load(login: login, force: true)
             searchOptions.load(login: login)
         }) {
@@ -3050,6 +3060,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                             } label: {
                                 Label("整理及管理智能文件夹", systemImage: "folder.badge.gearshape")
                             }
+                            .accessibilityIdentifier("native-ios-files-organize-saved-searches")
                         }
                         Section("标签") {
                             NavigationLink {
@@ -3060,9 +3071,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                             } label: {
                                 Label("创建、重命名、颜色与删除", systemImage: "tag")
                             }
+                            .accessibilityIdentifier("native-ios-files-organize-tags")
                         }
                     }
                     .navigationTitle("整理浏览首页")
+                    .accessibilityIdentifier("native-ios-files-organize-home-sheet")
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("完成") { showingOrganizeHome = false }
@@ -3211,8 +3224,17 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
         }
         .sheet(isPresented: $showingTagManager, onDismiss: {
+            let sameOwner = tagManagerOwner.map {
+                XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+            } ?? false
             tagManagerOwner = nil
-            if login.owner != nil { searchOptions.load(login: login) }
+            if sameOwner,
+               XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                 visible: filesViewVisible, active: phase == .active,
+                 hasOwner: login.owner != nil
+               ) {
+                searchOptions.load(login: login)
+            }
         }) {
             if let owner = tagManagerOwner,
                XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) {
@@ -3560,6 +3582,13 @@ struct XDriveIOSNativeFilesBrowser: View {
         filesModals
         .onAppear {
             filesViewVisible = true
+            // A view can appear while iOS is still inactive or after an
+            // Owner change. Defer both saved-folder navigation and network
+            // reads until a visible, active, authorized Files lifecycle.
+            guard XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                visible: filesViewVisible, active: phase == .active,
+                hasOwner: login.owner != nil
+            ) else { return }
             restoreFilesSectionIfNeeded()
             if phase == .active, let owner = login.owner,
                !quickHistoryReadAttempted {
@@ -3664,6 +3693,22 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: phase) { next in
+            // A hidden page or the OS background cannot restart an Owner GET.
+            // Re-enter through the same verified route when really visible.
+            if next == .active, filesViewVisible, login.owner != nil {
+                if isHome {
+                    restoreFilesSectionIfNeeded()
+                    if !homeReadAttempted {
+                        homeReadAttempted = true
+                        reload()
+                    }
+                } else if selectedFile == nil && !model.verifiedPage &&
+                          model.errorMessage == nil {
+                    // The first directory read might have been deferred while
+                    // inactive; an explicit denial remains retry-only.
+                    reload()
+                }
+            }
             if next != .active {
                 if quickHistoryReadAttempted && operationShortcuts.loading &&
                    !operationShortcuts.verified && operationShortcuts.status == nil {
@@ -3780,12 +3825,16 @@ struct XDriveIOSNativeFilesBrowser: View {
             searchFilters = XDriveIOSNativeFilesSearchFilterState()
             model.invalidate()
             searchOptions.invalidate()
-            if login.owner != nil { searchOptions.load(login: login) }
-            if isHome { restoreFilesSectionIfNeeded() }
+            let allowOwnerRead = XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                visible: filesViewVisible, active: phase == .active,
+                hasOwner: login.owner != nil
+            )
+            if allowOwnerRead { searchOptions.load(login: login) }
+            if isHome && allowOwnerRead { restoreFilesSectionIfNeeded() }
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
             homeReadAttempted = false
-            if isHome && phase == .active {
+            if isHome && allowOwnerRead {
                 homeReadAttempted = true
                 reload()
             }

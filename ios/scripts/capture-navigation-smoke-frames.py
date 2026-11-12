@@ -205,6 +205,17 @@ TARGETS.update({
     "testFilesSearchKeyboardMineCacheReturnKeepsFiles",
     "testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent",
 })
+# Real Organizer nested navigation, Owner-visibility and process-survival cases.
+# These capture diagnostic Simulator frames, not certified 60/120 Hz FPS.
+TARGETS.update({
+    "testOrganizeNestedSavedSearchesGalleryOriginalsFilesReturn",
+    "testOrganizeNestedTagsGalleryPeopleFilesReturn",
+    "testOrganizeHomeRotationGalleryFilesRoundtrip",
+    "testOrganizeHomeReopenAfterNestedChildrenHasNoGhostSheet",
+    "testOrganizeHomeDeniedCloudRecoveryThenGalleryFilter",
+    "testOrganizeHomeThenFilesQuickRailAndGalleryAlternation",
+    "testOrganizeHomeSignoutRelaunchNeverRestoresPrivilegedSheet",
+})
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
