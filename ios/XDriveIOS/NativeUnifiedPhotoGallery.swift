@@ -240,6 +240,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                         // A retained verified page must not jump to its top
                         // before the exact row-center loaded() restoration.
                         scroll.scrollTo(anchor, anchor: .center)
+                        // Retained pages may not emit a second loaded() event.
+                        // Retire this Viewer return so another page cannot
+                        // trigger a stale second scroll after the dismissal.
+                        viewerReturnAnchor = nil
+                        viewerOpeningPage = nil
                     } else {
                         // The Viewer filmstrip advanced to a different lazy
                         // page. Materialize it before restoring the exact row.

@@ -22,7 +22,8 @@ test('opening Viewer stores the exact authorized page', () => {
 test('same-page Viewer dismiss scrolls directly to target row, never page top', () => {
   const section = from('.onChange(of: selected?.id) { selection in');
   assert.match(section, /if viewerOpeningPage == viewerReturnPage\s*\{/);
-  assert.match(section.split('} else {')[0], /scroll\.scrollTo\(anchor, anchor: \.center\)/);
+  assert.match(section.split('} else {')[0],
+    /scroll\.scrollTo\(anchor, anchor: \.center\)\s+\/\/[\s\S]*?viewerReturnAnchor = nil\s+viewerOpeningPage = nil/);
   assert.doesNotMatch(section.split('} else {')[0], /unified-page-/);
 });
 test('cross-page filmstrip navigation still materializes the target lazy page', () => {
