@@ -3,7 +3,7 @@ import Photos
 import SwiftUI
 import UIKit
 
-private final class XDriveIOSUnifiedPhotoObserver: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
+final class XDriveIOSUnifiedPhotoObserver: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     @Published private(set) var change = UUID()
     private var observing = false
 

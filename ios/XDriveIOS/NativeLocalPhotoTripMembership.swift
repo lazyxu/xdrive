@@ -15,6 +15,7 @@ struct XDriveIOSNativeLocalTripScope: Identifiable, Equatable, Sendable {
     let id: UUID
     let title: String
     let captureRange: XDriveIOSNativePhotoMapCaptureRange
+    let timeZoneIdentifier: String
     // Exact PhotoKit generation of the discovery. A later edit/revoke must
     // never silently import new assets into this GPS trip's membership.
     let libraryEpoch: Data
@@ -22,7 +23,8 @@ struct XDriveIOSNativeLocalTripScope: Identifiable, Equatable, Sendable {
     let photoCount: Int
 
     var valid: Bool {
-        captureRange.valid && !cells.isEmpty && photoCount >= 2 &&
+        captureRange.valid && timeZoneIdentifier == TimeZone.current.identifier &&
+        !cells.isEmpty && photoCount >= 2 &&
         cells.count <= 100_000
     }
 
@@ -146,6 +148,7 @@ private enum XDriveIOSNativeLocalTripDiscovery {
                 from: first, to: end, label: label)
             let trip = XDriveIOSNativeLocalTripScope(
                 id: UUID(), title: label, captureRange: scope,
+                timeZoneIdentifier: calendar.timeZone.identifier,
                 libraryEpoch: generation, cells: members, photoCount: count)
             if trip.valid { trips.append(trip) }
         }

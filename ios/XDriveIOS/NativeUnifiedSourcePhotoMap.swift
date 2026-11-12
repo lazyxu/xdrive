@@ -62,6 +62,10 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
     let onClose: () -> Void
 
     @Environment(\.scenePhase) private var phase
+    // The Gallery underneath stops its PHChange observer while the modal
+    // Map is open. Register one in this Map so stale GPS counts disappear
+    // immediately after edits rather than only on the next user gesture.
+    @StateObject private var photoChanges = XDriveIOSUnifiedPhotoObserver()
     @State private var scanTask: Task<Void, Never>?
     @State private var generation = UUID()
     @State private var busy = false
@@ -153,7 +157,16 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 Text("位置照片核验已失效。")
             }
         }
-        .onAppear { if pins.isEmpty && !busy { reload() } }
+        .onAppear {
+            photoChanges.start()
+            if pins.isEmpty && !busy { reload() }
+        }
+        .onChange(of: photoChanges.change) { _ in
+            // A PhotoKit edit invalidates both published map counts and the
+            // selected sheet. No old coordinate becomes a new membership.
+            invalidate()
+            if phase == .active { reload() }
+        }
         .onChange(of: login.owner) { _ in invalidate() }
         .onChange(of: presence) { _ in reload() }
         .onChange(of: query) { _ in reload() }
@@ -161,9 +174,12 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             if state == .active { reload() } else { invalidate() }
         }
         .onDisappear {
-            // Presenting the place sheet must not retire the live parent
-            // map or dismiss that sheet. Only final route departure retires.
-            if selected == nil { invalidate() }
+            // Keep observing while a place sheet covers the map. Retire the
+            // observation only on actual route departure.
+            if selected == nil {
+                photoChanges.stop()
+                invalidate()
+            }
         }
     }
 
@@ -283,6 +299,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     let pin: XDriveIOSUnifiedSourceMapPin
 
     @Environment(\.scenePhase) private var phase
+    @StateObject private var photoChanges = XDriveIOSUnifiedPhotoObserver()
     @State private var generation = UUID()
     @State private var request: Task<Void, Never>?
     @State private var busy = false
@@ -366,10 +383,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             }
         }
         .onAppear {
+            photoChanges.start()
             if current.isEmpty && !busy && error == nil {
                 load(from: pin.firstCursor)
             }
         }
+        .onChange(of: photoChanges.change) { _ in invalidate() }
         .onChange(of: login.owner) { _ in invalidate() }
         .onChange(of: phase) { state in
             if state != .active { invalidate() }
@@ -377,6 +396,10 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         .onDisappear {
             request?.cancel()
             request = nil
+            if viewing == nil {
+                photoChanges.stop()
+                invalidate()
+            }
         }
     }
 
