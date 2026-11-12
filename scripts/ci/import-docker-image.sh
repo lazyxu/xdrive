@@ -54,8 +54,16 @@ if ! actual_id="$(timeout --signal=TERM --kill-after=10s 30s \
   exit 1
 fi
 if [[ "$actual_id" != "$expected_id" ]]; then
-  echo "loaded Docker image ID mismatch: got $actual_id want $expected_id for $image" >&2
-  exit 1
+  # Docker 29/containerd may expose an OCI index digest as inspect .Id.
+  # A config digest only passes when the loaded tag is independently saved
+  # and its config bytes hash to the exact CI-exported SHA-256.
+  ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+  if ! timeout --signal=TERM --kill-after=10s "$import_seconds"s \
+      bash -o pipefail -c 'docker save "$1" | python3 "$2" "$1" "$3"' _ \
+      "$image" "$ROOT/scripts/ci/verify-loaded-docker-config.py" "$expected_id"; then
+    echo "loaded Docker image/config mismatch: inspected $actual_id, expected $expected_id for $image" >&2
+    exit 1
+  fi
 fi
 
-echo "Loaded exact Docker image $image ($actual_id)"
+echo "Loaded exact Docker image $image (verified config $expected_id; inspect $actual_id)"

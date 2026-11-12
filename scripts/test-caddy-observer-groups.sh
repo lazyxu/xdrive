@@ -5,7 +5,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$(id -u)" == 0 ]] || { echo 'Run this fixture as root in an isolated runner.' >&2; exit 2; }
 command -v setpriv >/dev/null
-scratch="$(mktemp -d)"
+# Group permission fixture impersonates UID 65531; a GitHub RUNNER_TEMP
+# parent may be mode 0700 and inaccessible to this deliberately reduced UID.
+scratch="$(mktemp -d -p /tmp xdrive-caddy-observer-groups.XXXXXXXX)"
 trap 'rm -rf -- "$scratch"' EXIT
 chmod 755 "$scratch"
 mkdir -p "$scratch/xd/config" "$scratch/xd/bin" "$scratch/xd/state/control"
