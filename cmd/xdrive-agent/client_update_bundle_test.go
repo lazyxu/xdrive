@@ -189,12 +189,12 @@ func TestStableGitLabChecksumUsesServerCacheOnlyForSameVersion(t *testing.T) {
 	listing := client.ReleaseBundleListing{
 		Commit: commit, Channel: xupdate.ChannelStable,
 		ServerVersion: "v2.1.0",
-		Artifacts: []client.ReleaseBundleArtifact{artifact},
+		Artifacts:     []client.ReleaseBundleArtifact{artifact},
 	}
 	result := xupdate.Result{
 		Current: "v2.0.0", Latest: "v2.1.0", Commit: commit,
 		Channel: xupdate.ChannelStable, UpdateAvailable: true,
-		Asset: xupdate.Asset{Name: artifact.Filename},
+		Asset:     xupdate.Asset{Name: artifact.Filename},
 		Checksums: xupdate.Asset{Name: "SHA256SUMS.txt", URL: server.URL + "/SHA256SUMS.txt"},
 	}
 	good := matchCurrentServerBundleWithGitLabChecksum(

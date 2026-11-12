@@ -1,4 +1,4 @@
-name: Release Bundle immutable publication acceptance
+name: Release Bundle source-exact publication acceptance
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - name: Validate exact immutable published Commit and Sigstore proof
+      - name: Validate exact published Commit, all digests and Sigstore proof
         shell: bash
         env:
           TARGET_COMMIT: ${{ inputs.commit }}
@@ -33,4 +33,4 @@ jobs:
             exit 1
           }
           python3 scripts/ci/verify-live-release-bundle.py \
-            --commit "$TARGET_COMMIT" --require-immutable --require-sigstore
+            --commit "$TARGET_COMMIT" --require-sigstore

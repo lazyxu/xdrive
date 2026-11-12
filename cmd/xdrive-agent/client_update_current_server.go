@@ -17,9 +17,12 @@ import (
 // Desktop action. Automatic update policy continues to use the independent
 // configured release channel; a Server upgrade never triggers this method.
 //
-// Trust: current authenticated Owner -> immutable GitHub tag/source+asset
-// digest verification -> exact size and SHA-256 -> OS-specific admission.
-// Only an explicitly confirmed Windows master Snapshot may omit Authenticode. Never execute an arbitrary Server-supplied URL or download path.
+// Trust: explicit Owner request -> authenticated current Server metadata ->
+// exact 40-hex Commit, platform/name/size/SHA-256 -> OS-specific admission.
+// Native installation must not depend on GitHub Release immutability or GitHub
+// API availability: verified Server cache first, exact-Commit GitLab next,
+// GitHub last. This gives the authenticated Server authority over the digest,
+// a weaker trust model than an independently immutable public release.
 // currentServerInstallAllowed is the last local policy check after the
 // authenticated Server listing. Explicit private unsigned consent must never
 // leak into stable, Linux or background/channel update flows.
@@ -100,9 +103,9 @@ func (m *clientUpdateManager) InstallCurrentServerCommit(
 	if personalUnsigned != (item.InstallMode == "manual_test_only") {
 		return m.fail(fmt.Errorf("personal unsigned consent must match the exact published Windows installer mode"))
 	}
-	if err := client.VerifyCurrentBundlePublisher(opCtx, expectedCommit, *item); err != nil {
-		return m.fail(fmt.Errorf("independent published-Commit verification failed: %w", err))
-	}
+	// Public GitHub API is not a pre-install dependency. The authenticated
+	// Server listing and exact downloaded bytes are revalidated by the
+	// downloader; OS-native permission and signature admission remain intact.
 	result := xupdate.Result{
 		Current: version.String(), Latest: listing.ServerVersion,
 		Channel: listing.Channel, Commit: expectedCommit,

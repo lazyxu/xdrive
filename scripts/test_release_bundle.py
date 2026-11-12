@@ -100,7 +100,7 @@ class BundleCacheTests(unittest.TestCase):
                     _verify_sigstore_manifest(raw, sha, "master")
 
 
-    def test_strict_host_requires_platform_immutability_before_accepting_signed_manifest(self):
+    def test_immutable_platform_flag_is_optional_with_signed_provenance(self):
         from release_bundle import _verify_published_release
         raw = json.dumps(self.manifest, sort_keys=True).encode()
         sha = self.manifest["commit"]
@@ -114,9 +114,9 @@ class BundleCacheTests(unittest.TestCase):
                        {"name": asset["filename"], "size": asset["size"],
                         "digest": "sha256:" + asset["sha256"]},
                    ]}
-        # Existing opt-in HTTPS Host behavior remains backwards compatible.
+        # Mutable full-Commit Releases remain eligible for signed provenance checks.
         _verify_published_release(sha, raw, self.manifest, ref, release)
-        # Signing alone is NOT an immutable GitHub Release.
+        # Explicit future immutability checks remain strict when requested.
         with self.assertRaisesRegex(ValueError, "mutable"):
             _verify_published_release(sha, raw, self.manifest, ref, release,
                                       require_immutable=True)

@@ -115,12 +115,14 @@ func TestCLIOnlyGitLabServerPreferenceRequiresIndependentDigest(t *testing.T) {
 		t.Fatal("matching independently pinned GitLab CLI-only archive not preferred")
 	}
 	for scenario, mutate := range map[string]func(*xupdate.Result, *client.ReleaseBundleListing){
-		"wrong Server commit": func(_ *xupdate.Result, l *client.ReleaseBundleListing) { l.Commit = strings.Repeat("c", 40) },
-		"wrong Server version": func(_ *xupdate.Result, l *client.ReleaseBundleListing) { l.ServerVersion = "v2.0.0" },
-		"other update channel": func(_ *xupdate.Result, l *client.ReleaseBundleListing) { l.Channel = xupdate.ChannelStable },
-		"other installer name": func(r *xupdate.Result, _ *client.ReleaseBundleListing) { r.Asset.Name = "other.tar.gz" },
+		"wrong Server commit":    func(_ *xupdate.Result, l *client.ReleaseBundleListing) { l.Commit = strings.Repeat("c", 40) },
+		"wrong Server version":   func(_ *xupdate.Result, l *client.ReleaseBundleListing) { l.ServerVersion = "v2.0.0" },
+		"other update channel":   func(_ *xupdate.Result, l *client.ReleaseBundleListing) { l.Channel = xupdate.ChannelStable },
+		"other installer name":   func(r *xupdate.Result, _ *client.ReleaseBundleListing) { r.Asset.Name = "other.tar.gz" },
 		"wrong independent size": func(r *xupdate.Result, _ *client.ReleaseBundleListing) { r.Asset.Size++ },
-		"testing-only installer": func(_ *xupdate.Result, l *client.ReleaseBundleListing) { l.Artifacts[0].InstallMode = "manual_test_only" },
+		"testing-only installer": func(_ *xupdate.Result, l *client.ReleaseBundleListing) {
+			l.Artifacts[0].InstallMode = "manual_test_only"
+		},
 		"Desktop installer platform": func(_ *xupdate.Result, l *client.ReleaseBundleListing) { l.Artifacts[0].Platform = "linux" },
 	} {
 		t.Run(scenario, func(t *testing.T) {
