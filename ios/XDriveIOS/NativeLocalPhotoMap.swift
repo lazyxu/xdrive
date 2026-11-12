@@ -28,7 +28,9 @@ private enum XDriveIOSMapCurrentPhotoKitAdmission {
             return false
         }
         if let tripScope {
-            guard let coordinate = asset.location?.coordinate,
+            guard XDriveIOSNativePhotoFingerprintIndex.isCurrent(
+                    tripScope.libraryEpoch),
+                  let coordinate = asset.location?.coordinate,
                   tripScope.contains(
                     asset.creationDate, latitude: coordinate.latitude,
                     longitude: coordinate.longitude
@@ -1718,6 +1720,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 pendingTrip = nil
                 pendingRecentDay = nil
                 guard trip.valid,
+                      XDriveIOSNativePhotoFingerprintIndex.isCurrent(
+                        trip.libraryEpoch),
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
                 else { return }
                 mapScope = .library

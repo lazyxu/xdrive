@@ -128,7 +128,9 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         }
         guard captureRange == nil || captureRange!.valid,
               tripScope == nil || (tripScope!.valid &&
-                  captureRange == tripScope!.captureRange)
+                  captureRange == tripScope!.captureRange &&
+                  XDriveIOSNativePhotoFingerprintIndex.isCurrent(
+                    tripScope!.libraryEpoch))
         else {
             reset()
             throw XDrivePhotoKitScanFailure.snapshotChanged

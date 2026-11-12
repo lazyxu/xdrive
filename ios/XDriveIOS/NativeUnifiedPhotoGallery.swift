@@ -111,8 +111,17 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 pendingMapFilenameTerm = ""
                 reset()
             }
-            .onChange(of: sourceFilter) { _ in resetWall() }
-            .onChange(of: query) { _ in resetWall() }
+            .onChange(of: sourceFilter) { _ in
+                // A query/presence transition is not authority to reuse old
+                // map markers while a full-screen source map is visible.
+                showingSourceFilteredMap = false
+                openSourceMapAfterFilterDismiss = false
+                resetWall()
+            }
+            .onChange(of: query) { _ in
+                showingSourceFilteredMap = false
+                resetWall()
+            }
             .onChange(of: timeline.indexRevision) { _ in resetWall() }
             .onChange(of: selected?.id) { _ in
                 // Leaving the page for Viewer also retires any explicit

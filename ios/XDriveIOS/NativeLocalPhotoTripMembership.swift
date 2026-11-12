@@ -15,6 +15,9 @@ struct XDriveIOSNativeLocalTripScope: Identifiable, Equatable, Sendable {
     let id: UUID
     let title: String
     let captureRange: XDriveIOSNativePhotoMapCaptureRange
+    // Exact PhotoKit generation of the discovery. A later edit/revoke must
+    // never silently import new assets into this GPS trip's membership.
+    let libraryEpoch: Data
     let cells: Set<XDriveIOSNativeLocalTripDayCell>
     let photoCount: Int
 
@@ -143,7 +146,7 @@ private enum XDriveIOSNativeLocalTripDiscovery {
                 from: first, to: end, label: label)
             let trip = XDriveIOSNativeLocalTripScope(
                 id: UUID(), title: label, captureRange: scope,
-                cells: members, photoCount: count)
+                libraryEpoch: generation, cells: members, photoCount: count)
             if trip.valid { trips.append(trip) }
         }
 

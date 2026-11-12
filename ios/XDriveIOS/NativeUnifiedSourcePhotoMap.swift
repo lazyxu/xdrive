@@ -155,6 +155,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         }
         .onAppear { if pins.isEmpty && !busy { reload() } }
         .onChange(of: login.owner) { _ in invalidate() }
+        .onChange(of: presence) { _ in reload() }
+        .onChange(of: query) { _ in reload() }
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
         }
