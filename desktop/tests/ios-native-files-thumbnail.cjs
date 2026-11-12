@@ -26,8 +26,10 @@ test('Files list, grid and collection rows render only visible source-revision t
   assert.match(runtime, /nodeID: node\.id, revision: node\.revision/)
   assert.match(runtime, /ownerID: owner\?\.ownerID/)
   assert.match(runtime, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
-  // The image may be cached across navigation, but must never be *rendered*\n  // for a covered Viewer, inactive scene, mismatched Owner or stale revision.\n  assert.match(runtime, /if identity\\.visible, let bitmap, let bitmapIdentity,/)
-  assert.match(runtime, /bitmapIdentity\\.revision == identity\\.revision/)
+  // A cached image is painted only when the Viewer is absent and the scene
+  // is active; node revision and exact Owner must still match.
+  assert.match(runtime, /if identity\.visible, let bitmap, let bitmapIdentity,/)
+  assert.match(runtime, /bitmapIdentity\.revision == identity\.revision/)
 })
 
 test('native thumbnail reads actual media derivative instead of original/Viewer ticket', () => {
