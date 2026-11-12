@@ -84,6 +84,9 @@ function fixture() {
       throw new Error('unexpected map-window close in Agent-only test')
     },
     resetSourceRunNotificationState: () => {},
+    // Preserve the production publishAgentState body rather than deleting
+    // its notification side effect in the extracted-function race fixture.
+    mountRunNotificationTracker: { reset: () => {} },
     notifyAgentTransition: () => {},
     rebuildTrayMenu: () => {},
     updateTaskbarOverlay: () => {},

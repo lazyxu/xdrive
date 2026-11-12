@@ -1142,6 +1142,8 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   },
   setStartup: (enabled: boolean) => ipcRenderer.invoke('desktop:set-startup', enabled),
   setCloseToTray: (enabled: boolean) => ipcRenderer.invoke('desktop:set-close-to-tray', enabled),
+  setSyncNotificationLevel: (level: 'errors-only' | 'changes-and-errors' | 'all') =>
+    ipcRenderer.invoke('desktop:set-sync-notification-level', level),
   setAppearance: (appearance: 'system' | 'light' | 'dark') => ipcRenderer.invoke('desktop:set-appearance', appearance),
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),
   authorizeLocalFolder: (sourceID: number) => ipcRenderer.invoke('desktop:authorize-local-folder', sourceID),
@@ -1155,8 +1157,12 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   readClipboardText: () => clipboard.readText(),
   hide: () => ipcRenderer.send('desktop:hide'),
   quit: () => ipcRenderer.send('desktop:quit'),
-  onNavigate: (callback: (view: string | { kind: 'source-run'; sourceID: number; runID: string; server: string; username: string }) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, view: string) => callback(view)
+  onNavigate: (callback: (view: string |
+    { kind: 'source-run'; sourceID: number; runID: string; server: string; username: string } |
+    { kind: 'mount-run'; runID: string; server: string; username: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, view: string |
+      { kind: 'source-run'; sourceID: number; runID: string; server: string; username: string } |
+      { kind: 'mount-run'; runID: string; server: string; username: string }) => callback(view)
     ipcRenderer.on('desktop:navigate', handler)
     return () => ipcRenderer.removeListener('desktop:navigate', handler)
   },

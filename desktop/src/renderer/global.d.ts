@@ -140,7 +140,8 @@ export {}
 declare global {
   type DesktopInfo = BuildInfo & { platform: string; arch: string; device_name?: string }
   type DesktopStartup = { start_at_login: boolean }
-  type DesktopPreferences = { appearance: 'system' | 'light' | 'dark'; start_at_login: boolean; close_to_tray: boolean }
+  type DesktopSyncNotificationLevel = 'errors-only' | 'changes-and-errors' | 'all'
+  type DesktopPreferences = { appearance: 'system' | 'light' | 'dark'; start_at_login: boolean; close_to_tray: boolean; sync_notification_level: DesktopSyncNotificationLevel }
   type DesktopConnectionRoute = { mode: 'auto' | 'lan' | 'public'; lan_ip: string; public_ip: string }
   type DesktopLoginProfile = {
     server: string
@@ -160,6 +161,11 @@ declare global {
   type DesktopNavigationIntent = DesktopViewTarget | {
     kind: 'source-run'
     sourceID: number
+    runID: string
+    server: string
+    username: string
+  } | {
+    kind: 'mount-run'
     runID: string
     server: string
     username: string
@@ -577,6 +583,7 @@ declare global {
       onWindowState: (callback: (state: DesktopWindowState) => void) => () => void
       setStartup: (enabled: boolean) => Promise<DesktopResult<DesktopStartup>>
       setCloseToTray: (enabled: boolean) => Promise<DesktopResult<DesktopPreferences>>
+      setSyncNotificationLevel: (level: DesktopSyncNotificationLevel) => Promise<DesktopResult<DesktopPreferences>>
       setAppearance: (appearance: 'system' | 'light' | 'dark') => Promise<DesktopResult<DesktopPreferences>>
       selectDirectory: (defaultPath?: string) => Promise<string | null>
       authorizeLocalFolder: (sourceID: number) => Promise<DesktopResult<{

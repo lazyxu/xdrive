@@ -12,6 +12,7 @@ test('desktop preferences migrate old startup-only settings', () => {
     appearance: 'system',
     start_at_login: false,
     close_to_tray: true,
+    sync_notification_level: 'changes-and-errors',
     close_behavior_prompted: false,
     window_bounds: undefined,
     window_maximized: false,
@@ -47,4 +48,13 @@ test('desktop appearance preference accepts only the three supported modes', () 
   assert.equal(normalizeDesktopPreferences({ appearance: 'light' }).appearance, 'light')
   assert.equal(normalizeDesktopPreferences({ appearance: 'system' }).appearance, 'system')
   assert.equal(normalizeDesktopPreferences({ appearance: 'other' }).appearance, 'system')
+})
+
+test('desktop sync notification level migrates old settings and rejects invalid values', () => {
+  assert.equal(defaultDesktopPreferences().sync_notification_level, 'changes-and-errors')
+  for (const level of ['errors-only', 'changes-and-errors', 'all']) {
+    assert.equal(normalizeDesktopPreferences({ sync_notification_level: level }).sync_notification_level, level)
+  }
+  assert.equal(normalizeDesktopPreferences({ sync_notification_level: 'never' }).sync_notification_level,
+    'changes-and-errors', 'unrecognized old values must not disable notifications')
 })
