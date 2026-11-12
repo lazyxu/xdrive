@@ -1,0 +1,244 @@
+{
+  "schema": "xdrive-ios-native-xcuitest-ax-ready-n3-v1",
+  "source_commit": "810014b4a4dd92daebee77edba8ad9bd4333a79e",
+  "workflow_run": 43047764998,
+  "job": 130637852644,
+  "artifact": 13878596433,
+  "runner": "macos-15; iPhone iOS 18.5 Simulator",
+  "definition": "Actual XCUITest cold launch or tap to AX-ready including XCTest and idling overhead; NOT composited frame FPS CPU RSS or signed Owner media",
+  "routes_measured": 19,
+  "raw_trial_samples": 57,
+  "full_pr_ci_success": false,
+  "extension_target_routes": 25,
+  "extension_verified": false,
+  "rows": [
+    {
+      "route": "app.gallery",
+      "phase": "cold",
+      "trial_ms": [
+        12181,
+        68012,
+        5964
+      ],
+      "p50_ms": 12181,
+      "p95_ms": 68012,
+      "max_ms": 68012
+    },
+    {
+      "route": "files.browse",
+      "phase": "warm",
+      "trial_ms": [
+        3526,
+        3670,
+        7794
+      ],
+      "p50_ms": 3670,
+      "p95_ms": 7794,
+      "max_ms": 7794
+    },
+    {
+      "route": "files.cloud-denied",
+      "phase": "warm",
+      "trial_ms": [
+        5727,
+        4019,
+        5226
+      ],
+      "p50_ms": 5226,
+      "p95_ms": 5727,
+      "max_ms": 5727
+    },
+    {
+      "route": "files.favorites",
+      "phase": "warm",
+      "trial_ms": [
+        3976,
+        4125,
+        3808
+      ],
+      "p50_ms": 3976,
+      "p95_ms": 4125,
+      "max_ms": 4125
+    },
+    {
+      "route": "files.recent",
+      "phase": "warm",
+      "trial_ms": [
+        4379,
+        3871,
+        3721
+      ],
+      "p50_ms": 3871,
+      "p95_ms": 4379,
+      "max_ms": 4379
+    },
+    {
+      "route": "files.trash-denied",
+      "phase": "warm",
+      "trial_ms": [
+        4040,
+        6741,
+        4540
+      ],
+      "p50_ms": 4540,
+      "p95_ms": 6741,
+      "max_ms": 6741
+    },
+    {
+      "route": "gallery.filters",
+      "phase": "warm",
+      "trial_ms": [
+        5536,
+        4170,
+        3866
+      ],
+      "p50_ms": 4170,
+      "p95_ms": 5536,
+      "max_ms": 5536
+    },
+    {
+      "route": "gallery.local",
+      "phase": "warm",
+      "trial_ms": [
+        65560,
+        4828,
+        4775
+      ],
+      "p50_ms": 4828,
+      "p95_ms": 65560,
+      "max_ms": 65560
+    },
+    {
+      "route": "gallery.originals",
+      "phase": "warm",
+      "trial_ms": [
+        5460,
+        3263,
+        2934
+      ],
+      "p50_ms": 3263,
+      "p95_ms": 5460,
+      "max_ms": 5460
+    },
+    {
+      "route": "gallery.people",
+      "phase": "warm",
+      "trial_ms": [
+        5200,
+        3889,
+        3726
+      ],
+      "p50_ms": 3889,
+      "p95_ms": 5200,
+      "max_ms": 5200
+    },
+    {
+      "route": "gallery.unified",
+      "phase": "warm",
+      "trial_ms": [
+        3292,
+        3445,
+        2933
+      ],
+      "p50_ms": 3292,
+      "p95_ms": 3445,
+      "max_ms": 3445
+    },
+    {
+      "route": "tab.files",
+      "phase": "warm",
+      "trial_ms": [
+        4317,
+        3021,
+        5656
+      ],
+      "p50_ms": 4317,
+      "p95_ms": 5656,
+      "max_ms": 5656
+    },
+    {
+      "route": "tab.gallery",
+      "phase": "warm",
+      "trial_ms": [
+        2857,
+        3064,
+        3109
+      ],
+      "p50_ms": 3064,
+      "p95_ms": 3109,
+      "max_ms": 3109
+    },
+    {
+      "route": "tab.launcher",
+      "phase": "warm",
+      "trial_ms": [
+        2937,
+        2870,
+        2871
+      ],
+      "p50_ms": 2871,
+      "p95_ms": 2937,
+      "max_ms": 2937
+    },
+    {
+      "route": "tab.mine",
+      "phase": "warm",
+      "trial_ms": [
+        3218,
+        3157,
+        3114
+      ],
+      "p50_ms": 3157,
+      "p95_ms": 3218,
+      "max_ms": 3218
+    },
+    {
+      "route": "tool.backup",
+      "phase": "warm",
+      "trial_ms": [
+        5410,
+        3756,
+        3540
+      ],
+      "p50_ms": 3756,
+      "p95_ms": 5410,
+      "max_ms": 5410
+    },
+    {
+      "route": "tool.clipboard",
+      "phase": "warm",
+      "trial_ms": [
+        4492,
+        4303,
+        4547
+      ],
+      "p50_ms": 4492,
+      "p95_ms": 4547,
+      "max_ms": 4547
+    },
+    {
+      "route": "tool.notes",
+      "phase": "warm",
+      "trial_ms": [
+        4307,
+        3864,
+        4058
+      ],
+      "p50_ms": 4058,
+      "p95_ms": 4307,
+      "max_ms": 4307
+    },
+    {
+      "route": "tool.transfers",
+      "phase": "warm",
+      "trial_ms": [
+        4133,
+        3799,
+        3610
+      ],
+      "p50_ms": 3799,
+      "p95_ms": 4133,
+      "max_ms": 4133
+    }
+  ]
+}

@@ -307,7 +307,9 @@ struct XDriveIOSNativePhotoBackupTaskList: View {
                 Button("确认处理所选原件") {
                     guard let owner = priorityOwner, let id = priorityID,
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
-                          PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                          [.authorized, .limited].contains(
+                                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                                ),
                           phase == .active else { return }
                     controller.startSingle(
                         login: login, expectedOwner: owner,

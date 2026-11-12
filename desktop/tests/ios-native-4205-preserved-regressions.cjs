@@ -79,11 +79,18 @@ for (const id of accepted) {
         assert.equal(check.pattern,
           'source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]')
         assert.match(source,
-          /source:\s*\[release-c83,\s*candidate-navigation,\s*candidate-gallery-files,\s*candidate-no-session(?:,\s*candidate-mapkit)?\s*\]/,
+          /source:\s*\[release-c83,\s*candidate-navigation,\s*candidate-gallery-files,\s*candidate-no-session(?:,\s*candidate-mapkit)?(?:,\s*candidate-performance)?\s*\]/,
           'historical '+id+' requires all original native UI shards')
         assert.match(source,
           /candidate-no-session\)[\s\S]*?XDriveIOSFilesSessionRecoveryUITests/,
           'the real no-Session native child remains a mandatory shard')
+        if (source.includes('candidate-performance')) {
+          assert.match(source,
+            /candidate-performance\)[\s\S]*?XDriveIOSPagePerformanceUITests/,
+            'the new performance shard must run actual native XCTest routes')
+          assert.match(source, /--require-page-performance/,
+            'all performance routes must produce real n>=3 samples')
+        }
         if (source.includes('candidate-mapkit')) {
           assert.match(source,
             /candidate-mapkit\)[\s\S]*?XDriveIOSMapNavigationRuntimeUITests/,

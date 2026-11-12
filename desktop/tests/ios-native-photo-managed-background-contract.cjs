@@ -84,7 +84,20 @@ test('all persisted cursors invalidate when a previously stored target differs',
   assert.match(policy, /savedTargetNodeID == currentTargetNodeID/);
   assert.match(auto, /targetSourceID: UInt64\? = nil/);
   assert.match(auto, /targetNodeID: UInt64\? = nil/);
-  assert.match(auto, /windowIndex: sameTarget \? \(existing\?\.windowIndex \?\? 0\) : 0/);
+  // A NEW plan must restart its positional scan; only explicit resume of
+  // the same Owner/Source/Target may reuse an older saved cursor.
+  const resumeAt = auto.indexOf('if startRule == .resumePrevious');
+  const freshAt = auto.indexOf('let state = State(', resumeAt);
+  const saved = auto.slice(resumeAt, freshAt);
+  const fresh = auto.slice(freshAt, auto.indexOf('try persist(state, owner: owner)', freshAt));
+  assert.ok(resumeAt >= 0 && freshAt > resumeAt);
+  assert.match(saved, /sameTarget, previous\.backupStartRule != nil/);
+  assert.match(saved, /previous\.enabled = true/);
+  assert.match(fresh, /windowIndex: 0,/);
+  assert.match(fresh, /lastCompletedAt: nil,/);
+  assert.match(fresh, /libraryChangeEpoch: nil,/);
+  assert.match(fresh, /libraryAuthorizationRaw: nil,/);
+  assert.doesNotMatch(fresh, /sameTarget \?/);
   assert.match(auto, /state\.targetSourceID == sourceID/);
   assert.match(auto, /state\.targetNodeID == targetNodeID/);
   assert.match(bgCursor, /XDriveIOSPhotoBackupDestinationCursorPolicy\.sameManagedTarget/);

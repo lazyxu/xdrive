@@ -13,6 +13,7 @@ on:
       - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
       - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
       - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
+      - 'ios/UITests/XDriveIOSPagePerformanceUITests.swift'
       - 'ios/UITests/Fixtures/**'
       - 'ios/XDriveIOS/NativeLocalPhotoMap.swift'
       - 'ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'
@@ -73,7 +74,7 @@ jobs:
       matrix:
         # Keep published baseline separate and require both current native
         # suites; no unrelated older CI-success can waive this exact HEAD.
-        source: [release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session, candidate-mapkit]
+        source: [release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session, candidate-mapkit, candidate-performance]
     continue-on-error: ${{ matrix.source == 'release-c83' }}
     steps:
       - uses: actions/checkout@v4
@@ -294,6 +295,8 @@ jobs:
               # This candidate uses an isolated real PhotoKit permission
               # lifecycle; other Gallery/Files UITests cannot reset TCC.
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests") ;;
+            candidate-performance)
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSPagePerformanceUITests") ;;
             *) echo "Unsupported UI suite" >&2; exit 2 ;;
           esac
           touch "$RUNNER_TEMP/native-navigation-results/xcodebuild-start.marker"
@@ -336,6 +339,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testMapCameraLayoutAndUnverifiedGestureNeverClosesTheApp \
             test 2>&1 | tee "$RUNNER_TEMP/native-navigation-results/dark-map.log"
+      - name: Validate all native page performance routes have 3 real UI trials
+        if: matrix.source == 'candidate-performance'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          python3 "$GITHUB_WORKSPACE/ios/scripts/summarize-navigation-latency.py" \
+            "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
+            "$RUNNER_TEMP/native-navigation-results/diagnostics/page-performance.json" \
+            --require-page-performance
       - name: Capture crash diagnostics and XCTest summary
         if: always()
         shell: bash

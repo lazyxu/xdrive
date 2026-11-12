@@ -77,7 +77,8 @@ func (defaultClientUpdateBackend) Target(current string) (string, error) {
 
 func (defaultClientUpdateBackend) Check(ctx context.Context, current, channel, source string) (xupdate.Result, error) {
 	result, err := xupdate.CheckPlatformTargetFromSource(ctx, current, channel, source)
-	if err != nil || !result.UpdateAvailable || result.Channel != xupdate.ChannelMaster ||
+	if err != nil || !result.UpdateAvailable ||
+		(result.Channel != xupdate.ChannelMaster && result.Channel != xupdate.ChannelStable) ||
 		len(result.Commit) != 40 {
 		return result, err
 	}

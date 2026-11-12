@@ -222,6 +222,13 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         // separate UX feature and can stall XCUI accessibility snapshots.
         Thread.sleep(forTimeInterval: 2)
         alive(app, "offline-owner-after-denied-read")
+        // The next XCTest opens the same bundle with a new synthetic Owner.
+        // Explicitly retire this verified-denied child rather than leaving a
+        // live process for XCUIApplication.launch() to implicitly terminate.
+        // Keep exit failure fatal: do not retry/ignore an unresponsive app.
+        app.terminate()
+        XCTAssertEqual(app.state, .notRunning,
+                       "Offline Owner child must remain stoppable after a denied read")
         // No Session/token is provided; never invent a successful file read.
     }
 
