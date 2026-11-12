@@ -5,6 +5,9 @@ import Foundation
 enum XDriveIOSPhotoAutoStartRule: String, Codable, CaseIterable {
     case everything
     case onlyNew
+    // UI-only request to resume a previously paused plan. Never persisted as
+    // a backup scope and never substitutes for current Owner receipt proof.
+    case resumePrevious
 }
 
 /// Pure, testable foreground-only schedule policy. An iOS system BGTask may
@@ -22,7 +25,8 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
         raw: String?, newOnlySince: Date?
     ) -> XDriveIOSPhotoAutoStartRule? {
         guard let raw else { return .everything }
-        guard let rule = XDriveIOSPhotoAutoStartRule(rawValue: raw) else { return nil }
+        guard let rule = XDriveIOSPhotoAutoStartRule(rawValue: raw),
+              rule != .resumePrevious else { return nil }
         if rule == .onlyNew {
             guard let since = newOnlySince,
                   since.timeIntervalSince1970.isFinite else { return nil }

@@ -18,7 +18,10 @@ enum XDriveIOSPhotoKitLibraryEpoch {
 
     static func capture() throws -> Snapshot {
         let authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard authorization == .authorized else {
+        // Limited scope means only Apple's currently selected subset; it
+        // never proves full-library access. A change to Full Access has a
+        // distinct authorization generation and invalidates old cursors.
+        guard authorization == .authorized || authorization == .limited else {
             throw Failure.unauthorizedOrChanged
         }
         let token = PHPhotoLibrary.shared().currentChangeToken

@@ -1,5 +1,6 @@
 import Foundation
 import Photos
+import Network
 
 enum XDrivePhotoKitExportFailure: Error {
     case notAuthorized
@@ -93,6 +94,18 @@ private final class PhotoKitRequestGate: @unchecked Sendable {
         if let id { manager.cancelDataRequest(id) }
     }
 
+    func cancelForWiFiLoss() {
+        lock.lock()
+        if failure == nil {
+            // No ambiguous Server mutation can occur during this source read.
+            // Persist it as a retryable iCloud wait, not a successful backup.
+            failure = XDrivePhotoKitExportFailure.iCloudDownloadRequired
+        }
+        let id = requestID
+        lock.unlock()
+        if let id { manager.cancelDataRequest(id) }
+    }
+
     func finish(_ photoError: Error?, continuation: CheckedContinuation<Int64, Error>) {
         lock.lock()
         if complete {
@@ -129,6 +142,22 @@ private final class PhotoKitRequestGate: @unchecked Sendable {
     }
 }
 
+/// Advisory cancellation for PhotoKit's OS-owned iCloud transfer.
+private final class XDrivePhotoKitWiFiFlightMonitor {
+    private let monitor = NWPathMonitor()
+    init(gate: PhotoKitRequestGate) {
+        monitor.pathUpdateHandler = { [weak gate] path in
+            if path.status != .satisfied || !path.usesInterfaceType(.wifi) {
+                gate?.cancelForWiFiLoss()
+            }
+        }
+        monitor.start(queue: DispatchQueue(
+            label: "com.lazyxu.xdrive.photo-resource-wifi"
+        ))
+    }
+    func stop() { monitor.cancel() }
+}
+
 /// The *source* side of a future one-file/Live-pair backup. It exports bytes
 /// only when invoked by an explicit user action; caller chooses whether
 /// iCloud originals may be downloaded. No server/Device/Owner is involved.
@@ -144,7 +173,8 @@ enum XDrivePhotoKitOriginalExporter {
     /// both still and paired-video originals must be present and fully read.
     static func stage(localIdentifier: String, allowICloudDownload: Bool = false,
                       maximumBytesPerResource: Int64 = .max,
-                      allowLimitedPhotoAccess: Bool = false) async throws
+                      allowLimitedPhotoAccess: Bool = false,
+                      requireWiFiWhileDownloading: Bool = false) async throws
         -> XDriveStagedPhotoKitAsset {
         guard authorized(allowLimitedPhotoAccess: allowLimitedPhotoAccess) else { throw XDrivePhotoKitExportFailure.notAuthorized }
         guard !localIdentifier.isEmpty,
@@ -200,7 +230,10 @@ enum XDrivePhotoKitOriginalExporter {
                 let options = PHAssetResourceRequestOptions()
                 options.isNetworkAccessAllowed = allowICloudDownload
                 let size = try await writeResource(entry.resource, to: url,
-                                                   options: options, maximumBytes: maximumBytesPerResource)
+                                                   options: options,
+                                                   maximumBytes: maximumBytesPerResource,
+                                                   requireWiFiWhileDownloading:
+                                                       requireWiFiWhileDownloading && allowICloudDownload)
                 try Task.checkCancellation()
                 staged.append(XDriveStagedPhotoKitResource(
                     role: entry.role, originalFilename: entry.resource.originalFilename,
@@ -251,7 +284,8 @@ enum XDrivePhotoKitOriginalExporter {
 
     private static func writeResource(_ resource: PHAssetResource, to url: URL,
                                       options: PHAssetResourceRequestOptions,
-                                      maximumBytes: Int64) async throws -> Int64 {
+                                      maximumBytes: Int64,
+                                      requireWiFiWhileDownloading: Bool) async throws -> Int64 {
         let handle: FileHandle
         do {
             handle = try FileHandle(forWritingTo: url)
@@ -262,6 +296,12 @@ enum XDrivePhotoKitOriginalExporter {
         let manager = PHAssetResourceManager.default()
         let gate = PhotoKitRequestGate(manager: manager, handle: handle,
                                        maximumBytes: maximumBytes)
+        // PhotoKit does not expose a cellular prohibition. A separately
+        // consented Wi-Fi-mode fetch gets best-effort route-loss cancellation.
+        // Strict Wi-Fi-only users must leave OS iCloud downloads disabled.
+        let routeWatch = requireWiFiWhileDownloading
+            ? XDrivePhotoKitWiFiFlightMonitor(gate: gate) : nil
+        defer { routeWatch?.stop() }
 
         let copied = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation {

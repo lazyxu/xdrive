@@ -12,29 +12,29 @@ a unit test or a mocked installer.
 - The running Server remains authoritative; no historical version picker and
   **no forced or synchronized client upgrade**. Missing platforms are valid.
 - Authenticated local Server cache (if verified) → exact-source GitLab →
-  immutable exact-source GitHub; each package retains its independent SHA-256.
+  exact-source GitHub as a last resort; each package retains its SHA-256.
 - Client mirrors, partial downloads, signing failures and retry errors cannot
   fail or roll back an otherwise healthy Server upgrade.
 - All native installs require explicit user request and OS admission.
   `manual_test_only` IPA/APK/unsigned Windows assets never automatically
   become normal signed releases. Personal Windows unsigned consent is separate
-  and never bypasses public immutable-manifest verification.
-- No bypass, `continue-on-error` or masking of the post-publish gate.
+  and never bypasses SHA-256, exact Commit or OS installation admission.
+- Do not mask the post-publish SHA-256/Sigstore gate or weaken OS checks.
   Owner token must never be sent to GitHub/GitLab or printed in logs.
 
 ## Acceptance order and evidence
 
 | ID | Priority | Verification / completion evidence | Execution |
 | --- | --- | --- | --- |
-| R01 | P0 | Repository Settings → Releases → enable **Release immutability**. Publish a **new** `bundle-<full-sha>`; GitHub REST reports `immutable:true`. Old releases are never rewritten. | Repository administrator (external) |
-| R02 | P0 | Independent `verify-published-bundle` / on-demand public acceptance succeeds for the **new exact SHA**; Manifest raw bytes, complete unique asset inventory, all SHA-256 and Sigstore must agree. | GitHub CI |
+| R01 | Deferred | Platform Release Immutability is temporarily unsupported as a mandatory gate; `immutable:false` is allowed, never described as immutable. | Future admin decision |
+| R02 | P0 | Independent `verify-published-bundle` / on-demand acceptance checks exact SHA, raw Manifest bytes, complete asset inventory, SHA-256 and Sigstore without requiring platform immutable flag. | GitHub CI |
 | R03 | P0 | Installed Host `XD_RELEASE_COMMIT`, verified cached disk bytes, authenticated Owner API, real two-Range resumed download SHA-256 and unauthenticated 401/403 on metadata and cached file. | Authorized real Host |
 | R04 | P0 | Windows personal unsigned consent; actual EXE download/install, process exit/restart; installed `xd`, authenticated Agent and launched Electron each report the exact target Commit; deliberately failed post-install verification rolls back to last known good. | Windows device |
 | R05 | P0 | Real Linux `pkexec`/PolicyKit prompt, DEB install, `xd`, Agent and Desktop source Commit, restart, denied permission, interrupted install and recovery. | Linux desktop |
 | R06 | P0 | Remove optional client package; GitLab 404, corrupt SHA, offline network and cache worker failure; Server transaction still succeeds/rolls back on **Server** health alone. Partial verified clients remain usable. | Host staging |
 | R07 | P1 | Safe GitLab fast-forward, current exact Package API + Release links, mirror bytes and GitLab 404 → GitHub fallback. Record pipeline URL and digest evidence; #3966 remains tracked. | GitLab+Host (external) |
 | R08 | P1 | DSM Package Center install/upgrade on target NAS, backup state and data retained, Agent launch and Owner status working. | NAS device |
-| R09 | P1 | Host `XD_RELEASE_BUNDLE_VERIFY_SIGSTORE=required` with trusted GH CLI: immutable Release + signer workflow + source digest + repo ID pinned. Missing GH, mutable Release, or tampered signature reject **only cache**. | Authorized Host |
+| R09 | P1 | Host `XD_RELEASE_BUNDLE_VERIFY_SIGSTORE=required` with trusted GH CLI: signer workflow, source digest and repo ID pinned. Missing GH or invalid signature rejects **only cache**; signed mutable Release allowed. | Authorized Host |
 | R10 | P1 | 404/5xx, cancel, resume, lock/marker cleanup, dependency priority and unlimited client resume; record byte counts/Range and SHA. | Host/network environment |
 | R11 | P1 | Old Desktop/DSM/iOS/Android client and new Server scenarios; no forced upgrades, Owner and old-version access only as permitted by API compatibility. | Real/versioned clients |
 | R12 | P2 | Apple **signed** iOS IPA and independently fixed-key signed Android production APK, both from the same Commit if published. Unsigned IPA is test-only, debug Android APK excluded. | Apple/Android signing |
@@ -42,19 +42,22 @@ a unit test or a mocked installer.
 
 ## Public release check (safe to run on GitHub Actions)
 
-The repository provides **Release Bundle immutable publication acceptance** as
+The repository provides **source-exact signed Bundle publication acceptance** as
 a manual GitHub Actions workflow using a **new already-published full SHA**.
 This is read-only and has no credentials for real Hosts/devices.
 
 ```bash
 SHA=NEW_40_HEX_MASTER_SHA
 python3 scripts/ci/verify-live-release-bundle.py \
-  --commit "$SHA" --require-immutable --require-sigstore
+  --commit "$SHA" --require-sigstore
 ```
 
-A `mutable:false` Release must fail. A source-level no-clobber publisher
-does not constitute GitHub platform immutability. Enabling the setting is
-a repository-administrator action, not something a source PR can simulate.
+A GitHub Release with `immutable:false` is allowed but is **not**
+platform-immutable. Exact Commit, full asset inventory, actual SHA-256 and
+independent Sigstore remain required for the public check. Manual native
+installation takes its authority from authenticated current-Server metadata,
+not a GitHub API preflight. This is a weaker supply-chain trust assumption
+and must be displayed honestly to the owner.
 
 ## Installed real Host and Owner acceptance
 
@@ -65,7 +68,7 @@ the exact tested Commit** and is reachable over authenticated HTTPS:
 SHA=THE_RUNNING_SERVER_FULL_SHA
 export XD_BUNDLE_OWNER_TOKEN='REDACTED_OWNER_TOKEN'
 python3 scripts/ci/verify-live-release-bundle.py \
-  --commit "$SHA" --require-immutable --require-sigstore \
+  --commit "$SHA" --require-sigstore \
   --host-home "$HOME/.xd" --server-url https://YOUR_SERVER_ORIGIN \
   --check-server-download --check-auth-denial
 unset XD_BUNDLE_OWNER_TOKEN

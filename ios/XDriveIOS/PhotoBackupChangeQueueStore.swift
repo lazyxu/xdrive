@@ -108,6 +108,10 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             // A separate table preserves the existing Owner-scoped queue
             // schema. Reasons are valid only for an exact failed revision.
             try execute("CREATE TABLE IF NOT EXISTS failure_reasons (asset_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), reason TEXT NOT NULL)")
+            // Automatic retries are crash-durable, exact revision scoped and
+            // limited independently from explicit user retries. Never store
+            // UploadSession/ACK uncertainty in this item-local table.
+            try execute("CREATE TABLE IF NOT EXISTS automatic_retries (asset_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), attempts INTEGER NOT NULL CHECK(attempts>=0), next_due REAL NOT NULL)")
             try execute("CREATE INDEX IF NOT EXISTS entries_pending_order ON entries (state, priority DESC, queue_order DESC)")
             // UI-only task paging follows an index rather than sorting every
             // row in large 10k/100k PhotoKit change histories.
@@ -169,6 +173,7 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         // Clear them atomically with the new token and queue reset, not at
         // database open or via an unbounded foreground rescan.
         try execute("DELETE FROM failure_reasons")
+        try execute("DELETE FROM automatic_retries")
         let marker = try prepare(
             "INSERT INTO reconciliation(id,token,authorization) VALUES(1,?,?) " +
             "ON CONFLICT(id) DO UPDATE SET token=excluded.token,authorization=excluded.authorization"
@@ -460,6 +465,118 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         }
     }
 
+    /// Select only independently proven, item-local, transient failures.
+    /// Unknown UploadSession ACKs live in a different encrypted journal and
+    /// never enter this query. Inaccessible/unsupported resources are not
+    /// repeatedly scheduled in the background.
+    func automaticRetryCandidates(limit: Int = 4, now: Date = Date()) throws -> [Pending] {
+        guard (1...4).contains(limit), now.timeIntervalSince1970.isFinite else {
+            throw Failure.invalidInput
+        }
+        let sql = """
+            SELECT e.asset_id,e.revision,e.priority FROM entries e
+            JOIN failure_reasons r ON r.asset_id=e.asset_id AND r.revision=e.revision
+            LEFT JOIN automatic_retries a ON a.asset_id=e.asset_id AND a.revision=e.revision
+            WHERE e.state='failed' AND r.reason IN ('unavailable','originalMissing')
+              AND COALESCE(a.attempts,0)<3 AND COALESCE(a.next_due,0)<=?
+            ORDER BY e.priority DESC,e.queue_order DESC LIMIT ?
+            """
+        let query = try prepare(sql)
+        defer { sqlite3_finalize(query) }
+        guard sqlite3_bind_double(query, 1, now.timeIntervalSince1970) == SQLITE_OK,
+              sqlite3_bind_int(query, 2, Int32(limit)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        var found: [Pending] = []
+        while true {
+            let status = sqlite3_step(query)
+            if status == SQLITE_DONE { return found }
+            guard status == SQLITE_ROW, let raw = sqlite3_column_text(query, 0) else {
+                throw Failure.database(status)
+            }
+            found.append(Pending(localIdentifier: String(cString: raw),
+                                 revision: sqlite3_column_int64(query, 1),
+                                 priority: Int(sqlite3_column_int(query, 2))))
+        }
+    }
+
+    /// Atomic failed -> pending CAS plus durable attempt/cooldown accounting.
+    /// A crash cannot requeue indefinitely by losing a retry timestamp.
+    @discardableResult
+    func retryFailedAutomatically(_ candidate: Pending,
+                                  expectedBaselineToken: Data,
+                                  authorization: Int,
+                                  now: Date = Date()) throws -> Bool {
+        try validateIdentifier(candidate.localIdentifier)
+        try validateToken(expectedBaselineToken)
+        guard candidate.revision > 0, authorization > 0,
+              now.timeIntervalSince1970.isFinite else { throw Failure.invalidInput }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        guard let baseline = try baseline(),
+              baseline.authorization == authorization,
+              baseline.token == expectedBaselineToken else {
+            throw Failure.baselineChanged
+        }
+        let read = try prepare("""
+            SELECT r.reason,COALESCE(a.attempts,0),COALESCE(a.next_due,0)
+            FROM entries e JOIN failure_reasons r
+            ON r.asset_id=e.asset_id AND r.revision=e.revision
+            LEFT JOIN automatic_retries a
+            ON a.asset_id=e.asset_id AND a.revision=e.revision
+            WHERE e.asset_id=? AND e.revision=? AND e.state='failed'
+            """)
+        defer { sqlite3_finalize(read) }
+        try bind(candidate.localIdentifier, into: read, position: 1)
+        guard sqlite3_bind_int64(read, 2, candidate.revision) == SQLITE_OK
+        else { throw Failure.database(sqlite3_errcode(database)) }
+        guard sqlite3_step(read) == SQLITE_ROW,
+              let raw = sqlite3_column_text(read, 0) else { return false }
+        let reason = String(cString: raw)
+        let attempts = Int(sqlite3_column_int(read, 1))
+        let due = sqlite3_column_double(read, 2)
+        guard (reason == "unavailable" || reason == "originalMissing"),
+              (0..<3).contains(attempts), due <= now.timeIntervalSince1970
+        else { return false }
+        let update = try prepare(
+            "UPDATE entries SET state='pending' WHERE asset_id=? AND revision=? AND state='failed'"
+        )
+        defer { sqlite3_finalize(update) }
+        try bind(candidate.localIdentifier, into: update, position: 1)
+        guard sqlite3_bind_int64(update, 2, candidate.revision) == SQLITE_OK
+        else { throw Failure.database(sqlite3_errcode(database)) }
+        try stepDone(update)
+        guard sqlite3_changes(database) == 1 else { return false }
+        let delays: [TimeInterval] = [15 * 60, 60 * 60, 6 * 3600]
+        let ledger = try prepare("""
+            INSERT INTO automatic_retries(asset_id,revision,attempts,next_due)
+            VALUES (?,?,?,?) ON CONFLICT(asset_id) DO UPDATE SET
+            revision=excluded.revision,attempts=excluded.attempts,next_due=excluded.next_due
+            """)
+        defer { sqlite3_finalize(ledger) }
+        try bind(candidate.localIdentifier, into: ledger, position: 1)
+        guard sqlite3_bind_int64(ledger, 2, candidate.revision) == SQLITE_OK,
+              sqlite3_bind_int(ledger, 3, Int32(attempts + 1)) == SQLITE_OK,
+              sqlite3_bind_double(ledger, 4,
+                  now.timeIntervalSince1970 + delays[attempts]) == SQLITE_OK
+        else { throw Failure.database(sqlite3_errcode(database)) }
+        try stepDone(ledger)
+        // Successful retry selection retires the OLD failure reason. A
+        // subsequent verified item-local failure can write a fresh reason.
+        let remove = try prepare(
+            "DELETE FROM failure_reasons WHERE asset_id=? AND revision=?"
+        )
+        defer { sqlite3_finalize(remove) }
+        try bind(candidate.localIdentifier, into: remove, position: 1)
+        guard sqlite3_bind_int64(remove, 2, candidate.revision) == SQLITE_OK
+        else { throw Failure.database(sqlite3_errcode(database)) }
+        try stepDone(remove)
+        try execute("COMMIT")
+        committed = true
+        return true
+    }
+
     /// Explicit user retry only after a fresh PhotoKit baseline check. The
     /// SQLite transaction prevents a stale UI action from requeueing a row
     /// after a newer PhotoKit change has been observed.
@@ -505,6 +622,10 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
                 throw Failure.database(sqlite3_errcode(database))
             }
             try stepDone(oldReason)
+            let reset = try prepare("DELETE FROM automatic_retries WHERE asset_id=?")
+            defer { sqlite3_finalize(reset) }
+            try bind(candidate.localIdentifier, into: reset, position: 1)
+            try stepDone(reset)
         }
         try execute("COMMIT")
         committed = true
@@ -665,6 +786,12 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         defer { sqlite3_finalize(statement) }
         try bind(id, into: statement, position: 1)
         try stepDone(statement)
+        // An edit or deletion is a new source revision. Its old retry budget
+        // must never be attached to the newly created PhotoKit revision.
+        let retry = try prepare("DELETE FROM automatic_retries WHERE asset_id=?")
+        defer { sqlite3_finalize(retry) }
+        try bind(id, into: retry, position: 1)
+        try stepDone(retry)
     }
 
     private func prepare(_ sql: String) throws -> OpaquePointer {
