@@ -5,8 +5,13 @@ routes and real 75/75 tap/launch-to-AX-ready samples at earlier commit
 a32cac115854da414fc9787aaf56465add275f54. Its updated 55d7867 HEAD
 has newly triggered CI and must not be rewritten merely for consolidation.
 
-This stacked follow-up records actual application-targeted XCTCPUMetric,
-XCTMemoryMetric and XCTHitchMetric across the 24 warm native routes. The
+This stacked follow-up records actual application-targeted XCTCPUMetric and
+XCTMemoryMetric across the 24 warm native routes. Xcode 26 with iOS 26+
+also measures XCTHitchMetric. The repository's macOS-15/Xcode 16.4/iOS 18.5
+Simulator cannot compile XCTHitchMetric (introduced in Xcode 26), so that
+toolchain records XCTest scrolling/deceleration and navigation-transition
+signpost durations instead. Those signpost timings are NOT Hitch Time Ratio,
+dropped-frame counts or hardware refresh-rate evidence. The
 25th, app.gallery, uses the independent XCTApplicationLaunchMetric because
 the app is not running at measurement start. One unmeasured warmup plus three
 retained metrics per route are collected in Apple's original xcresult format,
@@ -19,7 +24,10 @@ provide a valid Server Session and cannot benchmark authorized media.
 Preparatory native scrolls and returns occur outside startMeasuring/
 stopMeasuring, preserving page-action costs separately from UI discovery.
 The audit rejects missing/duplicate route methods, trials and missing
-xcresult metrics; it does not invent FPS, baseline percentages or P95.
+xcresult metrics, and requires both compiler-gated hitch instrumentation and
+the legacy-toolchain signpost fallback. It does not invent hitch ratios, FPS,
+baseline percentages or P95. The exact-HEAD Xcode 16.4 build and xcresult
+export remain mandatory acceptance gates.
 
 Scope not yet measured against real content: signed Owner Files 100k
 first/next 100, long scroll and return, Gallery 10k/100k PhotoKit/cloud

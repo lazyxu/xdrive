@@ -13,6 +13,10 @@ REQ = {"app.gallery", "tab.files", "gallery.unified"}
 PREFIX = """XCTCPUMetric(application: app)
 XCTMemoryMetric(application: app)
 XCTHitchMetric(application: app)
+XCTOSSignpostMetric.scrollingAndDecelerationMetric
+XCTOSSignpostMetric.navigationTransitionMetric
+#if compiler(>=6.2)
+if #available(iOS 26.0, *)
 XCTApplicationLaunchMetric()
 options.iterationCount = 3
 options.invocationOptions = [.manuallyStart, .manuallyStop]
@@ -65,6 +69,14 @@ class TestNativeResourceAudit(unittest.TestCase):
             module.audit(source(), log().replace("route=tab.files invocations=4",
                                                   "route=tab.files invocations=3"),
                          {"measured": [1]}, REQ)
+
+    def test_old_xcode_requires_real_navigation_and_scrolling_metrics(self):
+        with self.assertRaisesRegex(ValueError, "target-app metric"):
+            module.source_routes(source().replace(
+                "XCTOSSignpostMetric.navigationTransitionMetric", "NO_SIGNPOST"))
+        with self.assertRaisesRegex(ValueError, "target-app metric"):
+            module.source_routes(source().replace(
+                "#if compiler(>=6.2)", "#if compiler(>=5.1)"))
 
     def test_target_must_be_app_not_test_runner(self):
         with self.assertRaisesRegex(ValueError, "target-app metric"):

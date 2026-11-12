@@ -202,11 +202,26 @@ final class XDriveIOSNativeResourcePerformanceUITests: XCTestCase {
         options.iterationCount = 3
         options.invocationOptions = [.manuallyStart, .manuallyStop]
         var iterations = 0
-        measure(metrics: [
+        // Xcode 16.4 / iOS 18.5 does not define XCTHitchMetric (added in
+        // Xcode 26). Keep genuine app CPU/RSS measurements, and use older
+        // XCTest navigation/scroll signposts as duration evidence. They do
+        // NOT measure Hitch Time Ratio or a physical 60/120-Hz display.
+        var resourceMetrics: [any XCTMetric] = [
             XCTCPUMetric(application: app),
-            XCTMemoryMetric(application: app),
-            XCTHitchMetric(application: app)
-        ], options: options) {
+            XCTMemoryMetric(application: app)
+        ]
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            resourceMetrics.append(XCTHitchMetric(application: app))
+        } else {
+            resourceMetrics.append(XCTOSSignpostMetric.scrollingAndDecelerationMetric)
+            resourceMetrics.append(XCTOSSignpostMetric.navigationTransitionMetric)
+        }
+        #else
+        resourceMetrics.append(XCTOSSignpostMetric.scrollingAndDecelerationMetric)
+        resourceMetrics.append(XCTOSSignpostMetric.navigationTransitionMetric)
+        #endif
+        measure(metrics: resourceMetrics, options: options) {
             iterations += 1
             stage(route, app)
             print("IOS_NATIVE_RESOURCE_ITERATION route=\(route) index=\(iterations)")

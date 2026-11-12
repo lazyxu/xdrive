@@ -34,6 +34,9 @@ def source_routes(source):
     for token in (
         "XCTCPUMetric(application: app)", "XCTMemoryMetric(application: app)",
         "XCTHitchMetric(application: app)", "XCTApplicationLaunchMetric()",
+        "#if compiler(>=6.2)", "if #available(iOS 26.0, *)",
+        "XCTOSSignpostMetric.scrollingAndDecelerationMetric",
+        "XCTOSSignpostMetric.navigationTransitionMetric",
         "options.iterationCount = 3",
         "options.invocationOptions = [.manuallyStart, .manuallyStop]",
         "startMeasuring()", "stopMeasuring()",
@@ -73,6 +76,8 @@ def audit(source, log, metrics, required):
         "simulator_only": True,
         "signed_100k_owner_validation": False,
         "physical_60_120hz_fps": False,
+        "hitch_metric_requires_xcode26_ios26": True,
+        "ios18_signpost_durations_are_not_hitch_ratio": True,
         "not_comparable_with_web_ms": True,
     }
 
