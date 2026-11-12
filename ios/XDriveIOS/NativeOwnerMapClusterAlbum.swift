@@ -86,6 +86,13 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
+    // Only an exact Owner-authenticated complete date index is retained.
+    // Date keys and offsets are presentation hints, never media grants.
+    @State private var verifiedDateIndex: XDriveIOSNativeMediaDateGroupSets?
+    @State private var verifiedDatePlaceID: String?
+    @State private var verifiedDateTotal = 0
+    @State private var dateJumpVisible = false
+    @State private var requestedDate = Date()
 
     init(login: XDriveIOSNativeOwnerLoginModel,
          selection: XDriveIOSOwnerMapChosenCluster) {
@@ -96,6 +103,17 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     private var activeOwner: Bool {
         phase == .active &&
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, selection.owner)
+    }
+
+    private var canJumpInCurrentPlace: Bool {
+        guard activeOwner, let index = verifiedDateIndex,
+              selection.places.indices.contains(cursor.placeIndex),
+              verifiedDatePlaceID == selection.places[cursor.placeIndex].id,
+              verifiedDateTotal == selection.places[cursor.placeIndex].item_count,
+              XDriveIOSNativeOwnerPlaceDateIndexPolicy.accepts(
+                  index, total: verifiedDateTotal)
+        else { return false }
+        return true
     }
 
     private var selectedPhotoCount: Int {
@@ -163,6 +181,18 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
                 .padding(.horizontal, 12)
                 .disabled(!activeOwner || busy || viewing != nil)
+            if canJumpInCurrentPlace {
+                Button {
+                    requestedDate = Date()
+                    dateJumpVisible = true
+                } label: {
+                    Label("跳转此地点的历史日期", systemImage: "calendar")
+                }
+                .disabled(busy || viewing != nil)
+                .padding(.horizontal, 12)
+                .accessibilityIdentifier("native-ios-owner-place-full-date-jump")
+                .accessibilityHint("按当前 Owner 的完整日期索引定位，仍须重新验证照片访问权限")
+            }
             if wallTimeScale != .all {
                 Text("仅对当前已授权、已加载的照片分组；更远照片仍按需加载。")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -271,6 +301,31 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     Label("位置照片操作", systemImage: "ellipsis.circle")
                 }
                 .accessibilityIdentifier("native-ios-owner-map-cluster-more")
+            }
+        }
+        .sheet(isPresented: $dateJumpVisible) {
+            NavigationStack {
+                VStack(spacing: 12) {
+                    DatePicker("选择地点照片日期", selection: $requestedDate,
+                               displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .accessibilityIdentifier("native-ios-owner-place-date-picker")
+                    Text("按此地点完整授权索引中的最近有照片日期定位（UTC 日期索引）。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .navigationTitle("跳转地点照片")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { dateJumpVisible = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("跳转") { jumpToSelectedDate() }
+                            .disabled(!canJumpInCurrentPlace || busy || viewing != nil)
+                            .accessibilityIdentifier("native-ios-owner-place-date-confirm")
+                    }
+                }
             }
         }
         .xdrivePhotoWallPinch(
@@ -606,6 +661,22 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             placeIndex: nextIndex, offset: nextOffset)
     }
 
+    private func jumpToSelectedDate() {
+        guard canJumpInCurrentPlace, !busy, viewing == nil,
+              let index = verifiedDateIndex,
+              let selected = XDriveIOSNativeOwnerPlaceDateIndexPolicy.nearestDay(
+                requestedDate, index: index, total: verifiedDateTotal,
+                pageSize: XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize
+              )
+        else { dateJumpVisible = false; return }
+        dateJumpVisible = false
+        // The Reader will re-fetch offset zero and revalidate this day+index
+        // before the requested sparse Range is accepted and painted.
+        load(XDriveIOSOwnerClusterCursor(
+            placeIndex: cursor.placeIndex, offset: selected.offset),
+            history: [], dateJump: selected)
+    }
+
     private func advanceIfVisible() {
         // The next Owner Range is independent of decorative thumbnails.
         // A slow or missing cover must never block continuous scrolling:
@@ -635,6 +706,10 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         priorWindowCursor = nil
         scrollFootVisible = false
         coverImages = [:]
+        verifiedDateIndex = nil
+        verifiedDatePlaceID = nil
+        verifiedDateTotal = 0
+        dateJumpVisible = false
         viewing = nil
         next = nil
         earlier = []
@@ -644,7 +719,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
 
     private func load(_ target: XDriveIOSOwnerClusterCursor,
                       history: [XDriveIOSOwnerClusterCursor],
-                      autoAdvance: Bool = false) {
+                      autoAdvance: Bool = false,
+                      dateJump: XDriveIOSNativeOwnerPlaceDateJump? = nil) {
         guard activeOwner, !busy, viewing == nil,
               target.placeIndex >= 0,
               target.placeIndex < selection.places.count,
@@ -655,6 +731,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         let ticket = generation
         let departingPage = page
         let departingCursor = cursor
+        if target.placeIndex != departingCursor.placeIndex {
+            verifiedDateIndex = nil
+            verifiedDatePlaceID = nil
+            verifiedDateTotal = 0
+            dateJumpVisible = false
+        }
         // Ordinary pagination does not carry a stale Viewer anchor into a
         // different place or new 48-item Range. Dismissal reloads the SAME.
         if autoAdvance || target != cursor { viewerReturn = nil }
@@ -688,6 +770,29 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken)
+                if let dateJump {
+                    guard !autoAdvance, target.placeIndex == departingCursor.placeIndex,
+                          target.offset == dateJump.offset
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    // A stale date index may choose a wrong sparse offset even
+                    // when item_count is unchanged. Re-query the real Owner's
+                    // first Range and require the exact same date group.
+                    let root = try await reader.page(
+                        offset: 0, placeID: facet.id,
+                        captureRange: selection.captureRange)
+                    try Task.checkCancellation()
+                    let fresh = root.timeline_group_sets ??
+                        XDriveIOSNativeOwnerPlaceDateIndexPolicy.legacyCompleteIndex(root)
+                    guard root.total_count == facet.item_count,
+                          let fresh,
+                          XDriveIOSNativeOwnerPlaceDateIndexPolicy.accepts(
+                            fresh, total: root.total_count),
+                          fresh.day.contains(where: {
+                            $0.key == dateJump.key &&
+                            $0.start_index == dateJump.startIndex
+                          })
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                }
                 if autoAdvance {
                     // A stable item count does not guarantee that old and
                     // new 48-item windows belong to the same media snapshot.
@@ -776,6 +881,21 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     autoScrollReturn = nil
                     coverImages = [:]
                 }
+                if fetched.offset == 0 {
+                    let index = fetched.timeline_group_sets ??
+                        XDriveIOSNativeOwnerPlaceDateIndexPolicy.legacyCompleteIndex(fetched)
+                    if let index,
+                       XDriveIOSNativeOwnerPlaceDateIndexPolicy.accepts(
+                        index, total: fetched.total_count) {
+                        verifiedDateIndex = index
+                        verifiedDatePlaceID = facet.id
+                        verifiedDateTotal = fetched.total_count
+                    } else {
+                        verifiedDateIndex = nil
+                        verifiedDatePlaceID = nil
+                        verifiedDateTotal = 0
+                    }
+                }
                 cursor = target
                 earlier = history
                 next = following
@@ -838,6 +958,13 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             } catch is CancellationError {
             } catch {
                 guard generation == ticket else { return }
+                if dateJump != nil {
+                    // A failed fresh-index check invalidates any previously
+                    // cached jump hint, even when the Owner is unchanged.
+                    verifiedDateIndex = nil
+                    verifiedDatePlaceID = nil
+                    verifiedDateTotal = 0
+                }
                 // Do not promote an unverified next cursor on failure.
                 viewerReturn = nil
                 self.error = "地点照片或 Owner 授权已变化；可重试，必要时返回地图刷新。"
