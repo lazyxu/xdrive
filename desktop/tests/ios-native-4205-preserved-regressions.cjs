@@ -34,6 +34,31 @@ for (const id of accepted) {
       'historical case identity must not drift')
     for (const check of item.checks) {
       const source = readSource(check.file)
+      // #4205 case 116 originally pinned the Files selector *below* the
+      // list. The real Simulator now proves that conditional bottom placement
+      // can lose the rail on Files -> Mine -> Gallery -> Files return.
+      // Preserve the untouched historical JSON, but require the stronger
+      // accessible 44pt top rail and stable geometry during selection.
+      if (id === 116 && check.file === 'f') {
+        assert.match(check.pattern, /switch quickSection$/)
+        const begin = source.indexOf('private var filesMain: some View {')
+        const end = source.indexOf('private var filesModals: some View {', begin)
+        assert.ok(begin >= 0 && end > begin, 'real Files component must exist')
+        const main = source.slice(begin, end)
+        const rail = main.indexOf('native-ios-files-quick-rail')
+        const content = main.indexOf('switch quickSection')
+        assert.ok(rail >= 0 && content > rail,
+          'Files navigation rail must remain mounted above its content')
+        assert.match(main, /guard !selecting, !batchTrash\.busy/)
+        assert.match(main, /\.disabled\(selecting\)/)
+        assert.match(main, /\.frame\(maxWidth: \.infinity, minHeight: 44\)/)
+        assert.match(main, /native-ios-files-section-/)
+        assert.match(main, /case \.browse:\s*filesChrome/)
+        assert.match(main, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
+        assert.match(main, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
+        assert.doesNotMatch(main, /if !selecting\s*\{\s*HStack/)
+        continue
+      }
       // #4205 case 184 archived an obsolete "if count < 3" two-tap limit.
       // The current route sampler intentionally observes taps 1, 2, 4, 8,
       // 12 and 16 during longer navigation journeys. Preserve the original
