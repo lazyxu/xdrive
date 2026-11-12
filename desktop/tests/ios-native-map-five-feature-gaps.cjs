@@ -84,6 +84,8 @@ test('M09: local recent days and trips include exact PhotoKit day AND GPS cells'
   assert.match(trips, /struct XDriveIOSNativeLocalTripDayCell: Hashable, Sendable/)
   assert.match(trips, /struct XDriveIOSNativeLocalTripScope: Identifiable, Equatable, Sendable/)
   assert.match(trips, /cells\.contains\(\.init\(day: calendar\.startOfDay/)
+  assert.match(trips, /let canonical = longitude == 180 \? -180 : longitude/)
+  assert.match(trips, /Int\(floor\(\(canonical \+ 180\) \* 4\)\)/)
   assert.match(trips, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
   assert.match(trips, /XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(generation\)/)
   assert.match(trips, /maximumAssets = 250_000/)

@@ -32,7 +32,11 @@ struct XDriveIOSNativeLocalTripScope: Identifiable, Equatable, Sendable {
         guard XDriveIOSNativePhotoMapPolicy.validCoordinate(
             latitude: latitude, longitude: longitude) else { return nil }
         let lat = min(719, max(0, Int(floor((latitude + 90) * 4))))
-        let lon = min(1439, max(0, Int(floor((longitude + 180) * 4))))
+        // ±180 is one physical meridian. Without canonicalization a single
+        // location can count as TWO distinct cities/away GPS cells, falsely
+        // creating a same-day trip when a photo uses +180 and another -180.
+        let canonical = longitude == 180 ? -180 : longitude
+        let lon = min(1439, max(0, Int(floor((canonical + 180) * 4))))
         return lat * 1440 + lon
     }
 
