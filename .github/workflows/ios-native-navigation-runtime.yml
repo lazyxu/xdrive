@@ -6,6 +6,7 @@ on:
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift'
       - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
       - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
       - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
@@ -41,6 +42,9 @@ on:
       - 'ios/XDriveIOS/NativePhotosDashboard.swift'
       - 'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift'
       - 'ios/XDriveIOS/NativeUnifiedPhotoWall.swift'
+      - 'ios/XDriveIOS/NativeUnifiedGalleryPolicy.swift'
+      - 'ios/tests/NativeUnifiedGalleryChecks.swift'
+      - 'ios/XDriveIOS/NativeFilesThumbnail.swift'
       - 'ios/XDriveIOS/NativeUnifiedPhotoViewer.swift'
       - 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'
       - 'ios/XDriveIOS/NativeLocalPhotoGallery.swift'
@@ -235,7 +239,8 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests") ;;
             candidate-gallery-files)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests")
-              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests") ;;
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesTransitionEdgeUITests") ;;
             candidate-no-session)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests") ;;
             candidate-mapkit)

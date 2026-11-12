@@ -144,7 +144,10 @@ struct XDriveIOSNativeFilesThumbnailTile: View {
         ZStack {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.accentColor.opacity(0.07))
-            if let bitmap, let bitmapIdentity,
+            // A retained child/Viewer or inactive scene must not paint old
+            // private pixels during transition snapshots. Keep the decoded
+            // image cached for an immediate same-Owner foreground return.
+            if identity.visible, let bitmap, let bitmapIdentity,
                bitmapIdentity.nodeID == identity.nodeID,
                bitmapIdentity.revision == identity.revision,
                bitmapIdentity.serverOrigin == identity.serverOrigin,

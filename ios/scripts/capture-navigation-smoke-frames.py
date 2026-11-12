@@ -97,6 +97,13 @@ TARGETS = {
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
+    # Six real tap-driven Gallery/Files child transition regressions.
+    "testPeopleChildDeniedFilesReturnKeepsGalleryTree",
+    "testCloudOriginalsHelpFilesSearchReturnRetainsChild",
+    "testGalleryFilterCancelFilesSectionsKeepsUnifiedWall",
+    "testLocalPhotoPermissionFilesForegroundReturnKeepsChild",
+    "testFilesRootDenialLandscapeGalleryAlbumsReturn",
+    "testOriginalsAlbumsFilesQuickRailThreeCyclesKeepsPages",
     "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",
     "testGalleryDismissedFilterThenForegroundDoesNotRebuildWall",
     "testGalleryPeopleBackThenForegroundKeepsVerifiedWall",
