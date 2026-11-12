@@ -63,7 +63,7 @@ test('M08: one Owner filter controls every map count, cover and Viewer Range', (
   assert.match(cluster, /mapSelection: selection\.mapSelection/)
   assert.match(dashboard, /cloudSourceAllowed: true/)
   assert.match(go, /type mediaCaptureBounds struct \{/)
-  assert.match(go, /Filename string[\s\S]*?MediaKind string[\s\S]*?AssetKind string/)
+  assert.match(go, /Filename\s+string[\s\S]*?MediaKind\s+string[\s\S]*?AssetKind\s+string/)
   assert.match(go, /mediaMapCaptureFilter\(/)
   assert.match(go, /applyMediaFilenameFilter\(query, scope\.Filename\)/)
   assert.match(go, /selection\.Filename = entries\[0\]/)

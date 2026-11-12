@@ -467,7 +467,7 @@ test('native Photos album exposes Show Map only with Full Photo Library access',
   assert.match(map, /if album == nil && onFocusChange != nil \{\s*ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-map-focus-toggle/)
   assert.match(map, /worker\.startMap\(\s*atOffset: 0, album: album, mediaFilter: mediaFilter,\s*captureRange: activeCaptureRange,\s*filenameTerm: filenameTerm,\s*tripScope: chosenLocalTrip\s*\)/)
   assert.match(map, /\.sheet\(item: \$globalSelection, onDismiss: \{[\s\S]*?\}\) \{ chosen in[\s\S]*?XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: album,/)
-  assert.match(map, /scanner\.startMap\(\s*atOffset: 0, album: album, mediaFilter: selection\.mediaFilter,\s*captureRange: selection\.captureRange,\s*filenameTerm: selection.filenameTerm\s*\)/)
+  assert.match(map, /scanner\.startMap\(\s*atOffset: 0, album: album, mediaFilter: selection\.mediaFilter,\s*captureRange: selection\.captureRange,\s*filenameTerm: selection.filenameTerm,\s*tripScope: selection.tripScope\s*\)/)
   assert.match(map, /album == nil \?\s*"此授权图库没有可显示位置的照片或视频。" :\s*"此相册没有可显示位置的照片或视频。"/)
 })
 
