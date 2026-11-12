@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '../..');
 const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const map = read('ios/XDriveIOS/NativeOwnerMapClusterAlbum.swift');
 const transport = read('ios/XDriveIOS/NativeServerMediaGalleryTransport.swift');
-const policy = read('ios/XDriveIOS/NativePhotoWallDensityPolicy.swift');
+const policy = read('ios/XDriveIOS/NativeServerMediaGalleryTransport.swift');
 
 test('Native Owner map date navigation uses the existing authenticated 48-item place Reader', () => {
   assert.match(transport, /let timeline_group_sets: XDriveIOSNativeMediaDateGroupSets\?/);

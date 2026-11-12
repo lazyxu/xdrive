@@ -32,7 +32,10 @@ def verify():
                     if manifest is not None or not member.isfile() or not 0 < member.size <= 2 * 1024 * 1024:
                         fail("invalid or duplicate manifest")
                     manifest = json.load(stream.extractfile(member))
-                elif CONFIG_NAME.fullmatch(member.name):
+                elif member.name in (expected + ".json", "blobs/sha256/" + expected):
+                    # OCI layer blobs also have SHA-named tar paths; most are
+                    # far larger than a config. Hash only the one expected
+                    # image config, skipping all other blobs and layers.
                     if member.name in configs or not member.isfile() or not 0 < member.size <= 4 * 1024 * 1024:
                         fail("invalid or duplicate image config")
                     configs[member.name] = hashlib.sha256(stream.extractfile(member).read()).hexdigest()

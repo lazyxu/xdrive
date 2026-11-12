@@ -31,7 +31,24 @@ elif args[:2] == ["image", "inspect"]:
     print("snapshot" if any("image.version" in arg for arg in args)
           else "sha256:" + "1" * 64)
 elif args[0] == "save":
-    print("synthetic archive for the export command boundary")
+    # Construct a genuine Docker-save manifest/config artifact. The exporter
+    # now fails closed on invalid tar instead of accepting a plain-text mock.
+    import hashlib
+    import io
+    import json
+    import tarfile
+    config = b'{"architecture":"amd64","config":{"Env":["XDRIVE_TEST=1"]},"os":"linux"}'
+    digest = hashlib.sha256(config).hexdigest()
+    manifest = json.dumps([{
+        "Config": digest + ".json",
+        "RepoTags": [args[1]],
+        "Layers": [],
+    }], separators=(",", ":")).encode()
+    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as output:
+        for name, data in ((digest + ".json", config), ("manifest.json", manifest)):
+            member = tarfile.TarInfo(name)
+            member.size = len(data)
+            output.addfile(member, io.BytesIO(data))
 elif args[0] == "run":
     if "list-modules" in args:
         probe, line = "caddy-modules", "dns.providers.alidns"
