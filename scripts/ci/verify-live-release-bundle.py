@@ -221,6 +221,50 @@ def server_listing(server_url, token, *, allow_loopback_http=False):
     return json.loads(raw)
 
 
+def require_verified_cached_artifacts(listing):
+    """A zero-byte/uncached API listing cannot pass a real transfer check.
+
+    A partial cache is valid; download only packages that the running Server
+    actually advertises as verified, not optional upstream-only packages.
+    """
+    items = listing.get("artifacts")
+    if not isinstance(items, list):
+        raise GateError("Server has no valid package inventory for live download")
+    cached = [item for item in items if item.get("cached") is True]
+    if not cached:
+        raise GateError("no verified current-Commit cached package to exercise")
+    return cached
+
+
+def check_unauthenticated_denial(server_url, *, sample_cached=None):
+    """Exercise real Owner denial without sending a credential to the Server.
+
+    Both metadata and one cached package must be inaccessible to a guest.
+    An HTTP redirect is not a successful authorization check.
+    """
+    if not sample_cached:
+        raise GateError("no verified cached package for guest download denial")
+    origin = server_url.rstrip("/")
+    paths = [
+        "/api/v1/release-bundles/current",
+        "/api/v1/release-bundles/current/artifacts/" + quote(sample_cached["filename"]),
+    ]
+    opener = build_opener(NoRedirect)
+    for path in paths:
+        try:
+            with opener.open(Request(origin + path, headers={
+                "Accept-Encoding": "identity",
+            }), timeout=20) as response:
+                response.read(1)
+        except HTTPError as exc:
+            if exc.code in (401, 403):
+                continue
+            raise GateError("unauthenticated Bundle request returned HTTP " +
+                            str(exc.code) + ": " + path) from exc
+        raise GateError("unauthenticated Bundle request was exposed: " + path)
+    return len(paths)
+
+
 def check_remote_bytes(item, origin):
     """Optional expensive check of *actual* bytes at each advertised origin."""
     url = item["sources"][origin]
@@ -361,7 +405,9 @@ def main(argv=None):
     parser.add_argument("--require-sigstore", action="store_true",
                         help="verify signed manifest with pinned CI identity and Git Commit")
     parser.add_argument("--check-server-download", action="store_true",
-                        help="two authenticated Range requests per cached package; full SHA-256")
+                        help="two authenticated Range requests per VERIFIED cached package; full SHA-256")
+    parser.add_argument("--check-auth-denial", action="store_true",
+                        help="real unauthenticated GET of metadata and one cached package must return 401/403")
     parser.add_argument("--check-package-bytes", action="store_true",
                         help="download and SHA-256 verify every GitLab/GitHub package; expensive")
     args = parser.parse_args(argv)
@@ -369,6 +415,8 @@ def main(argv=None):
         manifest, raw = check_release(args.commit, require_immutable=args.require_immutable)
         verified_host = None
         api_count = None
+        range_count = 0
+        denied_count = 0
         if args.require_sigstore:
             check_sigstore(args.commit, raw)
         if args.host_home:
@@ -378,12 +426,20 @@ def main(argv=None):
             api = server_listing(args.server_url, os.environ.get("XD_BUNDLE_OWNER_TOKEN", ""),
                                  allow_loopback_http=args.allow_loopback_http)
             api_count = check_server_listing(args.commit, manifest, api)
-        if args.check_server_download:
+        if args.check_server_download or args.check_auth_denial:
             if not args.server_url:
-                raise GateError("--check-server-download requires --server-url")
-            for item in api["artifacts"]:
-                check_authenticated_range_download(args.server_url,
-                    os.environ.get("XD_BUNDLE_OWNER_TOKEN", ""), item)
+                raise GateError("live download/auth checks require --server-url")
+            cached = require_verified_cached_artifacts(api)
+            if args.check_server_download:
+                for item in cached:
+                    if not check_authenticated_range_download(args.server_url,
+                            os.environ.get("XD_BUNDLE_OWNER_TOKEN", ""), item):
+                        raise GateError("cached package did not execute an authenticated Range check")
+                    range_count += 1
+            if args.check_auth_denial:
+                denied_count = check_unauthenticated_denial(
+                    args.server_url, sample_cached=cached[0]
+                )
         if args.check_package_bytes:
             for item in manifest["artifacts"]:
                 for origin in ("gitlab", "github"):
@@ -397,7 +453,9 @@ def main(argv=None):
             "host_packages": len(verified_host) if verified_host is not None else None,
             "api_packages": api_count,
             "remote_bytes": "verified" if args.check_package_bytes else "not_checked",
-            "server_download": "verified" if args.check_server_download else "not_checked",
+            "server_download": "verified" if range_count else "not_checked",
+            "range_verified_packages": range_count,
+            "guest_denial": "verified" if denied_count == 2 else "not_checked",
         }, sort_keys=True))
         return 0
     except (ValueError, HTTPError, URLError, OSError, json.JSONDecodeError) as exc:

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Exercise smoke scripts with a streaming producer and genuine pipeline exits."""
 
+import hashlib
+import io
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -19,8 +23,12 @@ SCRIPTS = (
     "export-docker-image.sh",
 )
 DOCKER = r'''
+import hashlib
+import io
+import json
 import os
 import sys
+import tarfile
 
 args = sys.argv[1:]
 if args[0] == "login":
@@ -31,7 +39,29 @@ elif args[:2] == ["image", "inspect"]:
     print("snapshot" if any("image.version" in arg for arg in args)
           else "sha256:" + "1" * 64)
 elif args[0] == "save":
-    print("synthetic archive for the export command boundary")
+    # A Docker save mock must produce real Docker-archive structure. The
+    # exporter now hashes the named config bytes and rejects junk streams.
+    # Keep the CI smoke's real stream/EOF and upstream-failure assertions,
+    # rather than weakening source-archive validation to accept fake text.
+    if len(args) != 2:
+        raise SystemExit("unexpected docker save arguments: " + repr(args))
+    config = json.dumps({
+        "architecture": "amd64",
+        "os": "linux",
+        "rootfs": {"type": "layers", "diff_ids": []},
+        "config": {"Labels": {"org.opencontainers.image.version": "snapshot"}},
+    }, sort_keys=True).encode()
+    digest = hashlib.sha256(config).hexdigest()
+    config_path = "blobs/sha256/" + digest
+    manifest = json.dumps([{
+        "Config": config_path, "RepoTags": [args[1]], "Layers": [],
+    }]).encode()
+    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+        for name, data in (("manifest.json", manifest), (config_path, config)):
+            member = tarfile.TarInfo(name)
+            member.mode = 0o644
+            member.size = len(data)
+            archive.addfile(member, io.BytesIO(data))
 elif args[0] == "run":
     if "list-modules" in args:
         probe, line = "caddy-modules", "dns.providers.alidns"
@@ -127,6 +157,20 @@ class ImageSmokePipelines(unittest.TestCase):
         for script in ("gitlab-post-release-smoke.sh", "gitlab-caddy-image.sh"):
             with self.subTest(script=script):
                 self.assert_exit(self.run_smoke(script), 0)
+
+    def test_exported_caddy_archive_is_content_addressed(self):
+        self.assert_exit(self.run_smoke("gitlab-caddy-image.sh"), 0)
+        output = self.root / "dist" / "caddy-image"
+        with tarfile.open(output / "image.tar.gz", "r:gz") as archive:
+            entries = json.load(archive.extractfile("manifest.json"))
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]["RepoTags"], ["xdrive/caddy:test"])
+            config_name = entries[0]["Config"]
+            config = archive.extractfile(config_name).read()
+            digest = hashlib.sha256(config).hexdigest()
+            self.assertEqual(config_name, "blobs/sha256/" + digest)
+        self.assertEqual((output / "image.id").read_text().strip(), "sha256:" + digest)
+        self.assertEqual((output / "image.ref").read_text().strip(), "xdrive/caddy:test")
 
     def test_valid_banner_does_not_hide_upstream_failure(self):
         for probe in ("server-version", "caddy-modules", "ffmpeg", "ffprobe", "caddy-config", "face"):
