@@ -151,6 +151,13 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             ) else { return }
             backup.tickIfDue(login: model)
         }
+        // A restored signed-out form may appear before SwiftUI publishes
+        // restoreFinished. Its onAppear can then fail readiness admission,
+        // leaving the process checkpoint stuck at mountingWorkspace even
+        // after the login field is visible. Re-arm at the completion boundary.
+        .onChange(of: restoreFinished) { finished in
+            if finished { armReadinessAfterMount() }
+        }
         .onChange(of: phase) { state in
             if state == .active {
                 if startupReady {

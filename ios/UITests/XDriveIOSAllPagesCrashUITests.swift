@@ -159,11 +159,19 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
                 ready(marker, app: app)
             }
             tap("native-ios-tab-dynamic", app: app)
-            let map = app.descendants(matching: .any).matching(
-                identifier: "native-ios-map-source-selector"
-            ).firstMatch
-            XCTAssertTrue(map.waitForExistence(timeout: 12),
-                          "Dynamic tab did not mount the actual native MapKit route")
+            // The dynamic slot can legitimately restore Notes, Clipboard,
+            // Backup or Transfers after the preceding Launcher journeys.
+            // Its empty state offers "打开地图"; MapKit opens only AFTER that
+            // button is tapped. Never demand a hidden Gallery MapKit child.
+            let eligible: [XCUIElement] = [
+                app.buttons["打开地图"].firstMatch,
+                element("native-ios-backup-overview", app: app),
+                element("ios-clipboard-status", app: app),
+                element("native-ios-transfer-overview", app: app),
+                app.segmentedControls["笔记来源"].firstMatch
+            ]
+            XCTAssertTrue(eligible.contains(where: { $0.exists }),
+                          "Dynamic tab did not mount its real selected feature or Map shortcut")
             XCUIDevice.shared.press(.home)
             app.activate()
             XCTAssertEqual(app.state, .runningForeground, "Failed to resume dynamic tab")

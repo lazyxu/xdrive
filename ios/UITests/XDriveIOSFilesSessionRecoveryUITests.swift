@@ -4,7 +4,13 @@ import UIKit
 /// Actual no-Session SwiftUI routes with a synthetic Owner and no bearer.
 /// These are native mount/Back/AX regressions, NOT a real signed-iPhone FPS test.
 final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        // The previous XCTest may finish a landscape navigation failure.
+        // Every independent test must begin in known portrait geometry,
+        // while rotation tests still exercise real iOS orientation changes.
+        XCUIDevice.shared.orientation = .portrait
+    }
 
     private func launch(owner: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
@@ -31,8 +37,18 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
 
     private func files(_ app: XCUIApplication) {
         tap("native-ios-tab-files", app)
-        XCTAssertTrue(element("native-ios-files-section-browse", app)
-            .waitForExistence(timeout: 15))
+        let browse = element("native-ios-files-section-browse", app)
+        XCTAssertTrue(browse.waitForExistence(timeout: 15))
+        // The real Files quick rail persists Recent/Favorites by Owner.
+        // Existence of the Browse button does NOT mean the Browse Home List
+        // is mounted; all Home/Organizer tests explicitly enter Browse.
+        if (browse.value as? String) != "已选择" {
+            tap("native-ios-files-section-browse", app)
+        }
+        XCTAssertEqual(browse.value as? String, "已选择",
+                       "Files Home tests must enter the actual Browse route")
+        XCTAssertTrue(element("native-ios-files-home-list", app)
+            .waitForExistence(timeout: 15), "Files Browse Home list did not mount")
     }
 
     private func expect(_ id: String, _ app: XCUIApplication) {
@@ -49,7 +65,10 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
             XCTFail("No native frame after " + route)
             return
         }
-        let width = 24, height = 32
+        // Preserve the >8-colour blank-frame guard but resolve small text
+        // strokes in the very short landscape Organizer sheet. The older
+        // 24x32 downsample erased real text and misclassified a valid sheet.
+        let width = 96, height = 64
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
         let rendered = rgba.withUnsafeMutableBytes { bytes -> Bool in
             guard let base = bytes.baseAddress,
@@ -291,7 +310,7 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     /// Search this Home List only; never force an unreadable child AX tree.
     private func openHomeShortcut(_ id: String, _ app: XCUIApplication) {
         let item = element(id, app)
-        if !item.exists {
+        if !item.exists || !item.isHittable {
             // Scroll the actual Files Home List, never a retained Gallery
             // collection from the process-wide accessibility hierarchy.
             let list = element("native-ios-files-home-list", app)
