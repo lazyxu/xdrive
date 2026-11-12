@@ -64,6 +64,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var explicitOriginalAudit = false
     @State private var viewerReturnAnchor: String?
     @State private var viewerReturnPage = 0
+    // Exact Owner-authorized page that opened Viewer; its first frame is retained.
+    @State private var viewerOpeningPage: Int?
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var started = false
     @Environment(\.scenePhase) private var phase
@@ -215,11 +217,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                          phase != .active || !isTabActive,
                                     open: { payload, position in
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+                                        viewerOpeningPage = payload.number
                                         selected = .init(owner: owner, page: payload, position: position)
                                     }, loaded: {
                                         if selected == nil, let anchor = viewerReturnAnchor, viewerReturnPage == page.id {
                                             scroll.scrollTo(anchor, anchor: .center)
                                             viewerReturnAnchor = nil
+                                            viewerOpeningPage = nil
                                         }
                                     }, pairing: { pairing = $0 })
                                     .id("unified-page-\(page.id)")
@@ -235,7 +239,18 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     enabled: selected == nil && phase == .active && !showFilters && isTabActive
                 )
                 .onChange(of: selected?.id) { selection in
-                    if selection == nil, viewerReturnAnchor != nil {
+                    guard selection == nil, phase == .active, isTabActive,
+                          let anchor = viewerReturnAnchor else { return }
+                    if viewerOpeningPage == viewerReturnPage {
+                        // Same retained verified page: restore the exact row directly
+                        // rather than flashing the page's top before final restoration.
+                        scroll.scrollTo(anchor, anchor: .center)
+                        // A retained page may not emit loaded() again. Consume once.
+                        viewerReturnAnchor = nil
+                        viewerOpeningPage = nil
+                    } else {
+                        // Filmstrip crossed a lazy page: materialize its signed page,
+                        // then let loaded() restore the exact authorized row.
                         scroll.scrollTo("unified-page-\(viewerReturnPage)", anchor: .top)
                     }
                 }
@@ -436,7 +451,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         }
     }
 
-    private func resetWall() { selected = nil; viewerReturnAnchor = nil; wall.reset() }
+    private func resetWall() {
+        selected = nil
+        viewerReturnAnchor = nil
+        viewerOpeningPage = nil
+        wall.reset()
+    }
     private func requestOriginalAudit(retryUnavailable: Bool) {
         // An explicit diagnostic is independent from upload scheduling.
         self.retryUnavailable = retryUnavailable

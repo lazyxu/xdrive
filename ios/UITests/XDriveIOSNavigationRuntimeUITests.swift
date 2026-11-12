@@ -353,4 +353,162 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    // Six distinct tap-driven native transition journeys. These deliberately
+    // use the real no-session / synthetic-Owner UI and assert each child after
+    // navigation rather than treating a colored tab bar as a rendered page.
+    // PNG samples diagnose candidate blanks; they are not 60/120-Hz proof.
+    private func observedSelect(_ identifier: String, in app: XCUIApplication) {
+        let element = find(identifier, in: app)
+        XCTAssertTrue(element.exists, "Native route missing before tap: \(identifier)")
+        print("IOS_NATIVE_NAV_TAP_START route=\(identifier)")
+        element.tap()
+        XCTAssertEqual(app.state, .runningForeground, "Exited after \(identifier)")
+    }
+
+    private func observedFilesHomeEntry(_ identifier: String, in app: XCUIApplication) {
+        let element = filesHomeEntry(identifier, in: app)
+        print("IOS_NATIVE_NAV_TAP_START route=\(identifier)")
+        element.tap()
+        XCTAssertEqual(app.state, .runningForeground, "Exited after \(identifier)")
+    }
+
+    private func assertChildAndCapture(
+        _ identifier: String, in app: XCUIApplication, label: String
+    ) {
+        XCTAssertTrue(find(identifier, in: app).waitForExistence(timeout: 15),
+                      "Real native child absent: \(label)")
+        XCTAssertEqual(app.state, .runningForeground)
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = label
+        evidence.lifetime = .keepAlways
+        add(evidence)
+    }
+
+    func testSavedSearchesSheetOriginalsAndFilesReturnKeepsContent() {
+        let app = launch(syntheticOwner: true)
+        observedSelect("native-ios-tab-files", in: app)
+        observedFilesHomeEntry("native-ios-files-open-saved-searches", in: app)
+        assertChildAndCapture("native-ios-files-saved-searches-page", in: app,
+                              label: "saved-searches-before-gallery")
+        let done = app.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        observedSelect("native-ios-tab-gallery", in: app)
+        observedSelect("native-ios-gallery-source-originals", in: app)
+        assertChildAndCapture("native-ios-cloud-original-layout-help", in: app,
+                              label: "originals-after-saved-searches")
+        observedSelect("native-ios-tab-files", in: app)
+        assertChildAndCapture("native-ios-files-section-browse", in: app,
+                              label: "files-after-originals")
+    }
+
+    func testOperationsHistoryGalleryPeopleAndFilesReturnKeepsContent() {
+        let app = launch(syntheticOwner: true)
+        observedSelect("native-ios-tab-files", in: app)
+        observedFilesHomeEntry("native-ios-files-open-operations", in: app)
+        assertChildAndCapture("native-ios-files-operation-history-page", in: app,
+                              label: "operations-before-people")
+        let done = find("native-ios-files-operation-history-done", in: app)
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        observedSelect("native-ios-tab-gallery", in: app)
+        observedSelect("native-ios-gallery-people", in: app)
+        assertChildAndCapture("native-ios-gallery-people-page", in: app,
+                              label: "gallery-people-after-operations")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        observedSelect("native-ios-tab-files", in: app)
+        assertChildAndCapture("native-ios-files-section-browse", in: app,
+                              label: "files-after-people")
+    }
+
+    func testTrashDenialGalleryFilterCancelAndFilesReturnKeepsContent() {
+        let app = launch(syntheticOwner: true)
+        observedSelect("native-ios-tab-files", in: app)
+        observedSelect("native-ios-files-open-trash", in: app)
+        assertChildAndCapture("native-ios-files-trash-error-page", in: app,
+                              label: "trash-denied-child")
+        observedSelect("native-ios-files-trash-error-return", in: app)
+        observedSelect("native-ios-tab-gallery", in: app)
+        observedSelect("native-ios-gallery-open-filters", in: app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        assertChildAndCapture("native-ios-gallery-open-filters", in: app,
+                              label: "gallery-after-trash-and-filter")
+        observedSelect("native-ios-tab-files", in: app)
+        assertChildAndCapture("native-ios-files-section-browse", in: app,
+                              label: "files-after-trash-filter")
+        XCTAssertFalse(find("native-ios-files-trash-error-page", in: app).exists,
+                       "Denied Trash child must not remain above Files Home")
+    }
+
+    func testFilesHomeEditGallerySourceRoundtripKeepsBrowse() {
+        let app = launch(syntheticOwner: true)
+        observedSelect("native-ios-tab-files", in: app)
+        let edit = find("native-ios-files-home-edit-toggle", in: app)
+        XCTAssertTrue(edit.waitForExistence(timeout: 15))
+        edit.tap()
+        XCTAssertEqual(edit.label, "完成")
+        observedSelect("native-ios-tab-gallery", in: app)
+        observedSelect("native-ios-gallery-source-albums", in: app)
+        observedSelect("native-ios-gallery-source-unified", in: app)
+        assertChildAndCapture("native-ios-gallery-open-filters", in: app,
+                              label: "gallery-after-files-edit")
+        observedSelect("native-ios-tab-files", in: app)
+        let returningEdit = find("native-ios-files-home-edit-toggle", in: app)
+        XCTAssertTrue(returningEdit.waitForExistence(timeout: 15))
+        if returningEdit.label == "完成" { returningEdit.tap() }
+        assertChildAndCapture("native-ios-files-section-browse", in: app,
+                              label: "files-browse-after-edit")
+    }
+
+    func testFilesSearchKeyboardMineCacheReturnKeepsFiles() {
+        let app = launch(syntheticOwner: true)
+        observedSelect("native-ios-tab-files", in: app)
+        let search = app.searchFields["搜索全部文件"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        search.tap()
+        search.typeText("cross-page")
+        observedSelect("native-ios-tab-mine", in: app)
+        let cacheButton = app.buttons["缩略图缓存"].firstMatch
+        if cacheButton.waitForExistence(timeout: 8) {
+            cacheButton.tap()
+        } else {
+            let cacheLabel = app.staticTexts["缩略图缓存"].firstMatch
+            XCTAssertTrue(cacheLabel.waitForExistence(timeout: 12))
+            cacheLabel.tap()
+        }
+        assertChildAndCapture("native-ios-gallery-thumbnail-cache", in: app,
+                              label: "mine-cache-after-files-keyboard")
+        let back = app.navigationBars["缩略图缓存"].buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        observedSelect("native-ios-tab-files", in: app)
+        assertChildAndCapture("native-ios-files-section-browse", in: app,
+                              label: "files-after-mine-cache")
+    }
+
+    func testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent() {
+        let app = launch(syntheticOwner: true)
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        observedSelect("native-ios-tab-files", in: app)
+        observedFilesHomeEntry("native-ios-files-open-saved-searches", in: app)
+        assertChildAndCapture("native-ios-files-saved-searches-page", in: app,
+                              label: "saved-searches-portrait")
+        device.orientation = .landscapeLeft
+        assertChildAndCapture("native-ios-files-saved-searches-page", in: app,
+                              label: "saved-searches-landscape")
+        let done = app.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        device.orientation = .portrait
+        observedSelect("native-ios-tab-gallery", in: app)
+        observedSelect("native-ios-tab-files", in: app)
+        assertChildAndCapture("native-ios-files-section-browse", in: app,
+                              label: "files-after-sheet-rotation")
+    }
+
 }
