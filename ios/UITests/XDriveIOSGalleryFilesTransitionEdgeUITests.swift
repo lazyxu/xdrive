@@ -227,4 +227,103 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
             assertPixels(app, "Gallery after mixed source/Files cycle \(i)")
         }
     }
+    // Five *real* native cross-page regression journeys. A signed-out launch
+    // must not synthesize Owner media or claim physical iPhone frame pacing.
+    func testMapShortcutThenExplicitUnifiedFilesReturn() {
+        let app = launch()
+        tap("native-ios-tab-dynamic", app)
+        XCTAssertTrue(target("native-ios-map-source-selector", app)
+            .waitForExistence(timeout: 15), "Dynamic fallback did not mount real Map")
+        tap("native-ios-gallery-source-unified", app)
+        XCTAssertTrue(target("native-ios-unified-photo-gallery", app)
+            .waitForExistence(timeout: 15), "Unified Gallery failed to open from Map")
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        tap("native-ios-files-section-recent", app)
+        tap("native-ios-files-section-browse", app)
+        tap("native-ios-tab-gallery", app)
+        assertGallery(app)
+        assertPixels(app, "Map shortcut Unified Files return")
+    }
+
+    func testMapShortcutFilesRailThenMapReentryKeepsRoute() {
+        let app = launch()
+        tap("native-ios-tab-dynamic", app)
+        XCTAssertTrue(target("native-ios-map-source-selector", app)
+            .waitForExistence(timeout: 15), "Map shortcut was missing")
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        for section in ["favorites", "recent", "browse", "favorites", "browse"] {
+            tap("native-ios-files-section-\(section)", app)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app)
+        XCTAssertTrue(target("native-ios-map-source-selector", app)
+            .waitForExistence(timeout: 15), "Map was replaced by a stale Gallery wall")
+        assertPixels(app, "Map after five Files quick rail changes")
+    }
+
+    func testOriginalsHelpFilesDeniedChildThenUnifiedRecovery() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-gallery-source-originals", app)
+        tap("native-ios-cloud-original-layout-help", app)
+        let help = app.alerts["云端备份原件说明"].firstMatch
+        XCTAssertTrue(help.waitForExistence(timeout: 15))
+        help.buttons["完成"].tap()
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        tap("native-ios-files-open-root-location", app)
+        XCTAssertTrue(target("native-ios-files-error-page", app)
+            .waitForExistence(timeout: 15), "Denied Owner must show recovery, not a cached file")
+        tap("native-ios-files-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        XCTAssertTrue(target("native-ios-cloud-original-layout-help", app)
+            .waitForExistence(timeout: 15), "Originals source lost after Files denial")
+        tap("native-ios-gallery-source-unified", app)
+        assertGallery(app)
+        assertPixels(app, "Originals Files denial Unified return")
+    }
+
+    func testPeopleFilesSectionsBackgroundAndPeopleReentry() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-gallery-people", app)
+        closePeople(app)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        for section in ["recent", "favorites", "browse"] {
+            tap("native-ios-files-section-\(section)", app)
+            assertFiles(app)
+        }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-people", app)
+        closePeople(app)
+        assertPixels(app, "People after Files foreground return")
+    }
+
+    func testLocalPhotosFilesRecentOriginalsThenLocalReturn() {
+        let app = launch()
+        tap("native-ios-gallery-source-menu", app)
+        let local = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(local.waitForExistence(timeout: 15))
+        local.tap()
+        XCTAssertTrue(target("native-ios-local-timeline-open", app)
+            .waitForExistence(timeout: 15), "Real PhotoKit timeline did not mount")
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        tap("native-ios-files-section-recent", app)
+        tap("native-ios-files-section-browse", app)
+        tap("native-ios-tab-gallery", app)
+        XCTAssertTrue(target("native-ios-local-timeline-open", app)
+            .waitForExistence(timeout: 15), "Local PhotoKit route disappeared on Files return")
+        tap("native-ios-gallery-source-originals", app)
+        XCTAssertTrue(target("native-ios-cloud-original-layout-help", app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-gallery-source-local", app)
+        XCTAssertTrue(target("native-ios-local-timeline-open", app)
+            .waitForExistence(timeout: 15))
+        assertPixels(app, "Local Photos after Originals and Files")
+    }
 }

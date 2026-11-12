@@ -226,6 +226,16 @@ TARGETS.update({
     "testFilesRootDenialLandscapeGalleryAlbumsReturn",
     "testOriginalsAlbumsFilesQuickRailThreeCyclesKeepsPages",
 })
+# Five further navigation/foreground regression journeys, all real UI taps.
+# Keep diagnostic frames; a sparse/empty state is not an automatic flicker.
+NAV_TARGETS.update({
+    "testMapShortcutThenExplicitUnifiedFilesReturn",
+    "testMapShortcutFilesRailThenMapReentryKeepsRoute",
+    "testOriginalsHelpFilesDeniedChildThenUnifiedRecovery",
+    "testPeopleFilesSectionsBackgroundAndPeopleReentry",
+    "testLocalPhotosFilesRecentOriginalsThenLocalReturn",
+})
+TARGETS.update(NAV_TARGETS)
 # Cross-feature native crash reproduction and two-cycle Operation History foreground regression.
 # This records tap-adjacent diagnostics; it is not a physical FPS claim.
 TARGETS.update({

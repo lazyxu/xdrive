@@ -63,3 +63,28 @@ test('six production iOS Gallery/Files child journeys are executed and filmed by
   assert.match(flow, /ios\/UITests\/XDriveIOSGalleryFilesTransitionEdgeUITests\.swift/)
   assert.doesNotMatch(ui, /WKWebView|fakeToken|mockPhotoKit|Data\(contentsOf:/)
 })
+
+test('five additional real Simulator Gallery/Files transitions use source-correct child routes', () => {
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  const watcher = read('ios/scripts/capture-navigation-smoke-frames.py')
+  const flow = read('.github/workflows/ios-native-navigation-runtime.yml')
+  const additional = [
+    'testMapShortcutThenExplicitUnifiedFilesReturn',
+    'testMapShortcutFilesRailThenMapReentryKeepsRoute',
+    'testOriginalsHelpFilesDeniedChildThenUnifiedRecovery',
+    'testPeopleFilesSectionsBackgroundAndPeopleReentry',
+    'testLocalPhotosFilesRecentOriginalsThenLocalReturn',
+  ]
+  for (const method of additional) {
+    assert.ok(ui.includes('func ' + method + '()'), 'Native XCTest missing: ' + method)
+    assert.ok(watcher.includes('"' + method + '"'), 'Real frame observer must register: ' + method)
+  }
+  assert.match(ui, /tap\("native-ios-tab-dynamic", app\)/)
+  assert.match(ui, /native-ios-map-source-selector/)
+  assert.match(ui, /native-ios-gallery-source-unified/)
+  assert.match(ui, /native-ios-files-error-page/)
+  assert.match(ui, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(ui, /native-ios-local-timeline-open/)
+  assert.match(flow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSGalleryFilesTransitionEdgeUITests/)
+  assert.doesNotMatch(ui, /mockPhotoKit|fakeToken|Data\(contentsOf:|WKWebView/)
+})
