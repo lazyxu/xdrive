@@ -223,6 +223,7 @@ jobs:
           python3 scripts/test-release-attestation-contract.py
           python3 -m unittest discover -s scripts -p 'test_release_bundle.py'
           python3 -m unittest discover -s scripts/ci -p 'test_generate_release_bundle.py'
+          python3 -m unittest discover -s scripts/ci -p 'test_package_standalone_cli.py'
           python3 -m unittest discover -s scripts/ci -p 'test_publish_release_bundle.py'
           python3 -m unittest discover -s scripts/ci -p 'test_verify_live_release_bundle.py'
           bash scripts/ci/test-optional-client-release.sh
@@ -439,6 +440,10 @@ jobs:
         run: |
           bash scripts/package-backup-cli.sh release/core release/backup-cli
           bash scripts/ci/test-backup-cli-archives.sh "$XDRIVE_RELEASE_VERSION" release/backup-cli release/core
+      - name: Package source-exact portable xd/Agent CLI distribution
+        run: |
+          python3 scripts/ci/package-standalone-cli.py release/core release/standalone-cli --commit "$GITHUB_SHA"
+          python3 -m unittest discover -s scripts/ci -p 'test_package_standalone_cli.py'
       - name: Build and validate DSM armada38x SPK from the original client
         shell: bash
         run: |
@@ -471,6 +476,12 @@ jobs:
         with:
           name: xdrive-backup-cli
           path: release/backup-cli
+          if-no-files-found: error
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-standalone-cli
+          path: release/standalone-cli
           if-no-files-found: error
           retention-days: 2
       - uses: actions/upload-artifact@v4

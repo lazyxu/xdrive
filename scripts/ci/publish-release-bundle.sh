@@ -120,7 +120,7 @@ if ! gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
   fi
   gh release create "$tag" "${assets[@]}" --repo "$repo" \
     --target "$sha" --prerelease --title "xDrive bundle ${sha:0:12}" \
-    --notes "Immutable client artifacts built from complete Git Commit $sha. Optional platforms may be absent. Android debug APKs are manual testing only."
+    --notes "Content-addressed client artifacts built from complete Git Commit $sha. Platform-level Release immutability is checked independently after publication. Optional platforms may be absent. Android debug APKs are manual testing only."
 fi
 
 ref="$(gh api "repos/$repo/git/ref/tags/$tag" --jq '.object.sha')"
@@ -136,4 +136,6 @@ for path in "${assets[@]}"; do
   actual="$(jq -r --arg name "$name" '[.assets[] | select(.name == $name) | .digest] | if length == 1 then .[0] else empty end' <<< "$remote")"
   [[ "$actual" == "$expected" ]] || { echo "Immutable Bundle asset digest mismatch: $name" >&2; exit 1; }
 done
-echo "Published and verified immutable $tag with ${#names[@]} client artifacts."
+# Exact digest comparison is not proof that GitHub has locked Release mutation.
+# The independent parent CI verifies immutable:true and the Sigstore proof.
+echo "Published exact-commit $tag with ${#names[@]} verified client artifacts; platform immutability awaits independent acceptance."
