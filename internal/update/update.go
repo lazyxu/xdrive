@@ -530,6 +530,21 @@ func InstallPreviouslyVerified(ctx context.Context, pathname string, result Resu
 	return installDownloaded(ctx, pathname, result)
 }
 
+// ResolveReleaseAssetSHA256 obtains an independent release-channel digest
+// without downloading or executing an installer. GitLab Release links may not
+// expose an inline digest; in that case fetch the channel's SHA256SUMS.txt.
+// A current authenticated Server's Bundle listing may only be preferred when
+// this independently selected release hash exactly agrees with it.
+func ResolveReleaseAssetSHA256(ctx context.Context, result Result) (string, error) {
+	if digest, ok := assetSHA256(result.Asset); ok {
+		return digest, nil
+	}
+	if result.Asset.Name == "" {
+		return "", errors.New("release installer name is missing")
+	}
+	return downloadChecksum(ctx, DefaultChecker(), result.Checksums, result.Asset.Name, result.Current, nil)
+}
+
 func DownloadVerified(ctx context.Context, checker Checker, result Result, dir string) (string, error) {
 	return DownloadVerifiedWithProgress(ctx, checker, result, dir, nil)
 }
