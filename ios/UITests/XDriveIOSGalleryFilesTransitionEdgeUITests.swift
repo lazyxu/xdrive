@@ -321,7 +321,16 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
         tap("native-ios-gallery-source-originals", app)
         XCTAssertTrue(target("native-ios-cloud-original-layout-help", app)
             .waitForExistence(timeout: 15))
-        tap("native-ios-gallery-source-local", app)
+        // Only the active Local source has a direct gallery chip.
+        // Originals -> Local must go through the actual single-source menu.
+        tap("native-ios-gallery-source-menu", app)
+        let localReturn = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(localReturn.waitForExistence(timeout: 15),
+                      "Local Photos action missing from the real source chooser")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-source-menu-local")
+        localReturn.tap()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Process exited after Originals to Local Photos return")
         XCTAssertTrue(target("native-ios-local-timeline-open", app)
             .waitForExistence(timeout: 15))
         assertPixels(app, "Local Photos after Originals and Files")

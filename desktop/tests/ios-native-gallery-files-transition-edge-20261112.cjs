@@ -88,3 +88,22 @@ test('five additional real Simulator Gallery/Files transitions use source-correc
   assert.match(flow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSGalleryFilesTransitionEdgeUITests/)
   assert.doesNotMatch(ui, /mockPhotoKit|fakeToken|Data\(contentsOf:|WKWebView/)
 })
+
+test('Originals to Local Photos returns via the real visible source menu', () => {
+  const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  assert.match(dashboard, /\(\$0 != \.local && \$0 != \.cloud\) \|\| \$0 == gallerySource/,
+    'Dashboard hides Local chip unless Local is already active')
+  const start = ui.indexOf('func testLocalPhotosFilesRecentOriginalsThenLocalReturn()')
+  assert.ok(start >= 0, 'Missing actual cross-page XCTest journey')
+  const route = ui.slice(start, ui.indexOf('\n    }', start))
+  const originals = route.indexOf('tap("native-ios-gallery-source-originals", app)')
+  const chooser = route.indexOf('tap("native-ios-gallery-source-menu", app)', originals)
+  assert.ok(originals >= 0 && chooser > originals,
+    'Originals must navigate back using the reachable source chooser')
+  assert.match(route.slice(chooser), /app\.buttons\["本机照片"\]\.firstMatch/)
+  assert.match(route.slice(chooser), /localReturn\.tap\(\)/)
+  assert.match(route.slice(chooser), /XCTAssertEqual\(app\.state, \.runningForeground/)
+  assert.doesNotMatch(route.slice(originals), /tap\("native-ios-gallery-source-local", app\)/,
+    'The hidden Local chip cannot be tapped from Originals')
+})
