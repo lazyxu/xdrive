@@ -1,0 +1,38 @@
+'use strict'
+
+const {test} = require('node:test')
+const assert = require('node:assert/strict')
+const {readFileSync} = require('node:fs')
+const {join} = require('node:path')
+const root = join(__dirname, '../..')
+const source = readFileSync(join(root, 'ios/UITests/XDriveIOSNativeResourcePerformanceUITests.swift'), 'utf8')
+
+test('native Files AX staging does not tap a previously selected Browse route', () => {
+  const start = source.indexOf('private func ensureFilesSection(')
+  const stop = source.indexOf('private func homeEntry(', start)
+  assert.ok(start >= 0 && stop > start)
+  const stage = source.slice(start, stop)
+  assert.match(stage, /control\.waitForExistence\(timeout: 15\)/)
+  assert.match(stage, /if \(control\.value as\? String\) != "已选择" \{[\s\S]*?tap\(id, app\)/)
+  assert.match(stage, /XCTAssertEqual\(control\.value as\? String, "已选择"/)
+  assert.match(stage, /XCTAssertEqual\(app\.state, \.runningForeground\)/)
+})
+test('staging enters the true Files destination before resource measurement starts', () => {
+  const stage = source.slice(source.indexOf('private func stage('),source.indexOf('private func perform('))
+  assert.match(stage, /ensureFilesSection\(route == "files\.browse" \? "favorites" : "browse", app\)/)
+  assert.ok(!stage.includes('tap(route == "files.browse"'))
+  const runner = source.slice(source.indexOf('private func run('),source.indexOf('private func runCold('))
+  assert.ok(runner.indexOf('stage(route, app)') < runner.indexOf('startMeasuring()'))
+  assert.ok(runner.indexOf('startMeasuring()') < runner.indexOf('perform(route, app)'))
+  assert.ok(runner.indexOf('perform(route, app)') < runner.indexOf('stopMeasuring()'))
+})
+test('all 25 native resource routes and at least three real metric samples stay mandatory', () => {
+  const cases = [...source.matchAll(/func testResource\w+\(\)/g)].map(x=>x[0])
+  assert.equal(cases.length,25)
+  assert.equal(new Set(cases).size,25)
+  assert.match(source,/options\.iterationCount = 3/)
+  assert.match(source,/XCTCPUMetric\(application: app\)/)
+  assert.match(source,/XCTMemoryMetric\(application: app\)/)
+  assert.match(source,/XCTOSSignpostMetric\.navigationTransitionMetric/)
+  assert.match(source,/XCTHitchMetric\(application: app\)/)
+})

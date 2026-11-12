@@ -15,6 +15,23 @@ final class XDriveIOSNativeResourcePerformanceUITests: XCTestCase {
         e.tap()
         XCTAssertEqual(app.state, .runningForeground)
     }
+    /// The Files rail is Owner-scoped and persists the last selected page.
+    /// When Browse is *already* selected, tapping it again is neither a route
+    /// transition nor required staging. XCUITest's AXScrollToVisible can fail
+    /// on a selected, covered SwiftUI rail control; do not mistake that for
+    /// an application frame hitch or invent a successful navigation sample.
+    private func ensureFilesSection(_ key: String, _ app: XCUIApplication) {
+        let id = "native-ios-files-section-" + key
+        let control = item(id, app)
+        XCTAssertTrue(control.waitForExistence(timeout: 15),
+                      "Files staging rail is missing: \(key)")
+        if (control.value as? String) != "已选择" {
+            tap(id, app)
+        }
+        XCTAssertEqual(control.value as? String, "已选择",
+                       "Files staging must have the real selected route: \(key)")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
     private func homeEntry(_ id: String, _ app: XCUIApplication) -> XCUIElement {
         let e = app.buttons.matching(identifier: id).firstMatch
         let list = app.collectionViews.firstMatch
@@ -61,8 +78,7 @@ final class XDriveIOSNativeResourcePerformanceUITests: XCTestCase {
              "files.cloud-denied", "files.trash-denied",
              "files.saved-searches", "files.operation-history", "files.search-input":
             tap("native-ios-tab-files", app)
-            tap(route == "files.browse" ?
-                "native-ios-files-section-favorites" : "native-ios-files-section-browse", app)
+            ensureFilesSection(route == "files.browse" ? "favorites" : "browse", app)
             if route == "files.saved-searches" {
                 _ = homeEntry("native-ios-files-open-saved-searches", app)
             }
