@@ -266,6 +266,27 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
                        "Native app exited opening Files operations")
     }
 
+    /// A Files tab remains mounted while its operations Sheet dismisses.
+    /// Observe the real SwiftUI modal retirement, not a covered tab, before
+    /// attempting navigation to Gallery. This still fails a stuck Sheet.
+    private func awaitOperationsSheetRetired(_ app: XCUIApplication) {
+        let sheet = target("native-ios-files-operation-history-page", app: app)
+        let dismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: sheet)
+        let status = XCTWaiter.wait(for: [dismissed], timeout: 12)
+        if status != .completed {
+            let evidence = XCTAttachment(screenshot: app.screenshot())
+            evidence.name = "operation-history-sheet-stuck-after-done"
+            evidence.lifetime = .keepAlways
+            add(evidence)
+            print("IOS_NATIVE_NAV_ERROR operations-sheet-persisted appState=\(app.state.rawValue)")
+        }
+        XCTAssertEqual(status, .completed,
+                       "Operations Sheet remained mounted after Done; Gallery tab is covered")
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Native process exited during operations Sheet dismissal")
+    }
+
     func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages() {
         let app = launch(syntheticOwner: true)
         tap("native-ios-tab-files", app: app)
@@ -278,6 +299,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         XCTAssertTrue(done.waitForExistence(timeout: 15),
                       "Operation history has no close action after denial")
         done.tap()
+        awaitOperationsSheetRetired(app)
         assertFiles(app)
         tap("native-ios-tab-gallery", app: app)
         assertGallery(app)
@@ -296,10 +318,21 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         let done = target("native-ios-files-operation-history-done", app: app)
         XCTAssertTrue(done.waitForExistence(timeout: 15))
         done.tap()
+        awaitOperationsSheetRetired(app)
         assertFiles(app)
         assertVisiblePixels(app, route: "Files after operations foreground")
         tap("native-ios-tab-gallery", app: app)
-        assertGallery(app)
+        let gallery = target("native-ios-gallery-source-unified", app: app)
+        guard gallery.waitForExistence(timeout: 15) else {
+            let evidence = XCTAttachment(screenshot: app.screenshot())
+            evidence.name = "gallery-not-mounted-after-operations-foreground"
+            evidence.lifetime = .keepAlways
+            add(evidence)
+            print("IOS_NATIVE_NAV_ERROR gallery-return-failed appState=\(app.state.rawValue)")
+            XCTFail("Gallery source rail was lost after operations Sheet retirement")
+            return
+        }
+        XCTAssertEqual(app.state, .runningForeground)
         assertVisiblePixels(app, route: "Gallery after operations foreground")
     }
 
