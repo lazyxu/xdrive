@@ -1,4 +1,7 @@
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box as MuiBox,
   CircularProgress,
   FormControl,
@@ -12,18 +15,24 @@ import {
 } from '@mui/material'
 import {
   XDriveActionButton,
-  XDriveMetricCard,
-  XDriveMetricGrid,
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
 import { formatBytes, formatBytesPerSecond } from '@xdrive/shared'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 
+/** Snapshot is only a label: only full published Git Commits can establish equality. */
+function releaseCommit(state: AgentUpdateState): string | undefined {
+  const note = state.release_notes?.match(/\bXDRIVE_RELEASE_COMMIT=([0-9a-f]{40})\b/i)?.[1]
+  const name = state.release_name?.match(/\b([0-9a-f]{40})\b/i)?.[1]
+  const version = state.latest_version?.match(/\b([0-9a-f]{40})\b/i)?.[1]
+  return (note || name || version)?.toLowerCase()
+}
 function updateStatusLabel(state: AgentUpdateState | null) {
   if (!state) return '未知'
   if (state.status === 'idle') return '等待检查'
   if (state.status === 'checking') return '正在检查'
   if (state.status === 'available') return '发现新版本'
-  if (state.status === 'up_to_date') return '已是最新'
+  if (state.status === 'up_to_date') return '更新通道未发现新版本'
   if (state.status === 'downloading') return '正在下载'
   if (state.status === 'downloaded') return '已下载，等待安装'
   if (state.status === 'installing') return '正在安装'
@@ -48,6 +57,7 @@ export type DesktopClientUpdateProps = {
   updateCancelSupported: boolean
   updateProgress: number
   currentVersion?: string
+  currentCommit?: string
   onUpdateSourceChange: (source: AgentUpdateSource) => void
   onUpdateModeChange: (mode: AgentUpdateMode) => void
   onCheckUpdate: () => void
@@ -65,6 +75,7 @@ export function DesktopClientUpdatePanel({
   updateCancelSupported,
   updateProgress,
   currentVersion,
+  currentCommit,
   onUpdateSourceChange,
   onUpdateModeChange,
   onCheckUpdate,
@@ -72,17 +83,32 @@ export function DesktopClientUpdatePanel({
   onInstallUpdate,
   onCancelUpdate,
 }: DesktopClientUpdateProps) {
+  const installedCommit = currentCommit && /^[0-9a-f]{40}$/i.test(currentCommit) ? currentCommit.toLowerCase() : undefined
+  const latestCommit = clientUpdate ? releaseCommit(clientUpdate) : undefined
+  const commitMatches = Boolean(installedCommit && latestCommit && installedCommit === latestCommit)
+  const commitDiffers = Boolean(installedCommit && latestCommit && installedCommit !== latestCommit)
+  const operating = clientUpdate?.status === 'checking' || clientUpdate?.status === 'downloading' ||
+    clientUpdate?.status === 'installing'
+  const busyNow = Boolean(busy) || updateOperationBusy || operating
+  const summary = !clientUpdate ? '正在读取版本'
+    : clientUpdate.status === 'error' ? '更新检查失败'
+    : clientUpdate.status === 'downloading' ? '正在下载更新'
+    : clientUpdate.status === 'installing' ? '正在安装更新'
+    : clientUpdate.status === 'checking' ? '正在检查更新'
+    : clientUpdate.update_available ? (clientUpdate.downloaded ? '已下载更新，等待安装' : '发现可用更新')
+    : clientUpdate.status === 'up_to_date' && commitDiffers ? '版本信息需要核对'
+    : clientUpdate.status === 'up_to_date' && commitMatches ? '当前已是最新版本'
+    : updateStatusLabel(clientUpdate)
   return (
   <Paper
     id="client-update-card"
     variant="outlined"
     sx={{
-      mt: 1.75,
-      p: 2,
-      borderRadius: 1.75,
+      p: { xs: 2, md: 2.5 },
+      borderRadius: 2,
       display: 'grid',
       gap: 1.5,
-      bgcolor: 'action.hover',
+      bgcolor: 'background.paper',
     }}
   >
     <Stack
@@ -92,11 +118,64 @@ export function DesktopClientUpdatePanel({
       justifyContent="space-between"
     >
       <MuiBox sx={{ minWidth: 0, display: 'grid', gap: 0.5 }}>
-        <Typography variant="subtitle2" fontWeight={700}>客户端更新</Typography>
+        <Typography variant="subtitle2" fontWeight={700}>当前设备 · 更新通道</Typography>
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
-          默认不自动更新。你可以选择只检查、自动下载，或自动下载安装。
+          仅更新本机 Desktop 与 Agent，不会自动升级 Server 或其他设备。
         </Typography>
       </MuiBox>
+
+    </Stack>
+
+    {!updateSupported ? (
+      <XDriveStatusAlert tone="warning">当前 xdrive-agent 不支持更新设置，请先安装包含新 Agent 的统一客户端版本。</XDriveStatusAlert>
+    ) : !clientUpdate ? (
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary' }}>
+        <CircularProgress size={16} />
+        <Typography variant="body2">正在读取客户端更新状态…</Typography>
+      </Stack>
+    ) : (
+      <>
+        <MuiBox role="status" aria-live="polite" sx={{ p: 2, borderRadius: 2, bgcolor: 'action.hover' }}>
+          <Typography variant="h6" fontWeight={700} data-client-update-status>{summary}</Typography>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2.5} sx={{ mt: 1.5 }}>
+            <MuiBox sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary">当前 Desktop</Typography>
+              <Typography variant="body1" fontWeight={600}>
+                {clientUpdate.current_version || currentVersion || '未知'}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+                Commit：{installedCommit ? installedCommit.slice(0, 12) : '未提供'}
+              </Typography>
+            </MuiBox>
+            <MuiBox sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary">更新通道中的版本</Typography>
+              <Typography variant="body1" fontWeight={600}>{clientUpdate.latest_version || '尚未检查'}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+                Commit：{latestCommit ? latestCommit.slice(0, 12) : '未提供'}
+              </Typography>
+            </MuiBox>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1.5 }}>
+            上次检查：{clientUpdate.last_checked_at ? new Date(clientUpdate.last_checked_at).toLocaleString() : '尚未检查'}
+          </Typography>
+        </MuiBox>
+        {commitDiffers && clientUpdate.status === 'up_to_date' && !clientUpdate.update_available ? (
+          <XDriveStatusAlert tone="warning">
+            更新通道报告没有新版本，但当前 Desktop 与最新发布的完整 Commit 不一致。
+            不能仅凭 snapshot 名称判断一致；请重新检查或查看发布详情。
+          </XDriveStatusAlert>
+        ) : null}
+        {clientUpdate.status === 'up_to_date' && !clientUpdate.update_available && (!installedCommit || !latestCommit) ? (
+          <Typography variant="caption" color="text.secondary">
+            更新通道未报告新版本；缺少完整 Commit，尚不能证明安装的程序与发布版本完全一致。
+          </Typography>
+        ) : null}
+        <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, '&:before': { display: 'none' } }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="body2" fontWeight={600}>更新设置、发布说明与技术信息</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Stack spacing={1.5}>
       {updateSupported && clientUpdate ? (
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ minWidth: { sm: 360 } }}>
           <FormControl size="small" sx={{ minWidth: 140 }}>
@@ -129,32 +208,6 @@ export function DesktopClientUpdatePanel({
           </FormControl>
         </Stack>
       ) : null}
-    </Stack>
-
-    {!updateSupported ? (
-      <XDriveStatusAlert tone="warning">当前 xdrive-agent 不支持更新设置，请先安装包含新 Agent 的统一客户端版本。</XDriveStatusAlert>
-    ) : !clientUpdate ? (
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary' }}>
-        <CircularProgress size={16} />
-        <Typography variant="body2">正在读取客户端更新状态…</Typography>
-      </Stack>
-    ) : (
-      <>
-        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-          当前来源：{clientUpdate.source === 'gitlab' ? 'GitLab · http://gitlab.t-fluid.com:1080' : 'GitHub'}。
-          {' '}{updateModeDescription(clientUpdate.mode)}
-          {!clientUpdate.install_supported ? ' 当前平台不会后台安装更新；下载后请使用系统包管理器完成安装。' : ''}
-        </Typography>
-        <XDriveMetricGrid>
-          <XDriveMetricCard title="当前版本" value={clientUpdate.current_version || currentVersion || '未知'} />
-          <XDriveMetricCard title="最新版本" value={clientUpdate.latest_version || '尚未检查'} />
-          <XDriveMetricCard title="状态" value={updateStatusLabel(clientUpdate)} />
-          <XDriveMetricCard title="发布时间" value={clientUpdate.published_at ? new Date(clientUpdate.published_at).toLocaleString() : '未知'} />
-          <XDriveMetricCard title="发布名称" value={clientUpdate.release_name || clientUpdate.latest_version || '—'} />
-          <XDriveMetricCard title="安装包大小" value={clientUpdate.bytes_total ? formatBytes(clientUpdate.bytes_total) : '未知'} />
-          <XDriveMetricCard title="更新通道" value={clientUpdate.channel || '—'} />
-          <XDriveMetricCard title="上次检查" value={clientUpdate.last_checked_at ? new Date(clientUpdate.last_checked_at).toLocaleString() : '尚未检查'} />
-        </XDriveMetricGrid>
         {clientUpdate.release_notes ? (
           <MuiBox sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
             <Typography variant="subtitle2" sx={{ mb: 0.75 }}>发布说明</Typography>
@@ -171,7 +224,25 @@ export function DesktopClientUpdatePanel({
           </MuiBox>
         ) : null}
 
-        {(clientUpdate.status === 'downloading' || clientUpdate.bytes_done || clientUpdate.bytes_total) ? (
+              <Typography variant="caption" color="text.secondary">
+                {updateModeDescription(clientUpdate.mode)}
+                仅影响 Agent 更新通道，不改变当前 Server Bundle 的下载顺序。
+              </Typography>
+              {installedCommit ? <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>本机 Commit：{installedCommit}</Typography> : null}
+              {latestCommit ? <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>通道 Commit：{latestCommit}</Typography> : null}
+              <Typography variant="caption">通道：{clientUpdate.channel || '未提供'} · 来源：{clientUpdate.source === 'gitlab' ? 'GitLab' : 'GitHub'}</Typography>
+              {clientUpdate.bytes_total ? <Typography variant="caption">安装包大小：{formatBytes(clientUpdate.bytes_total)}</Typography> : null}
+              {clientUpdate.published_at ? <Typography variant="caption">发布时间：{new Date(clientUpdate.published_at).toLocaleString()}</Typography> : null}
+              {clientUpdate.last_error && clientUpdate.status !== 'error' ? (
+                <Typography variant="caption" color="text.secondary">此前错误：{clientUpdate.last_error}</Typography>
+              ) : null}
+              <Typography variant="caption" color="text.secondary">
+                自动策略由 Agent 执行，约在启动 90 秒后首次检查，之后约每 6 小时检查。
+              </Typography>
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
+        {(clientUpdate.status === 'downloading' || clientUpdate.status === 'downloaded' || clientUpdate.status === 'installing') ? (
           <Stack spacing={0.75}>
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
@@ -201,49 +272,34 @@ export function DesktopClientUpdatePanel({
           </Stack>
         ) : null}
 
-        {clientUpdate.last_error ? <XDriveStatusAlert tone="bad">{clientUpdate.last_error}</XDriveStatusAlert> : null}
-        {!clientUpdate.last_error && clientUpdate.message ? <XDriveStatusAlert tone="neutral">{clientUpdate.message}</XDriveStatusAlert> : null}
+        {clientUpdate.status === 'error' && clientUpdate.last_error ? <XDriveStatusAlert tone="bad">{clientUpdate.last_error}</XDriveStatusAlert> : null}
+        {clientUpdate.status === 'error' && !clientUpdate.last_error && clientUpdate.message ? <XDriveStatusAlert tone="bad">{clientUpdate.message}</XDriveStatusAlert> : null}
 
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+        {clientUpdate.downloaded && clientUpdate.update_available && !clientUpdate.install_supported ? (
+          <XDriveStatusAlert tone="neutral">安装包已经下载。本机不支持自动安装，请使用系统安装程序。</XDriveStatusAlert>
+        ) : null}
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" data-client-update-actions>
+          {clientUpdate.update_available && !operating && (clientUpdate.install_supported || !clientUpdate.downloaded) ? (
+            <XDriveActionButton intent="primary" disabled={busyNow}
+              onClick={clientUpdate.install_supported ? onInstallUpdate : onDownloadUpdate}>
+              {clientUpdate.install_supported
+                ? (clientUpdate.downloaded ? '安装更新' : '下载并安装')
+                : '下载更新'}
+            </XDriveActionButton>
+          ) : null}
           <XDriveActionButton
-            disabled={Boolean(busy) || updateOperationBusy}
+            disabled={busyNow}
             loading={busy === 'update-check' || clientUpdate.status === 'checking'}
             loadingLabel="正在检查…"
             onClick={onCheckUpdate}
           >
-            检查更新
-          </XDriveActionButton>
-          <XDriveActionButton
-            disabled={Boolean(busy) || updateOperationBusy || !clientUpdate.update_available || clientUpdate.downloaded}
-            loading={busy === 'update-download' || clientUpdate.status === 'downloading'}
-            loadingLabel="正在下载…"
-            onClick={onDownloadUpdate}
-          >
-            {clientUpdate.downloaded ? '已下载' : '下载更新'}
-          </XDriveActionButton>
-          <XDriveActionButton
-            intent="primary"
-            disabled={Boolean(busy) || updateOperationBusy || !clientUpdate.update_available || !clientUpdate.install_supported}
-            loading={busy === 'update-install' || clientUpdate.status === 'installing'}
-            loadingLabel="正在安装…"
-            onClick={onInstallUpdate}
-          >
-            {clientUpdate.downloaded ? '安装更新' : '下载并安装'}
+            {clientUpdate.status === 'error' ? '重新检查' : '检查更新'}
           </XDriveActionButton>
           {updateCancelSupported && (clientUpdate.status === 'checking' || clientUpdate.status === 'downloading') ? (
-            <XDriveActionButton
-              disabled={updateCancelling}
-              loading={updateCancelling}
-              loadingLabel="正在取消…"
-              onClick={onCancelUpdate}
-            >
-              取消
-            </XDriveActionButton>
+            <XDriveActionButton disabled={updateCancelling} loading={updateCancelling}
+              loadingLabel="正在取消…" onClick={onCancelUpdate}>取消</XDriveActionButton>
           ) : null}
         </Stack>
-        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
-          自动策略在 Agent 启动后约 90 秒首次运行，之后约每 6 小时检查一次；切换到自动策略时会立即检查一次。
-        </Typography>
       </>
     )}
   </Paper>

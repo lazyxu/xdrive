@@ -3065,6 +3065,7 @@ export default function App({
   const desktopClientUpdateProps = {
     busy, updateSupported, clientUpdate, updateOperationBusy, updateCancelling,
     updateCancelSupported, updateProgress, currentVersion: status?.version,
+    currentCommit: info?.commit,
     onUpdateSourceChange: (source: AgentUpdateSource) => { void changeUpdateSource(source) },
     onUpdateModeChange: (mode: AgentUpdateMode) => { void changeUpdateMode(mode) },
     onCheckUpdate: () => { void checkClientUpdate() },
