@@ -165,3 +165,49 @@ func TestGitLabChecksumEnablesServerFirstOnlyForExactRelease(t *testing.T) {
 		t.Fatal("GitHub update without independent digest improperly used Server cache")
 	}
 }
+
+// Stable GitLab updates may also prefer an authenticated Server only when
+// their independently selected full tag Commit, version and checksum agree.
+func TestStableGitLabChecksumUsesServerCacheOnlyForSameVersion(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	payload := []byte("stable-source-exact-update")
+	digest := sha256.Sum256(payload)
+	hash := hex.EncodeToString(digest[:])
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/SHA256SUMS.txt" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprintf(w, "%s  xDriveSetup-amd64.exe\n", hash)
+	}))
+	defer server.Close()
+	artifact := client.ReleaseBundleArtifact{
+		Platform: "windows", Filename: "xDriveSetup-amd64.exe",
+		BuildCommit: commit, SHA256: hash, Size: int64(len(payload)),
+		InstallMode: "manual",
+	}
+	listing := client.ReleaseBundleListing{
+		Commit: commit, Channel: xupdate.ChannelStable,
+		ServerVersion: "v2.1.0",
+		Artifacts: []client.ReleaseBundleArtifact{artifact},
+	}
+	result := xupdate.Result{
+		Current: "v2.0.0", Latest: "v2.1.0", Commit: commit,
+		Channel: xupdate.ChannelStable, UpdateAvailable: true,
+		Asset: xupdate.Asset{Name: artifact.Filename},
+		Checksums: xupdate.Asset{Name: "SHA256SUMS.txt", URL: server.URL + "/SHA256SUMS.txt"},
+	}
+	good := matchCurrentServerBundleWithGitLabChecksum(
+		context.Background(), result, listing, "windows", xupdate.SourceGitLab,
+	)
+	if good.Bundle == nil || good.Bundle.SHA256 != hash {
+		t.Fatalf("stable GitLab and current Server did not agree: %+v", good)
+	}
+	wrong := listing
+	wrong.Channel = xupdate.ChannelMaster
+	if bad := matchCurrentServerBundleWithGitLabChecksum(
+		context.Background(), result, wrong, "windows", xupdate.SourceGitLab,
+	); bad.Bundle != nil {
+		t.Fatal("stable GitLab source used master Server cache")
+	}
+}

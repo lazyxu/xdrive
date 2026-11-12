@@ -7,8 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 
+	"github.com/lazyxu/xdrive/internal/client"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
+	"github.com/lazyxu/xdrive/internal/userconfig"
 )
 
 // portableCLIOnlyDistribution recognizes both published xdrive-backup archives
@@ -63,15 +67,98 @@ func runCLIOnlyUpdate(ctx context.Context, current, channel, source string, down
 	if err != nil {
 		return err
 	}
-	path, err := xupdate.DownloadVerifiedCLIOnly(ctx, xupdate.DefaultChecker(), result, dir,
-		func(event xupdate.ProgressEvent) { fmt.Println(xupdate.FormatProgress(event)) })
-	if err != nil {
-		return err
+	path := ""
+	if owner, artifact, ok := verifiedCLIOnlyServerSource(ctx, result, source, runtime.GOOS); ok {
+		target := filepath.Join(dir, result.Asset.Name)
+		if err := owner.DownloadCurrentReleaseArtifact(ctx, result.Commit, artifact, target); err == nil {
+			// The CLI archive validator is stricter than a matching checksum:
+			// never install/extract an archive with bad layout or wrong Go binaries.
+			if err := xupdate.ValidateCLIOnlyArchive(target, result.Asset.Name); err == nil {
+				path = target
+			} else {
+				_ = os.Remove(target)
+			}
+		} else if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+	if path == "" {
+		path, err = xupdate.DownloadVerifiedCLIOnly(ctx, xupdate.DefaultChecker(), result, dir,
+			func(event xupdate.ProgressEvent) { fmt.Println(xupdate.FormatProgress(event)) })
+		if err != nil {
+			return err
+		}
 	}
 	fmt.Printf("SHA-256 verified and CLI-only binary/layout checked: %s\n", path)
 	fmt.Println("Only downloaded to the user cache. xd and xdrive-agent were NOT installed, replaced or restarted.")
 	fmt.Println("An atomic CLI-only install/rollback transaction is required before --install can be enabled.")
 	return nil
+}
+
+// matchCLIOnlyServerBundle requires an independently pinned GitLab checksum
+// matching the authenticated Server's exact source Commit and version.
+// CLI-only archives remain download-only, never an install permission.
+func matchCLIOnlyServerBundle(
+	result xupdate.Result, listing client.ReleaseBundleListing, digest, goos string,
+) (client.ReleaseBundleArtifact, bool) {
+	if len(result.Commit) != 40 || result.Commit != listing.Commit ||
+		result.Channel != listing.Channel ||
+		!strings.EqualFold(result.Latest, listing.ServerVersion) {
+		return client.ReleaseBundleArtifact{}, false
+	}
+	for _, artifact := range listing.Artifacts {
+		if artifact.Platform == "cli" {
+			// Preserve the published, named CLI-only archive, not a Desktop
+			// installer. Cross-platform packages remain separate artifacts.
+			if artifact.Filename == result.Asset.Name &&
+				artifact.BuildCommit == result.Commit &&
+				artifact.InstallMode == "manual" &&
+				strings.EqualFold(artifact.SHA256, digest) &&
+				(result.Asset.Size <= 0 || result.Asset.Size == artifact.Size) &&
+				((goos == "linux" && artifact.Filename == "xdrive-backup-linux-amd64.tar.gz") ||
+					(goos == "windows" && artifact.Filename == "xdrive-backup-windows-amd64.zip")) {
+				return artifact, true
+			}
+		}
+	}
+	return client.ReleaseBundleArtifact{}, false
+}
+
+// verifiedCLIOnlyServerSource is an optional optimization for a logged-in
+// GitLab CLI-only update. Both the Server manifest and GitLab's release
+// SHA256SUMS must agree before an authenticated package download is attempted.
+// No Owner token can be forwarded to GitLab/GitHub mirrors.
+func verifiedCLIOnlyServerSource(
+	ctx context.Context, result xupdate.Result, source, goos string,
+) (*client.Client, client.ReleaseBundleArtifact, bool) {
+	if !strings.EqualFold(strings.TrimSpace(source), xupdate.SourceGitLab) ||
+		!result.UpdateAvailable || len(result.Commit) != 40 {
+		return nil, client.ReleaseBundleArtifact{}, false
+	}
+	cfg, err := userconfig.Load()
+	if err != nil || cfg.SessionInvalid {
+		return nil, client.ReleaseBundleArtifact{}, false
+	}
+	owner, err := userconfig.NewClient(cfg)
+	if err != nil {
+		return nil, client.ReleaseBundleArtifact{}, false
+	}
+	probeCtx, stop := context.WithTimeout(ctx, 4*time.Second)
+	defer stop()
+	listing, err := owner.CurrentReleaseBundle(probeCtx)
+	if err != nil || listing.Commit != result.Commit ||
+		listing.Channel != result.Channel ||
+		!strings.EqualFold(listing.ServerVersion, result.Latest) {
+		return nil, client.ReleaseBundleArtifact{}, false
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	digest, err := xupdate.ResolveReleaseAssetSHA256(checkCtx, result)
+	if err != nil {
+		return nil, client.ReleaseBundleArtifact{}, false
+	}
+	artifact, ok := matchCLIOnlyServerBundle(result, listing, digest, goos)
+	return owner, artifact, ok
 }
 
 // An explicit GUI distribution is a prerequisite for existing unified Desktop
