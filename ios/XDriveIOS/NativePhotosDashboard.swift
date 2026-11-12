@@ -934,6 +934,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
             .padding(14)
         }
+        // The five tabs retain inactive SwiftUI ScrollViews. XCUITest must
+        // target this Launcher grid, not the first Gallery/Files scroll view.
+        .accessibilityIdentifier("native-ios-launcher-scroll")
     }
 
     @ViewBuilder

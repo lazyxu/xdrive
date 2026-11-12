@@ -4,7 +4,12 @@ import XCTest
 /// Simulator. The synthetic Owner has NO authenticated Server session; this
 /// checks fail-closed routing and process survival, not signed-device media.
 final class XDriveIOSAllPagesCrashUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        // A previous crash or interrupted landscape journey must not leave
+        // unrelated page cases testing a retained orientation by accident.
+        XCUIDevice.shared.orientation = .portrait
+    }
 
     private func launch(offlineOwner: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
@@ -55,7 +60,7 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
     private func openLauncher(_ route: String, app: XCUIApplication) {
         tap("native-ios-tab-launcher", app: app)
         ready("native-ios-launcher-search", app: app)
-        let host = app.scrollViews.firstMatch
+        let host = element("native-ios-launcher-scroll", app: app)
         XCTAssertTrue(host.waitForExistence(timeout: 15), "Real Launcher scroll host missing")
         let identifier = "native-ios-launcher-\(route)"
         let target = element(identifier, app: app)
@@ -266,4 +271,120 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         ready("native-ios-transfer-overview", app: app)
         capture(app, "tools-background-rotation")
     }
+
+    // Six extra real tap-driven journeys target tools and transition states
+    // that the per-Launcher mount checks alone do not exercise. Synthetic
+    // Owner has no Server bearer; no private media or successful mutation
+    // is invented by these tests.
+    func testNotesFilesGalleryNotesThreeCyclesDoNotExit() {
+        let app = launch()
+        openLauncher("notes", app: app)
+        XCTAssertTrue(app.navigationBars["笔记"].firstMatch.waitForExistence(timeout: 15))
+        for cycle in 0..<3 {
+            tap("native-ios-tab-files", app: app)
+            ready("native-ios-files-section-browse", app: app)
+            tap("native-ios-tab-gallery", app: app)
+            ready("native-ios-unified-photo-gallery", app: app)
+            tap("native-ios-tab-dynamic", app: app)
+            XCTAssertTrue(app.navigationBars["笔记"].firstMatch.waitForExistence(timeout: 15),
+                          "Notes route did not survive Gallery/Files cycle \(cycle)")
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        capture(app, "notes-files-gallery-three-cycles")
+    }
+
+    func testClipboardNotesTransfersForegroundRoundTripsDoNotExit() {
+        let app = launch()
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("ios-clipboard-draft", app: app)
+        openLauncher("notes", app: app)
+        XCTAssertTrue(app.navigationBars["笔记"].firstMatch.waitForExistence(timeout: 15))
+        openLauncher("transfers", app: app)
+        ready("native-ios-transfer-overview", app: app)
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        capture(app, "clipboard-notes-transfers-return")
+    }
+
+    func testTransfersRealFileAndBackupDestinationsDoNotExit() {
+        let app = launch()
+        openLauncher("transfers", app: app)
+        ready("native-ios-transfer-overview", app: app)
+        let files = app.buttons["打开文件"].firstMatch
+        XCTAssertTrue(files.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-transfer-open-files")
+        files.tap()
+        ready("native-ios-files-section-browse", app: app)
+        openLauncher("transfers", app: app)
+        ready("native-ios-transfer-overview", app: app)
+        let backup = app.buttons["打开相册备份"].firstMatch
+        XCTAssertTrue(backup.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-transfer-open-backup")
+        backup.tap()
+        ready("native-ios-backup-overview", app: app)
+        capture(app, "transfers-files-backup")
+    }
+
+    func testBackupTaskSheetFilesGalleryDynamicReturnDoNotExit() {
+        let app = launch()
+        openLauncher("backup", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tap("native-ios-photos-task-list", app: app)
+        let done = element("native-ios-photo-task-list-done", app: app)
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        let retired = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: done)
+        XCTAssertEqual(XCTWaiter.wait(for: [retired], timeout: 12), .completed,
+                       "Backup task Sheet remained over app navigation")
+        ready("native-ios-backup-overview", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-dynamic", app: app)
+        ready("native-ios-backup-overview", app: app)
+        capture(app, "backup-sheet-gallery-return")
+    }
+
+    func testSignedOutMinePlaceholdersGalleryReturnDoNotExit() {
+        let app = launch(offlineOwner: false)
+        tap("native-ios-tab-mine", app: app)
+        ready("native-ios-mine-server-account", app: app)
+        XCTAssertFalse(element("native-ios-mine-server-account", app: app).isEnabled)
+        for (name, message) in [("sync", "同步尚未接通"),
+                                ("devices", "设备尚未接通"),
+                                ("diagnostics", "诊断尚未接通")] {
+            openLauncher(name, app: app)
+            XCTAssertTrue(app.staticTexts[message].firstMatch.waitForExistence(timeout: 15),
+                          "Actual unavailable child page missing for \(name)")
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        capture(app, "mine-placeholders-gallery-return")
+    }
+
+    func testLocalMapFilesNotesClipboardReturnDoNotExit() {
+        let app = launch(offlineOwner: false)
+        openLauncher("map", app: app)
+        ready("native-ios-map-source-selector", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        openLauncher("notes", app: app)
+        XCTAssertTrue(app.navigationBars["笔记"].firstMatch.waitForExistence(timeout: 15))
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        // Gallery still owns the previous local map route, not a fabricated
+        // unified page. It must remount its actual MapKit source selector.
+        ready("native-ios-map-source-selector", app: app)
+        capture(app, "map-files-tools-return")
+    }
+
 }

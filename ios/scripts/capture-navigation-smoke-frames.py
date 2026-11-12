@@ -226,6 +226,17 @@ TARGETS.update({
     "testFilesRootDenialLandscapeGalleryAlbumsReturn",
     "testOriginalsAlbumsFilesQuickRailThreeCyclesKeepsPages",
 })
+# Cross-feature native crash reproduction and two-cycle Operation History foreground regression.
+# This records tap-adjacent diagnostics; it is not a physical FPS claim.
+TARGETS.update({
+    "testNotesFilesGalleryNotesThreeCyclesDoNotExit",
+    "testClipboardNotesTransfersForegroundRoundTripsDoNotExit",
+    "testTransfersRealFileAndBackupDestinationsDoNotExit",
+    "testBackupTaskSheetFilesGalleryDynamicReturnDoNotExit",
+    "testSignedOutMinePlaceholdersGalleryReturnDoNotExit",
+    "testLocalMapFilesNotesClipboardReturnDoNotExit",
+    "testOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage",
+})
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")

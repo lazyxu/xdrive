@@ -243,18 +243,26 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
     private func openFilesOperationHistoryFromBrowse(_ app: XCUIApplication) {
         assertFiles(app)
         let action = target("native-ios-files-open-operations", app: app)
-        // SwiftUI List can surface as UITableView or UICollectionView
-        // depending on iOS runtime. Keep a bounded native swipe fallback.
-        let table = app.tables.firstMatch
-        let collection = app.collectionViews.firstMatch
-        let scroll = app.scrollViews.firstMatch
-        var list: XCUIElement = app
-        if table.exists { list = table }
-        else if collection.exists { list = collection }
-        else if scroll.exists { list = scroll }
-        for _ in 0..<8 {
-            if action.isHittable { break }
+        // Files/Photos retain other AX scroll containers across tabs. The
+        // explicit Files Home List must be selected before any swipe, or a
+        // stale Gallery/Files child could receive it instead.
+        let browse = target("native-ios-files-section-browse", app: app)
+        XCTAssertTrue(browse.waitForExistence(timeout: 15))
+        if browse.value as? String != "已选择" {
+            tap("native-ios-files-section-browse", app: app)
+        }
+        XCTAssertEqual(browse.value as? String, "已选择",
+                       "Operation History requires the actual Files Browse Home")
+        let list = target("native-ios-files-home-list", app: app)
+        XCTAssertTrue(list.waitForExistence(timeout: 15),
+                      "Verified Files Browse Home List was not mounted")
+        for _ in 0..<9 {
+            if action.exists && action.isHittable { break }
             list.swipeUp()
+        }
+        for _ in 0..<12 {
+            if action.exists && action.isHittable { break }
+            list.swipeDown()
         }
         XCTAssertTrue(action.waitForExistence(timeout: 10),
                       "Files Home operation history entry was not loaded after bounded scrolling")
@@ -328,12 +336,50 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
             evidence.name = "gallery-not-mounted-after-operations-foreground"
             evidence.lifetime = .keepAlways
             add(evidence)
-            print("IOS_NATIVE_NAV_ERROR gallery-return-failed appState=\(app.state.rawValue)")
+            let galleryTab = target("native-ios-tab-gallery", app: app)
+            let sheetStillMounted = target(
+                "native-ios-files-operation-history-page", app: app).exists
+            print("IOS_NATIVE_NAV_ERROR gallery-return-failed appState=\(app.state.rawValue) " +
+                  "tabSelected=\(galleryTab.isSelected) sheetVisible=\(sheetStillMounted)")
+            XCTAssertFalse(sheetStillMounted,
+                           "Operation History sheet unexpectedly remounted after dismissal")
             XCTFail("Gallery source rail was lost after operations Sheet retirement")
             return
         }
         XCTAssertEqual(app.state, .runningForeground)
         assertVisiblePixels(app, route: "Gallery after operations foreground")
+    }
+
+    // Repeat the exact prior failing foreground Sheet sequence twice, with
+    // real taps and a mandatory modal-retirement fence on each iteration.
+    // A stuck Gallery route is a test failure, never a skipped "crash".
+    func testOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage() {
+        let app = launch(syntheticOwner: true)
+        for cycle in 0..<2 {
+            tap("native-ios-tab-files", app: app)
+            openFilesOperationHistoryFromBrowse(app)
+            XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+                .waitForExistence(timeout: 15))
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertEqual(app.state, .runningForeground)
+            let done = target("native-ios-files-operation-history-done", app: app)
+            XCTAssertTrue(done.waitForExistence(timeout: 15))
+            done.tap()
+            awaitOperationsSheetRetired(app)
+            assertFiles(app)
+            tap("native-ios-tab-gallery", app: app)
+            let gallery = target("native-ios-gallery-source-unified", app: app)
+            if !gallery.waitForExistence(timeout: 15) {
+                let evidence = XCTAttachment(screenshot: app.screenshot())
+                evidence.name = "operation-history-gallery-cycle-\(cycle)-failed"
+                evidence.lifetime = .keepAlways
+                add(evidence)
+            }
+            XCTAssertTrue(gallery.exists,
+                          "Gallery lost its actual page after operation history cycle \(cycle)")
+            assertVisiblePixels(app, route: "Gallery after operations cycle \(cycle)")
+        }
     }
 
     func testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels() {

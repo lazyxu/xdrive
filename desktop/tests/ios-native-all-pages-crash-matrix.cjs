@@ -94,3 +94,39 @@ test('no-session Files cases select actual Browse and retain strict screenshot r
   assert.match(files, /XCTAssertGreaterThan\(colors\.count, 8/);
   assert.match(files, /XCUIDevice\.shared\.orientation = \.portrait/);
 });
+
+
+test('retained Gallery/Files scroll views cannot hijack lazy Launcher navigation', () => {
+  assert.match(dashboard, /private var launcher: some View \{[\s\S]*?\.accessibilityIdentifier\("native-ios-launcher-scroll"\)/);
+  const helper = swift.slice(swift.indexOf('private func openLauncher('),
+                             swift.indexOf('private func verifyLauncher('));
+  assert.match(helper, /let host = element\("native-ios-launcher-scroll", app: app\)/);
+  assert.doesNotMatch(helper, /app\.scrollViews\.firstMatch/);
+  assert.match(helper, /host\.swipeUp\(\)/);
+  assert.match(helper, /host\.swipeDown\(\)/);
+  assert.match(helper, /target\.exists && target\.isHittable/);
+});
+
+test('six more real native tool, backup, Map and Viewer-free navigation journeys are registered', () => {
+  const names = [
+    'testNotesFilesGalleryNotesThreeCyclesDoNotExit',
+    'testClipboardNotesTransfersForegroundRoundTripsDoNotExit',
+    'testTransfersRealFileAndBackupDestinationsDoNotExit',
+    'testBackupTaskSheetFilesGalleryDynamicReturnDoNotExit',
+    'testSignedOutMinePlaceholdersGalleryReturnDoNotExit',
+    'testLocalMapFilesNotesClipboardReturnDoNotExit'
+  ];
+  const allCases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
+  assert.equal(allCases.length, 25, 'Existing nineteen and six new independent tests must all run');
+  for (const name of names) {
+    assert.ok(allCases.includes(name), 'Missing tap-driven XCUITest: ' + name);
+    assert.ok(watcher.includes('"' + name + '"'), 'Missing tap-adjacent watcher: ' + name);
+  }
+  assert.match(swift, /XCTNSPredicateExpectation/);
+  assert.match(swift, /native-ios-photo-task-list-done/);
+  assert.match(swift, /native-ios-transfer-overview/);
+  assert.match(swift, /native-ios-map-source-selector/);
+  assert.match(swift, /XCTAssertEqual\(app\.state, \.runningForeground/);
+  assert.doesNotMatch(swift, /fakeToken|fakeOwner|mockServerLogin/);
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
+});
