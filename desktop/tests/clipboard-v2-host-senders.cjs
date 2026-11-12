@@ -200,3 +200,126 @@ test('Server-originated Desktop and DSM change cursor triggers one Owner-scoped 
   }
 })
 
+
+
+// Deterministic virtual-time integration through the actual exported Host ports.
+// Do not sleep 15 seconds or replace the application reconciling implementation
+// with a source-regex assertion: count real SSE calls, GETs and visible refreshes.
+async function withVisibleClipboardClock(advance,run){
+  const savedDocument=Object.getOwnPropertyDescriptor(globalThis,'document')
+  const savedSetTimeout=globalThis.setTimeout
+  const savedNow=Date.now
+  let now=100000
+  Object.defineProperty(globalThis,'document',{
+    value:{visibilityState:'visible'},configurable:true,
+  })
+  globalThis.setTimeout=(callback,delay=0)=>{
+    now+=advance(delay)
+    queueMicrotask(callback)
+    return 1
+  }
+  Date.now=()=>now
+  try{await run()}finally{
+    Date.now=savedNow
+    globalThis.setTimeout=savedSetTimeout
+    if(savedDocument)Object.defineProperty(globalThis,'document',savedDocument)
+    else delete globalThis.document
+  }
+}
+function makeClipboardWatchHost(kind,handlers){
+  const ok=data=>({ok:true,data})
+  if(kind==='desktop'){
+    return desktop.createDesktopClipboardDataPort({
+      cloudClipboardNextEvent:async after=>ok(await handlers.next(after)),
+      cloudClipboardList:async()=>ok(await handlers.list()),
+    },'desktop-owner','https://drive.example/',handlers.ownerCurrent||(()=>true))
+  }
+  const owner='a'.repeat(64)
+  return dsm.createXDriveDSMClipboardPort({
+    serverConnection:async()=>({
+      configured:true,must_change_password:false,
+      server:'https://drive.example/',username:'owner',
+      owner_scope:handlers.ownerScope?.()||owner,
+    }),
+    clipboardNextEvent:handlers.next,
+    clipboardList:handlers.list,
+  },owner)
+}
+test('Desktop/DSM SSE outage falls back to bounded GET, refreshing only after a true change',async()=>{
+  await withVisibleClipboardClock(ms=>ms,async()=>{
+    for(const kind of ['desktop','dsm']){
+      const abort=new AbortController()
+      let sse=0,reads=0,refreshes=0
+      const port=makeClipboardWatchHost(kind,{
+        next:async()=>{sse++;throw Error('SSE offline')},
+        list:async()=>{
+          reads++
+          const stamp=reads<3?'original':'updated'
+          return {items:[{id:1,client_event_id:stamp}],next_before:null}
+        },
+      })
+      await port.watchChanges(()=>{refreshes++;abort.abort()},abort.signal)
+      assert.deepEqual({sse,reads,refreshes},{sse:1,reads:3,refreshes:1},
+        kind+' must not flash on initial or identical fallback snapshot')
+    }
+  })
+})
+test('Desktop/DSM return to Server SSE after 15s fallback without duplicate refresh',async()=>{
+  await withVisibleClipboardClock(ms=>ms===1800?15001:ms,async()=>{
+    for(const kind of ['desktop','dsm']){
+      const abort=new AbortController()
+      let sse=0,reads=0,refreshes=0
+      const port=makeClipboardWatchHost(kind,{
+        next:async after=>{
+          sse++
+          assert.equal(after,0)
+          if(sse===1)throw Error('temporary SSE disconnection')
+          return {cursor:52,changed:true}
+        },
+        list:async()=>{reads++;return {items:[],next_before:null}},
+      })
+      await port.watchChanges(()=>{refreshes++;abort.abort()},abort.signal)
+      assert.deepEqual({sse,reads,refreshes},{sse:2,reads:1,refreshes:1},
+        kind+' must resume SSE after one fallback baseline GET')
+    }
+  })
+})
+test('Desktop/DSM reject delayed SSE after Owner switch without stale callbacks or list GETs',async()=>{
+  await withVisibleClipboardClock(ms=>ms,async()=>{
+    const other='b'.repeat(64),owner='a'.repeat(64)
+    for(const kind of ['desktop','dsm']){
+      let active=true,scope=owner,refreshes=0,reads=0
+      const port=makeClipboardWatchHost(kind,{
+        ownerCurrent:()=>active,
+        ownerScope:()=>scope,
+        next:async()=>{
+          active=false
+          scope=other
+          return {cursor:31,changed:true}
+        },
+        list:async()=>{reads++;return {items:[],next_before:null}},
+      })
+      await assert.rejects(
+        ()=>port.watchChanges(()=>{refreshes++},new AbortController().signal),
+        /账号已变化|Owner 已变化/)
+      assert.equal(refreshes,0,kind+' exposed old Owner invalidation')
+      assert.equal(reads,0,kind+' performed stale Owner GET')
+    }
+  })
+})
+test('Desktop/DSM cancellation during in-flight SSE cannot trigger stale refresh',async()=>{
+  await withVisibleClipboardClock(ms=>ms,async()=>{
+    for(const kind of ['desktop','dsm']){
+      const abort=new AbortController()
+      let refreshes=0,reads=0
+      const port=makeClipboardWatchHost(kind,{
+        next:async()=>{abort.abort();return {cursor:40,changed:true}},
+        list:async()=>{reads++;return {items:[],next_before:null}},
+      })
+      await assert.rejects(()=>port.watchChanges(()=>{refreshes++},abort.signal),
+        err=>err?.name==='AbortError')
+      assert.equal(refreshes,0,kind+' refreshed after disposed page')
+      assert.equal(reads,0,kind+' performed GET after page cancellation')
+    }
+  })
+})
