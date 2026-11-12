@@ -315,6 +315,15 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
                 else { throw XDriveIOSNativeSessionError.staleSession }
             }
+            // Resume of a saved "only new" plan must retain Full Photos
+            // access even if PhotoKit permission was reduced while awaiting
+            // Owner/managed-target verification. Limited is permitted only
+            // for an explicitly selected subset-only full scan, never for
+            // continuing a full-library incremental history token.
+            guard startRule != .resumePrevious ||
+                  store.status(owner: selected)?.backupStartRule != .onlyNew ||
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+            else { throw XDriveIOSNativeSessionError.staleSession }
             schedule = try store.configure(
                 owner: selected, minutes: minutes, allowICloud: allowICloud,
                 startRule: startRule, enabledAt: enabledAt,

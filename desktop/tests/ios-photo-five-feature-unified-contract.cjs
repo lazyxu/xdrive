@@ -138,3 +138,24 @@ test('receipt-reviewed paused backup resumes exact cursor and does not silently 
   assert.match(restore, /scheduleStore\.resumeAfterTrustedReview\(/)
   assert.doesNotMatch(restore, /scheduleStore\.configure\(/)
 })
+
+test('resume of full-library only-new plan rechecks Full Photos after awaited managed-target proof', () => {
+  const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+  const screen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
+  const configure = controller.slice(controller.indexOf('    func configure('),
+    controller.indexOf('    /// Local stop'))
+  const latestManaged = configure.indexOf('.readExistingForUpload(owner: selected')
+  const guardStart = configure.indexOf('guard startRule != .resumePrevious', latestManaged)
+  const save = configure.indexOf('schedule = try store.configure(', guardStart)
+  assert.ok(latestManaged >= 0 && guardStart > latestManaged && save > guardStart,
+    'the resume-only Full Photos gate must follow the final asynchronous managed-target proof')
+  const finalGate = configure.slice(guardStart, save)
+  assert.match(finalGate, /store\.status\(owner: selected\)\?\.backupStartRule != \.onlyNew/)
+  assert.match(finalGate, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
+  assert.match(finalGate, /throw XDriveIOSNativeSessionError\.staleSession/)
+  const admission = screen.slice(screen.indexOf('private var canEnableAutomaticBackup:'),
+    screen.indexOf('private var enableAutomaticBackupButton:'))
+  assert.match(admission, /photoAuthorization != \.limited \|\| autoStartRule != \.resumePrevious \|\|/)
+  assert.match(admission, /controller\.schedule\?\.backupStartRule != \.onlyNew/)
+  assert.match(admission, /photoAuthorization != \.limited \|\| autoStartRule != \.onlyNew/)
+})

@@ -884,6 +884,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             destination.confirmedForCurrentName &&
             (photoAuthorization == .authorized || photoAuthorization == .limited) &&
             (photoAuthorization != .limited || autoStartRule != .onlyNew) &&
+            (photoAuthorization != .limited || autoStartRule != .resumePrevious ||
+                controller.schedule?.backupStartRule != .onlyNew) &&
             (autoStartRule != .resumePrevious || controller.schedule?.enabled == false)
     }
 
