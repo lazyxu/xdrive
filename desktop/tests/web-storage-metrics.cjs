@@ -104,7 +104,9 @@ test('Local storage is one shared Web/Desktop/DSM page with platform-specific se
   assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 3, 'Desktop shares Local Storage and the update page no longer has a metric grid')
   assert.equal((desktopClientUpdatePanel.match(/<XDriveMetricGrid\b/g) || []).length, 0, 'client update must not recreate the eight-field metric dashboard')
   assert.equal((desktopClientUpdatePanel.match(/<XDriveMetricCard\b/g) || []).length, 0, 'client update must not recreate metric cards')
-  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 19, 'DSM shares Local Storage; diagnostics must not add pass/warn/fail metric cards')
+  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length,
+    (localStorage.match(/<XDriveMetricCard\b/g) || []).length,
+    'Desktop and DSM use the shared Local Storage cards; diagnostics and updates must not add duplicate metric cards')
   assert.equal(desktopApp.includes('className="cloud-quota-grid"'), false)
   assert.equal(desktopApp.includes('className="cache-metrics"'), false)
   assert.equal(desktopApp.includes('className="update-metrics"'), false)
