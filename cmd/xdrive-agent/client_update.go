@@ -98,7 +98,31 @@ func (defaultClientUpdateBackend) Check(ctx context.Context, current, channel, s
 	if err != nil || listing.Commit != result.Commit {
 		return result, nil
 	}
-	return matchCurrentServerBundle(result, listing, runtime.GOOS), nil
+	return matchCurrentServerBundleWithGitLabChecksum(ctx, result, listing, runtime.GOOS, source), nil
+}
+
+// matchCurrentServerBundleWithGitLabChecksum downloads the selected GitLab
+// release's independent SHA256SUMS.txt when that provider does not publish an
+// inline asset digest. The authenticated Server's version + SHA-256 listing was
+// fetched first; only exact source/version/digest agreement enables Server-first
+// package download. A mismatch never substitutes Server bytes for the release
+// channel's independently selected client version.
+func matchCurrentServerBundleWithGitLabChecksum(
+	ctx context.Context, result xupdate.Result, listing client.ReleaseBundleListing, platform, source string,
+) xupdate.Result {
+	if result.Commit != listing.Commit || len(result.Commit) != 40 ||
+		result.Channel != listing.Channel || !strings.EqualFold(result.Latest, listing.ServerVersion) {
+		return result
+	}
+	if strings.EqualFold(strings.TrimSpace(source), xupdate.SourceGitLab) &&
+		strings.TrimSpace(result.Asset.Digest) == "" {
+		checksumCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+		defer cancel()
+		if digest, err := xupdate.ResolveReleaseAssetSHA256(checksumCtx, result); err == nil {
+			result.Asset.Digest = "sha256:" + digest
+		}
+	}
+	return matchCurrentServerBundle(result, listing, platform)
 }
 
 // matchCurrentServerBundle only changes transport metadata for the package
