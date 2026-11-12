@@ -36,8 +36,13 @@ START = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 FINISH = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
 TAP = re.compile(r'IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)')
 SIM_ID = re.compile(r'^[A-Fa-f0-9-]{36}$')
-MAX_CLIP_SECONDS = 26
-POST_TAP_SECONDS = 9
+# A real macOS CI Simulator can deliver encoded frames significantly later
+# than the wall-clock XCTest tap marker. Longer bounded recording gives the
+# actual post-tap animation time to reach the H264 file; the audit still rejects
+# clips without >=20 genuine monotonic frames and >=2 seconds post-tap.
+# Do not fabricate, resample, sort or interpolate frames to force green.
+MAX_CLIP_SECONDS = 40
+POST_TAP_SECONDS = 18
 
 
 def event(line):

@@ -177,8 +177,16 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
                 predicate: NSPredicate(format: "value == %@", "ready"),
                 object: build
             )
-            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30),
-                           .completed, "Native startup never entered the real ready state")
+            let result = XCTWaiter.wait(for: [ready], timeout: 30)
+            if result != .completed {
+                // Preserve actual native evidence when a visible login page
+                // never acknowledges the guarded production startup.
+                print("IOS_NATIVE_STARTUP_NOT_READY state=\(build.value as? String ?? "missing") " +
+                      "appState=\(app.state.rawValue)")
+                record(app, "visible-login-not-ready")
+            }
+            XCTAssertEqual(result, .completed,
+                           "Native startup never entered the real ready state")
         } else {
             print("B9_CRASH published baseline lacks readiness AX marker")
             Thread.sleep(forTimeInterval: 4)

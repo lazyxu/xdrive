@@ -60,6 +60,20 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                 .font(.title3.weight(.semibold))
 
                             loginForm
+                                // The signed-out form itself is the definitive
+                                // visible workspace. SwiftUI may materialize
+                                // it after the ancestor's original onAppear,
+                                // so re-arm the existing guarded readiness
+                                // fence from the concrete mounted child too.
+                                .onAppear { workspaceAppeared() }
+                                .task(id: restoreFinished) {
+                                    guard restoreFinished else { return }
+                                    // This is not a shortcut to ready:
+                                    // restoreComplete, visible scene and
+                                    // foreground are still required by
+                                    // armReadinessAfterMount().
+                                    await MainActor.run { workspaceAppeared() }
+                                }
                             if let logoutWarning {
                                 Text(logoutWarning)
                                     .foregroundStyle(.orange)

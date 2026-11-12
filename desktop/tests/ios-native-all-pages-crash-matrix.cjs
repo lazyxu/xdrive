@@ -130,3 +130,38 @@ test('six more real native tool, backup, Map and Viewer-free navigation journeys
   assert.doesNotMatch(swift, /fakeToken|fakeOwner|mockServerLogin/);
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
 });
+
+
+test('real dynamic MapKit source must be closed through native Done before demanding Unified', () => {
+  const method = swift.slice(
+    swift.indexOf('func testFiveTabsWithForegroundReturnDoNotCrash()'),
+    swift.indexOf('func testDynamicRecentPickerSwitchAndDismissDoesNotCrash()'),
+  );
+  assert.match(method, /var mapOpenedByDynamic = false/);
+  assert.match(method, /if tab == "gallery" && mapOpenedByDynamic \{/);
+  assert.match(method, /ready\("native-ios-map-source-selector", app: app\)/);
+  assert.match(method, /tap\("native-ios-map-dismiss", app: app\)/);
+  assert.match(method, /tap\("native-ios-map-close", app: app\)/);
+  assert.match(method, /ready\("native-ios-unified-photo-gallery", app: app\)/);
+  assert.match(method, /mapOpenedByDynamic = element\("native-ios-map-source-selector", app: app\)\.exists/);
+  assert.match(method, /XCTFail\("Real MapKit Gallery source lost its Done action"\)/);
+  const map = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeLocalPhotoMap.swift'), 'utf8');
+  assert.match(map, /"native-ios-map-dismiss"/);
+  assert.match(dashboard, /private func closeGalleryMap\(\)/);
+  assert.match(dashboard, /openGallery\(prior \?\? fallback\)/);
+});
+
+test('actual mounted signed-out login re-arms the existing guarded readiness, never forces ready', () => {
+  const login = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8');
+  const checkpoint = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeLaunchCheckpoint.swift'), 'utf8');
+  const b9 = fs.readFileSync(path.join(root, 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'), 'utf8');
+  assert.match(login, /loginForm[\s\S]*?\.onAppear \{ workspaceAppeared\(\) \}[\s\S]*?\.task\(id: restoreFinished\) \{/);
+  assert.match(login, /guard restoreFinished else \{ return \}[\s\S]*?await MainActor\.run \{ workspaceAppeared\(\) \}/);
+  assert.match(login, /XDriveIOSNativeLaunchCheckpoint\.mayFinishStartup\([\s\S]*?restoreComplete: restoreFinished, workspaceVisible: workspaceVisible,[\s\S]*?foreground: phase == \.active/);
+  assert.match(login, /Task\.sleep\(nanoseconds: 3_000_000_000\)/);
+  assert.match(checkpoint, /restoreComplete && workspaceVisible && foreground/);
+  assert.match(b9, /IOS_NATIVE_STARTUP_NOT_READY/);
+  assert.match(b9, /record\(app, "visible-login-not-ready"\)/);
+  assert.match(b9, /XCTAssertEqual\(result, \.completed/);
+  assert.doesNotMatch(login, /UserDefaults\.standard\.set\("ready"/);
+});

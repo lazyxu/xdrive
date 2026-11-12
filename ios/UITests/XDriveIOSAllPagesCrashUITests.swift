@@ -158,16 +158,36 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
             ("files", "native-ios-files-section-browse"),
             ("mine", "native-ios-mine-server-account")
         ]
+        // The unassigned Dynamic slot opens the *real Gallery Map source*.
+        // Returning to Gallery retains MapKit until the user explicitly
+        // closes it; requiring Unified immediately after a map shortcut is
+        // a stale test assumption, not a proven native crash.
+        var mapOpenedByDynamic = false
         for cycle in 0..<3 {
             for (tab, marker) in destinations {
                 tap("native-ios-tab-\(tab)", app: app)
-                ready(marker, app: app)
+                if tab == "gallery" && mapOpenedByDynamic {
+                    ready("native-ios-map-source-selector", app: app)
+                    let localClose = element("native-ios-map-dismiss", app: app)
+                    let cloudClose = element("native-ios-map-close", app: app)
+                    if localClose.exists && localClose.isHittable {
+                        tap("native-ios-map-dismiss", app: app)
+                    } else if cloudClose.exists && cloudClose.isHittable {
+                        tap("native-ios-map-close", app: app)
+                    } else {
+                        capture(app, "map-return-without-close-\(cycle)")
+                        XCTFail("Real MapKit Gallery source lost its Done action")
+                    }
+                    ready("native-ios-unified-photo-gallery", app: app)
+                    mapOpenedByDynamic = false
+                } else {
+                    ready(marker, app: app)
+                }
             }
             tap("native-ios-tab-dynamic", app: app)
-            // An unused dynamic slot is a DIRECT native MapKit shortcut;
-            // with a previously chosen feature it is the real Notes,
-            // Clipboard, Backup or Transfers page. A fallback may instead
-            // display an explicit "打开地图" control. Test every real state.
+            // The dynamic slot can also restore a chosen Notes/Clipboard/
+            // Backup/Transfers feature. Demand an actual native destination,
+            // never a fictitious success in a hidden Gallery.
             let eligible: [XCUIElement] = [
                 element("native-ios-map-source-selector", app: app),
                 app.buttons["打开地图"].firstMatch,
@@ -178,9 +198,13 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
             ]
             XCTAssertTrue(eligible.contains(where: { $0.exists }),
                           "Dynamic tab did not mount its real selected feature or Map shortcut")
+            mapOpenedByDynamic = element("native-ios-map-source-selector", app: app).exists
             XCUIDevice.shared.press(.home)
             app.activate()
             XCTAssertEqual(app.state, .runningForeground, "Failed to resume dynamic tab")
+            if mapOpenedByDynamic {
+                ready("native-ios-map-source-selector", app: app)
+            }
             capture(app, "five-tabs-cycle-\(cycle)")
         }
     }

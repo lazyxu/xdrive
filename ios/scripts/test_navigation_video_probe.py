@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from navigation_video_probe import (
+    MAX_CLIP_SECONDS, POST_TAP_SECONDS,
     TEST_ROUTES, VideoRecorder, assess_clip, audit, event,
     frame_timeline, timestamps_from_probe,
 )
@@ -72,6 +73,14 @@ class VideoEvidenceTests(unittest.TestCase):
             "Test Case '-[Suite.Case testRapidGalleryFilesTabOscillationPreservesBothShells]' passed (20s)."),
             ('finish', 'testRapidGalleryFilesTabOscillationPreservesBothShells'))
         self.assertIsNone(event('random owner-session tokens'))
+
+    def test_delayed_simulator_h264_delivery_gets_a_bounded_real_window(self):
+        # The previous CI artifact had 83/83 real XCTest passes, but H264
+        # stopped before >=2s post-tap presentation for 9/16 routes. Allow
+        # extra recording time, NEVER weaken the strict six-route audit.
+        self.assertGreaterEqual(MAX_CLIP_SECONDS, 38)
+        self.assertGreaterEqual(POST_TAP_SECONDS, 16)
+        self.assertGreater(MAX_CLIP_SECONDS, POST_TAP_SECONDS + 2)
 
     def test_six_or_more_distinct_real_route_groups(self):
         self.assertGreaterEqual(len(set(TEST_ROUTES.values())), 8)
