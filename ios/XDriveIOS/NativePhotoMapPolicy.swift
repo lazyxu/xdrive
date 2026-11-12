@@ -83,7 +83,7 @@ enum XDriveIOSNativePhotoMapPolicy {
 /// map + signed 48-item Range. Always use *absolute* instants for the wire;
 /// Calendar supplies each local midnight, including DST/non-24-hour days.
 /// Missing capture dates never enter a bounded map selection.
-struct XDriveIOSNativePhotoMapCaptureRange: Equatable {
+struct XDriveIOSNativePhotoMapCaptureRange: Equatable, Sendable {
     let from: Date
     let to: Date
     let label: String

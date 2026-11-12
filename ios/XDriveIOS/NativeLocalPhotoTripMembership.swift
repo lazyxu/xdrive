@@ -6,12 +6,12 @@ import SwiftUI
 /// WGS84 0.25-degree cell match the discovered day/cell pair. Date alone is
 /// never authority for a curated journey, and no PHAsset identifiers, GPS
 /// positions or originals are saved to persistent storage.
-struct XDriveIOSNativeLocalTripDayCell: Hashable {
+struct XDriveIOSNativeLocalTripDayCell: Hashable, Sendable {
     let day: Date
     let cell: Int
 }
 
-struct XDriveIOSNativeLocalTripScope: Identifiable, Equatable {
+struct XDriveIOSNativeLocalTripScope: Identifiable, Equatable, Sendable {
     let id: UUID
     let title: String
     let captureRange: XDriveIOSNativePhotoMapCaptureRange

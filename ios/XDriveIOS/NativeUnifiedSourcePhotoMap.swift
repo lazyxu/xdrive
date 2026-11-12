@@ -158,7 +158,11 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
         }
-        .onDisappear { invalidate() }
+        .onDisappear {
+            // Presenting the place sheet must not retire the live parent
+            // map or dismiss that sheet. Only final route departure retires.
+            if selected == nil { invalidate() }
+        }
     }
 
     private func invalidate() {
