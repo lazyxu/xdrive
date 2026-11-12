@@ -52,6 +52,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
     @State private var openMapAfterFilterDismiss = false
+    @State private var openSourceMapAfterFilterDismiss = false
+    @State private var showingSourceFilteredMap = false
     @State private var pendingMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var pendingMapMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var pendingMapFilenameTerm = ""
@@ -102,6 +104,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 showingPeople = false; showingThumbnailCache = false
                 sourceFilter = nil; query = .init(); draft = .init()
                 openMapAfterFilterDismiss = false
+                openSourceMapAfterFilterDismiss = false
+                showingSourceFilteredMap = false
                 pendingMapCaptureRange = nil
                 pendingMapMediaFilter = .all
                 pendingMapFilenameTerm = ""
@@ -134,6 +138,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 // UIKit cannot present the map while the filter editor sheet
                 // is still being dismissed. The owning Gallery remains live
                 // underneath; no source/page/filter state is rebuilt here.
+                if openSourceMapAfterFilterDismiss {
+                    openSourceMapAfterFilterDismiss = false
+                    showingSourceFilteredMap = true
+                    return
+                }
                 guard openMapAfterFilterDismiss else { return }
                 openMapAfterFilterDismiss = false
                 let selectedRange = pendingMapCaptureRange
@@ -155,6 +164,18 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     filter: sourceFilter, query: query,
                     onViewed: { page, id in viewerReturnPage = page; viewerReturnAnchor = id },
                     pairing: { _ in reset() })
+            }
+            .fullScreenCover(isPresented: $showingSourceFilteredMap) {
+                if let presence = sourceFilter {
+                    NavigationStack {
+                        XDriveIOSNativeUnifiedSourcePhotoMapScreen(
+                            login: login, presence: presence, query: query,
+                            onClose: { showingSourceFilteredMap = false })
+                    }
+                } else {
+                    Text("来源筛选已变化，请重新打开地图。")
+                        .accessibilityIdentifier("native-ios-unified-source-map-invalidated")
+                }
             }
     }
 
@@ -355,10 +376,17 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             // Gallery shown after MapKit has the same date
                             // criteria as the map that was just opened.
                             query = draft
-                            pendingMapCaptureRange = representableMapCaptureRange
-                            pendingMapMediaFilter = representableMapMediaFilter
-                            pendingMapFilenameTerm = draft.term
-                            openMapAfterFilterDismiss = true
+                            if sourceFilter != nil {
+                                // A source filter cannot borrow the ordinary
+                                // local/Owner map. Dismiss the editor before
+                                // presenting the exact reconciled source map.
+                                openSourceMapAfterFilterDismiss = true
+                            } else {
+                                pendingMapCaptureRange = representableMapCaptureRange
+                                pendingMapMediaFilter = representableMapMediaFilter
+                                pendingMapFilenameTerm = draft.term
+                                openMapAfterFilterDismiss = true
+                            }
                             showFilters = false
                         } label: {
                             Label("显示地图", systemImage: "map")
@@ -366,9 +394,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                         .disabled(mapUnavailableReason != nil || !draft.isValid)
                         .accessibilityIdentifier("native-ios-unified-gallery-show-map")
                         Text(mapUnavailableReason ??
-                             ((draft.media != .all || !draft.term.isEmpty)
-                                 ? "本机 PhotoKit 按文件名／媒体类型精确过滤；云端缺少对应的已授权地图筛选，已锁定本机来源。"
-                                 : "地图按本机 PhotoKit 或当前云端 Owner 分别显示有位置照片；来源可在地图内切换，不会将两端照片误称为同一个已筛选集合。"))
+                             (sourceFilter != nil
+                                 ? "按当前已核验的来源成员显示地图；缺失证据时不显示未经验证的位置或数量。"
+                                 : "地图在当前本机 PhotoKit 和 Owner 云端分别执行文件名、媒体类型及日期过滤，Owner 身份独立复核。"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("native-ios-unified-gallery-map-scope")
@@ -394,7 +422,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         for criteria: XDriveIOSNativeUnifiedGalleryQuery
     ) -> String? {
         if sourceFilter != nil {
-            return "当前“两端都有／仅本机／仅云端／待核验”来源筛选无法在地图中精确重现。请先选择“全部”来源。"
+            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                  login.owner != nil else {
+                return "来源地图需完整本机照片权限与已登录的云端 Owner。"
+            }
         }
         if !criteria.isValid {
             return "请先修正日期范围或搜索条件。"
@@ -412,7 +443,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
 
     private func showMapForAppliedQuery() {
         guard mapUnavailableReason(for: query) == nil,
-              let onShowMap else { return }
+              onShowMap != nil else { return }
+        if sourceFilter != nil {
+            showingSourceFilteredMap = true
+            return
+        }
         let range: XDriveIOSNativePhotoMapCaptureRange?
         if let from = query.from, let until = query.until {
             let current = XDriveIOSNativePhotoMapCaptureRange(
@@ -429,7 +464,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         case .video: media = .videos
         case .live: media = .livePhotos
         }
-        onShowMap(range, media, query.term)
+        onShowMap?(range, media, query.term)
     }
 
     private var representableMapMediaFilter: XDriveIOSNativePhotoMediaFilter {
