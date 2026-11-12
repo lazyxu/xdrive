@@ -30,7 +30,11 @@ struct XDriveIOSNativeFilesNavigationChecks {
         require(!allowed(filters: false), "different tag/source/date/kind scope invalidates")
         require(!allowed(sort: false), "changed ordering invalidates")
         require(!allowed(order: false), "changed ascending/descending invalidates")
-        let read = XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead
+        func read(visible: Bool, active: Bool, hasOwner: Bool) -> Bool {
+            XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                visible: visible, active: active, hasOwner: hasOwner
+            )
+        }
         require(read(visible: true, active: true, hasOwner: true),
                 "visible active Files with Owner can load")
         require(!read(visible: false, active: true, hasOwner: true),
