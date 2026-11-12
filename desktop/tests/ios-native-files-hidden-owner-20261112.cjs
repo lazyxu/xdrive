@@ -41,9 +41,14 @@ test('Owner switch cannot issue home/search requests or restore hidden stack', (
   assert.doesNotMatch(ownerChange, /if isHome && phase == \.active \{\s+homeReadAttempted = true/);
 });
 
-test('return-to-active path restores previously blocked saved-folder reads', () => {
-  const active = browser.slice(browser.indexOf('.onChange(of: phase) { next in'));
-  assert.match(active, /if next == \.active, filesViewVisible, isHome \{\s+restoreFilesSectionIfNeeded\(\)/);
+test('off-scene onAppear defers Owner reads, then active Files returns once', () => {
+  const from = browser.indexOf('private func filesForegroundLifecycle(');
+  const appear = browser.slice(from, browser.indexOf('.onDisappear { suspendVisibleRange() }', from));
+  assert.match(appear, /\.onAppear \{\s*filesViewVisible = true[\s\S]*?guard XDriveIOSNativeFilesNavigationPolicy\.shouldStartOwnerRead\(\s*visible: filesViewVisible, active: phase == \.active,\s*hasOwner: login\.owner != nil/);
+  assert.match(appear, /\) else \{ return \}\s*restoreFilesSectionIfNeeded\(\)/);
+  const active = browser.slice(browser.indexOf('.onChange(of: phase) { next in', from));
+  assert.match(active, /if next == \.active, filesViewVisible, login\.owner != nil \{\s*if isHome \{\s*restoreFilesSectionIfNeeded\(\)\s*if !homeReadAttempted \{\s*homeReadAttempted = true\s*reload\(\)/);
+  assert.match(active, /\} else if selectedFile == nil && !model\.verifiedPage &&\s*model\.errorMessage == nil \{[\s\S]*?reload\(\)/);
   assert.match(browser, /private func restoreFilesSectionIfNeeded\(\) \{[\s\S]*?guard isHome, let owner = login\.owner, !resumeLoaded/);
 });
 

@@ -3568,6 +3568,13 @@ struct XDriveIOSNativeFilesBrowser: View {
         filesModals
         .onAppear {
             filesViewVisible = true
+            // A view can appear while iOS is still inactive or after an
+            // Owner change. Defer both saved-folder navigation and network
+            // reads until a visible, active, authorized Files lifecycle.
+            guard XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                visible: filesViewVisible, active: phase == .active,
+                hasOwner: login.owner != nil
+            ) else { return }
             restoreFilesSectionIfNeeded()
             if phase == .active, let owner = login.owner,
                !quickHistoryReadAttempted {
@@ -3672,10 +3679,21 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: phase) { next in
-            // An Owner switch while this tab was covered must resume through
-            // the visible, active Files lifecycle rather than a hidden read.
-            if next == .active, filesViewVisible, isHome {
-                restoreFilesSectionIfNeeded()
+            // A hidden page or the OS background cannot restart an Owner GET.
+            // Re-enter through the same verified route when really visible.
+            if next == .active, filesViewVisible, login.owner != nil {
+                if isHome {
+                    restoreFilesSectionIfNeeded()
+                    if !homeReadAttempted {
+                        homeReadAttempted = true
+                        reload()
+                    }
+                } else if selectedFile == nil && !model.verifiedPage &&
+                          model.errorMessage == nil {
+                    // The first directory read might have been deferred while
+                    // inactive; an explicit denial remains retry-only.
+                    reload()
+                }
             }
             if next != .active {
                 if quickHistoryReadAttempted && operationShortcuts.loading &&
