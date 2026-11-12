@@ -532,7 +532,11 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         done.tap()
         // Validate the actual native return, not just the persistent tab bar.
         expect("native-ios-files-section-browse", app)
-        XCTAssertFalse(element("native-ios-files-organize-home-sheet", app).exists,
+        let dismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: element("native-ios-files-organize-home-sheet", app)
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 12), .completed,
                        "Organizer sheet remained over Files Home")
     }
 
@@ -569,7 +573,7 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         organizerChild("native-ios-files-organize-tags", app)
         expect("native-ios-files-tag-management", app)
         attachPage(app, name: "organizer-tag-management-child")
-        let tagDone = app.buttons["完成"].firstMatch
+        let tagDone = app.navigationBars["标签"].buttons["完成"].firstMatch
         XCTAssertTrue(tagDone.waitForExistence(timeout: 12))
         tagDone.tap()
         expect("native-ios-files-organize-home-sheet", app)
@@ -611,7 +615,9 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         expect("native-ios-files-organize-home-sheet", app)
         organizerChild("native-ios-files-organize-tags", app)
         expect("native-ios-files-tag-management", app)
-        app.buttons["完成"].firstMatch.tap()
+        let tagDone = app.navigationBars["标签"].buttons["完成"].firstMatch
+        XCTAssertTrue(tagDone.waitForExistence(timeout: 12))
+        tagDone.tap()
         completeOrganizer(app)
         openOrganizer(app)
         expect("native-ios-files-organize-home-sheet", app)
@@ -626,6 +632,10 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         files(app)
         openOrganizer(app)
         completeOrganizer(app)
+        // The Organizer action lives below the fold; explicitly return to
+        // the top of Files Home before tapping its protected Cloud child.
+        let homeList = app.collectionViews.firstMatch
+        for _ in 0..<5 { homeList.swipeDown() }
         tap("native-ios-files-open-root-location", app)
         expect("native-ios-files-error-page", app)
         XCTAssertFalse(element("native-ios-files-grid", app).exists)
