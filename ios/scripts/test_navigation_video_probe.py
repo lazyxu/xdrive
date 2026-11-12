@@ -190,13 +190,13 @@ class VideoEvidenceTests(unittest.TestCase):
         self.assertFalse(report['pass'])
         self.assertEqual(report['usable_routes'], 5)
 
-    def test_eight_routes_satisfy_six_route_coverage(self):
+    def test_all_sixteen_routes_satisfy_six_route_coverage(self):
         rows = [self.clip(name) for name in TEST_ROUTES]
         (self.root / 'trace.jsonl').write_text(
             '\n'.join(json.dumps(x) for x in rows) + '\n')
         report = audit(self.root, required=6, probe=self.probe)
         self.assertTrue(report['pass'])
-        self.assertEqual(report['usable_routes'], 8)
+        self.assertEqual(report['usable_routes'], 16)
 
     def test_corrupt_manifest_line_fails_closed(self):
         (self.root / 'trace.jsonl').write_text('bad json\n')
