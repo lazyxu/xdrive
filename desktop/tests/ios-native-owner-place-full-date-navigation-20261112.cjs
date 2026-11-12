@@ -57,3 +57,12 @@ test('date jump uses native accessible controls rather than new web authorizatio
   assert.match(map, /datePickerStyle\(\.graphical\)/);
   assert.doesNotMatch(map, /URLSession\.shared/);
 });
+
+test('historical date jump restores the exact reverified day tile, not page top', () => {
+  assert.match(map, /let dayIndex = dateJump.startIndex - fetched.offset/);
+  assert.match(map, /fetched.items.indices.contains\(dayIndex\)/);
+  assert.match(map, /dateJumpReturn = fetched.items\[dayIndex\]/);
+  assert.match(map, /XDriveIOSNativePhotoWallWindowPolicy.canRestore\([\s\S]*?anchor, in: page\?\.items \?\? \[\]/);
+  assert.match(map, /returnScroll.scrollTo\(anchor.id, anchor: \.top\)/);
+  assert.match(map, /dateJumpReturn = nil/);
+});

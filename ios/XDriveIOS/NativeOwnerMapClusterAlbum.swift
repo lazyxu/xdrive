@@ -92,6 +92,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     @State private var verifiedDatePlaceID: String?
     @State private var verifiedDateTotal = 0
     @State private var dateJumpVisible = false
+    // Transient Owner-verified target media for an exact historical day.
+    @State private var dateJumpReturn: XDriveIOSNativeMediaItem?
     @State private var requestedDate = Date()
 
     init(login: XDriveIOSNativeOwnerLoginModel,
@@ -259,6 +261,19 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         returnScroll.scrollTo(anchor.id, anchor: .bottom)
                     }
                     autoScrollReturn = nil
+                }
+                // Restore the exact first signed tile of a requested day,
+                // not merely the 48-item page's top or an old scroll offset.
+                if let anchor = dateJumpReturn {
+                    if activeOwner,
+                       XDriveIOSNativePhotoWallWindowPolicy.canRestore(
+                           anchor, in: page?.items ?? [],
+                           scopeActive: activeOwner,
+                           matches: { $0.sameVisibleRevision(as: $1) }
+                       ) {
+                        returnScroll.scrollTo(anchor.id, anchor: .top)
+                    }
+                    dateJumpReturn = nil
                 }
                 // Only the reverified current Owner page can restore focus.
                 // An unavailable, deleted or modified Node is never scrolled
@@ -710,6 +725,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         verifiedDatePlaceID = nil
         verifiedDateTotal = 0
         dateJumpVisible = false
+        dateJumpReturn = nil
         viewing = nil
         next = nil
         earlier = []
@@ -731,6 +747,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         let ticket = generation
         let departingPage = page
         let departingCursor = cursor
+        // Never retain a date anchor across a new Owner/cursor/task epoch.
+        dateJumpReturn = nil
         if target.placeIndex != departingCursor.placeIndex {
             verifiedDateIndex = nil
             verifiedDatePlaceID = nil
@@ -895,6 +913,15 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         verifiedDatePlaceID = nil
                         verifiedDateTotal = 0
                     }
+                }
+                if let dateJump {
+                    let dayIndex = dateJump.startIndex - fetched.offset
+                    guard fetched.items.indices.contains(dayIndex) else {
+                        throw XDriveIOSNativeMediaReadFailure.invalidPage
+                    }
+                    // Date-index metadata is not a media grant. The exact
+                    // Node+revision comes from the newly verified signed page.
+                    dateJumpReturn = fetched.items[dayIndex]
                 }
                 cursor = target
                 earlier = history
