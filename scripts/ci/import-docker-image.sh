@@ -21,6 +21,23 @@ expected_id="$(tr -d '\r\n' < "$id_file")"
   exit 1
 }
 
+# Containerd-backed builders can identify an OCI index, while docker save
+# exports the selected platform config. Engine versions can report either
+# immutable ID after loading. Accept only the two IDs from the same export.
+source_id_file="$artifact_dir/image.source.id"
+source_id=""
+if [[ -e "$source_id_file" || -L "$source_id_file" ]]; then
+  [[ -f "$source_id_file" && ! -L "$source_id_file" && -s "$source_id_file" ]] || {
+    echo "Docker image source ID file is missing or unsafe: $source_id_file" >&2
+    exit 1
+  }
+  source_id="$(tr -d '\r\n' < "$source_id_file")"
+  [[ "$source_id" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+    echo "Invalid CI-produced source image ID: $source_id_file" >&2
+    exit 1
+  }
+fi
+
 # A large image could previously strand a release job indefinitely during
 # gzip -dc | docker load. One pipefail-bound pass verifies gzip CRC AND loads
 # the exact archive; never decompress the entire archive twice.
@@ -53,8 +70,8 @@ if ! actual_id="$(timeout --signal=TERM --kill-after=10s 30s \
   echo "Docker image inspection failed or timed out: $image" >&2
   exit 1
 fi
-if [[ "$actual_id" != "$expected_id" ]]; then
-  echo "loaded Docker image ID mismatch: got $actual_id want $expected_id for $image" >&2
+if [[ "$actual_id" != "$expected_id" && ( -z "$source_id" || "$actual_id" != "$source_id" ) ]]; then
+  echo "loaded Docker image ID mismatch: got $actual_id want exported platform $expected_id or OCI index ${source_id:-<absent>} for $image" >&2
   exit 1
 fi
 
