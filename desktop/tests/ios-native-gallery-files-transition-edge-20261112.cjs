@@ -28,7 +28,7 @@ test('Gallery refuses historical cursor loops atomically before publishing a pag
   const checks = read('ios/tests/NativeUnifiedGalleryChecks.swift')
   assert.match(checks, /twoHop\.commit\(page: 1, count: 48, next: "A"\)/)
   assert.match(checks, /threeHop\.commit\(page: 2, count: 48, next: "A"\)/)
-  assert.match(checks, /n < 2_084/)
+  assert.match(checks, /for n in 0\.\.<2_084/)
 })
 
 test('Files cached thumbnail is hidden while Viewer covers it or scene is inactive', () => {
