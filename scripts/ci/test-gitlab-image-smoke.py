@@ -19,8 +19,12 @@ SCRIPTS = (
     "export-docker-image.sh",
 )
 DOCKER = r'''
+import hashlib
+import io
+import json
 import os
 import sys
+import tarfile
 
 args = sys.argv[1:]
 if args[0] == "login":
@@ -31,7 +35,23 @@ elif args[:2] == ["image", "inspect"]:
     print("snapshot" if any("image.version" in arg for arg in args)
           else "sha256:" + "1" * 64)
 elif args[0] == "save":
-    print("synthetic archive for the export command boundary")
+    # export-docker-image now validates manifest.json and the exact Linux
+    # config digest. Supply a real, bounded Docker save tar, not old text.
+    config = json.dumps({
+        "architecture": "amd64", "os": "linux",
+        "rootfs": {"type": "layers", "diff_ids": []}, "config": {},
+    }, sort_keys=True).encode()
+    digest = hashlib.sha256(config).hexdigest()
+    config_path = "blobs/sha256/" + digest
+    manifest = json.dumps([{
+        "Config": config_path, "RepoTags": [args[1]], "Layers": [],
+    }]).encode()
+    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+        for name, payload in ((config_path, config), ("manifest.json", manifest)):
+            item = tarfile.TarInfo(name)
+            item.size = len(payload)
+            item.mode = 0o644
+            archive.addfile(item, io.BytesIO(payload))
 elif args[0] == "run":
     if "list-modules" in args:
         probe, line = "caddy-modules", "dns.providers.alidns"
