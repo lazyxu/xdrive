@@ -149,6 +149,8 @@ struct XDriveIOSNativeNotesScreen: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("native-ios-notes-page")
         .navigationTitle("笔记")
         .searchable(text: $search, prompt: "搜索标题或正文")
         .xDriveNotesToolbar {
