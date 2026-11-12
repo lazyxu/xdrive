@@ -65,6 +65,10 @@ private enum XDriveIOSNativeLocalTripDiscovery {
     static let maximumAssets = 250_000
     static let maximumTrips = 100
     static let maximumTripDays = 21
+    // One photographed calendar day at a location is not enough evidence
+    // that the place is home. Preserve same-day intercity candidates in a
+    // sparse new library instead of erasing one city as an invented home.
+    static let minimumHomeDays = 3
 
     static func scan() throws -> XDriveIOSLocalTripDiscovery {
         guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
@@ -110,11 +114,14 @@ private enum XDriveIOSNativeLocalTripDiscovery {
         // The most repeatedly photographed calendar location is a stable
         // heuristic home, NOT a Photos/Apple-private travel classification.
         // Never include home-cell members in automatically inferred trips.
-        let home = daysPerCell.max {
+        let dominant = daysPerCell.max {
             $0.value.count == $1.value.count
                 ? $0.key > $1.key
                 : $0.value.count < $1.value.count
-        }?.key
+        }
+        let home = dominant.flatMap {
+            $0.value.count >= minimumHomeDays ? $0.key : nil
+        }
 
         var away: [Date: [XDriveIOSNativeLocalTripDayCell]] = [:]
         for (key, count) in dayCellCounts where count > 0 {
@@ -161,6 +168,13 @@ private enum XDriveIOSNativeLocalTripDiscovery {
             // a single incidental/commute snapshot. Across the same day,
             // all verified away cells remain members (multi-city preserved).
             if count < 2 { finishSegment(); continue }
+            if home == nil {
+                // With no trustworthy home, at least two independently
+                // located GPS cells are required on a day. Two stills from
+                // a single arbitrary cell are not evidence of travel.
+                let distinctCells = Set((away[day] ?? []).map(\.cell))
+                if distinctCells.count < 2 { finishSegment(); continue }
+            }
             if let last = segment.last {
                 let gap = calendar.dateComponents([.day], from: last, to: day).day ?? 999
                 if gap > 1 || segment.count >= maximumTripDays {

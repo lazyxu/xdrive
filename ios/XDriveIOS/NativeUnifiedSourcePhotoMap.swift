@@ -11,12 +11,19 @@ private enum XDriveIOSUnifiedSourceMapPolicy {
     static let maximumPages = 10_000
     static let maximumWallSeekPages = 256
 
+    static func canonicalLongitude(_ longitude: Double) -> Double {
+        // WGS84's +180 and -180 describe the SAME meridian. Unify before
+        // bucketing AND computing MapKit representative coordinates.
+        longitude == 180 ? -180 : longitude
+    }
+
     static func bucket(latitude: Double, longitude: Double) -> Int? {
         guard XDriveIOSNativePhotoMapPolicy.validCoordinate(
             latitude: latitude, longitude: longitude
         ) else { return nil }
         let lat = min(7, max(0, Int(floor((latitude + 90) / 180 * 8))))
-        let lon = min(7, max(0, Int(floor((longitude + 180) / 360 * 8))))
+        let canonical = canonicalLongitude(longitude)
+        let lon = min(7, max(0, Int(floor((canonical + 180) / 360 * 8))))
         return lat * 8 + lon
     }
 
@@ -32,12 +39,16 @@ private enum XDriveIOSUnifiedSourceMapPolicy {
                   ).firstObject, let position = asset.location?.coordinate,
                   bucket(latitude: position.latitude, longitude: position.longitude) != nil
             else { return nil }
-            return position
+            return CLLocationCoordinate2D(
+                latitude: position.latitude,
+                longitude: canonicalLongitude(position.longitude))
         }
         if let metadata = row.cloud?.metadata, let latitude = metadata.latitude,
            let longitude = metadata.longitude,
            bucket(latitude: latitude, longitude: longitude) != nil {
-            return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            return CLLocationCoordinate2D(
+                latitude: latitude,
+                longitude: canonicalLongitude(longitude))
         }
         return nil
     }
