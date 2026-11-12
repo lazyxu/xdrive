@@ -91,8 +91,7 @@ struct XDriveIOSNativePhotoMapCaptureRange: Equatable {
     var valid: Bool {
         from.timeIntervalSince1970.isFinite &&
         to.timeIntervalSince1970.isFinite &&
-        from < to && to.timeIntervalSince(from) <= 370 * 86_400 &&
-        !label.isEmpty && label.utf8.count <= 80
+        from < to && !label.isEmpty && label.utf8.count <= 80
     }
 
     func contains(_ capturedAt: Date?) -> Bool {

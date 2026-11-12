@@ -165,6 +165,28 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     Label(query == .init() ? "搜索与筛选" : "已筛选", systemImage: "line.3.horizontal.decrease.circle")
                 }
                 .accessibilityIdentifier("native-ios-gallery-open-filters")
+                // The native Photos-style menu applies the *committed* filter.
+                // Unsubmitted sheet edits are never allowed to leak into it.
+                if onShowMap != nil {
+                    Menu {
+                        Button("排序和筛选") {
+                            draft = query
+                            showFilters = true
+                        }
+                        Button {
+                            showMapForAppliedQuery()
+                        } label: {
+                            Label("显示地图", systemImage: "map")
+                        }
+                        .disabled(mapUnavailableReason(for: query) != nil)
+                        .accessibilityIdentifier("native-ios-gallery-sort-filter-show-map")
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("排序和筛选")
+                    .accessibilityIdentifier("native-ios-gallery-sort-filter-menu")
+                }
                 Spacer()
                 if query != .init() { Button("清除") { query = .init() } }
                 Menu {
@@ -366,22 +388,48 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     // MapKit routes have separate PhotoKit/Owner scopes. Refuse every
     // predicate that MapKit cannot represent *exactly*; never display an
     // unfiltered map under an actively filtered Gallery heading.
-    private var mapUnavailableReason: String? {
+    private var mapUnavailableReason: String? { mapUnavailableReason(for: draft) }
+
+    private func mapUnavailableReason(
+        for criteria: XDriveIOSNativeUnifiedGalleryQuery
+    ) -> String? {
         if sourceFilter != nil {
             return "当前“两端都有／仅本机／仅云端／待核验”来源筛选无法在地图中精确重现。请先选择“全部”来源。"
         }
-        if !draft.isValid {
+        if !criteria.isValid {
             return "请先修正日期范围或搜索条件。"
         }
-        if draft.from != nil || draft.until != nil {
-            guard let from = draft.from, let until = draft.until,
+        if criteria.from != nil || criteria.until != nil {
+            guard let from = criteria.from, let until = criteria.until,
                   XDriveIOSNativePhotoMapCaptureRange(
                     from: from, to: until, label: "当前图库日期筛选"
                   ).valid else {
-                return "所选日期超出地图支持的连续时间范围（最长 370 天）。"
+                return "日期区间无效，请选择正确的开始和结束日期。"
             }
         }
         return nil
+    }
+
+    private func showMapForAppliedQuery() {
+        guard mapUnavailableReason(for: query) == nil,
+              let onShowMap else { return }
+        let range: XDriveIOSNativePhotoMapCaptureRange?
+        if let from = query.from, let until = query.until {
+            let current = XDriveIOSNativePhotoMapCaptureRange(
+                from: from, to: until, label: "当前图库日期筛选")
+            guard current.valid else { return }
+            range = current
+        } else {
+            range = nil
+        }
+        let media: XDriveIOSNativePhotoMediaFilter
+        switch query.media {
+        case .all: media = .all
+        case .image: media = .photos
+        case .video: media = .videos
+        case .live: media = .livePhotos
+        }
+        onShowMap(range, media, query.term)
     }
 
     private var representableMapMediaFilter: XDriveIOSNativePhotoMediaFilter {

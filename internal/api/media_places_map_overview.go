@@ -26,7 +26,7 @@ type mediaCaptureBounds struct {
 
 func (s *mediaCaptureBounds) valid() bool {
 	return s != nil && !s.From.IsZero() && !s.To.IsZero() &&
-		s.From.Before(s.To) && s.To.Sub(s.From) <= 370*24*time.Hour
+		s.From.Before(s.To)
 }
 
 func mediaMapCaptureFilter(query *gorm.DB, scope *mediaCaptureBounds) *gorm.DB {
