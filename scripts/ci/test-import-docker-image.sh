@@ -90,7 +90,8 @@ ln -s "$TMP/artifact/original.tar.gz" "$TMP/artifact/image.tar.gz"
 if bash "$IMPORT" "$TMP/artifact" xdrive/server:test >/dev/null 2>&1; then
   echo 'symlinked CI archive was accepted' >&2; exit 1
 fi
-if grep -E '^(tag|push|build|save)' "$XD_TEST_DOCKER_RECORD"; then
+# A verified re-export is read-only; tag/push/build remain forbidden.
+if grep -E '^(tag|push|build)' "$XD_TEST_DOCKER_RECORD"; then
   echo 'import attempted unrelated Docker mutation' >&2; exit 1
 fi
 echo 'Bounded exact Docker image import: success, SHA, CRC, timeout and safe artifact tests passed'
