@@ -101,3 +101,17 @@ test('P0-6 real MapKit → place photo wall → Viewer → map ×3 keeps screens
   assert.match(workflow, /Reject candidate xDriveIOS process crash reports/)
   assert.match(workflow, /candidate-mapkit/)
 })
+
+test('P0 real Settings return may re-request Full Photos only after an explicit tap and never trusts stale TCC state', () => {
+  assert.match(local, /@State private var explicitSettingsAuthorizationRecheck = false/)
+  assert.match(local, /private func openPhotoSettings\(\)[\s\S]*?explicitSettingsAuthorizationRecheck = true[\s\S]*?UIApplication\.shared\.open\(url\)/)
+  assert.match(local, /private func recheckExplicitSettingsAuthorization\(\)/)
+  assert.match(local, /guard explicitSettingsAuthorizationRecheck, phase == \.active else \{ return \}/)
+  assert.match(local, /guard status == \.denied \|\| status == \.notDetermined else \{ return \}/)
+  assert.match(local, /await PHPhotoLibrary\.requestAuthorization\(for: \.readWrite\)/)
+  assert.match(local, /guard phase == \.active, generation == ticket else \{ return \}/)
+  assert.match(local, /guard live == \.authorized else \{[\s\S]*?invalidate\(\)[\s\S]*?return/)
+  assert.match(local, /recheckExplicitSettingsAuthorization\(\)\s*return/)
+  assert.match(ui, /handleInitialPhotoLibraryPromptIfPresent\(\)\s*recordActualPhotoKitReadback\(app, stage: "after-settings"\)/)
+  assert.doesNotMatch(ui, /fakeAuthorized|skipFullAccess|forceGrantPhotoKit/)
+})

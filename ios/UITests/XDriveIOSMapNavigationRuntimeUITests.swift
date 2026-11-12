@@ -274,6 +274,11 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
         app.activate()
         XCTAssertEqual(app.state, .runningForeground)
+        // iOS 18.5 may issue an explicit system-wide Full Access prompt
+        // *after* the Settings row is selected. Only its actual Full
+        // authorization button is admissible; the app must still read back
+        // .authorized and mount real MapKit without a restart.
+        handleInitialPhotoLibraryPromptIfPresent()
         recordActualPhotoKitReadback(app, stage: "after-settings")
         if !element("native-ios-full-library-gps-map", in: app)
             .waitForExistence(timeout: 35) {
@@ -284,6 +289,9 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             let liveBlocked = element("native-ios-map-open-photo-settings", in: app).exists
             app.terminate()
             app.launch()
+            // Diagnostic only. No restart may be accepted as a substitute
+            // for immediate Settings-return reauthorization.
+            handleInitialPhotoLibraryPromptIfPresent()
             recordActualPhotoKitReadback(app, stage: "after-restart-before-map")
             let launcher = element("native-ios-tab-launcher", in: app)
             let launcherAvailable = launcher.waitForExistence(timeout: 15)

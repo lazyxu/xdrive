@@ -1201,6 +1201,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var selection: XDriveIOSMapPhotoSelection?
     @State private var singleViewer: XDrivePhotoKitScanCandidate?
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    // Only an explicit tap on "打开 iOS 设置" permits one post-Settings
+    // PhotoKit reauthorization request. Never silently prompt on map entry.
+    @State private var explicitSettingsAuthorizationRecheck = false
     @State private var globalCells: [
         XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
     ] = []
@@ -1911,8 +1914,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     onLibraryCameraChange?(nil)
                     clearReturnCamera()
                     invalidate()
+                    recheckExplicitSettingsAuthorization()
                     return
                 }
+                explicitSettingsAuthorizationRecheck = false
                 if mapScope == .page { refresh(at: offset) }
                 else { scanFullLibrary() } // A new PhotoKit generation must re-scan.
             } else {
@@ -1933,13 +1938,21 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // grant must revoke the displayed cells before another tap.
             let live = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             print("IOS_MAP_PHOTO_AUTH_REENTRY cached=\(authorization.rawValue) live=\(live.rawValue) scene=\(phase)")
-            guard phase == .active, live != authorization else { return }
+            guard phase == .active else { return }
+            if live == authorization {
+                if live != .authorized { recheckExplicitSettingsAuthorization() }
+                return
+            }
             let returningCamera = globalCamera
             authorization = live
             onLibraryCameraChange?(nil)
             clearReturnCamera()
             invalidate()
-            guard live == .authorized else { return }
+            guard live == .authorized else {
+                recheckExplicitSettingsAuthorization()
+                return
+            }
+            explicitSettingsAuthorizationRecheck = false
             changes.start()
             if mapScope == .page {
                 refresh(at: offset)
@@ -2119,7 +2132,35 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
 
     private func openPhotoSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        // This flag is only set by the visible, user-initiated Settings button.
+        // A background foreground-transition, retry, or Owner change cannot
+        // trigger a Photo Library consent prompt by itself.
+        explicitSettingsAuthorizationRecheck = true
         UIApplication.shared.open(url)
+    }
+
+    private func recheckExplicitSettingsAuthorization() {
+        guard explicitSettingsAuthorizationRecheck, phase == .active else { return }
+        explicitSettingsAuthorizationRecheck = false
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        // A system Settings transition may still expose the old .denied TCC
+        // snapshot until PhotoKit explicitly re-reads authorization. Limited
+        // and Restricted are NEVER widened into a full-library map.
+        guard status == .denied || status == .notDetermined else { return }
+        let ticket = generation
+        Task {
+            _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            guard phase == .active, generation == ticket else { return }
+            let live = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            authorization = live
+            guard live == .authorized else {
+                invalidate()
+                return
+            }
+            changes.start()
+            if mapScope == .page { refresh(at: offset) }
+            else { scanFullLibrary() }
+        }
     }
 
     private func scanFullLibrary(
