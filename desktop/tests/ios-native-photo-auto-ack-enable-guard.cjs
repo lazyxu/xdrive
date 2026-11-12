@@ -24,7 +24,7 @@ test('auto enable serializes verified ledger inspection with original writers', 
   assert.match(configure, /defer \{ XDriveIOSOriginalRunGate\.shared\.release\(gate\) \}/)
   assert.match(configure, /guard pending == 0 else \{/)
   assert.match(configure, /if store\.status\(owner: selected\)\?\.pausedForReview == true/)
-  assert.match(configure, /else if store\.status\(owner: selected\) != nil/)
+  assert.match(configure, /else if store\.hasSavedRecord\(owner: selected\)/)
   assert.doesNotMatch(configure, /\.localScopeAndTag\(|\.installationKey\(|\.uploadPrepared\(/)
 })
 
@@ -105,7 +105,7 @@ test('only-new consent epoch is persisted after verified managed target without 
 test('paused plan cannot bypass a missing Owner ledger by resuming or changing backup scope', () => {
   const scope = configure.indexOf('.existingLocalScope(owner: selected)')
   const checkPending = configure.indexOf('guard pending == 0 else')
-  const missingLedger = configure.indexOf('else if store.status(owner: selected) != nil')
+  const missingLedger = configure.indexOf('else if store.hasSavedRecord(owner: selected)')
   const authority = configure.indexOf('let second = try await login.verifiedAuthorization()')
   assert.ok(scope >= 0 && checkPending > scope &&
     missingLedger > checkPending && authority > missingLedger,
@@ -117,4 +117,23 @@ test('paused plan cannot bypass a missing Owner ledger by resuming or changing b
   assert.match(configure, /if startRule == \.resumePrevious/)
   assert.match(configure, /previous\.enabled == false/)
   assert.doesNotMatch(configure, /clearLedger|resetLedger|deleteReceipt/)
+})
+
+test('unreadable persisted Owner schedule cannot pose as first-time consent', () => {
+  const state = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
+  const present = state.slice(state.indexOf('func hasSavedRecord(owner:'),
+    state.indexOf('func status(owner:'))
+  assert.match(present, /UserDefaults\.standard\.object\(forKey: key\(for: owner\)\) != nil/)
+  assert.doesNotMatch(present, /JSONDecoder|removeObject|installationKey|localScopeAndTag/)
+  const setup = state.slice(state.indexOf('func configure(owner:'),
+    state.indexOf('func pauseForPendingReceipts('))
+  const readExisting = setup.indexOf('let existing = status(owner: owner)')
+  const refuseCorrupt = setup.indexOf('guard existing != nil || !hasSavedRecord(owner: owner)')
+  const save = setup.indexOf('try persist(state, owner: owner)')
+  assert.ok(readExisting >= 0 && refuseCorrupt > readExisting && save > refuseCorrupt)
+  assert.match(setup, /throw XDriveIOSPhotoAutoScheduleError\.persistenceUnavailable/)
+  const proof = configure.slice(configure.indexOf('.existingLocalScope(owner: selected)'),
+    configure.indexOf('let second = try await login.verifiedAuthorization()'))
+  assert.match(proof, /else if store\.hasSavedRecord\(owner: selected\)/)
+  assert.doesNotMatch(proof, /resetLedger|deleteReceipt|disable\(owner:/)
 })

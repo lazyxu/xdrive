@@ -255,7 +255,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     errorMessage = "当前账户还有 \(pending) 项结果不确定的上传收据，请先核对；自动备份未开启。"
                     return
                 }
-            } else if store.status(owner: selected) != nil {
+            } else if store.hasSavedRecord(owner: selected) {
                 // An existing plan may have been paused with enabled=false.
                 // Missing Keychain/ledger scope is NOT proof that its earlier
                 // uploads all received a confirmed Server ACK. Never revive
