@@ -27,7 +27,8 @@ test('same-page Viewer dismiss scrolls directly to target row, never page top', 
   assert.doesNotMatch(section.split('} else {')[0], /unified-page-/);
 });
 test('cross-page filmstrip navigation still materializes the target lazy page', () => {
-  const section = from('.onChange(of: selected?.id) { selection in');
+  // Include the entire cross-page branch even when same-page cleanup gains comments.
+  const section = from('.onChange(of: selected?.id) { selection in', 1750);
   assert.match(section, /} else \{[\s\S]*scroll\.scrollTo\("unified-page-/);
   assert.match(section, /anchor: \.top/);
 });
