@@ -21,9 +21,9 @@ import (
 // capture-time predicate is applied to map Count, exact cells, covers and
 // every selected Owner photo Range.
 type mediaCaptureBounds struct {
-	From time.Time
-	To   time.Time
-	Filename string
+	From      time.Time
+	To        time.Time
+	Filename  string
 	MediaKind string
 	AssetKind string
 }
@@ -31,7 +31,7 @@ type mediaCaptureBounds struct {
 func (s *mediaCaptureBounds) valid() bool {
 	return s != nil &&
 		((s.From.IsZero() && s.To.IsZero()) ||
-		(!s.From.IsZero() && !s.To.IsZero() && s.From.Before(s.To))) &&
+			(!s.From.IsZero() && !s.To.IsZero() && s.From.Before(s.To))) &&
 		(s.MediaKind == "" || s.MediaKind == "image" || s.MediaKind == "video") &&
 		(s.AssetKind == "" || s.AssetKind == "live_photo") &&
 		len([]rune(s.Filename)) <= 120 &&

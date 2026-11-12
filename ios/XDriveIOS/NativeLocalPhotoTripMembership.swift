@@ -292,7 +292,7 @@ struct XDriveIOSNativeLocalRecentDaysAndTrips: View {
                 if request == ticket { busy = false }
             } catch {
                 guard request == ticket else { return }
-                error = "本机照片或位置成员已变化，请重新核对。"
+                self.error = "本机照片或位置成员已变化，请重新核对。"
                 busy = false
             }
         }

@@ -378,8 +378,8 @@ func TestMediaQueryCalendarDateBoundariesMatchMapUIAndDST(t *testing.T) {
 func TestMediaQueryFromRequestLiteralMapFilename(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, input := range []struct {
-		query string
-		valid bool
+		query    string
+		valid    bool
 		filename string
 	}{
 		{"filename=IMG_0001.HEIC&kind=image", true, "IMG_0001.HEIC"},

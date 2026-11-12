@@ -78,10 +78,10 @@ func TestMediaMapOverviewAcceptsExplicitMultiYearRangeWithoutBroadeningOwner(t *
 
 func TestMediaMapOverviewNativeMediaAndLiteralFilenameFilter(t *testing.T) {
 	base := "west=-180&south=-85&east=180&north=85&detail=1"
-	for _, scenario := range []struct{
-		query string
-		media string
-		asset string
+	for _, scenario := range []struct {
+		query    string
+		media    string
+		asset    string
 		filename string
 	}{
 		{"&filename=IMG_001.JPG", "", "", "IMG_001.JPG"},

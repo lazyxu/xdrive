@@ -379,7 +379,9 @@ func (options mediaQueryOptions) withoutFormats() mediaQueryOptions {
 // general search (OCR/tags/camera). Use the SAME current Owner asset Resource
 // membership for both Map Overview and selected 48-photo Range.
 func applyMediaFilenameFilter(query *gorm.DB, filename string) *gorm.DB {
-	if filename == "" { return query }
+	if filename == "" {
+		return query
+	}
 	return query.Where(
 		"POSITION(LOWER(?) IN LOWER(n.name)) > 0 OR EXISTS ("+
 			"SELECT 1 FROM xd_photo_resources AS map_resource "+
