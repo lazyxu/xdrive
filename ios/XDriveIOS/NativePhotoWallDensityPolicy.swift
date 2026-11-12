@@ -195,13 +195,17 @@ enum XDriveIOSNativeOwnerPlaceDateIndexPolicy {
             var lastKnown: String?
             var ascending: Bool?
             var hasKnown = false
+            var hasUnknown = false
             for (position, group) in groups.enumerated() {
                 guard group.start_index == counted, group.item_count > 0,
                       group.item_count <= total - counted else { return false }
                 counted += group.item_count
                 if group.key == "unknown" {
-                    // Missing dates can occur only once at one end of a timeline.
-                    if position != 0 && position != groups.count - 1 { return false }
+                    // A single unknown date bucket may occur only at one edge.
+                    if hasUnknown || (position != 0 && position != groups.count - 1) {
+                        return false
+                    }
+                    hasUnknown = true
                     continue
                 }
                 guard validKey(group.key, scale: scale) else { return false }
@@ -240,7 +244,8 @@ enum XDriveIOSNativeOwnerPlaceDateIndexPolicy {
         guard let first = known.first, let last = known.last else { return nil }
         let descending = first >= last
         for i in 1..<known.count {
-            if descending ? known[i] > known[i - 1] : known[i] < known[i - 1] {
+            if (descending && known[i] > known[i - 1]) ||
+               (!descending && known[i] < known[i - 1]) {
                 return nil
             }
         }

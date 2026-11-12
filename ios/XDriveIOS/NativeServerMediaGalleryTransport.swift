@@ -81,6 +81,17 @@ struct XDriveIOSNativeMediaRange: Decodable {
     // Complete Owner-filtered timeline from offset-zero Server Range only.
     // Date indices never authorize opening a media Node.
     let timeline_group_sets: XDriveIOSNativeMediaDateGroupSets?
+
+    // Keep four-argument fixture/production initializers source-compatible.
+    init(items: [XDriveIOSNativeMediaItem], total_count: Int,
+         offset: Int, limit: Int,
+         timeline_group_sets: XDriveIOSNativeMediaDateGroupSets? = nil) {
+        self.items = items
+        self.total_count = total_count
+        self.offset = offset
+        self.limit = limit
+        self.timeline_group_sets = timeline_group_sets
+    }
 }
 
 /// Exact per-item identity for a resumed native cloud Viewer. A matching
@@ -315,7 +326,10 @@ struct XDriveIOSNativeMediaGalleryReader {
             parameters.append(URLQueryItem(name: "has_location", value: "true"))
         }
         let url = try endpoint(path, query: parameters)
-        let data = try await read(url, maximum: 2 * 1_048_576)
+        // Offset-zero place Ranges can include up to 100k date groups;
+        // preserve a finite 8 MiB cap without enlarging ordinary pages.
+        let maximumBytes = placeID != nil && offset == 0 ? 8 * 1_048_576 : 2 * 1_048_576
+        let data = try await read(url, maximum: maximumBytes)
         let page = try JSONDecoder().decode(XDriveIOSNativeMediaRange.self, from: data)
         guard page.offset == offset, page.limit == Self.pageSize,
               page.total_count >= 0, page.total_count <= 10_000_000,

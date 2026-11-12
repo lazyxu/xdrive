@@ -106,12 +106,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     }
 
     private var canJumpInCurrentPlace: Bool {
-        guard activeOwner, let index = verifiedDateIndex,
+        // Validation is O(number of date groups) and occurs on receipt only.
+        // SwiftUI re-renders must not rescan 100k date groups per frame.
+        guard activeOwner, verifiedDateIndex != nil,
               selection.places.indices.contains(cursor.placeIndex),
               verifiedDatePlaceID == selection.places[cursor.placeIndex].id,
-              verifiedDateTotal == selection.places[cursor.placeIndex].item_count,
-              XDriveIOSNativeOwnerPlaceDateIndexPolicy.accepts(
-                  index, total: verifiedDateTotal)
+              verifiedDateTotal == selection.places[cursor.placeIndex].item_count
         else { return false }
         return true
     }
