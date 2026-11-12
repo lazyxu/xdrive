@@ -100,3 +100,22 @@ test('Limited Photos may back up only Apple-selected originals; only-new and BG 
   assert.match(screen, /仅备份当前选定/)
   assert.match(bg, /guard access == \.authorized else/)
 })
+
+
+test('a newly selected photo backup scope never inherits an older positional cursor', () => {
+  const store = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
+  const resume = store.indexOf('if startRule == .resumePrevious')
+  const newPlan = store.indexOf('let state = State(', resume)
+  const persist = store.indexOf('try persist(state, owner: owner)', newPlan)
+  assert.ok(resume >= 0 && newPlan > resume && persist > newPlan)
+  const existingResume = store.slice(resume, newPlan)
+  assert.match(existingResume, /sameTarget, previous\.backupStartRule != nil/)
+  assert.match(existingResume, /previous\.enabled = true/)
+  const fresh = store.slice(newPlan, persist)
+  assert.match(fresh, /windowIndex: 0,/)
+  assert.match(fresh, /lastCompletedAt: nil,/)
+  assert.match(fresh, /libraryChangeEpoch: nil,/)
+  assert.match(fresh, /libraryAuthorizationRaw: nil,/)
+  assert.doesNotMatch(fresh, /sameTarget \?/,
+    'only explicitly resuming an old plan may reuse an old scan window')
+})

@@ -120,12 +120,16 @@ final class XDriveIOSPhotoAutoScheduleStore {
         let state = State(
             enabled: true, pausedForReview: false,
             intervalMinutes: minutes, allowICloudOriginals: allowICloud,
-            windowIndex: sameTarget ? (existing?.windowIndex ?? 0) : 0,
+            // A new selection starts a new positional scan even when the
+            // managed target is unchanged. Only .resumePrevious above may
+            // preserve a paused plan's cursor and PhotoKit generation.
+            // The independent durable change queue is not erased here.
+            windowIndex: 0,
             // First scan is due on the next eligible foreground poll.
-            nextDueAt: Date(), lastCompletedAt: sameTarget ? existing?.lastCompletedAt : nil,
+            nextDueAt: Date(), lastCompletedAt: nil,
             targetSourceID: sourceID, targetNodeID: targetNodeID,
-            libraryChangeEpoch: sameTarget ? existing?.libraryChangeEpoch : nil,
-            libraryAuthorizationRaw: sameTarget ? existing?.libraryAuthorizationRaw : nil,
+            libraryChangeEpoch: nil,
+            libraryAuthorizationRaw: nil,
             catchUpWhenBehind: XDriveIOSPhotoAutoSchedulePolicy.initialCatchUpPreference(
                 hasExistingPlan: existing != nil,
                 savedPreference: existing?.catchUpWhenBehind
