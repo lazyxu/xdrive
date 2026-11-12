@@ -283,9 +283,7 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
                       XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
                       UIApplication.shared.applicationState == .active,
-                      [.authorized, .limited].contains(
-                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                      ) else { throw XDriveIOSNativeSessionError.staleSession }
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else { throw XDriveIOSNativeSessionError.staleSession }
 
                 // Schedule first; on failure retain the durable BG pause.
                 // The OS earliest-attempt is advisory, not a foreground run.
