@@ -232,6 +232,7 @@ test('published native Agent terminal auth states revoke both map surfaces',()=>
       closeDesktopPlacesGuests:()=>calls.push('guest-closed'),
       closeSecureBaiduMapWindow:()=>calls.push('secure-closed'),
       resetSourceRunNotificationState:()=>{},
+      mountRunNotificationTracker:{reset:()=>{}},
       notifyAgentTransition:()=>{},rebuildTrayMenu:()=>{},
       updateTaskbarOverlay:()=>{},updateTaskbarProgress:()=>{},
       mainWindow:null,

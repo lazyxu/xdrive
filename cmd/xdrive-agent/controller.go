@@ -522,12 +522,11 @@ func (c *agentController) Run() {
 			_, err := cli.Root(checkCtx)
 			cancel()
 			if err == nil {
+				// Root() proves this session can authenticate; it does not
+				// prove Mount completed or clear a recorded Mount failure.
+				// Only the actual Mount event may update sync completion.
 				c.setSnapshot(func(s *agentSnapshot) {
 					s.AuthStatus = "已登录"
-					if !s.HasConflict {
-						s.SyncStatus = "同步正常"
-					}
-					s.LastError = ""
 				})
 				return
 			}

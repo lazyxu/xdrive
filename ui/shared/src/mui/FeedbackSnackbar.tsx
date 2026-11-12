@@ -28,6 +28,17 @@ export function XDriveFeedbackSnackbar({
       open={open}
       autoHideDuration={autoHideDuration}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      sx={{
+        // Keep passive feedback above the five-slot dock without intercepting
+        // taps anywhere outside explicit action controls.
+        bottom: { xs: 'calc(64px + env(safe-area-inset-bottom))', sm: '24px' },
+        '@media (orientation: landscape) and (max-height: 500px)': {
+          bottom: 'calc(52px + env(safe-area-inset-bottom))',
+        },
+        pointerEvents: 'none',
+        '& > div': { pointerEvents: 'none' },
+        '& a[href], & button, & [role="button"]': { pointerEvents: 'auto' },
+      }}
       onClose={(_event, reason) => {
         if (reason !== 'clickaway') onClose()
       }}
