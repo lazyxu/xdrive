@@ -751,3 +751,161 @@ struct XDriveIOSNativeClipboardScreen: View {
         message = nil
     }
 }
+
+
+/// Files/Owner authorization is shared with Native Files. Clipboard adds
+/// no second file reader, binary store or local cache of remote metadata.
+private enum XDriveIOSClipboardCloudFilePolicy {
+    static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "avif", "heic", "heif",
+        "tif", "tiff", "bmp"
+    ]
+
+    static func accepts(_ node: XDriveIOSNativeFilesNode, kind: String) -> Bool {
+        guard node.id > 0, node.parent_id != nil,
+              node.revision > 0, node.size >= 0,
+              !node.name.isEmpty, node.type == "file" else { return false }
+        if kind == "image" {
+            guard let suffix = node.name.split(separator: ".").last else { return false }
+            return imageExtensions.contains(String(suffix).lowercased())
+        }
+        return kind == "file"
+    }
+}
+
+/// Read-only Cloud Files selection: a single, real 64-item Server page at
+/// any time; no fabricated directory/Node data or unbounded 100k lists.
+private struct XDriveIOSNativeClipboardCloudPicker: View {
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let openedOwner: XDriveNativeOwnerRoot
+    let kind: String
+    let onChoose: (XDriveIOSNativeFilesNode) -> Void
+    let onDismiss: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var folders: [XDriveIOSNativeFilesDestination] = []
+    @State private var rows: [XDriveIOSNativeFilesNode] = []
+    @State private var offset = 0
+    @State private var totalCount = 0
+    @State private var loading = false
+    @State private var failure: String?
+    @State private var requestID = UUID()
+
+    private var folderID: UInt64 { folders.last?.id ?? openedOwner.rootNodeID }
+    private var folderName: String { folders.last?.name ?? "云端根目录" }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("当前目录") {
+                    Label(folderName, systemImage: "folder")
+                    if !folders.isEmpty {
+                        Button("返回上一级") {
+                            folders.removeLast()
+                            offset = 0
+                            rows = []
+                        }
+                    }
+                }
+                Section("当前 Owner 的云端文件") {
+                    if loading { ProgressView("正在核验 Files 分页…") }
+                    if let failure {
+                        Text(failure).foregroundStyle(.secondary)
+                        Button("重试") { Task { await readPage() } }
+                    } else if !loading {
+                        ForEach(rows) { node in
+                            if node.isDirectory {
+                                Button {
+                                    guard node.parent_id == folderID, node.id > 0 else { return }
+                                    folders.append(.init(id: node.id, name: node.name))
+                                    offset = 0
+                                    rows = []
+                                } label: {
+                                    Label(node.name, systemImage: "folder.fill")
+                                }
+                            } else if XDriveIOSClipboardCloudFilePolicy.accepts(node, kind: kind) {
+                                Button {
+                                    guard XDriveIOSNativePhotoOwnerScope.matches(
+                                        login.owner, openedOwner
+                                    ), rows.contains(where: { $0.id == node.id }) else { return }
+                                    onChoose(node)
+                                    dismiss()
+                                } label: {
+                                    Label(node.name, systemImage: "doc")
+                                }
+                            }
+                        }
+                        if offset > 0 {
+                            Button("上一页") { offset = max(0, offset - 64) }
+                        }
+                        if offset + rows.count < totalCount && !rows.isEmpty {
+                            Button("下一页") { offset += rows.count }
+                        }
+                        if rows.isEmpty && totalCount == 0 {
+                            Text("当前目录没有文件").foregroundStyle(.secondary)
+                        }
+                        Text("已读取 \(offset + rows.count) / \(totalCount) 项")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("从云端 Files 选择")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("取消") { onDismiss(); dismiss() }
+                }
+            }
+            .task(id: "\(folderID):\(offset)") { await readPage() }
+            .onChange(of: login.owner) { _ in
+                requestID = UUID()
+                onDismiss()
+                dismiss()
+            }
+            .onDisappear { requestID = UUID() }
+        }
+    }
+
+    @MainActor private func readPage() async {
+        let id = UUID()
+        requestID = id
+        loading = true
+        failure = nil
+        rows = []
+        let requestedFolder = folderID
+        let requestedOffset = offset
+        defer { if requestID == id { loading = false } }
+        do {
+            let auth = try await login.verifiedAuthorization()
+            try Task.checkCancellation()
+            guard requestID == id,
+                  XDriveIOSNativePhotoOwnerScope.matches(auth.owner, openedOwner),
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner)
+            else { return }
+            let result = try await XDriveIOSNativeFilesReader(
+                owner: auth.owner, accessToken: auth.accessToken
+            ).children(parentID: requestedFolder, offset: requestedOffset,
+                       sort: "name", order: "asc")
+            try Task.checkCancellation()
+            guard requestID == id, folderID == requestedFolder,
+                  offset == requestedOffset,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner)
+            else { return }
+            guard result.offset == requestedOffset, result.items.count <= 64,
+                  result.total_count >= requestedOffset + result.items.count,
+                  (result.items.count > 0 || result.total_count == requestedOffset),
+                  Set(result.items.map(\.id)).count == result.items.count,
+                  result.items.allSatisfy({ $0.id > 0 && $0.parent_id == requestedFolder })
+            else { throw XDriveIOSClipboardPolicy.Failure.invalidPayload }
+            rows = result.items
+            totalCount = result.total_count
+        } catch is CancellationError {
+        } catch {
+            if requestID == id {
+                rows = []
+                failure = "目录已变化、无权访问或分页无效；请返回或重试。"
+            }
+        }
+    }
+}
