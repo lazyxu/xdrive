@@ -240,6 +240,13 @@ struct XDriveIOSNativePhotosDashboard: View {
                 gallery
                     .navigationTitle("图库")
                     .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            if !galleryFocused {
+                                galleryCompactBackupAction
+                            }
+                        }
+                    }
             }
             .tabItem { Label("图库", systemImage: "photo.on.rectangle") }
             .tag(XDriveIOSNativeBottomTab.gallery)
@@ -597,16 +604,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                     if gallerySource == .local || gallerySource == .albums {
                         gallerySearchAction
                     }
-                    // A caption-only Menu label produced a 15pt AX target in
-                    // real iPhone Simulator tests. Keep the real menu, but make
-                    // its touch area at least 44pt and explicitly hittable.
-                    Menu { backupMenuItems } label: {
-                        Label("备份", systemImage: "icloud.and.arrow.up")
-                            .frame(minWidth: 68, minHeight: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("native-ios-gallery-backup-settings")
+                    // The backup Menu is in the native navigation toolbar,
+                    // never an overlapping caption-sized content-row control.
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)
@@ -698,18 +697,21 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     private var galleryCompactBackupAction: some View {
         Menu { backupMenuItems } label: {
-            Image(systemName: backup.busy ? "arrow.triangle.2.circlepath" :
+            Label("备份", systemImage:
+                  backup.busy ? "arrow.triangle.2.circlepath" :
                   backup.schedule?.pausedForReview == true ? "exclamationmark.shield" :
                   (photoAuthorization != .authorized && photoAuthorization != .limited) ?
                       "exclamationmark.triangle" : "icloud.and.arrow.up")
-                .font(.body)
-                .frame(width: 48, height: 44)
+                .font(.subheadline)
+                .lineLimit(1)
+                .frame(minWidth: 64, minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(
             backup.schedule?.pausedForReview == true ? Color.orange : Color.accentColor
         )
-        .accessibilityLabel("备份设置")
+        .accessibilityLabel("备份操作")
         .accessibilityValue(
             backup.busy ? "正在检查备份" :
             backup.schedule?.pausedForReview == true ? "自动备份已暂停，需核对收据" :
@@ -718,7 +720,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             backup.schedule?.enabled == true ? "前台自动备份已开启" :
                 "前台自动备份未开启"
         )
-        .accessibilityIdentifier("native-ios-gallery-backup-settings-compact")
+        .accessibilityIdentifier("native-ios-gallery-backup-settings")
     }
 
     private var gallery: some View {
@@ -737,7 +739,6 @@ struct XDriveIOSNativePhotosDashboard: View {
                             if gallerySource == .local || gallerySource == .albums {
                                 gallerySearchAction
                             }
-                            galleryCompactBackupAction
                         }
                         .frame(minHeight: 48)
                     } else {

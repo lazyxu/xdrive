@@ -235,7 +235,15 @@ test('actual mounted signed-out login re-arms the existing guarded readiness, ne
 test('real Simulator regressions keep Gallery backup 44pt, Notes source AX and guarded startup retry', () => {
   const notes = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeNotesScreen.swift'), 'utf8');
   const login = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8');
-  assert.match(dashboard, /Label\("备份", systemImage: "icloud\.and\.arrow\.up"\)[\s\S]*?\.frame\(minWidth: 68, minHeight: 44\)/);
+  const nav = dashboard.slice(dashboard.indexOf('var body: some View'), dashboard.indexOf('private var nativeBottomBar:'));
+  assert.match(nav, /\.navigationTitle\("图库"\)[\s\S]*?ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?galleryCompactBackupAction/);
+  const row = dashboard.slice(dashboard.indexOf('private var galleryStatusRow:'), dashboard.indexOf('private var backupMenuItems:'));
+  assert.doesNotMatch(row, /Menu \{ backupMenuItems \}/);
+  const compact = dashboard.slice(dashboard.indexOf('private var galleryCompactBackupAction:'), dashboard.indexOf('private var gallery: some View'));
+  assert.match(compact, /\.frame\(minWidth: 64, minHeight: 44\)[\s\S]*?\.contentShape\(Rectangle\(\)\)/);
+  assert.match(compact, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings"\)/);
+  assert.equal((dashboard.match(/galleryCompactBackupAction/g) || []).length, 2,
+    'The single backup Menu must be declared once and rendered only in the toolbar');
   assert.match(notes, /\.pickerStyle\(\.segmented\)[\s\S]*?\.accessibilityIdentifier\("native-ios-notes-source-picker"\)/);
   assert.match(swift, /let picker = element\("native-ios-notes-source-picker", app: app\)/);
   // A 2-second retry cannot restore a revoked visible lease. Root ownership
