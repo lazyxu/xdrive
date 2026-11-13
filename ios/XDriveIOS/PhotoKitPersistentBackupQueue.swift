@@ -75,8 +75,10 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
 
     /// Install the PhotoKit token captured at the user's native only-new
     /// consent after managed Owner/Device/Source/Target proof completes.
-    /// Saving the later token would skip old-dated imports or edits made
-    /// while the Server was being verified. Never overwrite older baselines.
+    /// A fresh plan must not inherit a previous, permanently disabled plan's
+    /// unuploaded PhotoKit change queue. This reset is distinct from resume
+    /// previous (which never reaches this overload), and is authorized only
+    /// by the foreground setup's verified zero-unknown-receipt gate.
     func installNewOnlyBaseline(
         owner: XDriveNativeOwnerRoot,
         consentToken: Data,
@@ -91,17 +93,19 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         guard before.authorization == consentAuthorization else {
             throw Failure.authorizationChanged
         }
-        // The SQLite insert-if-absent preserves previous pending revisions.
-        // PhotoKit may advance legitimately between consent and this write:
-        // later replay must start at the consent-time token, not "before".
-        let installed = try store.installBaselineIfAbsent(
+        // For a new, expressly confirmed only-new plan, previous queued
+        // pre-consent revisions are outside scope. SQLite replaces the token
+        // and retires those rows in one transaction; no Server receipt changes.
+        // PhotoKit may advance after consent while Server proof is pending:
+        // those later changes remain replayable from this exact token.
+        try store.replaceBaselineForFreshOnlyNewConsent(
             token: consentToken, authorization: consentAuthorization
         )
         let after = try XDriveIOSPhotoKitLibraryEpoch.capture()
         guard after.authorization == consentAuthorization else {
             throw Failure.authorizationChanged
         }
-        return installed
+        return true
     }
 
     /// Read only, bounded to 64 candidate IDs per call. Priority is freshly
