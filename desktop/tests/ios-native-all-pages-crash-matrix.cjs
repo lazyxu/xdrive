@@ -302,3 +302,9 @@ test('real login child crash journeys exercise the production root without crede
   assert.match(swift, /192\.0\.2\.4/);
   assert.doesNotMatch(swift, /-xdrive-ui-navigation-smoke".*launchRealSignedOutWorkspace/);
 });
+
+test('Launcher crash frame evidence follows actual child destination tap, not the tab-rail tap', () => {
+  assert.ok(watcher.includes('current_case[0].startswith("testLauncher")'));
+  assert.ok(watcher.includes('tapped.group(1).startswith("native-ios-launcher-")'));
+  assert.ok(watcher.includes('minimal and count == 1 and not is_launcher'));
+});
