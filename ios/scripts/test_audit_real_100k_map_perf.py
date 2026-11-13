@@ -50,9 +50,10 @@ def fixture():
             "kind": "frame", "stage": stage,
             "measurement": "CADisplayLink_callback_cadence",
             "duration_ms": 1500.0, "display_callback_intervals": 90,
+            "callback_intervals_ms": [16.0] * 60 + [18.0] * 30,
             "observed_callback_fps": 60.0,
             "frame_interval_p50_ms": 16.0, "frame_interval_p95_ms": 18.0,
-            "long_callback_gaps": 2, "screen_max_fps": 60,
+            "long_callback_gaps": 0, "screen_max_fps": 60,
             "sampled_peak_resident_bytes": 130000000,
         })
     return {"schema": SCHEMA,
@@ -98,6 +99,21 @@ class Real100KAuditContracts(unittest.TestCase):
                          if x.get("stage") != "place_wall_scroll"]
         with self.assertRaisesRegex(ValueError, "place_wall_scroll"):
             audit(bad, before=0, after=100000, expected=100000)
+
+    def test_reject_missing_or_inconsistent_raw_frame_intervals(self):
+        for tamper in ("missing", "p95", "fps", "gap"):
+            bad = fixture()
+            frame = next(x for x in bad["events"] if x["kind"] == "frame")
+            if tamper == "missing":
+                frame.pop("callback_intervals_ms")
+            elif tamper == "p95":
+                frame["frame_interval_p95_ms"] = 20.0
+            elif tamper == "fps":
+                frame["observed_callback_fps"] = 61.0
+            else:
+                frame["long_callback_gaps"] = 2
+            with self.assertRaises(ValueError):
+                audit(bad, before=0, after=100000, expected=100000)
 
     def test_reject_p95_smaller_than_p50(self):
         bad = fixture()

@@ -53,3 +53,5 @@ GitHub Actions → [iOS MapKit P0 real PhotoKit GPS scale audit](https://github.
 ### 独立 XCTest 测量方法
 
 每个 XCTestCase 方法只执行一组 `measure(metrics:options:)`。同一真实 PhotoKit Simulator 中分三次运行：`testP1Real100KPhotoKitMapScanPerformance`、`testP1Real100KPhotoKitMapWallPerformance`、`testP1Real100KPhotoKitMapZoomPerformance`。每次启动记录独立的 `ios-map-100k-scan/wall/zoom-metrics.json`，原生 XCTest 日志分别生成扫描／滚动／缩放的 App CPU、Physical Memory Peak；CI 必须核对三份原始文件和三组真实测量，再合并报告。不能依赖同一 XCTest 方法连续调用三次 `measure()`。
+
+**帧率统计口径**：每个实际 `CADisplayLink` 回调间隔以毫秒数组记录到只含数字的 Debug JSON；审计器会先逐次检查回调数、P50/P95、FPS 与长间隔数量是否和原始间隔一致，然后把同类阶段的全部真实回调间隔合并计算 **总体 P50/P95**，而不是对多个窗口的 P95 再取 P95。它仍属于主线程显示回调观测，**不等于** GPU 最终呈现帧率。

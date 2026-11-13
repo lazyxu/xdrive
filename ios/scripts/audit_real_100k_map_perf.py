@@ -142,25 +142,40 @@ def audit(report: dict, before: int, after: int, expected: int,
         frames = [x for x in events if isinstance(x, dict) and
                   x.get("kind") == "frame" and x.get("stage") == name]
         valid = []
+        measured_intervals: list[float] = []
         for frame in frames:
             require(frame.get("measurement") == "CADisplayLink_callback_cadence",
                     "frame metric not collected from real CADisplayLink")
             callbacks = nonnegative_int(frame.get("display_callback_intervals"),
                                         "display callback intervals")
+            intervals_raw = frame.get("callback_intervals_ms")
+            require(isinstance(intervals_raw, list) and
+                    len(intervals_raw) == callbacks,
+                    f"{name}: missing raw CADisplayLink callback intervals")
+            intervals = [positive(v, f"{name}.interval_ms") for v in intervals_raw]
             if callbacks < 8:
                 continue
             p50 = positive(frame.get("frame_interval_p50_ms"), f"{name}.p50")
             p95 = positive(frame.get("frame_interval_p95_ms"), f"{name}.p95")
             require(p95 >= p50, f"{name} interval p95 < p50")
+            require(math.isclose(p50, nearest_rank(intervals, 0.50), rel_tol=1e-8),
+                    f"{name}: per-window p50 disagrees with actual intervals")
+            require(math.isclose(p95, nearest_rank(intervals, 0.95), rel_tol=1e-8),
+                    f"{name}: per-window p95 disagrees with actual intervals")
             fps = positive(frame.get("observed_callback_fps"), f"{name}.fps")
+            calculated_fps = callbacks * 1000 / sum(intervals)
+            require(math.isclose(fps, calculated_fps, rel_tol=1e-8),
+                    f"{name}: callback fps disagrees with actual intervals")
             require(fps <= 240, f"{name} impossible callback cadence")
-            require(positive(frame.get("screen_max_fps"), "screen refresh") <= 240,
-                    "invalid screen refresh")
-            require(nonnegative_int(frame.get("long_callback_gaps"), "slow callbacks") <= callbacks,
-                    "slow callback count > all callbacks")
+            max_fps = positive(frame.get("screen_max_fps"), "screen refresh")
+            require(max_fps <= 240, "invalid screen refresh")
+            slow = nonnegative_int(frame.get("long_callback_gaps"), "slow callbacks")
+            require(slow == sum(v > 1500 / max_fps for v in intervals),
+                    "slow callback count mismatches actual callback intervals")
             memory.append(positive(frame.get("sampled_peak_resident_bytes"),
                                    f"{name}.rss"))
             valid.append(frame)
+            measured_intervals.extend(intervals)
         require(valid, f"{name}: no real, sufficiently long CADisplayLink sample")
         frame_aggregate[name] = {
             "samples": len(valid),
@@ -168,10 +183,12 @@ def audit(report: dict, before: int, after: int, expected: int,
                 [float(v["observed_callback_fps"]) for v in valid], 0.5),
             "callback_fps_p95": nearest_rank(
                 [float(v["observed_callback_fps"]) for v in valid], 0.95),
-            "interval_p50_ms": nearest_rank(
-                [float(v["frame_interval_p50_ms"]) for v in valid], 0.5),
-            "interval_p95_ms": nearest_rank(
-                [float(v["frame_interval_p95_ms"]) for v in valid], 0.95),
+            # Percentiles of ALL actual callback intervals, not a
+            # percentile-of-per-gesture-percentiles approximation.
+            "interval_p50_ms": nearest_rank(measured_intervals, 0.5),
+            "interval_p95_ms": nearest_rank(measured_intervals, 0.95),
+            "overall_callback_fps": len(measured_intervals) * 1000 /
+                                    sum(measured_intervals),
             "total_callback_intervals": sum(v["display_callback_intervals"] for v in valid),
             "total_long_callback_gaps": sum(v["long_callback_gaps"] for v in valid),
         }

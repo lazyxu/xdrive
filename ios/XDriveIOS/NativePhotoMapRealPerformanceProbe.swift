@@ -200,6 +200,9 @@ final class XDriveIOSMapRealPerformanceProbe: NSObject {
             "measurement": "CADisplayLink_callback_cadence",
             "duration_ms": duration,
             "display_callback_intervals": gaps.count,
+            // Exact numeric intervals permit true aggregate P50/P95 across
+            // all measured gestures. No IDs, coordinates or media enter data.
+            "callback_intervals_ms": gaps,
             "observed_callback_fps": sum > 0 ? Double(gaps.count) * 1_000 / sum : 0,
             "frame_interval_p50_ms": Self.percentile(gaps, 0.50),
             "frame_interval_p95_ms": Self.percentile(gaps, 0.95),
