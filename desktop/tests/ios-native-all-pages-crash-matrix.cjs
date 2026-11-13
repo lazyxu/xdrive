@@ -117,7 +117,7 @@ test('six more real native tool, backup, Map and Viewer-free navigation journeys
     'testLocalMapFilesNotesClipboardReturnDoNotExit'
   ];
   const allCases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
-  assert.equal(allCases.length, 36, 'Existing 25 plus eight independent child-page XCTest routes must all run');
+  assert.equal(allCases.length, 36, 'All 36 independent Launcher and child-page XCTest routes must all run');
   for (const name of names) {
     assert.ok(allCases.includes(name), 'Missing tap-driven XCUITest: ' + name);
     assert.ok(watcher.includes('"' + name + '"'), 'Missing tap-adjacent watcher: ' + name);
@@ -146,7 +146,7 @@ test('eight actual Backup/Gallery/Files/Mine subpage crash journeys are independ
   ];
   const allCases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
   assert.equal(allCases.length, 36, 'Every independent Launcher and subpage route must remain present');
-  assert.equal(new Set(allCases).size, 33, 'No duplicate method can silently hide a child');
+  assert.equal(new Set(allCases).size, allCases.length, 'No duplicate method can silently hide a child');
   for (const name of children) {
     assert.ok(allCases.includes(name), 'Missing actual native XCTest child: ' + name);
     assert.ok(watcher.includes('"' + name + '"'), 'Missing tap-adjacent screenshot watcher: ' + name);
