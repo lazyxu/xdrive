@@ -471,6 +471,7 @@ jobs:
             ios/tests/NativePasswordProfilesChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-saved-login-profiles"
           "$RUNNER_TEMP/xdrive-ios-saved-login-profiles"
+          node --test desktop/tests/ios-native-password-prefill.cjs
 
       - name: Verify native historical receipt counts never claim full-library completion
         run: |

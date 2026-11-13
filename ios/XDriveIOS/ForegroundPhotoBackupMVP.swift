@@ -538,6 +538,13 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         // completed 256-slot cursor after repeated offline failures can
         // strand entire older windows until a future full-library wrap.
         // A disk staging failure is equally global, not a missing original.
+        // The journal's stable installation key is shared by every
+        // original in the current Owner scope. Keychain unavailable/corrupt
+        // is NOT a missing photo: continuing would mark all originals
+        // unavailable and could advance a 256-slot automatic scan window.
+        if error is XDriveIOSForegroundBackupIdentityError {
+            return true
+        }
         if error is XDriveIOSPhotoBackupNetworkError ||
            error is URLError ||
            error is XDriveNativeOwnerRootFailure ||

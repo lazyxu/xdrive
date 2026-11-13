@@ -4963,6 +4963,72 @@ class DriveController(
             }
         }
 
+    /** Read-only Files admission for the visible native Clipboard picker.
+     * This does not use a SourceRun, a background token, or a second binary writer.
+     */
+    suspend fun clipboardFilesRoot(currentClipboardSession: () -> Boolean): DriveNode =
+        withNotesOwner { service, token ->
+            check(currentClipboardSession()) { "Clipboard Owner changed before Files read" }
+            val root = service.root(token)
+            currentCoroutineContext().ensureActive()
+            check(currentClipboardSession() && root.id > 0 && root.isDirectory &&
+                root.parentId == null && root.revision > 0) {
+                "Current Owner Files root is no longer authorized"
+            }
+            root
+        }
+
+    suspend fun clipboardFilesPage(
+        folder: DriveNode, offset: Int, currentClipboardSession: () -> Boolean,
+    ): NodeRange = withNotesOwner { service, token ->
+        require(folder.id > 0 && folder.isDirectory && offset >= 0 && offset % 100 == 0)
+        check(currentClipboardSession()) { "Clipboard Owner changed before Files page" }
+        val root = service.root(token)
+        check(currentClipboardSession() && root.id > 0 && root.isDirectory &&
+            root.parentId == null && root.revision > 0)
+        if (folder.id != root.id) {
+            val located = service.nodeLocation(token, folder.id)
+            check(currentClipboardSession() &&
+                XDriveClipboardFileLocationPolicy.accepts(folder, located, root.id)) {
+                "Clipboard folder is stale or outside current Owner Files root"
+            }
+        }
+        val page = service.children(token, folder.id, offset)
+        currentCoroutineContext().ensureActive()
+        check(currentClipboardSession() && page.offset == offset &&
+            page.items.size <= 100 &&
+            page.totalCount >= offset.toLong() + page.items.size &&
+            (page.items.isNotEmpty() || page.totalCount == offset.toLong()) &&
+            page.items.map { it.id }.toSet().size == page.items.size &&
+            page.items.all { it.id > 0 && it.parentId == folder.id &&
+                it.revision > 0 && validDriveNodeName(it.name) }) {
+            "Invalid current Owner Clipboard Files page"
+        }
+        page
+    }
+
+    suspend fun clipboardVerifyExistingFile(
+        selected: DriveNode, currentClipboardSession: () -> Boolean,
+    ): DriveNode = withNotesOwner { service, token ->
+        require(selected.id > 0 && selected.type == "file" &&
+            selected.parentId != null && selected.revision > 0 && selected.size >= 0)
+        check(currentClipboardSession())
+        val root = service.root(token)
+        val located = service.nodeLocation(token, selected.id)
+        currentCoroutineContext().ensureActive()
+        check(currentClipboardSession() && root.id > 0 && root.isDirectory &&
+            XDriveClipboardFileLocationPolicy.accepts(selected, located, root.id)) {
+            "Clipboard Files Node moved, changed or permission revoked"
+        }
+        selected
+    }
+
+    suspend fun clipboardRevokeDevice(deviceID: String) {
+        require(runCatching { java.util.UUID.fromString(deviceID).toString() == deviceID }
+            .getOrDefault(false))
+        withNotesOwner { service, token -> service.clipboardRevokeDevice(token, deviceID) }
+    }
+
     suspend fun clipboardDevices(): List<OwnerClipboardDevice> =
         withNotesOwner { service, token -> service.clipboardDevices(token) }
     suspend fun clipboardDelete(id: Long) {

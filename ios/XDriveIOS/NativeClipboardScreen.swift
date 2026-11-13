@@ -29,6 +29,13 @@ struct XDriveIOSNativeClipboardScreen: View {
     @State private var pickerGeneration: UInt64?
     @State private var pickerTargetID = ""
     @State private var pickerKind = ""
+    @State private var cloudPickerOpen = false
+    @State private var cloudPickerTargetID = ""
+    @State private var cloudPickerKind = ""
+    @State private var cloudPickerGeneration: UInt64?
+    @State private var revokeCandidate: String?
+    @State private var confirmRevoke = false
+
 
     private struct Pending {
         let sourceText: String
@@ -74,6 +81,7 @@ struct XDriveIOSNativeClipboardScreen: View {
                 .onChange(of: targetID) { _ in
                     referenceKind = "text"
                     referenceNodeID = ""
+                    cloudPickerOpen = false
                 }
                 if !targetID.isEmpty {
                     Picker("定向消息内容", selection: $referenceKind) {
@@ -83,12 +91,25 @@ struct XDriveIOSNativeClipboardScreen: View {
                     }
                     .pickerStyle(.segmented)
                     .disabled(busy)
-                    .onChange(of: referenceKind) { _ in referenceNodeID = "" }
+                    .onChange(of: referenceKind) { _ in
+                        referenceNodeID = ""
+                        cloudPickerOpen = false
+                    }
                     if referenceKind != "text" {
-                        TextField("已经完成上传的 CAS Node ID", text: $referenceNodeID)
-                            .keyboardType(.numberPad)
+                        TextField("已核验的云端文件 Node", text: $referenceNodeID)
                             .textFieldStyle(.roundedBorder)
-                            .disabled(busy)
+                            .disabled(true)
+                        Button("从云端 Files 选择现有文件") {
+                            guard !busy, pending == nil, ownerAtOpen != nil,
+                                  !targetID.isEmpty else {
+                                message = "请先验证当前 Owner 和目标设备。"
+                                return
+                            }
+                            cloudPickerTargetID = targetID
+                            cloudPickerKind = referenceKind
+                            cloudPickerGeneration = sessionGeneration
+                            cloudPickerOpen = true
+                        }.disabled(busy || pending != nil)
                         Button("选择本机文件并上传 CAS") {
                             guard !busy, pending == nil else { return }
                             pickerGeneration = sessionGeneration
@@ -100,11 +121,20 @@ struct XDriveIOSNativeClipboardScreen: View {
                             guard !busy, pending == nil else { return }
                             Task { await importSharedPasteboard() }
                         }.disabled(busy || pending != nil)
+                        if referenceKind == "image" {
+                            Button("读取本机剪贴板图片并上传") {
+                                importSystemClipboardImage()
+                            }.disabled(busy || pending != nil)
+                        }
                         Text("分享扩展复制的图片/文件仅保留 2 分钟；先选择目标及图片/文件类型，再手动导入。导入不会自动发送。")
                             .font(.caption).foregroundStyle(.secondary)
                         Text("上传只创建当前 Owner 文件。确认 Node ID 后再次点击定向发送。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    Button("撤销所选设备的 Clipboard 接收授权") {
+                        revokeCandidate = targetID
+                        confirmRevoke = true
+                    }.foregroundStyle(.red).disabled(busy || pending != nil)
                     Button("定向发送") { Task { await send(directed: true) } }
                         .buttonStyle(.borderedProminent)
                         .disabled(busy || !targetDevices.contains(where: { $0.device_id == targetID }))
@@ -117,6 +147,10 @@ struct XDriveIOSNativeClipboardScreen: View {
                 } else {
                     Label("设备定向接收已启用", systemImage: "checkmark.shield")
                         .font(.footnote).foregroundStyle(.secondary)
+                    Button("撤销本机 Clipboard 接收授权") {
+                        revokeCandidate = recipientProof?.deviceID
+                        confirmRevoke = true
+                    }.foregroundStyle(.red).disabled(busy || pending != nil)
                 }
                 if retryNeedsAbandon && pending != nil {
                     Button("放弃待确认回执") {
@@ -174,6 +208,23 @@ struct XDriveIOSNativeClipboardScreen: View {
             .padding(16)
         }
         .navigationTitle("剪贴板")
+        .sheet(isPresented: $cloudPickerOpen) {
+            if let owner = ownerAtOpen {
+                XDriveIOSNativeClipboardCloudPicker(
+                    login: login, openedOwner: owner, kind: cloudPickerKind,
+                    onChoose: { node in
+                        let generation = cloudPickerGeneration ?? sessionGeneration
+                        let target = cloudPickerTargetID
+                        let kind = cloudPickerKind
+                        cloudPickerOpen = false
+                        Task { await chooseExistingCloudFile(
+                            node, generation: generation, target: target, kind: kind
+                        ) }
+                    },
+                    onDismiss: { cloudPickerOpen = false }
+                )
+            }
+        }
         .fileImporter(isPresented: $filePickerOpen,
                       allowedContentTypes: [.item], allowsMultipleSelection: false) { outcome in
             let generation = pickerGeneration
@@ -194,6 +245,15 @@ struct XDriveIOSNativeClipboardScreen: View {
             Button("清空", role: .destructive) { Task { await clear() } }
         } message: {
             Text("只删除当前账号的 Server 剪贴板历史，无法撤销。")
+        }
+        .confirmationDialog("撤销设备的 Clipboard 定向接收授权？",
+                            isPresented: $confirmRevoke, titleVisibility: .visible) {
+            Button("确认撤销", role: .destructive) {
+                Task { await revokeSelectedDevice() }
+            }
+            Button("取消", role: .cancel) { revokeCandidate = nil }
+        } message: {
+            Text("撤销后设备不能再接收新定向消息；已复制到设备的内容无法追回。")
         }
         .task(id: scenePhase == .active) {
             guard scenePhase == .active else { return }
@@ -307,10 +367,130 @@ struct XDriveIOSNativeClipboardScreen: View {
             targetDevices = directory
             if !targetID.isEmpty && !directory.contains(where: { $0.device_id == targetID }) {
                 targetID = ""
+                referenceKind = "text"
                 referenceNodeID = ""
+                cloudPickerOpen = false
             }
         } catch {
             if generation == sessionGeneration { targetDevices = [] }
+        }
+    }
+
+    /// The chosen Files row is a hint, not an authorization. Re-read the
+    /// exact Node under the current Owner before offering an explicit send.
+    @MainActor
+    private func chooseExistingCloudFile(
+        _ selected: XDriveIOSNativeFilesNode, generation: UInt64,
+        target: String, kind: String
+    ) async {
+        guard generation == sessionGeneration, !busy, pending == nil,
+              targetID == target, referenceKind == kind, !target.isEmpty,
+              XDriveIOSClipboardCloudFilePolicy.accepts(selected, kind: kind)
+        else { return }
+        busy = true
+        referenceNodeID = ""
+        defer { if generation == sessionGeneration { busy = false } }
+        do {
+            let client = try await authorizedClient(for: generation)
+            let reader = XDriveIOSNativeFilesReader(
+                owner: client.owner, accessToken: client.token
+            )
+            let current = try await reader.referencedFile(nodeID: selected.id)
+            try Task.checkCancellation()
+            guard generation == sessionGeneration, ownerAtOpen == client.owner,
+                  targetID == target, referenceKind == kind,
+                  XDriveIOSClipboardCloudFilePolicy.accepts(current, kind: kind),
+                  current.id == selected.id,
+                  current.parent_id == selected.parent_id,
+                  current.revision == selected.revision,
+                  current.name == selected.name, current.size == selected.size
+            else { throw XDriveIOSClipboardPolicy.Failure.invalidPayload }
+            referenceNodeID = String(current.id)
+            message = "已从当前 Owner 的 Files 核验文件；请确认目标后点击“定向发送”。"
+        } catch {
+            if generation == sessionGeneration {
+                referenceNodeID = ""
+                message = "所选云端文件已变化或权限失效，请重新选择。"
+            }
+        }
+    }
+
+    /// Device grant revocation never deletes the installation or Files data.
+    @MainActor
+    private func revokeSelectedDevice() async {
+        guard !busy, let selected = revokeCandidate,
+              targetDevices.contains(where: { $0.device_id == selected }) ||
+              recipientProof?.deviceID == selected else { return }
+        let generation = sessionGeneration
+        busy = true
+        defer { if sessionGeneration == generation { busy = false } }
+        do {
+            let client = try await authorizedClient(for: generation)
+            try await client.revokeDevice(selected)
+            try Task.checkCancellation()
+            guard sessionGeneration == generation, ownerAtOpen == client.owner else { return }
+            revokeCandidate = nil
+            targetDevices.removeAll(where: { $0.device_id == selected })
+            if recipientProof?.deviceID == selected { recipientProof = nil }
+            if targetID == selected {
+                targetID = ""
+                referenceKind = "text"
+                referenceNodeID = ""
+                cloudPickerOpen = false
+            }
+            if pending?.targetID == selected {
+                pending = nil // Never retry an unknown ACK to a revoked device.
+                retryNeedsAbandon = false
+            }
+            message = "该设备的 Clipboard 接收授权已撤销。"
+            await refresh()
+        } catch {
+            if generation == sessionGeneration {
+                message = "撤销未确认，请刷新授权状态再核对；不会自动重复提交。"
+            }
+        }
+    }
+
+    /// Clipboard images enter through a user gesture and the SAME CAS writer.
+    @MainActor
+    private func importSystemClipboardImage() {
+        guard scenePhase == .active, !busy, pending == nil,
+              !targetID.isEmpty, referenceKind == "image" else { return }
+        let clipboard = UIPasteboard.general
+        let supported: [(String, String)] = [
+            ("public.heic", "heic"), ("public.heif", "heif"),
+            ("public.png", "png"), ("public.jpeg", "jpg")
+        ]
+        var imageData: Data?
+        var suffix = "png"
+        for (type, ext) in supported {
+            if let data = clipboard.data(forPasteboardType: type) {
+                imageData = data
+                suffix = ext
+                break
+            }
+        }
+        if imageData == nil { imageData = clipboard.image?.pngData() }
+        guard let bytes = imageData, !bytes.isEmpty,
+              bytes.count <= 64 * 1_048_576 else {
+            message = "剪贴板没有有效且不超过 64 MiB 的图片；请从本机文件选择。"
+            return
+        }
+        let generation = sessionGeneration
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xdrive-clipboard-" + UUID().uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory,
+                withIntermediateDirectories: true)
+            let source = directory.appendingPathComponent("Clipboard-" + UUID().uuidString + "." + suffix)
+            try bytes.write(to: source, options: .atomic)
+            uploadTask = Task { @MainActor in
+                defer { try? FileManager.default.removeItem(at: directory) }
+                await importLocalFile(source, generation: generation)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            message = "剪贴板图片暂存失败，未进行任何上传。"
         }
     }
 
@@ -559,9 +739,173 @@ struct XDriveIOSNativeClipboardScreen: View {
         pickerGeneration = nil
         pickerTargetID = ""
         pickerKind = ""
+        cloudPickerOpen = false
+        cloudPickerTargetID = ""
+        cloudPickerKind = ""
+        cloudPickerGeneration = nil
+        revokeCandidate = nil
+        confirmRevoke = false
         loading = false
         busy = false
         confirmClear = false
         message = nil
+    }
+}
+
+
+/// Files/Owner authorization is shared with Native Files. Clipboard adds
+/// no second file reader, binary store or local cache of remote metadata.
+private enum XDriveIOSClipboardCloudFilePolicy {
+    static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "avif", "heic", "heif",
+        "tif", "tiff", "bmp"
+    ]
+
+    static func accepts(_ node: XDriveIOSNativeFilesNode, kind: String) -> Bool {
+        guard node.id > 0, node.parent_id != nil,
+              node.revision > 0, node.size >= 0,
+              !node.name.isEmpty, node.type == "file" else { return false }
+        if kind == "image" {
+            guard let suffix = node.name.split(separator: ".").last else { return false }
+            return imageExtensions.contains(String(suffix).lowercased())
+        }
+        return kind == "file"
+    }
+}
+
+/// Read-only Cloud Files selection: a single, real 64-item Server page at
+/// any time; no fabricated directory/Node data or unbounded 100k lists.
+private struct XDriveIOSNativeClipboardCloudPicker: View {
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let openedOwner: XDriveNativeOwnerRoot
+    let kind: String
+    let onChoose: (XDriveIOSNativeFilesNode) -> Void
+    let onDismiss: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var folders: [XDriveIOSNativeFilesDestination] = []
+    @State private var rows: [XDriveIOSNativeFilesNode] = []
+    @State private var offset = 0
+    @State private var totalCount = 0
+    @State private var loading = true
+    @State private var failure: String?
+    @State private var requestID = UUID()
+
+    private var folderID: UInt64 { folders.last?.id ?? openedOwner.rootNodeID }
+    private var folderName: String { folders.last?.name ?? "云端根目录" }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("当前目录") {
+                    Label(folderName, systemImage: "folder")
+                    if !folders.isEmpty {
+                        Button("返回上一级") {
+                            folders.removeLast()
+                            offset = 0
+                            rows = []
+                        }
+                    }
+                }
+                Section("当前 Owner 的云端文件") {
+                    if loading { ProgressView("正在核验 Files 分页…") }
+                    if let failure {
+                        Text(failure).foregroundStyle(.secondary)
+                        Button("重试") { Task { await readPage() } }
+                    } else if !loading {
+                        ForEach(rows) { node in
+                            if node.isDirectory {
+                                Button {
+                                    guard node.parent_id == folderID, node.id > 0 else { return }
+                                    folders.append(.init(id: node.id, name: node.name))
+                                    offset = 0
+                                    rows = []
+                                } label: {
+                                    Label(node.name, systemImage: "folder.fill")
+                                }
+                            } else if XDriveIOSClipboardCloudFilePolicy.accepts(node, kind: kind) {
+                                Button {
+                                    guard XDriveIOSNativePhotoOwnerScope.matches(
+                                        login.owner, openedOwner
+                                    ), rows.contains(where: { $0.id == node.id }) else { return }
+                                    onChoose(node)
+                                    dismiss()
+                                } label: {
+                                    Label(node.name, systemImage: "doc")
+                                }
+                            }
+                        }
+                        if offset > 0 {
+                            Button("上一页") { offset = max(0, offset - 64) }
+                        }
+                        if offset + rows.count < totalCount && !rows.isEmpty {
+                            Button("下一页") { offset += rows.count }
+                        }
+                        if rows.isEmpty && totalCount == 0 {
+                            Text("当前目录没有文件").foregroundStyle(.secondary)
+                        }
+                        Text("已读取 \(offset + rows.count) / \(totalCount) 项")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("从云端 Files 选择")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("取消") { onDismiss(); dismiss() }
+                }
+            }
+            .task(id: "\(folderID):\(offset)") { await readPage() }
+            .onChange(of: login.owner) { _ in
+                requestID = UUID()
+                onDismiss()
+                dismiss()
+            }
+            .onDisappear { requestID = UUID() }
+        }
+    }
+
+    @MainActor private func readPage() async {
+        let id = UUID()
+        requestID = id
+        loading = true
+        failure = nil
+        rows = []
+        let requestedFolder = folderID
+        let requestedOffset = offset
+        defer { if requestID == id { loading = false } }
+        do {
+            let auth = try await login.verifiedAuthorization()
+            try Task.checkCancellation()
+            guard requestID == id,
+                  XDriveIOSNativePhotoOwnerScope.matches(auth.owner, openedOwner),
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner)
+            else { return }
+            let result = try await XDriveIOSNativeFilesReader(
+                owner: auth.owner, accessToken: auth.accessToken
+            ).children(parentID: requestedFolder, offset: requestedOffset,
+                       sort: "name", order: "asc")
+            try Task.checkCancellation()
+            guard requestID == id, folderID == requestedFolder,
+                  offset == requestedOffset,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, openedOwner)
+            else { return }
+            guard result.offset == requestedOffset, result.items.count <= 64,
+                  result.total_count >= requestedOffset + result.items.count,
+                  (result.items.count > 0 || result.total_count == requestedOffset),
+                  Set(result.items.map(\.id)).count == result.items.count,
+                  result.items.allSatisfy({ $0.id > 0 && $0.parent_id == requestedFolder })
+            else { throw XDriveIOSClipboardPolicy.Failure.invalidPayload }
+            rows = result.items
+            totalCount = result.total_count
+        } catch is CancellationError {
+        } catch {
+            if requestID == id {
+                rows = []
+                failure = "目录已变化、无权访问或分页无效；请返回或重试。"
+            }
+        }
     }
 }

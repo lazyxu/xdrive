@@ -128,10 +128,9 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             if route == "backup.tasks" {
                 _ = reveal(view("native-ios-photos-task-list", app: app), app: app)
             } else if route == "backup.setup" {
-                let setup = app.buttons.matching(NSPredicate(
-                    format: "label == %@ OR label == %@", "开始设置", "继续设置"
-                )).firstMatch
+                let setup = view("native-ios-backup-open-setup", app: app)
                 _ = reveal(setup, app: app)
+                XCTAssertTrue(setup.isEnabled, "Native Backup Setup entry is disabled")
             } else if route == "backup.details" {
                 _ = reveal(app.buttons["备份详情"].firstMatch, app: app)
             } else if route == "backup.audit" {
@@ -223,11 +222,7 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             tap("native-ios-photos-task-list", app: app)
             ready = view("native-ios-photo-task-list-done", app: app)
         case "backup.setup":
-            let setup = app.buttons.matching(NSPredicate(
-                format: "label == %@ OR label == %@", "开始设置", "继续设置"
-            )).firstMatch
-            XCTAssertTrue(setup.waitForExistence(timeout: 15))
-            setup.tap()
+            tap("native-ios-backup-open-setup", app: app)
             ready = view("native-ios-backup-setup", app: app)
         case "backup.details":
             app.buttons["备份详情"].firstMatch.tap()

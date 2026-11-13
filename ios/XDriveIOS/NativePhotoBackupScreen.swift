@@ -649,6 +649,13 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
             Section("备份进度与任务") {
+                // Viewing Setup is safe even when destination verification fails.
+                // It never starts upload or grants backup authorization by itself.
+                if login.owner != nil {
+                    Button("查看备份设置向导") { page = .setup }
+                        .disabled(controller.busy || enablingAutomaticBackup)
+                        .accessibilityIdentifier("native-ios-backup-open-setup")
+                }
                 if let focused = controller.focusedSummary, focused.totalWindows > 0 {
                     Text("集中扫描：\(focused.completedWindows)/\(focused.totalWindows) 段，确认新增 \(focused.confirmedNew) 项")
                         .monospacedDigit()
@@ -783,6 +790,11 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                              ? "备份启用后新增或编辑的照片和视频。"
                              : "分批扫描当前获得授权的照片和视频。"))
                         .foregroundStyle(.secondary)
+                    if controller.schedule?.enabled == false {
+                        Text("当前仍保留一个旧任务。要继续旧增量历史，请选「恢复之前的任务」；要新建「仅备份新照片」，必须先永久关闭旧任务。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        discardPausedAutoPlanButton
+                    }
                     if let path = destination.confirmed?.targetPath {
                         LabeledContent("备份目录", value: path)
                     }
@@ -869,7 +881,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         Picker("备份范围", selection: $autoStartRule) {
             Text("扫描并备份全部照片").tag(XDriveIOSPhotoAutoStartRule.everything)
             Text("仅备份新照片").tag(XDriveIOSPhotoAutoStartRule.onlyNew)
-                .disabled(photoAuthorization == .limited)
+                // The saved paused plan owns the old PhotoKit history.
+                // To start a NEW only-new scope, explicitly discard that plan.
+                .disabled(photoAuthorization == .limited ||
+                          controller.schedule?.enabled == false)
             if controller.schedule?.enabled == false {
                 Text("恢复之前的任务").tag(XDriveIOSPhotoAutoStartRule.resumePrevious)
             }
@@ -884,6 +899,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             destination.confirmedForCurrentName &&
             (photoAuthorization == .authorized || photoAuthorization == .limited) &&
             (photoAuthorization != .limited || autoStartRule != .onlyNew) &&
+            (autoStartRule != .onlyNew || controller.schedule == nil) &&
             (photoAuthorization != .limited || autoStartRule != .resumePrevious ||
                 controller.schedule?.backupStartRule != .onlyNew) &&
             (autoStartRule != .resumePrevious || controller.schedule?.enabled == false)
@@ -905,6 +921,23 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         }
         .disabled(!canEnableAutomaticBackup)
         .accessibilityIdentifier("native-ios-photos-auto-enable")
+    }
+
+    // A paused plan remains resumable until explicitly discarded. Only the
+    // UserDefaults schedule is removed here, never the encrypted receipts,
+    // SQLite queue, remote Node or CAS originals. The NEXT fresh only-new
+    // confirmation establishes its own independent PhotoKit epoch.
+    private var discardPausedAutoPlanButton: some View {
+        Button("永久关闭已暂停的旧任务（保留云端原件）", role: .destructive) {
+            guard let owner = login.owner,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                  controller.schedule?.enabled == false else { return }
+            controller.disable(owner: owner)
+            if autoStartRule == .resumePrevious { autoStartRule = .everything }
+        }
+        .disabled(controller.busy || background.busy ||
+                  enablingAutomaticBackup || login.owner == nil)
+        .accessibilityIdentifier("native-ios-photos-auto-discard-paused")
     }
 
     // Native Form Sections are authored exactly once and reused by both
@@ -1234,6 +1267,11 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 } else if enablingAutomaticBackup {
                     ProgressView("正在启用前台自动备份")
                 } else {
+                    if controller.schedule?.enabled == false {
+                        Text("旧计划处于暂停保留状态。恢复旧任务不会改变其 PhotoKit 增量基准；新建仅新增计划前需要明确永久关闭旧计划。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        discardPausedAutoPlanButton
+                    }
                     enableAutomaticBackupButton
                 }
                 Text("「暂停并保留」可保留原任务供独立「恢复之前的任务」选项使用；永久关闭仍会删除本机计划但绝不删除已上传原件或未知 ACK。自动计划采用启用时确认的范围、检查间隔、iCloud 设置和首次积压策略；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")

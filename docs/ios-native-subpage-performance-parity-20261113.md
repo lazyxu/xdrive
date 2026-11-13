@@ -26,7 +26,7 @@ resource lifetimes differ.
 | files.organizer.tags | Organizer → 标签管理 | native-ios-files-tag-management | Synthetic Owner, no Session |
 | files.tags | Files Home → 管理标签 Sheet | native-ios-files-tag-management | Synthetic Owner, no Session |
 | backup.tasks | 相册备份 → 逐项任务 Sheet | native-ios-photo-task-list-done | Genuine empty/unauthorized queue |
-| backup.setup | 相册备份 → 真实设置向导 | native-ios-backup-setup | Synthetic Owner; setup mount only, no device registration or uploads |
+| backup.setup | 相册备份 → 真实设置向导 | native-ios-backup-setup | Explicit safe overview entry, no registration or uploads |
 | backup.details | 相册备份 → 备份详情 | native-ios-backup-portrait-form | Genuine disabled/no-Session controls |
 | backup.audit | 相册备份 → 逐项核验当前云端原件（详情定位） | native-ios-backup-portrait-form | No-Session Owner; no actual receipt mutation |
 | gallery.backup.queue | 图库备份菜单 → 备份任务队列 | native-ios-photo-task-list-done | Real native menu-to-sheet navigation; no upload |
@@ -58,6 +58,10 @@ infer success from source checks. A different MapKit job in
 failed to index real PhotoKit GPS fixture photos; no part of that
 failure is silently skipped or counted as a performance pass. Nonexistent private
 contents, disabled operations and missing network grants are **not** bypassed.
+
+### Actual 22-test failure and repair (2026-11-13)
+
+The genuine iOS 18.5/Xcode Simulator [run #43410173204](https://github.com/lazyxu/xdrive/actions/runs/43410173204) executed **22 methods: 20 passed, 2 failed**, so the previous SHA is **red**, not a completed 66-sample result. `backup.setup` could not reach a conditional setup button when Owner destination verification was unavailable; `mine.signout.confirm` could open its dialog but lacked a native explicit Cancel. The repair preserves 22 routes and adds a safe Setup view link in the existing overview plus an explicit cancellation action. Separately, full CI/IPA failed a stale compact Gallery Node source assertion still demanding backup actions inside the content row even after the real hit-tested toolbar repair. That assertion now verifies the actual toolbar and non-remounting short-row layout. No skips, Owner bypass, simulated data or automatic sign-out are introduced. **Fresh exact-HEAD 22-route metrics and full CI/IPA are still required.**
 
 ## Metrics and gates
 
