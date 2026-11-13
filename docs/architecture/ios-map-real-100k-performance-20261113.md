@@ -6,7 +6,7 @@
 
 1. 新建隔离 iPhone 16 Simulator，擦除图库，取得基线 PHAsset.location 数量。
 2. 用现有 `generate-mapkit-p0-gps-fixtures.py` 生成 **100,000 个实际 EXIF-GPS JPEG 文件**，分组经 `simctl addmedia` 真正导入 iOS Photos。
-3. 先对 100k 库做第一次 xDrive 原生地图扫描、随后四次全库重新扫描，再测试地点墙滚动、MapKit 放大/拖拽/返回和两视窗缓存重用。
+3. 先对 100k 库做第一次 xDrive 原生地图扫描、随后一轮 XCTest 预热扫描及四次保留的全库重复扫描，再测试地点墙滚动、MapKit 放大/拖拽/返回和两视窗缓存重用。
 4. 在 App 内记录每次真实 PhotoKit 扫描的单调时钟毫秒数、64 项分页数、遍历元数据量、GPS 有效数、进程 CPU 时间、内存常驻量采样峰值。MapKit 手势、照片墙滚动与扫描期间用 `CADisplayLink` 采样主线程显示回调周期、P50/P95 和较长回调间隔。
 5. UI Test 直接测量实际运行的 App：`XCTCPUMetric(application:)`、`XCTMemoryMetric(application:)`，滚动/缩放额外使用 `XCTHitchMetric(application:)`。这比只打印主进程自报值更能核对 App 的物理内存峰值和动画 hitch。
 6. 最后再次独立扫描 PhotoKit GPS 数量，对比导入前后必须**精确增加 100,000**，且与地图扫描 GPS 数量完全一致。
@@ -28,7 +28,7 @@ GitHub Actions → [iOS MapKit P0 real PhotoKit GPS scale audit](https://github.
 | 类别 | 指标 | 证据源 |
 |---|---|---|
 | 首次地图扫描 | `first_scan_ms`、`total_assets`、`metadata_items/pages`、GPS 数量 | 第一次真实 app `PHAsset` 64 项分页 |
-| 全库重复扫描 | 首次后四次的 P50、P95，进程 CPU P50/P95 | 同一 Simulator 的真实 PhotoKit / `getrusage` |
+| 全库重复扫描 | 首次后的预热与四次正式重复扫描的 P50、P95，进程 CPU P50/P95 | 同一 Simulator 的真实 PhotoKit / `getrusage` |
 | 实际视窗缓存重用 | 命中次数、耗时 P50/P95、必须 `metadata_pages=0` | 现有原生 MapKit 已验证缓存分支 |
 | 地点墙滚动 | 帧回调间隔 P50/P95、观测回调 FPS、超长间隔和 CPU/Memory Peak | SwiftUI 48 项分页照片墙 + CADisplayLink + XCTest |
 | MapKit 缩放/平移 | 帧回调间隔 P50/P95、观测回调 FPS、超长间隔和 CPU/Memory Peak | 真实 MKMapView 手势 + CADisplayLink + XCTest |
