@@ -1,0 +1,29 @@
+name: iOS LAN Stage3 RED Baseline Reproduction
+on:
+  push:
+    branches:
+      - test/ios-lan-stage3-red-repro-20261113
+    paths:
+      - 'ios/tests/NativeLANStage3NoChallengeRepro.swift'
+      - '.github/workflows/ios-lan-stage3-red-repro.yml'
+permissions:
+  contents: read
+jobs:
+  red-baseline-classification:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reproduce generic stage-3 certificate error before fix
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeLANTrust.swift \
+            ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANCertificateBootstrap.swift \
+            ios/XDriveIOS/NativeLANLoginRoute.swift \
+            ios/tests/NativeLANStage3NoChallengeRepro.swift \
+            -o "$RUNNER_TEMP/ios-lan-stage3-no-challenge-repro"
+          "$RUNNER_TEMP/ios-lan-stage3-no-challenge-repro"
