@@ -243,6 +243,14 @@ jobs:
               # This candidate uses an isolated real PhotoKit permission
               # lifecycle; other Gallery/Files UITests cannot reset TCC.
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests")
+              # The P0 MapKit shard intentionally seeds only two real GPS PHAssets.
+              # Run genuine 100k-PHAsset scan/wall/zoom XCTest exclusively in
+              # ios-mapkit-p0-real-gps-scale.yml with MAP_P0_COUNT=100000.
+              # Keep their >=100000 assertions; never let this two-photo job
+              # silently claim a genuine 100k performance pass.
+              native_test_args+=("-skip-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP1Real100KPhotoKitMapScanPerformance")
+              native_test_args+=("-skip-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP1Real100KPhotoKitMapWallPerformance")
+              native_test_args+=("-skip-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP1Real100KPhotoKitMapZoomPerformance")
               # This separately scheduled method requires real system revocation.
               native_test_args+=("-skip-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testZP0ExternallyRevokedPhotosRejectOldMapAndRecover") ;;
             candidate-performance)
