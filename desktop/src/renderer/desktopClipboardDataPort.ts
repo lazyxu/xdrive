@@ -47,7 +47,8 @@ export function createDesktopClipboardDataPort(
     if (root.type !== 'dir') throw new Error('云端文件根目录不可用')
     const uploaded = await run(() => agent.cloudUploadFile(root.id, file, 'fail'), signal)
     if (uploaded.skipped || uploaded.node.type !== 'file' ||
-        uploaded.node.parent_id !== root.id || uploaded.node.revision <= 0) {
+        uploaded.node.parent_id !== root.id || uploaded.node.revision <= 0 ||
+        uploaded.node.name !== file.name || uploaded.node.size !== file.size) {
       throw new Error('文件上传回执不完整，请在 Files 中核对后再发送')
     }
     return { node_id: project(uploaded.node, root.id).id }
@@ -117,6 +118,7 @@ export function createDesktopClipboardDataPort(
       const formats = [
         ['image/png', 'png'], ['image/jpeg', 'jpg'], ['image/webp', 'webp'],
         ['image/gif', 'gif'], ['image/avif', 'avif'],
+        ['image/heic', 'heic'], ['image/heif', 'heif'],
       ] as const
       const match = formats.flatMap(([mime, ext]) =>
         items.filter(item => item.types.includes(mime)).map(item => ({ mime, ext, item })))[0]

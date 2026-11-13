@@ -116,6 +116,7 @@ export function createXDriveDSMClipboardPort(
       const formats = [
         ['image/png', 'png'], ['image/jpeg', 'jpg'], ['image/webp', 'webp'],
         ['image/gif', 'gif'], ['image/avif', 'avif'],
+        ['image/heic', 'heic'], ['image/heif', 'heif'],
       ] as const
       const match = formats.flatMap(([mime, ext]) =>
         items.filter(item => item.types.includes(mime)).map(item => ({ mime, ext, item })))[0]
