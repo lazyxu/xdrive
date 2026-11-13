@@ -140,6 +140,61 @@ import SQLite3
             try expect(try store.status(for: "not-here") == nil)
             try expect(try !store.settle(newer, result: .confirmed))
         }
+        // Fresh only-new consent after permanently disabling an earlier plan:
+        // the old PhotoKit queue must not silently upload pre-consent edits.
+        // This is NOT full-library reconciliation and must not install a
+        // verified-library marker or change the separate upload journal.
+        do {
+            let path = dir.appendingPathComponent("fresh-only-new.sqlite3")
+            let first = Data([80]), changed = Data([81]), consent = Data([82])
+            let store = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: path)
+            try expect(try store.installBaselineIfAbsent(
+                token: first, authorization: 3
+            ))
+            _ = try store.apply(
+                inserted: ["from-previous-plan", "previous-failed"],
+                updated: [], deleted: [], expectedToken: first,
+                nextToken: changed, authorization: 3
+            )
+            guard let failed = try store.pending().first(where: {
+                $0.localIdentifier == "previous-failed"
+            }) else { preconditionFailure("missing previous candidate") }
+            try expect(try store.settle(
+                failed, result: .failed, reasonCode: "originalMissing",
+                expectedBaselineToken: changed, authorization: 3
+            ))
+            precondition(rawFailureReasonRows(at: path) == 1)
+            try store.replaceBaselineForFreshOnlyNewConsent(
+                token: consent, authorization: 3
+            )
+            try expect(try store.baseline()?.token == consent)
+            try expect(try store.counts() == .init())
+            try expect(try store.pending().isEmpty)
+            try expect(try store.failed().isEmpty)
+            precondition(rawFailureReasonRows(at: path) == 0)
+            try expect(try !store.hasCompletedFullReconciliation(
+                token: consent, authorization: 3
+            ))
+            do {
+                _ = try store.apply(inserted: ["stale-before-consent"],
+                                    updated: [], deleted: [],
+                                    expectedToken: changed, nextToken: Data([83]),
+                                    authorization: 3)
+                preconditionFailure("stale prior token accepted")
+            } catch XDriveIOSPhotoBackupChangeQueueStore.Failure.baselineChanged {}
+            _ = try store.apply(inserted: ["new-after-consent"],
+                                updated: [], deleted: [],
+                                expectedToken: consent, nextToken: Data([84]),
+                                authorization: 3)
+            try expect(try store.pending().map(\\.localIdentifier) == ["new-after-consent"])
+        }
+        // The reset and token persist across process relaunch.
+        do {
+            let path = dir.appendingPathComponent("fresh-only-new.sqlite3")
+            let reopened = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: path)
+            try expect(try reopened.baseline()?.token == Data([84]))
+            try expect(try reopened.pending().map(\\.localIdentifier) == ["new-after-consent"])
+        }
         // A full authorized-library reconciliation atomically installs a
         // fresh token and discards stale queue rows only after receipt proof.
         do {
