@@ -4988,9 +4988,8 @@ class DriveController(
             root.parentId == null && root.revision > 0)
         if (folder.id != root.id) {
             val located = service.nodeLocation(token, folder.id)
-            check(currentClipboardSession() && located.nodeId == folder.id &&
-                located.parentId == folder.parentId && located.revision == folder.revision &&
-                located.parentDirectories.lastOrNull()?.id == root.id) {
+            check(currentClipboardSession() &&
+                XDriveClipboardFileLocationPolicy.accepts(folder, located, root.id)) {
                 "Clipboard folder is stale or outside current Owner Files root"
             }
         }
@@ -5018,9 +5017,7 @@ class DriveController(
         val located = service.nodeLocation(token, selected.id)
         currentCoroutineContext().ensureActive()
         check(currentClipboardSession() && root.id > 0 && root.isDirectory &&
-            located.nodeId == selected.id && located.parentId == selected.parentId &&
-            located.revision == selected.revision &&
-            located.parentDirectories.lastOrNull()?.id == root.id) {
+            XDriveClipboardFileLocationPolicy.accepts(selected, located, root.id)) {
             "Clipboard Files Node moved, changed or permission revoked"
         }
         selected
