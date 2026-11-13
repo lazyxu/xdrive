@@ -293,6 +293,16 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   UIApplication.shared.applicationState == .active else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
+            // A malformed or unsupported saved plan can coexist with a
+            // readable encrypted receipt journal. configure() would refuse
+            // that plan, but only AFTER the token installation below. Do not
+            // create or advance any durable PhotoKit queue baseline for a
+            // configuration that must be rejected by the schedule store.
+            if store.hasSavedRecord(owner: selected),
+               store.status(owner: selected) == nil {
+                errorMessage = "当前账户的旧自动备份计划无法读取；未写入新的照片增量基准，请先处理旧任务。"
+                return
+            }
             if let consentEpoch {
                 // Persist the original, consent-time PhotoKit token ONLY after
                 // the current managed target was authenticated. New imports
