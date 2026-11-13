@@ -7,6 +7,7 @@ on:
       - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift'
       - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
+      - 'ios/UITests/XDriveIOSClipboardRuntimeUITests.swift'
       - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
       - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
       - 'ios/UITests/XDriveIOSPagePerformanceUITests.swift'
@@ -238,7 +239,8 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests") ;;
             candidate-no-session)
-              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests") ;;
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSClipboardRuntimeUITests") ;;
             candidate-mapkit)
               # This candidate uses an isolated real PhotoKit permission
               # lifecycle; other Gallery/Files UITests cannot reset TCC.
