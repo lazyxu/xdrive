@@ -23,11 +23,11 @@ SCHEMA = "xdrive.ios.map.real-photokit-perf.v1"
 # Xcode 16.4 emits these actual app-targeted values from XCTCPUMetric and
 # XCTMemoryMetric, unlike CADisplayLink's callback-cadence approximation.
 XCTEST_METRIC = re.compile(
-    r"Test Case '-\\[xDriveIOSNavigationUITests\\."
+    r"Test Case '-\[xDriveIOSNavigationUITests\."
     r"XDriveIOSMapNavigationRuntimeUITests "
-    r"testP1Real100KPhotoKitMapPerformance\\]'"
-    r" measured \\[(CPU Time \\(ios\\), s|Memory Peak Physical \\(ios\\), kB)\\]"
-    r" average: [^\\n]*?values: \\[([0-9., \\-]+)\\]"
+    r"testP1Real100KPhotoKitMapPerformance\]'"
+    r" measured \[(CPU Time \(ios\), s|Memory Peak Physical \(ios\), kB)\]"
+    r" average: [^\n]*?values: \[([0-9., \-]+)\]"
 )
 
 
