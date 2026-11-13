@@ -861,6 +861,61 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         close.tap()
         XCTAssertTrue(map.waitForExistence(timeout: 30))
 
+        // Qualify the real two-window cache BEFORE measuring repeated gestures.
+        // World overview is much larger than the 24x48 degree refinement
+        // threshold. One 2x pinch is insufficient to produce any viewport
+        // scan, so it cannot honestly establish a cache hit.
+        func metricCounter(_ key: String) -> Int {
+            let field = inventory.label.split(separator: " ")
+                .first(where: { $0.hasPrefix("\(key)=") })
+            guard let field else { return -1 }
+            return Int(field.dropFirst(key.count + 1)) ?? -1
+        }
+
+        func waitForCounterIncrease(_ key: String, from oldValue: Int) -> Bool {
+            let limit = Date().addingTimeInterval(360)
+            repeat {
+                if metricCounter(key) > oldValue { return true }
+                Thread.sleep(forTimeInterval: 1.5)
+            } while Date() < limit && app.state == .runningForeground
+            return false
+        }
+
+        let completedBeforeRefine = metricCounter("completed")
+        XCTAssertGreaterThanOrEqual(completedBeforeRefine, 5)
+        // Real MapKit touches. Three 3.5x zooms exceed a 24.5x zoom and
+        // shrink even the largest whole-Earth camera below 24°/48°.
+        // The PhotoKit scan still uses the ordinary user-visible path.
+        for _ in 0..<3 {
+            map.pinch(withScale: 3.5, velocity: 1.0)
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        XCTAssertTrue(waitForCounterIncrease("completed", from: completedBeforeRefine),
+                      "Real deep-zoom viewport PhotoKit rescan was never completed")
+
+        let beforeSecondWindow = metricCounter("completed")
+        let beforeCacheHit = metricCounter("cache")
+        var pans = 0
+        // Leave the verified viewport's 2x overscan. Do not assert a cache
+        // from a pan that never caused a real PhotoKit rescan.
+        for _ in 0..<3 {
+            map.swipeLeft()
+            pans += 1
+            Thread.sleep(forTimeInterval: 2)
+            if metricCounter("completed") > beforeSecondWindow ||
+               waitForCounterIncrease("completed", from: beforeSecondWindow) {
+                break
+            }
+        }
+        XCTAssertGreaterThan(metricCounter("completed"), beforeSecondWindow,
+                            "Leaving overscan did not produce a second verified PhotoKit window")
+        for _ in 0..<pans {
+            map.swipeRight()
+            Thread.sleep(forTimeInterval: 2)
+        }
+        XCTAssertTrue(waitForCounterIncrease("cache", from: beforeCacheHit),
+                      "Returning to verified viewport must reuse cached cells with 0 metadata pages")
+
         // Real MKMapView gestures; no fake cache flag or direct viewport API.
         // Each region settles for the normal 900ms PhotoKit refinement policy.
         let zoomOptions = XCTMeasureOptions()
