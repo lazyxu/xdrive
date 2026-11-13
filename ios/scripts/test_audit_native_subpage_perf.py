@@ -70,11 +70,11 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertEqual(report["rows"][0]["app_peak_memory_p95_mib"], 3)
         self.assertFalse(report["real_signed_owner_data"])
 
-    def test_actual_repository_registration_has_all_twenty_routes(self):
+    def test_actual_repository_registration_has_all_twenty_two_routes(self):
         module.ROUTES = self.old
         registered = module.source_routes(module.SOURCE.read_text(encoding="utf-8"))
         self.assertEqual(set(registered.values()), set(module.ROUTES))
-        self.assertEqual(len(module.ROUTES), 20)
+        self.assertEqual(len(module.ROUTES), 22)
 
     def test_gallery_backup_routes_use_existing_product_navigation(self):
         gallery = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
@@ -114,6 +114,24 @@ class NativeSubpageAuditTests(unittest.TestCase):
                       "gallery.local.date-sheet", "gallery.map.from-filter",
                       "gallery.map.from-launcher"):
             self.assertIn(f'run("{route}")', native_test)
+
+    def test_new_backup_setup_and_mine_consent_are_real(self):
+        backup = (module.ROOT / "ios/XDriveIOS/NativePhotoBackupScreen.swift").read_text(
+            encoding="utf-8"
+        )
+        dashboard = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
+            encoding="utf-8"
+        )
+        native_test = module.SOURCE.read_text(encoding="utf-8")
+        self.assertIn('native-ios-backup-setup', backup)
+        self.assertIn('Button(destination.confirmed == nil ? "开始设置" : "继续设置")', backup)
+        self.assertIn('native-ios-mine-server-account', dashboard)
+        self.assertIn('确认退出当前服务器和账户？', dashboard)
+        self.assertIn('Button("停止本机自动备份并退出"', dashboard)
+        for route in ("backup.setup", "mine.signout.confirm"):
+            self.assertIn(f'run("{route}")', native_test)
+        self.assertIn('XCTCPUMetric(application: app)', native_test)
+        self.assertIn('XCTMemoryMetric(application: app)', native_test)
 
     def test_missing_actual_metric_fails(self):
         stripped = "\n".join(
