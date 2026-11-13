@@ -1,0 +1,42 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = (file) => fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8')
+const panel = read('desktop/src/renderer/DesktopClientUpdatePanel.tsx')
+const page = read('ui/shared/src/mui/ClientUpdatePage.tsx')
+const card = read('ui/shared/src/mui/ReleaseBundleCard.tsx')
+const app = read('desktop/src/renderer/App.tsx')
+
+test('the Desktop update summary comes first and snapshot labels cannot establish Git Commit equality', () => {
+  assert.ok(page.indexOf('{clientUpdateContent}') < page.indexOf('<XDriveReleaseBundleCard'))
+  assert.ok(page.indexOf('<XDriveReleaseBundleCard') < page.indexOf('<XDriveBuildInfoCard'))
+  assert.ok(panel.includes('XDRIVE_RELEASE_COMMIT='))
+  assert.ok(panel.includes('commitMatches') && panel.includes('commitDiffers'))
+  assert.ok(panel.includes('更新通道报告没有新版本'))
+  assert.ok(panel.includes('缺少完整 Commit'))
+  assert.ok(app.includes('currentCommit: info?.commit'))
+  assert.ok(app.includes('currentVersion: info?.version || status?.version'))
+  assert.ok(panel.includes("{currentVersion || clientUpdate.current_version || '未知'}"))
+})
+
+test('only actionable buttons are visible and settings and raw release info are folded', () => {
+  assert.ok(panel.includes('clientUpdate.update_available && !operating && (clientUpdate.install_supported || !clientUpdate.downloaded)'))
+  assert.ok(panel.includes('clientUpdate.install_supported ? onInstallUpdate : onDownloadUpdate'))
+  assert.ok(panel.includes('updateCancelSupported && (clientUpdate.status'))
+  assert.ok(panel.includes('<AccordionSummary'))
+  assert.ok(panel.includes('更新设置、发布说明与技术信息'))
+  assert.ok(!panel.includes('XDriveMetricGrid'))
+})
+
+test('Server Commit install remains independent and preserves full manifest verification and Owner guards', () => {
+  assert.ok(card.includes('与上方更新通道独立'))
+  assert.ok(card.includes('state.artifacts.filter((artifact) => artifact.platform === port.platform)'))
+  assert.ok(card.includes('其他平台安装包、校验与备用下载来源'))
+  assert.ok(card.includes('SHA-256：{artifact.sha256}'))
+  assert.ok(card.includes('setPendingInstall({ commit: artifact.build_commit'))
+  assert.ok(card.includes('确认安装未经签名的个人 Windows 构建'))
+  assert.ok(card.includes('if (actionNumber !== actionGeneration.current) return'))
+  assert.ok(app.includes('retry: undefined'))
+})

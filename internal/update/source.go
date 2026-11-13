@@ -164,6 +164,11 @@ func checkGitLabTarget(ctx context.Context, current, assetName, channel string) 
 			return result, fmt.Errorf("gitlab has no stable vMAJOR.MINOR.PATCH release")
 		}
 		result.Latest = strings.TrimSpace(release.TagName)
+		// The GitLab stable Release already identifies its source Commit.
+		// Pin the full 40-hex identity only when it is present and valid.
+		// Legacy releases with no source identity remain independently
+		// downloadable via SHA256SUMS, but never borrow Server cache bytes.
+		result.Commit = normalizeFullCommit(release.Commit.ID)
 		if IsReleaseVersion(current) {
 			result.UpdateAvailable = Compare(result.Latest, current) > 0
 		} else {

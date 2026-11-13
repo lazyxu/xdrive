@@ -1,7 +1,14 @@
 package main
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/client"
@@ -71,5 +78,136 @@ func TestClientUpdateOnlyPrefersExactMatchingCurrentServerCommit(t *testing.T) {
 	testingOnly.Artifacts[0].InstallMode = "manual_test_only"
 	if actual := matchCurrentServerBundle(target, testingOnly, "windows"); actual.Bundle != nil {
 		t.Fatal("testing-only installer was selected by normal channel auto-update")
+	}
+}
+
+// GitLab does not consistently supply asset.digest in its Release metadata.
+// Before using the authenticated Server cache as a preferred download origin,
+// read the Server version/hash listing and separately fetch GitLab SHA256SUMS.
+// Matching metadata permits Server → GitLab → GitHub; mismatches must not
+// substitute bytes from a different or tampered update channel.
+func TestGitLabChecksumEnablesServerFirstOnlyForExactRelease(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	payload := []byte("independently verified GitLab package")
+	sum := sha256.Sum256(payload)
+	digest := hex.EncodeToString(sum[:])
+	var reads atomic.Int32
+	badDigest := strings.Repeat("b", 64)
+	var wrong atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reads.Add(1)
+		if r.URL.Path != "/SHA256SUMS.txt" {
+			http.NotFound(w, r)
+			return
+		}
+		checksum := digest
+		if wrong.Load() {
+			checksum = badDigest
+		}
+		_, _ = fmt.Fprintf(w, "%s  xDriveSetup-amd64.exe\n", checksum)
+	}))
+	defer server.Close()
+
+	artifact := client.ReleaseBundleArtifact{
+		Platform: "windows", Filename: "xDriveSetup-amd64.exe",
+		BuildCommit: commit, SHA256: digest, Size: int64(len(payload)),
+		InstallMode: "manual", Cached: true,
+	}
+	listing := client.ReleaseBundleListing{
+		Commit: commit, Channel: xupdate.ChannelMaster,
+		ServerVersion: "snapshot",
+		Artifacts:     []client.ReleaseBundleArtifact{artifact},
+	}
+	release := xupdate.Result{
+		Current: "snapshot", Latest: "snapshot", Commit: commit,
+		Channel: xupdate.ChannelMaster, UpdateAvailable: true,
+		Asset:     xupdate.Asset{Name: artifact.Filename},
+		Checksums: xupdate.Asset{Name: "SHA256SUMS.txt", URL: server.URL + "/SHA256SUMS.txt"},
+	}
+	matched := matchCurrentServerBundleWithGitLabChecksum(
+		context.Background(), release, listing, "windows", xupdate.SourceGitLab,
+	)
+	if matched.Bundle == nil || matched.Bundle.SHA256 != digest ||
+		matched.Bundle.Size != artifact.Size || matched.Asset.Digest != "sha256:"+digest {
+		t.Fatalf("GitLab checksum did not authorize matching Server-first bytes: %+v", matched)
+	}
+	if reads.Load() != 1 {
+		t.Fatalf("expected one GitLab checksum download after Server listing, got %d", reads.Load())
+	}
+
+	wrong.Store(true)
+	conflicting := matchCurrentServerBundleWithGitLabChecksum(
+		context.Background(), release, listing, "windows", xupdate.SourceGitLab,
+	)
+	if conflicting.Bundle != nil || conflicting.Asset.Digest != "sha256:"+badDigest {
+		t.Fatalf("mismatching GitLab release digest replaced Server package: %+v", conflicting)
+	}
+	wrong.Store(false)
+
+	before := reads.Load()
+	staleServer := listing
+	staleServer.Commit = strings.Repeat("c", 40)
+	if mismatched := matchCurrentServerBundleWithGitLabChecksum(
+		context.Background(), release, staleServer, "windows", xupdate.SourceGitLab,
+	); mismatched.Bundle != nil || reads.Load() != before {
+		t.Fatal("wrong Server Commit caused checksum fetch or package substitution")
+	}
+	staleServer = listing
+	staleServer.ServerVersion = "v2.0.0"
+	if mismatched := matchCurrentServerBundleWithGitLabChecksum(
+		context.Background(), release, staleServer, "windows", xupdate.SourceGitLab,
+	); mismatched.Bundle != nil || reads.Load() != before {
+		t.Fatal("wrong Server version caused checksum fetch or package substitution")
+	}
+	if direct := matchCurrentServerBundleWithGitLabChecksum(
+		context.Background(), release, listing, "windows", xupdate.SourceGitHub,
+	); direct.Bundle != nil || reads.Load() != before {
+		t.Fatal("GitHub update without independent digest improperly used Server cache")
+	}
+}
+
+// Stable GitLab updates may also prefer an authenticated Server only when
+// their independently selected full tag Commit, version and checksum agree.
+func TestStableGitLabChecksumUsesServerCacheOnlyForSameVersion(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	payload := []byte("stable-source-exact-update")
+	digest := sha256.Sum256(payload)
+	hash := hex.EncodeToString(digest[:])
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/SHA256SUMS.txt" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprintf(w, "%s  xDriveSetup-amd64.exe\n", hash)
+	}))
+	defer server.Close()
+	artifact := client.ReleaseBundleArtifact{
+		Platform: "windows", Filename: "xDriveSetup-amd64.exe",
+		BuildCommit: commit, SHA256: hash, Size: int64(len(payload)),
+		InstallMode: "manual",
+	}
+	listing := client.ReleaseBundleListing{
+		Commit: commit, Channel: xupdate.ChannelStable,
+		ServerVersion: "v2.1.0",
+		Artifacts:     []client.ReleaseBundleArtifact{artifact},
+	}
+	result := xupdate.Result{
+		Current: "v2.0.0", Latest: "v2.1.0", Commit: commit,
+		Channel: xupdate.ChannelStable, UpdateAvailable: true,
+		Asset:     xupdate.Asset{Name: artifact.Filename},
+		Checksums: xupdate.Asset{Name: "SHA256SUMS.txt", URL: server.URL + "/SHA256SUMS.txt"},
+	}
+	good := matchCurrentServerBundleWithGitLabChecksum(
+		context.Background(), result, listing, "windows", xupdate.SourceGitLab,
+	)
+	if good.Bundle == nil || good.Bundle.SHA256 != hash {
+		t.Fatalf("stable GitLab and current Server did not agree: %+v", good)
+	}
+	wrong := listing
+	wrong.Channel = xupdate.ChannelMaster
+	if bad := matchCurrentServerBundleWithGitLabChecksum(
+		context.Background(), result, wrong, "windows", xupdate.SourceGitLab,
+	); bad.Bundle != nil {
+		t.Fatal("stable GitLab source used master Server cache")
 	}
 }

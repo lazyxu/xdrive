@@ -62,7 +62,7 @@ func TestGitLabSourceStableAndMasterAreSeparated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stable.Latest != "v1.10.0" || !stable.UpdateAvailable {
+	if stable.Latest != "v1.10.0" || !stable.UpdateAvailable || stable.Commit != full {
 		t.Fatalf("stable=%+v", stable)
 	}
 	if stable.PublishedAt != "2026-09-25T12:00:00Z" || stable.ReleaseName == "" || stable.ReleaseNotes == "" || stable.ReleaseURL == "" {
@@ -206,5 +206,29 @@ func gitLabTestRelease(tag, releasedAt, commit, base string) map[string]any {
 				{"name": "SHA256SUMS.txt", "direct_asset_url": assetBase + "/assets/SHA256SUMS.txt"},
 			},
 		},
+	}
+}
+
+// Missing or malformed GitLab stable source identity must never enable
+// authenticated Server cache substitution, while independent GitLab SHA256SUMS
+// updates remain available for legacy tag-only releases.
+func TestGitLabStableWithoutFullSourceCommitKeepsIndependentDownload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/releases") {
+			http.NotFound(w, r)
+			return
+		}
+		release := gitLabTestRelease("v3.0.0", "2026-11-12T00:00:00Z", "short", "")
+		_ = json.NewEncoder(w).Encode([]map[string]any{release})
+	}))
+	defer server.Close()
+	t.Setenv("XD_UPDATE_GITLAB_BASE_URL", server.URL)
+	t.Setenv("XD_UPDATE_GITLAB_PROJECT", "xuliang/xdrive")
+	result, err := CheckAssetTargetFromSource(
+		context.Background(), "v2.0.0", "pkg.bin", ChannelStable, SourceGitLab,
+	)
+	if err != nil || !result.UpdateAvailable || result.Commit != "" ||
+		result.Latest != "v3.0.0" || result.Asset.Name != "pkg.bin" {
+		t.Fatalf("legacy GitLab stable update must not mint a full Server Commit: %+v err=%v", result, err)
 	}
 }

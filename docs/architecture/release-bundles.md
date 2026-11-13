@@ -5,24 +5,29 @@ independently scheduled client-package cache and a client is **never forced**
 to match the Server commit. Server update, backup, rollback and compatibility
 checks remain authoritative.
 
-## Identity and immutable publication
+## Identity and source-exact publication
 
-**Platform immutability is separate from source-level no-clobber guards.**
-The first observed public `bundle-2f5787bef3e1c825f00ff912e8bcd820d6862326`
-Release has `immutable: false`, despite its exact source ref and Release
-asset digest inventory. It must not be represented as a GitHub-locked Release.
-GitHub repository **Settings → Releases → Enable release immutability** must
-be enabled by an authorized repository administrator; this applies to
-future Releases, not retroactively to that already published one.
-The independent parent CI `verify-published-bundle` job now requires
-`immutable: true` *and* the signed Manifest proof for subsequent Releases.
-It is intentionally not a dependency of the core Server/Snapshot publish job.
+**Decision (2026-11-12): GitHub Release Immutability is deferred.**
+GitHub Releases may report `immutable:false`; this is not equivalent to
+a GitHub-locked release, and must not be advertised as immutable.
+The source-exact publication CI continues to require full Commit, raw
+Manifest/asset SHA-256 and Sigstore provenance; the platform immutable
+flag is not required. A Server upgrade never forces clients to upgrade.
 
+**Native manual download priority:** authenticated current xd Server's
+verified local package → exact-Commit GitLab → GitHub last resort.
+The current authenticated Server listing (40-hex Commit, platform, name,
+install mode, byte size and SHA-256) is the authority for manual current-Server
+installation. GitHub availability is not required for the first two sources.
+This has weaker independent publisher authenticity than a GitHub-immutable
+Release: a compromised authenticated Server could alter its manifest and
+matching digest. Continue explicit consent, platform signing/authorization,
+byte rechecks, post-install Commit verification and rollback.
 
 - A Bundle is identified by the **complete lowercase 40-hex Git Commit**,
   not by a rolling `snapshot`, 12-character prefix, build number or
   platform version string.
-- An immutable GitHub Release `bundle-<full-sha>` publishes
+- A full-Commit GitHub Release `bundle-<full-sha>` publishes
   `release-bundle.json` and the exact same-commit client packages. Its
   publisher verifies the tag ref, every asset name and SHA-256 on retries.
   CI also produces a Sigstore attestation for the manifest. A **separate
@@ -43,8 +48,8 @@ It is intentionally not a dependency of the core Server/Snapshot publish job.
   for the exact current authenticated Server Commit. The user must acknowledge
   the absence of Authenticode; this does not add publisher identity assurance.
   The native path checks that it is Windows AMD64 + master channel, the fixed
-  `xDriveSetup-amd64.exe` filename, full Git Commit and public GitHub Bundle
-  tag/asset inventory, and exact size/SHA-256 before installer execution.
+  `xDriveSetup-amd64.exe` filename, full Git Commit and authenticated
+  Server-approved source allowlist, and exact size/SHA-256 before execution.
   Windows PowerShell rechecks size/SHA-256 after Agent exit and confirms that
   the package is actually unsigned. Wrong Commit, wrong platform, signed/invalid
   package in unsigned mode, or an unconfirmed request fail closed. Other
@@ -65,15 +70,15 @@ The Desktop **客户端更新** page offers the same current-Commit Bundle card
 to authenticated non-admin users, but no admin-only Host cache retry action.
 The separate administrator **管理 → 系统更新** page retains cache diagnostics
 and retry. Both views are opt-in: updating Server never pushes a client install.
-The presence of a package or a `verified` Host cache is **not** a claim that
-GitHub publication has passed the independent `immutable:true` installer
-admission gate. The shared Desktop Bundle card explicitly explains this check
-before confirmation; the native Agent re-verifies the public Release, raw
-manifest bytes, full asset inventory, Commit and SHA-256 immediately before
-installation. If GitHub Release immutability has not been enabled for the
-**new** Bundle, the native install must reject the attempt without affecting
-Server or other clients. Polling the cache must not erase a prior install
-error, nor turn "install requested" into an installed/healthy success report.
+The presence of a package or a `verified` Host cache is **not** proof
+of installation success. The Desktop card explicitly identifies the
+authenticated Server as the authority for opt-in updates and warns that
+GitHub `immutable:true` is not required. The native Agent does not query
+GitHub Release metadata before trying the Server/GitLab sources. It re-reads
+current authenticated Server metadata and validates Commit, platform,
+filename, mode, size and SHA-256; OS-native admission remains independent.
+Polling the cache must not erase a prior install error, nor turn "install
+requested" into an installed/healthy success report.
 
 Exact-Commit native install is supported for Windows and Debian-family Linux
 AMD64 when an applicable artifact actually exists. `xd version --json` and
@@ -85,19 +90,17 @@ before committing its last-known-good transaction. Linux checks installed
 xd, Agent and Desktop build metadata following authorized apt/PolicyKit
 installation. A textual version such as `snapshot` alone is insufficient.
 
-Before any native Windows/Linux installer is executed, the independent public
-GitHub trust check must verify the exact Bundle tag commit, Release
-`immutable:true`, and the published installer size and SHA-256. It also
-retrieves the raw `release-bundle.json` from GitHub's numeric Release asset
-endpoint, permitting only GitHub-owned release asset CDN redirects; the asset
-bytes must match the GitHub Release's manifest digest and size. The parsed
-manifest must identify the same full Commit and exact requested platform,
-filename, mode, source URLs, size and SHA-256. **Every other manifest entry**
-must correspond one-to-one with the published Release asset inventory. A
-missing/unreadable/tampered manifest fails closed; an authenticated Server
-cannot introduce an installer not actually present in the immutable public
-manifest. This independent pre-install check is distinct from the Host's own
-caching and the operator's real deployment acceptance.
+Before Windows/Linux execution, the native client checks the exact
+authenticated Server listing and the downloaded package's SHA-256/size,
+with no GitHub Release API or `immutable:true` prerequisite.
+Download order remains verified Server cache → exact-Commit GitLab →
+GitHub fallback. Wrong bytes are rejected, never installed. Owner credentials
+never leave the Server origin. Signed-channel OS publisher checks are
+unchanged, and only separately acknowledged personal Windows master builds
+may be unsigned. The `VerifyCurrentBundlePublisher` helper remains an
+optional independent public audit of a GitHub tag, manifest and all assets,
+not a prerequisite to a local install. The absence of that mandatory
+independent trust root is a documented security trade-off.
 
 This source implementation is not a claim of real-device acceptance. Confirm
 the actual Windows personal unsigned installer (including its OS warning),
@@ -142,22 +145,16 @@ checks must be recorded separately from physical-device results.
   `verified`, `pending`, `missing_upstream`, `verification_failed` and
   `retry_needed`. Every failure is noncritical and never influences Server
   upgrade exit status or rollback decisions.
-- Before mirroring bytes, the worker verifies the exact GitHub `bundle-<sha>`
-  ref targets a **commit** with the requested full SHA and compares the
-  manifest and every artifact against the immutable GitHub Release asset
-  digest/size inventory. Missing, duplicated, altered, or mismatched assets
-  fail closed without affecting Server health. This uses GitHub HTTPS
-  provenance by default. To independently verify the signed Manifest before
-  **every Host cache promotion**, install a trusted GitHub CLI on the Host and
-  set `XD_RELEASE_BUNDLE_VERIFY_SIGSTORE=required` in its Host `.env`.
-  The Worker then pins the OIDC signer workflow, full source Commit, master
-  source ref (when applicable), and immutable GitHub repository ID 1382670236.
-  Missing tools, mutable GitHub Releases, or invalid attestations fail only
-  the optional client cache, never the Server upgrade. Strict mode requires
-  **both** platform `immutable:true` and the pinned independent signature;
-  signed-but-mutable Releases are rejected. Without this setting Host Sigstore
-  enforcement is explicitly **not active**.
-
+- Before mirroring bytes, the Host Worker checks GitHub exact-Commit tag,
+  Manifest, package metadata and SHA-256 inventory. Its strict
+  `XD_RELEASE_BUNDLE_VERIFY_SIGSTORE=required` mode still needs trusted
+  GH CLI and pins the manifest signature to signer workflow, source Commit,
+  branch (where applicable) and repository ID 1382670236. Missing verifier,
+  wrong signature or altered bytes reject **only the optional cache**.
+  Platform `immutable:false` by itself does not reject a valid signed
+  manifest. Existing Server-verified cache remains usable even if GitHub
+  goes offline; creation of a new Host cache still needs the public
+  Manifest inventory. Release Immutability is deferred.
 
 ## Authenticated distribution
 
@@ -165,11 +162,9 @@ checks must be recorded separately from physical-device results.
   Commit, its per-package cache state and exact digests with fallback URLs.
   No historical Bundle selection endpoint or version selector exists. Entries list the
   local authenticated download first **only when a verified cache exists**,
-  followed by GitLab and then GitHub. The native Desktop updater only opts
-  into this alternate source when the independently selected release channel
-  already pins the **same full Commit, filename, platform and SHA-256**; a
-  missing or conflicting channel digest falls back to the original channel
-  download rather than accepting a Server-created trust root.
+  followed by GitLab and then GitHub. Automatic release-channel updates retain their independent signed-channel
+  checks. Explicit current-Server-Commit updates instead use authenticated
+  Server metadata and the exact platform-specific bytes.
   No authenticated local redirect is followed, and Owner credentials never
   leave the pinned Server origin. All downloaded bytes are SHA-256/size checked
   before being made available as an installer. The Windows detached updater

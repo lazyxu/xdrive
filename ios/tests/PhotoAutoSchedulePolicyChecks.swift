@@ -14,6 +14,9 @@ import Foundation
     precondition(p.storedStartRule(raw: "everything", newOnlySince: nil) == .everything)
     precondition(p.storedStartRule(raw: "onlyNew", newOnlySince: nil) == nil)
     precondition(p.storedStartRule(raw: "futureRule", newOnlySince: nil) == nil)
+    // "Resume previous" is a UI operation, never a persisted scope.
+    precondition(p.storedStartRule(raw: "resumePrevious", newOnlySince: nil) == nil)
+    precondition(XDriveIOSPhotoAutoStartRule.allCases.contains(.resumePrevious))
     let enabledAt = Date(timeIntervalSince1970: 2_000_000)
     precondition(p.storedStartRule(raw: "onlyNew", newOnlySince: enabledAt) == .onlyNew)
     let prior = Date(timeIntervalSince1970: 1_999_990)

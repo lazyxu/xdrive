@@ -149,7 +149,10 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
             throw XDrivePhotoKitScanFailure.invalidOffset
         }
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard status == .authorized || (!requireStableResume && album == nil && status == .limited) else {
+        // Stable backup cursors may enumerate only the current selected
+        // Limited subset. Map and other requireFullLibrary readers keep
+        // their independent Full Photos-only admission.
+        guard status == .authorized || (album == nil && status == .limited) else {
             throw XDrivePhotoKitScanFailure.notAuthorized
         }
         // Recheck at the actual snapshot admission, not only in startMap():

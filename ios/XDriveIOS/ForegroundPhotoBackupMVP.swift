@@ -112,8 +112,12 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             }
         }
         let onlyWiFi = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
-        // PhotoKit can allow or disallow iCloud access, but cannot pin it to Wi-Fi.
-        let allowICloudOriginals = allowICloudOriginals && !onlyWiFi
+        // PhotoKit's network switch is independent of URLSession. When
+        // Wi-Fi-only is enabled, OS-managed source downloads require a
+        // separate Owner opt-in and a current Wi-Fi path. The transport still
+        // denies cellular uploads. PhotoKit requests cancel on path loss.
+        let allowICloudOriginals = await XDriveIOSPhotoBackupNetworkPolicy.shared
+            .mayDownloadICloudOriginals(for: owner, userRequested: allowICloudOriginals)
         try await authorization.verify(owner: owner)
         try Task.checkCancellation()
 
@@ -144,10 +148,15 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                 // At most four distinct network-required revisions are
                 // requeued; ordinary failed rows and unknown ACKs are never
                 // blindly retried.
-                if allowICloudOriginals, case .managedForeground = authorization {
-                    _ = try await changeQueue.retryWaitingICloudCandidates(
-                        owner: owner, limit: 4
-                    )
+                if allowICloudOriginals {
+                    switch authorization {
+                    case .managedForeground, .background:
+                        _ = try await changeQueue.retryWaitingICloudCandidates(
+                            owner: owner, limit: 4
+                        )
+                    case .webBearer:
+                        break
+                    }
                 }
                 let queued = try await changeQueue.pendingCandidates(
                     owner: owner, limit: 64
@@ -215,8 +224,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         if Self.isTransientConfirmedReadbackFailure(error) ||
                            Self.mustAbortRun(after: error) { throw error }
                         let waitingForICloud: Bool
-                        if !allowICloudOriginals,
-                           let photoError = error as? XDrivePhotoKitExportFailure,
+                        if let photoError = error as? XDrivePhotoKitExportFailure,
                            case .iCloudDownloadRequired = photoError {
                             waitingForICloud = true
                         } else {
@@ -400,7 +408,8 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             throw XDriveIOSPhotoBackupMVPError.identityNotVerified
         }
         let onlyWiFi = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
-        let allowICloudOriginals = allowICloudOriginals && !onlyWiFi
+        let allowICloudOriginals = await XDriveIOSPhotoBackupNetworkPolicy.shared
+            .mayDownloadICloudOriginals(for: owner, userRequested: allowICloudOriginals)
         try await authorization.verify(owner: owner)
         try Task.checkCancellation()
         var report = XDriveIOSPhotoBackupProgress()
@@ -600,11 +609,14 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         try Task.checkCancellation()
         // No iOS-specific media size ceiling. The exporter streams to
         // protected staging and the existing UploadSession sends 8 MiB chunks.
-        _ = try await XDriveIOSPhotoBackupNetworkPolicy.shared.requireWiFiIfNeeded(for: owner)
+        let sourceWiFiOnly = try await XDriveIOSPhotoBackupNetworkPolicy.shared
+            .requireWiFiIfNeeded(for: owner)
         let staged = try await XDrivePhotoKitOriginalExporter.stage(
             localIdentifier: localIdentifier,
             allowICloudDownload: allowICloud,
-            maximumBytesPerResource: .max
+            maximumBytesPerResource: .max,
+            allowLimitedPhotoAccess: true,
+            requireWiFiWhileDownloading: sourceWiFiOnly && allowICloud
         )
         defer { staged.delete() }
         try Task.checkCancellation()

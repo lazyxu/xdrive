@@ -418,6 +418,35 @@ class OfflinePackageTests(unittest.TestCase):
         subprocess.run(["bash", "-n", str(HERE / "build-five-packages.sh")], check=True)
 
 
+class OfflineAssemblerCIImageIdentityContractTests(unittest.TestCase):
+    """Ensure offline publication reuses exact archive identity, not .Id."""
+
+    def test_shared_import_export_identity_path(self):
+        builder = (HERE / "build-five-packages.sh").read_text(encoding="utf-8")
+        self.assertIn('bash scripts/ci/import-docker-image.sh', builder)
+        self.assertIn('bash scripts/ci/export-docker-image.sh', builder)
+        self.assertIn('mv -- "$export_dir/image.tar.gz" "$target"', builder)
+        self.assertIn('"$export_dir/image.id"', builder)
+        self.assertIn('verified archive image reference mismatch', builder)
+        self.assertNotIn('CI image ID mismatch: $local_ref', builder)
+        self.assertNotIn('docker load -i "$ARTIFACTS/$archive_dir/image.tar.gz"', builder)
+        self.assertNotIn('["docker","image","inspect","--format","{{.Id}}",ref]', builder)
+
+    def test_five_components_record_archive_config_digest(self):
+        builder = (HERE / "build-five-packages.sh").read_text(encoding="utf-8")
+        for key, ref in (
+            ("server", "SERVER_REF"),
+            ("caddy", "CADDY_REF"),
+            ("postgres", "PINNED_POSTGRES"),
+            ("media-worker", "MEDIA_REF"),
+            ("ai-runtime", "RUNTIME_REF"),
+        ):
+            with self.subTest(key=key):
+                wanted = ' "' + chr(36) + ref + '"'
+                self.assertIn("archive_image " + key + wanted, builder)
+                self.assertIn("record_image " + key + wanted, builder)
+
+
 class ImageArchiveIdentityTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="offline-image-identity-")

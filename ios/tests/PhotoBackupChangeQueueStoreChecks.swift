@@ -483,6 +483,79 @@ import SQLite3
                 token: Data([94]), authorization: 3
             ))
         }
+        // Real SQLite automatic retry: only safe item-local failures,
+        // one exact revision, three persisted attempts and finite cooldowns.
+        // Unsupported items and unknown remote ACKs never enter this path.
+        let automaticFile = dir.appendingPathComponent("automatic-retry.sqlite3")
+        let retryToken0 = Data([110]), retryToken1 = Data([111])
+        let retryTime = Date(timeIntervalSince1970: 3_000_000)
+        do {
+            let retry = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: automaticFile)
+            try expect(try retry.installBaselineIfAbsent(
+                token: retryToken0, authorization: 3
+            ))
+            _ = try retry.apply(
+                inserted: ["recoverable", "unsupported-type"], updated: [],
+                deleted: [], expectedToken: retryToken0,
+                nextToken: retryToken1, authorization: 3
+            )
+            let items = try retry.pending()
+            guard let recoverable = items.first(where: {
+                    $0.localIdentifier == "recoverable"
+                  }), let unsupported = items.first(where: {
+                    $0.localIdentifier == "unsupported-type"
+                  }) else { preconditionFailure("missing retry fixtures") }
+            try expect(try retry.settle(
+                recoverable, result: .failed, reasonCode: "unavailable",
+                expectedBaselineToken: retryToken1, authorization: 3
+            ))
+            try expect(try retry.settle(
+                unsupported, result: .failed, reasonCode: "unsupported",
+                expectedBaselineToken: retryToken1, authorization: 3
+            ))
+            try expect(try retry.automaticRetryCandidates(
+                limit: 4, now: retryTime
+            ).map(\.localIdentifier) == ["recoverable"])
+            let attempts: [TimeInterval] = [0, 15 * 60, 15 * 60 + 60 * 60]
+            for (index, elapsed) in attempts.enumerated() {
+                let moment = retryTime.addingTimeInterval(elapsed)
+                try expect(try retry.retryFailedAutomatically(
+                    recoverable, expectedBaselineToken: retryToken1,
+                    authorization: 3, now: moment
+                ))
+                try expect(try retry.settle(
+                    recoverable, result: .failed, reasonCode: "unavailable",
+                    expectedBaselineToken: retryToken1, authorization: 3
+                ))
+                if index < 2 {
+                    try expect(try retry.automaticRetryCandidates(
+                        limit: 4, now: moment
+                    ).isEmpty)
+                }
+            }
+            try expect(try retry.automaticRetryCandidates(
+                limit: 4, now: retryTime.addingTimeInterval(200_000)
+            ).isEmpty)
+            try expect(try !retry.retryFailedAutomatically(
+                recoverable, expectedBaselineToken: retryToken1,
+                authorization: 3,
+                now: retryTime.addingTimeInterval(200_000)
+            ))
+            // An explicit user request can still reset a previously exhausted
+            // item without bypassing receipt review or the exact revision CAS.
+            try expect(try retry.retryFailed(
+                recoverable, expectedBaselineToken: retryToken1,
+                authorization: 3
+            ))
+            try expect(try retry.settle(
+                recoverable, result: .failed, reasonCode: "unavailable",
+                expectedBaselineToken: retryToken1, authorization: 3
+            ))
+            try expect(try retry.automaticRetryCandidates(
+                limit: 4, now: retryTime
+            ).count == 1)
+        }
+
         print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation+failure codes: PASS")
     }
 }

@@ -70,6 +70,13 @@ final class XDriveIOSPhotoAutoScheduleStore {
         return "xdrive.ios.photos.auto.v1." +
             hash.map { String(format: "%02x", $0) }.joined()
     }
+    /// Raw presence is independent of JSON decoding. An unreadable previous
+    /// Owner plan must not be mistaken for an unconfigured new backup.
+    /// This never creates a credential, erases a receipt or mutates the plan.
+    func hasSavedRecord(owner: XDriveNativeOwnerRoot) -> Bool {
+        UserDefaults.standard.object(forKey: key(for: owner)) != nil
+    }
+
     func status(owner: XDriveNativeOwnerRoot) -> State? {
         guard let bytes = UserDefaults.standard.data(forKey: key(for: owner)),
               let state = try? JSONDecoder().decode(State.self, from: bytes),
@@ -97,21 +104,44 @@ final class XDriveIOSPhotoAutoScheduleStore {
             throw XDriveIOSPhotoAutoScheduleError.invalidStartRule
         }
         let existing = status(owner: owner)
+        // A corrupt or unsupported saved schedule cannot be reset to a fresh
+        // scope without first resolving the old plan/receipt uncertainty.
+        guard existing != nil || !hasSavedRecord(owner: owner) else {
+            throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable
+        }
         let sameTarget = XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(
             savedSourceID: existing?.targetSourceID,
             savedTargetNodeID: existing?.targetNodeID,
             currentSourceID: sourceID, currentTargetNodeID: targetNodeID,
             ownerRootNodeID: owner.rootNodeID
         )
+        if startRule == .resumePrevious {
+            // No baseline, timestamp or scope is created during recovery:
+            // revive ONLY the exact existing inactive Owner/Source/Target
+            // plan. A stopped plan with an uncertain receipt cannot bypass
+            // the explicit review path.
+            guard var previous = existing,
+                  !previous.enabled, !previous.pausedForReview,
+                  sameTarget, previous.backupStartRule != nil
+            else { throw XDriveIOSPhotoAutoScheduleError.invalidStartRule }
+            previous.enabled = true
+            previous.nextDueAt = Date()
+            try persist(previous, owner: owner)
+            return previous
+        }
         let state = State(
             enabled: true, pausedForReview: false,
             intervalMinutes: minutes, allowICloudOriginals: allowICloud,
-            windowIndex: sameTarget ? (existing?.windowIndex ?? 0) : 0,
+            // A new selection starts a new positional scan even when the
+            // managed target is unchanged. Only .resumePrevious above may
+            // preserve a paused plan's cursor and PhotoKit generation.
+            // The independent durable change queue is not erased here.
+            windowIndex: 0,
             // First scan is due on the next eligible foreground poll.
-            nextDueAt: Date(), lastCompletedAt: sameTarget ? existing?.lastCompletedAt : nil,
+            nextDueAt: Date(), lastCompletedAt: nil,
             targetSourceID: sourceID, targetNodeID: targetNodeID,
-            libraryChangeEpoch: sameTarget ? existing?.libraryChangeEpoch : nil,
-            libraryAuthorizationRaw: sameTarget ? existing?.libraryAuthorizationRaw : nil,
+            libraryChangeEpoch: nil,
+            libraryAuthorizationRaw: nil,
             catchUpWhenBehind: XDriveIOSPhotoAutoSchedulePolicy.initialCatchUpPreference(
                 hasExistingPlan: existing != nil,
                 savedPreference: existing?.catchUpWhenBehind
@@ -135,6 +165,45 @@ final class XDriveIOSPhotoAutoScheduleStore {
             state.pausedForReview = true
             try persist(state, owner: owner)
         }
+        return state
+    }
+
+    /// Resume ONLY the same Owner and managed target after an explicit,
+    /// read-only unknown-receipt review. This is distinct from selecting a
+    /// new backup scope, and retains the prior PhotoKit epoch/cursor.
+    /// The caller holds the shared writer gate, proves zero pending receipts
+    /// and checks the exact stop generation immediately before this write.
+    @discardableResult
+    func resumeAfterTrustedReview(
+        owner: XDriveNativeOwnerRoot,
+        sourceID: UInt64, targetNodeID: UInt64,
+        trustedPending: Int, expectedStopGeneration: UInt64
+    ) throws -> State {
+        guard trustedPending == 0,
+              expectedStopGeneration == localStopGeneration,
+              sourceID > 0, targetNodeID > 0,
+              targetNodeID != owner.rootNodeID,
+              var previous = status(owner: owner),
+              previous.enabled, previous.pausedForReview,
+              previous.backupStartRule != nil,
+              previous.targetSourceID == sourceID,
+              previous.targetNodeID == targetNodeID
+        else { throw XDriveIOSPhotoAutoScheduleError.invalidStartRule }
+        previous.pausedForReview = false
+        previous.nextDueAt = Date()
+        try persist(previous, owner: owner)
+        return previous
+    }
+
+    /// Local pause retains the prior start rule, PhotoKit cursor and
+    /// managed target so the user can explicitly select "Resume previous".
+    /// This never deletes the sealed receipt journal or authorizes a write.
+    @discardableResult
+    func pausePreservingPrevious(owner: XDriveNativeOwnerRoot) throws -> State? {
+        guard var state = status(owner: owner), state.enabled else { return nil }
+        localStopGeneration &+= 1
+        state.enabled = false
+        try persist(state, owner: owner)
         return state
     }
 

@@ -36,7 +36,7 @@ func TestCurrentBundlePublisherRequiresExactTagAndAssetDigest(t *testing.T) {
 		wantError           bool
 	}{
 		{name: "exact immutable verified manifest and package"},
-		{name: "mutable release must fail closed", mutableRelease: true, wantError: true},
+		{name: "mutable release with exact digest remains acceptable", mutableRelease: true},
 		{name: "cross commit tag", wrongRef: true, wantError: true},
 		{name: "altered published package hash", wrongDigest: true, wantError: true},
 		{name: "missing package", missingFile: true, wantError: true},
