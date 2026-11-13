@@ -525,6 +525,9 @@ interface XDriveService {
     /** Recipient identities only; no cryptographic public/private keys. */
     suspend fun clipboardDevices(accessToken: String): List<OwnerClipboardDevice> =
         throw ApiException(501, "Clipboard device directory unavailable")
+    suspend fun clipboardRevokeDevice(accessToken: String, deviceID: String) {
+        throw ApiException(501, "Clipboard recipient revoke unavailable")
+    }
     suspend fun clipboardDelete(accessToken: String, id: Long) {
         throw ApiException(501,"Owner Clipboard delete unavailable")
     }
@@ -1124,6 +1127,12 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             received.targetDeviceID != item.targetDeviceID ||
             received.nodeID != item.nodeID) invalidPayload()
         return received
+    }
+
+    override suspend fun clipboardRevokeDevice(accessToken: String, deviceID: String) {
+        require(runCatching { java.util.UUID.fromString(deviceID).toString() == deviceID }
+            .getOrDefault(false)) { "Invalid Clipboard recipient identity" }
+        request("clipboard/devices/$deviceID", accessToken, method = "DELETE", emptyResponse = true)
     }
 
     override suspend fun clipboardDelete(accessToken: String,id: Long) {
