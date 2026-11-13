@@ -45,6 +45,23 @@ enum NativeLANTrustChecks {
         let changedCATrust = try trust("ip")
         let dnsSANTrust = try trust("dns")
         precondition(XDriveIOSServerTLSDelegate.verify(valid, target: ip, rootDER: root), "correct CA and IP SAN")
+        let evidenceRoot = XDriveIOSLANTrustEvidence.digest(root)
+        precondition(evidenceRoot == XDriveIOSLANPairing(domain: "https://drive.example.com:8443",
+            rootDER: root).fingerprint, "public root evidence must use canonical SHA-256")
+        let originalLeaf = try Data(contentsOf: fixtures.appendingPathComponent("ip.der"))
+        precondition(XDriveIOSLANTrustEvidence.peerLeafDigest(valid) ==
+                     XDriveIOSLANTrustEvidence.digest(originalLeaf),
+                     "evidence must hash the observed leaf, not the pinned root or intermediate")
+        let noTrust = XDriveIOSLANTrustEvidence(reason: .trustObjectMissing,
+            rootSHA256: evidenceRoot, leafSHA256: nil, setupOSStatus: nil)
+        precondition(noTrust.safeSummary.contains("SERVER_TRUST_MISSING") &&
+                     !noTrust.safeSummary.contains("对端叶证书") &&
+                     noTrust.safeSummary.contains(evidenceRoot),
+                     "missing-trust evidence may only show known public material")
+        let detailedValid = XDriveIOSServerTLSDelegate.inspectDetailed(
+            try trust("ip"), target: ip, rootDER: root)
+        precondition(detailedValid.verdict == .trusted && detailedValid.setupOSStatus == nil,
+                     "detailed inspection must keep the original strict positive check")
         precondition(XDriveIOSServerTLSDelegate.inspect(matchedPolicyTrust,
             target: ip, rootDER: root) == .trusted, "strict CA + literal IP SAN succeeds")
         precondition(XDriveIOSServerTLSDelegate.inspect(changedIPTrust,
