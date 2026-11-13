@@ -77,10 +77,18 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     private func diagnose(_ message: String, in app: XCUIApplication) {
         print("MAP_ROUTE_DIAGNOSTIC: \(message), app state=\(app.state.rawValue)")
         print("MAP_ROUTE_DIAGNOSTIC AX tree:\n\(app.debugDescription)")
-        let capture = XCTAttachment(screenshot: app.screenshot())
-        capture.name = "native-map-route-failure"
-        capture.lifetime = .keepAlways
-        add(capture)
+        // iOS may terminate the target while Photos TCC is changed in
+        // Settings. An unavailable app cannot provide an XCTest screenshot;
+        // keep the diagnostic and let the real crash-audit job decide whether
+        // there was a process crash instead of masking the original failure.
+        if app.state == .runningForeground {
+            let capture = XCTAttachment(screenshot: app.screenshot())
+            capture.name = "native-map-route-failure"
+            capture.lifetime = .keepAlways
+            add(capture)
+        } else {
+            print("MAP_ROUTE_DIAGNOSTIC_TARGET_NOT_FOREGROUND state=\(app.state.rawValue)")
+        }
     }
 
     /// Do not mistake an app in Settings > Apps search results for its
@@ -172,6 +180,41 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         } else {
             print("MAP_PHOTOS_TARGET_AUTH_STAGE \(stage) readback-not-mounted")
         }
+    }
+
+    /// Apple's Photos TCC transition may *terminate* an app that was
+    /// backgrounded in Settings. This is distinct from a test-driven cold
+    /// restart of a still-running app. Reopen the real Dashboard/MapKit route
+    /// only for the observed system-stopped target, preserving the Full-only
+    /// PhotoKit admission and post-change Viewer/pin assertions.
+    @discardableResult
+    private func resumeMapAfterSystemPhotosChange(
+        _ app: XCUIApplication, stage: String
+    ) -> Bool {
+        if app.state != .notRunning {
+            app.activate()
+            XCTAssertEqual(app.state, .runningForeground,
+                           "The still-running app must resume immediately from Settings")
+            return false
+        }
+
+        print("MAP_PHOTOS_TCC_TERMINATED_APP stage=\(stage) action=relaunch-real-target")
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "System-stopped target must relaunch before PhotoKit is rechecked")
+        handleInitialPhotoLibraryPromptIfPresent()
+        let launcher = element("native-ios-tab-launcher", in: app)
+        XCTAssertTrue(launcher.waitForExistence(timeout: 20),
+                      "Relaunched app must expose its real native launcher")
+        launcher.tap()
+        let entry = element("native-ios-launcher-map", in: app)
+        XCTAssertTrue(entry.waitForExistence(timeout: 20),
+                      "Relaunched app must reopen MapKit through the genuine launcher")
+        entry.tap()
+        XCTAssertTrue(element("native-ios-map-source-selector", in: app)
+            .waitForExistence(timeout: 20),
+            "Relaunched app must mount the genuine source-protected MapKit route")
+        return true
     }
 
     /// Exercise an actual user-level Settings decision if the simulator
@@ -272,19 +315,31 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             XCTAssertNotNil(allow, "Only explicit Full Access consent is allowed")
             allow?.tap()
         }
-        app.activate()
-        XCTAssertEqual(app.state, .runningForeground)
-        // iOS 18.5 may issue an explicit system-wide Full Access prompt
-        // *after* the Settings row is selected. Only its actual Full
-        // authorization button is admissible; the app must still read back
-        // .authorized and mount real MapKit without a restart.
+        // Return to the existing process whenever iOS keeps it alive. If
+        // iOS itself ended the process as Photos TCC changed, only then
+        // relaunch via the real app route; never hide a live-app refresh bug.
+        var systemRelaunched = resumeMapAfterSystemPhotosChange(
+            app, stage: "after-full-access-selection"
+        )
+        // iOS 18.5 can still display a second system-wide consent prompt.
+        // Choose the real Full option, not Limited, and independently read
+        // back the target app's PHAuthorizationStatus afterward.
         handleInitialPhotoLibraryPromptIfPresent()
+        if app.state == .notRunning {
+            systemRelaunched = resumeMapAfterSystemPhotosChange(
+                app, stage: "after-full-access-system-prompt"
+            ) || systemRelaunched
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+        print("MAP_PHOTOS_FULL_ACCESS_REENTRY os_relaunch=\(systemRelaunched)")
         recordActualPhotoKitReadback(app, stage: "after-settings")
         if !element("native-ios-full-library-gps-map", in: app)
             .waitForExistence(timeout: 35) {
             // Diagnose whether this is an unrefreshed SwiftUI map or a real
-            // persistent TCC denial. A cold restart is diagnostic only:
-            // *never* pass an immediate Settings-return test on its basis.
+            // persistent TCC denial. A deliberate cold restart of a *live*
+            // app remains diagnostic only and cannot pass this assertion.
+            // The observed OS-terminated process was explicitly distinguished
+            // and relaunched above, so we also require a fresh real MapKit.
             diagnose("MapKit absent immediately after Settings Full Access", in: app)
             let liveBlocked = element("native-ios-map-open-photo-settings", in: app).exists
             app.terminate()
@@ -308,7 +363,9 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
                 ? "PhotoKit Full Access worked only after cold restart: fix immediate foreground refresh"
                 : "PhotoKit Full Access still not admitted after cold restart: inspect real TCC/readWrite decision",
                 in: app)
-            XCTFail("Full Access must mount real MapKit immediately after Settings return, without restart")
+            XCTFail(systemRelaunched
+                ? "After OS-terminated TCC process relaunch, Full Access must mount genuine MapKit"
+                : "A still-running app must mount real MapKit immediately on Settings return")
         }
     }
 
@@ -686,7 +743,9 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
                 break
             }
         }
-        app.activate()
+        _ = resumeMapAfterSystemPhotosChange(
+            app, stage: "after-selected-photos-selection"
+        )
         let limitedBlock = element("native-ios-map-open-photo-settings", in: app)
         if !limitedBlock.waitForExistence(timeout: 20) {
             recordActualPhotoKitReadback(app, stage: "after-limited-settings")
