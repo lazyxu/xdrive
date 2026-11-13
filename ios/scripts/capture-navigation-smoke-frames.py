@@ -203,6 +203,9 @@ MINIMAL_TARGETS.update({
     "testLauncherStoragePlaceholderDoesNotCrash",
     "testLauncherDevicesPlaceholderDoesNotCrash",
     "testLauncherDiagnosticsPlaceholderDoesNotCrash",
+    # Genuine signed-out Login routes, distinct from CI synthetic Owner.
+    "testRealSignedOutLoginPasswordToggleAfterForegroundDoesNotExit",
+    "testRealSignedOutLANHelpAfterFieldEditDoesNotExit",
 })
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
