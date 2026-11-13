@@ -194,12 +194,22 @@ test('Settings-return permission transition is live-revalidated and cold-start f
   assert.match(simulator, /MAP_PHOTOS_TARGET_AUTH_STAGE/)
   assert.match(local, /native-ios-map-photo-auth-readback/)
   assert.match(runtimeWorkflow, /candidate-mapkit\)/)
-  assert.match(simulator, /Full Access must mount real MapKit immediately after Settings return, without restart/)
+  // iOS may terminate the target on a Photos TCC change; only that
+  // observed OS-stop may reopen the real map route. A live app cannot
+  // satisfy Settings-return by a test-driven cold restart.
+  assert.match(simulator, /if app\.state != \.notRunning \{\s*app\.activate\(\)/)
+  assert.match(simulator, /The still-running app must resume immediately from Settings/)
+  assert.match(simulator, /MAP_PHOTOS_TCC_TERMINATED_APP/)
+  assert.match(simulator, /MAP_PHOTOS_FULL_ACCESS_REENTRY os_relaunch=/)
+  assert.match(simulator, /No restart may be accepted as a substitute/)
+  assert.match(simulator, /A still-running app must mount real MapKit immediately on Settings return/)
   const permissionTap = simulator.indexOf('full.tap()')
   const proof = simulator.indexOf('MAP_PHOTOS_FULL_ACCESS_POST_TAP')
-  const resume = simulator.indexOf('app.activate()')
-  const coldStart = simulator.indexOf('MAP_PHOTOS_COLD_START_PROBE')
-  assert.ok(permissionTap >= 0 && permissionTap < proof && proof < resume && resume < coldStart)
+  const resume = simulator.indexOf('var systemRelaunched = resumeMapAfterSystemPhotosChange(', proof)
+  const liveReadback = simulator.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings")', resume)
+  const coldStart = simulator.indexOf('MAP_PHOTOS_COLD_START_PROBE', liveReadback)
+  assert.ok(permissionTap >= 0 && permissionTap < proof && proof < resume &&
+            resume < liveReadback && liveReadback < coldStart)
 })
 
 test('real iOS first-use Photo Library system prompt cannot be default-denied by XCTest', () => {
