@@ -252,7 +252,37 @@ test('real Simulator regressions keep Gallery backup 44pt, Notes source AX and g
   assert.match(login, /if finished \{ workspaceAppeared\(\) \}/);
   assert.doesNotMatch(login, /Timer\.publish\(every: 2, on: \.main/);
   assert.doesNotMatch(login, /\.onAppear \{ workspaceAppeared\(\) \}\s*\.onDisappear \{ workspaceDisappeared\(\) \}/);
-  assert.match(swift, /XCTAssertGreaterThanOrEqual\(backup\.frame\.height, 40/);
+  assert.match(swift, /XCTAssertGreaterThanOrEqual\(backup\.frame\.height, 43/);
+  assert.match(swift, /XCTAssertGreaterThanOrEqual\(backup\.frame\.width, 43/);
   assert.match(login, /XDriveIOSNativeLaunchCheckpoint\.mayFinishStartup\([\s\S]*?restoreComplete: restoreFinished, workspaceVisible: workspaceVisible,[\s\S]*?foreground: phase == \.active/);
   assert.match(login, /Task\.sleep\(nanoseconds: 3_000_000_000\)/);
+});
+
+
+test('every independent Launcher and all-pages child crash journey is registered for real Simulator frames', () => {
+  const names = [...swift.matchAll(/\\bfunc\\s+(test\\w+)\\s*\\(/g)].map(match => match[1]);
+  assert.ok(names.length >= 36, 'All-pages crash matrix lost an executable journey');
+  assert.equal(new Set(names).size, names.length, 'Duplicate XCTest method hides an independent route');
+  for (const name of names) {
+    assert.ok(watcher.includes('"' + name + '"'), 'Missing real Simulator frame watcher: ' + name);
+  }
+  for (const name of [
+    "testLauncherLocalPageDoesNotCrash",
+    "testLauncherAlbumsPageDoesNotCrash",
+    "testLauncherCloudPageDoesNotCrash",
+    "testLauncherOriginalsPageDoesNotCrash",
+    "testLauncherMapPageDoesNotCrash",
+    "testLauncherFilesPageDoesNotCrash",
+    "testLauncherNotesPageDoesNotCrash",
+    "testLauncherClipboardPageDoesNotCrash",
+    "testLauncherBackupPageDoesNotCrash",
+    "testLauncherTransfersPageDoesNotCrash",
+    "testLauncherSyncPlaceholderDoesNotCrash",
+    "testLauncherStoragePlaceholderDoesNotCrash",
+    "testLauncherDevicesPlaceholderDoesNotCrash",
+    "testLauncherDiagnosticsPlaceholderDoesNotCrash",
+  ]) {
+    assert.ok(watcher.includes('"' + name + '"'), 'Launcher missing bounded UI evidence: ' + name);
+  }
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\\/XDriveIOSAllPagesCrashUITests/);
 });
