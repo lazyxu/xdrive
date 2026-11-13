@@ -99,6 +99,10 @@ test('only-new consent epoch is persisted after verified managed target without 
   assert.match(overload, /token: consentToken, authorization: consentAuthorization/)
   // The fresh-plan scope is distinct from paused-plan resume: old SQLite
   // discovery rows never become newly authorized uploads.
+  const livePlanGuard = configure.indexOf('store.status(owner: selected)?.enabled == true')
+  assert.ok(livePlanGuard > configure.indexOf('XDriveIOSOriginalRunGate.shared.acquire()') &&
+    livePlanGuard < configure.indexOf('.installNewOnlyBaseline('),
+    'a running plan must never have its PhotoKit history reset')
   const reset = read('ios/XDriveIOS/PhotoBackupChangeQueueStore.swift')
   const fresh = reset.slice(reset.indexOf('func replaceBaselineForFreshOnlyNewConsent('),
     reset.indexOf('func completeFullReconciliation('))
