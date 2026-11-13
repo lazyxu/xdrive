@@ -240,6 +240,14 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 errorMessage = "已有因收据不确定而暂停的计划，请先在收据核对区明确恢复。"
                 return
             }
+            // A fresh "only new" consent is allowed only after stopping the
+            // previous active plan. In particular, never reset a live
+            // plan's SQLite history by re-entering setup programmatically.
+            if startRule == .onlyNew,
+               store.status(owner: selected)?.enabled == true {
+                errorMessage = "请先暂停或关闭当前自动计划，再新建仅备份新照片的任务。"
+                return
+            }
             let scope = try await XDriveIOSForegroundBackupIdentity.shared
                 .existingLocalScope(owner: selected)
             guard displayEpoch == uiEpoch,
