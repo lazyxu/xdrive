@@ -9,8 +9,9 @@ The original 25-route AX-ready baseline passed 75/75 on \`a32cac1\`.
 This follow-up is now directly targeted at master, not stacked onto an
 unmerged development parent.
 
-This additive PR registers **20 measured native interaction/entry paths** (the original 9,
-6 added Backup/Gallery entries, and 5 further Files/Gallery/MapKit child paths),
+This additive PR registers **22 native interaction/entry paths** (the original 9,
+6 added Backup/Gallery entries, 5 Files/Gallery/MapKit child paths, and 2 more
+Setup/Account consent routes),
 without inventing Owner authentication or media fixtures. It retains separate
 route IDs and test cases even where multiple navigation paths render the same
 SwiftUI component. Repetition is deliberate: user-perceived entry costs and
@@ -25,6 +26,7 @@ resource lifetimes differ.
 | files.organizer.tags | Organizer → 标签管理 | native-ios-files-tag-management | Synthetic Owner, no Session |
 | files.tags | Files Home → 管理标签 Sheet | native-ios-files-tag-management | Synthetic Owner, no Session |
 | backup.tasks | 相册备份 → 逐项任务 Sheet | native-ios-photo-task-list-done | Genuine empty/unauthorized queue |
+| backup.setup | 相册备份 → 真实设置向导 | native-ios-backup-setup | Synthetic Owner; setup mount only, no device registration or uploads |
 | backup.details | 相册备份 → 备份详情 | native-ios-backup-portrait-form | Genuine disabled/no-Session controls |
 | backup.audit | 相册备份 → 逐项核验当前云端原件（详情定位） | native-ios-backup-portrait-form | No-Session Owner; no actual receipt mutation |
 | gallery.backup.queue | 图库备份菜单 → 备份任务队列 | native-ios-photo-task-list-done | Real native menu-to-sheet navigation; no upload |
@@ -38,8 +40,9 @@ resource lifetimes differ.
 | gallery.map.from-filter | 统一图库 → 搜索与筛选 → 显示地图 | Native MapKit source selector | Real map shell; no Full Access/100k timing assertion |
 | gallery.map.from-launcher | 全部功能 → 地图 | Native MapKit source selector | Real independent launcher path; no GPS dataset claim |
 | launcher.recent-picker | 笔记 → 最近功能 Sheet | Recent picker navigation bar | Genuine native launcher/session-free |
+| mine.signout.confirm | 我的 → 退出当前账户确认层 → 安全取消 | 停止本机自动备份并退出 | Synthetic Owner, no Session; never confirms destructive sign-out |
 
-All twenty routes use real product-owned SwiftUI views or native UI modes, but some are
+All twenty-two routes use real product-owned SwiftUI views or native UI modes, but some are
 **distinct entry paths into the same underlying screen**, not 15 unique
 screens. The original nine-path Simulator run [#43249473366](https://github.com/lazyxu/xdrive/actions/runs/43249473366)
 passed on `a39441a`. An actual 20-route Simulator run
@@ -47,8 +50,9 @@ passed on `a39441a`. An actual 20-route Simulator run
 executed all **20 tests but failed 5 Gallery backup paths** because the
 Menu had no valid AX hit point despite a 44pt height. The retained set is
 incomplete and **not** a 20-route performance pass. The single Gallery
-backup Menu is now moved to the NavigationStack toolbar, and the
-next exact-HEAD run must genuinely prove its hit-testability, not
+backup Menu is now moved to the NavigationStack toolbar. This 22-path extension
+includes two extra unverified routes; the next exact-HEAD run must genuinely prove
+all 22 and its hit-testability, not
 infer success from source checks. A different MapKit job in
 [#43367128814](https://github.com/lazyxu/xdrive/actions/runs/43367128814)
 failed to index real PhotoKit GPS fixture photos; no part of that
@@ -65,7 +69,7 @@ AX-ready wall milliseconds and separately app-targeted
 \`XCTMemoryMetric(application: app)\` Memory Peak Physical in KiB.
 The raw .xcresult is exported as JSON and CSV.
 
-The strict audit requires 20 registered methods, 4 observed UI invocations
+The strict audit requires 22 registered methods, 4 observed UI invocations
 per route, 3 unique AX trial IDs per route, 3 **genuine XCTest CPU Time** and
 **Memory Peak Physical** numbers per route and nonempty original xcresult
 metrics export. Missing, duplicates, or invalid numerical results cause an
@@ -77,8 +81,8 @@ true Hitch Time Ratio or physical 60/120 Hz frame pacing. User-visible
 screens requiring an Owner will fail closed rather than load fabricated
 Server files. This suite does not modify backup/session/Server code.
 
-The 20-path contract requires **80 UI invocations, 60 retained AX trials,
-60 genuine app CPU and 60 app peak-memory values**, all from the same
+The 22-path contract requires **88 UI invocations, 66 retained AX trials,
+66 genuine app CPU and 66 app peak-memory values**, all from the same
 exact-head Xcode Simulator run. Existing 25 root/selected-child routes are
 measured separately; these matrices are not 45 unique pages. Alert, map
 source selector and edit mode readiness are explicitly not pixel/FPS timing.
