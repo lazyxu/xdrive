@@ -65,9 +65,12 @@ test('native dynamic slot accepts direct MapKit or the actual selected feature',
   assert.match(dashboard, /if destination == \.dynamic && emptyDynamicMapFallback \{\s*openGallery\(\.map\)/);
   for (const actual of [
     'native-ios-map-source-selector', 'native-ios-backup-overview',
-    'ios-clipboard-status', 'native-ios-transfer-overview', '笔记来源', '打开地图'
+    'ios-clipboard-status', 'native-ios-transfer-overview',
+    'native-ios-notes-source-picker', '打开地图'
   ]) assert.ok(route.includes(actual), 'Uncovered dynamic destination: ' + actual);
   assert.match(route, /eligible\.contains\(where: \{ \$0\.exists \}\)/);
+  assert.doesNotMatch(route, /app\.segmentedControls\["笔记来源"\]/);
+  assert.match(route, /element\("native-ios-notes-source-picker", app: app\)/);
   assert.doesNotMatch(route, /XCTAssertTrue\(app\.buttons\["打开地图"\]/);
 });
 
