@@ -49,7 +49,7 @@ struct XDriveIOSMapPixelAudit {
             ])
         }
         var mismatched = 0
-        var maximumDelta = 0.0
+        var maximumDelta: CGFloat = 0
         for y in 0..<height {
             for x in 0..<width {
                 guard let a = reference.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
@@ -66,7 +66,7 @@ struct XDriveIOSMapPixelAudit {
                 ]
                 let error = channels.max() ?? 0
                 maximumDelta = max(maximumDelta, error)
-                if error > perChannelTolerance { mismatched += 1 }
+                if Double(error) > perChannelTolerance { mismatched += 1 }
                 diff.setColor(NSColor(
                     calibratedRed: error, green: 0, blue: 0, alpha: 1),
                     atX: x, y: y)
@@ -85,7 +85,7 @@ struct XDriveIOSMapPixelAudit {
             "candidate_type": "paired actual xDrive native MapKit screenshot crop",
             "width_pixels": width, "height_pixels": height,
             "mismatched_pixels": mismatched, "mismatch_ratio": ratio,
-            "max_channel_delta": maximumDelta,
+            "max_channel_delta": Double(maximumDelta),
             "per_channel_tolerance": perChannelTolerance,
             "maximum_allowed_mismatch_ratio": maxMismatchRatio,
             "passed": ratio <= maxMismatchRatio
