@@ -74,7 +74,11 @@ test('native dynamic slot accepts direct MapKit or the actual selected feature',
 test('normal cold restart requires real visible startup readiness and preserves recovery', () => {
   const login = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8');
   const recovery = fs.readFileSync(path.join(root, 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'), 'utf8');
-  assert.match(login, /\.onChange\(of: restoreFinished\) \{ finished in\s*if finished \{ armReadinessAfterMount\(\) \}/);
+  // Completion re-enters via the mounted workspace, not a readiness shortcut.
+  // The workspace itself still applies restore/visibility/foreground gates.
+  assert.match(login, /\.onChange\(of: restoreFinished\) \{ finished in\s*if finished \{ workspaceAppeared\(\) \}/);
+  assert.match(login, /private func workspaceAppeared\(\) \{\s*workspaceVisible = true\s*armReadinessAfterMount\(\)/);
+  assert.match(login, /private func armReadinessAfterMount\(\) \{\s*guard !startupReady,[\s\S]*?XDriveIOSNativeLaunchCheckpoint\.mayFinishStartup\(/);
   assert.match(login, /\.accessibilityValue\(startupReady \? "ready" : "mounting"\)/);
   assert.match(login, /XDriveIOSNativeLaunchCheckpoint\.mark\(\.ready\)/);
   assert.match(recovery, /XCTNSPredicateExpectation\([\s\S]*?predicate: NSPredicate\(format: "value == %@", "ready"\)/);
