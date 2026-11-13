@@ -902,8 +902,13 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             map.swipeLeft()
             pans += 1
             Thread.sleep(forTimeInterval: 2)
-            if metricCounter("completed") > beforeSecondWindow ||
-               waitForCounterIncrease("completed", from: beforeSecondWindow) {
+            // No 100k scan is required for a pan still inside the existing
+            // overscan: keep moving instead of waiting 360 seconds for an
+            // event the production map correctly will not schedule.
+            let scanning = element("native-ios-map-full-library-scan-progress", in: app)
+            if metricCounter("completed") > beforeSecondWindow || scanning.exists {
+                XCTAssertTrue(waitForCounterIncrease("completed", from: beforeSecondWindow),
+                              "Second genuine viewport scan started but did not complete")
                 break
             }
         }
