@@ -195,41 +195,6 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         }
     }
 
-    // Split the real PhotoKit wall from the sheet/Viewer modifier chain.
-    // Keeping the nested ForEach/Button/Grid expression in one SwiftUI body
-    // exceeded Xcode 16.4's type-check budget; there is no shortcut in tests.
-    private var photoWall: some View {
-        ScrollView {
-            XDriveIOSNativePhotoWallGrid(density: density) {
-                ForEach(previous + current) { row in
-                    photoButton(for: row)
-                }
-                if next != nil, !busy, error == nil {
-                    Color.clear.frame(height: 32)
-                        .onAppear { advance() }
-                        .accessibilityHidden(true)
-                }
-            }
-            .padding(4)
-        }
-    }
-
-    private func photoButton(for row: XDriveIOSNativeUnifiedPhoto) -> some View {
-        Button {
-            guard active, !busy,
-                  (previous + current).contains(where: { $0.id == row.id })
-            else { return }
-            viewing = .init(row: row)
-        } label: {
-            XDriveIOSUnifiedPhotoTile(
-                row: row, login: login, presentingOwner: owner,
-                displayActive: active && viewing == nil,
-                retainWhileCovered: viewing != nil)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("native-ios-unified-source-map-photo")
-    }
-
     private func invalidate() {
         generation = UUID()
         scanTask?.cancel()
@@ -424,6 +389,41 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 invalidate()
             }
         }
+    }
+
+    // Split the real PhotoKit wall from the sheet/Viewer modifier chain.
+    // Keeping the nested ForEach/Button/Grid expression in one SwiftUI body
+    // exceeded Xcode 16.4's type-check budget; there is no shortcut in tests.
+    private var photoWall: some View {
+        ScrollView {
+            XDriveIOSNativePhotoWallGrid(density: density) {
+                ForEach(previous + current) { row in
+                    photoButton(for: row)
+                }
+                if next != nil, !busy, error == nil {
+                    Color.clear.frame(height: 32)
+                        .onAppear { advance() }
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(4)
+        }
+    }
+
+    private func photoButton(for row: XDriveIOSNativeUnifiedPhoto) -> some View {
+        Button {
+            guard active, !busy,
+                  (previous + current).contains(where: { $0.id == row.id })
+            else { return }
+            viewing = .init(row: row)
+        } label: {
+            XDriveIOSUnifiedPhotoTile(
+                row: row, login: login, presentingOwner: owner,
+                displayActive: active && viewing == nil,
+                retainWhileCovered: viewing != nil)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("native-ios-unified-source-map-photo")
     }
 
     private func invalidate() {
