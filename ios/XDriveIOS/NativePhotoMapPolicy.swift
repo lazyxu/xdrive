@@ -3,6 +3,15 @@ import Foundation
 /// One currently scanned PhotoKit page, not a spatial index of 100k media.
 enum XDriveIOSNativePhotoMapPolicy {
     static let pageSize = 64
+    // Apple's minimum interactive target also applies in iPad split-screen,
+    // landscape and Accessibility Dynamic Type. Measurements are in points.
+    static let minimumInteractiveTarget: Double = 44
+
+    static func accessibleMapViewport(width: Double, height: Double) -> Bool {
+        width.isFinite && height.isFinite &&
+            width >= minimumInteractiveTarget &&
+            height >= minimumInteractiveTarget
+    }
 
     /// Both native PhotoKit and Owner-cloud maps use the *actual* safe-area
     /// viewport. Rotation alone never changes the L1/L2 navigation level.
