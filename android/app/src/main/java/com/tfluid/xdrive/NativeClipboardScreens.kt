@@ -675,3 +675,110 @@ internal fun NativeClipboardScreen(
         }){Text("确认清空")}},
         dismissButton={TextButton(onClick={clearConfirm=false}){Text("取消")}})
 }
+
+
+/** One real Owner Files range at a time, never a copied WebView tree or an
+ * unbounded client-side 100k listing. Files/Node ACL stays on the Server.
+ */
+@Composable
+private fun NativeClipboardCloudFilePicker(
+    controller: DriveController, kind: String, stillCurrent: () -> Boolean,
+    onChoose: (DriveNode) -> Unit, onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var folders by remember { mutableStateOf(emptyList<DriveNode>()) }
+    var rows by remember { mutableStateOf(emptyList<DriveNode>()) }
+    var offset by remember { mutableIntStateOf(0) }
+    var total by remember { mutableLongStateOf(0L) }
+    var loading by remember { mutableStateOf(false) }
+    var choosing by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableIntStateOf(0) }
+    val folderID=folders.lastOrNull()?.id
+    val folderName=folders.lastOrNull()?.name ?: "云端根目录"
+    val imageExtensions=setOf("png","jpg","jpeg","gif","webp","avif","heic","heif","tif","tiff","bmp")
+
+    LaunchedEffect(folderID,offset,retry) {
+        if (!stillCurrent()) return@LaunchedEffect
+        loading=true
+        rows=emptyList()
+        error=null
+        try {
+            val folder=folders.lastOrNull() ?: controller.clipboardFilesRoot(stillCurrent)
+            val page=controller.clipboardFilesPage(folder,offset,stillCurrent)
+            if (stillCurrent() && folderID==folders.lastOrNull()?.id) {
+                rows=page.items
+                total=page.totalCount
+            }
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) {
+            if (stillCurrent()) error="目录权限已变化或 Files 分页无效；请返回或重试。"
+        } finally {
+            if (stillCurrent()) loading=false
+        }
+    }
+
+    AlertDialog(onDismissRequest=onDismiss,
+        title={Text("从云端 Files 选择 · $folderName")},
+        text={
+            Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                if (folders.isNotEmpty()) {
+                    TextButton(onClick={
+                        folders=folders.dropLast(1)
+                        offset=0
+                        rows=emptyList()
+                    }) { Text("返回上一级") }
+                }
+                if (loading || choosing) CircularProgressIndicator()
+                if (error!=null) {
+                    Text(error!!,color=MaterialTheme.colorScheme.error)
+                    TextButton(onClick={retry++}){Text("重试")}
+                } else if (!loading) {
+                    LazyColumn(modifier=Modifier.heightIn(max=340.dp),
+                        verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                        items(rows,key={it.id}) { node ->
+                            val image=node.name.substringAfterLast('.', "").lowercase() in imageExtensions
+                            if (node.isDirectory || (node.type=="file" &&
+                                    (kind=="file" || (kind=="image" && image)))) {
+                                TextButton(onClick={
+                                    if (!stillCurrent() || choosing || loading) return@TextButton
+                                    if (node.isDirectory) {
+                                        folders=folders+node
+                                        offset=0
+                                        rows=emptyList()
+                                    } else {
+                                        choosing=true
+                                        scope.launch {
+                                            try {
+                                                val selected=controller.clipboardVerifyExistingFile(
+                                                    node,stillCurrent)
+                                                if (stillCurrent()) onChoose(selected)
+                                            } catch (e: CancellationException) { throw e }
+                                            catch (_: Exception) {
+                                                if (stillCurrent())
+                                                    error="文件已移动、改变或授权失效，请刷新目录。"
+                                            } finally { choosing=false }
+                                        }
+                                    }
+                                },enabled=!choosing) {
+                                    Text((if (node.isDirectory) "📁 " else "📄 ")+node.name)
+                                }
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        if (offset>0) TextButton(onClick={offset=(offset-100).coerceAtLeast(0)}) {
+                            Text("上一页")
+                        }
+                        if (rows.size==100 && offset.toLong()+rows.size<total) {
+                            TextButton(onClick={offset+=100}) { Text("下一页") }
+                        }
+                    }
+                    Text("已读取 "+(offset+rows.size)+" / "+total+" 项",
+                        style=MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton={TextButton(onClick=onDismiss){Text("取消")}},
+    )
+}
