@@ -7,7 +7,7 @@
 1. 新建隔离 iPhone 16 Simulator，擦除图库，取得基线 PHAsset.location 数量。
 2. 用现有 `generate-mapkit-p0-gps-fixtures.py` 生成 **100,000 个实际 EXIF-GPS JPEG 文件**，分组经 `simctl addmedia` 真正导入 iOS Photos。
 3. 先对 100k 库做第一次 xDrive 原生地图扫描、随后一轮 XCTest 预热扫描及四次保留的全库重复扫描，再测试地点墙滚动、MapKit 放大/拖拽/返回和两视窗缓存重用。
-4. 在 App 内记录每次真实 PhotoKit 扫描的单调时钟毫秒数、64 项分页数、遍历元数据量、GPS 有效数、进程 CPU 时间、内存常驻量采样峰值。MapKit 手势、照片墙滚动与扫描期间用 `CADisplayLink` 采样主线程显示回调周期、P50/P95 和较长回调间隔。
+4. 在 App 内记录每次真实 PhotoKit 扫描的单调时钟毫秒数、64 项分页数、遍历元数据量、GPS 有效数、进程 CPU 时间、内存常驻量采样峰值。MapKit 手势、照片墙的**实际拖动时段**和扫描期间用 `CADisplayLink` 采样主线程显示回调周期、P50/P95 和较长回调间隔；滚动回调测量不把地点墙静止等待时间计入，但当前仍不测惯性减速到完全停止的整段呈现帧率。
 5. UI Test 直接测量实际运行的 App：`XCTCPUMetric(application:)`、`XCTMemoryMetric(application:)`，滚动/缩放在 **Xcode 26 / Swift 6.2 或更新**的构建上额外启用 `XCTHitchMetric(application:)`；当前仓库的 **Xcode 16.4** 不提供此 API，不能声称已测得 Hitch。这比只打印主进程自报值更能核对 App 的物理内存峰值和动画 hitch。
 6. 最后再次独立扫描 PhotoKit GPS 数量，对比导入前后必须**精确增加 100,000**，且与地图扫描 GPS 数量完全一致。
 7. `audit_real_100k_map_perf.py` 独立检验 APP JSON、XCTest 原始日志、导入前/后真实 PHAsset 计数。缺任一证据视为失败，生成 JSON 和 CSV 报告。
