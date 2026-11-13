@@ -20,6 +20,15 @@ GPS_COUNT = re.compile(
     r"MAP_P0_REAL_PHOTOKIT_INDEPENDENT_COUNT 独立 GPS (\d+) 地图 GPS (\d+) 一致"
 )
 SCHEMA = "xdrive.ios.map.real-photokit-perf.v1"
+# Xcode 16.4 emits these actual app-targeted values from XCTCPUMetric and
+# XCTMemoryMetric, unlike CADisplayLink's callback-cadence approximation.
+XCTEST_METRIC = re.compile(
+    r"Test Case '-\\[xDriveIOSNavigationUITests\\."
+    r"XDriveIOSMapNavigationRuntimeUITests "
+    r"testP1Real100KPhotoKitMapPerformance\\]'"
+    r" measured \\[(CPU Time \\(ios\\), s|Memory Peak Physical \\(ios\\), kB)\\]"
+    r" average: [^\\n]*?values: \\[([0-9., \\-]+)\\]"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -53,7 +62,33 @@ def gps_inventory(log_path: Path) -> int:
     return photo
 
 
-def audit(report: dict, before: int, after: int, expected: int) -> dict:
+def parse_xctest_metrics(log: str) -> dict:
+    rows: dict[str, list[list[float]]] = {
+        "cpu_s": [], "peak_memory_kb": []
+    }
+    for name, values in XCTEST_METRIC.findall(log):
+        key = "cpu_s" if name.startswith("CPU Time") else "peak_memory_kb"
+        samples = [float(x.strip()) for x in values.split(",")]
+        require(len(samples) == (4 if len(rows[key]) == 0 else 3),
+                f"{key}: incorrect actual XCTest trial count")
+        for number in samples:
+            positive(number, f"XCTest {key}")
+        rows[key].append(samples)
+    require(len(rows["cpu_s"]) == 3 and len(rows["peak_memory_kb"]) == 3,
+            "missing actual XCTest CPU and peak physical-memory metrics for "
+            "rescan / place-wall scroll / MapKit pan-zoom")
+    return {
+        "scan": {"cpu_s": rows["cpu_s"][0],
+                 "peak_memory_kb": rows["peak_memory_kb"][0]},
+        "place_wall_scroll": {"cpu_s": rows["cpu_s"][1],
+                              "peak_memory_kb": rows["peak_memory_kb"][1]},
+        "map_pan_zoom": {"cpu_s": rows["cpu_s"][2],
+                         "peak_memory_kb": rows["peak_memory_kb"][2]},
+    }
+
+
+def audit(report: dict, before: int, after: int, expected: int,
+          xctest_log: str) -> dict:
     require(report.get("schema") == SCHEMA, "report schema or real-app source mismatch")
     require(expected >= 100_000, "this suite requires >=100,000 real PhotoKit assets")
     require(after - before == expected,
@@ -138,6 +173,10 @@ def audit(report: dict, before: int, after: int, expected: int) -> dict:
             "total_long_callback_gaps": sum(v["long_callback_gaps"] for v in valid),
         }
 
+    app_metrics = parse_xctest_metrics(xctest_log)
+    actual_peak_kb = max(
+        value for stage in app_metrics.values() for value in stage["peak_memory_kb"]
+    )
     return {
         "schema": "xdrive.ios.map.100k-audit.v1",
         "proven_real_photokit_delta": expected,
@@ -151,7 +190,10 @@ def audit(report: dict, before: int, after: int, expected: int) -> dict:
         "scan_process_cpu_p50_ms": nearest_rank(cpu, 0.5),
         "scan_process_cpu_p95_ms": nearest_rank(cpu, 0.95),
         "sampled_app_resident_peak_bytes": max(memory),
-        "memory_proof": "sampled process resident bytes, not exact system peak",
+        "xctest_app_peak_physical_kb": actual_peak_kb,
+        "xctest_app_peak_physical_mib": actual_peak_kb / 1024.0,
+        "xctest_app_cpu_and_peak_memory_stages": app_metrics,
+        "memory_proof": "XCTest target-app Peak Physical + separately sampled resident",
         "cache_hits": len(cache),
         "cache_hit_p50_ms": nearest_rank(cache_ms, 0.5),
         "cache_hit_p95_ms": nearest_rank(cache_ms, 0.95),
@@ -166,13 +208,16 @@ def main() -> None:
     p.add_argument("metrics", type=Path, help="real app tmp/ios-map-100k-metrics.json")
     p.add_argument("--baseline", type=Path, required=True)
     p.add_argument("--seeded", type=Path, required=True)
+    p.add_argument("--xctest-log", type=Path, required=True,
+                   help="native XCTest log containing real CPU + Memory Peak Physical values")
     p.add_argument("--expected", type=int, default=100000)
     p.add_argument("--json-output", type=Path, required=True)
     p.add_argument("--csv-output", type=Path, required=True)
     args = p.parse_args()
     summary = audit(
         json.loads(args.metrics.read_text(encoding="utf-8")),
-        gps_inventory(args.baseline), gps_inventory(args.seeded), args.expected)
+        gps_inventory(args.baseline), gps_inventory(args.seeded), args.expected,
+        args.xctest_log.read_text(encoding="utf-8", errors="replace"))
     args.json_output.write_text(
         json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8")
