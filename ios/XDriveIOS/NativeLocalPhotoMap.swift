@@ -814,6 +814,24 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     .padding(8)
                 }
                 .accessibilityIdentifier("native-ios-map-place-scroll")
+                // This measures actual touch-driven scrolling, not an idle
+                // photo wall waiting for image/PhotoKit data. The display
+                // link is closed on gesture end and again at page teardown.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { _ in
+#if DEBUG
+                            XDriveIOSMapRealPerformanceProbe.shared
+                                .beginFrameWindow("place_wall_scroll")
+#endif
+                        }
+                        .onEnded { _ in
+#if DEBUG
+                            XDriveIOSMapRealPerformanceProbe.shared
+                                .endFrameWindow("place_wall_scroll")
+#endif
+                        }
+                )
                 .onChange(of: visibleWindowRevision) { _ in
                     if let anchor = autoScrollReturnID,
                        XDriveIOSNativePhotoWallWindowPolicy.canRestore(
@@ -877,9 +895,6 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 )
             }
             .onAppear {
-#if DEBUG
-                XDriveIOSMapRealPerformanceProbe.shared.beginFrameWindow("place_wall_scroll")
-#endif
                 changes.start()
                 if !started {
                     started = true
