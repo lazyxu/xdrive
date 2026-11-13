@@ -129,4 +129,63 @@ class NativeClipboardDirectedApiTest {
             }
         }
     }
+
+    @Test fun revokeDeviceUsesOwnerOnlyAndCanonicalRecipientPath() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(204))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                api.clipboardRevokeDevice("current-owner-bearer", device.deviceId)
+                val sent = server.takeRequest()
+                assertEquals("DELETE", sent.method)
+                assertEquals("/api/v1/clipboard/devices/" + device.deviceId, sent.path)
+                assertEquals("Bearer current-owner-bearer", sent.getHeader("Authorization"))
+                assertNull(sent.getHeader("X-XDrive-Device-Token"))
+                assertNull(sent.getHeader("X-XDrive-Device-ID"))
+            }
+        }
+    }
+
+    @Test fun invalidRecipientOrRevocationFailureCannotBeReportedSuccessful() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(403)
+                .setBody("{\"error\":\"foreign Owner\"}"))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                try {
+                    api.clipboardRevokeDevice("current-owner-bearer", "../other")
+                    fail("malformed recipient should be rejected before transport")
+                } catch (_: IllegalArgumentException) { }
+                assertEquals(0, server.requestCount)
+                try {
+                    api.clipboardRevokeDevice("current-owner-bearer", device.deviceId)
+                    fail("rejected revoke cannot be treated as success")
+                } catch (e: ApiException) {
+                    assertEquals(403, e.statusCode)
+                }
+                assertEquals(1, server.requestCount)
+            }
+        }
+    }
+
+    @Test fun revokedRecipientCannotReadDirectedClipboardThroughOldProof() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(204))
+            server.enqueue(MockResponse().setResponseCode(403)
+                .setBody("{\"error\":\"recipient revoked\"}"))
+            XDriveApi(ServerAddress.parse(server.url("/").toString(), true)).use { api ->
+                api.clipboardRevokeDevice("owner-bearer", device.deviceId)
+                try {
+                    api.clipboardListForDevice("owner-bearer", device)
+                    fail("old device token after revocation cannot read directed mailbox")
+                } catch (e: ApiException) {
+                    assertEquals(403, e.statusCode)
+                }
+                val revoke = server.takeRequest()
+                val read = server.takeRequest()
+                assertEquals("DELETE", revoke.method)
+                assertEquals("GET", read.method)
+                assertNull(revoke.getHeader("X-XDrive-Device-Token"))
+                assertEquals(device.deviceToken, read.getHeader("X-XDrive-Device-Token"))
+            }
+        }
+    }
 }
