@@ -56,7 +56,10 @@ test('startup readiness re-arms after visible login restore state changes', () =
   const source = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
   const app = read('ios/XDriveIOS/XDriveIOSApp.swift')
   const recovery = read('ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift')
-  assert.match(source, /\.onChange\(of: restoreFinished\) \{ finished in\s*if finished \{ armReadinessAfterMount\(\) \}/)
+  assert.match(source, /\.onChange\(of: restoreFinished\) \{ finished in\s*if finished \{ workspaceAppeared\(\) \}/)
+  // Do not accept a direct "ready" shortcut: keep mount/foreground/restore guard.
+  assert.match(source, /private func workspaceAppeared\(\) \{\s*workspaceVisible = true\s*armReadinessAfterMount\(\)/)
+  assert.match(source, /private func armReadinessAfterMount\(\) \{\s*guard !startupReady,[\s\S]*?XDriveIOSNativeLaunchCheckpoint\.mayFinishStartup\(/)
   assert.match(source, /XDriveIOSNativeLaunchCheckpoint\.mayFinishStartup\(/)
   assert.match(source, /XDriveIOSNativeLaunchCheckpoint\.mark\(\.ready\)/)
   assert.match(app, /native-ios-startup-recovery/)
