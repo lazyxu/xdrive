@@ -245,7 +245,17 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             // plan's SQLite history by re-entering setup programmatically.
             if startRule == .onlyNew,
                store.status(owner: selected)?.enabled == true {
-                errorMessage = "请先暂停或关闭当前自动计划，再新建仅备份新照片的任务。"
+                errorMessage = "请先关闭当前自动计划，再新建仅备份新照片的任务。"
+                return
+            }
+            // Pausing preserves the previous consent, change queue and
+            // history token for "Resume previous". Resetting that SQLite
+            // queue before the new UserDefaults plan is committed creates a
+            // crash window: a resumed old plan could silently skip historical
+            // imports. Require explicit permanent close before fresh consent.
+            if startRule == .onlyNew,
+               store.status(owner: selected)?.enabled == false {
+                errorMessage = "旧自动备份任务仍已暂停保留；请先选择恢复之前的任务，或明确永久关闭旧计划后再新建。"
                 return
             }
             let scope = try await XDriveIOSForegroundBackupIdentity.shared
