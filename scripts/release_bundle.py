@@ -182,7 +182,9 @@ def _download(url, path, size, digest, lock_path, marker=None):
         raise ValueError("non-regular Bundle partial origin marker")
     prior = ""
     if origin.is_file() and origin.stat().st_size <= 128:
-        prior = origin.read_text(encoding="ascii").strip()
+        # A torn or non-ASCII marker is untrusted and should be discarded,
+        # not permanently wedge every mirror retry.
+        prior = origin.read_text(encoding="ascii", errors="replace").strip()
     if not partial.exists() or prior != identity:
         partial.unlink(missing_ok=True)
         origin.unlink(missing_ok=True)
