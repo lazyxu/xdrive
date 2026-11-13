@@ -30,7 +30,10 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ios-mapkit-p0-scale-${{ github.event.pull_request.number || github.run_id }}
+  # Preserve the existing 100k group (and its non-cancellation semantics),
+  # but let cheap 65-photo PR acceptance run separately rather than queue
+  # behind a 100,000-file simulator import for hours.
+  group: ${{ ((github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'real-photokit-100k-once') || (github.event_name == 'workflow_dispatch' && inputs.count == '100000')) && format('ios-mapkit-p0-scale-{0}', github.event.pull_request.number || github.run_id) || format('ios-mapkit-p0-scale-{0}-small', github.event.pull_request.number || github.run_id) }}
   cancel-in-progress: false
 jobs:
   actual-photokit-delta:
