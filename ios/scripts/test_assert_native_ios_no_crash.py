@@ -74,6 +74,40 @@ class NativeCrashAuditTests(unittest.TestCase):
         self.make_report('xDriveIOS-incident.ips', '{}', root=self.host)
         self.assertEqual(audit(self.marker, [self.host, self.sim])['status'], 'fail')
 
+
+    def test_no_existing_report_roots_is_incomplete_not_clean(self):
+        report = audit(self.marker, [self.root / 'absent-sim', self.root / 'absent-host'])
+        self.assertEqual(report['status'], 'error')
+        self.assertEqual(report['reason'], 'no_crash_report_roots_accessible')
+        self.assertEqual(report['report_roots_checked'], 0)
+        self.assertEqual(report['app_crash_report_count'], 0)
+
+    def test_file_instead_of_report_directory_does_not_count_as_scanned(self):
+        report = audit(self.marker, [self.marker])
+        self.assertEqual(report['status'], 'error')
+        self.assertEqual(report['report_roots_checked'], 0)
+
+    def test_optional_missing_simulator_root_with_real_host_is_accepted(self):
+        report = audit(self.marker, [self.host, self.root / 'missing-simulator'])
+        self.assertEqual(report['status'], 'pass')
+        self.assertEqual(report['report_roots_checked'], 1)
+
+    def test_actual_app_crash_with_missing_optional_root_still_fails(self):
+        self.make_report('xDriveIOS-fail-closed.ips', '{}')
+        report = audit(self.marker, [self.root / 'missing-host', self.sim])
+        self.assertEqual(report['status'], 'fail')
+        self.assertEqual(report['app_crash_report_count'], 1)
+        self.assertEqual(report['report_roots_checked'], 1)
+
+    def test_cli_missing_report_root_returns_nonzero_with_machine_readable_error(self):
+        dest = self.root / 'missing-root-audit.json'
+        rc = main(['--marker', str(self.marker), '--output', str(dest),
+                   str(self.root / 'missing-simulator')])
+        self.assertEqual(rc, 1)
+        report = json.loads(dest.read_text(encoding='utf-8'))
+        self.assertEqual(report['status'], 'error')
+        self.assertEqual(report['reason'], 'no_crash_report_roots_accessible')
+
     def test_missing_marker_is_not_falsely_passed(self):
         self.marker.unlink()
         self.assertEqual(audit(self.marker, [self.sim])['status'], 'not_run')

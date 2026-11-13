@@ -37,6 +37,7 @@ def audit(marker, roots):
         'reports_scanned_after_marker': 0,
         'app_crash_report_count': 0,
         'app_crash_report_names': [],
+        'report_roots_checked': 0,
         'scan_errors': [],
     }
     if not marker.is_file():
@@ -48,6 +49,10 @@ def audit(marker, roots):
         root = pathlib.Path(root)
         if not root.is_dir():
             continue
+        # A non-existent/incorrect crash-report root must never be evidence
+        # that an iOS process did not crash. Optional roots may be absent when
+        # at least one other real directory can be enumerated.
+        summary['report_roots_checked'] += 1
 
         def onerror(exc):
             summary['scan_errors'].append(type(exc).__name__)
@@ -69,7 +74,13 @@ def audit(marker, roots):
                     summary['scan_errors'].append(type(exc).__name__)
     summary['app_crash_report_names'] = sorted(found)
     summary['app_crash_report_count'] = len(found)
-    summary['status'] = ('fail' if found else 'error' if summary['scan_errors'] else 'pass')
+    if summary['report_roots_checked'] == 0:
+        summary['reason'] = 'no_crash_report_roots_accessible'
+    summary['status'] = (
+        'fail' if found else
+        'error' if summary['scan_errors'] or summary['report_roots_checked'] == 0 else
+        'pass'
+    )
     return summary
 
 
