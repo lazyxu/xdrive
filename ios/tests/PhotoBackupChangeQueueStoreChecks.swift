@@ -186,14 +186,14 @@ import SQLite3
                                 updated: [], deleted: [],
                                 expectedToken: consent, nextToken: Data([84]),
                                 authorization: 3)
-            try expect(try store.pending().map(\\.localIdentifier) == ["new-after-consent"])
+            try expect(try store.pending().map { $0.localIdentifier } == ["new-after-consent"])
         }
         // The reset and token persist across process relaunch.
         do {
             let path = dir.appendingPathComponent("fresh-only-new.sqlite3")
             let reopened = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: path)
             try expect(try reopened.baseline()?.token == Data([84]))
-            try expect(try reopened.pending().map(\\.localIdentifier) == ["new-after-consent"])
+            try expect(try reopened.pending().map { $0.localIdentifier } == ["new-after-consent"])
         }
         // A full authorized-library reconciliation atomically installs a
         // fresh token and discards stale queue rows only after receipt proof.
