@@ -5,7 +5,27 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from audit_real_100k_map_perf import audit, gps_inventory, SCHEMA
+from audit_real_100k_map_perf import audit as actual_audit, gps_inventory, SCHEMA
+
+
+def mocked_xctest_measurement_log():
+    # Unit-test-only text; production audit accepts ONLY runner-produced logs.
+    test = ("Test Case '-[xDriveIOSNavigationUITests."
+            "XDriveIOSMapNavigationRuntimeUITests "
+            "testP1Real100KPhotoKitMapPerformance]' measured ")
+    rows = []
+    for n in (4, 3, 3):
+        rows.append(test + "[CPU Time (ios), s] average: 1.2 values: [" +
+                    ", ".join(["1.2"] * n) + "]")
+        rows.append(test + "[Memory Peak Physical (ios), kB] average: 180000 values: [" +
+                    ", ".join(["180000"] * n) + "]")
+    return "\n".join(rows)
+
+
+def audit(report, before, after, expected):
+    return actual_audit(report, before, after, expected,
+                        mocked_xctest_measurement_log())
+
 
 
 def fixture():
@@ -84,6 +104,14 @@ class Real100KAuditContracts(unittest.TestCase):
         frame["frame_interval_p95_ms"] = 2.0
         with self.assertRaisesRegex(ValueError, "p95 < p50"):
             audit(bad, before=0, after=100000, expected=100000)
+
+    def test_xctest_peak_memory_must_be_real_and_complete(self):
+        with self.assertRaisesRegex(ValueError, "missing actual XCTest"):
+            actual_audit(fixture(), 0, 100000, 100000, "")
+        good = audit(fixture(), before=0, after=100000, expected=100000)
+        self.assertEqual(good["xctest_app_peak_physical_kb"], 180000)
+        self.assertEqual(set(good["xctest_app_cpu_and_peak_memory_stages"]),
+                         {"scan", "place_wall_scroll", "map_pan_zoom"})
 
     def test_gps_proof_requires_agreement(self):
         with tempfile.TemporaryDirectory() as d:
