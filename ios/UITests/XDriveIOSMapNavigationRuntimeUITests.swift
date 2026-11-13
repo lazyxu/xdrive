@@ -894,6 +894,8 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
 
     func testP1Real100KPhotoKitMapZoomPerformance() {
         let app = openLocalMap(performance: true, stage: "zoom")
+        let map = element("native-ios-full-library-gps-map", in: app)
+        XCTAssertTrue(map.waitForExistence(timeout: 30), "Real PhotoKit MapKit view did not mount")
         // The native MKMapView mounts while its 100k PhotoKit scan is
         // still running. The authoritative verified-count element appears
         // only after ALL 100k PHAssets have been enumerated and admitted.
