@@ -168,3 +168,39 @@ test('a corrupt stored plan with a readable ledger cannot mutate the PhotoKit ba
   assert.match(refusal, /return/)
   assert.doesNotMatch(refusal, /resetLedger|deleteReceipt|removeObject|installNewOnlyBaseline/)
 })
+
+test('paused old only-new plan cannot lose queued edits during a fresh-consent crash window', () => {
+  // The isolated SQLite reset occurs BEFORE the UserDefaults plan save.
+  // Keeping a resumable old plan through that reset would let a crash
+  // resurrect the old start date with a newer, truncated change queue.
+  const tokenReset = configure.indexOf('.installNewOnlyBaseline(')
+  const pausedGuard = configure.indexOf('store.status(owner: selected)?.enabled == false')
+  const activeGuard = configure.indexOf('store.status(owner: selected)?.enabled == true')
+  const writerGate = configure.indexOf('XDriveIOSOriginalRunGate.shared.acquire()')
+  assert.ok(writerGate >= 0 && activeGuard > writerGate &&
+    pausedGuard > activeGuard && pausedGuard < tokenReset)
+  assert.match(configure.slice(pausedGuard, tokenReset),
+    /旧自动备份任务仍已暂停保留/)
+  const storeSetup = store.slice(store.indexOf('func configure(owner:'),
+    store.indexOf('func pauseForPendingReceipts('))
+  const savedRead = storeSetup.indexOf('let existing = status(owner: owner)')
+  const boundaryGuard = storeSetup.indexOf('guard startRule != .onlyNew || existing == nil else')
+  const commitPlan = storeSetup.indexOf('try persist(state, owner: owner)')
+  assert.ok(savedRead >= 0 && boundaryGuard > savedRead &&
+    commitPlan > boundaryGuard, 'the store must reject old plans independently')
+  assert.match(storeSetup.slice(boundaryGuard, commitPlan),
+    /throw XDriveIOSPhotoAutoScheduleError\.invalidStartRule/)
+  const screen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
+  assert.match(screen, /private var discardPausedAutoPlanButton: some View/)
+  assert.match(screen, /native-ios-photos-auto-discard-paused/)
+  assert.match(screen, /controller\.schedule\?\.enabled == false/)
+  assert.match(screen, /autoStartRule != \.onlyNew \|\| controller\.schedule == nil/)
+  assert.match(screen, /controller\.disable\(owner: owner\)/)
+  // Explicit disable removes ONLY the schedule, not the sealed receipts,
+  // previously uploaded CAS originals or the user's PhotoKit source.
+  const disable = store.slice(store.indexOf('func disable(owner:'),
+    store.indexOf('func setCatchUp('))
+  assert.match(disable, /UserDefaults\.standard\.removeObject/)
+  assert.doesNotMatch(disable, /XDrivePhotoSyncLedger|DELETE FROM|eraseOriginal|deleteNode/)
+  assert.doesNotMatch(configure.slice(pausedGuard, tokenReset), /resetLedger|deleteReceipt/)
+})
