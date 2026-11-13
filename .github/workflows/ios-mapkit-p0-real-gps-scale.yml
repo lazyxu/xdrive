@@ -120,6 +120,29 @@ jobs:
           find "$output" -name 'gps-*.jpg' -type f -print0 |
             xargs -0 -n 100 xcrun simctl addmedia "$MAP_P0_SIM"
           echo "MAP_P0_REAL_EXIF_IMPORT requested=$MAP_P0_COUNT"
+      - name: Measure 100k genuine PhotoKit scans, cache reuse, wall scrolling and MapKit gestures
+        # The normal PR runs only 65 genuine assets. An explicit 100000
+        # workflow_dispatch exercises the expensive REAL 100k dataset.
+        # Do not report synthetic Swift 100k index tests as this result.
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.count == '100000' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$MAP_P0_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/map-p0-build" \
+            -resultBundlePath "$RUNNER_TEMP/map-p0-results/performance.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP1Real100KPhotoKitMapPerformance \
+            2>&1 | tee "$RUNNER_TEMP/map-p0-results/performance.log"
+          # Copy only aggregate numeric evidence from the actual app sandbox,
+          # never a photo, filename, PHAsset ID, private GPS or iCloud original.
+          sandbox="$(xcrun simctl get_app_container "$MAP_P0_SIM" com.lazyxu.xdrive.ios data)"
+          test -s "$sandbox/tmp/ios-map-100k-metrics.json"
+          cp "$sandbox/tmp/ios-map-100k-metrics.json" \
+            "$RUNNER_TEMP/map-p0-results/real-app-performance.json"
       - name: Independent PhotoKit and streaming MapKit count must increase by exact N
         shell: bash
         run: |
@@ -148,29 +171,11 @@ jobs:
           print(f"MAP_P0_GENUINE_PHOTOKIT_DELTA baseline={before} after={after} expected={wanted} actual={after-before}")
           if after-before!=wanted: raise SystemExit("Real PhotoKit imported asset count did not match exact EXIF GPS delta")
           PY
-      - name: Measure 100k genuine PhotoKit scans, cache reuse, wall scrolling and MapKit gestures
-        # The normal PR runs only 65 genuine assets. An explicit 100000
-        # workflow_dispatch exercises the expensive REAL 100k dataset.
-        # Do not report synthetic Swift 100k index tests as this result.
+      - name: Independently audit cold 100k evidence against real imported GPS delta
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.count == '100000' }}
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild test -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
-            -configuration Debug -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,id=$MAP_P0_SIM" \
-            -derivedDataPath "$RUNNER_TEMP/map-p0-build" \
-            -resultBundlePath "$RUNNER_TEMP/map-p0-results/performance.xcresult" \
-            -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO \
-            -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP1Real100KPhotoKitMapPerformance \
-            2>&1 | tee "$RUNNER_TEMP/map-p0-results/performance.log"
-          # Copy only aggregate numeric evidence from the actual app sandbox,
-          # never a photo, filename, PHAsset ID, private GPS or iCloud original.
-          sandbox="$(xcrun simctl get_app_container "$MAP_P0_SIM" com.lazyxu.xdrive.ios data)"
-          test -s "$sandbox/tmp/ios-map-100k-metrics.json"
-          cp "$sandbox/tmp/ios-map-100k-metrics.json" \
-            "$RUNNER_TEMP/map-p0-results/real-app-performance.json"
           python3 ios/scripts/audit_real_100k_map_perf.py \
             "$RUNNER_TEMP/map-p0-results/real-app-performance.json" \
             --baseline "$RUNNER_TEMP/map-p0-results/baseline.log" \
