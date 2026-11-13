@@ -617,6 +617,12 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let trigger = element("native-ios-map-p0-audit-trigger", in: app)
         XCTAssertTrue(trigger.waitForExistence(timeout: 120),
                       "Independent GPS audit must be available only in the real Debug test route")
+        let touchFrame = trigger.frame
+        print("MAP_P0_REAL_AUDIT_TOUCH_FRAME \(touchFrame)")
+        XCTAssertTrue(trigger.isHittable && touchFrame.width >= 44 &&
+                      touchFrame.height >= 44 && touchFrame.origin.x.isFinite &&
+                      touchFrame.origin.y.isFinite,
+                      "Native MapKit audit button must have a genuine visible hit target; frame=\(touchFrame)")
         trigger.tap()
         let independentlyVerified = element("native-ios-map-p0-independent-count", in: app)
         if !independentlyVerified.waitForExistence(timeout: 150) {
