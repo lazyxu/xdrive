@@ -125,34 +125,34 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
     }
 
     private func setup() {
-        frame = CGRect(x: 0, y: 0, width: 68, height: 68)
-        centerOffset = CGPoint(x: 0, y: -16)
+        frame = XDriveIOSNativeMapMarkerVisualPolicy.frame
+        centerOffset = XDriveIOSNativeMapMarkerVisualPolicy.centerOffset
         clipsToBounds = false
         collisionMode = .circle
         displayPriority = .defaultHigh
-        photo.frame = CGRect(x: 2, y: 2, width: 64, height: 64)
+        photo.frame = XDriveIOSNativeMapMarkerVisualPolicy.imageFrame
         photo.contentMode = .scaleAspectFill
         photo.clipsToBounds = true
-        photo.layer.cornerRadius = 9
-        photo.layer.borderWidth = 2
+        photo.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.coverCornerRadius
+        photo.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.photoBorderWidth
         photo.layer.borderColor = UIColor.white.cgColor
         photo.backgroundColor = .secondarySystemGroupedBackground
         addSubview(photo)
-        placeholder.frame = CGRect(x: 20, y: 20, width: 28, height: 28)
+        placeholder.frame = XDriveIOSNativeMapMarkerVisualPolicy.placeholderFrame
         placeholder.contentMode = .scaleAspectFit
         placeholder.tintColor = .secondaryLabel
         addSubview(placeholder)
-        loading.frame = CGRect(x: 20, y: 20, width: 28, height: 28)
+        loading.frame = XDriveIOSNativeMapMarkerVisualPolicy.placeholderFrame
         loading.hidesWhenStopped = true
         addSubview(loading)
-        badge.frame = CGRect(x: 43, y: -7, width: 28, height: 28)
+        badge.frame = XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame
         badge.textAlignment = .center
-        badge.font = .boldSystemFont(ofSize: 12)
+        badge.font = XDriveIOSNativeMapMarkerVisualPolicy.badgeFont
         badge.textColor = .white
         badge.backgroundColor = .systemBlue
-        badge.layer.cornerRadius = 14
+        badge.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius
         badge.layer.borderColor = UIColor.white.cgColor
-        badge.layer.borderWidth = 2
+        badge.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.badgeBorderWidth
         badge.clipsToBounds = true
         addSubview(badge)
     }
@@ -163,7 +163,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         // An incomplete 64-cell preview has neither a final member count
         // nor permission to open a PhotoKit location album.
         badge.isHidden = provisional || count <= 1
-        badge.text = provisional ? nil : (count > 999 ? "999+" : String(count))
+        badge.text = provisional ? nil : XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: count)
         isAccessibilityElement = !provisional
         accessibilityTraits = provisional ? [] : .button
         accessibilityLabel = provisional ?
