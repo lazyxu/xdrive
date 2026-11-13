@@ -122,10 +122,12 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         lanIPText = item.lanIP
         username = item.username
         displayedIdentity = [serverText, lanIPText, username].joined(separator: "\u{001F}")
+        // Clear a stale login failure BEFORE reading the new profile's Keychain:
+        // otherwise a password-read failure gets immediately hidden.
+        errorMessage = nil
         prefillSavedPasswordForCurrentProfile()
         canRetryStoredSession = false
         retryDraftSnapshot = nil
-        errorMessage = nil
         XDriveIOSNativeLoginDraftStore.save(
             server: serverText, lanIP: lanIPText, username: username)
     }
@@ -340,7 +342,6 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         restoreAttempted = true
         canRetryStoredSession = false
         retryDraftSnapshot = nil
-        errorMessage = nil
         busy = true
         generation &+= 1
         let ticket = generation
@@ -348,7 +349,12 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         var savedForRetry: XDriveIOSNativeOwnerCredential?
         do {
             guard let saved = try XDriveIOSNativeOwnerSessionStore.load()
-            else { return }
+            else {
+                // No session to restore. Keep an existing Keychain password
+                // prefill warning visible on the signed-out login form.
+                return
+            }
+            errorMessage = nil
             savedForRetry = saved
             let origin = try ServerAddress.parse(saved.origin)
             let refreshed = try await AuthService(origin: origin).refresh(
@@ -442,6 +448,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         }
         canRetryStoredSession = false
         retryDraftSnapshot = nil
+        errorMessage = nil
         restoreAttempted = false
         await restore()
     }
