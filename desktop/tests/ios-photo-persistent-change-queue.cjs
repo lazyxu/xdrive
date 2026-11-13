@@ -266,7 +266,9 @@ test('Owner installation Keychain failure aborts all original runners without co
     runner.indexOf('private static func issueReason('))
   for (const [name, section] of [['queue', queue], ['window', window], ['single', single]]) {
     const abortAt = section.indexOf('Self.mustAbortRun(after: error) { throw error }')
-    const unavailableAt = section.indexOf('report.unavailable += 1', abortAt)
+    const unavailableAt = section.indexOf(
+      name === 'single' ? 'report.unavailable = 1' : 'report.unavailable += 1', abortAt
+    )
     assert.ok(abortAt >= 0 && unavailableAt > abortAt, 
       name + ' must rethrow identity failure before local-unavailable classification')
   }
