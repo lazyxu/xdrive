@@ -375,7 +375,14 @@ while True:
                 count = tap_counts.get(current_case, 0) + 1
                 tap_counts[current_case] = count
                 minimal = current_case[0] in MINIMAL_TARGETS
-                if (minimal and count == 1) or (not minimal and count in TAP_CAPTURE_NUMBERS):
+                # A Launcher test taps the Launcher tab *before* its real
+                # destination. Sample that later destination tap, never
+                # mislabel a Launcher grid shot as child-page evidence.
+                is_launcher = current_case[0].startswith("testLauncher")
+                if ((minimal and count == 1 and not is_launcher)
+                        or (minimal and is_launcher
+                            and tapped.group(1).startswith("native-ios-launcher-"))
+                        or (not minimal and count in TAP_CAPTURE_NUMBERS)):
                     now_tap = time.monotonic()
                     delays = (0.55,) if minimal else TAP_FRAME_OFFSETS_SECONDS
                     for frame, delay in enumerate(delays):
