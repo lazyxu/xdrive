@@ -137,3 +137,19 @@ test('unreadable persisted Owner schedule cannot pose as first-time consent', ()
   assert.match(proof, /else if store\.hasSavedRecord\(owner: selected\)/)
   assert.doesNotMatch(proof, /resetLedger|deleteReceipt|disable\(owner:/)
 })
+
+test('a corrupt stored plan with a readable ledger cannot mutate the PhotoKit baseline', () => {
+  const verifiedTarget = configure.indexOf('managed.destination == expectedDestination')
+  const corruptGuard = configure.indexOf('if store.hasSavedRecord(owner: selected),')
+  const decodeGuard = configure.indexOf('store.status(owner: selected) == nil', corruptGuard)
+  const installBaseline = configure.indexOf('.installNewOnlyBaseline(')
+  const saveSchedule = configure.indexOf('schedule = try store.configure(')
+  assert.ok(verifiedTarget >= 0 && corruptGuard > verifiedTarget &&
+    decodeGuard > corruptGuard && installBaseline > decodeGuard &&
+    saveSchedule > installBaseline,
+  'reject an unreadable saved plan even when an encrypted ledger exists, before writing the PhotoKit token')
+  const refusal = configure.slice(corruptGuard, installBaseline)
+  assert.match(refusal, /未写入新的照片增量基准/)
+  assert.match(refusal, /return/)
+  assert.doesNotMatch(refusal, /resetLedger|deleteReceipt|removeObject|installNewOnlyBaseline/)
+})
