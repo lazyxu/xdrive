@@ -319,7 +319,12 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .textFieldStyle(.roundedBorder)
             .accessibilityIdentifier("native-ios-login-password")
 
-            Toggle("安全保存当前账号密码", isOn: $model.rememberPassword)
+            // Use an explicit user-action binding: automatic Keychain prefill
+            // must never be confused with a request to revoke a saved secret.
+            Toggle("安全保存当前账号密码", isOn: Binding(
+                get: { model.rememberPassword },
+                set: { model.setRememberPasswordFromUser($0) }
+            ))
                 .accessibilityIdentifier("native-ios-remember-password")
             Toggle("保持登录", isOn: $model.keepSignedIn)
             Button {
