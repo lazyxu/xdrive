@@ -286,10 +286,16 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 	}
 	// A very large same-trip location set may not be silently truncated
 	// to a plausible-looking top-64 MapKit result with a wrong total.
+	var firstMany, secondMany uint64
 	for i := 0; i < 70; i++ {
 		lat := 10.025 + float64(i%10)*0.0125
 		lon := 10.025 + float64(i/10)*0.0125
-		add(owner.ID, root.ID, fmt.Sprintf("trip-map-many-%d.jpg", i), 5, &lat, &lon)
+		member := add(owner.ID, root.ID, fmt.Sprintf("trip-map-many-%d.jpg", i), 5, &lat, &lon)
+		if i == 0 {
+			firstMany = member
+		} else if i == 1 {
+			secondMany = member
+		}
 	}
 	// A 65+ place trip now has a bounded display aggregate, not a 409 or
 	// false top-64 subset. Each aggregate is inert until it is zoomed.
@@ -322,4 +328,78 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 			t.Fatal("geography-changed trip retained stale route")
 		}
 	}
+	// M10: The old travel ID is not a reusable date-range credential. A
+	// previously signed trip URL must fail to resolve after a GPS edit.
+	if _, found, err := server.resolveMediaExactTrip(ctx, owner.ID, "UTC", id); err != nil || found {
+		t.Fatalf("old GPS-edited trip route still resolved: found=%v err=%v", found, err)
+	}
+
+	// Reclassify one genuine away image as unsupported. The exact member
+	// count and fingerprint must change even when the original node remains.
+	if err := db.Model(&meta.MediaMetadata{}).
+		Where("owner_id = ? AND node_id = ?", owner.ID, firstMany).
+		Update("index_state", meta.MediaIndexStateUnsupported).Error; err != nil {
+		t.Fatal(err)
+	}
+	beforeReclassification := ""
+	for _, current := range after {
+		if current.ItemCount == 74 {
+			beforeReclassification = mediaExactTripID(current, "UTC")
+		}
+	}
+	if beforeReclassification == "" {
+		t.Fatalf("GPS edit did not produce a current 74-member trip: %+v", after)
+	}
+	reclassified, err := queryMediaExactTripSegments(ctx, db, owner.ID, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reclassifiedID string
+	for _, current := range reclassified {
+		if current.ItemCount == 73 {
+			reclassifiedID = mediaExactTripID(current, "UTC")
+		}
+	}
+	if reclassifiedID == "" || reclassifiedID == beforeReclassification {
+		t.Fatalf("reclassified GPS member retained stale trip identity: %+v", reclassified)
+	}
+	if _, found, err := server.resolveMediaExactTrip(ctx, owner.ID, "UTC", beforeReclassification); err != nil || found {
+		t.Fatalf("reclassified trip old URL still resolved: %v %v", found, err)
+	}
+
+	// Soft-delete another still-indexed member. Both the signed Range and
+	// the map overview must exclude deleted nodes; no stale place is readable.
+	if err := db.Model(&meta.Node{}).
+		Where("id = ? AND owner_id = ?", secondMany, owner.ID).
+		Update("deleted_at", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := queryMediaExactTripSegments(ctx, db, owner.ID, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, current := range deleted {
+		if current.ItemCount == 72 {
+			newID := mediaExactTripID(current, "UTC")
+			if newID == "" || newID == reclassifiedID {
+				t.Fatalf("delete reused stale trip URL: %q", newID)
+			}
+			if _, found, err := server.resolveMediaExactTrip(ctx, owner.ID, "UTC", reclassifiedID); err != nil || found {
+				t.Fatalf("deleted member remained authorized by old trip: %v %v", found, err)
+			}
+			query, err := server.mediaExactTripQuery(ctx, owner.ID, current, "UTC")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var count int64
+			if err := query.Distinct("xd_media_metadata.node_id").Count(&count).Error; err != nil {
+				t.Fatal(err)
+			}
+			if count != 72 {
+				t.Fatalf("deleted/reclassified trip Range has %d instead of 72 members", count)
+			}
+			return
+		}
+	}
+	t.Fatalf("deleting one indexed GPS trip member lost or retained wrong trip set: %+v", deleted)
 }
