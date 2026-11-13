@@ -69,7 +69,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         username = draft.username
         displayedIdentity = [serverText, lanIPText, username].joined(separator: "\u{001F}")
         savedProfiles = XDriveIOSNativePasswordProfiles.list()
-        rememberPassword = savedProfilePasswordAvailable
+        prefillSavedPasswordForCurrentProfile()
     }
 
     var currentSavedProfile: XDriveIOSNativeLoginProfile? {
@@ -81,6 +81,23 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     var savedProfilePasswordAvailable: Bool {
         guard let item = currentSavedProfile else { return false }
         return (try? XDriveIOSNativePasswordProfiles.password(for: item)) != nil
+    }
+
+    /// Prefill only a password that this exact HTTPS Server, LAN route and
+    /// username previously opted to store. No network login or refresh occurs.
+    /// Signed-in sessions never retain the autofilled plaintext in UI state.
+    private func prefillSavedPasswordForCurrentProfile() {
+        password = ""
+        rememberPassword = false
+        guard active == nil, owner == nil, let item = currentSavedProfile else { return }
+        do {
+            guard let saved = try XDriveIOSNativePasswordProfiles.password(for: item)
+            else { return }
+            password = saved
+            rememberPassword = true
+        } catch {
+            errorMessage = "无法从系统 Keychain 读取保存的密码；请解锁设备后手动输入。"
+        }
     }
 
     /// Account and route changes must not carry a prior account's typed password.
@@ -105,10 +122,9 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         lanIPText = item.lanIP
         username = item.username
         displayedIdentity = [serverText, lanIPText, username].joined(separator: "\u{001F}")
-        password = ""
+        prefillSavedPasswordForCurrentProfile()
         canRetryStoredSession = false
         retryDraftSnapshot = nil
-        rememberPassword = (try? XDriveIOSNativePasswordProfiles.password(for: item)) != nil
         errorMessage = nil
         XDriveIOSNativeLoginDraftStore.save(
             server: serverText, lanIP: lanIPText, username: username)
@@ -366,6 +382,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 verifiedOwner: verified
             )
             owner = verified
+            password = ""
             // A restored refresh credential may be pinned to the selected LAN IP.
             // Preserve the user's original HTTPS domain and LAN hint only when
             // they resolve to exactly this already-verified Owner endpoint.
@@ -646,6 +663,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         }
         active = nil
         owner = nil
+        prefillSavedPasswordForCurrentProfile()
         guard let previous else {
             noticeMessage = "本机原生登录凭据已清除。"
             return true
