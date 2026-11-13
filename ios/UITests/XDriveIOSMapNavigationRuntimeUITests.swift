@@ -842,12 +842,17 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(element("native-ios-map-photo-wall-tile", in: app)
             .waitForExistence(timeout: 60),
             "Real PhotoKit wall loaded no authorized photo")
+        // XCTHitchMetric was introduced with Xcode 26 (Swift 6.2).
+        // Keep the repository's Xcode 16.4 / iOS 18.5 runner compiling.
+        var appRenderMetrics: [any XCTMetric] = [
+            XCTCPUMetric(application: app), XCTMemoryMetric(application: app)
+        ]
+#if compiler(>=6.2)
+        appRenderMetrics.append(XCTHitchMetric(application: app))
+#endif
         let wallOptions = XCTMeasureOptions()
         wallOptions.iterationCount = 3
-        measure(metrics: [
-            XCTCPUMetric(application: app), XCTMemoryMetric(application: app),
-            XCTHitchMetric(application: app)
-        ], options: wallOptions) {
+        measure(metrics: appRenderMetrics, options: wallOptions) {
             for _ in 0..<5 { scroll.swipeUp() }
             for _ in 0..<3 { scroll.swipeDown() }
         }
@@ -860,10 +865,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         // Each region settles for the normal 900ms PhotoKit refinement policy.
         let zoomOptions = XCTMeasureOptions()
         zoomOptions.iterationCount = 3
-        measure(metrics: [
-            XCTCPUMetric(application: app), XCTMemoryMetric(application: app),
-            XCTHitchMetric(application: app)
-        ], options: zoomOptions) {
+        measure(metrics: appRenderMetrics, options: zoomOptions) {
             map.pinch(withScale: 2.0, velocity: 1.0)
             Thread.sleep(forTimeInterval: 2)
             map.swipeLeft()
