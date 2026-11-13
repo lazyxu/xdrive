@@ -264,7 +264,7 @@ test('real Simulator regressions keep Gallery backup 44pt, Notes source AX and g
 
 
 test('every independent Launcher and all-pages child crash journey is registered for real Simulator frames', () => {
-  const names = [...swift.matchAll(/\\bfunc\\s+(test\\w+)\\s*\\(/g)].map(match => match[1]);
+  const names = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(match => match[1]);
   assert.ok(names.length >= 38, 'All-pages crash matrix lost an executable journey');
   assert.equal(new Set(names).size, names.length, 'Duplicate XCTest method hides an independent route');
   for (const name of names) {
@@ -288,7 +288,7 @@ test('every independent Launcher and all-pages child crash journey is registered
   ]) {
     assert.ok(watcher.includes('"' + name + '"'), 'Launcher missing bounded UI evidence: ' + name);
   }
-  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\\/XDriveIOSAllPagesCrashUITests/);
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
 });
 
 test('real login child crash journeys exercise the production root without credentials', () => {
