@@ -185,6 +185,25 @@ MINIMAL_TARGETS = {
     "testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank",
     "testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership",
 }
+# The Launcher has fourteen separate real destination tests; all must emit
+# bounded Simulator diagnostics, including pages with no private Owner data.
+# A mounted/captured route is not a physical-device zero-flicker guarantee.
+MINIMAL_TARGETS.update({
+    "testLauncherLocalPageDoesNotCrash",
+    "testLauncherAlbumsPageDoesNotCrash",
+    "testLauncherCloudPageDoesNotCrash",
+    "testLauncherOriginalsPageDoesNotCrash",
+    "testLauncherMapPageDoesNotCrash",
+    "testLauncherFilesPageDoesNotCrash",
+    "testLauncherNotesPageDoesNotCrash",
+    "testLauncherClipboardPageDoesNotCrash",
+    "testLauncherBackupPageDoesNotCrash",
+    "testLauncherTransfersPageDoesNotCrash",
+    "testLauncherSyncPlaceholderDoesNotCrash",
+    "testLauncherStoragePlaceholderDoesNotCrash",
+    "testLauncherDevicesPlaceholderDoesNotCrash",
+    "testLauncherDiagnosticsPlaceholderDoesNotCrash",
+})
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
 TARGETS.update({
