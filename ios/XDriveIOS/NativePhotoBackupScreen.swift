@@ -272,7 +272,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
         } message: {
-            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证") · 目录：\(autoConsentDestination?.targetPath ?? "未验证")。\(autoConsentStartRule == .resumePrevious ? "仅恢复旧 Owner/Source/Target 绑定的持久任务与原有范围；不重新建立增量基准。" : (autoConsentStartRule == .onlyNew ? "仅自动备份启用后拍摄或编辑的照片；无法判断拍摄和修改日期的项目仍标记不可用。" : "自动检查所有已授权的照片和视频。")) 首次积压未扫完时仅在前台约每分钟继续一轮，完成扫描后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
+            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证") · 目录：\(autoConsentDestination?.targetPath ?? "未验证")。\(autoConsentStartRule == .resumePrevious ? "仅恢复旧 Owner/Source/Target 绑定的持久任务与原有范围；不重新建立增量基准。" : (autoConsentStartRule == .onlyNew ? "新建任务将以本次确认的时间和 PhotoKit 变更令牌作为起点；旧任务未上传的本地队列与失败重试状态不会带入本次任务，已上传原件和不确定收据不删除。若要保留旧任务请选「恢复之前的任务」。无法判定日期的项目仍标记不可用。" : "自动检查所有已授权的照片和视频。")) 首次积压未扫完时仅在前台约每分钟继续一轮，完成扫描后恢复每 \(autoConsentMinutes) 分钟检查；每轮最多新增 20 个原件。不保证锁屏或强制退出后执行。")
         }
         .confirmationDialog("确认恢复当前 Owner 的前台自动备份？",
                             isPresented: $showResumeConsent, titleVisibility: .visible) {
