@@ -168,18 +168,39 @@ OPENER = build_opener(SafeRedirect)
 
 def _download(url, path, size, digest, lock_path, marker=None):
     partial = path.with_name(path.name + ".part")
+    # Bind a resumable partial to its exact approved source URL. Otherwise an
+    # interrupted GitLab body could be completed with GitHub Range bytes, fail
+    # the final digest, and exhaust the last fallback when retries=1.
+    # Unknown legacy .part files are discarded once rather than mixed.
+    origin = path.with_name(path.name + ".part.origin")
+    identity = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    if partial.is_symlink() or origin.is_symlink():
+        raise ValueError("symlinked Bundle partial or origin marker")
+    if partial.exists() and not partial.is_file():
+        raise ValueError("non-regular Bundle partial")
+    if origin.exists() and not origin.is_file():
+        raise ValueError("non-regular Bundle partial origin marker")
+    prior = ""
+    if origin.is_file() and origin.stat().st_size <= 128:
+        prior = origin.read_text(encoding="ascii").strip()
+    if not partial.exists() or prior != identity:
+        partial.unlink(missing_ok=True)
+        origin.unlink(missing_ok=True)
     offset = partial.stat().st_size if partial.exists() else 0
     if offset > size:
         partial.unlink()
+        origin.unlink(missing_ok=True)
         offset = 0
     if offset == size:
         if _digest(partial) == (size, digest):
             os.chmod(partial, 0o644)
             os.replace(partial, path)
+            origin.unlink(missing_ok=True)
             return
         # A fully downloaded but corrupted .part must not cause endless 416
         # range requests, or be re-used with bytes from another origin.
         partial.unlink()
+        origin.unlink(missing_ok=True)
         offset = 0
     headers = {"User-Agent": "xDrive-ReleaseBundle/1"}
     if offset:
@@ -198,6 +219,11 @@ def _download(url, path, size, digest, lock_path, marker=None):
         else:
             raise ValueError("unexpected download status")
         count = offset
+        # The marker is established before writing any resumable bytes. A
+        # crash before this write leaves an untrusted legacy partial, which is
+        # safely discarded on the next attempt.
+        origin.write_text(identity + "\n", encoding="ascii")
+        os.chmod(origin, 0o600)
         with partial.open(mode) as output:
             while True:
                 if _install_busy(lock_path, marker):
@@ -216,6 +242,7 @@ def _download(url, path, size, digest, lock_path, marker=None):
         raise ValueError("downloaded artifact failed SHA-256 verification")
     os.chmod(partial, 0o644)
     os.replace(partial, path)
+    origin.unlink(missing_ok=True)
 
 
 def _github_release_json(url, lock_path, marker=None):
