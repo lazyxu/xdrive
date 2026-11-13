@@ -597,10 +597,16 @@ struct XDriveIOSNativePhotosDashboard: View {
                     if gallerySource == .local || gallerySource == .albums {
                         gallerySearchAction
                     }
+                    // The original caption-only Menu exposed a 49x15pt AX
+                    // target and five real Simulator subpage tests could not
+                    // compute a hit point. Enforce an actual finger-sized target.
                     Menu { backupMenuItems } label: {
                         Label("备份", systemImage: "icloud.and.arrow.up")
+                            .lineLimit(1)
+                            .frame(minWidth: 64, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
-                        .accessibilityIdentifier("native-ios-gallery-backup-settings")
+                    .accessibilityIdentifier("native-ios-gallery-backup-settings")
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)
