@@ -35,7 +35,9 @@ test('P0 Files resume stores only bounded Owner-scoped route hints and no grants
 test('P0 Files-local Recent Browse Favorites stays accessible in pushed folders', () => {
   const main = browser.slice(browser.indexOf('private var filesMain: some View'),
     browser.indexOf('private var filesModals: some View'))
-  assert.match(main, /VStack\(spacing: 0\) \{\s*switch quickSection/)
+  assert.match(main, /VStack\(spacing: 0\) \{\s*\/\/ One compact Files-only TOP selector/)
+  assert.ok(main.indexOf('native-ios-files-quick-rail') < main.indexOf('switch quickSection'))
+  assert.match(main, /\.disabled\(selecting\)/)
   assert.match(main, /case \.browse:\s*filesChrome/)
   assert.match(main, /native-ios-files-quick-rail/)
   assert.match(main, /resumeStore\.saveSection\(option\.rawValue, owner: owner\)/)

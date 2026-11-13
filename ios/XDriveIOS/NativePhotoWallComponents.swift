@@ -83,6 +83,39 @@ struct XDriveIOSNativePhotoWallDayHeader: View {
     }
 }
 
+/// The same four date-scale controls for native Gallery and Owner MapKit.
+/// This never requests or grants an unsent photo range.
+struct XDriveIOSNativePhotoWallTimeScaleControls: View {
+    @Binding var scale: XDriveIOSNativePhotoWallTimeScale
+
+    var body: some View {
+        Picker("照片时间分组", selection: $scale) {
+            ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
+                Text(option.title).tag(option)
+            }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("native-ios-shared-photo-time-scale")
+    }
+}
+
+/// Presentation-only crop/contain options. Sources, Owners and authenticated
+/// thumbnail lifetimes remain in the callers, never in this shared component.
+@ViewBuilder
+func xdrivePhotoWallFramingButtons(
+    _ framing: Binding<XDriveIOSNativePhotoWallFraming>
+) -> some View {
+    ForEach(XDriveIOSNativePhotoWallFraming.allCases) { option in
+        Button {
+            framing.wrappedValue = option
+        } label: {
+            Label(option.title, systemImage: framing.wrappedValue == option
+                ? "checkmark.circle.fill" : "square.dashed")
+        }
+        .accessibilityIdentifier("native-ios-shared-framing-" + option.rawValue)
+    }
+}
+
 /// Shared density menu actions: callers retain their own guards, cursors,
 /// current Owner, photo filters and Viewer presentation and dismissal.
 @ViewBuilder

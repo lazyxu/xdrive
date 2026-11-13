@@ -22,6 +22,7 @@ import {
 } from './MediaGalleryPhotoWallFraming'
 import type { XDriveMediaGalleryFraming } from './MediaGalleryPhotoWallFraming'
 import { XDriveMediaGalleryDateNavigation } from './MediaGalleryDateNavigation'
+import { XDriveMediaGalleryTimeScaleControls } from './MediaGalleryTimeScaleControls'
 import {
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
   xDriveReadMobileGalleryColumns,
@@ -522,24 +523,15 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             <CloseRoundedIcon />
           </IconButton>
         </Stack>
-        <Stack direction="row" role="group" aria-label="地点照片时间分组"
-          spacing={0.25} sx={{px:1.25,pb:0.5,flexWrap:'wrap',rowGap:0.25}}>
-          {(['all','year','month','day'] as const).map(scale => (
-            <Button key={scale} size="small" variant={timeScale===scale ? 'contained' : 'text'}
-              disabled={phase!=='ready' || (scale!=='all' && !timelineGroups)}
-              aria-pressed={timeScale===scale}
-              data-xdrive-places-photo-time-scale={scale}
-              onClick={() => changeTimeScale(scale)}
-              sx={{minHeight:44,minWidth:44,px:1.25,textTransform:'none'}}>
-              {scale==='all' ? '全部' : scale==='year' ? '年' : scale==='month' ? '月' : '日'}
-            </Button>
-          ))}
-          {!timelineGroups && phase==='ready' ? (
-            <Typography variant="caption" color="text.secondary">
-              当前服务端未返回完整日期索引，可在图库中按日期浏览
-            </Typography>
-          ) : null}
-        </Stack>
+        <XDriveMediaGalleryTimeScaleControls
+          surface="places" scale={timeScale} onChange={changeTimeScale}
+          disabled={phase!=='ready'} hasTimeline={Boolean(timelineGroups)}
+        />
+        {!timelineGroups && phase==='ready' ? (
+          <Typography variant="caption" color="text.secondary" sx={{px:1.25,pb:0.5}}>
+            当前服务端未返回完整日期索引，可在图库中按日期浏览
+          </Typography>
+        ) : null}
         {phase==='ready' && timelineGroups && expanded ? (
           <Box sx={{px:1.25,pb:0.75}}>
             <XDriveMediaGalleryDateNavigation

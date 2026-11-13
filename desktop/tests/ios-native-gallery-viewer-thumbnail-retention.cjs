@@ -101,5 +101,9 @@ test('explicit typed thumbnail identity and Viewer filmstrip compile-sensitive c
   const viewer = fs.readFileSync(path.join(__dirname, '../../ios/XDriveIOS/NativeUnifiedPhotoViewer.swift'), 'utf8');
   assert.match(viewer, /ForEach\(Array\(page\.rows\.enumerated\(\)\), id: \\.element\.id\) \{ index, photo in\s*filmstripCell\(photo, at: index\)/);
   assert.match(viewer, /private func filmstripCell\(/);
-  assert.match(viewer, /displayActive: authorized, retainWhileCovered: false/);
+  assert.match(viewer, /displayActive: authorized, retainWhileCovered: false,/);
+  assert.match(viewer, /framing: filmstripFraming/);
+  assert.match(viewer, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/);
+  assert.match(gallery, /let framing: XDriveIOSNativePhotoWallFraming/);
+
 });

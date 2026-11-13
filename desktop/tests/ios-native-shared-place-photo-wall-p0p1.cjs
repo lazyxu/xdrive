@@ -124,7 +124,9 @@ test('P0-06: Viewer return restores exact visible tile, never stale PhotoKit or 
   assert.match(cluster, /pendingViewerCross = nil/)
   assert.match(cloud, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.cloudTarget\(/)
   assert.match(album, /restoreAfterViewer\(\)/)
-  assert.doesNotMatch(cluster, /@AppStorage|UserDefaults\.set/)
+  assert.match(cluster, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
+  // Cosmetic framing is allowed; Owner identity, signed ranges and Viewer anchors are not stored.
+  assert.doesNotMatch(cluster, /UserDefaults\.set|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")[^"]+"/)
 })
 
 test('P1-07: continuous scroll, reserved placeholders and request cancellation stay bounded', () => {
@@ -134,7 +136,7 @@ test('P1-07: continuous scroll, reserved placeholders and request cancellation s
   assert.match(map, /readTask\?\.cancel\(\)/)
   assert.match(map, /await scanner\.reset\(\)/)
   assert.match(map, /priorWindow = departingItems/)
-  assert.match(cluster, /if let next \{\s*Color\.clear[\s\S]*?advanceIfVisible\(\)/)
+  assert.match(cluster, /if activeOwner, let next \{\s*Color\.clear[\s\S]*?advanceIfVisible\(\)/)
   assert.match(cluster, /loadTask\?\.cancel\(\)/)
   assert.match(cluster, /coverTask\?\.cancel\(\)/)
   assert.match(cluster, /priorWindow = departingPage/)

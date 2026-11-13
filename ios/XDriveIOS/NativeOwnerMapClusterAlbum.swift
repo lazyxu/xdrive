@@ -83,6 +83,18 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // prior signed place page. No guessed place or cached media identities.
     @State private var pendingViewerCross: XDriveIOSOwnerClusterCursor?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
+    // Only an exact Owner-authenticated complete date index is retained.
+    // Date keys and offsets are presentation hints, never media grants.
+    @State private var verifiedDateIndex: XDriveIOSNativeMediaDateGroupSets?
+    @State private var verifiedDatePlaceID: String?
+    @State private var verifiedDateTotal = 0
+    @State private var dateJumpVisible = false
+    // Transient Owner-verified target media for an exact historical day.
+    @State private var dateJumpReturn: XDriveIOSNativeMediaItem?
+    @State private var requestedDate = Date()
 
     init(login: XDriveIOSNativeOwnerLoginModel,
          selection: XDriveIOSOwnerMapChosenCluster) {
@@ -95,12 +107,53 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, selection.owner)
     }
 
+    private var canJumpInCurrentPlace: Bool {
+        // Validation is O(number of date groups) and occurs on receipt only.
+        // SwiftUI re-renders must not rescan 100k date groups per frame.
+        guard activeOwner, verifiedDateIndex != nil,
+              selection.places.indices.contains(cursor.placeIndex),
+              verifiedDatePlaceID == selection.places[cursor.placeIndex].id,
+              verifiedDateTotal == selection.places[cursor.placeIndex].item_count
+        else { return false }
+        return true
+    }
+
     private var selectedPhotoCount: Int {
         selection.places.reduce(0) { $0 + $1.item_count }
     }
 
+    private struct VisibleTile: Identifiable {
+        let item: XDriveIOSNativeMediaItem
+        let origin: XDriveIOSNativeMediaRange
+        var id: UInt64 { item.id }
+    }
+    private struct VisibleSection: Identifiable {
+        let id: Int
+        let key: String
+        var tiles: [VisibleTile]
+    }
+
+    // Retain only the two current, Owner-signed 48-item windows; date headings
+    // describe exactly these loaded tiles, never a fabricated 100k-place index.
+    private var visibleSections: [VisibleSection] {
+        let tiles: [VisibleTile] =
+            (priorWindow.map { range in range.items.map { VisibleTile(item: $0, origin: range) } } ?? []) +
+            (page.map { range in range.items.map { VisibleTile(item: $0, origin: range) } } ?? [])
+        var sections: [VisibleSection] = []
+        for tile in tiles {
+            let key = wallTimeScale.key(forISO8601: tile.item.metadata.captured_at)
+            if !sections.isEmpty && sections[sections.count - 1].key == key {
+                sections[sections.count - 1].tiles.append(tile)
+            } else {
+                sections.append(VisibleSection(id: sections.count, key: key, tiles: [tile]))
+            }
+        }
+        return sections
+    }
+
     var body: some View {
         VStack(spacing: 8) {
+            if activeOwner {
             Text("\(selection.places.count) 个位置 · \(selectedPhotoCount) 张已索引照片")
                 .font(.footnote).foregroundStyle(.secondary)
                 .accessibilityIdentifier("native-ios-owner-cluster-count")
@@ -111,7 +164,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         "当前位置 \(cursor.placeIndex + 1)/\(selection.places.count)，已读取 \($0.offset + $0.items.count)/\($0.total_count)"
                     } ?? "正在读取位置照片"
                 )
-            if let error {
+            } else {
+                XDriveIOSNativePhotoWallStatusMessage(
+                    message: "正在核对当前账户的地点照片…")
+            }
+            if activeOwner, let error {
                 XDriveIOSNativePhotoWallRetryMessage(
                     message: error, buttonTitle: "重试读取照片",
                     canRetry: !busy && activeOwner && viewing == nil,
@@ -123,23 +180,60 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             if busy {
                 XDriveIOSNativePhotoWallLoadingMessage(message: "核对当前 Owner 的地点照片…")
             }
+            XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                .padding(.horizontal, 12)
+                .disabled(!activeOwner || busy || viewing != nil)
+            if canJumpInCurrentPlace {
+                Button {
+                    requestedDate = Date()
+                    dateJumpVisible = true
+                } label: {
+                    Label("跳转此地点的历史日期", systemImage: "calendar")
+                }
+                .disabled(busy || viewing != nil)
+                .padding(.horizontal, 12)
+                .accessibilityIdentifier("native-ios-owner-place-full-date-jump")
+                .accessibilityHint("按当前 Owner 的完整日期索引定位，仍须重新验证照片访问权限")
+            }
+            if wallTimeScale != .all {
+                Text("仅对当前已授权、已加载的照片分组；更远照片仍按需加载。")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+            }
             ScrollViewReader { returnScroll in
             ScrollView {
                 XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                    if let priorWindow {
-                        ForEach(priorWindow.items) { item in
-                            photoTile(item, from: priorWindow)
-                        }
-                    }
-                    if let page {
-                        ForEach(page.items) { item in
-                            photoTile(item, from: page)
+                    // Fail closed during Owner switch *in body*, before the
+                    // onChange invalidation effect can clear the old UIImage.
+                    if activeOwner {
+                        if wallTimeScale == .all {
+                            if let priorWindow {
+                                ForEach(priorWindow.items) { item in
+                                    photoTile(item, from: priorWindow)
+                                }
+                            }
+                            if let page {
+                                ForEach(page.items) { item in
+                                    photoTile(item, from: page)
+                                }
+                            }
+                        } else {
+                            ForEach(visibleSections) { section in
+                                Section {
+                                    ForEach(section.tiles) { entry in
+                                        photoTile(entry.item, from: entry.origin)
+                                    }
+                                } header: {
+                                    XDriveIOSNativePhotoWallDayHeader(
+                                        title: wallTimeScale.label(for: section.key))
+                                }
+                            }
                         }
                     }
                     // The lazy-grid foot advances the verified Owner Range
                     // when it approaches the viewport, like native Photos.
                     // It remains guarded by Owner, busy, cover and error state.
-                    if let next {
+                    if activeOwner, let next {
                         Color.clear
                             .frame(height: 24)
                             .id("\(next.placeIndex):\(next.offset)")
@@ -167,6 +261,19 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                         returnScroll.scrollTo(anchor.id, anchor: .bottom)
                     }
                     autoScrollReturn = nil
+                }
+                // Restore the exact first signed tile of a requested day,
+                // not merely the 48-item page's top or an old scroll offset.
+                if let anchor = dateJumpReturn {
+                    if activeOwner,
+                       XDriveIOSNativePhotoWallWindowPolicy.canRestore(
+                           anchor, in: page?.items ?? [],
+                           scopeActive: activeOwner,
+                           matches: { $0.sameVisibleRevision(as: $1) }
+                       ) {
+                        returnScroll.scrollTo(anchor.id, anchor: .top)
+                    }
+                    dateJumpReturn = nil
                 }
                 // Only the reverified current Owner page can restore focus.
                 // An unavailable, deleted or modified Node is never scrolled
@@ -202,10 +309,38 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     Section("照片网格") {
                         xdrivePhotoWallDensityButtons($wallDensity)
                     }
+                    Section("显示比例") {
+                        xdrivePhotoWallFramingButtons($wallFraming)
+                    }
                 } label: {
                     Label("位置照片操作", systemImage: "ellipsis.circle")
                 }
                 .accessibilityIdentifier("native-ios-owner-map-cluster-more")
+            }
+        }
+        .sheet(isPresented: $dateJumpVisible) {
+            NavigationStack {
+                VStack(spacing: 12) {
+                    DatePicker("选择地点照片日期", selection: $requestedDate,
+                               displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .accessibilityIdentifier("native-ios-owner-place-date-picker")
+                    Text("按此地点完整授权索引中的最近有照片日期定位（UTC 日期索引）。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .navigationTitle("跳转地点照片")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { dateJumpVisible = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("跳转") { jumpToSelectedDate() }
+                            .disabled(!canJumpInCurrentPlace || busy || viewing != nil)
+                            .accessibilityIdentifier("native-ios-owner-place-date-confirm")
+                    }
+                }
             }
         }
         .xdrivePhotoWallPinch(
@@ -467,7 +602,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     Rectangle().fill(Color(uiColor: .tertiarySystemFill))
                     if let image = coverImages[item.id] {
                         Image(uiImage: image)
-                            .resizable().scaledToFill()
+                            .resizable()
+                            .aspectRatio(contentMode: wallFraming == .complete ? .fit : .fill)
                             .frame(width: tile.size.width,
                                    height: tile.size.height)
                             .clipped()
@@ -540,6 +676,22 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             placeIndex: nextIndex, offset: nextOffset)
     }
 
+    private func jumpToSelectedDate() {
+        guard canJumpInCurrentPlace, !busy, viewing == nil,
+              let index = verifiedDateIndex,
+              let selected = XDriveIOSNativeOwnerPlaceDateIndexPolicy.nearestDay(
+                requestedDate, index: index, total: verifiedDateTotal,
+                pageSize: XDriveIOSNativePhotoAssetRangeCursorPolicy.pageSize
+              )
+        else { dateJumpVisible = false; return }
+        dateJumpVisible = false
+        // The Reader will re-fetch offset zero and revalidate this day+index
+        // before the requested sparse Range is accepted and painted.
+        load(XDriveIOSOwnerClusterCursor(
+            placeIndex: cursor.placeIndex, offset: selected.offset),
+            history: [], dateJump: selected)
+    }
+
     private func advanceIfVisible() {
         // The next Owner Range is independent of decorative thumbnails.
         // A slow or missing cover must never block continuous scrolling:
@@ -569,6 +721,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         priorWindowCursor = nil
         scrollFootVisible = false
         coverImages = [:]
+        verifiedDateIndex = nil
+        verifiedDatePlaceID = nil
+        verifiedDateTotal = 0
+        dateJumpVisible = false
+        dateJumpReturn = nil
         viewing = nil
         next = nil
         earlier = []
@@ -578,7 +735,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
 
     private func load(_ target: XDriveIOSOwnerClusterCursor,
                       history: [XDriveIOSOwnerClusterCursor],
-                      autoAdvance: Bool = false) {
+                      autoAdvance: Bool = false,
+                      dateJump: XDriveIOSNativeOwnerPlaceDateJump? = nil) {
         guard activeOwner, !busy, viewing == nil,
               target.placeIndex >= 0,
               target.placeIndex < selection.places.count,
@@ -589,6 +747,14 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         let ticket = generation
         let departingPage = page
         let departingCursor = cursor
+        // Never retain a date anchor across a new Owner/cursor/task epoch.
+        dateJumpReturn = nil
+        if target.placeIndex != departingCursor.placeIndex {
+            verifiedDateIndex = nil
+            verifiedDatePlaceID = nil
+            verifiedDateTotal = 0
+            dateJumpVisible = false
+        }
         // Ordinary pagination does not carry a stale Viewer anchor into a
         // different place or new 48-item Range. Dismissal reloads the SAME.
         if autoAdvance || target != cursor { viewerReturn = nil }
@@ -622,6 +788,29 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken)
+                if let dateJump {
+                    guard !autoAdvance, target.placeIndex == departingCursor.placeIndex,
+                          target.offset == dateJump.offset
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                    // A stale date index may choose a wrong sparse offset even
+                    // when item_count is unchanged. Re-query the real Owner's
+                    // first Range and require the exact same date group.
+                    let root = try await reader.page(
+                        offset: 0, placeID: facet.id,
+                        captureRange: selection.captureRange)
+                    try Task.checkCancellation()
+                    let fresh = root.timeline_group_sets ??
+                        XDriveIOSNativeOwnerPlaceDateIndexPolicy.legacyCompleteIndex(root)
+                    guard root.total_count == facet.item_count,
+                          let fresh,
+                          XDriveIOSNativeOwnerPlaceDateIndexPolicy.accepts(
+                            fresh, total: root.total_count),
+                          fresh.day.contains(where: {
+                            $0.key == dateJump.key &&
+                            $0.start_index == dateJump.startIndex
+                          })
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                }
                 if autoAdvance {
                     // A stable item count does not guarantee that old and
                     // new 48-item windows belong to the same media snapshot.
@@ -710,6 +899,30 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     autoScrollReturn = nil
                     coverImages = [:]
                 }
+                if fetched.offset == 0 {
+                    let index = fetched.timeline_group_sets ??
+                        XDriveIOSNativeOwnerPlaceDateIndexPolicy.legacyCompleteIndex(fetched)
+                    if let index,
+                       XDriveIOSNativeOwnerPlaceDateIndexPolicy.accepts(
+                        index, total: fetched.total_count) {
+                        verifiedDateIndex = index
+                        verifiedDatePlaceID = facet.id
+                        verifiedDateTotal = fetched.total_count
+                    } else {
+                        verifiedDateIndex = nil
+                        verifiedDatePlaceID = nil
+                        verifiedDateTotal = 0
+                    }
+                }
+                if let dateJump {
+                    let dayIndex = dateJump.startIndex - fetched.offset
+                    guard fetched.items.indices.contains(dayIndex) else {
+                        throw XDriveIOSNativeMediaReadFailure.invalidPage
+                    }
+                    // Date-index metadata is not a media grant. The exact
+                    // Node+revision comes from the newly verified signed page.
+                    dateJumpReturn = fetched.items[dayIndex]
+                }
                 cursor = target
                 earlier = history
                 next = following
@@ -772,6 +985,13 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             } catch is CancellationError {
             } catch {
                 guard generation == ticket else { return }
+                if dateJump != nil {
+                    // A failed fresh-index check invalidates any previously
+                    // cached jump hint, even when the Owner is unchanged.
+                    verifiedDateIndex = nil
+                    verifiedDatePlaceID = nil
+                    verifiedDateTotal = 0
+                }
                 // Do not promote an unverified next cursor on failure.
                 viewerReturn = nil
                 self.error = "地点照片或 Owner 授权已变化；可重试，必要时返回地图刷新。"

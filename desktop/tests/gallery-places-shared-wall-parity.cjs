@@ -26,6 +26,7 @@ const grid = loadPolicy('ui/shared/src/mui/MediaGalleryVirtualGrid.ts')
 const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
 const drawer = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
 const dateControls = read('ui/shared/src/mui/MediaGalleryDateNavigation.tsx')
+const scaleControls = read('ui/shared/src/mui/MediaGalleryTimeScaleControls.tsx')
 const parent = read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
 const map = read('ui/shared/src/mui/MediaGalleryPlacesMap.tsx')
 const tiles = read('ui/shared/src/mui/MediaGallerySharedTiles.tsx')
@@ -99,7 +100,8 @@ test('date grouping uses only complete same-Owner first-page indices, not sparse
   ]) assert.equal(policy.xDrivePlacesPhotoTimelineGroups({...first(),timeline_group_sets:groups}),null)
   assert.match(parent,/timelineGroups:valid \? xDrivePlacesPhotoTimelineGroups\(range\)/)
   assert.match(parent,/xDrivePlacesDrawerValidRange\(cell,range\)/)
-  assert.match(drawer,/disabled=\{phase!=='ready' \|\| \(scale!=='all' && !timelineGroups\)\}/)
+  assert.match(drawer,/hasTimeline=\{Boolean\(timelineGroups\)\}/)
+  assert.match(scaleControls,/disabled=\{disabled \|\| \(value !== 'all' && !hasTimeline\)\}/)
 })
 
 test('Gallery and Places use one shared photo wall and one dated virtual renderer',()=>{
@@ -329,8 +331,71 @@ test('two entrances share framing, dated wall, thumbnail Tile, Live/video badges
   assert.match(drawer,/<XDriveMediaGalleryVirtualTimeline/)
   assert.match(gallery,/XDriveMediaGalleryDateNavigation/)
   assert.match(drawer,/XDriveMediaGalleryDateNavigation/)
+  assert.match(gallery,/XDriveMediaGalleryTimeScaleControls/)
+  assert.match(drawer,/XDriveMediaGalleryTimeScaleControls/)
+  assert.match(scaleControls,/data-xdrive-gallery-time-scale/)
+  assert.match(scaleControls,/data-xdrive-places-photo-time-scale/)
   assert.match(host,/xDriveMediaGalleryPinchColumnCount/)
   assert.match(drawer,/maxColumns: 10/)
   assert.match(parent,/xDrivePlacesDrawerValidRange/)
   assert.match(parent,/controller\.signal\.aborted/)
+})
+
+
+test('legacy Places date index is allowed only for complete sorted Owner page (never a sparse 100k prefix)', () => {
+  const item = (id, day) => ({
+    node: {id,revision:1},
+    metadata: {captured_at: day === 'unknown' ? undefined : day + 'T12:34:56Z'},
+  })
+  const full = days => ({
+    items: days.map((day,i)=>item(i+1,day)),
+    offset: 0, total_count: days.length, limit: 48,
+  })
+  const days = ['2026-11-11','2026-11-11','2026-11-10','2026-10-01']
+  const accepted = policy.xDrivePlacesPhotoTimelineGroups(full(days))
+  assert.deepEqual(accepted.year,[{key:'2026',item_count:4,start_index:0}])
+  assert.deepEqual(accepted.month,[
+    {key:'2026-11',item_count:3,start_index:0},
+    {key:'2026-10',item_count:1,start_index:3},
+  ])
+  assert.deepEqual(accepted.day,[
+    {key:'2026-11-11',item_count:2,start_index:0},
+    {key:'2026-11-10',item_count:1,start_index:2},
+    {key:'2026-10-01',item_count:1,start_index:3},
+  ])
+  const ascending = policy.xDrivePlacesPhotoTimelineGroups(full([...days].reverse()))
+  assert.equal(ascending.day[0].key, '2026-10-01')
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','unknown','2026-11-10',
+  ])), null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
+    'unknown','unknown',
+  ])), null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','2026-10-01','2026-11-10',
+  ])), null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','2026-02-30',
+  ])), null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','bad-date',
+  ])), null)
+  assert.deepEqual(policy.xDrivePlacesPhotoTimelineGroups(full([
+    '2026-11-11','unknown',
+  ])).day,[
+    {key:'2026-11-11',item_count:1,start_index:0},
+    {key:'unknown',item_count:1,start_index:1},
+  ])
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups({
+    ...full(days), total_count: 100000,
+  }),null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups({
+    ...full(days), total_count: 49,
+  }),null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups({
+    ...full(days), offset: 48,
+  }),null)
+  assert.equal(policy.xDrivePlacesPhotoTimelineGroups({
+    ...full(days), timeline_group_sets:{year:[],month:[],day:[]},
+  }),null)
 })

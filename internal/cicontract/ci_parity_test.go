@@ -499,6 +499,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"gzip -dc",
 		"docker load",
 		"loaded Docker image ID mismatch",
+		"config bytes do not match their content-addressed path",
 	)
 
 	if strings.Contains(gitlabRaw, "$ErrorActionPreference") ||
