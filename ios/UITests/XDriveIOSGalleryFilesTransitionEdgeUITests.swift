@@ -56,6 +56,29 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
             .waitForExistence(timeout: 15), "Files section navigation disappeared")
     }
 
+    /// Real Files filter chips live in a horizontally scrollable native List
+    /// header. On 393pt iPhones, the third (Size) chip is off-screen, so
+    /// XCTest must scroll the *correct* horizontal rail before tapping it.
+    private func revealFilesSizeFilter(_ app: XCUIApplication) -> XCUIElement {
+        let rail = target("native-ios-files-search-filters-scroll", app)
+        XCTAssertTrue(rail.waitForExistence(timeout: 15),
+                      "Native Files horizontal filters rail is missing")
+        let control = target("native-ios-files-search-size-filter", app)
+        for _ in 0..<5 {
+            if control.exists && control.isHittable { break }
+            rail.swipeLeft()
+        }
+        if !control.exists || !control.isHittable {
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "files-size-filter-offscreen"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        XCTAssertTrue(control.exists && control.isHittable,
+                      "Actual Files size filter is unreachable after horizontal swipes")
+        return control
+    }
+
     private func assertPixels(_ app: XCUIApplication, _ route: String) {
         guard let cgImage = app.screenshot().image.cgImage else {
             XCTFail("Missing real native screenshot at \(route)")
@@ -477,8 +500,13 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
         XCTAssertTrue(dateToggle.waitForExistence(timeout: 15),
                       "Actual Gallery date filter toggle missing")
         dateToggle.tap()
-        XCTAssertTrue(app.datePickers["开始"].firstMatch.waitForExistence(timeout: 15),
-                      "Date filter draft did not show its real date controls")
+        // Compact-style SwiftUI DatePicker is a button-like AX control on
+        // iOS 18.5, not necessarily an XCUIElementTypeDatePicker. Assert
+        // the actual mounted start/end editors by stable production IDs.
+        XCTAssertTrue(target("native-ios-gallery-filter-date-start", app)
+            .waitForExistence(timeout: 15), "Date range start editor not mounted")
+        XCTAssertTrue(target("native-ios-gallery-filter-date-end", app)
+            .waitForExistence(timeout: 15), "Date range end editor not mounted")
         let cancel = app.navigationBars.buttons["取消"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 15))
         cancel.tap()
@@ -539,15 +567,16 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
         let app = launch(syntheticOwner: true)
         tap("native-ios-tab-files", app)
         enterBrowseHome(app)
-        tap("native-ios-files-search-size-filter", app)
+        let sizeControl = revealFilesSizeFilter(app)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-search-size-filter")
+        sizeControl.tap()
         let small = app.buttons["小于 1 MiB"].firstMatch
         XCTAssertTrue(small.waitForExistence(timeout: 15),
                       "Real Files size-filter Menu choice was not presented")
         print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-size-under-1mib")
         small.tap()
-        let sizeControl = target("native-ios-files-search-size-filter", app)
-        XCTAssertTrue(sizeControl.waitForExistence(timeout: 15))
-        XCTAssertTrue(sizeControl.label.contains("文件大小已筛选"),
+        let activeSize = revealFilesSizeFilter(app)
+        XCTAssertTrue(activeSize.label.contains("文件大小已筛选"),
                       "Applied Files size filter must remain visibly active")
         tap("native-ios-tab-gallery", app)
         tap("native-ios-gallery-source-originals", app)
@@ -556,10 +585,11 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
             "Originals child did not mount after Files global filter")
         tap("native-ios-tab-files", app)
         enterBrowseHome(app)
-        XCTAssertTrue(sizeControl.waitForExistence(timeout: 15))
-        XCTAssertTrue(sizeControl.label.contains("文件大小已筛选"),
+        let restoredSize = revealFilesSizeFilter(app)
+        XCTAssertTrue(restoredSize.label.contains("文件大小已筛选"),
                       "Files silently lost its active size filter on Gallery tab return")
-        tap("native-ios-files-search-size-filter", app)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-search-size-filter-reset")
+        restoredSize.tap()
         let reset = app.buttons["不限大小"].firstMatch
         XCTAssertTrue(reset.waitForExistence(timeout: 15))
         reset.tap()

@@ -1792,6 +1792,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .accessibilityIdentifier("native-ios-files-search-filters-scroll")
                 .disabled(login.owner == nil)
             }
             if !hasVerifiedSearchOptionsForOwner && !searchOptions.loading {

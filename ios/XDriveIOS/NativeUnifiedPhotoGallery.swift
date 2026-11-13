@@ -336,11 +336,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     }))
                     if draft.from != nil {
                         DatePicker("开始", selection: Binding(get: { draft.from ?? Date() }, set: { draft.from = Calendar.current.startOfDay(for: $0) }), displayedComponents: .date)
+                            .accessibilityIdentifier("native-ios-gallery-filter-date-start")
                         DatePicker("结束（含当天）", selection: Binding(get: {
                             (draft.until ?? Date()).addingTimeInterval(-1)
                         }, set: {
                             draft.until = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: $0))
                         }), displayedComponents: .date)
+                            .accessibilityIdentifier("native-ios-gallery-filter-date-end")
                     }
                     Text("两端匹配的照片按本机拍摄日期排列；日期未知的照片只在不限日期时显示。").font(.footnote)
                 }
