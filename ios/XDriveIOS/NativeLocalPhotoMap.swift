@@ -394,6 +394,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+#if DEBUG
+            XDriveIOSMapRealPerformanceProbe.shared.beginFrameWindow("map_pan_zoom")
+#endif
             // Preview auto-fit runs without a delegate; only subsequent
             // native camera changes preserve the user's chosen viewport.
             if showingProvisional && provisionalPresented {
@@ -418,6 +421,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             onCamera?(mapView.region)
+#if DEBUG
+            XDriveIOSMapRealPerformanceProbe.shared.endFrameWindow("map_pan_zoom")
+#endif
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
@@ -807,6 +813,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     }
                     .padding(8)
                 }
+                .accessibilityIdentifier("native-ios-map-place-scroll")
                 .onChange(of: visibleWindowRevision) { _ in
                     if let anchor = autoScrollReturnID,
                        XDriveIOSNativePhotoWallWindowPolicy.canRestore(
@@ -870,6 +877,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 )
             }
             .onAppear {
+#if DEBUG
+                XDriveIOSMapRealPerformanceProbe.shared.beginFrameWindow("place_wall_scroll")
+#endif
                 changes.start()
                 if !started {
                     started = true
@@ -899,6 +909,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 }
             }
             .onDisappear {
+#if DEBUG
+                XDriveIOSMapRealPerformanceProbe.shared.endFrameWindow("place_wall_scroll")
+#endif
                 if viewer == nil {
                     retire()
                     viewerReturnID = nil
@@ -1478,6 +1491,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     ProgressView(album == nil ? "正在读取照片位置…" : "正在读取相册位置…")
                         .accessibilityIdentifier(album == nil ? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress")
                 }
+#if DEBUG
+                if XDriveIOSMapRealPerformanceProbe.enabled {
+                    // Real target PhotoKit snapshot inventory, never fixture-supplied.
+                    Text("total=\(globalTotal) scanned=\(globalScanned) completed=\(XDriveIOSMapRealPerformanceProbe.shared.completedScanCount) cache=\(XDriveIOSMapRealPerformanceProbe.shared.cacheHits)")
+                        .accessibilityIdentifier("native-ios-map-perf-inventory")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+#endif
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke"),
                    album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
@@ -2055,6 +2077,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     cached: item.viewport, camera: finalViewport
                 )
             }) {
+#if DEBUG
+                let cacheStartUptime = ProcessInfo.processInfo.systemUptime
+#endif
                 suspendForSheet()
                 guard phase == .active, mapScope == .library,
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
@@ -2071,6 +2096,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 error = nil
                 mapRevision = UUID()
                 #if DEBUG
+                XDriveIOSMapRealPerformanceProbe.shared.recordCacheHit(
+                    elapsedMilliseconds: max(0,
+                        (ProcessInfo.processInfo.systemUptime - cacheStartUptime) * 1_000),
+                    total: cached.total, located: cached.located)
                 print("IOS_MAP_PERF cache_hit=1 metadata_pages=0")
                 #endif
                 return
@@ -2204,6 +2233,19 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         busy = true
         task = Task { @MainActor in
             let scanStartUptime = ProcessInfo.processInfo.systemUptime
+#if DEBUG
+            var perfToken = XDriveIOSMapRealPerformanceProbe.shared.beginScan(
+                stage: viewport == nil ? "full_library" : "viewport_refinement")
+            defer {
+                // Covers cancellation, permission changes and early exits.
+                if let pending = perfToken {
+                    XDriveIOSMapRealPerformanceProbe.shared.finishScan(
+                        pending, succeeded: false, total: globalTotal,
+                        metadataItems: globalScanned, metadataPages: 0,
+                        located: globalLocated)
+                }
+            }
+#endif
             do {
                 let total = try await worker.startMap(
                     atOffset: 0, album: album, mediaFilter: mediaFilter,
@@ -2251,6 +2293,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         guard generation == ticket, phase == .active else { return }
                         globalScanned = scanned
                         globalLocated = index.locatedCount
+#if DEBUG
+                        XDriveIOSMapRealPerformanceProbe.shared.sampleScan(&perfToken)
+#endif
                         await Task.yield()
                     }
                     if next.page.finished { break }
@@ -2301,6 +2346,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         recentScanMilliseconds.count - sampleLimit)
                 }
                 #if DEBUG
+                XDriveIOSMapRealPerformanceProbe.shared.finishScan(
+                    perfToken, succeeded: true, total: total,
+                    metadataItems: scanned, metadataPages: pages,
+                    located: index.locatedCount)
+                perfToken = nil
                 if let percentiles = XDriveIOSNativeLocalMapAutoRefinePolicy
                     .scanPercentiles(recentScanMilliseconds) {
                     print("IOS_MAP_PERF cache_hit=0 elapsed_ms=\(Int(elapsedMilliseconds)) metadata_pages=\(pages) metadata_items=\(scanned) p50_ms=\(Int(percentiles.p50)) p95_ms=\(Int(percentiles.p95))")
