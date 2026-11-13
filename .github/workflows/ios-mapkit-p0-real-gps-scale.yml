@@ -11,6 +11,8 @@ on:
       - 'ios/XDriveIOS/NativePhotoMapRealPerformanceProbe.swift'
       - 'ios/scripts/audit_real_100k_map_perf.py'
       - 'ios/scripts/test_audit_real_100k_map_perf.py'
+      - 'ios/scripts/import_real_gps_photos.py'
+      - 'ios/scripts/test_import_real_gps_photos.py'
   workflow_dispatch:
     inputs:
       count:
@@ -58,6 +60,7 @@ jobs:
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           python3 -m unittest discover -s ios/scripts -p 'test_generate_mapkit_p0_gps_fixtures.py' -v
           python3 -m unittest discover -s ios/scripts -p 'test_audit_real_100k_map_perf.py' -v
+          python3 -m unittest discover -s ios/scripts -p 'test_import_real_gps_photos.py' -v
           python3 ios/scripts/prepare-navigation-runtime-smoke.py "$GITHUB_WORKSPACE"
           bash ios/scripts/prepare-assets.sh
           (cd ios && xcodegen generate --spec project.yml)
@@ -121,11 +124,14 @@ jobs:
           python3 ios/scripts/generate-mapkit-p0-gps-fixtures.py \
             --source ios/UITests/Fixtures/synthetic-gps-map.jpg \
             --output "$output" --count "$MAP_P0_COUNT" --pattern "$MAP_P0_PATTERN"
-          n="$(find "$output" -name 'gps-*.jpg' -type f | wc -l | tr -d ' ')"
-          test "$n" = "$MAP_P0_COUNT"
-          find "$output" -name 'gps-*.jpg' -type f -print0 |
-            xargs -0 -n 400 xcrun simctl addmedia "$MAP_P0_SIM"
-          echo "MAP_P0_REAL_EXIF_IMPORT requested=$MAP_P0_COUNT batch_size=400"
+          # Independent import harness prints progress after *each successful*
+          # real simctl call and times out a stalled batch. Never treat the
+          # simctl exit status as proof that the Photos database has indexed
+          # all assets: the later independent PHAsset.location audit remains.
+          python3 -u ios/scripts/import_real_gps_photos.py \
+            --source-dir "$output" --simulator "$MAP_P0_SIM" \
+            --count "$MAP_P0_COUNT" --batch-size 400 --timeout-seconds 900 \
+            | tee "$RUNNER_TEMP/map-p0-results/import.log"
       - name: Measure 100k genuine PhotoKit scans, cache reuse, wall scrolling and MapKit gestures
         # The normal PR runs only 65 genuine assets. An explicit 100000
         # workflow_dispatch exercises the expensive REAL 100k dataset.

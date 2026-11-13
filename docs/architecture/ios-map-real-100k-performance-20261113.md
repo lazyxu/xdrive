@@ -55,3 +55,7 @@ GitHub Actions → [iOS MapKit P0 real PhotoKit GPS scale audit](https://github.
 每个 XCTestCase 方法只执行一组 `measure(metrics:options:)`。同一真实 PhotoKit Simulator 中分三次运行：`testP1Real100KPhotoKitMapScanPerformance`、`testP1Real100KPhotoKitMapWallPerformance`、`testP1Real100KPhotoKitMapZoomPerformance`。每次启动记录独立的 `ios-map-100k-scan/wall/zoom-metrics.json`，原生 XCTest 日志分别生成扫描／滚动／缩放的 App CPU、Physical Memory Peak；CI 必须核对三份原始文件和三组真实测量，再合并报告。不能依赖同一 XCTest 方法连续调用三次 `measure()`。
 
 **帧率统计口径**：每个实际 `CADisplayLink` 回调间隔以毫秒数组记录到只含数字的 Debug JSON；审计器会先逐次检查回调数、P50/P95、FPS 与长间隔数量是否和原始间隔一致，然后把同类阶段的全部真实回调间隔合并计算 **总体 P50/P95**，而不是对多个窗口的 P95 再取 P95。它仍属于主线程显示回调观测，**不等于** GPU 最终呈现帧率。
+
+### 真实照片导入阶段进度与失败判定
+
+`ios/scripts/import_real_gps_photos.py` 使用串行、最多 400 个文件一批的真实 `xcrun simctl addmedia`，每批成功后输出 `MAP_P0_IMPORT_BATCH_COMPLETE batch=… imported=… expected=… batch_seconds=…`，记录于 `import.log`。单批 900 秒超时或非零退出立即失败，不跳过该批、不假报导入完成；后续仍必须以 iOS PhotoKit 的独立 `PHAsset.location` 枚举验证精确 +100,000。该脚本的单元测试仅核验传参、顺序、批次、超时和硬失败，并不声称完成真实 PhotoKit 测量。
