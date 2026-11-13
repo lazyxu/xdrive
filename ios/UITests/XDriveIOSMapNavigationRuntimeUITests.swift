@@ -797,9 +797,16 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             XCTAssertFalse(element("native-ios-map-full-library-scan-progress", in: app).exists)
         }
 
-        // The app probe measured the first true cold scan on entry. Measure
-        // four more real full-library rescans for empirical P50/P95.
-        for scan in 1...4 {
+        // The app probe measured the first actual map-entry scan. Capture
+        // true application-targeted XCTest CPU and peak physical memory for
+        // four further real 100k PhotoKit rescans, not just sampled RSS.
+        let scanOptions = XCTMeasureOptions()
+        scanOptions.iterationCount = 4
+        var scan = 0
+        measure(metrics: [
+            XCTCPUMetric(application: app), XCTMemoryMetric(application: app)
+        ], options: scanOptions) {
+            scan += 1
             let menu = element("native-ios-local-map-actions", in: app)
             XCTAssertTrue(menu.waitForExistence(timeout: 20))
             menu.tap()
