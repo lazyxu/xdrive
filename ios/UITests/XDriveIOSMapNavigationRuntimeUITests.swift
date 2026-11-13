@@ -774,6 +774,12 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     /// Swift synthetic spatial-index points for actual PHAssets.
     func testP1Real100KPhotoKitMapPerformance() {
         let app = openLocalMap(performance: true)
+        // The native MKMapView mounts while its 100k PhotoKit scan is
+        // still running. The authoritative verified-count element appears
+        // only after ALL 100k PHAssets have been enumerated and admitted.
+        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
+            .waitForExistence(timeout: 360),
+            "The initial genuine 100k PhotoKit scan never finished")
         let inventory = element("native-ios-map-perf-inventory", in: app)
         XCTAssertTrue(inventory.waitForExistence(timeout: 30),
                       "Real target PhotoKit performance readback is missing")
