@@ -563,4 +563,72 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "mine-gallery-files-signed-out")
     }
 
+
+    // Actual production Notes sources: no fake note/document or Server token.
+    // Switching source must not discard the mounted navigation stack.
+    func testNotesSourceChildrenFilesReturnKeepNativePage() {
+        let app = launch()
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        let picker = app.segmentedControls["笔记来源"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 15), "Notes source picker missing")
+        let iosBackup = picker.buttons["iOS 备份"].firstMatch
+        XCTAssertTrue(iosBackup.waitForExistence(timeout: 15), "Real iOS backup source missing")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-notes-ios-backup")
+        iosBackup.tap()
+        ready("native-ios-notes-page", app: app)
+        XCTAssertTrue(app.buttons["导入 Markdown 和图片"].firstMatch
+            .waitForExistence(timeout: 15), "Read-only Notes import child action missing")
+        let mine = picker.buttons["我的备忘录"].firstMatch
+        XCTAssertTrue(mine.waitForExistence(timeout: 15))
+        mine.tap()
+        XCTAssertTrue(app.buttons["新建笔记"].firstMatch
+            .waitForExistence(timeout: 15), "Writable Notes source lost its toolbar")
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-dynamic", app: app)
+        ready("native-ios-notes-page", app: app)
+        capture(app, "notes-source-files-return")
+    }
+
+    // An unauthenticated synthetic Owner must never be able to enroll a
+    // device receiver. The real failure belongs to the same native screen.
+    func testClipboardUnverifiedRecipientChildFailsClosedWithoutExit() {
+        let app = launch()
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        let enable = app.buttons["启用本机设备定向接收"].firstMatch
+        XCTAssertTrue(enable.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-clipboard-recipient-enroll")
+        enable.tap()
+        ready("ios-clipboard-draft", app: app)
+        XCTAssertTrue(element("ios-clipboard-status", app: app)
+            .waitForExistence(timeout: 15),
+            "Denied device enrollment must report a visible failure")
+        XCTAssertFalse(app.staticTexts["设备定向接收已启用"].firstMatch.exists,
+                       "Synthetic Owner cannot acquire a receiver grant")
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-dynamic", app: app)
+        ready("ios-clipboard-draft", app: app)
+        capture(app, "clipboard-recipient-denial-return")
+    }
+
+    // Mine's Owner-only storage child must remain disabled after tabs change.
+    func testMineOwnerOnlyThumbnailCacheCannotOpenSignedOut() {
+        let app = launch(offlineOwner: false)
+        tap("native-ios-tab-mine", app: app)
+        ready("native-ios-mine-server-account", app: app)
+        let cache = app.buttons["缩略图缓存"].firstMatch
+        XCTAssertTrue(cache.waitForExistence(timeout: 15), "Real Mine cache child entry missing")
+        XCTAssertFalse(cache.isEnabled, "Signed-out Mine must not open Owner cache")
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-mine", app: app)
+        ready("native-ios-mine-server-account", app: app)
+        XCTAssertFalse(cache.isEnabled, "Tab return cannot enable old Owner cache")
+        XCTAssertFalse(element("native-ios-gallery-thumbnail-cache", app: app).exists)
+        capture(app, "mine-disabled-cache-return")
+    }
+
 }

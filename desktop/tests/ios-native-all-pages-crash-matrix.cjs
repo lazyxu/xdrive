@@ -117,7 +117,7 @@ test('six more real native tool, backup, Map and Viewer-free navigation journeys
     'testLocalMapFilesNotesClipboardReturnDoNotExit'
   ];
   const allCases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
-  assert.equal(allCases.length, 33, 'Existing 25 plus eight independent child-page XCTest routes must all run');
+  assert.equal(allCases.length, 36, 'Existing 25 plus eight independent child-page XCTest routes must all run');
   for (const name of names) {
     assert.ok(allCases.includes(name), 'Missing tap-driven XCUITest: ' + name);
     assert.ok(watcher.includes('"' + name + '"'), 'Missing tap-adjacent watcher: ' + name);
@@ -145,7 +145,7 @@ test('eight actual Backup/Gallery/Files/Mine subpage crash journeys are independ
     'testMinePhotoWallChildFilesReturnWithoutSignIn'
   ];
   const allCases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
-  assert.equal(allCases.length, 33, 'Every independent Launcher and subpage route must remain present');
+  assert.equal(allCases.length, 36, 'Every independent Launcher and subpage route must remain present');
   assert.equal(new Set(allCases).size, 33, 'No duplicate method can silently hide a child');
   for (const name of children) {
     assert.ok(allCases.includes(name), 'Missing actual native XCTest child: ' + name);
@@ -168,6 +168,34 @@ test('eight actual Backup/Gallery/Files/Mine subpage crash journeys are independ
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
   assert.doesNotMatch(swift, /forceLogin|fakeToken|mockServerLogin/);
 });
+
+
+test('Notes, Clipboard and signed-out Mine real child routes remain registered in native crash shard', () => {
+  const children = [
+    'testNotesSourceChildrenFilesReturnKeepNativePage',
+    'testClipboardUnverifiedRecipientChildFailsClosedWithoutExit',
+    'testMineOwnerOnlyThumbnailCacheCannotOpenSignedOut'
+  ];
+  const cases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
+  assert.equal(cases.length, 36);
+  assert.equal(new Set(cases).size, 36);
+  for (const name of children) {
+    assert.ok(cases.includes(name), 'Missing real native child route: ' + name);
+    assert.ok(watcher.includes('"' + name + '"'), 'Missing tap-adjacent capture: ' + name);
+  }
+  const notes = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeNotesScreen.swift'), 'utf8');
+  const clipboard = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeClipboardScreen.swift'), 'utf8');
+  const mine = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotosDashboard.swift'), 'utf8');
+  assert.match(notes, /Picker\("笔记来源", selection: \$source\)/);
+  assert.match(notes, /Label\("导入 Markdown 和图片"/);
+  assert.match(clipboard, /Button\("启用本机设备定向接收"\)/);
+  assert.match(clipboard, /accessibilityIdentifier\("ios-clipboard-status"\)/);
+  assert.match(mine, /NavigationLink\("缩略图缓存"\)[\s\S]*?\.disabled\(login\.owner == nil\)/);
+  assert.match(swift, /XCTAssertFalse\(cache\.isEnabled/);
+  assert.match(swift, /XCTAssertFalse\(app\.staticTexts\["设备定向接收已启用"\]/);
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
+});
+
 
 test('real dynamic MapKit source must be closed through native Done before demanding Unified', () => {
   const method = swift.slice(

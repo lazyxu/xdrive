@@ -283,6 +283,12 @@ TARGETS.update({
     "testFilesTagManagementChildRetiresBeforeNotesDoesNotExit",
     "testMinePhotoWallChildFilesReturnWithoutSignIn",
 })
+# Real Notes, Clipboard and signed-out Mine child-page crash checks.
+TARGETS.update({
+    "testNotesSourceChildrenFilesReturnKeepNativePage",
+    "testClipboardUnverifiedRecipientChildFailsClosedWithoutExit",
+    "testMineOwnerOnlyThumbnailCacheCannotOpenSignedOut",
+})
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
