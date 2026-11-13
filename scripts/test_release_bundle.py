@@ -457,6 +457,17 @@ class BundleCacheTests(unittest.TestCase):
                 _download(url, path, len(self.data), hashlib.sha256(self.data).hexdigest(), None)
             self.assertIsNone(opener.call_args.args[0].get_header("Range"))
         self.assertFalse(part.exists())
+        # Corrupted or torn marker bytes must be discarded so the next
+        # attempt can restart cleanly, rather than fail every subsequent
+        # GitLab and GitHub fallback.
+        part.write_bytes(b"bad-partial")
+        marker.write_bytes(bytes([0xff, 0xfe, 0x00]))
+        with patch("release_bundle.OPENER.open", side_effect=OSError("offline")) as opener:
+            with self.assertRaises(OSError):
+                _download(url, path, len(self.data), hashlib.sha256(self.data).hexdigest(), None)
+            self.assertIsNone(opener.call_args.args[0].get_header("Range"))
+        self.assertFalse(part.exists())
+        self.assertFalse(marker.exists())
         other = self.root / "untouchable"
         other.write_bytes(b"keep me")
         marker.symlink_to(other)
