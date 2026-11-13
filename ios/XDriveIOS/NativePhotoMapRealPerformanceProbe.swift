@@ -78,6 +78,16 @@ final class XDriveIOSMapRealPerformanceProbe: NSObject {
         return sorted[max(0, index)]
     }
 
+    private static func jsonNumber(_ value: Double?) -> Any {
+        if let value { return value }
+        return NSNull()
+    }
+
+    private static func jsonMemory(_ value: UInt64?) -> Any {
+        if let value { return value }
+        return NSNull()
+    }
+
     func beginScan(stage: String) -> ScanToken? {
         guard Self.enabled else { return nil }
         beginFrameWindow("scan_ui_\(stage)")
@@ -113,10 +123,10 @@ final class XDriveIOSMapRealPerformanceProbe: NSObject {
             "elapsed_ms": elapsed,
             "total_assets": total, "metadata_items": metadataItems,
             "metadata_pages": metadataPages, "located_items": located,
-            "process_cpu_ms": cpuEnd.flatMap { end in
+            "process_cpu_ms": Self.jsonNumber(cpuEnd.flatMap { end in
                 token.cpuStart.map { max(0, end - $0) * 1_000 }
-            } ?? NSNull() as Any,
-            "sampled_peak_resident_bytes": peak > 0 ? peak as Any : NSNull()
+            }),
+            "sampled_peak_resident_bytes": Self.jsonMemory(peak > 0 ? peak : nil),
         ])
     }
 
@@ -186,11 +196,11 @@ final class XDriveIOSMapRealPerformanceProbe: NSObject {
             "frame_interval_p95_ms": Self.percentile(gaps, 0.95),
             "long_callback_gaps": longerThanOneAndHalfRefresh,
             "screen_max_fps": maxRefresh,
-            "process_cpu_ms": cpuEnd.flatMap { end in
+            "process_cpu_ms": Self.jsonNumber(cpuEnd.flatMap { end in
                 window.cpuStart.map { max(0, end - $0) * 1_000 }
-            } ?? NSNull() as Any,
+            }),
             "sampled_peak_resident_bytes":
-                window.sampledPeakResidentBytes ?? NSNull() as Any
+                Self.jsonMemory(window.sampledPeakResidentBytes)
         ])
     }
 
