@@ -112,7 +112,21 @@ test('P0 real Settings return may re-request Full Photos only after an explicit 
   assert.match(local, /guard phase == \.active, generation == ticket else \{ return \}/)
   assert.match(local, /guard live == \.authorized else \{[\s\S]*?invalidate\(\)[\s\S]*?return/)
   assert.match(local, /recheckExplicitSettingsAuthorization\(\)\s*return/)
-  assert.match(ui, /handleInitialPhotoLibraryPromptIfPresent\(\)\s*recordActualPhotoKitReadback\(app, stage: "after-settings"\)/)
+  // iOS can terminate the app during a real Settings/TCC permission change.
+  // A new Full-only prompt must be handled before the target app readback;
+  // only a genuinely OS-stopped process is allowed to relaunch its map route.
+  const selection = ui.indexOf('var systemRelaunched = resumeMapAfterSystemPhotosChange(')
+  const prompt = ui.indexOf('handleInitialPhotoLibraryPromptIfPresent()', selection)
+  const systemStop = ui.indexOf('if app.state == .notRunning {', prompt)
+  const secondResume = ui.indexOf('resumeMapAfterSystemPhotosChange(', systemStop)
+  const readback = ui.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings")', secondResume)
+  const mapGate = ui.indexOf('if !element("native-ios-full-library-gps-map"', readback)
+  assert.ok(selection >= 0 && selection < prompt && prompt < systemStop &&
+            systemStop < secondResume && secondResume < readback && readback < mapGate)
+  assert.match(ui, /if app\.state != \.notRunning \{\s*app\.activate\(\)/)
+  assert.match(ui, /The still-running app must resume immediately from Settings/)
+  assert.match(ui, /A still-running app must mount real MapKit immediately on Settings return/)
+  assert.match(ui, /No restart may be accepted as a substitute/)
   assert.doesNotMatch(ui, /fakeAuthorized|skipFullAccess|forceGrantPhotoKit/)
 })
 
