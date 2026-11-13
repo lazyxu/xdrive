@@ -369,9 +369,12 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
     }
 
-    private func openLocalMap() -> XCUIApplication {
+    private func openLocalMap(performance: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        if performance {
+            app.launchArguments.append("-xdrive-map-100k-perf")
+        }
         // The candidate Simulator job resets Photos once for the installed
         // target app before UI tests. Do NOT reset again for every testcase:
         // a later reset can invalidate the system Full Access selected by a
@@ -765,4 +768,98 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+
+    /// Runs only after CI has imported and independently counted 100,000 real
+    /// EXIF-GPS JPEGs in the simulator's PhotoKit database. Never substitutes
+    /// Swift synthetic spatial-index points for actual PHAssets.
+    func testP1Real100KPhotoKitMapPerformance() {
+        let app = openLocalMap(performance: true)
+        let inventory = element("native-ios-map-perf-inventory", in: app)
+        XCTAssertTrue(inventory.waitForExistence(timeout: 30),
+                      "Real target PhotoKit performance readback is missing")
+        let total = inventory.label.split(separator: " ").first
+            .flatMap { Int($0.replacingOccurrences(of: "total=", with: "")) }
+        XCTAssertGreaterThanOrEqual(total ?? 0, 100_000,
+            "Perf suite needs 100k actual PHAssets, not synthetic points")
+        let initialCompleted = inventory.label.split(separator: " ")
+            .first(where: { $0.hasPrefix("completed=") })
+            .flatMap { Int($0.replacingOccurrences(of: "completed=", with: "")) } ?? 0
+        XCTAssertGreaterThanOrEqual(initialCompleted, 1,
+            "First genuine PhotoKit scan was not completed")
+
+        func waitForScan(_ count: Int) {
+            let exp = XCTNSPredicateExpectation(
+                predicate: NSPredicate(
+                    format: "label CONTAINS %@", "completed=\(count)"
+                ), object: inventory)
+            XCTAssertEqual(XCTWaiter.wait(for: [exp], timeout: 360), .completed,
+                "Genuine 100k scan \(count) did not finish")
+            XCTAssertFalse(element("native-ios-map-full-library-scan-progress", in: app).exists)
+        }
+
+        // The app probe measured the first true cold scan on entry. Measure
+        // four more real full-library rescans for empirical P50/P95.
+        for scan in 1...4 {
+            let menu = element("native-ios-local-map-actions", in: app)
+            XCTAssertTrue(menu.waitForExistence(timeout: 20))
+            menu.tap()
+            let action = element("native-ios-map-scan-full-library", in: app)
+            let fallback = app.descendants(matching: .any)
+                .matching(NSPredicate(
+                    format: "label == %@", "重新扫描已授权图库位置"))
+                .firstMatch
+            XCTAssertTrue(action.waitForExistence(timeout: 5) ||
+                          fallback.waitForExistence(timeout: 5),
+                "Real MapKit rescan menu item is missing")
+            (action.exists ? action : fallback).tap()
+            waitForScan(initialCompleted + scan)
+        }
+
+        let map = element("native-ios-full-library-gps-map", in: app)
+        XCTAssertTrue(map.waitForExistence(timeout: 30))
+        let marker = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "张带定位照片"))
+            .firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 40),
+            "100k genuine GPS photos produced no selectable MapKit cell")
+        marker.tap()
+        let scroll = element("native-ios-map-place-scroll", in: app)
+        XCTAssertTrue(scroll.waitForExistence(timeout: 80),
+            "Real native place-album ScrollView did not mount")
+        XCTAssertTrue(element("native-ios-map-photo-wall-tile", in: app)
+            .waitForExistence(timeout: 60),
+            "Real PhotoKit wall loaded no authorized photo")
+        let wallOptions = XCTMeasureOptions()
+        wallOptions.iterationCount = 3
+        measure(metrics: [
+            XCTCPUMetric(application: app), XCTMemoryMetric(application: app)
+        ], options: wallOptions) {
+            for _ in 0..<5 { scroll.swipeUp() }
+            for _ in 0..<3 { scroll.swipeDown() }
+        }
+        let close = element("native-ios-map-place-dismiss", in: app)
+        XCTAssertTrue(close.waitForExistence(timeout: 15))
+        close.tap()
+        XCTAssertTrue(map.waitForExistence(timeout: 30))
+
+        // Real MKMapView gestures; no fake cache flag or direct viewport API.
+        // Each region settles for the normal 900ms PhotoKit refinement policy.
+        let zoomOptions = XCTMeasureOptions()
+        zoomOptions.iterationCount = 3
+        measure(metrics: [
+            XCTCPUMetric(application: app), XCTMemoryMetric(application: app)
+        ], options: zoomOptions) {
+            map.pinch(withScale: 2.0, velocity: 1.0)
+            Thread.sleep(forTimeInterval: 2)
+            map.swipeLeft()
+            Thread.sleep(forTimeInterval: 2)
+            map.swipeRight()
+            Thread.sleep(forTimeInterval: 2)
+        }
+        XCTAssertTrue(map.exists)
+        XCTAssertEqual(app.state, .runningForeground)
+        // Artifact JSON independently requires >=1 actual zero-page cache
+        // reuse and completed frame/CPU/RSS measurements. No fake pass.
+        print("IOS_MAP_REAL_100K_UI_JOURNEY_COMPLETE inventory=\(inventory.label)")
+    }
 }
