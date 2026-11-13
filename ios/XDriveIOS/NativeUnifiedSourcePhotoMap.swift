@@ -420,7 +420,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             XDriveIOSUnifiedPhotoTile(
                 row: row, login: login, presentingOwner: owner,
                 displayActive: active && viewing == nil,
-                retainWhileCovered: viewing != nil)
+                retainWhileCovered: viewing != nil, framing: .square)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-unified-source-map-photo")
