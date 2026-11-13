@@ -228,7 +228,7 @@ test('real iOS first-use Photo Library system prompt cannot be default-denied by
   assert.match(simulator, /"Real initial Photos prompt must permit explicit Full Access"/)
   assert.match(simulator, /acceptPhotoLibraryFullAccess\(in: alert, stage: "interruption"\)/)
   const monitor = simulator.indexOf('addUIInterruptionMonitor(')
-  const openLocalMap = simulator.indexOf('private func openLocalMap()')
+  const openLocalMap = simulator.search(/private func openLocalMap\(performance: Bool = false\) -> XCUIApplication/)
   const launch = simulator.indexOf('app.launch()', openLocalMap)
   const proactive = simulator.indexOf('handleInitialPhotoLibraryPromptIfPresent()', launch)
   const launcher = simulator.indexOf('let launcher = element("native-ios-tab-launcher", in: app)', launch)
