@@ -5,10 +5,23 @@ on:
       - test/ios-lan-stage3-red-repro-20261113
     paths:
       - 'ios/tests/NativeLANStage3NoChallengeRepro.swift'
+      - 'ios/tests/check-native-lan-stage3-no-challenge.py'
       - '.github/workflows/ios-lan-stage3-red-repro.yml'
 permissions:
   contents: read
 jobs:
+  red-baseline-exact-swift-function:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile original Swift classification function and observe RED
+        run: |
+          set -euo pipefail
+          swiftc --version
+          python3 ios/tests/check-native-lan-stage3-no-challenge.py
   red-baseline-classification:
     runs-on: macos-15
     timeout-minutes: 10
