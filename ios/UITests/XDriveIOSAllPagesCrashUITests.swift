@@ -435,6 +435,14 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
 
     private func openGalleryBackup(_ item: String, app: XCUIApplication) {
         tap("native-ios-tab-gallery", app: app)
+        let backup = element("native-ios-gallery-backup-settings", app: app)
+        XCTAssertTrue(backup.waitForExistence(timeout: 15), "Native Gallery backup entry missing")
+        // The real iOS 18.5 failure was a 15.3pt AX hitbox, not a process
+        // crash. Keep the minimum target and hittability regression gates.
+        XCTAssertGreaterThanOrEqual(backup.frame.height, 40,
+                                    "Gallery backup control regressed to a 15pt tap target")
+        XCTAssertTrue(backup.isHittable,
+                      "Gallery backup control is obstructed by its header")
         tap("native-ios-gallery-backup-settings", app: app)
         tapNamed(item, route: "native-ios-gallery-backup-child", app: app)
     }

@@ -238,7 +238,13 @@ test('real Simulator regressions keep Gallery backup 44pt, Notes source AX and g
   assert.match(dashboard, /Label\("备份", systemImage: "icloud\.and\.arrow\.up"\)[\s\S]*?\.frame\(minWidth: 68, minHeight: 44\)/);
   assert.match(notes, /\.pickerStyle\(\.segmented\)[\s\S]*?\.accessibilityIdentifier\("native-ios-notes-source-picker"\)/);
   assert.match(swift, /let picker = element\("native-ios-notes-source-picker", app: app\)/);
-  assert.match(login, /if !startupReady && readinessTask == nil \{\s*armReadinessAfterMount\(\)/);
+  // A 2-second retry cannot restore a revoked visible lease. Root ownership
+  // retains the real restore/visible/foreground gate without polling.
+  assert.match(login, /\.onAppear \{ workspaceAppeared\(\) \}\s*\.onDisappear \{\s*workspaceDisappeared\(\)/);
+  assert.match(login, /if finished \{ workspaceAppeared\(\) \}/);
+  assert.doesNotMatch(login, /Timer\.publish\(every: 2, on: \.main/);
+  assert.doesNotMatch(login, /\.onAppear \{ workspaceAppeared\(\) \}\s*\.onDisappear \{ workspaceDisappeared\(\) \}/);
+  assert.match(swift, /XCTAssertGreaterThanOrEqual\(backup\.frame\.height, 40/);
   assert.match(login, /XDriveIOSNativeLaunchCheckpoint\.mayFinishStartup\([\s\S]*?restoreComplete: restoreFinished, workspaceVisible: workspaceVisible,[\s\S]*?foreground: phase == \.active/);
   assert.match(login, /Task\.sleep\(nanoseconds: 3_000_000_000\)/);
 });
