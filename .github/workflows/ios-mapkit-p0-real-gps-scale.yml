@@ -36,7 +36,9 @@ jobs:
     # run. Other PR labels do not launch this job.
     if: ${{ github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'real-photokit-100k-once' }}
     runs-on: macos-15
-    timeout-minutes: 180
+    # A full 100k import plus multiple real PHAsset rescans can exceed 3h.
+    # Keep the job bounded, but reserve enough time for genuine measurements.
+    timeout-minutes: 360
     env:
       MAP_P0_COUNT: ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'real-photokit-100k-once') && '100000' || inputs.count || '65' }}
       MAP_P0_PATTERN: ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'real-photokit-100k-once') && 'mixed' || inputs.pattern || 'distinct' }}
@@ -122,8 +124,8 @@ jobs:
           n="$(find "$output" -name 'gps-*.jpg' -type f | wc -l | tr -d ' ')"
           test "$n" = "$MAP_P0_COUNT"
           find "$output" -name 'gps-*.jpg' -type f -print0 |
-            xargs -0 -n 100 xcrun simctl addmedia "$MAP_P0_SIM"
-          echo "MAP_P0_REAL_EXIF_IMPORT requested=$MAP_P0_COUNT"
+            xargs -0 -n 400 xcrun simctl addmedia "$MAP_P0_SIM"
+          echo "MAP_P0_REAL_EXIF_IMPORT requested=$MAP_P0_COUNT batch_size=400"
       - name: Measure 100k genuine PhotoKit scans, cache reuse, wall scrolling and MapKit gestures
         # The normal PR runs only 65 genuine assets. An explicit 100000
         # workflow_dispatch exercises the expensive REAL 100k dataset.
