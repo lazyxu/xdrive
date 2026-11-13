@@ -25,6 +25,21 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
+    /// Parse exact numeric counters from the genuine target PhotoKit scan.
+    /// An AX parsing failure is not an empty real photo library.
+    private func performanceReadbackCount(
+        _ key: String, in inventory: XCUIElement
+    ) -> Int? {
+        let fields = inventory.label.split(whereSeparator: {
+            $0.isWhitespace || $0 == "," || $0 == ";"
+        })
+        let prefix = key + "="
+        guard let field = fields.first(where: { $0.hasPrefix(prefix) }) else {
+            return nil
+        }
+        return Int(field.dropFirst(prefix.count))
+    }
+
     /// Only Apple's genuine system Photo Library permission alert may be
     /// handled here. This is not a TCC grant, fake readWrite value or shortcut
     /// to mounting MapKit: the target app must still report .authorized.
@@ -787,13 +802,13 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let inventory = element("native-ios-map-perf-inventory", in: app)
         XCTAssertTrue(inventory.waitForExistence(timeout: 30),
                       "Real target PhotoKit performance readback is missing")
-        let total = inventory.label.split(separator: " ").first
-            .flatMap { Int($0.replacingOccurrences(of: "total=", with: "")) }
+        let total = performanceReadbackCount("total", in: inventory)
+        print("IOS_MAP_100K_ACTUAL_INVENTORY label=\(inventory.label) value=\(String(describing: inventory.value))")
+        XCTAssertNotNil(total,
+            "Missing actual numeric total= readback from native PhotoKit map: \(inventory.label)")
         XCTAssertGreaterThanOrEqual(total ?? 0, 100_000,
-            "Perf suite needs 100k actual PHAssets, not synthetic points")
-        let initialCompleted = inventory.label.split(separator: " ")
-            .first(where: { $0.hasPrefix("completed=") })
-            .flatMap { Int($0.replacingOccurrences(of: "completed=", with: "")) } ?? 0
+            "Actual authorized PhotoKit inventory is not yet 100k: \(inventory.label)")
+        let initialCompleted = performanceReadbackCount("completed", in: inventory) ?? 0
         XCTAssertGreaterThanOrEqual(initialCompleted, 1,
             "First genuine PhotoKit scan was not completed")
 
@@ -846,13 +861,13 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let inventory = element("native-ios-map-perf-inventory", in: app)
         XCTAssertTrue(inventory.waitForExistence(timeout: 30),
                       "Real target PhotoKit performance readback is missing")
-        let total = inventory.label.split(separator: " ").first
-            .flatMap { Int($0.replacingOccurrences(of: "total=", with: "")) }
+        let total = performanceReadbackCount("total", in: inventory)
+        print("IOS_MAP_100K_ACTUAL_INVENTORY label=\(inventory.label) value=\(String(describing: inventory.value))")
+        XCTAssertNotNil(total,
+            "Missing actual numeric total= readback from native PhotoKit map: \(inventory.label)")
         XCTAssertGreaterThanOrEqual(total ?? 0, 100_000,
-            "Perf suite needs 100k actual PHAssets, not synthetic points")
-        let initialCompleted = inventory.label.split(separator: " ")
-            .first(where: { $0.hasPrefix("completed=") })
-            .flatMap { Int($0.replacingOccurrences(of: "completed=", with: "")) } ?? 0
+            "Actual authorized PhotoKit inventory is not yet 100k: \(inventory.label)")
+        let initialCompleted = performanceReadbackCount("completed", in: inventory) ?? 0
         XCTAssertGreaterThanOrEqual(initialCompleted, 1,
             "First genuine PhotoKit scan was not completed")
 
@@ -905,13 +920,13 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let inventory = element("native-ios-map-perf-inventory", in: app)
         XCTAssertTrue(inventory.waitForExistence(timeout: 30),
                       "Real target PhotoKit performance readback is missing")
-        let total = inventory.label.split(separator: " ").first
-            .flatMap { Int($0.replacingOccurrences(of: "total=", with: "")) }
+        let total = performanceReadbackCount("total", in: inventory)
+        print("IOS_MAP_100K_ACTUAL_INVENTORY label=\(inventory.label) value=\(String(describing: inventory.value))")
+        XCTAssertNotNil(total,
+            "Missing actual numeric total= readback from native PhotoKit map: \(inventory.label)")
         XCTAssertGreaterThanOrEqual(total ?? 0, 100_000,
-            "Perf suite needs 100k actual PHAssets, not synthetic points")
-        let initialCompleted = inventory.label.split(separator: " ")
-            .first(where: { $0.hasPrefix("completed=") })
-            .flatMap { Int($0.replacingOccurrences(of: "completed=", with: "")) } ?? 0
+            "Actual authorized PhotoKit inventory is not yet 100k: \(inventory.label)")
+        let initialCompleted = performanceReadbackCount("completed", in: inventory) ?? 0
         XCTAssertGreaterThanOrEqual(initialCompleted, 1,
             "First genuine PhotoKit scan was not completed")
 
@@ -920,10 +935,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         // threshold. One 2x pinch is insufficient to produce any viewport
         // scan, so it cannot honestly establish a cache hit.
         func metricCounter(_ key: String) -> Int {
-            let field = inventory.label.split(separator: " ")
-                .first(where: { $0.hasPrefix("\(key)=") })
-            guard let field else { return -1 }
-            return Int(field.dropFirst(key.count + 1)) ?? -1
+            performanceReadbackCount(key, in: inventory) ?? -1
         }
 
         func waitForCounterIncrease(_ key: String, from oldValue: Int) -> Bool {

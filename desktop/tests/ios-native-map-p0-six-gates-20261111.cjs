@@ -158,3 +158,19 @@ test('system Photos TCC termination preserves real app recovery and crash eviden
   assert.match(settings, /native-ios-full-library-gps-map/)
   assert.doesNotMatch(resume + settings, /fakePhotoKit|fakeAuthorized|skipFullAccess|forceGrantPhotoKit/)
 })
+
+test('real 100k MapKit XCTest has bound MapView and exact numeric target PhotoKit evidence', () => {
+  const zoomStart = ui.indexOf('func testP1Real100KPhotoKitMapZoomPerformance()')
+  assert.ok(zoomStart >= 0, 'real 100k zoom test must be registered')
+  const zoom = ui.slice(zoomStart)
+  const bind = zoom.indexOf('let map = element("native-ios-full-library-gps-map", in: app)')
+  const gesture = zoom.indexOf('map.pinch(withScale:')
+  assert.ok(bind >= 0 && gesture > bind,
+    'Real map view must be defined before the independent zoom method uses it')
+  assert.match(zoom, /performanceReadbackCount\("total", in: inventory\)/)
+  assert.match(zoom, /performanceReadbackCount\(key, in: inventory\)/)
+  assert.match(ui, /XCTAssertNotNil\(total,[\s\S]*?Missing actual numeric total=/)
+  assert.doesNotMatch(zoom, /fakePhotoKit|forceGrantPhotoKit|bypassAuthorization/)
+  assert.match(local, /\.accessibilityLabel\("total=/)
+  assert.match(local, /native-ios-map-perf-inventory/)
+})

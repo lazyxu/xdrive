@@ -1510,6 +1510,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 if XDriveIOSMapRealPerformanceProbe.enabled {
                     // Real target PhotoKit snapshot inventory, never fixture-supplied.
                     Text("total=\(globalTotal) scanned=\(globalScanned) completed=\(XDriveIOSMapRealPerformanceProbe.shared.completedScanCount) cache=\(XDriveIOSMapRealPerformanceProbe.shared.cacheHits)")
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("total=\(globalTotal) scanned=\(globalScanned) completed=\(XDriveIOSMapRealPerformanceProbe.shared.completedScanCount) cache=\(XDriveIOSMapRealPerformanceProbe.shared.cacheHits)")
                         .accessibilityIdentifier("native-ios-map-perf-inventory")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
