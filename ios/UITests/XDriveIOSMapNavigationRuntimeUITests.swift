@@ -839,7 +839,8 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let wallOptions = XCTMeasureOptions()
         wallOptions.iterationCount = 3
         measure(metrics: [
-            XCTCPUMetric(application: app), XCTMemoryMetric(application: app)
+            XCTCPUMetric(application: app), XCTMemoryMetric(application: app),
+            XCTHitchMetric(application: app)
         ], options: wallOptions) {
             for _ in 0..<5 { scroll.swipeUp() }
             for _ in 0..<3 { scroll.swipeDown() }
@@ -854,7 +855,8 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let zoomOptions = XCTMeasureOptions()
         zoomOptions.iterationCount = 3
         measure(metrics: [
-            XCTCPUMetric(application: app), XCTMemoryMetric(application: app)
+            XCTCPUMetric(application: app), XCTMemoryMetric(application: app),
+            XCTHitchMetric(application: app)
         ], options: zoomOptions) {
             map.pinch(withScale: 2.0, velocity: 1.0)
             Thread.sleep(forTimeInterval: 2)
