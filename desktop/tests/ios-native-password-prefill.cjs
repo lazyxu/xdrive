@@ -100,3 +100,27 @@ test('Keychain autofill errors remain visible during cold start and account sele
                         '    /// Forget only this Server+username.')
   assert.match(retry, /errorMessage = nil\s+restoreAttempted = false\s+await restore\(\)/)
 })
+
+test('user opting out revokes only the selected saved password before advertising OFF', () => {
+  const toggle = between('    func setRememberPasswordFromUser(_ enabled: Bool) {',
+                         '    /// Account and route changes')
+  assert.match(toggle, /guard !busy, active == nil else \\{ return \\}/)
+  assert.match(toggle, /if enabled \\{\\s+rememberPassword = true/)
+  assert.match(toggle, /guard let item = currentSavedProfile else/)
+  const remove = toggle.indexOf('try XDriveIOSNativePasswordProfiles.removePassword(for: item)')
+  const off = toggle.indexOf('rememberPassword = false', toggle.indexOf('do {'))
+  assert.ok(remove >= 0 && off > remove, 'never claim OFF before deleting Keychain secret')
+  assert.match(toggle, /catch \\{\\s+rememberPassword = true\\s+errorMessage = /)
+  assert.doesNotMatch(toggle, /XDriveIOSNativeOwnerSessionStore\\.clear|UserDefaults\\.standard|AuthService|signIn\\(/)
+})
+
+test('SwiftUI calls explicit user-only opt-out rather than revoking during automatic password prefill', () => {
+  assert.match(screen, /Toggle\\("安全保存当前账号密码", isOn: Binding\\(\\s+get: \\{ model.rememberPassword \\},\\s+set: \\{ model.setRememberPasswordFromUser\\(\\$0\\) \\}/)
+  assert.doesNotMatch(screen, /Toggle\\("安全保存当前账号密码", isOn: \\$model\\.rememberPassword\\)/)
+  const init = between('    init() {', '    var currentSavedProfile:')
+  const prefill = between('    private func prefillSavedPasswordForCurrentProfile() {',
+                          '    /// A user turning OFF secure storage')
+  const choose = between('    func chooseSavedProfile(', '    /// User-triggered only:')
+  assert.doesNotMatch(init + prefill + choose, /setRememberPasswordFromUser\\(/)
+  assert.match(prefill, /password = saved\\s+rememberPassword = true/)
+})
