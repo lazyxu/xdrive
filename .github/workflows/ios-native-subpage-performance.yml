@@ -81,7 +81,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests \
             2>&1 | tee "$RUNNER_TEMP/native-subpage-perf/xcodebuild.log"
-      - name: Require all 20 actual subpage paths and genuine per-route XCTest resource samples
+      - name: Require all 22 actual subpage paths and genuine per-route XCTest resource samples
         shell: bash
         run: |
           set -euo pipefail
