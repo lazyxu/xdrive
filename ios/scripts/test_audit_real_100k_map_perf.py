@@ -57,7 +57,11 @@ def fixture():
             "sampled_peak_resident_bytes": 130000000,
         })
     return {"schema": SCHEMA,
-            "run_stages": ["scan", "wall", "zoom"], "events": events}
+            "run_stages": ["scan", "wall", "zoom"],
+            "stage_evidence": ["five-completed-real-snapshots",
+                               "touch-driven-cadispaylink",
+                               "map-cadispaylink-and-verified-cache"],
+            "events": events}
 
 
 class Real100KAuditContracts(unittest.TestCase):
@@ -68,6 +72,12 @@ class Real100KAuditContracts(unittest.TestCase):
         self.assertEqual(value["proven_real_photokit_delta"], 100000)
         self.assertEqual(set(value["frame_stages"]), {
             "scan_ui_full_library", "map_pan_zoom", "place_wall_scroll"})
+
+    def test_reject_missing_per_stage_provenance(self):
+        modified = fixture()
+        modified["stage_evidence"] = []
+        with self.assertRaisesRegex(ValueError, "stage evidence"):
+            audit(modified, before=0, after=100000, expected=100000)
 
     def test_reject_synthetic_or_short_photo_library(self):
         with self.assertRaisesRegex(ValueError, "exactly 100000"):

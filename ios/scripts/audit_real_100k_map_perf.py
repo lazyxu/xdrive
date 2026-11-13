@@ -93,6 +93,11 @@ def audit(report: dict, before: int, after: int, expected: int,
     require(report.get("schema") == SCHEMA, "report schema or real-app source mismatch")
     require(report.get("run_stages") == ["scan", "wall", "zoom"],
             "missing separate real-app scan/wall/zoom performance reports")
+    require(report.get("stage_evidence") == [
+        "five-completed-real-snapshots",
+        "touch-driven-cadispaylink",
+        "map-cadispaylink-and-verified-cache",
+    ], "missing independently verified real-app stage evidence")
     require(expected >= 100_000, "this suite requires >=100,000 real PhotoKit assets")
     require(after - before == expected,
             f"real Photos inventory did not grow by exactly {expected}: {before}->{after}")
