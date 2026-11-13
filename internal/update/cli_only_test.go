@@ -98,7 +98,7 @@ func createCLIOnlyTestTar(t *testing.T, members []cliOnlyArchiveMember) string {
 	tw := tar.NewWriter(gz)
 	for _, m := range members {
 		header := &tar.Header{Name: m.name, Size: int64(len(m.payload)), Mode: int64(m.mode.Perm())}
-		if m.name == "xdrive-backup/" {
+		if m.mode.IsDir() {
 			header.Size = 0
 			header.Typeflag = tar.TypeDir
 		} else if m.mode&os.ModeSymlink != 0 {
