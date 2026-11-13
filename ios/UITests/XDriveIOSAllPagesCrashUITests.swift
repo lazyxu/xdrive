@@ -411,4 +411,156 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "map-files-tools-return")
     }
 
+
+    /// A real menu/button route, not a coordinate-based stand-in.
+    /// Every subpage transition is followed by an actual mounted-page check.
+    private func tapNamed(_ title: String, route: String, app: XCUIApplication) {
+        let button = app.buttons[title].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 15),
+                      "Native child action missing: \(title)")
+        XCTAssertTrue(button.isHittable,
+                      "Native child action is obstructed: \(title)")
+        print("IOS_NATIVE_NAV_TAP_START route=\(route)")
+        button.tap()
+        XCTAssertEqual(app.state, .runningForeground, "Process exited after \(route)")
+    }
+
+    private func waitRetired(_ id: String, app: XCUIApplication) {
+        let stale = element(id, app: app)
+        let retired = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: stale)
+        XCTAssertEqual(XCTWaiter.wait(for: [retired], timeout: 12), .completed,
+                       "Old child remained mounted after dismissal: \(id)")
+    }
+
+    private func openGalleryBackup(_ item: String, app: XCUIApplication) {
+        tap("native-ios-tab-gallery", app: app)
+        tap("native-ios-gallery-backup-settings", app: app)
+        tapNamed(item, route: "native-ios-gallery-backup-child", app: app)
+    }
+
+    // Each previously untested child entry has its own XCTest. A failed
+    // entry cannot mask later siblings, and the mandatory navigation shard
+    // retains the native process crash report plus a tap-adjacent screenshot.
+    func testBackupDetailsChildFilesReturnDoesNotExit() {
+        let app = launch()
+        openLauncher("backup", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tapNamed("备份详情", route: "native-ios-backup-details", app: app)
+        ready("native-ios-backup-portrait-form", app: app)
+        capture(app, "backup-details-child")
+        tapNamed("返回相册备份", route: "native-ios-backup-details-return", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        XCTAssertFalse(element("native-ios-backup-portrait-form", app: app).exists)
+    }
+
+    func testBackupAuditChildForegroundReturnDoesNotExit() {
+        let app = launch()
+        openLauncher("backup", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tapNamed("逐项核验当前云端原件", route: "native-ios-backup-audit", app: app)
+        ready("native-ios-backup-portrait-form", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-backup-portrait-form", app: app)
+        capture(app, "backup-audit-foreground")
+        tapNamed("返回相册备份", route: "native-ios-backup-audit-return", app: app)
+        ready("native-ios-backup-overview", app: app)
+        XCTAssertFalse(element("native-ios-backup-portrait-form", app: app).exists)
+    }
+
+    func testGalleryBackupSettingsChildReturnDoesNotExit() {
+        let app = launch()
+        openGalleryBackup("备份设置", app: app)
+        ready("native-ios-backup-portrait-form", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-dynamic", app: app)
+        ready("native-ios-backup-portrait-form", app: app)
+        capture(app, "gallery-backup-settings-resume")
+        tapNamed("返回相册备份", route: "native-ios-gallery-settings-return", app: app)
+        ready("native-ios-backup-overview", app: app)
+    }
+
+    func testGalleryFocusedBackupChildDoesNotStartUpload() {
+        let app = launch()
+        openGalleryBackup("集中备份（需确认）", app: app)
+        ready("native-ios-backup-portrait-form", app: app)
+        XCTAssertFalse(element("native-ios-photos-focused-progress", app: app).exists,
+                       "Navigation-only shortcut must not start an upload")
+        capture(app, "gallery-backup-focused-no-consent")
+        tapNamed("返回相册备份", route: "native-ios-gallery-focused-return", app: app)
+        ready("native-ios-backup-overview", app: app)
+    }
+
+    func testGalleryBackupQueueSheetRetiresDoesNotExit() {
+        let app = launch()
+        openGalleryBackup("查看备份任务队列", app: app)
+        ready("native-ios-photo-task-list-done", app: app)
+        capture(app, "gallery-backup-queue-child")
+        tap("native-ios-photo-task-list-done", app: app)
+        waitRetired("native-ios-photo-task-list-done", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+    }
+
+    func testGalleryCacheSheetBackgroundDismissDoesNotExit() {
+        let app = launch()
+        openGalleryBackup("释放本机缓存空间（不删除照片原件）", app: app)
+        ready("native-ios-gallery-thumbnail-cache", app: app)
+        ready("native-ios-backup-cache-sheet-close", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-gallery-thumbnail-cache", app: app)
+        capture(app, "gallery-cache-after-foreground")
+        tap("native-ios-backup-cache-sheet-close", app: app)
+        waitRetired("native-ios-gallery-thumbnail-cache", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+    }
+
+    func testFilesTagManagementChildRetiresBeforeNotesDoesNotExit() {
+        let app = launch()
+        tap("native-ios-tab-files", app: app)
+        let browse = element("native-ios-files-section-browse", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        if (browse.value as? String) != "已选择" {
+            tap("native-ios-files-section-browse", app: app)
+        }
+        XCTAssertEqual(browse.value as? String, "已选择")
+        let home = element("native-ios-files-home-list", app: app)
+        XCTAssertTrue(home.waitForExistence(timeout: 15), "Browse Home is not mounted")
+        let tags = element("native-ios-files-home-manage-tags", app: app)
+        for _ in 0..<8 {
+            if tags.exists && tags.isHittable { break }
+            home.swipeUp()
+        }
+        XCTAssertTrue(tags.exists && tags.isHittable,
+                      "Real Tags Manager entry cannot be reached in Files Home")
+        tap("native-ios-files-home-manage-tags", app: app)
+        ready("native-ios-files-tag-management", app: app)
+        capture(app, "files-tag-manager-child")
+        tapNamed("完成", route: "native-ios-files-tag-manager-return", app: app)
+        waitRetired("native-ios-files-tag-management", app: app)
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+    }
+
+    func testMinePhotoWallChildFilesReturnWithoutSignIn() {
+        let app = launch(offlineOwner: false)
+        tap("native-ios-tab-mine", app: app)
+        ready("native-ios-mine-server-account", app: app)
+        tapNamed("相册与照片墙", route: "native-ios-mine-photo-wall", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-mine", app: app)
+        ready("native-ios-mine-server-account", app: app)
+        XCTAssertFalse(element("native-ios-mine-server-account", app: app).isEnabled,
+                       "Switching children must not manufacture a verified Owner")
+        capture(app, "mine-gallery-files-signed-out")
+    }
+
 }
