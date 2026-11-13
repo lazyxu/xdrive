@@ -160,7 +160,8 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
       expected, name)
   }
-  assert.match(map, /wallDensity = wallDensity\.applyingPinch\(scale\)/)
+  assert.equal((map.match(/\.xdrivePhotoWallPinch\(/g) || []).length, 2)
+  assert.doesNotMatch(map, /MagnificationGesture\(minimumScaleDelta:/)
   assert.match(shared, /struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier/)
   assert.match(shared, /density = density\.applyingPinch\(scale\)/)
   assert.match(cluster, /\.xdrivePhotoWallPinch\(/)
@@ -185,7 +186,8 @@ test('P1-09: videos, Live badges and date groups match Gallery; map cannot acqui
   assert.match(tile, /seconds: asset\.duration/)
   assert.match(shared, /else if isLive \{\s*Image\(systemName: "livephoto"\)/)
   assert.match(tile, /loader\.cancel\(\)/)
-  assert.equal((map.match(/XDriveIOSNativeSquarePhotoTile\(candidate: item\)/g) || []).length, 2)
+  assert.equal((map.match(/XDriveIOSNativeSquarePhotoTile\(candidate: item, framing: wallFraming\)/g) || []).length, 2)
+  assert.equal((map.match(/XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/g) || []).length, 2)
   assert.match(gallery, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
   assert.match(album, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
   assert.match(album, /@State private var selectionMode = false/)
