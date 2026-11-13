@@ -121,7 +121,7 @@ test('six more real native tool, backup, Map and Viewer-free navigation journeys
     'testLocalMapFilesNotesClipboardReturnDoNotExit'
   ];
   const allCases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
-  assert.equal(allCases.length, 36, 'All 36 independent Launcher and child-page XCTest routes must all run');
+  assert.ok(allCases.length >= 38, 'All 36 independent Launcher and child-page XCTest routes must all run');
   for (const name of names) {
     assert.ok(allCases.includes(name), 'Missing tap-driven XCUITest: ' + name);
     assert.ok(watcher.includes('"' + name + '"'), 'Missing tap-adjacent watcher: ' + name);
@@ -149,7 +149,7 @@ test('eight actual Backup/Gallery/Files/Mine subpage crash journeys are independ
     'testMinePhotoWallChildFilesReturnWithoutSignIn'
   ];
   const allCases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
-  assert.equal(allCases.length, 36, 'Every independent Launcher and subpage route must remain present');
+  assert.ok(allCases.length >= 38, 'Every independent Launcher and subpage route must remain present');
   assert.equal(new Set(allCases).size, allCases.length, 'No duplicate method can silently hide a child');
   for (const name of children) {
     assert.ok(allCases.includes(name), 'Missing actual native XCTest child: ' + name);
@@ -181,8 +181,8 @@ test('Notes, Clipboard and signed-out Mine real child routes remain registered i
     'testMineOwnerOnlyThumbnailCacheCannotOpenSignedOut'
   ];
   const cases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
-  assert.equal(cases.length, 36);
-  assert.equal(new Set(cases).size, 36);
+  assert.ok(cases.length >= 38);
+  assert.equal(new Set(cases).size, cases.length);
   for (const name of children) {
     assert.ok(cases.includes(name), 'Missing real native child route: ' + name);
     assert.ok(watcher.includes('"' + name + '"'), 'Missing tap-adjacent capture: ' + name);
@@ -265,7 +265,7 @@ test('real Simulator regressions keep Gallery backup 44pt, Notes source AX and g
 
 test('every independent Launcher and all-pages child crash journey is registered for real Simulator frames', () => {
   const names = [...swift.matchAll(/\\bfunc\\s+(test\\w+)\\s*\\(/g)].map(match => match[1]);
-  assert.ok(names.length >= 36, 'All-pages crash matrix lost an executable journey');
+  assert.ok(names.length >= 38, 'All-pages crash matrix lost an executable journey');
   assert.equal(new Set(names).size, names.length, 'Duplicate XCTest method hides an independent route');
   for (const name of names) {
     assert.ok(watcher.includes('"' + name + '"'), 'Missing real Simulator frame watcher: ' + name);
@@ -289,4 +289,16 @@ test('every independent Launcher and all-pages child crash journey is registered
     assert.ok(watcher.includes('"' + name + '"'), 'Launcher missing bounded UI evidence: ' + name);
   }
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\\/XDriveIOSAllPagesCrashUITests/);
+});
+
+test('real login child crash journeys exercise the production root without credentials', () => {
+  for (const name of ["testRealSignedOutLoginPasswordToggleAfterForegroundDoesNotExit","testRealSignedOutLANHelpAfterFieldEditDoesNotExit"]) {
+    assert.match(swift, new RegExp('func\\s+' + name + '\\s*\\('));
+    assert.ok(watcher.includes('"' + name + '"'), 'Missing login root frame evidence: ' + name);
+  }
+  assert.match(swift, /app\.launchArguments = \["-xdrive\.ios\.native\.launch-checkpoint\.v1", "ready"\]/);
+  assert.match(swift, /native-ios-login-password/);
+  assert.match(swift, /native-ios-lan-certificate-help/);
+  assert.match(swift, /192\.0\.2\.4/);
+  assert.doesNotMatch(swift, /-xdrive-ui-navigation-smoke".*launchRealSignedOutWorkspace/);
 });
