@@ -433,4 +433,212 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
         }
     }
 
+
+    // Independent native regressions after the exact-HEAD 92/92 Simulator pass.
+    // UI is real SwiftUI/PhotoKit. These are mounted-child + settled-frame
+    // assertions, not proof of signed-device 60/120 Hz zero flicker.
+
+    func testUnifiedPhotoDensityThreeModesKeepsVerifiedWallAcrossFiles() {
+        let app = launch(syntheticOwner: true)
+        let wall = target("native-ios-unified-photo-gallery", app)
+        XCTAssertTrue(wall.waitForExistence(timeout: 15))
+        let generation = wall.value as? String
+        XCTAssertNotNil(generation.flatMap(UUID.init(uuidString:)),
+                        "Real unified Gallery generation was unavailable")
+        for (density, section) in [("紧凑", "recent"), ("大图", "favorites"), ("标准", "browse")] {
+            tap("native-ios-unified-wall-density", app)
+            let option = app.buttons[density].firstMatch
+            XCTAssertTrue(option.waitForExistence(timeout: 15),
+                          "Real density option was not presented: \(density)")
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-unified-wall-density-\(density)")
+            option.tap()
+            XCTAssertEqual(wall.value as? String, generation,
+                           "A presentation-only density change rebuilt verified Gallery pages")
+            tap("native-ios-tab-files", app)
+            enterBrowseHome(app)
+            tap("native-ios-files-section-\(section)", app)
+            assertFiles(app)
+            tap("native-ios-tab-gallery", app)
+            XCTAssertTrue(wall.waitForExistence(timeout: 15))
+            XCTAssertEqual(wall.value as? String, generation,
+                           "Files tab/rail roundtrip unnecessarily rebuilt the Gallery wall")
+            assertPixels(app, "Gallery density \(density) after Files \(section)")
+        }
+    }
+
+    func testGalleryDateDraftCanceledBeforeFilesPeopleReturnKeepsWall() {
+        let app = launch(syntheticOwner: true)
+        let wall = target("native-ios-unified-photo-gallery", app)
+        XCTAssertTrue(wall.waitForExistence(timeout: 15))
+        let generation = wall.value as? String
+        XCTAssertNotNil(generation.flatMap(UUID.init(uuidString:)))
+        tap("native-ios-gallery-open-filters", app)
+        let dateToggle = app.switches["限定日期范围"].firstMatch
+        XCTAssertTrue(dateToggle.waitForExistence(timeout: 15),
+                      "Actual Gallery date filter toggle missing")
+        dateToggle.tap()
+        XCTAssertTrue(app.datePickers["开始"].firstMatch.waitForExistence(timeout: 15),
+                      "Date filter draft did not show its real date controls")
+        let cancel = app.navigationBars.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        XCTAssertEqual(wall.value as? String, generation,
+                       "Canceling a filter draft must not reset the published wall")
+        tap("native-ios-gallery-people", app)
+        closePeople(app)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        tap("native-ios-files-section-favorites", app)
+        tap("native-ios-files-section-browse", app)
+        tap("native-ios-tab-gallery", app)
+        XCTAssertEqual(wall.value as? String, generation,
+                       "Canceled Gallery draft/People/Files return rebuilt same Owner wall")
+        assertPixels(app, "Canceled date draft People Files return")
+    }
+
+    func testGalleryFilenameFilterAppliedFilesSectionsAndCleared() {
+        let app = launch(syntheticOwner: true)
+        let wall = target("native-ios-unified-photo-gallery", app)
+        XCTAssertTrue(wall.waitForExistence(timeout: 15))
+        tap("native-ios-gallery-open-filters", app)
+        let search = app.textFields["文件名"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15),
+                      "Real unified Gallery filename editor missing")
+        search.tap()
+        search.typeText("navigation-regression")
+        let apply = app.navigationBars.buttons["应用"].firstMatch
+        XCTAssertTrue(apply.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-filter-apply")
+        apply.tap()
+        assertGallery(app)
+        let filterButton = target("native-ios-gallery-open-filters", app)
+        XCTAssertTrue(filterButton.label.contains("已筛选"),
+                      "Applied filename filter must be visible to the user")
+        let filteredGeneration = wall.value as? String
+        XCTAssertNotNil(filteredGeneration.flatMap(UUID.init(uuidString:)))
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        for section in ["recent", "favorites", "browse"] {
+            tap("native-ios-files-section-\(section)", app)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app)
+        XCTAssertTrue(filterButton.label.contains("已筛选"),
+                      "Returning from Files dropped the active Gallery search")
+        XCTAssertEqual(wall.value as? String, filteredGeneration,
+                       "An unchanged Gallery query should retain its current wall generation")
+        let clear = app.buttons["清除"].firstMatch
+        XCTAssertTrue(clear.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-filter-clear")
+        clear.tap()
+        assertGallery(app)
+        assertPixels(app, "Gallery filename filter applied Files return then cleared")
+    }
+
+    func testFilesSizeFilterOriginalsReturnAndResetWithoutBlank() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        tap("native-ios-files-search-size-filter", app)
+        let small = app.buttons["小于 1 MiB"].firstMatch
+        XCTAssertTrue(small.waitForExistence(timeout: 15),
+                      "Real Files size-filter Menu choice was not presented")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-size-under-1mib")
+        small.tap()
+        let sizeControl = target("native-ios-files-search-size-filter", app)
+        XCTAssertTrue(sizeControl.waitForExistence(timeout: 15))
+        XCTAssertTrue(sizeControl.label.contains("文件大小已筛选"),
+                      "Applied Files size filter must remain visibly active")
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-originals", app)
+        XCTAssertTrue(target("native-ios-cloud-original-layout-help", app)
+            .waitForExistence(timeout: 15),
+            "Originals child did not mount after Files global filter")
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        XCTAssertTrue(sizeControl.waitForExistence(timeout: 15))
+        XCTAssertTrue(sizeControl.label.contains("文件大小已筛选"),
+                      "Files silently lost its active size filter on Gallery tab return")
+        tap("native-ios-files-search-size-filter", app)
+        let reset = app.buttons["不限大小"].firstMatch
+        XCTAssertTrue(reset.waitForExistence(timeout: 15))
+        reset.tap()
+        assertFiles(app)
+        assertPixels(app, "Files size filter Originals and reset")
+    }
+
+    func testFilesOrganizeHomeSheetBackgroundRotationGalleryReturn() {
+        let app = launch(syntheticOwner: true)
+        defer { XCUIDevice.shared.orientation = .portrait }
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 15),
+                      "Actual Files Browse home collection was not mounted")
+        let organize = target("native-ios-files-organize-home", app)
+        for _ in 0..<7 {
+            if organize.exists && organize.isHittable { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(organize.exists && organize.isHittable,
+                      "Files Home Organizer entry not reachable by real scrolling")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-organize-home")
+        organize.tap()
+        XCTAssertTrue(target("native-ios-files-organize-home-sheet", app)
+            .waitForExistence(timeout: 15),
+            "Native Files Organizer Sheet did not mount")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(target("native-ios-files-organize-home-sheet", app)
+            .waitForExistence(timeout: 15),
+            "Foreground/rotation lost Organizer Sheet without a dismissal")
+        let done = app.navigationBars.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        let enabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"), object: done)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed,
+                       "Organizer completion stayed disabled after loading settled")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-organize-done")
+        done.tap()
+        XCUIDevice.shared.orientation = .portrait
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-albums", app)
+        assertGallery(app)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        XCTAssertFalse(target("native-ios-files-organize-home-sheet", app).exists,
+                       "Stale Files Organizer Sheet remained after real dismissal")
+        assertPixels(app, "Files organizer background rotation and Gallery return")
+    }
+
+    func testFilesTrashRetryLandscapeOriginalsReturnHasNoGhostChild() {
+        let app = launch(syntheticOwner: true)
+        defer { XCUIDevice.shared.orientation = .portrait }
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        tap("native-ios-files-open-trash", app)
+        XCTAssertTrue(target("native-ios-files-trash-error-page", app)
+            .waitForExistence(timeout: 15),
+            "Synthetic unauthenticated Owner must show real Trash denial")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        tap("native-ios-files-trash-retry", app)
+        XCTAssertTrue(target("native-ios-files-trash-error-page", app)
+            .waitForExistence(timeout: 15),
+            "Trash retry must fail closed, not show fabricated private rows")
+        tap("native-ios-files-trash-error-return", app)
+        assertFiles(app)
+        XCUIDevice.shared.orientation = .portrait
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-originals", app)
+        XCTAssertTrue(target("native-ios-cloud-original-layout-help", app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        XCTAssertFalse(target("native-ios-files-trash-error-page", app).exists,
+                       "Recovered Trash child reappeared over Files after tab return")
+        assertPixels(app, "Trash denial retry rotation Originals and Files return")
+    }
 }

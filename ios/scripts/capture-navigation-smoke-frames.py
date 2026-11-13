@@ -249,6 +249,16 @@ TARGETS.update({
     "testBRealPhotoKitViewerFilesGalleryReturnRemainsMounted",
     "testCRealPhotoKitViewerBackgroundRetiresOldSheet",
 })
+# Six independent post-green Gallery/Files navigation regressions.
+# Tap-adjacent PNG and real H.264 evidence remain diagnostic, not device FPS.
+TARGETS.update({
+    "testUnifiedPhotoDensityThreeModesKeepsVerifiedWallAcrossFiles",
+    "testGalleryDateDraftCanceledBeforeFilesPeopleReturnKeepsWall",
+    "testGalleryFilenameFilterAppliedFilesSectionsAndCleared",
+    "testFilesSizeFilterOriginalsReturnAndResetWithoutBlank",
+    "testFilesOrganizeHomeSheetBackgroundRotationGalleryReturn",
+    "testFilesTrashRetryLandscapeOriginalsReturnHasNoGhostChild",
+})
 # Cross-feature native crash reproduction and two-cycle Operation History foreground regression.
 # This records tap-adjacent diagnostics; it is not a physical FPS claim.
 TARGETS.update({
