@@ -117,7 +117,7 @@ test('six more real native tool, backup, Map and Viewer-free navigation journeys
     'testLocalMapFilesNotesClipboardReturnDoNotExit'
   ];
   const allCases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
-  assert.equal(allCases.length, 25, 'Existing nineteen and six new independent tests must all run');
+  assert.equal(allCases.length, 33, 'Existing 25 plus eight independent child-page XCTest routes must all run');
   for (const name of names) {
     assert.ok(allCases.includes(name), 'Missing tap-driven XCUITest: ' + name);
     assert.ok(watcher.includes('"' + name + '"'), 'Missing tap-adjacent watcher: ' + name);
@@ -131,6 +131,43 @@ test('six more real native tool, backup, Map and Viewer-free navigation journeys
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
 });
 
+
+
+test('eight actual Backup/Gallery/Files/Mine subpage crash journeys are independently recorded', () => {
+  const children = [
+    'testBackupDetailsChildFilesReturnDoesNotExit',
+    'testBackupAuditChildForegroundReturnDoesNotExit',
+    'testGalleryBackupSettingsChildReturnDoesNotExit',
+    'testGalleryFocusedBackupChildDoesNotStartUpload',
+    'testGalleryBackupQueueSheetRetiresDoesNotExit',
+    'testGalleryCacheSheetBackgroundDismissDoesNotExit',
+    'testFilesTagManagementChildRetiresBeforeNotesDoesNotExit',
+    'testMinePhotoWallChildFilesReturnWithoutSignIn'
+  ];
+  const allCases = [...swift.matchAll(/func (test\w+)\(\)/g)].map(m => m[1]);
+  assert.equal(allCases.length, 33, 'Every independent Launcher and subpage route must remain present');
+  assert.equal(new Set(allCases).size, 33, 'No duplicate method can silently hide a child');
+  for (const name of children) {
+    assert.ok(allCases.includes(name), 'Missing actual native XCTest child: ' + name);
+    assert.ok(watcher.includes('"' + name + '"'), 'Missing tap-adjacent screenshot watcher: ' + name);
+  }
+  for (const id of [
+    'native-ios-backup-portrait-form',
+    'native-ios-photo-task-list-done',
+    'native-ios-gallery-thumbnail-cache',
+    'native-ios-backup-cache-sheet-close',
+    'native-ios-files-tag-management',
+    'native-ios-notes-page',
+    'native-ios-mine-server-account'
+  ]) {
+    assert.ok(swift.includes('"' + id + '"'), 'Missing actual child mount check: ' + id);
+  }
+  assert.match(swift, /private func waitRetired[\s\S]*?XCTNSPredicateExpectation/);
+  assert.match(swift, /private func tapNamed[\s\S]*?IOS_NATIVE_NAV_TAP_START route=/);
+  assert.match(swift, /XCTAssertFalse\(element\("native-ios-photos-focused-progress"/);
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
+  assert.doesNotMatch(swift, /forceLogin|fakeToken|mockServerLogin/);
+});
 
 test('real dynamic MapKit source must be closed through native Done before demanding Unified', () => {
   const method = swift.slice(
