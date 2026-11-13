@@ -88,7 +88,7 @@ function appleProbe(binary, port, expectation, rootPath, label) {
   })
 }
 
-function request(port, ca, expectedName, servername, requestedPath) {
+function request(port, ca, expectedName, servername, requestedPath, httpVersion = '1.0') {
   return new Promise((resolve, reject) => {
     let finished = false
     let buffer = Buffer.alloc(0)
@@ -105,7 +105,7 @@ function request(port, ca, expectedName, servername, requestedPath) {
     socket.once('error', err => done(err))
     socket.once('secureConnect', () => {
       if (!socket.authorized) return done(new Error('TLS peer was not authorized'))
-      socket.write(`GET ${requestedPath} HTTP/1.0\r\nHost: ${domain}\r\nAccept: */*\r\nConnection: close\r\n\r\n`)
+      socket.write(`GET ${requestedPath} HTTP/${httpVersion}\r\nHost: ${domain}\r\nAccept: */*\r\nConnection: close\r\n\r\n`)
     })
     socket.on('data', data => {
       buffer = Buffer.concat([buffer, data])
@@ -143,7 +143,7 @@ test('iOS LAN Caddy wire: authenticated DNS SNI bootstrap + pinned IP identity',
         }
         const requested = requestText.split('\r\n', 1)[0]
         const bootstrap = requested === `GET ${rootPath} HTTP/1.0` && socket.servername === domain
-        const version = requested === 'GET /api/v1/version HTTP/1.0'
+        const version = /^GET \/api\/v1\/version HTTP\/1\.[01]$/.test(requested)
         const status = bootstrap ? 200 : version ? versionResponse.status : 404
         const body = bootstrap ? currentRoot : version ? versionResponse.body : 'not found'
         const mime = bootstrap ? 'application/x-pem-file' : 'application/json'
@@ -188,6 +188,8 @@ test('iOS LAN Caddy wire: authenticated DNS SNI bootstrap + pinned IP identity',
       assert.equal((await pair()).length, 64)
       assert.ok(sawDomainSNI, 'domain bootstrap must use DNS SNI')
       assert.ok(sawNoSNI, 'IP probe must not rely on public-domain SNI')
+      const http11 = await request(port, fixture.read('local-root.pem'), ip, undefined, '/api/v1/version', '1.1')
+      assert.equal(JSON.parse(parseHTTP(http11, 'application/json', 16384).toString('utf8')).version, 'test')
       await runApple('trusted', 'local-root.pem', 'valid-ip')
     })
     for (const [name, leaf, intermediate, responseRoot] of [
