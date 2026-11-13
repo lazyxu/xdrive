@@ -268,7 +268,7 @@ test('real Simulator regressions keep Gallery backup 44pt, Notes source AX and g
 
 test('every independent Launcher and all-pages child crash journey is registered for real Simulator frames', () => {
   const names = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(match => match[1]);
-  assert.ok(names.length >= 38, 'All-pages crash matrix lost an executable journey');
+  assert.ok(names.length >= 41, 'All-pages crash matrix lost an executable journey');
   assert.equal(new Set(names).size, names.length, 'Duplicate XCTest method hides an independent route');
   for (const name of names) {
     assert.ok(watcher.includes('"' + name + '"'), 'Missing real Simulator frame watcher: ' + name);
@@ -310,4 +310,29 @@ test('Launcher crash frame evidence follows actual child destination tap, not th
   assert.ok(watcher.includes('current_case[0].startswith("testLauncher")'));
   assert.ok(watcher.includes('tapped.group(1).startswith("native-ios-launcher-")'));
   assert.ok(watcher.includes('minimal and count == 1 and not is_launcher'));
+});
+
+test('production startup recovery safe/retry and real remember-password controls are native crash-tested', () => {
+  const recovery = fs.readFileSync(path.join(root, 'ios/XDriveIOS/XDriveIOSApp.swift'), 'utf8');
+  const login = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8');
+  for (const name of [
+    'testRealInterruptedStartupSafeEntryRemainsUsable',
+    'testRealInterruptedStartupRetryRendersLoginWithoutExit',
+    'testRealSignedOutRememberPasswordToggleForegroundDoesNotExit'
+  ]) {
+    assert.match(swift, new RegExp('func\\s+' + name + '\\s*\\('));
+    assert.ok(watcher.includes('"' + name + '"'), 'No native frame capture for ' + name);
+  }
+  assert.match(swift, /launchRealInterruptedStartup\("mountingWorkspace"\)/);
+  assert.match(swift, /launchRealInterruptedStartup\("restoringSession"\)/);
+  assert.match(swift, /app\.launchArguments = \["-xdrive\.ios\.native\.launch-checkpoint\.v1", stage\]/);
+  assert.match(swift, /tap\("native-ios-startup-safe-entry", app: app\)/);
+  assert.match(swift, /tap\("native-ios-startup-retry", app: app\)/);
+  assert.match(swift, /waitRetired\("native-ios-startup-retry", app: app\)/);
+  assert.match(swift, /toggle\.tap\(\)/);
+  assert.match(recovery, /\.accessibilityIdentifier\("native-ios-startup-recovery"\)/);
+  assert.match(recovery, /\.accessibilityIdentifier\("native-ios-startup-safe-entry"\)/);
+  assert.match(recovery, /\.accessibilityIdentifier\("native-ios-startup-retry"\)/);
+  assert.match(login, /Toggle\("安全保存当前账号密码", isOn: \$model\.rememberPassword\)/);
+  assert.doesNotMatch(swift, /fakeOwner|fakeToken|mockServerLogin|XCTSkip/);
 });

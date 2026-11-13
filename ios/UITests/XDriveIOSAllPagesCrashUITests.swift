@@ -702,4 +702,77 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "real-login-lan-help-foreground")
     }
 
+    /// A previous interrupted startup is supplied via the real UserDefaults
+    /// launch-checkpoint key. This reproduces the production recovery UI:
+    /// no test-only login shortcut, fake Owner or PhotoKit permission.
+    private func launchRealInterruptedStartup(_ stage: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive.ios.native.launch-checkpoint.v1", stage]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Real recovery root exited while rendering the previous stage")
+        ready("native-ios-startup-phase", app: app)
+        ready("native-ios-startup-safe-entry", app: app)
+        ready("native-ios-startup-retry", app: app)
+        return app
+    }
+
+    func testRealInterruptedStartupSafeEntryRemainsUsable() {
+        let app = launchRealInterruptedStartup("mountingWorkspace")
+        let phase = element("native-ios-startup-phase", app: app)
+        XCTAssertTrue(phase.label.contains("mountingWorkspace"),
+                      "Recovery must identify the actual interrupted production stage")
+        tap("native-ios-startup-safe-entry", app: app)
+        ready("native-ios-startup-safe-mode", app: app)
+        ready("native-ios-login-server", app: app)
+        waitRetired("native-ios-startup-safe-entry", app: app)
+        XCTAssertEqual(app.state, .runningForeground)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-startup-safe-mode", app: app)
+        capture(app, "real-startup-safe-entry-foreground")
+    }
+
+    func testRealInterruptedStartupRetryRendersLoginWithoutExit() {
+        let app = launchRealInterruptedStartup("restoringSession")
+        tap("native-ios-startup-retry", app: app)
+        ready("native-ios-login-server", app: app)
+        waitRetired("native-ios-startup-retry", app: app)
+        XCTAssertFalse(element("native-ios-startup-safe-mode", app: app).exists,
+                       "A genuine full retry must not silently enter safe-startup mode")
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "real-startup-full-retry-login")
+    }
+
+    func testRealSignedOutRememberPasswordToggleForegroundDoesNotExit() {
+        let app = launchRealSignedOutWorkspace()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15),
+                      "Native signed-out Login form has no scrollable workspace")
+        let toggle = element("native-ios-remember-password", app: app)
+        for _ in 0..<7 {
+            if toggle.exists && toggle.isHittable { break }
+            scroll.swipeUp()
+        }
+        XCTAssertTrue(toggle.exists && toggle.isHittable,
+                      "Native remember-password toggle is not reachable")
+        let initial = toggle.value as? String
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-login-remember-password")
+        toggle.tap()
+        XCTAssertEqual(app.state, .runningForeground)
+        if let initial {
+            let changed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value != %@", initial),
+                object: toggle
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 8), .completed,
+                           "Real remember-password switch did not toggle its AX value")
+        }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-remember-password", app: app)
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "real-login-remember-password-foreground")
+    }
+
 }

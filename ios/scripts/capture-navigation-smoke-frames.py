@@ -206,6 +206,9 @@ MINIMAL_TARGETS.update({
     # Genuine signed-out Login routes, distinct from CI synthetic Owner.
     "testRealSignedOutLoginPasswordToggleAfterForegroundDoesNotExit",
     "testRealSignedOutLANHelpAfterFieldEditDoesNotExit",
+    "testRealInterruptedStartupSafeEntryRemainsUsable",
+    "testRealInterruptedStartupRetryRendersLoginWithoutExit",
+    "testRealSignedOutRememberPasswordToggleForegroundDoesNotExit",
 })
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
