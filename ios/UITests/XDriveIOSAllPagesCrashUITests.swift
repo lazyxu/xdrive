@@ -194,7 +194,7 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
                 element("native-ios-backup-overview", app: app),
                 element("ios-clipboard-status", app: app),
                 element("native-ios-transfer-overview", app: app),
-                app.segmentedControls["笔记来源"].firstMatch
+                element("native-ios-notes-source-picker", app: app)
             ]
             XCTAssertTrue(eligible.contains(where: { $0.exists }),
                           "Dynamic tab did not mount its real selected feature or Map shortcut")
