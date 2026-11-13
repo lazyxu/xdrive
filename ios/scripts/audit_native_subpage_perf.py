@@ -24,6 +24,7 @@ ROUTES = (
     "files.tags",
     "files.home.edit-mode",
     "backup.tasks",
+    "backup.setup",
     "backup.details",
     "backup.audit",
     "gallery.backup.queue",
@@ -36,6 +37,7 @@ ROUTES = (
     "gallery.map.from-filter",
     "gallery.map.from-launcher",
     "launcher.recent-picker",
+    "mine.signout.confirm",
 )
 SOURCE_METHOD = re.compile(
     r'func\s+(testSubpage[A-Za-z0-9]+)\(\)\s*\{\s*run\("([a-z0-9.-]+)"\)\s*\}'
