@@ -129,7 +129,7 @@ func matchCLIOnlyServerBundle(
 				((goos == "linux" && (artifact.Filename == "xdrive-backup-linux-amd64.tar.gz" ||
 					artifact.Filename == "xdrive-cli-linux-amd64.tar.gz")) ||
 					(goos == "windows" && (artifact.Filename == "xdrive-backup-windows-amd64.zip" ||
-					artifact.Filename == "xdrive-cli-windows-amd64.zip"))) {
+						artifact.Filename == "xdrive-cli-windows-amd64.zip"))) {
 				return artifact, true
 			}
 		}

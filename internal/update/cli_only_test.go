@@ -252,7 +252,7 @@ func TestCLIOnlyArchiveAllowsExactOriginalGoBinaryPair(t *testing.T) {
 func TestStandaloneCLIAssetNamesKeepBackupOnlyDefault(t *testing.T) {
 	for _, tc := range []struct {
 		goos, goarch, standalone, legacy string
-		ok bool
+		ok                               bool
 	}{
 		{"linux", "amd64", "xdrive-cli-linux-amd64.tar.gz", "xdrive-backup-linux-amd64.tar.gz", true},
 		{"windows", "amd64", "xdrive-cli-windows-amd64.zip", "xdrive-backup-windows-amd64.zip", true},

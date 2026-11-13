@@ -285,9 +285,9 @@ func validateStandaloneCLITar(path string) error {
 	defer gz.Close()
 	tr := tar.NewReader(gz)
 	expected := map[string]bool{
-		"xdrive-cli/": false,
-		"xdrive-cli/README.md": false,
-		"xdrive-cli/xd": false,
+		"xdrive-cli/":             false,
+		"xdrive-cli/README.md":    false,
+		"xdrive-cli/xd":           false,
 		"xdrive-cli/xdrive-agent": false,
 	}
 	for {
@@ -335,8 +335,8 @@ func validateStandaloneCLIZIP(path string) error {
 	}
 	defer zr.Close()
 	expected := map[string]bool{
-		"xdrive-cli/README.md": false,
-		"xdrive-cli/xd.exe": false,
+		"xdrive-cli/README.md":        false,
+		"xdrive-cli/xd.exe":           false,
 		"xdrive-cli/xdrive-agent.exe": false,
 	}
 	for _, member := range zr.File {
