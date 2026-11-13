@@ -323,3 +323,89 @@ test('Desktop/DSM cancellation during in-flight SSE cannot trigger stale refresh
     }
   })
 })
+
+
+test('Desktop refuses same-Owner CAS receipts with unexpected file name or byte count',async()=>{
+  const ok=data=>({ok:true,data})
+  const root={id:7,name:'owner',type:'dir',size:0,revision:1}
+  const file=new File([Uint8Array.of(1,2,3)],'selected.png',{type:'image/png'})
+  let received={id:8,parent_id:7,name:'other.png',type:'file',size:3,revision:1}
+  const port=desktop.createDesktopClipboardDataPort({
+    cloudRoot:async()=>ok(root),
+    cloudUploadFile:async(parent,selected,policy)=>{
+      assert.deepEqual([parent,selected,policy],[7,file,'fail'])
+      return ok({node:received,skipped:false})
+    },
+  },'desktop-owner','https://drive.example/',()=>true)
+  const signal=new AbortController().signal
+  await assert.rejects(port.uploadLocalFile(file,signal),/文件上传回执不完整/)
+  received={...received,name:file.name,size:4}
+  await assert.rejects(port.uploadLocalFile(file,signal),/文件上传回执不完整/)
+  received={...received,size:file.size}
+  assert.deepEqual(await port.uploadLocalFile(file,signal),{node_id:8})
+})
+
+test('Desktop and DSM import explicitly exposed HEIC/HEIF using their existing Owner CAS writer',async()=>{
+  const priorWindow=Object.getOwnPropertyDescriptor(globalThis,'window')
+  const priorNavigator=Object.getOwnPropertyDescriptor(globalThis,'navigator')
+  const ok=data=>({ok:true,data})
+  const root={id:7,name:'owner',type:'dir',size:0,revision:1}
+  const owner='a'.repeat(64)
+  const uploaded=[]
+  let reads=0
+  try {
+    Object.defineProperty(globalThis,'window',{
+      configurable:true,value:{isSecureContext:true},
+    })
+    for(const [mime,extension] of [['image/heic','heic'],['image/heif','heif']]){
+      Object.defineProperty(globalThis,'navigator',{
+        configurable:true,value:{clipboard:{read:()=>{
+          reads++
+          return Promise.resolve([{
+            types:[mime],
+            getType:async type=>{
+              assert.equal(type,mime)
+              return new Blob([Uint8Array.of(1,2,3)],{type:mime})
+            },
+          }])
+        }}},
+      })
+      const checkFile=(host,file)=>{
+        assert.equal(file.type,mime)
+        assert.match(file.name,new RegExp('^Clipboard-[0-9a-f-]+\\.'+extension+'$'))
+        assert.equal(file.size,3)
+        uploaded.push({host,mime})
+        return {id:uploaded.length+30,parent_id:7,type:'file',name:file.name,
+          size:file.size,revision:1}
+      }
+      const desktopPort=desktop.createDesktopClipboardDataPort({
+        cloudRoot:async()=>ok(root),
+        cloudUploadFile:async(parent,file,policy)=>{
+          assert.equal(parent,7);assert.equal(policy,'fail')
+          return ok({node:checkFile('desktop',file),skipped:false})
+        },
+      },'desktop-owner','https://drive.example/',()=>true)
+      const signal=new AbortController().signal
+      assert.ok((await desktopPort.importImageFromClipboard(signal)).node_id>0)
+      const dsmPort=dsm.createXDriveDSMClipboardPort({
+        serverConnection:async()=>({configured:true,must_change_password:false,
+          server:'https://drive.example/',username:'owner',owner_scope:owner}),
+        ownerFilesRoot:async()=>root,
+        ownerUploadSmallFile:async(parent,file,scope)=>{
+          assert.equal(parent,7);assert.equal(scope,owner)
+          return checkFile('dsm',file)
+        },
+      },owner)
+      assert.ok((await dsmPort.importImageFromClipboard(signal)).node_id>0)
+    }
+    assert.equal(reads,4)
+    assert.deepEqual(uploaded,[{host:'desktop',mime:'image/heic'},
+      {host:'dsm',mime:'image/heic'},{host:'desktop',mime:'image/heif'},
+      {host:'dsm',mime:'image/heif'}])
+  } finally {
+    if(priorWindow)Object.defineProperty(globalThis,'window',priorWindow)
+    else delete globalThis.window
+    if(priorNavigator)Object.defineProperty(globalThis,'navigator',priorNavigator)
+    else delete globalThis.navigator
+  }
+})
