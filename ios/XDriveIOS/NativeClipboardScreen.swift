@@ -482,7 +482,7 @@ struct XDriveIOSNativeClipboardScreen: View {
         do {
             try FileManager.default.createDirectory(at: directory,
                 withIntermediateDirectories: true)
-            let source = directory.appendingPathComponent("Clipboard." + suffix)
+            let source = directory.appendingPathComponent("Clipboard-" + UUID().uuidString + "." + suffix)
             try bytes.write(to: source, options: .atomic)
             uploadTask = Task { @MainActor in
                 defer { try? FileManager.default.removeItem(at: directory) }
@@ -787,7 +787,7 @@ private struct XDriveIOSNativeClipboardCloudPicker: View {
     @State private var rows: [XDriveIOSNativeFilesNode] = []
     @State private var offset = 0
     @State private var totalCount = 0
-    @State private var loading = false
+    @State private var loading = true
     @State private var failure: String?
     @State private var requestID = UUID()
 
