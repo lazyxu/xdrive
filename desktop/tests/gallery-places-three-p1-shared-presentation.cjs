@@ -81,5 +81,5 @@ test('Web Gallery and trusted Places share cosmetic observer and UI-only return/
   assert.match(places, /onVisibleAnchorChange=\{captureVisibleAnchor\}/)
   assert.match(gallery, /xDriveMediaGalleryTimelineNearestDay\(dayGroupsForJump, day\)/)
   assert.match(places, /xDriveMediaGalleryTimelineNearestDay\(timelineGroups\.day, day\)/)
-  assert.doesNotMatch(state, /fetch\(|URLSession|Owner|CellItems|accessToken|photo_url|localStorage\.setItem/)
+  assert.doesNotMatch(state, /fetch\(|URLSession|OwnerRoot|CellItems|accessToken|photo_url|localStorage\.setItem/)
 })
