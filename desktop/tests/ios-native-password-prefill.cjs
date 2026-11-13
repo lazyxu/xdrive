@@ -80,7 +80,7 @@ test('forget deletes the profile secret and clears the visible password', () => 
 test('Keychain autofill errors remain visible during cold start and account selection', () => {
   const prefill = between('    private func prefillSavedPasswordForCurrentProfile() {',
                           '    /// Account and route changes')
-  assert.match(prefill, /catch \\{[\\s\\S]*?errorMessage = "无法从系统 Keychain 读取保存的密码/)
+  assert.match(prefill, /catch \{[\s\S]*?errorMessage = "无法从系统 Keychain 读取保存的密码/)
 
   const choose = between('    func chooseSavedProfile(', '    /// User-triggered only:')
   const reset = choose.indexOf('errorMessage = nil')
@@ -94,9 +94,9 @@ test('Keychain autofill errors remain visible during cold start and account sele
   assert.ok(restore.indexOf('guard let saved = try XDriveIOSNativeOwnerSessionStore.load()') <
     restore.indexOf('errorMessage = nil'),
     'no refresh session must not erase a prefill Keychain error')
-  assert.match(restore, /guard let saved = try XDriveIOSNativeOwnerSessionStore\\.load\\(\\)[\\s\\S]*?else \\{[\\s\\S]*?return\\s*\\}[\\s\\S]*?errorMessage = nil/)
+  assert.match(restore, /guard let saved = try XDriveIOSNativeOwnerSessionStore\.load\(\)[\s\S]*?else \{[\s\S]*?return\s*\}[\s\S]*?errorMessage = nil/)
 
   const retry = between('    func retryStoredSession() async {',
                         '    /// Forget only this Server+username.')
-  assert.match(retry, /errorMessage = nil\\s+restoreAttempted = false\\s+await restore\\(\\)/)
+  assert.match(retry, /errorMessage = nil\s+restoreAttempted = false\s+await restore\(\)/)
 })
