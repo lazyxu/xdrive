@@ -33,8 +33,17 @@ final class XDriveIOSMapRealPerformanceProbe: NSObject {
     private var entries: [[String: Any]] = []
     private var windows: [String: FrameWindow] = [:]
     private var displayLink: CADisplayLink?
-    private let outputURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("ios-map-100k-metrics.json")
+    // Independent XCTest stages share a real Simulator library but never
+    // overwrite one another's numeric app-process evidence.
+    private static let runStage: String = {
+        let args = ProcessInfo.processInfo.arguments
+        guard let index = args.firstIndex(of: "-xdrive-map-perf-stage"),
+              index + 1 < args.count else { return "unknown" }
+        let stage = args[index + 1]
+        return ["scan", "wall", "zoom"].contains(stage) ? stage : "invalid"
+    }()
+    private lazy var outputURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ios-map-100k-\(Self.runStage)-metrics.json")
 
     private(set) var completedScanCount = 0
     private(set) var cacheHits = 0
@@ -208,6 +217,7 @@ final class XDriveIOSMapRealPerformanceProbe: NSObject {
         entries.append(entry)
         let report: [String: Any] = [
             "schema": "xdrive.ios.map.real-photokit-perf.v1",
+            "run_stage": Self.runStage,
             "source": "Debug app, genuine PHAsset scan + MapKit + CADisplayLink",
             "memory_kind": "sampled app resident size, NOT exact system peak",
             "frame_kind": "main-runloop callback cadence, NOT presented GPU FPS",

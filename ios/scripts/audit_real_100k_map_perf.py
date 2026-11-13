@@ -25,7 +25,7 @@ SCHEMA = "xdrive.ios.map.real-photokit-perf.v1"
 XCTEST_METRIC = re.compile(
     r"Test Case '-\[xDriveIOSNavigationUITests\."
     r"XDriveIOSMapNavigationRuntimeUITests "
-    r"testP1Real100KPhotoKitMapPerformance\]'"
+    r"testP1Real100KPhotoKitMap(Scan|Wall|Zoom)Performance\]'"
     r" measured \[(CPU Time \(ios\), s|Memory Peak Physical \(ios\), kB)\]"
     r" average: [^\n]*?values: \[([0-9., \-]+)\]"
 )
@@ -63,33 +63,36 @@ def gps_inventory(log_path: Path) -> int:
 
 
 def parse_xctest_metrics(log: str) -> dict:
-    rows: dict[str, list[list[float]]] = {
-        "cpu_s": [], "peak_memory_kb": []
-    }
-    for name, values in XCTEST_METRIC.findall(log):
-        key = "cpu_s" if name.startswith("CPU Time") else "peak_memory_kb"
-        samples = [float(x.strip()) for x in values.split(",")]
-        require(len(samples) == (4 if len(rows[key]) == 0 else 3),
-                f"{key}: incorrect actual XCTest trial count")
-        for number in samples:
-            positive(number, f"XCTest {key}")
-        rows[key].append(samples)
-    require(len(rows["cpu_s"]) == 3 and len(rows["peak_memory_kb"]) == 3,
+    # Each XCTest method owns exactly ONE measurement block, rather than
+    # attempting multiple measure(...) calls from the same XCTest method.
+    stages = {"Scan": ("scan", 4),
+              "Wall": ("place_wall_scroll", 3),
+              "Zoom": ("map_pan_zoom", 3)}
+    records: dict[str, dict[str, list[float]]] = {}
+    for suffix, metric, values in XCTEST_METRIC.findall(log):
+        stage, count = stages[suffix]
+        key = "cpu_s" if metric.startswith("CPU Time") else "peak_memory_kb"
+        samples = [float(v.strip()) for v in values.split(",")]
+        require(len(samples) == count,
+                f"{stage}.{key}: incorrect real XCTest trial count")
+        for sample in samples:
+            positive(sample, f"XCTest {stage}.{key}")
+        record = records.setdefault(stage, {})
+        require(key not in record, f"duplicate real XCTest metric {stage}.{key}")
+        record[key] = samples
+    expected = {stage for stage, _ in stages.values()}
+    require(set(records) == expected and
+            all(set(row) == {"cpu_s", "peak_memory_kb"} for row in records.values()),
             "missing actual XCTest CPU and peak physical-memory metrics for "
-            "rescan / place-wall scroll / MapKit pan-zoom")
-    return {
-        "scan": {"cpu_s": rows["cpu_s"][0],
-                 "peak_memory_kb": rows["peak_memory_kb"][0]},
-        "place_wall_scroll": {"cpu_s": rows["cpu_s"][1],
-                              "peak_memory_kb": rows["peak_memory_kb"][1]},
-        "map_pan_zoom": {"cpu_s": rows["cpu_s"][2],
-                         "peak_memory_kb": rows["peak_memory_kb"][2]},
-    }
+            "independent scan / place-wall / MapKit methods")
+    return records
 
 
 def audit(report: dict, before: int, after: int, expected: int,
           xctest_log: str) -> dict:
     require(report.get("schema") == SCHEMA, "report schema or real-app source mismatch")
+    require(report.get("run_stages") == ["scan", "wall", "zoom"],
+            "missing separate real-app scan/wall/zoom performance reports")
     require(expected >= 100_000, "this suite requires >=100,000 real PhotoKit assets")
     require(after - before == expected,
             f"real Photos inventory did not grow by exactly {expected}: {before}->{after}")

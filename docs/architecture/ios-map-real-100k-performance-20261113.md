@@ -49,3 +49,7 @@ GitHub Actions → [iOS MapKit P0 real PhotoKit GPS scale audit](https://github.
 - P50/P95 不合法、非有限值、帧回调间隔缺失、FPS 异常 → **FAIL**。
 
 **当前完成范围**：探针、真实 UI Test、严格审计器及 CI 流程源码已提交在 #4305。只有完整 100k GitHub Actions run 完成后，才填写实际毫秒、FPS、CPU、MiB 数据；不存在“源码编好即测得 100k”这种状态。
+
+### 独立 XCTest 测量方法
+
+每个 XCTestCase 方法只执行一组 `measure(metrics:options:)`。同一真实 PhotoKit Simulator 中分三次运行：`testP1Real100KPhotoKitMapScanPerformance`、`testP1Real100KPhotoKitMapWallPerformance`、`testP1Real100KPhotoKitMapZoomPerformance`。每次启动记录独立的 `ios-map-100k-scan/wall/zoom-metrics.json`，原生 XCTest 日志分别生成扫描／滚动／缩放的 App CPU、Physical Memory Peak；CI 必须核对三份原始文件和三组真实测量，再合并报告。不能依赖同一 XCTest 方法连续调用三次 `measure()`。

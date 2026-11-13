@@ -9,15 +9,15 @@ from audit_real_100k_map_perf import audit as actual_audit, gps_inventory, SCHEM
 
 
 def mocked_xctest_measurement_log():
-    # Unit-test-only text; production audit accepts ONLY runner-produced logs.
-    test = ("Test Case '-[xDriveIOSNavigationUITests."
-            "XDriveIOSMapNavigationRuntimeUITests "
-            "testP1Real100KPhotoKitMapPerformance]' measured ")
+    # Contract fixture only, never acceptable as actual 100k proof.
+    prefix = ("Test Case '-[xDriveIOSNavigationUITests."
+              "XDriveIOSMapNavigationRuntimeUITests ")
     rows = []
-    for n in (4, 3, 3):
-        rows.append(test + "[CPU Time (ios), s] average: 1.2 values: [" +
+    for stage, n in (("Scan", 4), ("Wall", 3), ("Zoom", 3)):
+        label = prefix + "testP1Real100KPhotoKitMap" + stage + "Performance]' measured "
+        rows.append(label + "[CPU Time (ios), s] average: 1.2 values: [" +
                     ", ".join(["1.2"] * n) + "]")
-        rows.append(test + "[Memory Peak Physical (ios), kB] average: 180000 values: [" +
+        rows.append(label + "[Memory Peak Physical (ios), kB] average: 180000 values: [" +
                     ", ".join(["180000"] * n) + "]")
     return "\n".join(rows)
 
@@ -55,7 +55,8 @@ def fixture():
             "long_callback_gaps": 2, "screen_max_fps": 60,
             "sampled_peak_resident_bytes": 130000000,
         })
-    return {"schema": SCHEMA, "events": events}
+    return {"schema": SCHEMA,
+            "run_stages": ["scan", "wall", "zoom"], "events": events}
 
 
 class Real100KAuditContracts(unittest.TestCase):

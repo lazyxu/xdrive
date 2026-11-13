@@ -369,11 +369,15 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
     }
 
-    private func openLocalMap(performance: Bool = false) -> XCUIApplication {
+    private func openLocalMap(
+        performance: Bool = false, stage: String = "scan"
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
         if performance {
-            app.launchArguments.append("-xdrive-map-100k-perf")
+            app.launchArguments.append(contentsOf: [
+                "-xdrive-map-100k-perf", "-xdrive-map-perf-stage", stage
+            ])
         }
         // The candidate Simulator job resets Photos once for the installed
         // target app before UI tests. Do NOT reset again for every testcase:
@@ -772,8 +776,8 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     /// Runs only after CI has imported and independently counted 100,000 real
     /// EXIF-GPS JPEGs in the simulator's PhotoKit database. Never substitutes
     /// Swift synthetic spatial-index points for actual PHAssets.
-    func testP1Real100KPhotoKitMapPerformance() {
-        let app = openLocalMap(performance: true)
+    func testP1Real100KPhotoKitMapScanPerformance() {
+        let app = openLocalMap(performance: true, stage: "scan")
         // The native MKMapView mounts while its 100k PhotoKit scan is
         // still running. The authoritative verified-count element appears
         // only after ALL 100k PHAssets have been enumerated and admitted.
@@ -828,6 +832,30 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             waitForScan(initialCompleted + scan)
         }
 
+        print("IOS_MAP_REAL_100K_SCAN_COMPLETE inventory=\(inventory.label)")
+    }
+
+    func testP1Real100KPhotoKitMapWallPerformance() {
+        let app = openLocalMap(performance: true, stage: "wall")
+        // The native MKMapView mounts while its 100k PhotoKit scan is
+        // still running. The authoritative verified-count element appears
+        // only after ALL 100k PHAssets have been enumerated and admitted.
+        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
+            .waitForExistence(timeout: 360),
+            "The initial genuine 100k PhotoKit scan never finished")
+        let inventory = element("native-ios-map-perf-inventory", in: app)
+        XCTAssertTrue(inventory.waitForExistence(timeout: 30),
+                      "Real target PhotoKit performance readback is missing")
+        let total = inventory.label.split(separator: " ").first
+            .flatMap { Int($0.replacingOccurrences(of: "total=", with: "")) }
+        XCTAssertGreaterThanOrEqual(total ?? 0, 100_000,
+            "Perf suite needs 100k actual PHAssets, not synthetic points")
+        let initialCompleted = inventory.label.split(separator: " ")
+            .first(where: { $0.hasPrefix("completed=") })
+            .flatMap { Int($0.replacingOccurrences(of: "completed=", with: "")) } ?? 0
+        XCTAssertGreaterThanOrEqual(initialCompleted, 1,
+            "First genuine PhotoKit scan was not completed")
+
         let map = element("native-ios-full-library-gps-map", in: app)
         XCTAssertTrue(map.waitForExistence(timeout: 30))
         let marker = app.descendants(matching: .any)
@@ -861,6 +889,30 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         close.tap()
         XCTAssertTrue(map.waitForExistence(timeout: 30))
 
+        print("IOS_MAP_REAL_100K_WALL_COMPLETE inventory=\(inventory.label)")
+    }
+
+    func testP1Real100KPhotoKitMapZoomPerformance() {
+        let app = openLocalMap(performance: true, stage: "zoom")
+        // The native MKMapView mounts while its 100k PhotoKit scan is
+        // still running. The authoritative verified-count element appears
+        // only after ALL 100k PHAssets have been enumerated and admitted.
+        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
+            .waitForExistence(timeout: 360),
+            "The initial genuine 100k PhotoKit scan never finished")
+        let inventory = element("native-ios-map-perf-inventory", in: app)
+        XCTAssertTrue(inventory.waitForExistence(timeout: 30),
+                      "Real target PhotoKit performance readback is missing")
+        let total = inventory.label.split(separator: " ").first
+            .flatMap { Int($0.replacingOccurrences(of: "total=", with: "")) }
+        XCTAssertGreaterThanOrEqual(total ?? 0, 100_000,
+            "Perf suite needs 100k actual PHAssets, not synthetic points")
+        let initialCompleted = inventory.label.split(separator: " ")
+            .first(where: { $0.hasPrefix("completed=") })
+            .flatMap { Int($0.replacingOccurrences(of: "completed=", with: "")) } ?? 0
+        XCTAssertGreaterThanOrEqual(initialCompleted, 1,
+            "First genuine PhotoKit scan was not completed")
+
         // Qualify the real two-window cache BEFORE measuring repeated gestures.
         // World overview is much larger than the 24x48 degree refinement
         // threshold. One 2x pinch is insufficient to produce any viewport
@@ -882,7 +934,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
 
         let completedBeforeRefine = metricCounter("completed")
-        XCTAssertGreaterThanOrEqual(completedBeforeRefine, 5)
+        XCTAssertGreaterThanOrEqual(completedBeforeRefine, 1)
         // Real MapKit touches. Three 3.5x zooms exceed a 24.5x zoom and
         // shrink even the largest whole-Earth camera below 24°/48°.
         // The PhotoKit scan still uses the ordinary user-visible path.
@@ -923,6 +975,14 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
 
         // Real MKMapView gestures; no fake cache flag or direct viewport API.
         // Each region settles for the normal 900ms PhotoKit refinement policy.
+        // XCTHitchMetric was introduced with Xcode 26 (Swift 6.2).
+        // Keep the repository's Xcode 16.4 / iOS 18.5 runner compiling.
+        var appRenderMetrics: [any XCTMetric] = [
+            XCTCPUMetric(application: app), XCTMemoryMetric(application: app)
+        ]
+#if compiler(>=6.2)
+        appRenderMetrics.append(XCTHitchMetric(application: app))
+#endif
         let zoomOptions = XCTMeasureOptions()
         zoomOptions.iterationCount = 3
         measure(metrics: appRenderMetrics, options: zoomOptions) {
@@ -937,6 +997,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
         // Artifact JSON independently requires >=1 actual zero-page cache
         // reuse and completed frame/CPU/RSS measurements. No fake pass.
-        print("IOS_MAP_REAL_100K_UI_JOURNEY_COMPLETE inventory=\(inventory.label)")
+        print("IOS_MAP_REAL_100K_ZOOM_COMPLETE inventory=\(inventory.label)")
     }
+
 }
