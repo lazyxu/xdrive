@@ -24,7 +24,7 @@ test('auto enable serializes verified ledger inspection with original writers', 
   assert.match(configure, /defer \{ XDriveIOSOriginalRunGate\.shared\.release\(gate\) \}/)
   assert.match(configure, /guard pending == 0 else \{/)
   assert.match(configure, /if store\.status\(owner: selected\)\?\.pausedForReview == true/)
-  assert.match(configure, /else if store\.status\(owner: selected\)\?\.enabled == true/)
+  assert.match(configure, /else if store\.hasSavedRecord\(owner: selected\)/)
   assert.doesNotMatch(configure, /\.localScopeAndTag\(|\.installationKey\(|\.uploadPrepared\(/)
 })
 
@@ -67,9 +67,89 @@ test('runtime manual and automatic original runs consult global existing Owner p
   assert.match(runner, /try Task\.checkCancellation\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   assert.match(runner, /if olderPending > 0 \{[\s\S]*?\.pauseForPendingReceipts\(owner: selected\)/)
   assert.match(runner, /当前账户已有 \\?\(olderPending\) 项不确定原件收据/)
-  const pause = store.slice(store.indexOf('func pauseForPendingReceipts('),store.indexOf('func disable('))
+  // Scope only the receipt-pause method. The subsequent explicit trusted
+  // review/resume method legitimately updates nextDueAt after consent.
+  const pause = store.slice(store.indexOf('func pauseForPendingReceipts('),
+    store.indexOf('func resumeAfterTrustedReview('))
   assert.match(pause, /guard var state = status\(owner: owner\), state\.enabled else \{ return nil \}/)
   assert.match(pause, /state\.pausedForReview = true/)
   assert.match(pause, /try persist\(state, owner: owner\)/)
   assert.doesNotMatch(pause, /windowIndex =|nextDueAt =|libraryChangeEpoch =|libraryAuthorizationRaw =|disable\(/)
+})
+
+
+test('only-new consent epoch is persisted after verified managed target without skipping in-flight PhotoKit edits', () => {
+  const queue = read('ios/XDriveIOS/PhotoKitPersistentBackupQueue.swift')
+  const capture = configure.indexOf('consentEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()')
+  const firstAuth = configure.indexOf('let first = try await login.verifiedAuthorization()')
+  const managed = configure.indexOf('.readExistingForUpload(owner: selected')
+  const target = configure.indexOf('managed.destination == expectedDestination')
+  const install = configure.indexOf('.installNewOnlyBaseline(')
+  const persistPlan = configure.indexOf('schedule = try store.configure(')
+  assert.ok(capture >= 0 && capture < firstAuth)
+  assert.ok(firstAuth < managed && managed < target && target < install &&
+    install < persistPlan, 'a failed managed target may never advance the baseline')
+  assert.equal(configure.split('.installNewOnlyBaseline(').length - 1, 1)
+  assert.match(configure, /consentToken: consentEpoch\.serialized/)
+  assert.match(configure, /consentAuthorization: consentEpoch\.authorization/)
+  const overload = queue.slice(queue.indexOf('    func installNewOnlyBaseline(\n'),
+    queue.indexOf('    /// Read only, bounded'))
+  assert.match(overload, /NSKeyedUnarchiver\.unarchivedObject/)
+  assert.match(overload, /store\.installBaselineIfAbsent\(/)
+  assert.match(overload, /token: consentToken, authorization: consentAuthorization/)
+  assert.match(overload, /after\.authorization == consentAuthorization/)
+  assert.doesNotMatch(overload, /token: before\.serialized/)
+  assert.doesNotMatch(configure, /existing.*reset.*baseline/i)
+})
+
+test('paused plan cannot bypass a missing Owner ledger by resuming or changing backup scope', () => {
+  const scope = configure.indexOf('.existingLocalScope(owner: selected)')
+  const checkPending = configure.indexOf('guard pending == 0 else')
+  const missingLedger = configure.indexOf('else if store.hasSavedRecord(owner: selected)')
+  const authority = configure.indexOf('let second = try await login.verifiedAuthorization()')
+  assert.ok(scope >= 0 && checkPending > scope &&
+    missingLedger > checkPending && authority > missingLedger,
+    'both paused and running saved plans must prove old receipts before new consent')
+  const guard = configure.slice(missingLedger, authority)
+  assert.match(guard, /旧任务保持暂停/)
+  assert.match(guard, /return/)
+  assert.doesNotMatch(guard, /\?\.enabled == true/)
+  assert.match(configure, /if startRule == \.resumePrevious/)
+  assert.match(configure, /previous\.enabled == false/)
+  assert.doesNotMatch(configure, /clearLedger|resetLedger|deleteReceipt/)
+})
+
+test('unreadable persisted Owner schedule cannot pose as first-time consent', () => {
+  const state = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
+  const present = state.slice(state.indexOf('func hasSavedRecord(owner:'),
+    state.indexOf('func status(owner:'))
+  assert.match(present, /UserDefaults\.standard\.object\(forKey: key\(for: owner\)\) != nil/)
+  assert.doesNotMatch(present, /JSONDecoder|removeObject|installationKey|localScopeAndTag/)
+  const setup = state.slice(state.indexOf('func configure(owner:'),
+    state.indexOf('func pauseForPendingReceipts('))
+  const readExisting = setup.indexOf('let existing = status(owner: owner)')
+  const refuseCorrupt = setup.indexOf('guard existing != nil || !hasSavedRecord(owner: owner)')
+  const save = setup.indexOf('try persist(state, owner: owner)')
+  assert.ok(readExisting >= 0 && refuseCorrupt > readExisting && save > refuseCorrupt)
+  assert.match(setup, /throw XDriveIOSPhotoAutoScheduleError\.persistenceUnavailable/)
+  const proof = configure.slice(configure.indexOf('.existingLocalScope(owner: selected)'),
+    configure.indexOf('let second = try await login.verifiedAuthorization()'))
+  assert.match(proof, /else if store\.hasSavedRecord\(owner: selected\)/)
+  assert.doesNotMatch(proof, /resetLedger|deleteReceipt|disable\(owner:/)
+})
+
+test('a corrupt stored plan with a readable ledger cannot mutate the PhotoKit baseline', () => {
+  const verifiedTarget = configure.indexOf('managed.destination == expectedDestination')
+  const corruptGuard = configure.indexOf('if store.hasSavedRecord(owner: selected),')
+  const decodeGuard = configure.indexOf('store.status(owner: selected) == nil', corruptGuard)
+  const installBaseline = configure.indexOf('.installNewOnlyBaseline(')
+  const saveSchedule = configure.indexOf('schedule = try store.configure(')
+  assert.ok(verifiedTarget >= 0 && corruptGuard > verifiedTarget &&
+    decodeGuard > corruptGuard && installBaseline > decodeGuard &&
+    saveSchedule > installBaseline,
+  'reject an unreadable saved plan even when an encrypted ledger exists, before writing the PhotoKit token')
+  const refusal = configure.slice(corruptGuard, installBaseline)
+  assert.match(refusal, /未写入新的照片增量基准/)
+  assert.match(refusal, /return/)
+  assert.doesNotMatch(refusal, /resetLedger|deleteReceipt|removeObject|installNewOnlyBaseline/)
 })

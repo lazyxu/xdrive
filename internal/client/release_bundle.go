@@ -260,7 +260,7 @@ func releaseBundleRedirectAllowed(source string, req *http.Request, via []*http.
 }
 
 // DownloadCurrentReleaseArtifact prefers verified Server cache, then attempts
-// the exact-commit GitLab package and immutable GitHub Bundle asset. Missing
+// the exact-commit GitLab package and GitHub as last resort. Missing
 // cache or any failed mirror is noncritical to the Server. The local session
 // credential is sent only to this authenticated Server; never to fallbacks.
 func (c *Client) DownloadCurrentReleaseArtifact(

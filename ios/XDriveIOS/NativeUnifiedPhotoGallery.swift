@@ -48,6 +48,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var showingThumbnailCache = false
     @State private var sourceFilter: XDriveIOSNativeGalleryPresence?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .day
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
@@ -63,6 +66,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var explicitOriginalAudit = false
     @State private var viewerReturnAnchor: String?
     @State private var viewerReturnPage = 0
+    // Exact Owner-authorized page that opened Viewer; its first frame is retained.
+    @State private var viewerOpeningPage: Int?
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var started = false
     @Environment(\.scenePhase) private var phase
@@ -220,7 +225,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 Spacer()
                 if query != .init() { Button("清除") { query = .init() } }
                 Menu {
-                    xdrivePhotoWallDensityButtons($wallDensity)
+                    Section("照片大小") { xdrivePhotoWallDensityButtons($wallDensity) }
+                    Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
                 } label: {
                     Image(systemName: "square.grid.3x3")
                 }
@@ -242,6 +248,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 .accessibilityIdentifier("native-ios-gallery-explicit-audit")
             }.padding(.horizontal, 12).padding(.vertical, 4)
             filters.padding(.horizontal, 12).padding(.vertical, 4)
+            XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                .padding(.horizontal, 12).padding(.vertical, 4)
             Divider()
             ScrollViewReader { scroll in
                 ScrollView {
@@ -251,6 +259,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             ForEach(wall.index.pages) { page in
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
                                     filter: sourceFilter, query: query, density: wallDensity,
+                                    framing: wallFraming, timeScale: wallTimeScale,
                                     displayActive: selected == nil && phase == .active && isTabActive,
                                      // A tab switch covers a loaded 48-row
                                      // window; ordinary off-screen scrolling
@@ -260,11 +269,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                          phase != .active || !isTabActive,
                                     open: { payload, position in
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+                                        viewerOpeningPage = payload.number
                                         selected = .init(owner: owner, page: payload, position: position)
                                     }, loaded: {
                                         if selected == nil, let anchor = viewerReturnAnchor, viewerReturnPage == page.id {
                                             scroll.scrollTo(anchor, anchor: .center)
                                             viewerReturnAnchor = nil
+                                            viewerOpeningPage = nil
                                         }
                                     }, pairing: { pairing = $0 })
                                     .id("unified-page-\(page.id)")
@@ -275,14 +286,23 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 }
                 .refreshable { reset() }
-                .simultaneousGesture(
-                    MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                        guard selected == nil, phase == .active, !showFilters else { return }
-                        wallDensity = wallDensity.applyingPinch(scale)
-                    }
+                .xdrivePhotoWallPinch(
+                    density: $wallDensity,
+                    enabled: selected == nil && phase == .active && !showFilters && isTabActive
                 )
                 .onChange(of: selected?.id) { selection in
-                    if selection == nil, viewerReturnAnchor != nil {
+                    guard selection == nil, phase == .active, isTabActive,
+                          let anchor = viewerReturnAnchor else { return }
+                    if viewerOpeningPage == viewerReturnPage {
+                        // Same retained verified page: restore the exact row directly
+                        // rather than flashing the page's top before final restoration.
+                        scroll.scrollTo(anchor, anchor: .center)
+                        // A retained page may not emit loaded() again. Consume once.
+                        viewerReturnAnchor = nil
+                        viewerOpeningPage = nil
+                    } else {
+                        // Filmstrip crossed a lazy page: materialize its signed page,
+                        // then let loaded() restore the exact authorized row.
                         scroll.scrollTo("unified-page-\(viewerReturnPage)", anchor: .top)
                     }
                 }
@@ -523,7 +543,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         }
     }
 
-    private func resetWall() { selected = nil; viewerReturnAnchor = nil; wall.reset() }
+    private func resetWall() {
+        selected = nil
+        viewerReturnAnchor = nil
+        viewerOpeningPage = nil
+        wall.reset()
+    }
     private func requestOriginalAudit(retryUnavailable: Bool) {
         // An explicit diagnostic is independent from upload scheduling.
         self.retryUnavailable = retryUnavailable
@@ -587,6 +612,7 @@ struct XDriveIOSUnifiedPhotoTile: View {
     let presentingOwner: XDriveNativeOwnerRoot
     let displayActive: Bool
     let retainWhileCovered: Bool
+    let framing: XDriveIOSNativePhotoWallFraming
     @StateObject private var local = XDriveIOSPhotoImageLoader()
     @State private var remote: UIImage?
     @State private var fallback: Task<Void, Never>?
@@ -630,7 +656,8 @@ struct XDriveIOSUnifiedPhotoTile: View {
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, presentingOwner),
                    retainedKey == thumbnailKey,
                    let image = local.image ?? retainedLocal ?? remote {
-                    Image(uiImage: image).resizable().scaledToFill()
+                    Image(uiImage: image).resizable()
+                        .aspectRatio(contentMode: framing == .complete ? .fit : .fill)
                 } else {
                     Image(systemName: row.isVideo ? "play.rectangle" : "photo")
                         .foregroundStyle(.secondary)

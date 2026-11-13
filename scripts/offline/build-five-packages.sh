@@ -55,37 +55,49 @@ if sys.argv[2]:
 pathlib.Path(sys.argv[1]).write_text(json.dumps(data,sort_keys=True), "utf-8")
 PY
 
+# Reuse the strict CI image importer on all Docker engines. Docker 29's
+# containerd store can report an OCI index from image inspect .Id while the
+# source artifact records its platform config digest. The canonical importer
+# checks the actual loaded tag's config bytes when the two IDs differ.
 load_ci_image() {
-  local archive_dir="$1" local_ref="$2" exact_id
-  test -s "$ARTIFACTS/$archive_dir/image.tar.gz"
-  test -s "$ARTIFACTS/$archive_dir/image.id"
-  exact_id="$(cat "$ARTIFACTS/$archive_dir/image.id")"
-  [[ "$exact_id" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad CI image ID" >&2; exit 1; }
-  gzip -t "$ARTIFACTS/$archive_dir/image.tar.gz"
-  docker load -i "$ARTIFACTS/$archive_dir/image.tar.gz" >/dev/null
-  test "$(docker image inspect --format '{{.Id}}' "$local_ref")" = "$exact_id" || {
-    echo "CI image ID mismatch: $local_ref" >&2; exit 1;
-  }
+  local archive_dir="$1" local_ref="$2"
+  bash scripts/ci/import-docker-image.sh "$ARTIFACTS/$archive_dir" "$local_ref" >/dev/null
 }
 
+# The signed offline manifest must name the image identity IN the archive,
+# not the Docker daemon's OCI index ID. Export each re-tagged reference with
+# the same validated CI exporter, keeping the ID sidecar outside the package.
 archive_image() {
-  local ref="$1" target="$2"
-  docker image inspect "$ref" >/dev/null
-  docker save "$ref" | gzip -1 > "$target"
-  gzip -t "$target"
+  local key="$1" ref="$2" target="$3"
+  local export_dir="$work/exports/$key"
+  mkdir -p "$export_dir"
+  bash scripts/ci/export-docker-image.sh "$ref" "$export_dir" >/dev/null
+  mv -- "$export_dir/image.tar.gz" "$target"
 }
 
 record_image() {
   local key="$1" ref="$2"
-  python3 - "$prepared/images.json" "$key" "$ref" <<'PY'
-import json, pathlib, subprocess, sys
-path=pathlib.Path(sys.argv[1])
-data=json.loads(path.read_text("utf-8"))
-ref=sys.argv[3]
-image_id=subprocess.check_output(
-    ["docker","image","inspect","--format","{{.Id}}",ref],text=True).strip()
-data[sys.argv[2]]={"ref":ref,"id":image_id}
-path.write_text(json.dumps(data,sort_keys=True), "utf-8")
+  local export_dir="$work/exports/$key"
+  [[ -f "$export_dir/image.id" && ! -L "$export_dir/image.id" &&
+     -f "$export_dir/image.ref" && ! -L "$export_dir/image.ref" ]] || {
+    echo "missing or unsafe verified image identity for $key" >&2; exit 1;
+  }
+  [[ "$(cat "$export_dir/image.ref")" == "$ref" ]] || {
+    echo "verified archive image reference mismatch: $key" >&2; exit 1;
+  }
+  python3 - "$prepared/images.json" "$key" "$ref" "$export_dir/image.id" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+data = json.loads(path.read_text(encoding="utf-8"))
+image_id = pathlib.Path(sys.argv[4]).read_text(encoding="utf-8").strip()
+if re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
+    raise SystemExit("invalid verified exported image config identity")
+data[sys.argv[2]] = {"ref": sys.argv[3], "id": image_id}
+path.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
 PY
 }
 
@@ -96,8 +108,8 @@ if has_changed app; then
   CADDY_REF="$REGISTRY/xdrive-caddy:$APP_TAG"
   docker tag xdrive/server:test "$SERVER_REF"
   docker tag xdrive/caddy:test "$CADDY_REF"
-  archive_image "$SERVER_REF" "$prepared/app/images/server.tar.gz"
-  archive_image "$CADDY_REF" "$prepared/app/images/caddy.tar.gz"
+  archive_image server "$SERVER_REF" "$prepared/app/images/server.tar.gz"
+  archive_image caddy "$CADDY_REF" "$prepared/app/images/caddy.tar.gz"
   record_image server "$SERVER_REF"
   record_image caddy "$CADDY_REF"
 
@@ -125,7 +137,7 @@ if has_changed postgres; then
   # floating upstream postgres:17-alpine tag moves between releases.
   PINNED_POSTGRES="xdrive/offline-postgres:sha-${planned_id:7:12}"
   docker tag "$POSTGRES_REF" "$PINNED_POSTGRES"
-  archive_image "$PINNED_POSTGRES" "$prepared/postgres/images/postgres.tar.gz"
+  archive_image postgres "$PINNED_POSTGRES" "$prepared/postgres/images/postgres.tar.gz"
   record_image postgres "$PINNED_POSTGRES"
 fi
 
@@ -133,7 +145,7 @@ if has_changed media-worker; then
   load_ci_image media-worker-image xdrive/media-worker:test
   MEDIA_REF="$REGISTRY/xdrive-media-worker:$APP_TAG"
   docker tag xdrive/media-worker:test "$MEDIA_REF"
-  archive_image "$MEDIA_REF" "$prepared/media-worker/images/media-worker.tar.gz"
+  archive_image media-worker "$MEDIA_REF" "$prepared/media-worker/images/media-worker.tar.gz"
   record_image media-worker "$MEDIA_REF"
 fi
 
@@ -144,7 +156,7 @@ if has_changed ai-runtime; then
     --build-arg "XDRIVE_RUNTIME_VERSION=$RUNTIME_CONTRACT" \
     -f services/photo-face-analyzer/Dockerfile \
     -t "$RUNTIME_REF" services/photo-face-analyzer
-  archive_image "$RUNTIME_REF" "$prepared/ai-runtime/images/ai-runtime.tar.gz"
+  archive_image ai-runtime "$RUNTIME_REF" "$prepared/ai-runtime/images/ai-runtime.tar.gz"
   record_image ai-runtime "$RUNTIME_REF"
 fi
 

@@ -38,17 +38,19 @@ test('installation, cache retry and download failures have durable distinct feed
   assert.equal(card.includes("setError('已提交本机更新"), false, 'submitted is not an installation failure or verified success')
 })
 
-test('current-Server install warning preserves immutable public admission and explicit consent', () => {
-  assert.ok(card.includes('immutable:true'))
-  assert.ok(card.includes('Release immutability'))
-  assert.ok(card.includes('不影响 Server 或其他客户端'))
+test('Server-first native install retains digest admission and explicit consent', () => {
+  assert.ok(card.includes('优先下载该 Server 已校验缓存'))
+  assert.ok(card.includes('其次尝试同 Commit 的 GitLab'))
+  assert.ok(card.includes('GitHub Release immutable:true 暂不是安装前置条件'))
+  assert.ok(card.includes('不等同于不可变公开发布'))
   assert.ok(card.includes('确认安装未经签名的个人 Windows 构建'))
   assert.ok(card.includes('验证并安装'))
   assert.ok(desktop.includes('clientReleaseBundlePort'))
-  assert.ok(desktop.includes('retry: undefined'), 'ordinary users must not gain Host admin cache retry')
-  assert.ok(agent.includes('client.VerifyCurrentBundlePublisher('), 'Agent must independently verify public GitHub before install')
-  assert.ok(agent.includes('xupdate.InstallPreviouslyVerified('), 'native installer must independently recheck package bytes')
-  assert.ok(provenance.includes('!release.Immutable'), 'mutable releases must remain rejected')
+  assert.ok(desktop.includes('retry: undefined'), 'ordinary users cannot retry Host admin cache')
+  assert.ok(agent.includes('cli.DownloadCurrentReleaseArtifact('), 'Agent uses authenticated Server-first download')
+  assert.equal(agent.includes('client.VerifyCurrentBundlePublisher('), false, 'GitHub API must not gate local install')
+  assert.ok(agent.includes('xupdate.InstallPreviouslyVerified('), 'OS installer rechecks downloaded bytes')
+  assert.ok(provenance.includes('verifyPublishedCurrentBundleManifest'), 'optional public audit remains available')
   assert.ok(docs.includes('Polling the cache must not erase a prior install'))
 })
 

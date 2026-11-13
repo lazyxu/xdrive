@@ -14,7 +14,7 @@ import (
 
 const currentBundleManifestLimit = 2 << 20
 
-// Published asset identity is obtained from GitHub's immutable Release API.
+// Published asset identity is obtained from GitHub's Release API (optional audit).
 // No Server-provided URL, credential or arbitrary asset ID is accepted here.
 type publishedBundleAsset struct {
 	ID     int64  `json:"id"`
@@ -110,7 +110,7 @@ func verifyPublishedCurrentBundleManifest(
 	digest := sha256.Sum256(raw)
 	if int64(len(raw)) != manifest.Size ||
 		"sha256:"+hex.EncodeToString(digest[:]) != manifest.Digest {
-		return fmt.Errorf("public GitHub manifest bytes differ from immutable Release digest")
+		return fmt.Errorf("public GitHub manifest bytes differ from published Release digest")
 	}
 	var doc publishedBundleManifest
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -165,7 +165,7 @@ func verifyPublishedCurrentBundleManifest(
 		}
 	}
 	if !selectedFound {
-		return fmt.Errorf("current Server installer is not present in immutable Bundle manifest")
+		return fmt.Errorf("current Server installer is not present in published Bundle manifest")
 	}
 	return nil
 }

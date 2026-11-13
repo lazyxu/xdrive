@@ -88,7 +88,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         guard libraryObserver == nil else { return }
         let observer = XDriveIOSForegroundPhotoLibraryObserver { [weak self, weak login] in
             guard let self, let login, let owner = login.owner,
-                  [.authorized].contains(
+                  [.authorized, .limited].contains(
                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                   ) else { return }
             guard (try? XDriveIOSPhotoAutoScheduleStore.shared
@@ -174,13 +174,49 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         let uiEpoch = displayEpoch
         let store = XDriveIOSPhotoAutoScheduleStore.shared
         let stopVersion = store.localStopGeneration
-        guard [.authorized].contains(
+        guard [.authorized, .limited].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "请先在本机相册页面授权访问照片。"
             return
         }
+        if startRule == .onlyNew &&
+           PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited {
+            // Limited selection changes are not a full-library creation
+            // stream. Only a scope-limited full pass can be enabled without
+            // silently treating hidden photos as old/confirmed.
+            errorMessage = "仅部分照片权限可使用自动备份已授权照片；仅备份新照片需要完整照片权限。"
+            return
+        }
+        if startRule == .resumePrevious {
+            guard let previous = store.status(owner: selected),
+                  previous.enabled == false,
+                  previous.pausedForReview == false else {
+                errorMessage = "当前账户没有可安全恢复的暂停任务；请先核对旧收据或重新选择备份范围。"
+                return
+            }
+            if previous.backupStartRule == .onlyNew &&
+               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited {
+                errorMessage = "原计划为仅新增备份；Limited 权限不能安全沿用旧增量范围。"
+                return
+            }
+        }
         errorMessage = nil
+        // Capture the only-new boundary at the user's native confirmation,
+        // BEFORE any awaited Server preflight. Do not persist it yet: a
+        // rejected Owner/Device/Source/Target must not leave a durable queue
+        // checkpoint from a backup plan that was never enabled.
+        let consentEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
+        do {
+            if startRule == .onlyNew {
+                consentEpoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+            } else {
+                consentEpoch = nil
+            }
+        } catch {
+            errorMessage = "无法读取当前 PhotoKit 增量基准；自动备份未开启。"
+            return
+        }
         var configured = false
         do {
             let first = try await login.verifiedAuthorization()
@@ -219,23 +255,18 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     errorMessage = "当前账户还有 \(pending) 项结果不确定的上传收据，请先核对；自动备份未开启。"
                     return
                 }
-            } else if store.status(owner: selected)?.enabled == true {
-                // A previously enabled schedule with no verifiable ledger is
-                // not evidence that the old backup has safely completed.
-                errorMessage = "已有计划的加密账本不可验证，未重置或绕过旧收据。"
+            } else if store.hasSavedRecord(owner: selected) {
+                // An existing plan may have been paused with enabled=false.
+                // Missing Keychain/ledger scope is NOT proof that its earlier
+                // uploads all received a confirmed Server ACK. Never revive
+                // or replace an existing plan without reading its sealed
+                // journal, including the explicit "resume previous" path.
+                // A genuine first-time plan (no saved state) may create its
+                // own ledger on the first authorized original write.
+                errorMessage = "已有计划的加密账本不可验证，旧任务保持暂停；请先核对收据。"
                 return
             }
             try Task.checkCancellation()
-            // Only the explicitly consented "only new" plan installs a
-            // PhotoKit cursor. This records candidates, not Server receipts.
-            // Reusing an earlier baseline is safer than skipping old edits.
-            if startRule == .onlyNew {
-                let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
-                    owner: selected
-                )
-                _ = try await changeQueue.installNewOnlyBaseline(owner: selected)
-                try Task.checkCancellation()
-            }
             // An Owner/permission switch while awaiting PhotoKit must not
             // activate a now-stale consent or create a running schedule.
             let second = try await login.verifiedAuthorization()
@@ -245,7 +276,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   store.localStopGeneration == stopVersion,
                   displayEpoch == uiEpoch,
                   UIApplication.shared.applicationState == .active,
-                  [.authorized].contains(
+                  [.authorized, .limited].contains(
                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                   ) else {
                 throw XDriveIOSNativeSessionError.staleSession
@@ -262,6 +293,47 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   UIApplication.shared.applicationState == .active else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
+            // A malformed or unsupported saved plan can coexist with a
+            // readable encrypted receipt journal. configure() would refuse
+            // that plan, but only AFTER the token installation below. Do not
+            // create or advance any durable PhotoKit queue baseline for a
+            // configuration that must be rejected by the schedule store.
+            if store.hasSavedRecord(owner: selected),
+               store.status(owner: selected) == nil {
+                errorMessage = "当前账户的旧自动备份计划无法读取；未写入新的照片增量基准，请先处理旧任务。"
+                return
+            }
+            if let consentEpoch {
+                // Persist the original, consent-time PhotoKit token ONLY after
+                // the current managed target was authenticated. New imports
+                // or edits during Server verification remain replayable from
+                // this token, including imports with old capture dates.
+                // Existing baselines are never advanced over pending edits.
+                let changeQueue = try XDriveIOSPhotoKitPersistentBackupQueue(
+                    owner: selected
+                )
+                _ = try await changeQueue.installNewOnlyBaseline(
+                    owner: selected,
+                    consentToken: consentEpoch.serialized,
+                    consentAuthorization: consentEpoch.authorization
+                )
+                try Task.checkCancellation()
+                guard displayEpoch == uiEpoch,
+                      store.localStopGeneration == stopVersion,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                      UIApplication.shared.applicationState == .active,
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                else { throw XDriveIOSNativeSessionError.staleSession }
+            }
+            // Resume of a saved "only new" plan must retain Full Photos
+            // access even if PhotoKit permission was reduced while awaiting
+            // Owner/managed-target verification. Limited is permitted only
+            // for an explicitly selected subset-only full scan, never for
+            // continuing a full-library incremental history token.
+            guard startRule != .resumePrevious ||
+                  store.status(owner: selected)?.backupStartRule != .onlyNew ||
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+            else { throw XDriveIOSNativeSessionError.staleSession }
             schedule = try store.configure(
                 owner: selected, minutes: minutes, allowICloud: allowICloud,
                 startRule: startRule, enabledAt: enabledAt,
@@ -301,7 +373,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         // PhotoKit access may be revoked while the native consent sheet is
         // open. The shared writer's guard must not fail silently or leave an
         // earlier successful upload report looking like this attempt.
-        guard [.authorized].contains(
+        guard [.authorized, .limited].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             if !busy { progress = nil }
@@ -311,6 +383,23 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         start(login: login, kind: .manual, allowICloud: allowICloud)
     }
 
+
+    /// Pause without deleting a previously proven managed target, source
+    /// scope, PhotoKit checkpoint or encrypted uncertain receipts. The
+    /// explicit "Resume previous" choice revalidates them before restart.
+    func pausePreserving(owner: XDriveNativeOwnerRoot?) {
+        cancel()
+        if let owner {
+            do {
+                schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                    .pausePreservingPrevious(owner: owner)
+            } catch {
+                errorMessage = "无法安全保存已有任务进度；未重置或删除旧原件收据。"
+            }
+        }
+        refresh(owner: owner)
+        message = "前台自动备份已暂停并保留进度；重新启用需验证当前账户与目标目录。"
+    }
 
     /// Upload one explicitly selected PhotoKit original ahead of the batch
     /// cursor. The selected Owner is captured by the native confirmation UI;
@@ -324,7 +413,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             errorMessage = "服务器、账户或所选照片已变化；未启动优先备份。"
             return
         }
-        guard [.authorized].contains(
+        guard [.authorized, .limited].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "照片访问权限已变化，无法优先备份所选原件。"
@@ -345,7 +434,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             errorMessage = "集中备份确认后服务器或账户已改变，未上传原件。"
             return
         }
-        guard [.authorized].contains(
+        guard [.authorized, .limited].contains(
             PHPhotoLibrary.authorizationStatus(for: .readWrite)
         ) else {
             errorMessage = "照片读取权限已变化，无法开始集中备份。"
@@ -359,6 +448,14 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
               let state = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner),
               state.enabled, !state.pausedForReview,
               state.nextDueAt <= Date() else { return }
+        // A Full -> Limited permission downgrade can occur after the user
+        // approved an only-new PhotoKit history scope. Never run the old
+        // only-new plan against an incomplete selection.
+        guard state.backupStartRule != .onlyNew ||
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
+            errorMessage = "已改为 Limited 权限；旧仅新照片任务暂停，需恢复完整照片权限或重新授权当前子集。"
+            return
+        }
         start(login: login, kind: .automatic, allowICloud: state.allowICloudOriginals)
     }
 
@@ -367,7 +464,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                        singleLocalIdentifier: String? = nil) {
         guard !busy, running == nil, let selected = login.owner,
               UIApplication.shared.applicationState == .active,
-              [.authorized].contains(
+              [.authorized, .limited].contains(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
               ) else { return }
         // Acquire BEFORE reserveDue, shared with legacy Web manual/auto and
@@ -586,6 +683,15 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     var incrementalQueue: XDriveIOSPhotoKitPersistentBackupQueue?
                     var canUseOnlyNewDateFilter = true
                     if kind == .automatic {
+                        if let currentPlan = XDriveIOSPhotoAutoScheduleStore.shared
+                                .status(owner: selected),
+                           currentPlan.backupStartRule == .onlyNew,
+                           PHPhotoLibrary.authorizationStatus(for: .readWrite) != .authorized {
+                            self.message = "PhotoKit 权限缩小：未保留旧仅新照片游标，本轮取消上传。"
+                            await reporter.finish(status: "cancelled")
+                            self.refresh(owner: selected)
+                            return
+                        }
                         // Durably replay a bounded PhotoKit change batch before
                         // reserving the positional scan window. The same queue
                         // is then consumed by the existing CAS original writer.
@@ -661,6 +767,14 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                                         self.refresh(owner: selected)
                                         return
                                     }
+                                    // The existing zero-unknown-ACK gate,
+                                    // current managed target and exact PhotoKit
+                                    // replay precede any automatic failed-item
+                                    // retry. At most four safe local failures
+                                    // re-enter the original writer queue.
+                                    _ = try await changeQueue.retrySafeFailedCandidates(
+                                        owner: selected, limit: 4
+                                    )
                                 } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
                                     .requiresExplicitBaseline,
                                     XDriveIOSPhotoKitPersistentBackupQueue.Failure.invalidArchivedToken,

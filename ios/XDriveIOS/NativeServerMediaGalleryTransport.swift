@@ -61,11 +61,207 @@ struct XDriveIOSNativeMediaAlbum: Decodable, Identifiable {
     let item_count: Int
 }
 
+struct XDriveIOSNativeMediaDateGroup: Decodable, Equatable {
+    let key: String
+    let item_count: Int
+    let start_index: Int
+}
+
+struct XDriveIOSNativeMediaDateGroupSets: Decodable {
+    let year: [XDriveIOSNativeMediaDateGroup]
+    let month: [XDriveIOSNativeMediaDateGroup]
+    let day: [XDriveIOSNativeMediaDateGroup]
+}
+
 struct XDriveIOSNativeMediaRange: Decodable {
     let items: [XDriveIOSNativeMediaItem]
     let total_count: Int
     let offset: Int
     let limit: Int
+    // Complete Owner-filtered timeline from offset-zero Server Range only.
+    // Date indices never authorize opening a media Node.
+    let timeline_group_sets: XDriveIOSNativeMediaDateGroupSets?
+
+    // Keep four-argument fixture/production initializers source-compatible.
+    init(items: [XDriveIOSNativeMediaItem], total_count: Int,
+         offset: Int, limit: Int,
+         timeline_group_sets: XDriveIOSNativeMediaDateGroupSets? = nil) {
+        self.items = items
+        self.total_count = total_count
+        self.offset = offset
+        self.limit = limit
+        self.timeline_group_sets = timeline_group_sets
+    }
+}
+
+/// An index is a hint for choosing a 48-item range, never media authorization.
+/// All displayed Nodes must still pass the normal Owner Reader and revision checks.
+struct XDriveIOSNativeOwnerPlaceDateJump: Equatable {
+    let key: String
+    let startIndex: Int
+    let offset: Int
+}
+
+enum XDriveIOSNativeOwnerPlaceDateIndexPolicy {
+    private static func utcDate(_ day: String) -> Date? {
+        let parts = day.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].count == 4,
+              parts[1].count == 2, parts[2].count == 2,
+              let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]),
+              y > 0, (1...12).contains(m), (1...31).contains(d) else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        guard let date = cal.date(from: DateComponents(year: y, month: m, day: d))
+        else { return nil }
+        let verified = cal.dateComponents([.year, .month, .day], from: date)
+        return verified.year == y && verified.month == m && verified.day == d
+            ? date : nil
+    }
+
+    private static func validKey(_ key: String, scale: XDriveIOSNativePhotoWallTimeScale) -> Bool {
+        switch scale {
+        case .all: return false
+        case .year:
+            return key.count == 4 && key.allSatisfy { $0.isASCII && $0.isNumber }
+                && Int(key).map { $0 > 0 } == true
+        case .month:
+            return key.count == 7 && key[key.index(key.startIndex, offsetBy: 4)] == "-"
+                && utcDate(key + "-01") != nil
+        case .day:
+            return utcDate(key) != nil
+        }
+    }
+
+    static func accepts(_ sets: XDriveIOSNativeMediaDateGroupSets, total: Int) -> Bool {
+        guard total > 0, total <= 10_000_000 else { return false }
+        let modes: [(XDriveIOSNativePhotoWallTimeScale, [XDriveIOSNativeMediaDateGroup])] =
+            [(.year, sets.year), (.month, sets.month), (.day, sets.day)]
+        for (scale, groups) in modes {
+            guard !groups.isEmpty && groups.count <= total else { return false }
+            var counted = 0
+            var lastKnown: String?
+            var ascending: Bool?
+            var hasKnown = false
+            var hasUnknown = false
+            for (position, group) in groups.enumerated() {
+                guard group.start_index == counted, group.item_count > 0,
+                      group.item_count <= total - counted else { return false }
+                counted += group.item_count
+                if group.key == "unknown" {
+                    // A single unknown date bucket may occur only at one edge.
+                    if hasUnknown || (position != 0 && position != groups.count - 1) {
+                        return false
+                    }
+                    hasUnknown = true
+                    continue
+                }
+                guard validKey(group.key, scale: scale) else { return false }
+                hasKnown = true
+                if let previous = lastKnown {
+                    guard group.key != previous else { return false }
+                    let increasing = group.key > previous
+                    if let ascending, ascending != increasing { return false }
+                    ascending = increasing
+                }
+                lastKnown = group.key
+            }
+            guard counted == total && hasKnown else { return false }
+        }
+        return true
+    }
+
+    /// Only for old Server responses whose single <=48 row page is the
+    /// entire authorized place, with a real monotonic capture-date ordering.
+    static func legacyCompleteIndex(
+        _ page: XDriveIOSNativeMediaRange
+    ) -> XDriveIOSNativeMediaDateGroupSets? {
+        guard page.offset == 0, page.total_count > 0, page.total_count <= 48,
+              page.items.count == page.total_count else { return nil }
+        var days: [String] = []
+        for item in page.items {
+            guard let timestamp = item.metadata.captured_at else {
+                days.append("unknown")
+                continue
+            }
+            let day = String(timestamp.prefix(10))
+            guard validKey(day, scale: .day) else { return nil }
+            days.append(day)
+        }
+        let known = days.filter { $0 != "unknown" }
+        guard let first = known.first, let last = known.last else { return nil }
+        let descending = first >= last
+        for i in 1..<known.count {
+            if (descending && known[i] > known[i - 1]) ||
+               (!descending && known[i] < known[i - 1]) {
+                return nil
+            }
+        }
+        func collapse(_ scale: XDriveIOSNativePhotoWallTimeScale)
+            -> [XDriveIOSNativeMediaDateGroup]? {
+            var result: [XDriveIOSNativeMediaDateGroup] = []
+            var seen = Set<String>()
+            for (i, day) in days.enumerated() {
+                let key: String = day == "unknown" ? "unknown" :
+                    scale == .year ? String(day.prefix(4)) :
+                    scale == .month ? String(day.prefix(7)) : day
+                if let last = result.last, last.key == key {
+                    result[result.count - 1] = XDriveIOSNativeMediaDateGroup(
+                        key: key, item_count: last.item_count + 1,
+                        start_index: last.start_index)
+                } else {
+                    if !seen.insert(key).inserted { return nil }
+                    result.append(XDriveIOSNativeMediaDateGroup(
+                        key: key, item_count: 1, start_index: i))
+                }
+            }
+            return result
+        }
+        guard let y = collapse(.year), let m = collapse(.month),
+              let d = collapse(.day) else { return nil }
+        let sets = XDriveIOSNativeMediaDateGroupSets(year: y, month: m, day: d)
+        return accepts(sets, total: page.total_count) ? sets : nil
+    }
+
+    /// O(log days) seek, with at most two verified candidate groups. UTC
+    /// date keys are chosen from the calendar day explicitly selected in UI.
+    static func nearestDay(
+        _ requested: Date, index: XDriveIOSNativeMediaDateGroupSets,
+        total: Int, pageSize: Int
+    ) -> XDriveIOSNativeOwnerPlaceDateJump? {
+        guard total > 0, pageSize > 0 else { return nil }
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: requested)
+        guard let y = parts.year, let m = parts.month, let d = parts.day else { return nil }
+        let key = String(format: "%04d-%02d-%02d", y, m, d)
+        guard let requestedUTC = utcDate(key) else { return nil }
+        let days = index.day
+        let start = days.first?.key == "unknown" ? 1 : 0
+        let end = days.last?.key == "unknown" ? days.count - 1 : days.count
+        guard start < end else { return nil }
+        let ascending = end - start < 2 || days[start].key < days[start + 1].key
+        var low = start
+        var high = end
+        while low < high {
+            let mid = low + (high - low) / 2
+            let moveRight = ascending ? days[mid].key < key : days[mid].key > key
+            if moveRight { low = mid + 1 } else { high = mid }
+        }
+        var chosen: XDriveIOSNativeMediaDateGroup?
+        var smallest = Double.infinity
+        for position in [low - 1, low] where position >= start && position < end {
+            let day = days[position]
+            guard let timestamp = utcDate(day.key) else { return nil }
+            let distance = abs(timestamp.timeIntervalSince(requestedUTC))
+            if distance < smallest {
+                smallest = distance
+                chosen = day
+            }
+        }
+        guard let chosen, chosen.start_index >= 0,
+              chosen.start_index < total else { return nil }
+        return XDriveIOSNativeOwnerPlaceDateJump(
+            key: chosen.key, startIndex: chosen.start_index,
+            offset: (chosen.start_index / pageSize) * pageSize)
+    }
 }
 
 /// Exact per-item identity for a resumed native cloud Viewer. A matching
@@ -305,7 +501,10 @@ struct XDriveIOSNativeMediaGalleryReader {
             if let mapSelection { parameters += mapSelection.queryItems }
         }
         let url = try endpoint(path, query: parameters)
-        let data = try await read(url, maximum: 2 * 1_048_576)
+        // Offset-zero place Ranges can include up to 100k date groups;
+        // preserve a finite 8 MiB cap without enlarging ordinary pages.
+        let maximumBytes = placeID != nil && offset == 0 ? 8 * 1_048_576 : 2 * 1_048_576
+        let data = try await read(url, maximum: maximumBytes)
         let page = try JSONDecoder().decode(XDriveIOSNativeMediaRange.self, from: data)
         guard page.offset == offset, page.limit == Self.pageSize,
               page.total_count >= 0, page.total_count <= 10_000_000,

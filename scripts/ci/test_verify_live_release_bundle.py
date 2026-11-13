@@ -56,10 +56,13 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
         self.assertEqual(manifest, self.manifest)
         self.assertEqual(raw, self.raw)
 
-    def test_platform_immutable_release_required_for_production_acceptance(self):
+    def test_immutability_is_optional_for_exact_release_acceptance(self):
         self.release["immutable"] = False
         def json_data(url):
             return self.ref if "/git/ref/" in url else self.release
+        doc, _ = audit.check_release(COMMIT, json_data, lambda _url: self.raw)
+        self.assertEqual(doc["commit"], COMMIT)
+        # Optional future strict immutability diagnostics still fail closed.
         with self.assertRaisesRegex(audit.GateError, "mutable"):
             audit.check_release(COMMIT, json_data, lambda _url: self.raw,
                                 require_immutable=True)

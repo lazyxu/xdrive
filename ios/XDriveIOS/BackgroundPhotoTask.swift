@@ -182,6 +182,13 @@ enum XDriveIOSBackgroundPhotoTask {
                             await resubmitOnlyIfStillApproved()
                             return
                         }
+                        // Only a current, caught-up PhotoKit generation may
+                        // schedule a handful of proven pre-write item failures.
+                        // Shared writer gate and global unknown-ACK preflight
+                        // already completed before this block.
+                        _ = try await queue.retrySafeFailedCandidates(
+                            owner: owner, limit: 4
+                        )
                         incrementalQueue = queue
                         newOnlySince = plan.newOnlySince
                     } catch XDriveIOSPhotoKitPersistentBackupQueue.Failure
@@ -269,6 +276,12 @@ enum XDriveIOSBackgroundPhotoTask {
                 sourceRunReporter = reporter
                 await reporter.begin()
 
+                // PhotoKit iCloud originals are deliberately disabled unless
+                // THIS Owner separately enabled BG iCloud downloads. OS
+                // scheduling and protected-data guards remain unchanged.
+                let downloadICloudInBG = network.mayDownloadICloudInBackground(
+                    for: owner
+                )
                 // A small bounded number of serially journaled originals per
                 // BGTask, even if an original is a video or paired Live ZIP.
                 // The OS expiration handler may stop the batch at any point;
@@ -280,7 +293,7 @@ enum XDriveIOSBackgroundPhotoTask {
                         reporter.enqueueUpdate(value)
                     }
                 ).run(
-                    allowICloudOriginals: false,
+                    allowICloudOriginals: downloadICloudInBG,
                     startOffset: offset,
                     maximumNewOriginals: min(
                         XDriveIOSBGOriginalWindowStore.maximumNewOriginalsPerRun,

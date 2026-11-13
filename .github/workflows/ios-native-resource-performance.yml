@@ -1,0 +1,101 @@
+name: iOS Native Resource CPU Memory Hitch
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ios-native-resource-performance.yml'
+      - 'ios/UITests/XDriveIOSNativeResourcePerformanceUITests.swift'
+      - 'ios/scripts/audit_native_resource_perf.py'
+      - 'ios/scripts/test_audit_native_resource_perf.py'
+      - 'ios/scripts/prepare-navigation-runtime-smoke.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-resource-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  resource-metrics:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Source exact resource coverage and fail-closed regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ios/scripts/audit_native_resource_perf.py ios/scripts/test_audit_native_resource_perf.py
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_resource_perf.py' -v
+      - name: Generate isolated genuine iOS navigation UI test target
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_16.4.app ]]; then
+            sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          fi
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          python3 ios/scripts/prepare-navigation-runtime-smoke.py "$GITHUB_WORKSPACE"
+          bash ios/scripts/prepare-assets.sh
+          (cd ios && xcodegen generate --spec project.yml)
+      - name: Boot existing compatible iPhone Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          items=json.loads(subprocess.check_output(
+              ["xcrun","simctl","list","devices","available","-j"]))["devices"]
+          options=[x for rt,devices in items.items() for x in devices
+                   if rt.endswith("iOS-18-5") and x.get("isAvailable",True)
+                   and x.get("name","").startswith("iPhone")]
+          if not options: raise SystemExit("No iOS 18.5 Simulator")
+          x=next((a for a in options if a["name"]=="iPhone 16"),options[0])
+          with open(os.environ["GITHUB_ENV"],"a") as out:
+              out.write("RESOURCE_SIM="+x["udid"]+"\n")
+          print("RESOURCE_SIM",x["name"],x["udid"])
+          subprocess.run(["xcrun","simctl","boot",x["udid"]],check=True)
+          subprocess.run(["xcrun","simctl","bootstatus",x["udid"],"-b"],
+                         check=True,timeout=240)
+          PY
+      - name: Real native app CPU memory and hitch measurements
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-resource"
+          xcodebuild test \
+            -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$RESOURCE_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/native-resource/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/native-resource/Metrics.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeResourcePerformanceUITests \
+            2>&1 | tee "$RUNNER_TEMP/native-resource/xcodebuild.log"
+      - name: Export unmodified xcresult metrics and require complete route evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/native-resource"
+          xcrun xcresulttool get test-results summary --path "$out/Metrics.xcresult" > "$out/summary.json"
+          xcrun xcresulttool get test-results metrics --path "$out/Metrics.xcresult" > "$out/metrics.json"
+          mkdir -p "$out/metrics-csv"
+          xcrun xcresulttool export metrics --path "$out/Metrics.xcresult" --output-path "$out/metrics-csv"
+          python3 ios/scripts/audit_native_resource_perf.py \
+            "$out/xcodebuild.log" "$out/metrics.json" "$out/coverage.json"
+      - name: Preserve diagnostics and original performance data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-resource-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/native-resource/xcodebuild.log
+            ${{ runner.temp }}/native-resource/summary.json
+            ${{ runner.temp }}/native-resource/metrics.json
+            ${{ runner.temp }}/native-resource/metrics-csv/
+            ${{ runner.temp }}/native-resource/coverage.json
+          if-no-files-found: warn
+          retention-days: 7

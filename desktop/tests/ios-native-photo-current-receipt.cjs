@@ -67,7 +67,11 @@ test('proof policy does not mistake a matching local receipt for remotely verifi
   assert.match(policy, /kind == "image" \|\| \(kind == "video" && !isLive\)/)
   assert.match(policy, /static func canPublishCurrentProof\(/)
   assert.match(policy, /ownerNodeReadbackSucceeded && sourceStillSame/)
-  assert.doesNotMatch(policy, /URLSession|UploadSession|PHAsset|import Photos|import Security/)
+  // Documentation may refer to the canonical UploadSession writer; the
+  // read-only policy's executable code must never perform any upload or
+  // PhotoKit/Security operation.
+  const policyCode = policy.replace(/\/\/[^\n]*/g, '')
+  assert.doesNotMatch(policyCode, /URLSession|UploadSession|PHAsset|import Photos|import Security/)
   assert.match(screen, /此结果仅代表核验时刻，不能据此宣布全部照片已备份/)
   assert.match(screen, /\.onDisappear \{[\s\S]*?originalProof\.cancel\(\)/)
   assert.match(screen, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?originalProof\.cancel\(\)/)
@@ -79,7 +83,10 @@ test('Live Photo current proof uses the same atomic still-motion archive as nati
   const preparer = read('ios/XDriveIOS/PhotoKitStagedIntentPreparer.swift')
   assert.match(policy, /static func liveDestinationName\(tag: String, sha256: String\)/)
   assert.match(policy, /"Live-xios-" \+ tag \+ "-" \+ String\(sha256\.prefix\(12\)\) \+ "\.zip"/)
-  assert.match(model, /maximumBytesPerResource: stamp\.isLive/)
+  assert.match(model, /maximumBytesPerResource: \.max/)
+  assert.doesNotMatch(model, /1_073_741_824/)
+  assert.doesNotMatch(policy, /maximumOriginalBytes: Int64 = 1_073_741_824/)
+  assert.match(policy, /static func fitsStagedPayload\(bytes: Int64, isLiveArchive: Bool\)/)
   assert.match(model, /if stamp\.isLive \{/)
   assert.match(model, /staged\.resources\.count == 2/)
   assert.match(model, /evidence\.stillFilename == still\.originalFilename/)

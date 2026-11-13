@@ -112,7 +112,7 @@ const scenarios = [
       },
       {
         "file": "u",
-        "pattern": "private func resetWall\\(\\) \\{[^\\n]*wall\\.reset\\(\\) \\}",
+        "pattern": "private func resetWall\\(\\) \\{\\s*selected = nil\\s*viewerReturnAnchor = nil\\s*viewerOpeningPage = nil\\s*wall\\.reset\\(\\)\\s*\\}",
         "flags": ""
       },
       {
@@ -1287,7 +1287,7 @@ const scenarios = [
     "checks": [
       {
         "file": "j",
-        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session, candidate-mapkit\\]",
+        "pattern": "source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session, candidate-mapkit(?:, candidate-performance)?\\]",
         "flags": ""
       },
       {

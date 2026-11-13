@@ -68,6 +68,8 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     let filter: XDriveIOSNativeGalleryPresence?
     let query: XDriveIOSNativeUnifiedGalleryQuery
     let density: XDriveIOSNativePhotoWallDensity
+    let framing: XDriveIOSNativePhotoWallFraming
+    let timeScale: XDriveIOSNativePhotoWallTimeScale
     let displayActive: Bool
     let retainWhileCovered: Bool
     let open: (XDriveIOSNativeUnifiedGalleryPage, Int) -> Void
@@ -230,11 +232,15 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
         // advance mixed cursor pagination until the bounded window commits.
         if model.belongs(to: login.owner) &&
             (model.completed || (!model.rows.isEmpty && filter == nil && query == .init())) {
-            let groups = Dictionary(grouping: model.rows) { $0.capturedAt.map { Calendar.current.startOfDay(for: $0) } }
-            let days = groups.keys.sorted { ($0 ?? .distantPast) > ($1 ?? .distantPast) }
+            let groups = Dictionary(grouping: model.rows) { timeScale.key(for: $0.capturedAt) }
+            let dates = groups.keys.sorted { a, b in
+                a == "unknown" ? false : b == "unknown" ? true : a > b
+            }
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(days, id: \.self) { day in
-                    XDriveIOSNativePhotoWallDayHeader(title: day?.formatted(date: .abbreviated, time: .omitted) ?? "拍摄日期未知")
+                ForEach(dates, id: \.self) { day in
+                    if timeScale != .all {
+                        XDriveIOSNativePhotoWallDayHeader(title: timeScale.label(for: day))
+                    }
                     XDriveIOSNativePhotoWallGrid(density: density) {
                         ForEach(groups[day] ?? []) { row in
                             Button {
@@ -246,7 +252,8 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                                     XDriveIOSUnifiedPhotoTile(
                                         row: row, login: login, presentingOwner: owner,
                                         displayActive: displayActive,
-                                        retainWhileCovered: retainWhileCovered
+                                        retainWhileCovered: retainWhileCovered,
+                                        framing: framing
                                     )
                                     if let local = row.local, backupBadgeOwner != nil,
                                        let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy.badge(

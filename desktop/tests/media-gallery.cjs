@@ -36,10 +36,12 @@ const sharedMediaEdit = read('ui', 'shared', 'src', 'media-edit.ts')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
 const sharedGalleryVirtualTimeline = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualTimeline.ts')
 const sharedGalleryDateNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDateNavigation.tsx')
+const sharedGalleryTimeScaleControls = read('ui', 'shared', 'src', 'mui', 'MediaGalleryTimeScaleControls.tsx')
 const sharedGalleryThumbnailScheduler = read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts')
 const sharedVirtualCollectionController = read('ui', 'shared', 'src', 'mui', 'VirtualCollectionController.ts')
 const sharedGallery = [
   sharedGalleryMain,
+  sharedGalleryTimeScaleControls,
   sharedGalleryDetails,
   sharedGalleryInspector,
   sharedGalleryPreview,
@@ -132,11 +134,14 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /保存为智能相册/)
   assert.match(sharedGallery, /保存规则/)
   assert.match(sharedGallery, /智能相册/)
-  assert.match(sharedGallery, /data-xdrive-gallery-time-scale/)
-  assert.match(sharedGallery, /\['year', '年'\]/)
-  assert.match(sharedGallery, /\['month', '月'\]/)
-  assert.match(sharedGallery, /\['day', '日'\]/)
-  assert.match(sharedGallery, /\['all', '所有照片'\]/)
+  // The shared scale component owns the actual control IDs and labels;
+  // both Gallery and Places import it rather than duplicating button UI.
+  assert.match(sharedGalleryMain, /XDriveMediaGalleryTimeScaleControls/)
+  assert.match(sharedGalleryTimeScaleControls, /data-xdrive-gallery-time-scale/)
+  assert.match(sharedGalleryTimeScaleControls, /data-xdrive-places-photo-time-scale/)
+  assert.match(sharedGalleryTimeScaleControls, /\['year', 'month', 'day', 'all'\]/)
+  assert.match(sharedGalleryTimeScaleControls, /year: '年', month: '月', day: '日'/)
+  assert.match(sharedGalleryTimeScaleControls, /all: surface === 'gallery' \? '所有照片' : '全部'/)
   assert.match(sharedGallery, /缩略图大小/)
   assert.match(sharedGallery, /<Slider/)
   assert.match(sharedGallery, /日期未知/)
