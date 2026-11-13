@@ -42,8 +42,17 @@ resource lifetimes differ.
 All twenty routes use real product-owned SwiftUI views or native UI modes, but some are
 **distinct entry paths into the same underlying screen**, not 15 unique
 screens. The original nine-path Simulator run [#43249473366](https://github.com/lazyxu/xdrive/actions/runs/43249473366)
-passed on `a39441a`; the newly expanded twenty-path matrix has no
-valid execution evidence until its own exact-HEAD CI finishes. Nonexistent private
+passed on `a39441a`. An actual 20-route Simulator run
+[#43367128606](https://github.com/lazyxu/xdrive/actions/runs/43367128606)
+executed all **20 tests but failed 5 Gallery backup paths** because the
+Menu had no valid AX hit point despite a 44pt height. The retained set is
+incomplete and **not** a 20-route performance pass. The single Gallery
+backup Menu is now moved to the NavigationStack toolbar, and the
+next exact-HEAD run must genuinely prove its hit-testability, not
+infer success from source checks. A different MapKit job in
+[#43367128814](https://github.com/lazyxu/xdrive/actions/runs/43367128814)
+failed to index real PhotoKit GPS fixture photos; no part of that
+failure is silently skipped or counted as a performance pass. Nonexistent private
 contents, disabled operations and missing network grants are **not** bypassed.
 
 ## Metrics and gates

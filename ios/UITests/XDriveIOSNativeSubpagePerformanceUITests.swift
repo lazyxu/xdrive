@@ -21,21 +21,28 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
-    /// XCTest's AX scrollToVisible can fail on the Gallery's already-visible
-    /// backup toolbar button inside a nested scroll host. Tap its real on-screen
-    /// element coordinate only after AX existence and hittability are verified;
-    /// the next real menu button must appear or this test fails closed.
+    /// Require the one native Gallery NavigationStack toolbar Menu to be
+    /// visible and hit-testable; do not dispatch actions through a hidden label.
     private func tapVisibleGalleryBackup(_ app: XCUIApplication) {
-        let control = view("native-ios-gallery-backup-settings", app: app)
+        let controls = app.buttons.matching(identifier: "native-ios-gallery-backup-settings")
+        let control = controls.firstMatch
         XCTAssertTrue(control.waitForExistence(timeout: 15),
-                      "Real Gallery backup button must exist")
-        // Match the real accessible Menu geometry: a 15pt caption is not
-        // an acceptable Gallery control, even if a coordinate tap happens to work.
+                      "Real Gallery toolbar backup button must exist")
+        XCTAssertEqual(controls.count, 1, "Gallery backup toolbar must be unique")
         XCTAssertGreaterThanOrEqual(control.frame.height, 43,
-                                    "Gallery backup menu touch target collapsed")
+                                    "Gallery toolbar backup touch height collapsed")
+        XCTAssertGreaterThanOrEqual(control.frame.width, 43,
+                                    "Gallery toolbar backup touch width collapsed")
+        if !control.isHittable {
+            print("IOS_GALLERY_BACKUP_AX_BLOCKED frame=\(control.frame) AX=\(app.debugDescription)")
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "gallery-backup-toolbar-not-hittable"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         XCTAssertTrue(control.isHittable,
-                      "Real Gallery backup button must be visible and hittable")
-        control.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                      "Real Gallery toolbar backup button must be visible and hittable")
+        control.tap()
         XCTAssertEqual(app.state, .runningForeground)
     }
 
