@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Box, Link, Stack, Typography } from '@mui/material'
+import { Accordion, AccordionDetails, AccordionSummary, Box, Link, Stack, Typography } from '@mui/material'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { XDriveReleaseBundlePort, XDriveReleaseBundleState } from '../release-bundles'
 import { xDriveReleaseBundleDownloadSources } from '../release-bundles'
 import { XDriveActionButton } from './ActionButton'
@@ -100,9 +101,72 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
   return (
     <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }} data-xdrive-release-bundle>
       <Stack spacing={1.5}>
+        <Box>
+          <Typography variant="subtitle1" fontWeight={700}>其他安装选项</Typography>
+          <Typography variant="body2" color="text.secondary">
+            可选：获取当前 Server Commit 对应的客户端或其他平台安装包。
+            此功能与上方更新通道独立，不会强制同步客户端版本。
+          </Typography>
+        </Box>
+        {readError ? <XDriveStatusAlert tone="warning">{readError}</XDriveStatusAlert> : null}
+        {actionFeedback ? <XDriveStatusAlert tone={actionFeedback.tone}>{actionFeedback.message}</XDriveStatusAlert> : null}
+        {state && port.platform && !state.artifacts.some((artifact) => artifact.platform === port.platform) ? (
+          <Typography variant="body2" color="text.secondary">当前 Server 暂未提供适用于此设备的安装包。</Typography>
+        ) : null}
+        {state && port.platform ? state.artifacts.filter((artifact) => artifact.platform === port.platform).map((artifact) => {
+          const sources = xDriveReleaseBundleDownloadSources(artifact)
+          const personalUnsigned = port.platform === 'windows' && artifact.platform === 'windows' &&
+            artifact.filename === 'xDriveSetup-amd64.exe' && state.channel === 'master' &&
+            artifact.install_mode === 'manual_test_only'
+          const canInstall = Boolean(port.installCurrent && state.commit === artifact.build_commit &&
+            (artifact.install_mode === 'manual' || personalUnsigned) && sources.length > 0)
+          const fallbackUrl = sources.find((url) => !url.startsWith('/api/'))
+          return <Box key={artifact.filename} sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600}>此设备 · Server 当前 Commit</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+                  {artifact.filename} · {(artifact.size / 1024 / 1024).toFixed(1)} MB · Commit {artifact.build_commit.slice(0, 12)}
+                </Typography>
+              </Box>
+              {canInstall ? (
+                <XDriveActionButton intent="primary" compact disabled={installing}
+                  onClick={() => {
+                    setActionFeedback(null)
+                    setPendingInstall({ commit: artifact.build_commit, filename: artifact.filename, personalUnsigned })
+                  }}>
+                  {personalUnsigned ? '验证并安装（未签名版）' : '验证并安装'}
+                </XDriveActionButton>
+              ) : artifact.cached && artifact.cache_status === 'verified' && port.downloadCached ? (
+                <XDriveActionButton compact onClick={() => {
+                  const actionNumber = actionGeneration.current
+                  const transfer = port.downloadCached?.(artifact.filename)
+                  if (transfer) void transfer.catch(() => {
+                    if (actionNumber === actionGeneration.current) {
+                      setActionFeedback({ tone: 'bad', message: '本机安装包下载失败，可改用 GitLab 或 GitHub。' })
+                    }
+                  })
+                }}>下载安装包</XDriveActionButton>
+              ) : fallbackUrl ? (
+                <Link href={fallbackUrl} target="_blank" rel="noopener noreferrer" fontSize="small">下载安装包</Link>
+              ) : <Typography variant="caption" color="text.secondary">暂无可用下载来源</Typography>}
+            </Stack>
+            {personalUnsigned ? (
+              <Typography variant="caption" color="warning.main">
+                未签名个人 Windows Snapshot，安装前会再次征求确认，并校验完整 Commit 与 SHA-256。
+              </Typography>
+            ) : null}
+          </Box>
+        }) : null}
+        <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, '&:before': { display: 'none' } }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="body2" fontWeight={600}>其他平台安装包、校验与备用下载来源（{state?.artifacts.length ?? 0}）</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+      <Stack spacing={1.5}>
         <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1}>
           <Box>
-            <Typography variant="subtitle1" fontWeight={700}>多平台 Release Bundle</Typography>
+            <Typography variant="subtitle1" fontWeight={700}>完整多平台 Release Bundle</Typography>
             <Typography variant="body2" color="text.secondary">
               {states[state?.state || 'unavailable']}。客户端可独立升级，不需要与服务端保持同一版本。
             </Typography>
@@ -120,8 +184,8 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
           </Typography> : null}
         {state?.state === 'retry_needed' ?
           <XDriveStatusAlert tone="warning">客户端安装包缓存失败，可继续使用服务端并重试同步。</XDriveStatusAlert> : null}
-        {readError ? <XDriveStatusAlert tone="warning">{readError}</XDriveStatusAlert> : null}
-        {actionFeedback ? <XDriveStatusAlert tone={actionFeedback.tone}>{actionFeedback.message}</XDriveStatusAlert> : null}
+
+
         {state?.artifacts?.length ? (
           <Typography variant="body2" color="text.secondary">
             {state.artifacts.filter((entry) => entry.cached).length} / {state.artifacts.length} 个安装包已校验缓存；
@@ -194,6 +258,9 @@ export function XDriveReleaseBundleCard({ port }: { port?: XDriveReleaseBundlePo
           以上按本机服务器、GitLab、GitHub 顺序列出下载来源；下载后应验证 SHA-256，
           安装前仍须满足平台签名和兼容性要求。Android 安装包仍须通过系统签名验证。
         </Typography>
+      </Stack>
+          </AccordionDetails>
+        </Accordion>
       </Stack>
       <XDriveConfirmDialog
         open={pendingInstall !== null}
