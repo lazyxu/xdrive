@@ -270,6 +270,19 @@ TARGETS.update({
     "testLocalMapFilesNotesClipboardReturnDoNotExit",
     "testOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage",
 })
+# Eight independent real native child routes from the all-pages crash suite.
+# Keep tap-adjacent screenshots, process checks, and actual parent dismissal.
+# These frames do NOT establish physical iPhone 60/120 Hz jitter or media FPS.
+TARGETS.update({
+    "testBackupDetailsChildFilesReturnDoesNotExit",
+    "testBackupAuditChildForegroundReturnDoesNotExit",
+    "testGalleryBackupSettingsChildReturnDoesNotExit",
+    "testGalleryFocusedBackupChildDoesNotStartUpload",
+    "testGalleryBackupQueueSheetRetiresDoesNotExit",
+    "testGalleryCacheSheetBackgroundDismissDoesNotExit",
+    "testFilesTagManagementChildRetiresBeforeNotesDoesNotExit",
+    "testMinePhotoWallChildFilesReturnWithoutSignIn",
+})
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
