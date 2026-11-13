@@ -29,6 +29,10 @@ struct XDriveIOSNativeUnifiedPhotoViewer: View {
     @State private var request = UUID()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
+    // The Viewer filmstrip follows the exact same visual-only Gallery/Places framing choice.
+    // Never use this persisted preference for Owner, signed Node or media authority.
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var filmstripFraming: XDriveIOSNativePhotoWallFraming = .square
 
     init(login: XDriveIOSNativeOwnerLoginModel, wall: XDriveIOSNativeUnifiedPhotoWall,
          selection: XDriveIOSNativeUnifiedGallerySelection, filter: XDriveIOSNativeGalleryPresence?,
@@ -129,7 +133,8 @@ struct XDriveIOSNativeUnifiedPhotoViewer: View {
         return Button { show(page: page, at: index) } label: {
             XDriveIOSUnifiedPhotoTile(
                 row: photo, login: login, presentingOwner: selection.owner,
-                displayActive: authorized, retainWhileCovered: false
+                displayActive: authorized, retainWhileCovered: false,
+                framing: filmstripFraming
             )
             .frame(width: 48, height: 48)
             .overlay(

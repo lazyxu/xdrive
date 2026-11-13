@@ -34,6 +34,31 @@ for (const id of accepted) {
       'historical case identity must not drift')
     for (const check of item.checks) {
       const source = readSource(check.file)
+      // #4205 case 116 originally pinned the Files selector *below* the
+      // list. The real Simulator now proves that conditional bottom placement
+      // can lose the rail on Files -> Mine -> Gallery -> Files return.
+      // Preserve the untouched historical JSON, but require the stronger
+      // accessible 44pt top rail and stable geometry during selection.
+      if (id === 116 && check.file === 'f') {
+        assert.match(check.pattern, /switch quickSection$/)
+        const begin = source.indexOf('private var filesMain: some View {')
+        const end = source.indexOf('private var filesModals: some View {', begin)
+        assert.ok(begin >= 0 && end > begin, 'real Files component must exist')
+        const main = source.slice(begin, end)
+        const rail = main.indexOf('native-ios-files-quick-rail')
+        const content = main.indexOf('switch quickSection')
+        assert.ok(rail >= 0 && content > rail,
+          'Files navigation rail must remain mounted above its content')
+        assert.match(main, /guard !selecting, !batchTrash\.busy/)
+        assert.match(main, /\.disabled\(selecting\)/)
+        assert.match(main, /\.frame\(maxWidth: \.infinity, minHeight: 44\)/)
+        assert.match(main, /native-ios-files-section-/)
+        assert.match(main, /case \.browse:\s*filesChrome/)
+        assert.match(main, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
+        assert.match(main, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
+        assert.doesNotMatch(main, /if !selecting\s*\{\s*HStack/)
+        continue
+      }
       // #4205 case 184 archived an obsolete "if count < 3" two-tap limit.
       // The current route sampler intentionally observes taps 1, 2, 4, 8,
       // 12 and 16 during longer navigation journeys. Preserve the original
@@ -51,25 +76,6 @@ for (const id of accepted) {
         assert.match(source, /MAX_CAPTURE_LAG_SECONDS = 0\.75/)
         assert.match(source, /MAX_CAPTURE_DURATION_SECONDS = 2\.5/)
         assert.match(source, /report_missed\(key, missed_starts, missed_taps\)/)
-        continue
-      }
-      if (id === 116 && check.file === 'f') {
-        // #4205 predated the newer single Files-only TOP rail. Preserve its
-        // intent (Recent/Browse/Favorites remains accessible in pushed
-        // folders) without forcing the obsolete content-first layout.
-        // Explicitly reject a second bottom rail and geometry jumps.
-        const start = source.indexOf('@ViewBuilder private var filesMain: some View')
-        const end = source.indexOf('private var filesModals: some View', start)
-        assert.ok(start >= 0 && end > start, 'native Files page/rail missing')
-        const main = source.slice(start, end)
-        assert.match(main, /VStack\(spacing: 0\) \{\s*\/\/ One compact Files-only TOP selector/)
-        assert.ok(main.indexOf('native-ios-files-quick-rail') >= 0)
-        assert.ok(main.indexOf('native-ios-files-quick-rail') < main.indexOf('switch quickSection'),
-          'Files-only top rail must precede every section child')
-        assert.match(main, /switch quickSection \{\s*case \.recent:[\s\S]*?case \.browse:[\s\S]*?case \.favorites:/)
-        assert.match(main, /guard !selecting, !batchTrash\.busy, !batchTarget\.busy/)
-        assert.match(main, /\.disabled\(selecting\)/)
-        assert.match(main, /resumeStore\.saveSection\(option\.rawValue, owner: owner\)/)
         continue
       }
       if ((id === 96 || id === 141) && check.file === 'j') {

@@ -178,6 +178,7 @@ import {
 } from './MediaGalleryPhotoWallFraming'
 import type { XDriveMediaGalleryFraming } from './MediaGalleryPhotoWallFraming'
 import { XDriveMediaGalleryDateNavigation } from './MediaGalleryDateNavigation'
+import { XDriveMediaGalleryTimeScaleControls } from './MediaGalleryTimeScaleControls'
 import {
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
@@ -7196,27 +7197,9 @@ export function XDriveMediaGallery({
               </Stack>
             ) : null}
             {showCollectionTimeScale ? (
-              <Stack direction="row" spacing={0.25} useFlexGap flexWrap="wrap"
-                aria-label="图库时间尺度"
-                sx={{ '& .MuiButton-root': { '@media (max-width:899.95px)': { minHeight: 44 } } }}>
-                {([
-                  ['year', '年'],
-                  ['month', '月'],
-                  ['day', '日'],
-                  ['all', '所有照片'],
-                ] as const).map(([value, label]) => (
-                  <Button
-                    key={value}
-                    size="small"
-                    variant={effectiveTimeScale === value ? 'contained' : 'text'}
-                    aria-pressed={effectiveTimeScale === value}
-                    data-xdrive-gallery-time-scale={value}
-                    onClick={() => updateGalleryTimeScale(value)}
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </Stack>
+              <XDriveMediaGalleryTimeScaleControls surface="gallery"
+                scale={effectiveTimeScale} onChange={updateGalleryTimeScale}
+              />
             ) : null}
             {/* The same visual date controls are used by trusted Places.
                 Gallery keeps its independent signed timeline, navigation

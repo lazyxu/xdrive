@@ -449,11 +449,17 @@ test('desktop page-level status alerts use the shared alert surface', () => {
     '这里展示账号配额与逻辑文件视角',
     '当前平台不提供 Windows CfAPI',
     '当前 xdrive-agent 不支持更新设置',
-    'clientUpdate.last_error ? <XDriveStatusAlert tone="bad"',
-    '!clientUpdate.last_error && clientUpdate.message ? <XDriveStatusAlert tone="neutral"',
   ]) {
     assert.ok(renderer.includes(text), `missing shared status alert coverage: ${text}`)
   }
+  // New update screen suppresses non-error banners on idle/up-to-date; only
+  // current failures receive a bad alert, while active progress remains inline.
+  assert.ok(desktopClientUpdatePanel.includes("clientUpdate.status === 'error' && clientUpdate.last_error ? <XDriveStatusAlert tone=\"bad\""),
+    'active client update failures must stay visible through the shared alert')
+  assert.ok(desktopClientUpdatePanel.includes("clientUpdate.status === 'error' && !clientUpdate.last_error && clientUpdate.message ? <XDriveStatusAlert tone=\"bad\""),
+    'a failed check with only a message must still show a shared alert')
+  assert.ok(desktopClientUpdatePanel.includes("clientUpdate.message || '正在处理更新…'"),
+    'in-progress feedback must remain visible without an always-on status banner')
 })
 
 test('desktop global sync and diagnostic statuses use the cross-client MUI badge', () => {
