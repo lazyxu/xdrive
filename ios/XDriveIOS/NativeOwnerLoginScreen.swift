@@ -162,6 +162,15 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             backup.refresh(owner: model.owner)
             restoreFinished = true
         }
+        // SwiftUI can retire the transient login/progress subtree after its
+        // child first appeared, cancelling the startup lease while the real
+        // login form stays visible. Re-arm only when no lease is active; the
+        // existing restore/visible/foreground gate and 3-second delay apply.
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
+            if !startupReady && readinessTask == nil {
+                armReadinessAfterMount()
+            }
+        }
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             guard XDriveIOSNativeLaunchCheckpoint.mayAutoBackup(
                 startupReady: startupReady, safeStartup: safeStartup,

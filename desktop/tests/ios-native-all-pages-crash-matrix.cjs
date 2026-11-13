@@ -230,3 +230,15 @@ test('actual mounted signed-out login re-arms the existing guarded readiness, ne
   assert.match(b9, /XCTAssertEqual\(result, \.completed/);
   assert.doesNotMatch(login, /UserDefaults\.standard\.set\("ready"/);
 });
+
+
+test('real Simulator regressions keep Gallery backup 44pt, Notes source AX and guarded startup retry', () => {
+  const notes = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeNotesScreen.swift'), 'utf8');
+  const login = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8');
+  assert.match(dashboard, /Label\("备份", systemImage: "icloud\.and\.arrow\.up"\)[\s\S]*?\.frame\(minWidth: 68, minHeight: 44\)/);
+  assert.match(notes, /\.pickerStyle\(\.segmented\)[\s\S]*?\.accessibilityIdentifier\("native-ios-notes-source-picker"\)/);
+  assert.match(swift, /let picker = element\("native-ios-notes-source-picker", app: app\)/);
+  assert.match(login, /if !startupReady && readinessTask == nil \{\s*armReadinessAfterMount\(\)/);
+  assert.match(login, /XDriveIOSNativeLaunchCheckpoint\.mayFinishStartup\([\s\S]*?restoreComplete: restoreFinished, workspaceVisible: workspaceVisible,[\s\S]*?foreground: phase == \.active/);
+  assert.match(login, /Task\.sleep\(nanoseconds: 3_000_000_000\)/);
+});

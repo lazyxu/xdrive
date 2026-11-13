@@ -570,8 +570,9 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         let app = launch()
         openLauncher("notes", app: app)
         ready("native-ios-notes-page", app: app)
-        let picker = app.segmentedControls["笔记来源"].firstMatch
-        XCTAssertTrue(picker.waitForExistence(timeout: 15), "Notes source picker missing")
+        let picker = element("native-ios-notes-source-picker", app: app)
+        XCTAssertTrue(picker.waitForExistence(timeout: 15),
+                      "Real Notes source picker was not exposed to accessibility")
         let iosBackup = picker.buttons["iOS 备份"].firstMatch
         XCTAssertTrue(iosBackup.waitForExistence(timeout: 15), "Real iOS backup source missing")
         print("IOS_NATIVE_NAV_TAP_START route=native-ios-notes-ios-backup")

@@ -597,10 +597,16 @@ struct XDriveIOSNativePhotosDashboard: View {
                     if gallerySource == .local || gallerySource == .albums {
                         gallerySearchAction
                     }
+                    // A caption-only Menu label produced a 15pt AX target in
+                    // real iPhone Simulator tests. Keep the real menu, but make
+                    // its touch area at least 44pt and explicitly hittable.
                     Menu { backupMenuItems } label: {
                         Label("备份", systemImage: "icloud.and.arrow.up")
+                            .frame(minWidth: 68, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
-                        .accessibilityIdentifier("native-ios-gallery-backup-settings")
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("native-ios-gallery-backup-settings")
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)
