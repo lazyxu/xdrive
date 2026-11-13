@@ -257,7 +257,7 @@ TARGETS.update({
     "testGalleryFilenameFilterAppliedFilesSectionsAndCleared",
     "testFilesSizeFilterOriginalsReturnAndResetWithoutBlank",
     "testFilesOrganizeHomeSheetBackgroundRotationGalleryReturn",
-    "testFilesTrashRetryLandscapeOriginalsReturnHasNoGhostChild",
+    "testFilesTrashDeniedLandscapeForegroundOriginalsReturnHasNoGhostChild",
 })
 # Cross-feature native crash reproduction and two-cycle Operation History foreground regression.
 # This records tap-adjacent diagnostics; it is not a physical FPS claim.

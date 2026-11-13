@@ -614,7 +614,7 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
         assertPixels(app, "Files organizer background rotation and Gallery return")
     }
 
-    func testFilesTrashRetryLandscapeOriginalsReturnHasNoGhostChild() {
+    func testFilesTrashDeniedLandscapeForegroundOriginalsReturnHasNoGhostChild() {
         let app = launch(syntheticOwner: true)
         defer { XCUIDevice.shared.orientation = .portrait }
         tap("native-ios-tab-files", app)
@@ -624,10 +624,22 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
             .waitForExistence(timeout: 15),
             "Synthetic unauthenticated Owner must show real Trash denial")
         XCUIDevice.shared.orientation = .landscapeLeft
-        tap("native-ios-files-trash-retry", app)
+        // Synthetic Owner is deliberately unauthenticated. The real native
+        // Trash route is a fail-closed recovery view, never a retryable list.
+        XCTAssertTrue(target("native-ios-files-trash-no-session", app)
+            .waitForExistence(timeout: 15),
+            "Unauthenticated Trash must state the actual missing session")
+        XCTAssertFalse(target("native-ios-files-trash-retry", app).exists,
+                       "No-session Trash must not offer an impossible retry")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "No-session Trash terminated during foreground return")
         XCTAssertTrue(target("native-ios-files-trash-error-page", app)
             .waitForExistence(timeout: 15),
-            "Trash retry must fail closed, not show fabricated private rows")
+            "Background/landscape return lost the fail-closed Trash child")
+        XCTAssertFalse(target("native-ios-files-trash-retry", app).exists,
+                       "Foreground recovery must not manufacture a retry")
         tap("native-ios-files-trash-error-return", app)
         assertFiles(app)
         XCUIDevice.shared.orientation = .portrait

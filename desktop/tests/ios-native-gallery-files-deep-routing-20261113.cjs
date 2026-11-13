@@ -13,7 +13,7 @@ const journeys = [
   'testGalleryFilenameFilterAppliedFilesSectionsAndCleared',
   'testFilesSizeFilterOriginalsReturnAndResetWithoutBlank',
   'testFilesOrganizeHomeSheetBackgroundRotationGalleryReturn',
-  'testFilesTrashRetryLandscapeOriginalsReturnHasNoGhostChild'
+  'testFilesTrashDeniedLandscapeForegroundOriginalsReturnHasNoGhostChild'
 ]
 
 test('six new native Gallery/Files journeys have unique real XCTest and frame registrations', () => {
@@ -73,4 +73,19 @@ test('organizer and trash recovery use real child sheets, rotation and owner den
   assert.match(ui, /XCUIDevice\.shared\.orientation = \.landscapeLeft/)
   assert.match(ui, /XCTAssertFalse\(target\("native-ios-files-trash-error-page", app\)\.exists/)
   assert.match(ui, /XCTAssertFalse\(target\("native-ios-files-organize-home-sheet", app\)\.exists/)
+})
+
+
+test('no-session Trash child has no retry before or after landscape and foreground return', () => {
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  const trash = read('ios/XDriveIOS/NativeFilesTrash.swift')
+  const start = ui.indexOf('func testFilesTrashDeniedLandscapeForegroundOriginalsReturnHasNoGhostChild()')
+  assert.ok(start >= 0, 'Actual no-session Trash landscape XCUITest must exist')
+  const route = ui.slice(start, ui.indexOf('\n    }', start))
+  assert.match(trash, /if !login\.hasLocalOwnerSession \{[\s\S]*?XDriveIOSNativeFilesNoSessionRoute\(kind: \.trash\)/)
+  assert.match(route, /native-ios-files-trash-no-session/)
+  assert.match(route, /XCTAssertFalse\(target\("native-ios-files-trash-retry", app\)\.exists/)
+  assert.doesNotMatch(route, /tap\("native-ios-files-trash-retry", app\)/)
+  assert.match(route, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(route, /native-ios-files-trash-error-return/)
 })
