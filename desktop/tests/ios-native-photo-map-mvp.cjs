@@ -443,7 +443,7 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
   assert.match(spatialAlbum, /loadedWindow\(containing: item\.id\)/);
   assert.match(spatialAlbum, /if result\.scannerFinished[\s\S]*?result\.pendingIndex >= result\.pending\.count[\s\S]*?scanner\.reset\(\)/);
   assert.match(spatialAlbum, /changes\.revision[\s\S]*?retire\(\)[\s\S]*?dismiss\(\)/);
-  assert.match(spatialAlbum, /\.onDisappear \{\s*if viewer == nil \{\s*retire\(\)[\s\S]*?changes\.stop\(\)[\s\S]*?Keep its PhotoKit cursor/);
+  assert.match(spatialAlbum, /\.onDisappear \{\s*#if DEBUG\s*XDriveIOSMapRealPerformanceProbe\.shared\.endFrameWindow\("place_wall_scroll"\)\s*#endif\s*if viewer == nil \{\s*retire\(\)[\s\S]*?changes\.stop\(\)[\s\S]*?Keep its PhotoKit cursor/);
   const loadNext = spatialAlbum.slice(spatialAlbum.indexOf('private func loadNext()'),
     spatialAlbum.indexOf('private func retire()'));
   assert.match(loadNext, /readWindow\(\s*scanner: scanner,\s*pending: pendingLocated/);
