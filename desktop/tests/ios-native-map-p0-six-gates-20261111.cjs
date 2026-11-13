@@ -115,3 +115,32 @@ test('P0 real Settings return may re-request Full Photos only after an explicit 
   assert.match(ui, /handleInitialPhotoLibraryPromptIfPresent\(\)\s*recordActualPhotoKitReadback\(app, stage: "after-settings"\)/)
   assert.doesNotMatch(ui, /fakeAuthorized|skipFullAccess|forceGrantPhotoKit/)
 })
+
+
+test('system Photos TCC termination preserves real app recovery and crash evidence', () => {
+  const diagnoseStart = ui.indexOf('private func diagnose(')
+  const resumeStart = ui.indexOf('private func resumeMapAfterSystemPhotosChange(')
+  const settingsStart = ui.indexOf('private func authorizeFullPhotosInSettings(')
+  const mapStart = ui.indexOf('private func openLocalMap()')
+  assert.ok(diagnoseStart >= 0 && resumeStart > diagnoseStart &&
+            settingsStart > resumeStart && mapStart > settingsStart)
+  const diagnostic = ui.slice(diagnoseStart, ui.indexOf('private func xDriveSettingsDetailVisible(', diagnoseStart))
+  const resume = ui.slice(resumeStart, settingsStart)
+  const settings = ui.slice(settingsStart, mapStart)
+  // When TCC has terminated the app, XCTest screenshot() raises a second,
+  // misleading error. Preserve original failure and external crash reports.
+  assert.match(diagnostic, /if app\.state == \.runningForeground \{[\s\S]*?app\.screenshot\(\)/)
+  assert.match(diagnostic, /MAP_ROUTE_DIAGNOSTIC_TARGET_NOT_FOREGROUND/)
+  // An OS-terminated target is not the same as a live Settings return.
+  assert.match(resume, /if app\.state != \.notRunning \{[\s\S]*?app\.activate\(\)[\s\S]*?return false/)
+  assert.match(resume, /app\.launch\(\)[\s\S]*?native-ios-launcher-map[\s\S]*?native-ios-map-source-selector/)
+  assert.match(resume, /handleInitialPhotoLibraryPromptIfPresent\(\)/)
+  // Only actual Full Access may display MapKit. A live-app refresh failure
+  // remains a failing XCTest, not a silently accepted test-driven restart.
+  assert.match(settings, /var systemRelaunched = resumeMapAfterSystemPhotosChange\(/)
+  assert.match(settings, /if app\.state == \.notRunning \{[\s\S]*?resumeMapAfterSystemPhotosChange\(/)
+  assert.match(settings, /MAP_PHOTOS_FULL_ACCESS_REENTRY os_relaunch=/)
+  assert.match(settings, /XCTFail\(systemRelaunched/)
+  assert.match(settings, /native-ios-full-library-gps-map/)
+  assert.doesNotMatch(resume + settings, /fakePhotoKit|fakeAuthorized|skipFullAccess|forceGrantPhotoKit/)
+})
