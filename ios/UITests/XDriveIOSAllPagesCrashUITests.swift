@@ -645,4 +645,61 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "mine-disabled-cache-return")
     }
 
+    /// Unlike the synthetic Owner Dashboard smoke, these tests deliberately
+    /// omit the "-xdrive-ui-navigation-smoke" flag to exercise the genuine
+    /// production signed-out login form and its child controls. The existing
+    /// non-secret launch-checkpoint argument avoids a previous smoke run's
+    /// intentional incomplete-start marker; it does not inject credentials.
+    private func launchRealSignedOutWorkspace() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive.ios.native.launch-checkpoint.v1", "ready"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground, "Real signed-out root exited on startup")
+        ready("native-ios-login-server", app: app)
+        ready("native-ios-login-username", app: app)
+        ready("native-ios-login-password", app: app)
+        return app
+    }
+
+    func testRealSignedOutLoginPasswordToggleAfterForegroundDoesNotExit() {
+        let app = launchRealSignedOutWorkspace()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15),
+                      "Native signed-out login ScrollView did not mount")
+        let reveal = app.buttons["显示密码"].firstMatch
+        for _ in 0..<6 {
+            if reveal.exists && reveal.isHittable { break }
+            scroll.swipeUp()
+        }
+        XCTAssertTrue(reveal.exists && reveal.isHittable,
+                      "Real password visibility control could not be reached")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-login-show-password")
+        reveal.tap()
+        XCTAssertTrue(app.buttons["隐藏密码"].firstMatch.waitForExistence(timeout: 15),
+                      "Password reveal did not update the actual secure-field control")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground, "Native signed-out login exited on resume")
+        ready("native-ios-login-password", app: app)
+        capture(app, "real-login-password-foreground")
+    }
+
+    func testRealSignedOutLANHelpAfterFieldEditDoesNotExit() {
+        let app = launchRealSignedOutWorkspace()
+        let lan = element("native-ios-login-lan-ip", app: app)
+        XCTAssertTrue(lan.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-login-lan-ip")
+        lan.tap()
+        // Documentation-only TEST-NET address: no LAN pairing, certificate
+        // install, login attempt, or actual network transaction is performed.
+        lan.typeText("192.0.2.4")
+        ready("native-ios-lan-certificate-help", app: app)
+        ready("native-ios-lan-https-pairing", app: app)
+        XCTAssertEqual(app.state, .runningForeground)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-lan-certificate-help", app: app)
+        capture(app, "real-login-lan-help-foreground")
+    }
+
 }
