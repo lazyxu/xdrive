@@ -34,6 +34,30 @@ func CLIOnlyAssetName(goos, goarch string) (string, error) {
 	}
 }
 
+// StandaloneCLIAssetName selects the distinct, CI-built portable xd+Agent
+// pair. Preserve existing Backup-only --cli-only behavior by default.
+func StandaloneCLIAssetName(goos, goarch string) (string, error) {
+	if goarch != "amd64" {
+		return "", fmt.Errorf("standalone CLI has no verified %s/%s release archive", goos, goarch)
+	}
+	switch goos {
+	case "linux":
+		return "xdrive-cli-linux-amd64.tar.gz", nil
+	case "windows":
+		return "xdrive-cli-windows-amd64.zip", nil
+	default:
+		return "", fmt.Errorf("standalone CLI has no verified %s/%s release archive", goos, goarch)
+	}
+}
+
+func CheckStandaloneCLIOnlyTargetFromSource(ctx context.Context, current, channel, source, goos, goarch string) (Result, error) {
+	name, err := StandaloneCLIAssetName(goos, goarch)
+	if err != nil {
+		return Result{Current: current}, err
+	}
+	return CheckAssetTargetFromSource(ctx, current, name, channel, source)
+}
+
 func CheckCLIOnlyTargetFromSource(ctx context.Context, current, channel, source, goos, goarch string) (Result, error) {
 	name, err := CLIOnlyAssetName(goos, goarch)
 	if err != nil {
@@ -50,7 +74,8 @@ func DownloadVerifiedCLIOnly(ctx context.Context, checker Checker, result Result
 	// directory. Even malformed release metadata must never create an
 	// arbitrary filename outside the user-owned staging cache.
 	switch result.Asset.Name {
-	case "xdrive-backup-linux-amd64.tar.gz", "xdrive-backup-windows-amd64.zip":
+	case "xdrive-backup-linux-amd64.tar.gz", "xdrive-backup-windows-amd64.zip",
+		"xdrive-cli-linux-amd64.tar.gz", "xdrive-cli-windows-amd64.zip":
 	default:
 		return "", fmt.Errorf("unexpected CLI-only release asset name %q", result.Asset.Name)
 	}
@@ -81,6 +106,10 @@ func ValidateCLIOnlyArchive(path, assetName string) error {
 		return validateCLIOnlyTar(path)
 	case "xdrive-backup-windows-amd64.zip":
 		return validateCLIOnlyZIP(path)
+	case "xdrive-cli-linux-amd64.tar.gz":
+		return validateStandaloneCLITar(path)
+	case "xdrive-cli-windows-amd64.zip":
+		return validateStandaloneCLIZIP(path)
 	default:
 		return fmt.Errorf("unexpected CLI-only archive name %q", assetName)
 	}
@@ -236,6 +265,111 @@ func checkCLIOnlyGoBinary(reader io.Reader, size int64, goos, goarch, name strin
 	}
 	if !osOK || !archOK {
 		return fmt.Errorf("CLI-only executable %s is not built for %s/%s", name, goos, goarch)
+	}
+	return nil
+}
+
+// Standalone CLI archives have a different, deliberately minimal member
+// allowlist from Backup-only. No Desktop, login-task helper, symlinks or
+// installers may be smuggled into this portable release family.
+func validateStandaloneCLITar(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	expected := map[string]bool{
+		"xdrive-cli/": false,
+		"xdrive-cli/README.md": false,
+		"xdrive-cli/xd": false,
+		"xdrive-cli/xdrive-agent": false,
+	}
+	for {
+		header, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read standalone CLI tar: %w", err)
+		}
+		seen, ok := expected[header.Name]
+		if !ok || seen {
+			return fmt.Errorf("unexpected or duplicate standalone CLI tar member %q", header.Name)
+		}
+		expected[header.Name] = true
+		if header.Name == "xdrive-cli/" {
+			if header.Typeflag != tar.TypeDir {
+				return errors.New("standalone CLI tar root is not a directory")
+			}
+			continue
+		}
+		if (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) ||
+			header.Size < 0 || header.Size > cliOnlyMaxBinaryBytes {
+			return fmt.Errorf("unsafe standalone CLI tar member %q", header.Name)
+		}
+		if header.Name == "xdrive-cli/xd" || header.Name == "xdrive-cli/xdrive-agent" {
+			if err := checkCLIOnlyGoBinary(tr, header.Size, "linux", "amd64",
+				strings.TrimPrefix(header.Name, "xdrive-cli/")); err != nil {
+				return err
+			}
+		}
+	}
+	for name, present := range expected {
+		if !present {
+			return fmt.Errorf("standalone CLI tar missing %q", name)
+		}
+	}
+	return nil
+}
+
+func validateStandaloneCLIZIP(path string) error {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+	expected := map[string]bool{
+		"xdrive-cli/README.md": false,
+		"xdrive-cli/xd.exe": false,
+		"xdrive-cli/xdrive-agent.exe": false,
+	}
+	for _, member := range zr.File {
+		seen, ok := expected[member.Name]
+		if !ok || seen {
+			return fmt.Errorf("unexpected or duplicate standalone CLI zip member %q", member.Name)
+		}
+		expected[member.Name] = true
+		if !member.Mode().IsRegular() || member.Flags&1 != 0 ||
+			(member.Method != zip.Store && member.Method != zip.Deflate) ||
+			member.UncompressedSize64 > uint64(cliOnlyMaxBinaryBytes) {
+			return fmt.Errorf("unsafe standalone CLI zip member %q", member.Name)
+		}
+		if member.Name == "xdrive-cli/xd.exe" || member.Name == "xdrive-cli/xdrive-agent.exe" {
+			reader, err := member.Open()
+			if err != nil {
+				return err
+			}
+			err = checkCLIOnlyGoBinary(reader, int64(member.UncompressedSize64),
+				"windows", "amd64", strings.TrimPrefix(member.Name, "xdrive-cli/"))
+			closeErr := reader.Close()
+			if err != nil {
+				return err
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+		}
+	}
+	for name, present := range expected {
+		if !present {
+			return fmt.Errorf("standalone CLI zip missing %q", name)
+		}
 	}
 	return nil
 }
