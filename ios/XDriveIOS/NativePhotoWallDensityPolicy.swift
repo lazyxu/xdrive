@@ -147,6 +147,33 @@ enum XDriveIOSNativePhotoWallTimeScale: String, CaseIterable, Identifiable {
     }
 }
 
+/// Presentation-only contiguous sections of a *currently loaded* photo window.
+/// Never sorts, widens, or queries a PhotoKit/Owner collection. An unknown date
+/// stays in its original position and a repeated nonadjacent date starts another
+/// section rather than reordering Viewer identities.
+struct XDriveIOSNativePhotoWallVisibleSection<Item>: Identifiable {
+    let id: Int
+    let key: String
+    var items: [Item]
+}
+
+func xdriveIOSNativePhotoWallVisibleSections<Item>(
+    _ items: [Item],
+    scale: XDriveIOSNativePhotoWallTimeScale,
+    key: (Item) -> String
+) -> [XDriveIOSNativePhotoWallVisibleSection<Item>] {
+    var result: [XDriveIOSNativePhotoWallVisibleSection<Item>] = []
+    for item in items {
+        let groupKey = scale == .all ? "all" : key(item)
+        if !result.isEmpty && result[result.count - 1].key == groupKey {
+            result[result.count - 1].items.append(item)
+        } else {
+            result.append(.init(id: result.count, key: groupKey, items: [item]))
+        }
+    }
+    return result
+}
+
 /// Shared state-only auto-advance gate. No platform permissions, PhotoKit scan,
 /// signed Owner range or Viewer is ever started by the shared presentation.
 enum XDriveIOSNativePhotoWallWindowPolicy {
