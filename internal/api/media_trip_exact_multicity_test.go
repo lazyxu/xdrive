@@ -124,7 +124,9 @@ func TestMediaExactTripCivilDayDeltaDSTAndTimezone(t *testing.T) {
 	// These midnight instants are 23/25 hours apart across New York DST,
 	// but calendar-neighbor travel days must still be adjacent.
 	zone, err := time.LoadLocation("America/New_York")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, dates := range [][2]string{
 		{"2026-03-08", "2026-03-09"},
 		{"2026-11-01", "2026-11-02"},
@@ -132,7 +134,9 @@ func TestMediaExactTripCivilDayDeltaDSTAndTimezone(t *testing.T) {
 	} {
 		first, _ := time.ParseInLocation("2006-01-02", dates[0], zone)
 		second, _ := time.ParseInLocation("2006-01-02", dates[1], zone)
-		if first.Equal(second) { t.Fatalf("test does not represent distinct days: %v", dates) }
+		if first.Equal(second) {
+			t.Fatalf("test does not represent distinct days: %v", dates)
+		}
 		if delta := mediaExactTripCivilDayDelta(dates[1], dates[0]); delta != 1 {
 			t.Fatalf("forward adjacent dates %v yielded %d", dates, delta)
 		}
@@ -152,10 +156,14 @@ func TestMediaExactTripCivilDayDeltaDSTAndTimezone(t *testing.T) {
 
 func TestMediaExactTripPromotionUsesCivilDaysEvenWithDSTShift(t *testing.T) {
 	zone, err := time.LoadLocation("America/New_York")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	mk := func(date string, lat, lon, count int64) mediaMemoryTripDay {
 		value, parseErr := time.ParseInLocation("2006-01-02", date, zone)
-		if parseErr != nil { t.Fatal(parseErr) }
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
 		return mediaMemoryTripDay{
 			Date: value, DateKey: date,
 			LatitudeCell: lat, LongitudeCell: lon, ItemCount: count,
@@ -163,7 +171,7 @@ func TestMediaExactTripPromotionUsesCivilDaysEvenWithDSTShift(t *testing.T) {
 	}
 	dominant := []mediaMemoryTripDay{
 		mk("2026-03-06", 5, 5, 4), mk("2026-03-07", 5, 5, 4),
-		mk("2026-03-08", 5, 5, 12), // return with off-home GPS, true near home dominant
+		mk("2026-03-08", 5, 5, 12),  // return with off-home GPS, true near home dominant
 		mk("2026-03-09", 30, 30, 5), // neighbor away across DST
 		mk("2026-03-10", 40, 40, 6),
 	}
