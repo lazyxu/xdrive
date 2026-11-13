@@ -1,6 +1,7 @@
 name: iOS MapKit P0 real PhotoKit GPS scale audit
 on:
   pull_request:
+    types: [opened, reopened, synchronize, labeled]
     paths:
       - '.github/workflows/ios-mapkit-p0-real-gps-scale.yml'
       - 'ios/scripts/generate-mapkit-p0-gps-fixtures.py'
@@ -31,11 +32,14 @@ concurrency:
   cancel-in-progress: false
 jobs:
   actual-photokit-delta:
+    # Only the explicit, one-shot performance label may start a heavyweight
+    # run. Other PR labels do not launch this job.
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'real-photokit-100k-once' }}
     runs-on: macos-15
     timeout-minutes: 180
     env:
-      MAP_P0_COUNT: ${{ inputs.count || '65' }}
-      MAP_P0_PATTERN: ${{ inputs.pattern || 'distinct' }}
+      MAP_P0_COUNT: ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'real-photokit-100k-once') && '100000' || inputs.count || '65' }}
+      MAP_P0_PATTERN: ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'real-photokit-100k-once') && 'mixed' || inputs.pattern || 'distinct' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,7 +128,7 @@ jobs:
         # The normal PR runs only 65 genuine assets. An explicit 100000
         # workflow_dispatch exercises the expensive REAL 100k dataset.
         # Do not report synthetic Swift 100k index tests as this result.
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.count == '100000' }}
+        if: ${{ env.MAP_P0_COUNT == '100000' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -172,7 +176,7 @@ jobs:
           if after-before!=wanted: raise SystemExit("Real PhotoKit imported asset count did not match exact EXIF GPS delta")
           PY
       - name: Independently audit cold 100k evidence against real imported GPS delta
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.count == '100000' }}
+        if: ${{ env.MAP_P0_COUNT == '100000' }}
         shell: bash
         run: |
           set -euo pipefail
