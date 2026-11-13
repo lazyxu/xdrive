@@ -135,7 +135,7 @@ test('system Photos TCC termination preserves real app recovery and crash eviden
   const diagnoseStart = ui.indexOf('private func diagnose(')
   const resumeStart = ui.indexOf('private func resumeMapAfterSystemPhotosChange(')
   const settingsStart = ui.indexOf('private func authorizeFullPhotosInSettings(')
-  const mapStart = ui.indexOf('private func openLocalMap()')
+  const mapStart = ui.search(/private func openLocalMap\(performance: Bool = false\) -> XCUIApplication/)
   assert.ok(diagnoseStart >= 0 && resumeStart > diagnoseStart &&
             settingsStart > resumeStart && mapStart > settingsStart)
   const diagnostic = ui.slice(diagnoseStart, ui.indexOf('private func xDriveSettingsDetailVisible(', diagnoseStart))
