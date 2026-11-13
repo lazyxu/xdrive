@@ -127,6 +127,11 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 .waitForExistence(timeout: 15))
             if route == "backup.tasks" {
                 _ = reveal(view("native-ios-photos-task-list", app: app), app: app)
+            } else if route == "backup.setup" {
+                let setup = app.buttons.matching(NSPredicate(
+                    format: "label == %@ OR label == %@", "开始设置", "继续设置"
+                )).firstMatch
+                _ = reveal(setup, app: app)
             } else if route == "backup.details" {
                 _ = reveal(app.buttons["备份详情"].firstMatch, app: app)
             } else if route == "backup.audit" {
@@ -134,6 +139,11 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             } else {
                 XCTFail("Unregistered Backup subpage: \(route)")
             }
+        } else if route == "mine.signout.confirm" {
+            tap("native-ios-tab-mine", app: app)
+            let action = view("native-ios-mine-server-account", app: app)
+            XCTAssertTrue(action.waitForExistence(timeout: 15))
+            XCTAssertTrue(action.isEnabled, "Only a current native Owner may request sign-out")
         } else if route == "gallery.originals.help" {
             tap("native-ios-tab-gallery", app: app)
             tap("native-ios-gallery-source-originals", app: app)
@@ -212,6 +222,13 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "backup.tasks":
             tap("native-ios-photos-task-list", app: app)
             ready = view("native-ios-photo-task-list-done", app: app)
+        case "backup.setup":
+            let setup = app.buttons.matching(NSPredicate(
+                format: "label == %@ OR label == %@", "开始设置", "继续设置"
+            )).firstMatch
+            XCTAssertTrue(setup.waitForExistence(timeout: 15))
+            setup.tap()
+            ready = view("native-ios-backup-setup", app: app)
         case "backup.details":
             app.buttons["备份详情"].firstMatch.tap()
             ready = view("native-ios-backup-portrait-form", app: app)
@@ -233,6 +250,9 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "gallery.cache.sheet":
             app.buttons["释放本机缓存空间（不删除照片原件）"].firstMatch.tap()
             ready = view("native-ios-backup-cache-sheet-close", app: app)
+        case "mine.signout.confirm":
+            tap("native-ios-mine-server-account", app: app)
+            ready = app.buttons["停止本机自动备份并退出"].firstMatch
         case "gallery.originals.help":
             tap("native-ios-cloud-original-layout-help", app: app)
             ready = app.alerts["云端备份原件说明"].firstMatch
@@ -312,6 +332,12 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             let closed = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "exists == false"), object: done)
             XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 12), .completed)
+        case "backup.setup":
+            let back = app.buttons["返回相册备份"].firstMatch
+            XCTAssertTrue(back.waitForExistence(timeout: 15))
+            back.tap()
+            XCTAssertTrue(view("native-ios-backup-overview", app: app)
+                .waitForExistence(timeout: 15))
         case "backup.details", "backup.audit",
              "gallery.backup.focused", "gallery.backup.settings", "gallery.backup.audit":
             let back = app.buttons["返回相册备份"].firstMatch
@@ -332,6 +358,13 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "gallery.cache.sheet":
             tap("native-ios-backup-cache-sheet-close", app: app)
             XCTAssertTrue(view("native-ios-unified-photo-gallery", app: app)
+                .waitForExistence(timeout: 15))
+        case "mine.signout.confirm":
+            let cancel = app.buttons["取消"].firstMatch
+            XCTAssertTrue(cancel.waitForExistence(timeout: 15),
+                          "Native sign-out consent must provide a safe cancel action")
+            cancel.tap()
+            XCTAssertTrue(view("native-ios-mine-server-account", app: app)
                 .waitForExistence(timeout: 15))
         case "gallery.originals.help":
             let alert = app.alerts["云端备份原件说明"].firstMatch
@@ -405,6 +438,7 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     func testSubpageFilesOrganizerTags() { run("files.organizer.tags") }
     func testSubpageFilesTags() { run("files.tags") }
     func testSubpageBackupTasks() { run("backup.tasks") }
+    func testSubpageBackupSetup() { run("backup.setup") }
     func testSubpageBackupDetails() { run("backup.details") }
     func testSubpageLauncherRecentPicker() { run("launcher.recent-picker") }
     func testSubpageBackupAudit() { run("backup.audit") }
@@ -414,6 +448,7 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     func testSubpageGalleryBackupAudit() { run("gallery.backup.audit") }
     func testSubpageGalleryCacheSheet() { run("gallery.cache.sheet") }
     func testSubpageFilesHomeEditMode() { run("files.home.edit-mode") }
+    func testSubpageMineSignoutConfirm() { run("mine.signout.confirm") }
     func testSubpageGalleryOriginalsHelp() { run("gallery.originals.help") }
     func testSubpageGalleryLocalDateSheet() { run("gallery.local.date-sheet") }
     func testSubpageGalleryMapFromFilter() { run("gallery.map.from-filter") }
