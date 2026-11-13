@@ -153,9 +153,9 @@ class AuditTests(unittest.TestCase):
         source = (repo / 'ios/UITests/XDriveIOSAllPagesCrashUITests.swift').read_text(encoding='utf-8')
         watcher = (repo / 'ios/scripts/capture-navigation-smoke-frames.py').read_text(encoding='utf-8')
         workflow = (repo / '.github/workflows/ios-native-navigation-runtime.yml').read_text(encoding='utf-8')
-        cases = re.findall(r'\\bfunc\\s+(test\\w+)\\s*\\(', source)
-        registered = set(re.findall(r'"(test\\w+)"', watcher))
-        self.assertGreaterEqual(len(cases), 36)
+        cases = re.findall(r'\bfunc\s+(test\w+)\s*\(', source)
+        registered = set(re.findall(r'"(test\w+)"', watcher))
+        self.assertGreaterEqual(len(cases), 38)
         self.assertEqual(len(cases), len(set(cases)))
         self.assertFalse(set(cases) - registered,
                          'all-pages native cases missing frame diagnostics: ' +
