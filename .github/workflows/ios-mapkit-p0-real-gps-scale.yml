@@ -180,6 +180,7 @@ jobs:
             "$RUNNER_TEMP/map-p0-results/real-app-performance.json" \
             --baseline "$RUNNER_TEMP/map-p0-results/baseline.log" \
             --seeded "$RUNNER_TEMP/map-p0-results/seeded.log" \
+            --xctest-log "$RUNNER_TEMP/map-p0-results/performance.log" \
             --expected 100000 \
             --json-output "$RUNNER_TEMP/map-p0-results/100k-summary.json" \
             --csv-output "$RUNNER_TEMP/map-p0-results/100k-summary.csv"
