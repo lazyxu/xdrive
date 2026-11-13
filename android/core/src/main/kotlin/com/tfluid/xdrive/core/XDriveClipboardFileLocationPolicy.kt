@@ -4,7 +4,7 @@ package com.tfluid.xdrive.core
  * The last crumb is the immediate parent, NOT the Owner root for nested nodes.
  * Files/Node ACL is always enforced by the original Owner-authenticated API.
  */
-internal object XDriveClipboardFileLocationPolicy {
+object XDriveClipboardFileLocationPolicy {
     fun accepts(selected: DriveNode, located: OwnedNodeLocation, rootID: Long): Boolean {
         val parentID = selected.parentId ?: return false
         if (rootID <= 0 || selected.id <= 0 || parentID <= 0 ||
