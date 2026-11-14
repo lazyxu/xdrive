@@ -73,7 +73,7 @@ private struct XDriveIOSUnifiedSourceMapSeed {
     let cursor: XDriveIOSNativeGalleryCursor
 }
 
-private struct XDriveIOSUnifiedSourceMapPin: Identifiable {
+struct XDriveIOSUnifiedSourceMapPin: Identifiable {
     let key: XDriveIOSNativeLocalMapSpatialPolicy.Key
     let latitude: Double
     let longitude: Double
@@ -94,12 +94,22 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
     let presence: XDriveIOSNativeGalleryPresence
     let query: XDriveIOSNativeUnifiedGalleryQuery
     let onClose: () -> Void
+    var onSaveCamera: ((MKCoordinateRegion) -> Void)? = nil
 
     @Environment(\.scenePhase) private var phase
     // The Gallery underneath stops its PHChange observer while the modal
     // Map is open. Register one in this Map so stale GPS counts disappear
     // immediately after edits rather than only on the next user gesture.
     @StateObject private var photoChanges = XDriveIOSUnifiedPhotoObserver()
+    @StateObject private var currentLocation = XDriveIOSNativeMapUserLocationController()
+    @State private var mapType: MKMapType = .standard
+    @State private var basemapUnavailable = false
+    @State private var datePickerOpen = false
+    @State private var requestedCaptureDay = Date()
+    @State private var scopedQuery: XDriveIOSNativeUnifiedGalleryQuery
+    @State private var mapRevision = UUID()
+    @State private var cameraRequestID: UUID?
+    @State private var remotePollTask: Task<Void, Never>?
     @State private var scanTask: Task<Void, Never>?
     @State private var cameraSettleTask: Task<Void, Never>?
     @State private var coverTask: Task<Void, Never>?
@@ -119,6 +129,50 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
         span: MKCoordinateSpan(latitudeDelta: 160, longitudeDelta: 360)
     )
+
+    init(login: XDriveIOSNativeOwnerLoginModel,
+         presence: XDriveIOSNativeGalleryPresence,
+         query: XDriveIOSNativeUnifiedGalleryQuery,
+         restoredCamera: MKCoordinateRegion? = nil,
+         onSaveCamera: ((MKCoordinateRegion) -> Void)? = nil,
+         onClose: @escaping () -> Void) {
+        self.login = login
+        self.presence = presence
+        self.query = query
+        self.onClose = onClose
+        self.onSaveCamera = onSaveCamera
+        _scopedQuery = State(initialValue: query)
+        if let restoredCamera {
+            _camera = State(initialValue: restoredCamera)
+            _didFitFirstVerifiedMap = State(initialValue: true)
+        }
+    }
+
+    private func setDateRange(_ value: XDriveIOSNativePhotoMapCaptureRange?) {
+        guard !busy else { return }
+        var updated = scopedQuery
+        updated.from = value?.from
+        updated.until = value?.to
+        guard updated.isValid else { return }
+        scopedQuery = updated
+        didFitFirstVerifiedMap = false
+        reload()
+    }
+
+    private func startRemotePoll() {
+        remotePollTask?.cancel()
+        remotePollTask = Task { @MainActor in
+            while !Task.isCancelled {
+                // Cloud additions, edits and removals invalidate negative
+                // source claims too. Do not confuse a provisional page with
+                // an authoritative empty location index.
+                do { try await Task.sleep(nanoseconds: 30_000_000_000) }
+                catch { break }
+                guard !Task.isCancelled else { break }
+                if phase == .active && selected == nil && !busy { reload() }
+            }
+        }
+    }
 
     private var currentViewport: XDriveIOSNativeLocalMapViewport? {
         if camera.span.longitudeDelta >= 359 && camera.span.latitudeDelta >= 159 {
@@ -156,14 +210,27 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            Map(coordinateRegion: $camera, annotationItems: currentProof ? pins : []) { pin in
-                MapAnnotation(coordinate: CLLocationCoordinate2D(
-                    latitude: pin.latitude, longitude: pin.longitude
-                )) {
-                    verifiedMarker(for: pin)
+            XDriveIOSNativeUnifiedSourceMapSurface(
+                pins: currentProof ? pins : [], images: coverImages,
+                unavailable: coverUnavailable, revision: mapRevision,
+                markersEnabled: currentProof, initialCamera: camera,
+                mapType: mapType, cameraRequestID: cameraRequestID,
+                requestedCamera: camera, showsUserDot: currentLocation.showsUserDot,
+                onCameraWillChange: {},
+                onCamera: { region in camera = region },
+                onBasemapStatus: { basemapUnavailable = $0 },
+                onOpen: { id in
+                    guard currentProof, let pin = pins.first(where: { $0.id == id }),
+                          pin.count > 0 else { return }
+                    selected = pin
                 }
-            }
+            )
             .accessibilityIdentifier("native-ios-unified-source-map")
+            if basemapUnavailable {
+                Text("地图底图暂不可用。联网后可切换底图重试；照片位置仍受当前权限保护。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-unified-source-map-basemap-error")
+            }
             if busy {
                 ProgressView("核对整个当前来源的照片位置…")
                     .accessibilityIdentifier("native-ios-unified-source-map-scanning")
@@ -191,12 +258,78 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button("完成", action: onClose)
+                Button("完成") {
+                        if currentProof { onSaveCamera?(camera) }
+                        onClose()
+                    }
                     .accessibilityIdentifier("native-ios-unified-source-map-close")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("刷新") { reload() }.disabled(busy || phase != .active)
+                Menu {
+                    Button("刷新照片位置") { reload() }
+                        .disabled(busy || phase != .active)
+                    Picker("底图样式", selection: $mapType) {
+                        Text("标准地图").tag(MKMapType.standard)
+                        Text("卫星地图").tag(MKMapType.satellite)
+                    }
+                } label: { Label("地图操作", systemImage: "ellipsis.circle") }
+                .accessibilityIdentifier("native-ios-unified-source-map-actions")
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button("恢复原始日期范围") { setDateRange(nil) }
+                    Button("最近 7 天") {
+                        setDateRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
+                    }
+                    Button("最近 30 天") {
+                        setDateRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
+                    }
+                    Button("选择日期、月份或年份") { datePickerOpen = true }
+                } label: { Label("地图日期", systemImage: "calendar") }
+                .accessibilityIdentifier("native-ios-unified-source-map-dates")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { currentLocation.locate() } label: {
+                    Label("我的位置", systemImage: "location")
+                }
+                .disabled(currentLocation.isLocating || phase != .active || !currentProof)
+                .accessibilityIdentifier("native-ios-unified-source-map-locate")
+            }
+        }
+        .sheet(isPresented: $datePickerOpen) {
+            NavigationStack {
+                Form {
+                    DatePicker("拍摄日期", selection: $requestedCaptureDay,
+                               displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                    Button("显示当天") {
+                        setDateRange(XDriveIOSNativePhotoMapCaptureRange.day(requestedCaptureDay))
+                        datePickerOpen = false
+                    }
+                    Button("显示所在月份") {
+                        let calendar = Calendar.current
+                        setDateRange(XDriveIOSNativePhotoMapCaptureRange.month(
+                            calendar.component(.year, from: requestedCaptureDay),
+                            calendar.component(.month, from: requestedCaptureDay)))
+                        datePickerOpen = false
+                    }
+                    Button("显示所在年份") {
+                        setDateRange(XDriveIOSNativePhotoMapCaptureRange.year(
+                            Calendar.current.component(.year, from: requestedCaptureDay)))
+                        datePickerOpen = false
+                    }
+                }
+                .navigationTitle("选择来源地图日期")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { datePickerOpen = false }
+                    }
+                }
+            }
+        }
+        .alert(item: $currentLocation.alert) { issue in
+            Alert(title: Text("无法获取当前位置"), message: Text(issue.message),
+                  dismissButton: .default(Text("完成")))
         }
         .sheet(item: $selected, onDismiss: {
             // A return is a new authority boundary, not permission to reuse
@@ -208,7 +341,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 NavigationStack {
                     XDriveIOSNativeUnifiedSourceMapCellWall(
                         login: login, owner: owner, library: library,
-                        presence: presence, query: query, pin: pin)
+                        presence: presence, query: scopedQuery, pin: pin)
                 }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -219,6 +352,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         .onAppear {
             photoChanges.start()
             if pins.isEmpty && !busy { reload() }
+            startRemotePoll()
         }
         .onChange(of: photoChanges.change) { _ in
             invalidate()
@@ -234,91 +368,41 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             didFitFirstVerifiedMap = false
             reload()
         }
-        .onChange(of: query) { _ in
+        .onChange(of: query) { updated in
+            scopedQuery = updated
             didFitFirstVerifiedMap = false
             reload()
+        }
+        .onChange(of: currentLocation.requestID) { _ in
+            guard let target = currentLocation.camera, phase == .active else { return }
+            camera = target
+            cameraRequestID = UUID()
         }
         .onChange(of: camera.center.latitude) { _ in scheduleCameraRefinement() }
         .onChange(of: camera.center.longitude) { _ in scheduleCameraRefinement() }
         .onChange(of: camera.span.latitudeDelta) { _ in scheduleCameraRefinement() }
         .onChange(of: camera.span.longitudeDelta) { _ in scheduleCameraRefinement() }
         .onChange(of: phase) { state in
-            if state == .active { reload() } else { invalidate() }
+            if state == .active {
+                startRemotePoll()
+                reload()
+            } else {
+                remotePollTask?.cancel(); remotePollTask = nil
+                currentLocation.cancel()
+                invalidate()
+            }
         }
         .onDisappear {
             // Keep observing while a place sheet covers the map. Retire the
             // observation only on actual route departure.
             if selected == nil {
+                remotePollTask?.cancel(); remotePollTask = nil
+                currentLocation.cancel()
+                if currentProof { onSaveCamera?(camera) }
                 photoChanges.stop()
                 invalidate()
             }
         }
-    }
-
-    private func verifiedMarker(for pin: XDriveIOSUnifiedSourceMapPin) -> some View {
-        Button {
-            // Old MapKit hit testing cannot be treated as a source grant.
-            guard currentProof, pins.contains(where: {
-                $0.id == pin.id && $0.count == pin.count &&
-                $0.firstCursor == pin.firstCursor
-            }) else { return }
-            selected = pin
-        } label: {
-            ZStack(alignment: .topLeading) {
-                Group {
-                    if let cover = coverImages[pin.id] {
-                        Image(uiImage: cover).resizable().scaledToFill()
-                    } else {
-                        Image(systemName: coverUnavailable.contains(pin.id)
-                            ? "icloud.slash" : "photo.on.rectangle")
-                            .resizable().scaledToFit().padding(16)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(
-                    width: XDriveIOSNativeMapMarkerVisualPolicy.imageFrame.width,
-                    height: XDriveIOSNativeMapMarkerVisualPolicy.imageFrame.height)
-                .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(
-                    cornerRadius: XDriveIOSNativeMapMarkerVisualPolicy.coverCornerRadius))
-                .overlay(RoundedRectangle(
-                    cornerRadius: XDriveIOSNativeMapMarkerVisualPolicy.coverCornerRadius)
-                    .stroke(.white, lineWidth:
-                        XDriveIOSNativeMapMarkerVisualPolicy.photoBorderWidth))
-                .offset(
-                    x: XDriveIOSNativeMapMarkerVisualPolicy.imageFrame.minX,
-                    y: XDriveIOSNativeMapMarkerVisualPolicy.imageFrame.minY)
-                if pin.count > 1 {
-                    Text(XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: pin.count))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(
-                            width: XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame.width,
-                            height: XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame.height)
-                        .background(Color.blue, in: RoundedRectangle(
-                            cornerRadius: XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius))
-                        .overlay(RoundedRectangle(
-                            cornerRadius: XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius)
-                            .stroke(.white, lineWidth:
-                                XDriveIOSNativeMapMarkerVisualPolicy.badgeBorderWidth))
-                        .offset(
-                            x: XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame.minX,
-                            y: XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame.minY)
-                }
-            }
-            .frame(
-                width: XDriveIOSNativeMapMarkerVisualPolicy.frame.width,
-                height: XDriveIOSNativeMapMarkerVisualPolicy.frame.height,
-                alignment: .topLeading)
-            .overlay(RoundedRectangle(cornerRadius: 10)
-                .stroke(selected?.id == pin.id ? Color.accentColor : .clear,
-                        lineWidth: 3))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("native-ios-unified-source-map-cell-\(pin.id)")
-        .accessibilityLabel("当前筛选的此区域 \(pin.count) 张照片")
-        .accessibilityHint(coverUnavailable.contains(pin.id)
-            ? "位置封面暂不可用。可点击刷新重新读取缩略图。" : "双击打开当前区域照片")
     }
 
     private func invalidate() {
@@ -333,6 +417,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         coverImages = [:]
         coverUnavailable = []
         pins = []
+        mapRevision = UUID()
         selected = nil
         provedOwner = nil
         provedLibrary = nil
@@ -454,7 +539,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                           let start = cursor else { return }
                     let page = XDriveIOSNativeUnifiedPhotoTimeline()
                     await page.load(from: start, filter: presence, login: login,
-                                    query: query, library: library)
+                                    query: scopedQuery, library: library)
                     try Task.checkCancellation()
                     guard generation == ticket, page.completed,
                           page.notice == nil,
@@ -494,6 +579,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                                 firstCursor: cell.representative.cursor)
                         }
                         pins = verifiedPins
+                        mapRevision = UUID()
                         provedOwner = owner
                         provedLibrary = library
                         provedCamera = scannedCamera
@@ -512,6 +598,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                                     span: MKCoordinateSpan(
                                         latitudeDelta: fit.latitudeDelta,
                                         longitudeDelta: fit.longitudeDelta))
+                                cameraRequestID = UUID()
                             }
                         }
                         loadCovers(verifiedPins, owner: owner, ticket: ticket)
