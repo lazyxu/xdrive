@@ -304,7 +304,11 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
     }
 
-    private func openLocalMap(appearance: String? = nil) -> XCUIApplication {
+    private func openLocalMap() -> XCUIApplication {
+        openLocalMap(appearance: nil)
+    }
+
+    private func openLocalMap(appearance: String?) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
         if let appearance {
