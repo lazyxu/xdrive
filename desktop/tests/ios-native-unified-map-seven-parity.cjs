@@ -61,7 +61,7 @@ test('G03: source markers share native 68/64 point photo geometry and bounded pr
   assert.match(map, /reader\.thumbnail\(cloud\)/)
   assert.match(map, /coverTask\?\.cancel\(\)/)
   assert.match(map, /cancelImageRequest\(request\)/)
-  assert.match(map, /guard generation == ticket, currentProof/)
+  assert.match(map, /guard !cancelled, generation == ticket, currentProof/)
   assert.doesNotMatch(map, /Label\("\\\(pin\.count\\\)", systemImage: "photo.on.rectangle"\)/)
 })
 
