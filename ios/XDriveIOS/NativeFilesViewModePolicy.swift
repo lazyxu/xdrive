@@ -11,10 +11,11 @@ enum XDriveIOSNativeFilesViewModePolicy {
 
     static func canRestore(
         ticketCurrent: Bool, ownerValid: Bool, pageValid: Bool,
-        anchorVisible: Bool, expectedMode: String, currentMode: String,
+        anchorVisible: Bool, screenVisible: Bool,
+        expectedMode: String, currentMode: String,
         active: Bool
     ) -> Bool {
-        ticketCurrent && ownerValid && pageValid && anchorVisible && active &&
+        ticketCurrent && ownerValid && pageValid && anchorVisible && screenVisible && active &&
             (expectedMode == "list" || expectedMode == "grid") &&
             expectedMode == currentMode
     }

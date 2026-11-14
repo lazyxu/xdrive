@@ -43,7 +43,11 @@ test('F3 List/Grid uses verified anchored updates and rejects stale tasks', () =
     assert.match(src, /returnScroll\.scrollTo\(anchor, anchor: \.center\)/)
   }
   assert.match(policy, /Set\(loaded\)\.count == loaded\.count/)
-  assert.match(policy, /ticketCurrent && ownerValid && pageValid && anchorVisible && active/)
+  assert.match(policy, /ticketCurrent && ownerValid && pageValid && anchorVisible && screenVisible && active/)
+  assert.match(browse, /screenVisible: filesViewVisible/)
+  assert.match(collection, /screenVisible: isVisible/)
+  assert.match(browse, /modeSwitchTicket = UUID\(\)/)
+  assert.match(collection, /pendingModeSwitchAnchor = nil/)
   assert.match(browse, /model\.canReanchor/)
   assert.match(collection, /model\.matches\(login\.owner, kind: kind\)/)
 })

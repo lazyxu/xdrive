@@ -664,9 +664,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                         ownerValid: XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
                         pageValid: model.matches(login.owner, kind: kind),
                         anchorVisible: filteredItems.contains(where: { $0.node.id == anchor }),
+                        screenVisible: isVisible,
                         expectedMode: next, currentMode: viewMode,
                         active: phase == .active && isVisible
-                    ) else { return }
+                    ) else {
+                        if ticket == modeSwitchTicket { pendingModeSwitchAnchor = nil }
+                        return
+                    }
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
@@ -824,6 +828,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .onDisappear {
                 isVisible = false
+                modeSwitchTicket = UUID()
+                pendingModeSwitchAnchor = nil
                 if !viewerRefreshPending && selectedFile == nil &&
                     locateIntent == nil && managementIntent == nil {
                     // NavigationLink child must not lose its source identity.
@@ -853,6 +859,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
             .onChange(of: kind) { _ in
+                modeSwitchTicket = UUID()
+                pendingModeSwitchAnchor = nil
+                lastVisibleItemID = nil
                 viewerRefreshPending = false
                 // SwiftUI may reuse a StateObject when switching collection
                 // subroutes. Neither the old items nor async reads may cross.
@@ -870,6 +879,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if phase == .active { reload() }
             }
             .onChange(of: login.owner) { _ in
+                modeSwitchTicket = UUID()
+                pendingModeSwitchAnchor = nil
+                lastVisibleItemID = nil
                 viewerRefreshPending = false
                 selectedFile = nil
                 selectedOwner = nil

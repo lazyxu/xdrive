@@ -19,17 +19,17 @@ struct XDriveIOSNativeFilesViewModeChecks {
         require(P.anchor(preferred: 3, loaded: [1, 2, 2]) == nil, "duplicates")
         require(P.anchor(preferred: 3, loaded: [0, 3]) == nil, "zero Node")
         require(P.canRestore(ticketCurrent: true, ownerValid: true,
-                pageValid: true, anchorVisible: true,
+                pageValid: true, anchorVisible: true, screenVisible: true,
                 expectedMode: "grid", currentMode: "grid", active: true),
                 "same mode Owner and range")
-        for denied in 0..<6 {
+        for denied in 0..<7 {
             require(!P.canRestore(
                 ticketCurrent: denied != 0, ownerValid: denied != 1,
-                pageValid: denied != 2, anchorVisible: denied != 3,
+                pageValid: denied != 2, anchorVisible: denied != 3, screenVisible: denied != 6,
                 expectedMode: "list",
                 currentMode: denied == 4 ? "grid" : "list",
                 active: denied != 5
-            ), "reject stale ticket Owner range anchor mode or inactive")
+            ), "reject stale ticket Owner range anchor mode inactive or hidden route")
         }
         print("Files List/Grid anchor checks PASS")
     }

@@ -3658,6 +3658,8 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onDisappear { suspendVisibleRange() }
         .onDisappear {
             filesViewVisible = false
+            modeSwitchTicket = UUID()
+            pendingModeSwitchAnchor = nil
             // Undo/redo operation metadata is optional. A cancelled first
             // read must not permanently latch the shortcuts as "attempted".
             // Busy mutations are never cancelled by this navigation path.
@@ -3840,6 +3842,11 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func filesNavigationLifecycle(returnScroll: ScrollViewProxy) -> some View {
         filesOwnerLifecycle(returnScroll: returnScroll)
         .onChange(of: quickSection) { next in
+            if next != .browse {
+                modeSwitchTicket = UUID()
+                pendingModeSwitchAnchor = nil
+                return
+            }
             guard next == .browse, !isHome, !isGlobalSearch,
                   let folderID = parentID, let owner = login.owner,
                   let anchor = browseReturnAnchor,
@@ -3900,7 +3907,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 XDriveIOSNativeFilesViewModePolicy.anchor(
                     preferred: lastAppearedNodeID, loaded: model.entries.map(\.id)
                 )
-            guard !isHome, !isGlobalSearch, !selecting,
+            guard filesViewVisible, !isHome, !isGlobalSearch, !selecting,
                   let folderID = parentID, let owner = login.owner,
                   model.canReanchor(owner: owner, folderID: folderID,
                                     query: activeQuery, filters: searchFilters),
@@ -3919,9 +3926,13 @@ struct XDriveIOSNativeFilesBrowser: View {
                         query: activeQuery, filters: searchFilters
                     ),
                     anchorVisible: model.entries.contains(where: { $0.id == anchor }),
+                    screenVisible: filesViewVisible && !isHome && !isGlobalSearch && !selecting,
                     expectedMode: next, currentMode: viewMode,
                     active: phase == .active && quickSection == .browse
-                ) else { return }
+                ) else {
+                    if ticket == modeSwitchTicket { pendingModeSwitchAnchor = nil }
+                    return
+                }
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
