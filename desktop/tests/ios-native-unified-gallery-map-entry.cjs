@@ -22,7 +22,7 @@ test('default unified Gallery filter sheet exposes actual existing native map en
 
 test('unsupported unified source, filenames and media predicates never silently show an unfiltered map', () => {
   assert.match(gallery, /private var mapUnavailableReason: String\?/)
-  assert.match(gallery, /if sourceFilter != nil \{/)
+  assert.match(gallery, /if let sourceFilter \{/)
   assert.match(gallery, /if !criteria\.isValid \{/)
   assert.match(gallery, /private var representableMapMediaFilter: XDriveIOSNativePhotoMediaFilter/)
   assert.match(gallery, /pendingMapFilenameTerm = draft\.term/)
@@ -50,7 +50,7 @@ test('filter sheet is fully dismissed before existing MapKit is presented', () =
   assert.match(gallery, /\.sheet\(isPresented: \$showFilters, onDismiss: \{/)
   assert.match(gallery, /guard openMapAfterFilterDismiss else \{ return \}/)
   assert.match(gallery, /onShowMap\?\(selectedRange, selectedMedia, selectedFilename\)/)
-  assert.match(gallery, /query = draft[\s\S]*?if sourceFilter != nil \{[\s\S]*?openSourceMapAfterFilterDismiss = true/)
+  assert.match(gallery, /query = draft[\s\S]*?if sourceFilter != nil &&[\s\S]*?openSourceMapAfterFilterDismiss = true/)
   assert.match(gallery, /pendingMapCaptureRange = representableMapCaptureRange\s*pendingMapMediaFilter = representableMapMediaFilter\s*pendingMapFilenameTerm = draft\.term\s*openMapAfterFilterDismiss = true/)
   assert.match(gallery, /if openSourceMapAfterFilterDismiss \{[\s\S]*?showingSourceFilteredMap = true/)
   assert.match(gallery, /showFilters = false/)
