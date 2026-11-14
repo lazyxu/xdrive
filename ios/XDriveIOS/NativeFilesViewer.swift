@@ -347,6 +347,16 @@ struct XDriveIOSNativeFilesViewer: View {
                         .accessibilityIdentifier("native-ios-files-video-first-frame-pending")
                 }
             }
+            .overlay(alignment: .top) {
+                if exporter.busy {
+                    ProgressView("正在准备原件…")
+                        .padding(12)
+                        .background(.regularMaterial,
+                                    in: RoundedRectangle(cornerRadius: XDriveIOSNativeFilesUIStyle.cardRadius))
+                        .padding(.top, 12)
+                        .accessibilityIdentifier("native-ios-files-viewer-export-progress")
+                }
+            }
             .overlay(alignment: .bottom) {
                 if neighborBusy {
                     ProgressView("正在核验相邻文件…")
@@ -378,6 +388,46 @@ struct XDriveIOSNativeFilesViewer: View {
                             .accessibilityIdentifier("native-ios-files-player-reload")
                     }
                 }
+                // A real tap exports the exact verified Node/revision to the
+                // iOS system share sheet. No automatic original download.
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if authorized {
+                        Menu {
+                            if let staged = exporter.prepared,
+                               staged.nodeID == viewed.id,
+                               staged.revision == viewed.revision {
+                                ShareLink(item: staged.fileURL) {
+                                    Label("用其他 App 打开或保存原件",
+                                          systemImage: "square.and.arrow.up")
+                                }
+                                Button("清理暂存原件", role: .destructive) {
+                                    exporter.invalidate()
+                                }
+                            } else {
+                                Button {
+                                    exporter.prepare(viewed, login: login,
+                                                     transfers: transfers)
+                                } label: {
+                                    Label("下载原件以分享",
+                                          systemImage: "arrow.down.to.line")
+                                }
+                                .disabled(exporter.busy ||
+                                    viewed.size > XDriveIOSNativeFilesExportCapacityPolicy.maximumSingleFileBytes)
+                            }
+                            if exporter.busy {
+                                Button("取消下载") { exporter.invalidate() }
+                            }
+                            if let status = exporter.status {
+                                Text(status)
+                            }
+                        } label: {
+                            Label("导出原件", systemImage: "square.and.arrow.up")
+                                .frame(minWidth: XDriveIOSNativeFilesUIStyle.tapHeight,
+                                       minHeight: XDriveIOSNativeFilesUIStyle.tapHeight)
+                        }
+                        .accessibilityIdentifier("native-ios-files-viewer-primary-share")
+                    }
+                }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button {
                         move(-1)
@@ -391,7 +441,7 @@ struct XDriveIOSNativeFilesViewer: View {
                            current: viewed, in: visibleWindow, authorized: true
                        ) {
                         Text("\(index + 1)/\(visibleWindow.count)（窗口）")
-                            .font(.caption.monospacedDigit())
+                            .font(XDriveIOSNativeFilesUIStyle.metadataFont.monospacedDigit())
                     }
                     Spacer()
                     Button {
