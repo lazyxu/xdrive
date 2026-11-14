@@ -120,7 +120,9 @@ func TestVerifiedCommonBatchHistoryRebaselineArchivesOnlyCleanPriorRevision(t *t
 	unsafe := cp
 	unsafe.State, unsafe.UncertainFiles, unsafe.ScanComplete = "uncertain", 1, false
 	unsafe.UpdatedAt = unsafe.UpdatedAt.Add(time.Second)
-	if err := StoreVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7, unsafe); err != nil { t.Fatal(err) }
+	if err := StoreVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7, unsafe); err != nil {
+		t.Fatal(err)
+	}
 	if err := ReconcileVerifiedCommonBatchHistoryBeforeRun(ctx, f.config, f.grant, f.secret, 8); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
 		t.Fatalf("old-version pending SQL was silently made current: %v", err)
 	}

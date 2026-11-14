@@ -44,7 +44,9 @@ func TestLocalPushAutoOnlyAfterOwnVerifiedPreviousPartial(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			recovering := cp
 			recovering.State = state
-			if state == "uncertain" { recovering.UncertainFiles = 1 }
+			if state == "uncertain" {
+				recovering.UncertainFiles = 1
+			}
 			if due, err := localPushAutomaticDue(spec, recovering, last.Add(30*time.Second)); err != nil || due {
 				t.Fatalf("original %s retry fired before bounded recovery delay: %t %v", state, due, err)
 			}

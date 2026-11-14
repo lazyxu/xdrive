@@ -61,7 +61,9 @@ func TestCommonBatchScanCompleteNeverForgesSourceOrCASCompletion(t *testing.T) {
 		SessionDigest: commonUploadSessionDigest(f.secret),
 		State: "partial", ScanComplete: true, UpdatedAt: time.Now().UTC(),
 	}
-	if err := StoreVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7, cp); err != nil { t.Fatal(err) }
+	if err := StoreVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7, cp); err != nil {
+		t.Fatal(err)
+	}
 	read, err := ReadVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7)
 	if err != nil || !read.ScanComplete || read.BackupComplete || read.CurrentCASVerified || read.RetirementSafe {
 		t.Fatalf("local scan completion invented Source proof: %+v %v", read, err)

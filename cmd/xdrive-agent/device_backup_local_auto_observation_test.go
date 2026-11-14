@@ -67,7 +67,9 @@ func TestLocalAutoReadinessRejectsUncertainStoppedOrWrongRevision(t *testing.T) 
 			unverified.State = state
 			got := projectLocalBoundAutoReadiness(source, plan, &unverified, now)
 			expected := "review_required"
-			if state == "running" { expected = "reconciliation_pending" }
+			if state == "running" {
+				expected = "reconciliation_pending"
+			}
 			if got.AutoReadiness != expected || got.NextScheduledAt != nil {
 				t.Fatalf("unexpected %s recovery readiness: %+v", state, got)
 			}
