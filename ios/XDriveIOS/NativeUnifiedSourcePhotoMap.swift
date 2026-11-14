@@ -794,8 +794,16 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
 }
 
 private struct XDriveIOSUnifiedMapViewerChoice: Identifiable {
+    // A Viewer session survives adjacent-media switches without dismissing
+    // and re-presenting the full-screen SwiftUI cover (visible flash).
+    let session: UUID
     let row: XDriveIOSNativeUnifiedPhoto
-    var id: String { row.id }
+    var id: UUID { session }
+
+    init(row: XDriveIOSNativeUnifiedPhoto, session: UUID = UUID()) {
+        self.session = session
+        self.row = row
+    }
 }
 
 /// One exact visual cell, revisiting the original Gallery cursor. Only two
@@ -982,10 +990,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 if active, let local = choice.row.local {
                     XDriveIOSNativeLocalPhotoDetail(
                         candidate: local, onUnifiedNavigate: navigateViewer)
+                    .id(choice.row.id)
                 } else if active, let cloud = choice.row.cloud {
                     XDriveIOSNativeServerMediaPreview(
                         item: cloud, login: login, loadedItems: [cloud],
                         openedOwner: owner, onUnifiedNavigate: navigateViewer)
+                        .id(choice.row.id)
                 } else {
                     Text("该照片已不可访问。")
                 }
@@ -1138,7 +1148,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 return
             }
             viewerReturnID = fresh.id
-            viewing = XDriveIOSUnifiedMapViewerChoice(row: fresh)
+            viewing = XDriveIOSUnifiedMapViewerChoice(
+                row: fresh, session: viewing?.session ?? UUID())
         }
     }
 
@@ -1192,7 +1203,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                             )
                             .frame(width: 48, height: 48)
                             .overlay(RoundedRectangle(cornerRadius: 4)
-                                .stroke(viewing?.id == row.id
+                                .stroke(viewing?.row.id == row.id
                                     ? Color.accentColor : Color.clear, lineWidth: 2))
                         }
                         .buttonStyle(.plain)
