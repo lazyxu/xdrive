@@ -174,7 +174,7 @@ func ReserveVerifiedCommonAutoAdmission(
 		// Retrying a failed/crashed run must not clear the retry delay just
 		// because the original Runner recorded a new uncertain checkpoint.
 		if checkpoint.State != "partial" && prior.SessionDigest == digest &&
-			prior.SourceRevision == checkpoint.SourceRevision &&
+			prior.SourceRevision <= checkpoint.SourceRevision &&
 			now.Before(prior.NextAttemptAt) {
 			return false, nil
 		}
@@ -202,7 +202,7 @@ func ReserveVerifiedCommonAutoAdmission(
 			}
 			if checkpoint.State != "partial" &&
 				prior.SessionDigest == digest &&
-				prior.SourceRevision == checkpoint.SourceRevision {
+				prior.SourceRevision <= checkpoint.SourceRevision {
 				streak = prior.Streak + 1
 				if streak > commonAutoAdmissionMaxStep {
 					streak = commonAutoAdmissionMaxStep
