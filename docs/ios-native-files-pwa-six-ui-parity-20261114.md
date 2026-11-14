@@ -35,7 +35,7 @@ Files changes.
 
 | Priority | Requested area | Product change and proof boundary |
 | --- | --- | --- |
-| P0 | Home | Smart folders remain directly visible; Tags/Classification uses one disclosure; Home editing and operation history move beneath More management. Existing accessibility targets remain. |
+| P0 | Home | Smart folders remain directly visible; Tags/Classification uses one disclosure; Home editing moves beneath More management while operation history stays directly reachable. Existing accessibility targets remain. |
 | P0 | Rename + attributes | Direct revision-checked context rename remains. Browse and Recent/Favorites add an Owner-fenced read-only attributes sheet; full management remains a separate explicit action. |
 | P0 | Viewer | Existing AVPlayerLayer-ready first displayed frame timestamp, Previous/Next and verified return anchors remain; the PR adds explicit revision-bound export and Simulator video audit. Zero first-frame samples mean NOT MEASURED. |
 | P0 | Child switching | Existing simulator taps cover Browse, Recent, Favorites, Trash denial, Gallery/Files and navigation; recorded H.264 provenance and decoded 10Hz frames are separately audited. |

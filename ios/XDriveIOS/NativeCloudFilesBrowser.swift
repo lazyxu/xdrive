@@ -1689,12 +1689,14 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .disabled(login.owner == nil)
                 .accessibilityIdentifier("native-ios-files-organize-home")
-                Button { presentFileOperations() } label: {
-                    Label("操作历史及撤销", systemImage: "arrow.uturn.backward.circle")
-                }
-                .disabled(login.owner == nil)
-                .accessibilityIdentifier("native-ios-files-open-operations")
             }
+            // Keep the existing direct operation-history route for UI-test
+            // continuity and high-value Undo/Redo recovery.
+            Button { presentFileOperations() } label: {
+                Label("操作历史及撤销", systemImage: "arrow.uturn.backward.circle")
+            }
+            .disabled(login.owner == nil)
+            .accessibilityIdentifier("native-ios-files-open-operations")
         }
         if isHome, let routeResumeMessage {
             Section {
