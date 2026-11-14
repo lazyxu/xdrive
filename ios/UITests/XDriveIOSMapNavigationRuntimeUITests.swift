@@ -304,9 +304,12 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
     }
 
-    private func openLocalMap() -> XCUIApplication {
+    private func openLocalMap(appearance: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        if let appearance {
+            app.launchArguments += ["-uiuserinterfacestyle", appearance]
+        }
         // The candidate Simulator job resets Photos once for the installed
         // target app before UI tests. Do NOT reset again for every testcase:
         // a later reset can invalidate the system Full Access selected by a
@@ -570,6 +573,15 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let gallery = element("native-ios-tab-gallery", in: app)
         XCTAssertTrue(gallery.waitForExistence(timeout: 15))
         gallery.tap()
+        // Compare the actual same PhotoKit library, not a cloud placeholder.
+        let sourceMenu = element("native-ios-gallery-source-menu", in: app)
+        XCTAssertTrue(sourceMenu.waitForExistence(timeout: 15))
+        sourceMenu.tap()
+        let localSource = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(localSource.waitForExistence(timeout: 10))
+        localSource.tap()
+        XCTAssertTrue(app.navigationBars["本机照片"].firstMatch
+            .waitForExistence(timeout: 20))
         let galleryScale = element("native-ios-shared-photo-time-scale", in: app)
         if galleryScale.waitForExistence(timeout: 20) {
             XCTAssertLessThan(abs(galleryScale.frame.height - placeScaleHeight), 3,
@@ -578,6 +590,25 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         attach("gallery-landscape")
         XCUIDevice.shared.orientation = .portrait
         attach("gallery-portrait")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // Dark appearance on real PhotoKit GPS fixture; this attachment alone
+    // does not claim a physical iPhone or pixel-level parity check has passed.
+    func testPhotoKitPlaceWallDarkAppearanceSnapshotEvidence() {
+        let app = openLocalMap(appearance: "dark")
+        let marker = app.descendants(matching: .any)
+            .matching(NSPredicate(
+                format: "label CONTAINS %@", "已扫描图库区域有2张带定位照片"))
+            .firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 30))
+        marker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(element("native-ios-map-photo-wall-tile", in: app)
+            .waitForExistence(timeout: 45))
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "gallery-places-parity-place-dark"
+        shot.lifetime = .keepAlways
+        add(shot)
         XCTAssertEqual(app.state, .runningForeground)
     }
 }
