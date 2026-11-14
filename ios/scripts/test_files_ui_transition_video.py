@@ -1,5 +1,7 @@
+import json
 import pathlib
 import sys
+from unittest.mock import patch
 import tempfile
 import unittest
 
@@ -62,6 +64,67 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[1]["time"], 0.2)
         self.assertEqual(frames[0]["ymin"], 11)
+
+    def _audit_sample(self, **changes):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            name = sorted(TARGETS)[0]
+            (root / (name + ".mp4")).write_bytes(b"sample-video" * 400)
+            entry = {
+                "test": name, "file": name + ".mp4", "recorded": True,
+                "tap_markers": [{"route": "native-ios-tab-files", "at": 0.6}],
+                "record_exit": 0, "stop_reason": "test_finished",
+                "test_outcome": "passed",
+            }
+            entry.update(changes)
+            (root / "clips.jsonl").write_text(json.dumps(entry) + "\n")
+            report = root / "audit.json"
+            frames = [
+                {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+                for i in range(26)
+            ]
+            with patch("files_ui_transition_video.read_frames", return_value=frames):
+                accepted = audit(root, report, 1)
+            return accepted, json.loads(report.read_text())
+
+    def test_completed_real_case_and_recording_passes(self):
+        accepted, report = self._audit_sample()
+        self.assertTrue(accepted, report)
+        self.assertEqual(report["validated_clips"], 1)
+
+    def test_failed_xctest_does_not_pass_with_usable_mp4(self):
+        accepted, report = self._audit_sample(test_outcome="failed")
+        self.assertFalse(accepted)
+        self.assertIn("test_not_passed", report["clips"][0]["failures"])
+
+    def test_bounded_timeout_does_not_pass_as_complete_case(self):
+        accepted, report = self._audit_sample(stop_reason="bounded_timeout")
+        self.assertFalse(accepted)
+        self.assertIn("incomplete_test_recording", report["clips"][0]["failures"])
+
+    def test_recording_process_failure_cannot_pass(self):
+        accepted, report = self._audit_sample(record_exit=-2)
+        self.assertFalse(accepted)
+        self.assertIn("recording_process_failed", report["clips"][0]["failures"])
+
+    def test_no_real_pre_tap_frames_cannot_prove_continuity(self):
+        accepted, report = self._audit_sample(
+            tap_markers=[{"route": "native-ios-tab-files", "at": 0.05}]
+        )
+        self.assertFalse(accepted)
+        self.assertIn("missing_pre_tap_frames", report["clips"][0]["failures"])
+
+    def test_unregistered_tap_marker_cannot_pass(self):
+        accepted, report = self._audit_sample(
+            tap_markers=[{"route": "fake-tap-marker", "at": 0.6}]
+        )
+        self.assertFalse(accepted)
+        self.assertIn("invalid_native_tap_marker", report["clips"][0]["failures"])
+
+    def test_zero_requested_clips_does_not_green_empty_audit(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            self.assertFalse(audit(root, root / "report.json", 0))
 
     def test_no_clips_fails_closed_and_writes_audit(self):
         with tempfile.TemporaryDirectory() as d:

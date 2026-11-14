@@ -25,7 +25,7 @@ TARGETS = frozenset({
     "testGalleryFilterDismissThenFilesReturnDoesNotBlankTheWall",
 })
 CASE_START = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
-CASE_END = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
+CASE_END = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
 TAP = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 FRAME = re.compile(r"frame:\s*\d+.*pts_time:([0-9.]+)")
 STAT = re.compile(r"lavfi\.signalstats\.(YMIN|YMAX|YAVG)=([0-9.]+)")
@@ -121,7 +121,7 @@ def watch(simulator, log_path, directory):
                     elapsed = max(0.0, time.monotonic() - current["started"])
                     current["taps"].append({"route": hit.group(1), "at": elapsed})
                 if finished and current and finished.group(1) == current["test"]:
-                    stop_record(current, manifest, "test_finished")
+                    stop_record(current, manifest, "test_finished", outcome=finished.group(2))
                     current = None
         if current and time.monotonic() - current["started"] >= MAX_CLIP_SECONDS:
             stop_record(current, manifest, "bounded_timeout")
@@ -131,7 +131,7 @@ def watch(simulator, log_path, directory):
         stop_record(current, manifest, "watcher_shutdown")
 
 
-def stop_record(current, manifest, reason):
+def stop_record(current, manifest, reason, outcome=None):
     proc = current["process"]
     if proc.poll() is None:
         proc.send_signal(signal.SIGINT)
@@ -145,7 +145,7 @@ def stop_record(current, manifest, reason):
         "test": current["test"], "file": current["path"].name,
         "recorded": current["path"].is_file() and current["path"].stat().st_size > 4096,
         "elapsed": round(elapsed, 3), "tap_markers": current["taps"],
-        "record_exit": code, "stop_reason": reason,
+        "record_exit": code, "stop_reason": reason, "test_outcome": outcome,
     }
     with manifest.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -174,9 +174,23 @@ def audit(directory, report, minimum):
         path = directory / (name + ".mp4")
         if path.name != entry.get("file") or not path.is_file() or not entry.get("recorded"):
             failures.append("missing_real_recording")
+        # A playable clip from a failed or truncated XCTest is not success.
+        if entry.get("test_outcome") != "passed":
+            failures.append("test_not_passed")
+        if entry.get("stop_reason") != "test_finished":
+            failures.append("incomplete_test_recording")
+        if entry.get("record_exit") != 0:
+            failures.append("recording_process_failed")
         taps = entry.get("tap_markers")
         if not isinstance(taps, list) or not taps:
             failures.append("missing_real_tap_marker")
+        elif any(
+            not isinstance(tap, dict) or
+            not isinstance(tap.get("route"), str) or
+            not re.fullmatch(r"native-ios-[a-z0-9-]+", tap["route"])
+            for tap in taps
+        ):
+            failures.append("invalid_native_tap_marker")
         frames = []
         if not failures:
             try:
@@ -197,6 +211,11 @@ def audit(directory, report, minimum):
                     if not isinstance(at, (int, float)) or at < 0 or at + MIN_TAP_WINDOW_SECONDS > times[-1]:
                         failures.append("invalid_tap_timeline")
                         break
+                    # Two decoded samples before each tap are necessary
+                    # to establish that the old page was still visible.
+                    if sum(at - 0.25 <= f["time"] < at for f in frames) < 2:
+                        failures.append("missing_pre_tap_frames")
+                        break
                     reason = classify_bright_blank(frames, at)
                     if reason:
                         failures.append(reason)
@@ -207,7 +226,10 @@ def audit(directory, report, minimum):
             "decoded_10hz_samples": len(frames), "failures": failures,
         })
     good = [x for x in audited if not x["failures"]]
-    status = "pass" if len(good) >= minimum and not any(x["failures"] for x in audited) else "fail"
+    status = "pass" if (
+        1 <= minimum <= len(TARGETS) and len(good) >= minimum and
+        not any(x["failures"] for x in audited)
+    ) else "fail"
     result = {
         "status": status, "required_distinct_real_test_clips": minimum,
         "observed_clips": len(audited), "validated_clips": len(good),
