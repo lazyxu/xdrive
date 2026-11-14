@@ -360,9 +360,9 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                   dismissButton: .default(Text("完成")))
         }
         .sheet(item: $selected, onDismiss: {
-            // A return is a new authority boundary, not permission to reuse
-            // a vanished Owner or a different PhotoKit generation.
-            if !currentProof { invalidate() }
+            // Cloud changes that happened while a place sheet covered the map
+            // must be re-read even if local PhotoKit and Owner stayed valid.
+            if phase == .active { reload() } else { invalidate() }
         }) { pin in
             if let owner = provedOwner, let library = provedLibrary, currentProof,
                pins.contains(where: { $0.id == pin.id && $0.count == pin.count }) {
@@ -560,6 +560,9 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 provedOwner = owner
                 provedLibrary = library
                 provedCamera = scopedCamera
+                // The synchronous proof is now published. Covers check
+                // currentProof, which must not still be masked by scan busy.
+                busy = false
                 loadCovers(result, owner: owner, ticket: ticket)
             } catch is CancellationError {
             } catch {
@@ -766,7 +769,13 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                                 cameraRequestID = UUID()
                             }
                         }
-                        loadCovers(verifiedPins, owner: owner, ticket: ticket)
+                        // Permit genuine verified cover publication after the
+                        // complete scan; the first camera auto-fit may still
+                        // invalidate this proof and reproject from the cache.
+                        busy = false
+                        if cameraProof {
+                            loadCovers(verifiedPins, owner: owner, ticket: ticket)
+                        }
                         return
                     }
                 }
