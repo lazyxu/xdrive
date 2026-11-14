@@ -505,6 +505,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @StateObject private var model = XDriveIOSNativeFilesCollectionPageModel()
     @StateObject private var favorites = XDriveIOSNativeFilesFavoriteMutationModel()
     @StateObject private var recentClear = XDriveIOSNativeFilesRecentClearModel()
+    @StateObject private var quickRenameMutation = XDriveIOSNativeFilesMutationModel()
     @State private var showingClearRecentConfirmation = false
     @State private var selectedFile: XDriveIOSNativeFilesCollectionItem?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
@@ -515,6 +516,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var locateOwner: XDriveNativeOwnerRoot?
     @State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent?
     @State private var quickInfoIntent: XDriveIOSNativeFilesCollectionManageIntent?
+    @State private var quickRenameIntent: XDriveIOSNativeFilesCollectionManageIntent?
+    @State private var quickRenameDraft = ""
     @State private var filterQuery = ""
     @State private var isVisible = false
     // Match Browse's chosen presentation when switching between Files subroutes.
@@ -630,6 +633,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if let status = favorites.status {
                     Text(status).foregroundStyle(.secondary).font(.footnote)
                 }
+                if quickRenameMutation.busy {
+                    HStack { ProgressView(); Text("正在核验文件重命名…") }
+                }
+                if let status = quickRenameMutation.status {
+                    Text(status).foregroundStyle(.secondary).font(.footnote)
+                        .accessibilityIdentifier("native-ios-files-collection-rename-status")
+                }
                 if recentClear.busy {
                     HStack { ProgressView(); Text("正在清空最近记录…") }
                 }
@@ -737,6 +747,16 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
 
+            .alert("重命名", isPresented: Binding(
+                get: { quickRenameIntent != nil },
+                set: { if !$0 { quickRenameIntent = nil } }
+            )) {
+                TextField("新名称", text: $quickRenameDraft)
+                Button("保存") { confirmQuickRename() }
+                Button("取消", role: .cancel) { quickRenameIntent = nil }
+            } message: {
+                Text("当前账户和文件版本会重新核验，冲突或未知回执不自动重试。")
+            }
             .sheet(item: $quickInfoIntent) { intent in
                 if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
                    model.matches(login.owner, kind: kind),
@@ -847,7 +867,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 pendingModeSwitchAnchor = nil
                 if !viewerRefreshPending && selectedFile == nil &&
                     locateIntent == nil && managementIntent == nil &&
-                    quickInfoIntent == nil {
+                    quickInfoIntent == nil && quickRenameIntent == nil {
                     // NavigationLink child must not lose its source identity.
                     model.suspendForNavigation()
                     favorites.invalidate()
@@ -888,6 +908,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 locateOwner = nil
                 managementIntent = nil
                 quickInfoIntent = nil
+                quickRenameIntent = nil
+                quickRenameMutation.invalidate()
                 filterQuery = ""
                 showingClearRecentConfirmation = false
                 model.invalidate()
@@ -907,6 +929,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 locateOwner = nil
                 managementIntent = nil
                 quickInfoIntent = nil
+                quickRenameIntent = nil
+                quickRenameMutation.invalidate()
                 filterQuery = ""
                 showingClearRecentConfirmation = false
                 model.invalidate()
@@ -955,7 +979,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 Label("属性", systemImage: "info.circle")
             }
             .accessibilityIdentifier("native-ios-files-collection-quick-info")
-            Button { openManagement(for: item, quickAction: .rename) } label: {
+            Button { requestQuickRename(for: item) } label: {
                 Label("重命名", systemImage: "pencil")
             }
             if kind == .favorites {
@@ -988,6 +1012,35 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             } label: {
                 Label("移入回收站", systemImage: "trash")
             }
+        }
+    }
+
+    /// Reuse Browse's revision-checked Node rename writer, not a second API.
+    private func requestQuickRename(for item: XDriveIOSNativeFilesCollectionItem) {
+        guard phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
+              !favorites.busy, !recentClear.busy, !quickRenameMutation.busy,
+              selectedFile == nil, locateIntent == nil,
+              quickInfoIntent == nil, managementIntent == nil,
+              let owner = login.owner, filteredItems.contains(item),
+              model.items.contains(item) else { return }
+        quickRenameDraft = item.node.name
+        quickRenameIntent = .init(owner: owner, item: item, quickAction: .rename)
+    }
+
+    private func confirmQuickRename() {
+        guard let intent = quickRenameIntent else { return }
+        quickRenameIntent = nil
+        guard phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+              !favorites.busy, !recentClear.busy,
+              filteredItems.contains(intent.item),
+              model.items.contains(intent.item) else { return }
+        quickRenameMutation.perform(
+            node: intent.item.node, kind: .rename(quickRenameDraft), login: login
+        ) {
+            reload(preserveVerifiedRows: true)
         }
     }
 
