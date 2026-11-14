@@ -387,7 +387,8 @@ internal fun NativeClipboardScreen(
                 }
             }
             OutlinedTextField(value=draft,onValueChange={ draft=it; requireAbandon=false },
-                modifier=Modifier.fillMaxWidth().heightIn(min=100.dp),
+                modifier=Modifier.fillMaxWidth().heightIn(min=100.dp)
+                    .testTag("native-clipboard-draft"),
                 label={Text("文字或链接")},maxLines=7)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick={
@@ -509,7 +510,8 @@ internal fun NativeClipboardScreen(
                             if (stillSession(snapshot)) busy=false
                         }
                     }
-                },enabled=!busy && devices.any { it.deviceID==targetID }) {
+                },modifier=Modifier.testTag("native-clipboard-directed-send"),
+                    enabled=!busy && devices.any { it.deviceID==targetID }) {
                     Text("定向发送")
                 }
             }

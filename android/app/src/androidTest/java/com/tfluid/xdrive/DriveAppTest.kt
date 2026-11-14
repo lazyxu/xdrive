@@ -3,10 +3,22 @@ package com.tfluid.xdrive
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ContentValues
+import android.content.Context
+import android.provider.MediaStore
+import kotlinx.coroutines.CompletableDeferred
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -19,6 +31,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -74,6 +88,30 @@ class DriveAppTest {
     private var liveMotionRequests = 0
     private var liveMotionClosed = 0
     private var galleryOversizeFixture = false
+    // The real Compose Clipboard page uses this Owner-authenticated fixture.
+    // It is opt-in so existing File/Gallery tests retain their old policy.
+    private var clipboardUiFixture = false
+    @Volatile private var clipboardDeviceReads = 0
+    private var clipboardLifecycleOwner: LifecycleOwner? = null
+    private var clipboardNodeStale = false
+    @Volatile private var clipboardRevoked = false
+    @Volatile private var clipboardRevokes = 0
+    private var clipboardRevokeErrorCode: Int? = null
+    private var clipboardUnknownAck = false
+    private var clipboardManyFiles = false
+    @Volatile private var clipboardImports = 0
+    private var clipboardBadUploadReceipt = false
+    private var clipboardSecondOwner = false
+    private var clipboardDevicesGate: CompletableDeferred<Unit>? = null
+    private var clipboardImageUri: Uri? = null
+    private val clipboardTargetID = "123e4567-e89b-42d3-a456-426614174000"
+    // Emulator instrumentation observes these writes from its test thread,
+    // while Compose's coroutine writes on Main. Synchronize observation; an
+    // invisible fixture write must not masquerade as a timeout/failing UI.
+    private val clipboardWrites =
+        java.util.Collections.synchronizedList(mutableListOf<XDriveClipboardWrite>())
+    private val clipboardFile = DriveNode(55, 1, "clip.png", "file", size = 32, revision = 4)
+    private val clipboardDevice = OwnerClipboardDevice(clipboardTargetID, "Fixture Clip", "android")
     private var filesViewerFixture = false
     private var filesAudioFixture = false
     private val filesAudioNode = DriveNode(50, 1, "music.mp3", "file", size = 40, revision = 3)
@@ -138,7 +176,67 @@ class DriveAppTest {
         override suspend fun refresh(refreshToken: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun logout(refreshToken: String) = Unit
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
-        override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
+        override suspend fun root(accessToken: String) = DriveNode(
+            1, name = "", type = "dir", revision = if (clipboardUiFixture) 1 else 0
+        )
+        override suspend fun verifiedOwnerIdentity(accessToken: String): NativeServerOwnerIdentity {
+            if (!clipboardUiFixture || accessToken != "fixture") {
+                throw ApiException(501, "Clipboard fixture Owner identity unavailable")
+            }
+            return if (clipboardSecondOwner)
+                NativeServerOwnerIdentity(8, "other", "user", "fixture-second-instance")
+            else NativeServerOwnerIdentity(7, "owner", "user", "fixture-instance")
+        }
+        override suspend fun clipboardList(
+            accessToken: String, before: Long?,
+        ): OwnerClipboardPage {
+            check(clipboardUiFixture && accessToken == "fixture")
+            return OwnerClipboardPage(emptyList(), null)
+        }
+        override suspend fun clipboardDevices(accessToken: String): List<OwnerClipboardDevice> {
+            check(clipboardUiFixture && accessToken == "fixture")
+            // Capture response identity before suspension: a late Owner A
+            // directory reply must not be installed in Owner B's native UI.
+            val requestedBySecondOwner = clipboardSecondOwner
+            clipboardDeviceReads++
+            // A remote response may ignore cancellation. Reproduce that
+            // adverse transport behavior instead of letting logout cancel
+            // the fixture before the stale reply reaches Owner fencing.
+            withContext(NonCancellable) { clipboardDevicesGate?.await() }
+            return if (requestedBySecondOwner || clipboardRevoked)
+                emptyList() else listOf(clipboardDevice)
+        }
+        override suspend fun clipboardCreate(
+            accessToken: String, item: XDriveClipboardWrite,
+        ): OwnerClipboardItem {
+            check(clipboardUiFixture && accessToken == "fixture" && !clipboardRevoked)
+            check(item.valid() && item.targetDeviceID == clipboardTargetID)
+            clipboardWrites += item
+            if (clipboardUnknownAck) throw ApiException(504, "Unknown Clipboard ACK")
+            return OwnerClipboardItem(700, item.clientEventID, item.kind, item.content,
+                "2026-11-13T00:00:00Z", "2026-11-14T00:00:00Z",
+                item.targetDeviceID, item.nodeID)
+        }
+        override suspend fun clipboardRevokeDevice(accessToken: String, deviceID: String) {
+            check(clipboardUiFixture && accessToken == "fixture" && deviceID == clipboardTargetID)
+            clipboardRevokeErrorCode?.let { throw ApiException(it, "Denied revoke") }
+            clipboardRevokes++
+            clipboardRevoked = true
+        }
+        override suspend fun uploadFile(
+            accessToken: String, parent: DriveNode, name: String, size: Long,
+            openSource: () -> java.io.InputStream, onProgress: (Long) -> Unit,
+        ): DriveNode {
+            check(clipboardUiFixture && accessToken == "fixture" && parent.id == 1L)
+            check(name == "clipboard-ui.png" && size > 0)
+            val bytes = openSource().use { it.readBytes() }
+            check(bytes.size.toLong() == size &&
+                bytes.take(8) == listOf<Byte>(-119, 80, 78, 71, 13, 10, 26, 10))
+            clipboardImports++
+            onProgress(size)
+            return DriveNode(60, 1, if (clipboardBadUploadReceipt) "wrong.png" else name,
+                "file", size, revision = 2)
+        }
         override suspend fun placesMapOverview(
             accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
         ): OwnerMapOverview {
@@ -476,6 +574,13 @@ class DriveAppTest {
                     listOf(DriveCrumb(1, "")))), "")
         }
         override suspend fun nodeLocation(accessToken: String, nodeId: Long): OwnedNodeLocation {
+            if (clipboardUiFixture && nodeId == 60L) {
+                return OwnedNodeLocation(60, 2, 1, listOf(DriveCrumb(1, "")))
+            }
+            if (clipboardUiFixture && nodeId == clipboardFile.id) {
+                return OwnedNodeLocation(nodeId, if (clipboardNodeStale) 5 else 4,
+                    1, listOf(DriveCrumb(1, "")))
+            }
             check(locateLargeFolder && nodeId == locatedFile.id)
             return OwnedNodeLocation(nodeId, locatedFile.revision, 1, listOf(DriveCrumb(1, "")))
         }
@@ -581,6 +686,20 @@ class DriveAppTest {
             )
         }
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
+            if (clipboardUiFixture && parentId == 1L) {
+                val rows = if (clipboardManyFiles) buildList {
+                    add(DriveNode(2, 1, "假期照片", "dir", revision = 1))
+                    repeat(99) { index ->
+                        add(DriveNode(1000L + index, 1, "filler-$index.txt", "file",
+                            size = 8, revision = 1))
+                    }
+                    add(clipboardFile)
+                } else listOf(
+                    DriveNode(2, 1, "假期照片", "dir", revision = 1), clipboardFile,
+                    DriveNode(56, 1, "notes.txt", "file", size = 8, revision = 2),
+                )
+                return NodeRange(rows.drop(offset).take(100), rows.size.toLong(), offset)
+            }
             if (failNext || (paging && offset == 100 && failOnSecondPage)) {
                 failNext = false; failOnSecondPage = false; throw ApiException(503, "unavailable")
             }
@@ -616,7 +735,16 @@ class DriveAppTest {
     }
     private val connectFactoryCalls = AtomicInteger()
     private val controller = DriveController(scope, { connectFactoryCalls.incrementAndGet(); service })
-    @After fun cleanup() { controller.close(); scope.cancel() }
+    @After fun cleanup() {
+        clipboardImageUri?.let { uri ->
+            runCatching {
+                InstrumentationRegistry.getInstrumentation().targetContext
+                    .contentResolver.delete(uri, null, null)
+            }
+        }
+        controller.close()
+        scope.cancel()
+    }
 
     private fun startAndLogin(
         onDownload: ((DriveNode) -> Unit)? = null,
@@ -630,9 +758,22 @@ class DriveAppTest {
         compose.setContent {
             val observedImeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
             SideEffect { imeBottomPx.set(observedImeBottom) }
-            XDriveTheme {
-                DriveApp(controller, onDownload = onDownload, onUpload = onUpload,
-                    galleryFirstOnLogin = galleryFirstOnLogin)
+            // Tests normally use the real Activity lifecycle. The Clipboard
+            // STOP/START test supplies one LifecycleRegistry to the REAL app
+            // UI; production lifecycle and controller logic remain untouched.
+            val appContent: @Composable () -> Unit = {
+                XDriveTheme {
+                    DriveApp(controller, onDownload = onDownload, onUpload = onUpload,
+                        galleryFirstOnLogin = galleryFirstOnLogin)
+                }
+            }
+            val customLifecycle = clipboardLifecycleOwner
+            if (customLifecycle != null) {
+                CompositionLocalProvider(LocalLifecycleOwner provides customLifecycle) {
+                    appContent()
+                }
+            } else {
+                appContent()
             }
         }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
@@ -3447,4 +3588,356 @@ class DriveAppTest {
         }
     }
 
+
+    /** These are API-35 Compose interactions with the real production Clipboard
+     * screen and one bounded fake Owner service; no device credential or
+     * production Server is fabricated. A successful fixture send is NOT a
+     * physical-device or live HTTPS acceptance.
+     */
+    private fun openClipboardFixture() {
+        clipboardUiFixture = true
+        startAndLogin()
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.CLIPBOARD)
+        // The launcher and page can expose multiple "剪贴板" text nodes.
+        // Wait for the real authenticated editor control below instead.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                compose.onNodeWithText("发送范围：当前账号广播").assertExists()
+            }.isSuccess
+        }
+    }
+
+    private fun selectClipboardFixtureDevice() {
+        compose.onNodeWithText("发送范围：当前账号广播").performClick()
+        compose.onNodeWithText("Fixture Clip · android").assertExists().performClick()
+    }
+
+    @Test fun clipboardCloudImagePickerVerifiesNodeButRequiresSeparateDirectedSend() {
+        openClipboardFixture()
+        selectClipboardFixtureDevice()
+        compose.onNodeWithText("图片引用").performClick()
+        compose.onNodeWithText("从云端 Files 选择现有文件").performClick()
+        compose.onNodeWithText("从云端 Files 选择 · 云端根目录").assertExists()
+        compose.onNodeWithText("📄 clip.png").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                compose.onNodeWithText(
+                    "已从当前 Owner 的 Files 核验文件；请确认目标后点击定向发送。"
+                ).assertExists()
+            }.isSuccess
+        }
+        compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+        compose.onNodeWithTag("native-clipboard-directed-send").performClick()
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) { clipboardWrites.size == 1 }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            throw AssertionError(
+                "Directed send not received: writes=${clipboardWrites.size}; " +
+                    "UI=${compose.onRoot().printToString()}", failure)
+        }
+        compose.runOnIdle {
+            val only = clipboardWrites.single()
+            org.junit.Assert.assertEquals("image/x-xdrive-node-ref", only.kind)
+            org.junit.Assert.assertEquals(clipboardTargetID, only.targetDeviceID)
+            org.junit.Assert.assertEquals(clipboardFile.id, only.nodeID)
+            org.junit.Assert.assertEquals("asset:55", only.content)
+        }
+    }
+
+    @Test fun clipboardStaleFileLocationRejectsSelectionWithoutSending() {
+        openClipboardFixture()
+        selectClipboardFixtureDevice()
+        compose.onNodeWithText("图片引用").performClick()
+        compose.onNodeWithText("从云端 Files 选择现有文件").performClick()
+        compose.onNodeWithText("📄 clip.png").assertExists()
+        compose.runOnIdle { clipboardNodeStale = true }
+        compose.onNodeWithText("📄 clip.png").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                compose.onNodeWithText("文件已移动、改变或授权失效，请刷新目录。")
+                    .assertExists()
+            }.isSuccess
+        }
+        compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+        compose.onNodeWithText("取消").performClick()
+        compose.onNodeWithText("已核验的云端文件 Node").assertExists()
+        compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+    }
+
+    @Test fun clipboardRecipientRevokeRequiresConfirmAndRemovesTarget() {
+        openClipboardFixture()
+        selectClipboardFixtureDevice()
+        compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权").performClick()
+        compose.onNodeWithText("撤销设备的 Clipboard 接收授权？").assertExists()
+        compose.onNodeWithText("取消").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(0, clipboardRevokes)
+            org.junit.Assert.assertFalse(clipboardRevoked)
+        }
+        compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权").performClick()
+        compose.onNodeWithText("确认撤销").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { clipboardRevokes == 1 }
+        compose.onNodeWithText("发送范围：当前账号广播").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(clipboardRevoked)
+            org.junit.Assert.assertTrue(clipboardWrites.isEmpty())
+        }
+    }
+
+
+    /** Real system MediaStore/Clipboard URI and real app file stager; only
+     * the remote Owner UploadSession response is supplied by the fixture.
+     * A provider URI is not proof of Server permission or CAS commit.
+     */
+    private fun stageClipboardImageInOS() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "clipboard-ui.png")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+        }
+        val uri = requireNotNull(context.contentResolver.insert(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values))
+        clipboardImageUri = uri
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        val data = try {
+            ByteArrayOutputStream().use { stream ->
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream))
+                stream.toByteArray()
+            }
+        } finally { bitmap.recycle() }
+        context.contentResolver.openOutputStream(uri)!!.use { it.write(data) }
+        compose.runOnIdle {
+            val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            manager.setPrimaryClip(ClipData.newUri(context.contentResolver, "clipboard", uri))
+        }
+    }
+
+    private fun chooseClipboardImageKind() {
+        selectClipboardFixtureDevice()
+        compose.onNodeWithText("图片引用").performClick()
+    }
+
+    @Test fun clipboardImagePickerPaginatesReal100RangeBeforeSelectingNode() {
+        clipboardManyFiles = true
+        openClipboardFixture()
+        chooseClipboardImageKind()
+        compose.onNodeWithText("从云端 Files 选择现有文件").performClick()
+        compose.onNodeWithText("下一页").assertExists().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching { compose.onNodeWithText("📄 clip.png").assertExists() }.isSuccess
+        }
+        compose.onNodeWithText("📄 clip.png").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching { compose.onNodeWithText(
+                "已从当前 Owner 的 Files 核验文件；请确认目标后点击定向发送。"
+            ).assertExists() }.isSuccess
+        }
+        compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+    }
+
+    @Test fun clipboardRevoke403And404KeepAuthorizationAndDoNotRetry() {
+        openClipboardFixture()
+        selectClipboardFixtureDevice()
+        for (code in listOf(403, 404)) {
+            compose.runOnIdle { clipboardRevokeErrorCode = code }
+            compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权").performClick()
+            compose.onNodeWithText("确认撤销").performClick()
+            compose.waitUntil(timeoutMillis = 10_000) {
+                runCatching { compose.onNodeWithText(
+                    "撤销未确认，请刷新授权状态核对；不会自动重试。"
+                ).assertExists() }.isSuccess
+            }
+            compose.runOnIdle {
+                org.junit.Assert.assertEquals(0, clipboardRevokes)
+                org.junit.Assert.assertFalse(clipboardRevoked)
+            }
+            compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权").assertExists()
+        }
+    }
+
+    @Test fun clipboardUnknownACKNeverAutomaticallyRepeatsOrRetargetsMessage() {
+        clipboardUnknownAck = true
+        openClipboardFixture()
+        selectClipboardFixtureDevice()
+        compose.onNodeWithTag("native-clipboard-draft").performTextInput("hello fixture")
+        compose.onNodeWithTag("native-clipboard-directed-send").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { clipboardWrites.size == 1 }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                compose.onNodeWithText("定向发送回执未知：", substring = true).assertExists()
+            }.isSuccess
+        }
+        compose.onNodeWithText("定向发送：Fixture Clip").performClick()
+        compose.onNodeWithText("当前 Owner 广播").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, clipboardWrites.size)
+            org.junit.Assert.assertEquals(clipboardTargetID, clipboardWrites.single().targetDeviceID)
+        }
+        compose.onNodeWithText("发送").assertIsNotEnabled()
+    }
+
+    @Test fun clipboardOSPNGImportsToExistingCASAndRequiresSecondClick() {
+        openClipboardFixture()
+        chooseClipboardImageKind()
+        stageClipboardImageInOS()
+        compose.onNodeWithText("读取本机剪贴板图片并上传").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { clipboardImports == 1 }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching { compose.onNodeWithText(
+                "剪贴板图片已上传并核验 CAS；请再次点击定向发送。"
+            ).assertExists() }.isSuccess
+        }
+        compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+        compose.onNodeWithTag("native-clipboard-directed-send").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { clipboardWrites.size == 1 }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals("image/x-xdrive-node-ref", clipboardWrites.single().kind)
+            org.junit.Assert.assertEquals(60L, clipboardWrites.single().nodeID)
+        }
+    }
+
+    @Test fun clipboardInvalidCASReceiptCannotBecomeSendableNode() {
+        clipboardBadUploadReceipt = true
+        openClipboardFixture()
+        chooseClipboardImageKind()
+        stageClipboardImageInOS()
+        compose.onNodeWithText("读取本机剪贴板图片并上传").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { clipboardImports == 1 }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching { compose.onNodeWithText(
+                "图片上传未确认；请检查 Files，勿自动重传。"
+            ).assertExists() }.isSuccess
+        }
+        compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+        compose.onNodeWithTag("native-clipboard-directed-send").performClick()
+        compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+    }
+
+    @Test fun clipboardFilesGalleryReturnsDiscardSelectedTargetAndOldDraft() {
+        openClipboardFixture()
+        selectClipboardFixtureDevice()
+        compose.onNodeWithTag("native-clipboard-draft").performTextInput("stale-draft")
+        repeat(2) {
+            compose.onNodeWithTag("native-tab-files").performClick()
+            compose.onNodeWithTag("native-tab-gallery").performClick()
+            compose.onNodeWithTag("native-tab-all").performClick()
+            clickNativeLauncherShortcut(NativeHomeShortcut.CLIPBOARD)
+            compose.waitUntil(timeoutMillis = 10_000) {
+                runCatching {
+                    compose.onNodeWithText("发送范围：当前账号广播").assertExists()
+                }.isSuccess
+            }
+            compose.onNodeWithTag("native-clipboard-draft").assertTextEquals("")
+            compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+        }
+    }
+
+    @Test fun clipboardLateOwnerDeviceResponseCannotSurviveLogout() {
+        clipboardDevicesGate = CompletableDeferred()
+        clipboardUiFixture = true
+        startAndLogin()
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.CLIPBOARD)
+        compose.onNodeWithTag("native-clipboard-draft").assertExists()
+        compose.runOnIdle { controller.logout() }
+        clipboardDevicesGate?.complete(Unit)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.LOGIN
+        }
+        compose.onNodeWithTag("native-clipboard-draft").assertDoesNotExist()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(clipboardWrites.isEmpty())
+            org.junit.Assert.assertEquals(0, clipboardRevokes)
+        }
+    }
+
+    @Test fun clipboardOwnerSwitchRejectsPriorOwnerDeviceDirectoryResponse() {
+        clipboardDevicesGate = CompletableDeferred()
+        clipboardUiFixture = true
+        startAndLogin()
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.CLIPBOARD)
+        compose.onNodeWithTag("native-clipboard-draft").assertExists()
+
+        // Retire the first authenticated Owner while the first directory
+        // request is still unresolved, then actually authenticate a distinct
+        // Owner ID/username through the existing DriveController session.
+        compose.runOnIdle { controller.logout() }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.LOGIN
+        }
+        compose.runOnIdle {
+            clipboardSecondOwner = true
+            controller.login("other", "fixture-password")
+        }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.username == "other" &&
+                controller.state.value.screen == Screen.FILES &&
+                controller.state.value.loaded
+        }
+        // Unblock the old response *after* the new Owner session is live.
+        clipboardDevicesGate?.complete(Unit)
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.CLIPBOARD)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                compose.onNodeWithText("发送范围：当前账号广播").assertExists()
+            }.isSuccess
+        }
+        // Inspect the actual rendered recipient chooser: without opening it
+        // an old option can remain hidden and make a weak assertion pass.
+        compose.onNodeWithText("发送范围：当前账号广播").performClick()
+        compose.onNodeWithText("Fixture Clip · android").assertDoesNotExist()
+        compose.onNodeWithText("当前 Owner 广播").assertExists().performClick()
+        compose.onNodeWithTag("native-clipboard-directed-send").assertDoesNotExist()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals("other", controller.state.value.username)
+            org.junit.Assert.assertTrue(clipboardWrites.isEmpty())
+            org.junit.Assert.assertEquals(0, clipboardRevokes)
+        }
+    }
+
+    @Test fun clipboardActualLifecycleStopStartRechecksDeviceWithoutAutoSend() {
+        val owner = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry(this)
+        }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            owner.lifecycle.currentState = Lifecycle.State.CREATED
+            owner.lifecycle.currentState = Lifecycle.State.STARTED
+        }
+        clipboardLifecycleOwner = owner
+        try {
+            openClipboardFixture()
+            compose.waitUntil(timeoutMillis = 10_000) {
+                clipboardDeviceReads >= 1
+            }
+            val beforeStop = clipboardDeviceReads
+            instrumentation.runOnMainSync {
+                // This is Android ON_STOP. The production Clipboard
+                // repeatOnLifecycle must cancel the visible-page reader.
+                owner.lifecycle.currentState = Lifecycle.State.CREATED
+            }
+            compose.waitForIdle()
+            compose.runOnIdle {
+                org.junit.Assert.assertEquals(beforeStop, clipboardDeviceReads)
+                org.junit.Assert.assertTrue(clipboardWrites.isEmpty())
+            }
+            instrumentation.runOnMainSync {
+                owner.lifecycle.currentState = Lifecycle.State.STARTED
+            }
+            compose.waitUntil(timeoutMillis = 10_000) {
+                clipboardDeviceReads >= beforeStop + 1
+            }
+            compose.onNodeWithTag("native-clipboard-draft").assertExists()
+            compose.onNodeWithText("发送范围：当前账号广播").assertExists()
+            compose.onNodeWithTag("native-clipboard-directed-send").assertDoesNotExist()
+            compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+        } finally {
+            instrumentation.runOnMainSync {
+                owner.lifecycle.currentState = Lifecycle.State.DESTROYED
+            }
+        }
+    }
 }
