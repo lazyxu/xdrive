@@ -436,7 +436,7 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
   // Its sentinel must remain immediately after those bounded visible sections.
   assert.match(spatialAlbum, /private var visibleItems:[\s\S]*?priorWindow \+ items/);
   assert.match(spatialAlbum, /xdriveIOSNativePhotoWallVisibleSections\(\s*visibleItems, scale: wallTimeScale/);
-  assert.match(spatialAlbum, /ForEach\(visibleSections\) \{ section in[\s\S]*?XDriveIOSNativePhotoWallGrid\(density: wallDensity\)[\s\S]*?ForEach\(section\.items\) \{ item in photoTile\(item\) \}[\s\S]*?if hasNext \{\s*Color\.clear/);
+  assert.match(spatialAlbum, /XDriveIOSNativePhotoWallSectionList\([\s\S]*?sections: visibleSections, density: wallDensity,[\s\S]*?items: \{ \$0\.items \}[\s\S]*?\{ item in photoTile\(item\) \}[\s\S]*?if hasNext \{\s*Color\.clear/);
   assert.match(spatialAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/);
   assert.match(spatialAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/);
   assert.match(spatialAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard XDriveIOSNativePhotoWallWindowPolicy\.shouldAdvance\(\s*footVisible: scrollFootVisible, hasNext: hasNext, busy: busy,[\s\S]*?failed: error != nil, viewerOpen: viewer != nil,[\s\S]*?scopeActive: phase == \.active/);
