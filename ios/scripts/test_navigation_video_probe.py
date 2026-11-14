@@ -111,6 +111,17 @@ class VideoEvidenceTests(unittest.TestCase):
                 path = (pathlib.Path(__file__).resolve().parents[1] /
                         'UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift')
                 target = path.read_text(encoding='utf-8')
+            elif method in (
+                'testPeopleThreeFilesQuickRailCyclesKeepUnchangedUnifiedWall',
+                'testFilesSearchBackgroundOriginalsReturnHasNoGhostKeyboard',
+                'testOriginalsHelpTwiceAcrossFilesDenialNeverLeavesGhostAlert',
+                'testFilesTrashDeniedThenPeopleChildReturnClearsOverlay',
+                'testGalleryFilterDraftForegroundFilesReturnKeepsWallGeneration',
+                'testRapidAlbumsOriginalsFilesAlternationRetainsNativeChildShells',
+            ):
+                path = (pathlib.Path(__file__).resolve().parents[1] /
+                        'UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+                target = path.read_text(encoding='utf-8')
             else:
                 target = stability
             self.assertIn('func ' + method + '()', target)
