@@ -1634,6 +1634,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if let error { Text(error).foregroundStyle(.secondary).font(.footnote) }
             if mapScope == .page {
                 Button("刷新当前页") { refresh(at: offset) }
+                    .frame(minHeight: CGFloat(XDriveIOSNativePhotoMapPolicy.minimumInteractiveTarget))
                     .disabled(busy || authorization == .denied || authorization == .restricted)
             }
             if !compactMap && dynamicTypeSize.isAccessibilitySize {

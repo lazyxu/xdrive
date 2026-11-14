@@ -1,0 +1,31 @@
+'use strict'
+const test=require('node:test')
+const assert=require('node:assert/strict')
+const fs=require('node:fs')
+const path=require('node:path')
+const read=p=>fs.readFileSync(path.resolve(__dirname,'../..',p),'utf8')
+const policy=read('ios/XDriveIOS/NativePhotoMapPolicy.swift')
+const local=read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
+const owner=read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
+const trips=read('ios/XDriveIOS/NativeExactTripGallery.swift')
+const swift=read('ios/tests/NativePhotoMapPolicyChecks.swift')
+
+test('M14 iPad split view and accessibility use actual safe-area viewport',()=>{
+  assert.match(local,/GeometryReader \{ viewport in/)
+  assert.match(owner,/GeometryReader \{ viewport in/)
+  assert.match(local,/dynamicTypeSize\.isAccessibilitySize/)
+  assert.match(owner,/dynamicTypeSize\.isAccessibilitySize/)
+  assert.match(policy,/compactViewport\([\s\S]*?accessibilityText: Bool/)
+  assert.match(swift,/1024\.0, 768\.0/)
+  assert.match(swift,/507\.0, 768\.0/)
+})
+
+test('M14 native map touch actions and year chips are at least 44pt',()=>{
+  assert.match(policy,/minimumInteractiveTarget: Double = 44/)
+  assert.match(trips,/frame\(minHeight: CGFloat\(XDriveIOSNativePhotoMapPolicy\.minimumInteractiveTarget\)\)/)
+  assert.match(local,/Button\("刷新当前页"\)[\s\S]*?frame\(minHeight: CGFloat\(XDriveIOSNativePhotoMapPolicy\.minimumInteractiveTarget\)\)/)
+  assert.match(local,/native-ios-map-verified-count/)
+  assert.match(owner,/native-ios-map-source-selector/)
+  assert.match(local,/accessibilityElementsHidden = !canSelectCells/)
+  assert.match(swift,/accessibleMapViewport\(/)
+})
