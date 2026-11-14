@@ -53,7 +53,14 @@ test('CI native launch harness preserves both known b9 and diagnostic recovery r
       fs.mkdirSync(source, { recursive: true })
       const app = path.join(source, 'XDriveIOSApp.swift')
       const model = path.join(source, 'NativeOwnerLoginModel.swift')
-      fs.writeFileSync(app, 'import SwiftUI\nWindowGroup {\n            ' + entry + '\n}\n')
+      // The modern production App records the interrupted boot before mounting
+      // WindowGroup; the old published b9 entry has no such checkpoint.
+      const candidate = entry === known[1]
+      const boot = candidate
+        ? '        interruption = XDriveIOSNativeLaunchCheckpoint.beginReport()\n'
+        : ''
+      fs.writeFileSync(app, 'import SwiftUI\n' + boot +
+        'WindowGroup {\n            ' + entry + '\n}\n')
       fs.writeFileSync(model, '@Published private(set) var owner: XDriveNativeOwnerRoot?\n')
       fs.writeFileSync(path.join(source, 'NativePhotoBackupScreen.swift'),
         'var launchNonce: UUID\n')
@@ -67,6 +74,14 @@ test('CI native launch harness preserves both known b9 and diagnostic recovery r
         assert.match(result, /if ProcessInfo\.processInfo\.arguments\.contains\("-xdrive-ui-navigation-smoke"\)/)
         assert.match(result, /#else[\s\S]*?#endif/)
         assert.match(fs.readFileSync(model, 'utf8'), /@Published var owner:/)
+        if (candidate) {
+          // Only the modern diagnostic App accepts this synthetic DEBUG-only
+          // recovery checkpoint; no release/b9 fixture gets it.
+          assert.match(result, /#if DEBUG[\s\\S]*?-xdrive-ui-postlogin-recovery-fixture[\s\\S]*?markPostLogin\(\.openingDashboard\)/)
+          assert.equal((result.match(/markPostLogin\(\.openingDashboard\)/g) || []).length, 1)
+        } else {
+          assert.doesNotMatch(result, /xdrive-ui-postlogin-recovery-fixture/)
+        }
       } else {
         assert.notEqual(run.status, 0, 'Unknown App root must not be silently instrumented')
         assert.match(run.stderr, /Unexpected iOS App entry/)
