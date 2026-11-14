@@ -1208,10 +1208,53 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         .accessibilityIdentifier("native-ios-unified-source-map-viewer-filmstrip")
     }
 
+    /// Current visible rows are display windows, not permanent source-state
+    /// evidence. On EVERY Viewer move, recalculate this exact 48-item Owner
+    /// and PhotoKit source page, including fresh negative matching for
+    /// cloudOnly/localOnly, instead of trusting an old "absent" label.
+    private func sourceCursor(for row: XDriveIOSNativeUnifiedPhoto)
+        -> XDriveIOSNativeGalleryCursor? {
+        let inCurrent = current.firstIndex(where: { $0.id == row.id })
+        let inPrevious = previous.firstIndex(where: { $0.id == row.id })
+        guard (inCurrent == nil) != (inPrevious == nil) else { return nil }
+        if isNearbyExpansion {
+            let page = inCurrent == nil ? nearbyWindowIndex - 1 : nearbyWindowIndex
+            guard nearbyStarts.indices.contains(page) else { return nil }
+            let position = nearbyStarts[page] + (inCurrent ?? inPrevious!)
+            guard nearbyRanked.indices.contains(position) else { return nil }
+            let sample = nearbyRanked[position]
+            return sourceCursors.indices.contains(sample.page)
+                ? sourceCursors[sample.page] : nil
+        }
+        let page = inCurrent == nil ? windowIndex - 1 : windowIndex
+        return windowStarts.indices.contains(page) ? windowStarts[page] : nil
+    }
+
+    private func reproveCurrentSourcePresence(
+        _ row: XDriveIOSNativeUnifiedPhoto
+    ) async -> Bool {
+        guard active, let cursor = sourceCursor(for: row) else { return false }
+        let model = XDriveIOSNativeUnifiedPhotoTimeline()
+        await model.load(from: cursor, filter: presence, login: login,
+                         query: query, library: library)
+        guard !Task.isCancelled, active, model.completed, model.notice == nil else {
+            return false
+        }
+        let matches = model.rows.filter { $0.id == row.id && $0.presence == presence }
+        guard matches.count == 1 else { return false }
+        let refreshed = matches[0]
+        return refreshed.local?.id == row.local?.id &&
+            refreshed.cloud?.id == row.cloud?.id &&
+            refreshed.cloud?.node.revision == row.cloud?.node.revision &&
+            refreshed.cloud?.contentIdentity == row.cloud?.contentIdentity &&
+            refreshed.match == row.match
+    }
+
     private func revalidateCurrentMember(
         _ row: XDriveIOSNativeUnifiedPhoto
     ) async -> XDriveIOSNativeUnifiedPhoto? {
-        guard active, row.presence == presence else { return nil }
+        guard active, row.presence == presence,
+              await reproveCurrentSourcePresence(row) else { return nil }
         if let local = row.local {
             guard let asset = PHAsset.fetchAssets(
                 withLocalIdentifiers: [local.id], options: nil).firstObject,
