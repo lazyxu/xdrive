@@ -340,6 +340,17 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
             context.coordinator.focusRequestID = focusID
             map.setRegion(focusCamera, animated: true)
         }
+        // Owner A → B can render an empty scope before SwiftUI's onChange
+        // invalidation advances revision. Remove any previous Owner's GPS
+        // annotations *even when revision is unchanged*; marking them inert
+        // is insufficient because old coordinates must not remain visible.
+        if overview == nil {
+            map.removeAnnotations(map.annotations.filter {
+                $0 is XDriveIOSOwnerPlaceAnnotation
+            })
+            context.coordinator.revision = nil
+            return
+        }
         guard context.coordinator.revision != revision else { return }
         context.coordinator.revision = revision
         map.removeAnnotations(map.annotations.filter {
@@ -527,6 +538,12 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var coverImages: [String: UIImage] = [:]
     @State private var coverTask: Task<Void, Never>?
     @State private var verifiedBounds: XDriveIOSNativeOwnerMapBounds?
+    // Bound to the *published* signed overview, not merely the current login.
+    // A switch from Owner A to B can precede SwiftUI's onChange cleanup.
+    @State private var verifiedOverviewOwner: XDriveNativeOwnerRoot?
+    // Keep old covers visible while rechecking the SAME Owner viewport, but
+    // never display Owner A's thumbnails when the active login is Owner B.
+    @State private var displayedOverviewOwner: XDriveNativeOwnerRoot?
     @State private var requestedBounds: XDriveIOSNativeOwnerMapBounds?
     @State private var cameraGesturePending = false
     @State private var cameraSettleTask: Task<Void, Never>?
@@ -570,8 +587,16 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         // onChange below cancels all previously authorized Owner map requests.
     }
 
+    private var displayedOverviewMatchesLogin: Bool {
+        guard let displayedOverviewOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(
+            login.owner, displayedOverviewOwner)
+    }
+
     private var mapMarkersEnabled: Bool {
-        guard phase == .active, !busy, login.owner != nil,
+        guard phase == .active, !busy, let verifiedOverviewOwner,
+              XDriveIOSNativePhotoOwnerScope.matches(
+                  login.owner, verifiedOverviewOwner),
               selected == nil, selectedCluster == nil,
               singleViewer == nil, singleTask == nil,
               let verifiedBounds else { return false }
@@ -594,7 +619,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             XDriveIOSOwnerMapSurface(
-                overview: overview, coverImages: coverImages,
+                // Before an A → B switch's onChange cleanup, not even A's
+                // coordinate-only pins may remain mounted for B. Keep the
+                // same Owner's inert map during a normal viewport refresh.
+                overview: displayedOverviewMatchesLogin ? overview : nil,
+                coverImages: displayedOverviewMatchesLogin ? coverImages : [:],
                 markersEnabled: mapMarkersEnabled,
                 revision: revision, mapType: mapType,
                 initialCamera: cameraReturn ?? camera,
@@ -623,6 +652,9 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                           selected == nil, selectedCluster == nil,
                           singleViewer == nil, singleTask == nil,
                           let expected = login.owner,
+                          let verifiedOverviewOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                              expected, verifiedOverviewOwner),
                           let overview, let verifiedBounds,
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             verifiedBounds, current: currentBounds()),
@@ -659,6 +691,9 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                           selected == nil, selectedCluster == nil,
                           singleViewer == nil, singleTask == nil,
                           let expected = login.owner,
+                          let verifiedOverviewOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(
+                              expected, verifiedOverviewOwner),
                           let overview, let verifiedBounds,
                           XDriveIOSNativeOwnerMapSelectionPolicy.isSameViewport(
                             verifiedBounds, current: currentBounds()
@@ -681,7 +716,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("native-ios-owner-cloud-photo-map")
-            if let overview {
+            if let overview, displayedOverviewMatchesLogin {
                 if verifiedBounds != nil {
                     Text("当前视窗已有 \(overview.total_photo_count) 张已索引照片；地图显示 \(overview.items.count) 个位置代表项。")
                         .font(.caption).monospacedDigit()
@@ -1138,6 +1173,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         singleOwner = nil
         task?.cancel()
         task = nil
+        verifiedOverviewOwner = nil
         verifiedBounds = nil
         requestedBounds = nil
         if overview != nil || busy {
@@ -1162,6 +1198,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         task?.cancel()
         task = nil
         overview = nil
+        verifiedOverviewOwner = nil
+        displayedOverviewOwner = nil
         verifiedBounds = nil
         requestedBounds = nil
         error = nil
@@ -1197,6 +1235,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         // refresh. They are visual-only: busy and the revoked viewport fence
         // disable both touch and VoiceOver activation until a fresh response.
         verifiedBounds = nil
+        verifiedOverviewOwner = nil
         requestedBounds = bounds
         error = nil
         busy = true
@@ -1229,6 +1268,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 // reused as the current place's photo.
                 coverImages = [:]
                 overview = result
+                verifiedOverviewOwner = expected
+                displayedOverviewOwner = expected
                 verifiedBounds = bounds
                 revision = UUID()
                 loadCurrentOwnerCovers(result, reader: reader,
@@ -1240,6 +1281,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 // A failed authorization or failed map response cannot keep
                 // old Owner GPS covers displayed indefinitely.
                 overview = nil
+                verifiedOverviewOwner = nil
+                displayedOverviewOwner = nil
                 coverImages = [:]
                 revision = UUID()
                 self.error = "当前 Owner 地图范围或权限已失效，请核对账户并重试。"

@@ -196,7 +196,7 @@ test('short landscape Owner map retains verified camera, feedback, Sheet and acc
   assert.match(map, /\.accessibilityIdentifier\("native-ios-owner-map-layout-help"\)/);
   assert.match(map, /Button\("刷新当前视窗"\)/);
   assert.match(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
-  assert.match(map, /if let overview \{[\s\S]*?if verifiedBounds != nil[\s\S]*?上次验证视窗有/);
+  assert.match(map, /if let overview, displayedOverviewMatchesLogin \{[\s\S]*?if verifiedBounds != nil[\s\S]*?上次验证视窗有/);
   assert.match(map, /\.sheet\(item: \$selected, onDismiss:/);
   assert.doesNotMatch(map, /onChange\(of: compactMap\)|\.id\(compactMap\)/);
 });
