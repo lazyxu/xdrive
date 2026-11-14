@@ -35,3 +35,44 @@ test('password and origin are not replayed, and LAN cert validation is still enf
   assert.match(policy, /default:\s*return false/)
   assert.doesNotMatch(policy, /refreshToken|accessToken|localizedDescription|print\(/)
 })
+
+
+test('CI native launch harness preserves both known b9 and diagnostic recovery roots', () => {
+  const os = require('node:os')
+  const { spawnSync } = require('node:child_process')
+  const script = path.join(base, 'ios/scripts/prepare-navigation-runtime-smoke.py')
+  const known = [
+    'XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)',
+    'XDriveIOSNativeStartupRoot(interruption: interruption)'
+  ]
+  for (const entry of [...known, 'UnrecognizedNativeRoot()']) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-ios-crash-harness-'))
+    try {
+      const ios = path.join(dir, 'ios')
+      const source = path.join(ios, 'XDriveIOS')
+      fs.mkdirSync(source, { recursive: true })
+      const app = path.join(source, 'XDriveIOSApp.swift')
+      const model = path.join(source, 'NativeOwnerLoginModel.swift')
+      fs.writeFileSync(app, 'import SwiftUI\nWindowGroup {\n            ' + entry + '\n}\n')
+      fs.writeFileSync(model, '@Published private(set) var owner: XDriveNativeOwnerRoot?\n')
+      fs.writeFileSync(path.join(source, 'NativePhotoBackupScreen.swift'),
+        'var launchNonce: UUID\n')
+      fs.writeFileSync(path.join(ios, 'project.yml'), 'name: xDriveIOS\ntargets:\n')
+      const run = spawnSync('python3', [script, dir], { encoding: 'utf8', timeout: 10000 })
+      if (known.includes(entry)) {
+        assert.equal(run.status, 0, run.stderr)
+        const result = fs.readFileSync(app, 'utf8')
+        assert.equal(result.split(entry).length - 1, 2,
+          'Both normal and fallback startup paths must keep the original root')
+        assert.match(result, /if ProcessInfo\.processInfo\.arguments\.contains\("-xdrive-ui-navigation-smoke"\)/)
+        assert.match(result, /#else[\s\S]*?#endif/)
+        assert.match(fs.readFileSync(model, 'utf8'), /@Published var owner:/)
+      } else {
+        assert.notEqual(run.status, 0, 'Unknown App root must not be silently instrumented')
+        assert.match(run.stderr, /Unexpected iOS App entry/)
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  }
+})
