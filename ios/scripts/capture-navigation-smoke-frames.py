@@ -284,6 +284,16 @@ TARGETS.update({
     "testFilesOrganizeHomeSheetBackgroundRotationGalleryReturn",
     "testFilesTrashDeniedLandscapeForegroundOriginalsReturnHasNoGhostChild",
 })
+# Six additional real child-to-child / foreground / keyboard transitions.
+# Real screenshot probes are diagnostics only, never certified no-flicker FPS.
+TARGETS.update({
+    "testPeopleThreeFilesQuickRailCyclesKeepUnchangedUnifiedWall",
+    "testFilesSearchBackgroundOriginalsReturnHasNoGhostKeyboard",
+    "testOriginalsHelpTwiceAcrossFilesDenialNeverLeavesGhostAlert",
+    "testFilesTrashDeniedThenPeopleChildReturnClearsOverlay",
+    "testGalleryFilterDraftForegroundFilesReturnKeepsWallGeneration",
+    "testRapidAlbumsOriginalsFilesAlternationRetainsNativeChildShells",
+})
 # Cross-feature native crash reproduction and two-cycle Operation History foreground regression.
 # This records tap-adjacent diagnostics; it is not a physical FPS claim.
 TARGETS.update({
