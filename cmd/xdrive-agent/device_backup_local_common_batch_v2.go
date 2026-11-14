@@ -231,7 +231,7 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 			RootFingerprint: grant.Fingerprint,
 			SessionDigest:   localpush.CommonUploadOwnerSessionDigest(account.SessionID),
 			State:           state, InspectedFiles: out.InspectedFiles,
-			ScanComplete: out.ScanComplete,
+			ScanComplete:   out.ScanComplete,
 			ConfirmedFiles: out.ConfirmedFiles, SkippedFiles: out.SkippedFiles,
 			UnsupportedFiles: out.UnsupportedFiles, UncertainFiles: out.UncertainFiles,
 			ConfirmedBytes: out.ConfirmedBytes, StartedAt: runStartedAt,

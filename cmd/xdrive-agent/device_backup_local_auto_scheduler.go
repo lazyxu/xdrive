@@ -21,12 +21,12 @@ const (
 	// Bounded lookback supports multiple saved plan revisions while preventing
 	// an unbounded search through old account/source history.
 	localPushAutoMaxRevisionRearm uint64 = 16
-	localPushAutoInterval         = time.Minute
-	localPushAutoTickTimeout      = 50 * time.Second
-	localPushAutoAttemptCooldown  = 15 * time.Minute
-	localPushAutoMaxPages         = 64
-	localPushAutoPageSize         = 100
-	localPushAutoMaxAttemptMemory = 2048
+	localPushAutoInterval                = time.Minute
+	localPushAutoTickTimeout             = 50 * time.Second
+	localPushAutoAttemptCooldown         = 15 * time.Minute
+	localPushAutoMaxPages                = 64
+	localPushAutoPageSize                = 100
+	localPushAutoMaxAttemptMemory        = 2048
 )
 
 var errLocalPushAutoUnavailable = errors.New("local Push automatic scheduling unavailable")
