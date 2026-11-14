@@ -578,6 +578,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 owner: owner, accessToken: auth.accessToken)
             // One trusted 64-cell window. Only bounded 128px PhotoKit posters
             // may use iCloud networking; never fetch full-size media or originals.
+            var cloudPins: [XDriveIOSUnifiedSourceMapPin] = []
             for pin in verifiedPins {
                 guard !Task.isCancelled, generation == ticket, currentProof else { return }
                 if let local = pin.representative.local,
@@ -615,11 +616,31 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                         }
                     }
                     localCoverRequests.append(request)
-                } else if let cloud = pin.representative.cloud,
-                          let image = try? await reader.thumbnail(cloud) {
-                    guard !Task.isCancelled, generation == ticket, currentProof,
-                          pins.contains(where: { $0.id == pin.id }) else { return }
-                    coverImages[pin.id] = image
+                } else if pin.representative.cloud != nil {
+                    cloudPins.append(pin)
+                }
+            }
+            // M12: fixed-width concurrent network thumbnail reads. No more
+            // than three cloud requests are in flight; image publication is
+            // always checked against the exact current Owner/camera lease.
+            for offset in stride(from: 0, to: cloudPins.count, by: 3) {
+                guard !Task.isCancelled, generation == ticket, currentProof else { return }
+                let batch = Array(cloudPins[offset..<min(offset + 3, cloudPins.count)])
+                await withTaskGroup(of: (String, UIImage?).self) { group in
+                    for pin in batch {
+                        guard let cloud = pin.representative.cloud else { continue }
+                        group.addTask {
+                            let image = try? await reader.thumbnail(cloud)
+                            return (pin.id, image)
+                        }
+                    }
+                    for await (id, image) in group {
+                        guard !Task.isCancelled, generation == ticket,
+                              currentProof else { continue }
+                        if let image, pins.contains(where: { $0.id == id }) {
+                            coverImages[id] = image
+                        }
+                    }
                 }
             }
         }
