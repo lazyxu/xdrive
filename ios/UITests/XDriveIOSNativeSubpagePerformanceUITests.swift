@@ -498,6 +498,9 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             choice.tap()
             XCTAssertTrue(view("native-ios-clipboard-target-picker", app: app)
                 .waitForExistence(timeout: 15))
+            XCTAssertTrue(view("ios-clipboard-draft", app: app)
+                .waitForExistence(timeout: 15),
+                "Clipboard original editor must survive target-picker dismiss")
         case "clipboard.history-scroll":
             let scroll = app.scrollViews.firstMatch
             let editor = view("ios-clipboard-draft", app: app)
