@@ -97,6 +97,13 @@ TARGETS = {
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
+    # New native compositional Viewer/Files/Gallery continuity journeys.
+    "testLocalPhotoDateSheetThenCloudDeniedFilesReturnsLocalChild",
+    "testCloudOriginalsHelpThenFilesSearchKeyboardReturnsOriginalsChild",
+    "testFilesOperationHistoryThenGalleryFilterReturnsSameNativeFilesRail",
+    "testFilesQuickRailLandscapeThenGalleryOriginalsPortraitKeepsChildren",
+    "testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope",
+    "testFilesSearchGalleryPeopleBackAndQuickRailRemainAccessible",
     "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",
     "testGalleryDismissedFilterThenForegroundDoesNotRebuildWall",
     "testGalleryPeopleBackThenForegroundKeepsVerifiedWall",
@@ -178,8 +185,43 @@ MINIMAL_TARGETS = {
     "testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank",
     "testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership",
 }
+# The Launcher has fourteen separate real destination tests; all must emit
+# bounded Simulator diagnostics, including pages with no private Owner data.
+# A mounted/captured route is not a physical-device zero-flicker guarantee.
+MINIMAL_TARGETS.update({
+    "testLauncherLocalPageDoesNotCrash",
+    "testLauncherAlbumsPageDoesNotCrash",
+    "testLauncherCloudPageDoesNotCrash",
+    "testLauncherOriginalsPageDoesNotCrash",
+    "testLauncherMapPageDoesNotCrash",
+    "testLauncherFilesPageDoesNotCrash",
+    "testLauncherNotesPageDoesNotCrash",
+    "testLauncherClipboardPageDoesNotCrash",
+    "testLauncherBackupPageDoesNotCrash",
+    "testLauncherTransfersPageDoesNotCrash",
+    "testLauncherSyncPlaceholderDoesNotCrash",
+    "testLauncherStoragePlaceholderDoesNotCrash",
+    "testLauncherDevicesPlaceholderDoesNotCrash",
+    "testLauncherDiagnosticsPlaceholderDoesNotCrash",
+    # Genuine signed-out Login routes, distinct from CI synthetic Owner.
+    "testRealSignedOutLoginPasswordToggleAfterForegroundDoesNotExit",
+    "testRealSignedOutLANHelpAfterFieldEditDoesNotExit",
+    "testRealInterruptedStartupSafeEntryRemainsUsable",
+    "testRealInterruptedStartupRetryRendersLoginWithoutExit",
+    "testRealSignedOutRememberPasswordToggleForegroundDoesNotExit",
+})
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
+TARGETS.update({
+    "testLauncherMapPageDoesNotCrash",
+    "testLauncherCloudPageDoesNotCrash",
+    "testLauncherClipboardPageDoesNotCrash",
+    "testFiveTabsWithForegroundReturnDoNotCrash",
+    "testDynamicRecentPickerSwitchAndDismissDoesNotCrash",
+    "testFilesDeniedThenNotesClipboardTransfersDoesNotCrash",
+    "testSignedOutMineOwnerControlsFailClosedWithoutCrash",
+    "testToolPagesBackgroundAndRotationDoNotCrash",
+})
 TARGETS.update({
     "testSavedSearchesSheetOriginalsAndFilesReturnKeepsContent",
     "testOperationsHistoryGalleryPeopleAndFilesReturnKeepsContent",
@@ -187,6 +229,100 @@ TARGETS.update({
     "testFilesHomeEditGallerySourceRoundtripKeepsBrowse",
     "testFilesSearchKeyboardMineCacheReturnKeepsFiles",
     "testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent",
+})
+# Real Organizer nested navigation, Owner-visibility and process-survival cases.
+# These capture diagnostic Simulator frames, not certified 60/120 Hz FPS.
+TARGETS.update({
+    "testOrganizeNestedSavedSearchesGalleryOriginalsFilesReturn",
+    "testOrganizeNestedTagsGalleryPeopleFilesReturn",
+    "testOrganizeHomeRotationGalleryFilesRoundtrip",
+    "testOrganizeHomeReopenAfterNestedChildrenHasNoGhostSheet",
+    "testOrganizeHomeDeniedCloudRecoveryThenGalleryFilter",
+    "testOrganizeHomeThenFilesQuickRailAndGalleryAlternation",
+    "testOrganizeHomeSignoutRelaunchNeverRestoresPrivilegedSheet",
+})
+# Six additional real native Gallery/Files edge-navigation cases.
+# Screenshots are diagnostic; do not interpret samples as 60/120 Hz FPS.
+TARGETS.update({
+    "testPeopleChildDeniedFilesReturnKeepsGalleryTree",
+    "testCloudOriginalsHelpFilesSearchReturnRetainsChild",
+    "testGalleryFilterCancelFilesSectionsKeepsUnifiedWall",
+    "testLocalPhotoPermissionFilesForegroundReturnKeepsChild",
+    "testFilesRootDenialLandscapeGalleryAlbumsReturn",
+    "testOriginalsAlbumsFilesQuickRailThreeCyclesKeepsPages",
+})
+# Five further navigation/foreground regression journeys, all real UI taps.
+# Keep diagnostic frames; a sparse/empty state is not an automatic flicker.
+NAV_TARGETS.update({
+    "testMapShortcutThenExplicitUnifiedFilesReturn",
+    "testMapShortcutFilesRailThenMapReentryKeepsRoute",
+    "testOriginalsHelpFilesDeniedChildThenUnifiedRecovery",
+    "testPeopleFilesSectionsBackgroundAndPeopleReentry",
+    "testLocalPhotosFilesRecentOriginalsThenLocalReturn",
+})
+TARGETS.update(NAV_TARGETS)
+# Four more actual Gallery/Files journeys plus two seeded-PhotoKit Viewer
+# journeys. The MapKit shard uses a separate real GPS-photo Simulator.
+NAV_TARGETS.update({
+    "testFilesSearchKeyboardGalleryAlbumsThenBrowseNoBlank",
+    "testFilterCancelFilesQuickRailPeopleKeepsWallGeneration",
+    "testFilesDeniedForegroundOriginalsAndBrowseRecovery",
+    "testAlbumsOriginalsUnifiedFilesThreeCyclesKeepVisibleShells",
+})
+TARGETS.update(NAV_TARGETS)
+TARGETS.update({
+    "testBRealPhotoKitViewerFilesGalleryReturnRemainsMounted",
+    "testCRealPhotoKitViewerBackgroundRetiresOldSheet",
+})
+# Six independent post-green Gallery/Files navigation regressions.
+# Tap-adjacent PNG and real H.264 evidence remain diagnostic, not device FPS.
+TARGETS.update({
+    "testUnifiedPhotoDensityThreeModesKeepsVerifiedWallAcrossFiles",
+    "testGalleryDateDraftCanceledBeforeFilesPeopleReturnKeepsWall",
+    "testGalleryFilenameFilterAppliedFilesSectionsAndCleared",
+    "testFilesSizeFilterOriginalsReturnAndResetWithoutBlank",
+    "testFilesOrganizeHomeSheetBackgroundRotationGalleryReturn",
+    "testFilesTrashDeniedLandscapeForegroundOriginalsReturnHasNoGhostChild",
+})
+# Six additional real child-to-child / foreground / keyboard transitions.
+# Real screenshot probes are diagnostics only, never certified no-flicker FPS.
+TARGETS.update({
+    "testPeopleThreeFilesQuickRailCyclesKeepUnchangedUnifiedWall",
+    "testFilesSearchBackgroundOriginalsReturnHasNoGhostKeyboard",
+    "testOriginalsHelpTwiceAcrossFilesDenialNeverLeavesGhostAlert",
+    "testFilesTrashDeniedThenPeopleChildReturnClearsOverlay",
+    "testGalleryFilterDraftForegroundFilesReturnKeepsWallGeneration",
+    "testRapidAlbumsOriginalsFilesAlternationRetainsNativeChildShells",
+})
+# Cross-feature native crash reproduction and two-cycle Operation History foreground regression.
+# This records tap-adjacent diagnostics; it is not a physical FPS claim.
+TARGETS.update({
+    "testNotesFilesGalleryNotesThreeCyclesDoNotExit",
+    "testClipboardNotesTransfersForegroundRoundTripsDoNotExit",
+    "testTransfersRealFileAndBackupDestinationsDoNotExit",
+    "testBackupTaskSheetFilesGalleryDynamicReturnDoNotExit",
+    "testSignedOutMinePlaceholdersGalleryReturnDoNotExit",
+    "testLocalMapFilesNotesClipboardReturnDoNotExit",
+    "testOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage",
+})
+# Eight independent real native child routes from the all-pages crash suite.
+# Keep tap-adjacent screenshots, process checks, and actual parent dismissal.
+# These frames do NOT establish physical iPhone 60/120 Hz jitter or media FPS.
+TARGETS.update({
+    "testBackupDetailsChildFilesReturnDoesNotExit",
+    "testBackupAuditChildForegroundReturnDoesNotExit",
+    "testGalleryBackupSettingsChildReturnDoesNotExit",
+    "testGalleryFocusedBackupChildDoesNotStartUpload",
+    "testGalleryBackupQueueSheetRetiresDoesNotExit",
+    "testGalleryCacheSheetBackgroundDismissDoesNotExit",
+    "testFilesTagManagementChildRetiresBeforeNotesDoesNotExit",
+    "testMinePhotoWallChildFilesReturnWithoutSignIn",
+})
+# Real Notes, Clipboard and signed-out Mine child-page crash checks.
+TARGETS.update({
+    "testNotesSourceChildrenFilesReturnKeepNativePage",
+    "testClipboardUnverifiedRecipientChildFailsClosedWithoutExit",
+    "testMineOwnerOnlyThumbnailCacheCannotOpenSignedOut",
 })
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
@@ -252,7 +388,14 @@ while True:
                 count = tap_counts.get(current_case, 0) + 1
                 tap_counts[current_case] = count
                 minimal = current_case[0] in MINIMAL_TARGETS
-                if (minimal and count == 1) or (not minimal and count in TAP_CAPTURE_NUMBERS):
+                # A Launcher test taps the Launcher tab *before* its real
+                # destination. Sample that later destination tap, never
+                # mislabel a Launcher grid shot as child-page evidence.
+                is_launcher = current_case[0].startswith("testLauncher")
+                if ((minimal and count == 1 and not is_launcher)
+                        or (minimal and is_launcher
+                            and tapped.group(1).startswith("native-ios-launcher-"))
+                        or (not minimal and count in TAP_CAPTURE_NUMBERS)):
                     now_tap = time.monotonic()
                     delays = (0.55,) if minimal else TAP_FRAME_OFFSETS_SECONDS
                     for frame, delay in enumerate(delays):

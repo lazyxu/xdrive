@@ -182,9 +182,6 @@ test('real publishAgentState closes both map windows on selected IP change',()=>
     closeDesktopPlacesGuests:()=>calls.push('close-guest'),
     closeSecureBaiduMapWindow:()=>calls.push('close-secure'),
     resetSourceRunNotificationState:()=>calls.push('reset-source'),
-    // Notification policy is tested independently; this extraction retains
-    // the real Agent/Owner transition and supplies its new tracker dependency.
-    mountRunNotificationTracker: { reset: () => {} },
     notifyAgentTransition:()=>{},rebuildTrayMenu:()=>{},
     updateTaskbarOverlay:()=>{},updateTaskbarProgress:()=>{},
     mainWindow:null,
@@ -235,7 +232,7 @@ test('published native Agent terminal auth states revoke both map surfaces',()=>
       closeDesktopPlacesGuests:()=>calls.push('guest-closed'),
       closeSecureBaiduMapWindow:()=>calls.push('secure-closed'),
       resetSourceRunNotificationState:()=>{},
-      mountRunNotificationTracker: { reset: () => {} },
+      mountRunNotificationTracker:{reset:()=>{}},
       notifyAgentTransition:()=>{},rebuildTrayMenu:()=>{},
       updateTaskbarOverlay:()=>{},updateTaskbarProgress:()=>{},
       mainWindow:null,

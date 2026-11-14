@@ -29,21 +29,14 @@ export function XDriveFeedbackSnackbar({
       autoHideDuration={autoHideDuration}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       sx={{
-        // The real five-slot mobile dock is 56px (+ iOS safe-area).
-        // Position feedback *above* it, not over the Files destination.
-        // Desktop keeps its regular bottom-right placement.
+        // Keep passive feedback above the five-slot dock without intercepting
+        // taps anywhere outside explicit action controls.
         bottom: { xs: 'calc(64px + env(safe-area-inset-bottom))', sm: '24px' },
-        right: { xs: '8px', sm: '24px' },
-        left: { xs: '8px', sm: 'auto' },
         '@media (orientation: landscape) and (max-height: 500px)': {
           bottom: 'calc(52px + env(safe-area-inset-bottom))',
         },
-        // Snackbar's fixed 1400-z-index root must not steal navigation taps
-        // outside the actual visible Alert. Explicit dismiss remains usable.
         pointerEvents: 'none',
         '& > div': { pointerEvents: 'none' },
-        // A passive toast (even a tall/error toast) must not intercept the
-        // persistent five-slot dock; only genuine actions may receive taps.
         '& a[href], & button, & [role="button"]': { pointerEvents: 'auto' },
       }}
       onClose={(_event, reason) => {

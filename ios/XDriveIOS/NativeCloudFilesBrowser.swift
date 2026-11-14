@@ -1800,6 +1800,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .padding(.vertical, 4)
                 }
+                // In a lazy List, the horizontal filter rail must expose its
+                // real accessible scroll container so that an iOS 18.5 user
+                // and XCUITest can reach off-screen Size/Tag filter controls.
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("native-ios-files-search-filters-scroll")
                 .disabled(login.owner == nil)
             }
             if !hasVerifiedSearchOptionsForOwner && !searchOptions.loading {
@@ -1986,6 +1991,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .buttonStyle(.plain)
             .disabled(!canSelectPage)
+            .accessibilityValue(selectedIDs.contains(entry.id) ? "已选中" : "未选中")
             .accessibilityIdentifier("native-ios-files-select-\(entry.id)")
         } else if entry.node.isDirectory {
             // Disclosure is a sibling of NavigationLink: tapping the 44-pt
@@ -2507,6 +2513,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 filesHome
             } else {
                 filesLoadStatus
+                // Filtered global search must keep its filter controls on a
+                // denied/unverified Owner read, while never exposing a stale
+                // result list before the current scoped page is verified.
+                if !isGlobalSearch || model.verifiedPage {
                 if let notice = inlineFolders.status {
                     Text(notice).foregroundStyle(.orange)
                         .accessibilityIdentifier("native-ios-files-inline-limit")
@@ -2552,8 +2562,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 filesContinuousStatus
                 filesBatchOperations
+                }
             }
         }
+        // Identify the exact Files List for AX scrolling. A retained Gallery
+        // tab may have a different collectionView earlier in the AX tree.
+        .accessibilityIdentifier(isHome ? "native-ios-files-home-list" : "native-ios-files-folder-list")
     }
 
     /// Non-reflowing feedback shares one native location for progress,
@@ -2588,7 +2602,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             // virtual List/thumbnail/navigation AX tree alive under a failed
             // authorization. This also gives XCTest a bounded accessibility
             // hierarchy on the recoverable child route.
-            if !isHome && !model.loading && !model.verifiedPage,
+            if !isHome && !isGlobalSearch && !model.loading && !model.verifiedPage,
                let failure = model.errorMessage {
                 VStack(alignment: .leading, spacing: 18) {
                     Label("无法读取当前目录", systemImage: "exclamationmark.triangle")
@@ -2847,6 +2861,18 @@ struct XDriveIOSNativeFilesBrowser: View {
                               batchExport.busy || !batchExport.prepared.isEmpty ||
                               login.owner == nil || !activeQuery.isEmpty)
                     .accessibilityIdentifier("native-ios-files-quick-multi-upload")
+                    Button {
+                        openManagement(for: nil, quickAction: .uploadFolder)
+                    } label: {
+                        Label("上传文件夹（最多 512 MiB）",
+                              systemImage: "folder.badge.plus")
+                    }
+                    .disabled(model.loading || !model.verifiedPage || selecting ||
+                              batchTrash.busy || batchTarget.busy ||
+                              batchExport.busy || !batchExport.prepared.isEmpty ||
+                              login.owner == nil || !activeQuery.isEmpty)
+                    .accessibilityHint("前台最多 128 个文件、64 个文件夹、512 MiB、8 层；完整限制在上传页面显示。")
+                    .accessibilityIdentifier("native-ios-files-quick-folder-upload")
                     if isGlobalSearch {
                         Button { presentSavedSearches() } label: {
                             Label("保存或管理智能文件夹", systemImage: "folder.badge.gearshape")
@@ -2993,7 +3019,17 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var filesModals: some View {
         filesMain
         .sheet(isPresented: $showingOrganizeHome, onDismiss: {
+            // Sheet dismissal can race a tab or Owner switch. Never issue a
+            // new Owner's requests from the now-hidden, old Owner sheet.
+            let sameOwner = organizeHomeOwner.map {
+                XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+            } ?? false
             organizeHomeOwner = nil
+            guard sameOwner,
+                  XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                    visible: filesViewVisible, active: phase == .active,
+                    hasOwner: login.owner != nil
+                  ) else { return }
             quickAccess.load(login: login, force: true)
             searchOptions.load(login: login)
         }) {
@@ -3045,6 +3081,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                             } label: {
                                 Label("整理及管理智能文件夹", systemImage: "folder.badge.gearshape")
                             }
+                            .accessibilityIdentifier("native-ios-files-organize-saved-searches")
                         }
                         Section("标签") {
                             NavigationLink {
@@ -3055,9 +3092,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                             } label: {
                                 Label("创建、重命名、颜色与删除", systemImage: "tag")
                             }
+                            .accessibilityIdentifier("native-ios-files-organize-tags")
                         }
                     }
                     .navigationTitle("整理浏览首页")
+                    .accessibilityIdentifier("native-ios-files-organize-home-sheet")
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("完成") { showingOrganizeHome = false }
@@ -3206,8 +3245,17 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
         }
         .sheet(isPresented: $showingTagManager, onDismiss: {
+            let sameOwner = tagManagerOwner.map {
+                XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+            } ?? false
             tagManagerOwner = nil
-            if login.owner != nil { searchOptions.load(login: login) }
+            if sameOwner,
+               XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                 visible: filesViewVisible, active: phase == .active,
+                 hasOwner: login.owner != nil
+               ) {
+                searchOptions.load(login: login)
+            }
         }) {
             if let owner = tagManagerOwner,
                XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) {
@@ -3555,6 +3603,13 @@ struct XDriveIOSNativeFilesBrowser: View {
         filesModals
         .onAppear {
             filesViewVisible = true
+            // A view can appear while iOS is still inactive or after an
+            // Owner change. Defer both saved-folder navigation and network
+            // reads until a visible, active, authorized Files lifecycle.
+            guard XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                visible: filesViewVisible, active: phase == .active,
+                hasOwner: login.owner != nil
+            ) else { return }
             restoreFilesSectionIfNeeded()
             if phase == .active, let owner = login.owner,
                !quickHistoryReadAttempted {
@@ -3659,6 +3714,22 @@ struct XDriveIOSNativeFilesBrowser: View {
             showingBatchTrashConfirmation = false
         }
         .onChange(of: phase) { next in
+            // A hidden page or the OS background cannot restart an Owner GET.
+            // Re-enter through the same verified route when really visible.
+            if next == .active, filesViewVisible, login.owner != nil {
+                if isHome {
+                    restoreFilesSectionIfNeeded()
+                    if !homeReadAttempted {
+                        homeReadAttempted = true
+                        reload()
+                    }
+                } else if selectedFile == nil && !model.verifiedPage &&
+                          model.errorMessage == nil {
+                    // The first directory read might have been deferred while
+                    // inactive; an explicit denial remains retry-only.
+                    reload()
+                }
+            }
             if next != .active {
                 if quickHistoryReadAttempted && operationShortcuts.loading &&
                    !operationShortcuts.verified && operationShortcuts.status == nil {
@@ -3775,12 +3846,16 @@ struct XDriveIOSNativeFilesBrowser: View {
             searchFilters = XDriveIOSNativeFilesSearchFilterState()
             model.invalidate()
             searchOptions.invalidate()
-            if login.owner != nil { searchOptions.load(login: login) }
-            if isHome { restoreFilesSectionIfNeeded() }
+            let allowOwnerRead = XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                visible: filesViewVisible, active: phase == .active,
+                hasOwner: login.owner != nil
+            )
+            if allowOwnerRead { searchOptions.load(login: login) }
+            if isHome && allowOwnerRead { restoreFilesSectionIfNeeded() }
             favoriteShortcuts.invalidate()
             favoriteShortcutsOwner = nil
             homeReadAttempted = false
-            if isHome && phase == .active {
+            if isHome && allowOwnerRead {
                 homeReadAttempted = true
                 reload()
             }
@@ -4532,6 +4607,41 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
+    /// PWA parity for the file subtitle: an authoritative search path takes
+    /// priority; ordinary rows use local-calendar date then decimal file size.
+    /// This only formats the already-verified Node and never requests media.
+    private func filesDisplayMetadata(_ entry: XDriveIOSNativeFilesEntry) -> String? {
+        if let path = entry.path?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !path.isEmpty {
+            return path
+        }
+        var dateLabel: String?
+        if let modifiedDate = entry.node.modifiedDate {
+            let calendar = Calendar.current
+            let parts = calendar.dateComponents([.year, .month, .day], from: modifiedDate)
+            if let year = parts.year, let month = parts.month, let day = parts.day {
+                dateLabel = "\(year)/\(month)/\(day)"
+            }
+            if entry.node.isDirectory {
+                let days = calendar.dateComponents(
+                    [.day], from: calendar.startOfDay(for: modifiedDate),
+                    to: calendar.startOfDay(for: Date())
+                ).day
+                switch days {
+                case 0: dateLabel = "今天"
+                case 1: dateLabel = "昨天"
+                case 2: dateLabel = "前天"
+                default: break
+                }
+            }
+        }
+        if entry.node.isDirectory { return dateLabel }
+        let sizeLabel = ByteCountFormatter.string(
+            fromByteCount: entry.node.size, countStyle: .file
+        )
+        return [dateLabel, sizeLabel].compactMap { $0 }.joined(separator: " - ")
+    }
+
     private func gridLabel(_ entry: XDriveIOSNativeFilesEntry) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topTrailing) {
@@ -4551,14 +4661,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .font(.footnote)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
-            Text(entry.path ?? (entry.node.isDirectory ? "文件夹" :
-                ByteCountFormatter.string(fromByteCount: entry.node.size,
-                                          countStyle: .file)))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            if let modifiedDate = entry.node.modifiedDate {
-                Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
+            if let metadata = filesDisplayMetadata(entry) {
+                Text(metadata)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -4579,22 +4683,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             )
             VStack(alignment: .leading, spacing: 3) {
                 Text(entry.node.name).lineLimit(2)
-                if let path = entry.path {
-                    Text(path).font(.caption).foregroundStyle(.secondary)
+                if let metadata = filesDisplayMetadata(entry) {
+                    Text(metadata)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                }
-                HStack(spacing: 8) {
-                    if !entry.node.isDirectory {
-                        Text(ByteCountFormatter.string(
-                            fromByteCount: entry.node.size, countStyle: .file
-                        )).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let modifiedDate = entry.node.modifiedDate {
-                        Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
                 }
             }
             Spacer(minLength: 6)

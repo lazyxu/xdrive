@@ -30,6 +30,22 @@ struct XDriveIOSNativeFilesNavigationChecks {
         require(!allowed(filters: false), "different tag/source/date/kind scope invalidates")
         require(!allowed(sort: false), "changed ordering invalidates")
         require(!allowed(order: false), "changed ascending/descending invalidates")
-        print("native Files navigation resume policy passed")
+        func read(visible: Bool, active: Bool, hasOwner: Bool) -> Bool {
+            XDriveIOSNativeFilesNavigationPolicy.shouldStartOwnerRead(
+                visible: visible, active: active, hasOwner: hasOwner
+            )
+        }
+        require(read(visible: true, active: true, hasOwner: true),
+                "visible active Files with Owner can load")
+        require(!read(visible: false, active: true, hasOwner: true),
+                "hidden Files must not start new Owner reads")
+        require(!read(visible: true, active: false, hasOwner: true),
+                "inactive scene must not start Owner reads")
+        require(!read(visible: true, active: true, hasOwner: false),
+                "signed-out Files must not start Owner reads")
+        require(!read(visible: false, active: false, hasOwner: false),
+                "fully inactive Files must not read")
+
+        print("native Files navigation resume and visibility policy passed")
     }
 }

@@ -4,8 +4,12 @@ on:
     paths:
       - '.github/workflows/ios-native-navigation-runtime.yml'
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
+      - 'ios/UITests/XDriveIOSAllPagesCrashUITests.swift'
+      - 'ios/UITests/XDriveIOSPhotoBackupMVPScenarioUITests.swift'
+      - 'desktop/tests/ios-native-all-pages-crash-matrix.cjs'
       - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift'
       - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
       - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
       - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
@@ -25,6 +29,8 @@ on:
       - 'ios/XDriveIOS/NativePhotoWallDensityPolicy.swift'
       - 'ios/scripts/prepare-navigation-runtime-smoke.py'
       - 'ios/scripts/capture-navigation-smoke-frames.py'
+      - 'ios/scripts/navigation_video_probe.py'
+      - 'ios/scripts/test_navigation_video_probe.py'
       - 'ios/scripts/audit_navigation_frames.py'
       - 'ios/scripts/test_audit_navigation_frames.py'
       - 'ios/scripts/assert_native_ios_no_crash.py'
@@ -42,6 +48,10 @@ on:
       - 'ios/XDriveIOS/NativePhotosDashboard.swift'
       - 'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift'
       - 'ios/XDriveIOS/NativeUnifiedPhotoWall.swift'
+      - 'ios/XDriveIOS/NativeUnifiedGalleryPolicy.swift'
+      - 'ios/tests/NativeUnifiedGalleryChecks.swift'
+      - 'ios/XDriveIOS/NativeFilesThumbnail.swift'
+      - 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'
       - 'ios/XDriveIOS/NativeUnifiedPhotoViewer.swift'
       - 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'
       - 'ios/XDriveIOS/NativeLocalPhotoGallery.swift'
@@ -166,9 +176,34 @@ jobs:
           test -n "${MAPKIT_CREATED_SIM:-}"
           test "$SMOKE_SIM" = "$MAPKIT_CREATED_SIM"
           echo "MAPKIT_SEED_ONLY_TWO_REAL_GPS_PHOTOS simulator=$SMOKE_SIM"
-          xcrun simctl addmedia "$SMOKE_SIM" \
-            "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map.jpg" \
-            "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map-second.jpg"
+          # bootstatus can finish before the freshly created simulator's
+          # PhotoKit import service is ready (PHPhotosErrorDomain -1 /
+          # LaunchdSimError 133 on a real runner). Retry ONLY this isolated
+          # new device, never a shared runner Photo Library. Erase on failed
+          # attempts so partial imports cannot create duplicate GPS fixtures.
+          for attempt in 1 2 3; do
+            if xcrun simctl addmedia "$SMOKE_SIM" \
+                "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map.jpg" \
+                "$GITHUB_WORKSPACE/ios/UITests/Fixtures/synthetic-gps-map-second.jpg"; then
+              echo "MAPKIT_TWO_GPS_FIXTURES_IMPORTED attempt=$attempt"
+              break
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "::error title=Real MapKit PhotoKit seed failed::Fresh simulator failed to import both GPS fixtures after three real attempts."
+              exit 1
+            fi
+            echo "::warning title=CoreSimulator PhotoKit not ready::Failed real import attempt $attempt; resetting only isolated simulator."
+            test "$SMOKE_SIM" = "$MAPKIT_CREATED_SIM" && test -n "$MAPKIT_CREATED_SIM"
+            xcrun simctl shutdown "$SMOKE_SIM"
+            xcrun simctl erase "$SMOKE_SIM"
+            xcrun simctl boot "$SMOKE_SIM"
+            python3 - <<'PY'
+          import os,subprocess
+          subprocess.run(["xcrun","simctl","bootstatus",os.environ["SMOKE_SIM"],"-b"],
+                         timeout=240,check=True)
+          PY
+            sleep 8
+          done
       - name: Install candidate and reset Photos for system authorization prompt
         if: matrix.source == 'candidate-mapkit'
         shell: bash
@@ -202,7 +237,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
-          python3 -m py_compile "$GITHUB_WORKSPACE/ios/scripts/capture-navigation-smoke-frames.py" \
+          python3 -m py_compile "$GITHUB_WORKSPACE/ios/scripts/navigation_video_probe.py" \
+            "$GITHUB_WORKSPACE/ios/scripts/test_navigation_video_probe.py" \
+            "$GITHUB_WORKSPACE/ios/scripts/capture-navigation-smoke-frames.py" \
             "$GITHUB_WORKSPACE/ios/scripts/audit_navigation_frames.py" \
             "$GITHUB_WORKSPACE/ios/scripts/test_audit_navigation_frames.py" \
             "$GITHUB_WORKSPACE/ios/scripts/summarize-navigation-latency.py" \
@@ -212,10 +249,22 @@ jobs:
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
             -p 'test_audit_navigation_frames.py' -v
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
+            -p 'test_navigation_video_probe.py' -v
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
             -p 'test_assert_native_ios_no_crash.py' -v
-          # Keep a few frames from the LIVE failed route, not SpringBoard after
-          # xcodebuild exits. Never use AX queries from this observer.
-          if [[ "${{ matrix.source }}" != "release-c83" ]]; then
+          # Serial PNG screenshots previously missed 220/438 scheduled frames
+          # and are too sparse for a strict Gallery/Files transition gate.
+          # Only the Gallery/Files shard uses bounded authentic Simulator H264.
+          # Other candidate shards retain existing screenshot diagnostics.
+          if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
+            command -v ffprobe >/dev/null 2>&1 || brew install ffmpeg
+            python3 "$SMOKE_ROOT/ios/scripts/navigation_video_probe.py" record \
+              "$SMOKE_SIM" \
+              "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
+              "$RUNNER_TEMP/native-navigation-results/diagnostics/navigation-video" &
+            video_watcher=$!
+            trap 'kill -TERM "$video_watcher" >/dev/null 2>&1 || true; wait "$video_watcher" >/dev/null 2>&1 || true' EXIT
+          elif [[ "${{ matrix.source }}" != "release-c83" ]]; then
             python3 "$SMOKE_ROOT/ios/scripts/capture-navigation-smoke-frames.py" \
               "$SMOKE_SIM" \
               "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
@@ -233,10 +282,13 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesFirstOpenAndSixGalleryReturnsDoNotExit") ;;
             candidate-navigation)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests")
-              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests") ;;
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllPagesCrashUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSPhotoBackupMVPScenarioUITests") ;;
             candidate-gallery-files)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests")
-              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests") ;;
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesTransitionEdgeUITests") ;;
             candidate-no-session)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests") ;;
             candidate-mapkit)
@@ -258,6 +310,19 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             "${native_test_args[@]}" \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
+          if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
+            kill -TERM "$video_watcher" >/dev/null 2>&1 || true
+            wait "$video_watcher"
+          fi
+      - name: Assert six distinct real recorded Gallery/Files journeys
+        if: ${{ always() && matrix.source == 'candidate-gallery-files' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/ios/scripts/navigation_video_probe.py" audit \
+            "$RUNNER_TEMP/native-navigation-results/diagnostics/navigation-video" \
+            "$RUNNER_TEMP/native-navigation-results/diagnostics/video-frame-evidence.json" \
+            --required 6
       - name: Verify native PhotoKit MapKit in dark mode
         if: matrix.source == 'candidate-mapkit'
         shell: bash

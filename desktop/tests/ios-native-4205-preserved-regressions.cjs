@@ -69,8 +69,12 @@ for (const id of accepted) {
         assert.match(source,
           /TAP_CAPTURE_NUMBERS = frozenset\(\(1, 2, 4, 8, 12, 16\)\)/)
         assert.match(source, /tap_counts\[current_case\] = count/)
-        assert.match(source,
-          /if \(minimal and count == 1\) or \(not minimal and count in TAP_CAPTURE_NUMBERS\):/)
+        // An independent Launcher test must capture the actual route tap,
+        // rather than mistakenly counting its preliminary grid-tab tap.
+        assert.match(source, /is_launcher = current_case\[0\]\.startswith\("testLauncher"\)/)
+        assert.match(source, /minimal and count == 1 and not is_launcher/)
+        assert.match(source, /minimal and is_launcher[\s\S]*?tapped\.group\(1\)\.startswith\("native-ios-launcher-"\)/)
+        assert.match(source, /not minimal and count in TAP_CAPTURE_NUMBERS/)
         assert.match(source,
           /delays = \(0\.55,\) if minimal else TAP_FRAME_OFFSETS_SECONDS/)
         assert.match(source, /MAX_CAPTURE_LAG_SECONDS = 0\.75/)
