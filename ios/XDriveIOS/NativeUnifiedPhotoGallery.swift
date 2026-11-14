@@ -365,6 +365,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             Text("“仅云端”仅显示已确认本机没有相同原件的照片；想浏览全部云端照片，请使用上方“单独浏览 → 云端图库”。")
                 .font(.footnote).foregroundStyle(.secondary)
         }
+        if sourceFilter == .localOnly && login.owner == nil {
+            Text("未登录时无法证明云端没有同一原件。“显示地图”将使用已授权的本机 PhotoKit 地图，不标记为已核验的“仅本机”。")
+                .font(.footnote).foregroundStyle(.secondary)
+                .accessibilityIdentifier("native-ios-unified-local-map-unverified-source")
+        }
         if query != .init() {
             Text("\(query.media.title)\(query.term.isEmpty ? "" : " · 文件名包含「\(query.term)」")")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -405,12 +410,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             // Gallery shown after MapKit has the same date
                             // criteria as the map that was just opened.
                             query = draft
-                            if sourceFilter != nil {
-                                // A source filter cannot borrow the ordinary
-                                // local/Owner map. Dismiss the editor before
-                                // presenting the exact reconciled source map.
+                            if sourceFilter != nil &&
+                               !(sourceFilter == .localOnly && login.owner == nil) {
+                                // Exact source identity remains Owner-bound.
                                 openSourceMapAfterFilterDismiss = true
                             } else {
+                                // With no Owner, "localOnly" cannot prove cloud
+                                // absence. Open the existing local-only MapKit
+                                // PhotoKit route, never invent a paired status.
                                 pendingMapCaptureRange = representableMapCaptureRange
                                 pendingMapMediaFilter = representableMapMediaFilter
                                 pendingMapFilenameTerm = draft.term
@@ -450,10 +457,16 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private func mapUnavailableReason(
         for criteria: XDriveIOSNativeUnifiedGalleryQuery
     ) -> String? {
-        if sourceFilter != nil {
-            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
-                  login.owner != nil else {
-                return "来源地图需完整本机照片权限与已登录的云端 Owner。"
+        if let sourceFilter {
+            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
+                return "来源地图需要完整的本机照片访问权限。"
+            }
+            if login.owner == nil {
+                // No cloud authority means "only local" is a browsing scope,
+                // never a positive claim that the same original is not remote.
+                guard sourceFilter == .localOnly, onShowMap != nil else {
+                    return "精确的来源配对地图需要已登录的云端 Owner。"
+                }
             }
         }
         if !criteria.isValid {
@@ -473,7 +486,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private func showMapForAppliedQuery() {
         guard mapUnavailableReason(for: query) == nil,
               onShowMap != nil else { return }
-        if sourceFilter != nil {
+        if sourceFilter != nil &&
+           !(sourceFilter == .localOnly && login.owner == nil) {
             showingSourceFilteredMap = true
             return
         }
