@@ -1612,6 +1612,45 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier(album == nil ? "native-ios-full-library-gps-map" : "native-ios-album-gps-map")
+                    // Only a real Debug UI test may expose the actual PhotoKit
+                    // independent second-enumeration control. A flexible
+                    // MKMapView can compress a following VStack Button to
+                    // CGRect(infinity, infinity, 0, 0), making XCTest unable
+                    // to tap it. Anchor this 44pt target inside the VISIBLE
+                    // native map canvas; never bypass Full-Access authority.
+                    .overlay(alignment: .bottomTrailing) {
+#if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke"),
+                           album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
+                           activeCaptureRange == nil, globalViewport == nil,
+                           globalComplete && !busy {
+                            VStack(alignment: .trailing, spacing: 6) {
+                                Button {
+                                    runP0IndependentGPSAudit()
+                                } label: {
+                                    // The *button label*, not merely its parent
+                                    // layout frame, must be at least 44pt tall.
+                                    // XCTest measured the old AX button at
+                                    // only 34.3pt on the real iOS 18.5 Simulator.
+                                    Text("独立核对 PhotoKit GPS")
+                                        .frame(minWidth: 190, minHeight: 44)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(p0IndependentGPSAuditRunning)
+                                .accessibilityIdentifier("native-ios-map-p0-audit-trigger")
+                                if let p0IndependentGPSAuditResult {
+                                    Text(p0IndependentGPSAuditResult)
+                                        .font(.caption).monospacedDigit()
+                                        .accessibilityIdentifier("native-ios-map-p0-independent-count")
+                                }
+                            }
+                            .padding(12)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .padding(12)
+                        }
+#endif
+                    }
                 if globalComplete && !globalCells.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "mappin.and.ellipse")
@@ -1642,23 +1681,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         .foregroundStyle(.secondary)
                 }
 #endif
-                #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke"),
-                   album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
-                   activeCaptureRange == nil, globalViewport == nil,
-                   globalComplete && !busy {
-                    Button("独立核对 PhotoKit GPS") {
-                        runP0IndependentGPSAudit()
-                    }
-                    .disabled(p0IndependentGPSAuditRunning)
-                    .accessibilityIdentifier("native-ios-map-p0-audit-trigger")
-                    if let p0IndependentGPSAuditResult {
-                        Text(p0IndependentGPSAuditResult)
-                            .font(.caption).monospacedDigit()
-                            .accessibilityIdentifier("native-ios-map-p0-independent-count")
-                    }
-                }
-                #endif
+
                 if !globalComplete && !provisionalCells.isEmpty && !compactMap {
                     Text("位置封面正在核对，完整数量确认前暂不可打开。")
                         .font(.caption).foregroundStyle(.secondary)

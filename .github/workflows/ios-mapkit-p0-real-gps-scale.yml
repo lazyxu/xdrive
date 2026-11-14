@@ -174,9 +174,33 @@ jobs:
                   raise SystemExit("Invalid real app performance schema")
               if report.get("run_stage") != stage or not report.get("events"):
                   raise SystemExit("Missing real app performance stage: " + stage)
-              events.extend(report["events"])
+              # The scan, wall and zoom files must each prove their own
+              # real app work. Wrong-file evidence is a hard failure.
+              records = report["events"]
+              def has(kind, name):
+                  return any(isinstance(row, dict) and
+                             row.get("kind") == kind and
+                             row.get("stage") == name for row in records)
+              if stage == "scan" and sum(
+                  1 for row in records if isinstance(row, dict) and
+                  row.get("kind") == "scan" and
+                  row.get("stage") == "full_library" and
+                  row.get("completed") is True) < 5:
+                  raise SystemExit("Missing five genuine full-library scan passes")
+              if stage == "wall" and not has("frame", "place_wall_scroll"):
+                  raise SystemExit("Missing real place-wall touch frame samples")
+              if stage == "zoom" and not (
+                  has("frame", "map_pan_zoom") and
+                  has("cache", "verified_viewport_reuse")):
+                  raise SystemExit("Missing zoom frames or zero-page cache reuse")
+              events.extend(records)
           merged = {"schema": "xdrive.ios.map.real-photokit-perf.v1",
                     "run_stages": ["scan", "wall", "zoom"],
+                    "stage_evidence": [
+                        "five-completed-real-snapshots",
+                        "touch-driven-cadispaylink",
+                        "map-cadispaylink-and-verified-cache"
+                    ],
                     "events": events}
           (root / "real-app-performance.json").write_text(
               json.dumps(merged, indent=2, sort_keys=True) + "\n",

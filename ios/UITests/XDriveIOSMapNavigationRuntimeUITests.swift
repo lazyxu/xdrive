@@ -638,6 +638,22 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let trigger = element("native-ios-map-p0-audit-trigger", in: app)
         XCTAssertTrue(trigger.waitForExistence(timeout: 120),
                       "Independent GPS audit must be available only in the real Debug test route")
+        // PhotoKit's real seeded GPS annotations may finish their MapKit
+        // placement after the Debug audit button enters the AX tree. Wait for
+        // a genuinely hit-testable control, not merely an existing AX node.
+        // This retains the strict 44pt + isHittable gate on both empty and
+        // 65/100k populated libraries; no coordinate bypass or fake tap.
+        let hittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"), object: trigger)
+        if XCTWaiter.wait(for: [hittable], timeout: 30) != .completed {
+            diagnose("Seeded MapKit independent audit never became hittable", in: app)
+        }
+        let touchFrame = trigger.frame
+        print("MAP_P0_REAL_AUDIT_TOUCH_FRAME \(touchFrame)")
+        XCTAssertTrue(trigger.isHittable && touchFrame.width >= 44 &&
+                      touchFrame.height >= 44 && touchFrame.origin.x.isFinite &&
+                      touchFrame.origin.y.isFinite,
+                      "Native MapKit audit button must have a genuine visible hit target; frame=\(touchFrame)")
         trigger.tap()
         let independentlyVerified = element("native-ios-map-p0-independent-count", in: app)
         if !independentlyVerified.waitForExistence(timeout: 150) {
