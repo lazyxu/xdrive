@@ -3512,7 +3512,8 @@ class DriveAppTest {
         startAndLogin()
         compose.onNodeWithTag("native-tab-all").performClick()
         clickNativeLauncherShortcut(NativeHomeShortcut.CLIPBOARD)
-        compose.onNodeWithText("剪贴板").assertExists()
+        // The launcher and page can expose multiple "剪贴板" text nodes.
+        // Wait for the real authenticated editor control below instead.
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching {
                 compose.onNodeWithText("发送范围：当前账号广播").assertExists()
