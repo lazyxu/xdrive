@@ -1417,10 +1417,18 @@ struct XDriveIOSNativeFilesBrowser: View {
         Section("位置") {
             if let owner = login.owner {
                 NavigationLink {
-                    XDriveIOSNativeFilesBrowser(
-                        login: login, folderID: owner.rootNodeID,
-                        folderName: "xDrive 云端"
-                    )
+                    // The Home cloud entry must fail closed before creating a
+                    // folder Reader when the Owner is only a synthetic/stale
+                    // identity without a valid native Session. Recent and
+                    // Favorites already use this same read-only route.
+                    if login.hasLocalOwnerSession {
+                        XDriveIOSNativeFilesBrowser(
+                            login: login, folderID: owner.rootNodeID,
+                            folderName: "xDrive 云端"
+                        )
+                    } else {
+                        XDriveIOSNativeFilesNoSessionRoute(kind: .cloud)
+                    }
                 } label: {
                     HStack(spacing: 12) {
                         Label("xDrive 云端", systemImage: "externaldrive")
@@ -2927,6 +2935,50 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// the app-wide five-slot rail remains owned by the native dashboard.
     @ViewBuilder private var filesMain: some View {
         VStack(spacing: 0) {
+            // One compact Files-only TOP selector, not a second bottom bar.
+            // Keep its geometry stable during selection to prevent a list jump.
+            HStack(spacing: 8) {
+                ForEach(XDriveIOSNativeFilesQuickSection.allCases) { option in
+                    Button {
+                        guard !selecting, !batchTrash.busy, !batchTarget.busy,
+                              !chunked.busy, !selectAllBusy else { return }
+                        if quickSection == .browse && option != .browse &&
+                           !isHome && !isGlobalSearch {
+                            // Capture before SwiftUI unmounts the Browse List.
+                            browseReturnAnchor = lastAppearedNodeID
+                        }
+                        if quickSection == .browse && option != .browse {
+                            searchPresented = false
+                        }
+                        quickSection = option
+                        if let owner = login.owner {
+                            resumeStore.saveSection(option.rawValue, owner: owner)
+                        }
+                        if option == .browse && isHome {
+                            resumeLastFolderIfNeeded()
+                        }
+                    } label: {
+                        Label(option.title, systemImage: option.symbol)
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(quickSection == option ? Color.accentColor : Color.secondary)
+                    .background(
+                        quickSection == option ? Color.accentColor.opacity(0.12) : Color.clear,
+                        in: Capsule()
+                    )
+                    .disabled(selecting)
+                    .accessibilityIdentifier("native-ios-files-section-" + option.rawValue)
+                    .accessibilityValue(quickSection == option ? "已选择" : "未选择")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.bar)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("native-ios-files-quick-rail")
             switch quickSection {
             case .recent:
                 XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
@@ -2934,49 +2986,6 @@ struct XDriveIOSNativeFilesBrowser: View {
                 filesChrome
             case .favorites:
                 XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
-            }
-            if !selecting {
-                HStack(spacing: 8) {
-                    ForEach(XDriveIOSNativeFilesQuickSection.allCases) { option in
-                        Button {
-                            guard !batchTrash.busy, !batchTarget.busy,
-                                  !chunked.busy, !selectAllBusy else { return }
-                            if quickSection == .browse && option != .browse &&
-                               !isHome && !isGlobalSearch {
-                                // Capture before SwiftUI unmounts the Browse List.
-                                browseReturnAnchor = lastAppearedNodeID
-                            }
-                            if quickSection == .browse && option != .browse {
-                                searchPresented = false
-                            }
-                            quickSection = option
-                            if let owner = login.owner {
-                                resumeStore.saveSection(option.rawValue, owner: owner)
-                            }
-                            if option == .browse && isHome {
-                                resumeLastFolderIfNeeded()
-                            }
-                        } label: {
-                            Label(option.title, systemImage: option.symbol)
-                                .font(.caption)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(quickSection == option ? Color.accentColor : Color.secondary)
-                        .background(
-                            quickSection == option ? Color.accentColor.opacity(0.12) : Color.clear,
-                            in: Capsule()
-                        )
-                        .accessibilityIdentifier("native-ios-files-section-" + option.rawValue)
-                        .accessibilityValue(quickSection == option ? "已选择" : "未选择")
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.bar)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("native-ios-files-quick-rail")
             }
         }
     }

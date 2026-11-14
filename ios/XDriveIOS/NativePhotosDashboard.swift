@@ -847,7 +847,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                     onClose: { presentingUnifiedMap = false },
                     mediaFilter: unifiedMapMediaFilter,
                     filenameTerm: unifiedMapFilenameTerm,
-                    cloudSourceAllowed: unifiedMapMediaFilter.isAll && unifiedMapFilenameTerm.isEmpty,
+                    cloudSourceAllowed: true,
                     inheritedCaptureRange: unifiedMapCaptureRange
                 )
             }

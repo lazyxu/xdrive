@@ -285,8 +285,20 @@ struct XDriveIOSNativeClipboardClient {
     }
     func clear() async throws { try await noContent("/api/v1/clipboard/items") }
 
+    /// Revoke only an enrolled Clipboard grant, never the installation itself.
+    /// Owner authentication and device ACL are enforced by the existing Server.
+    func revokeDevice(_ deviceID: String) async throws {
+        guard let id = UUID(uuidString: deviceID),
+              id.uuidString.lowercased() == deviceID else {
+            throw XDriveIOSClipboardPolicy.Failure.invalidPayload
+        }
+        try await noContent("/api/v1/clipboard/devices/\(deviceID)")
+    }
+
     private func noContent(_ path: String) async throws {
-        guard path.hasPrefix("/api/v1/clipboard/items"), !path.contains("?"),
+        guard (path.hasPrefix("/api/v1/clipboard/items") ||
+               path.hasPrefix("/api/v1/clipboard/devices/")),
+              !path.contains("?"), !path.contains("#"),
               let url = URL(string: path, relativeTo: owner.origin)?.absoluteURL else {
             throw XDriveIOSClipboardPolicy.Failure.invalidOwner
         }

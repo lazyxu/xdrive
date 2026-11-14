@@ -146,6 +146,42 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         return sqlite3_changes(database) == 1
     }
 
+    /// A newly confirmed "only new" plan is a NEW scope, not the paused
+    /// previous plan. An Owner's old PhotoKit queue may survive permanent
+    /// schedule disable; carrying it forward would upload photos discovered
+    /// before the new consent. The caller must already hold the shared
+    /// original-writer gate and prove zero uncertain Server receipts.
+    ///
+    /// Discard ONLY discovery rows, diagnostics, retry budgets and old
+    /// reconciliation markers. The encrypted upload journal and remote
+    /// originals live outside this database and are never deleted here.
+    /// The fresh consent token and queue reset commit atomically.
+    func replaceBaselineForFreshOnlyNewConsent(
+        token: Data, authorization: Int
+    ) throws {
+        try validateToken(token)
+        guard authorization > 0 else { throw Failure.invalidInput }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+        let statement = try prepare(
+            "INSERT INTO baseline(id,token,authorization) VALUES(1,?,?) " +
+            "ON CONFLICT(id) DO UPDATE SET token=excluded.token,authorization=excluded.authorization"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(token, into: statement, position: 1)
+        guard sqlite3_bind_int64(statement, 2, Int64(authorization)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        try stepDone(statement)
+        try execute("DELETE FROM entries")
+        try execute("DELETE FROM failure_reasons")
+        try execute("DELETE FROM automatic_retries")
+        try execute("DELETE FROM reconciliation")
+        try execute("COMMIT")
+        committed = true
+    }
+
     /// Replace an unreplayable PhotoKit history checkpoint only after the
     /// Owner-scoped caller has completed a full current-library scan and
     /// verified every supported original against the current Server receipt.

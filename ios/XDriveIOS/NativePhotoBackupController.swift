@@ -240,6 +240,24 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 errorMessage = "已有因收据不确定而暂停的计划，请先在收据核对区明确恢复。"
                 return
             }
+            // A fresh "only new" consent is allowed only after stopping the
+            // previous active plan. In particular, never reset a live
+            // plan's SQLite history by re-entering setup programmatically.
+            if startRule == .onlyNew,
+               store.status(owner: selected)?.enabled == true {
+                errorMessage = "请先关闭当前自动计划，再新建仅备份新照片的任务。"
+                return
+            }
+            // Pausing preserves the previous consent, change queue and
+            // history token for "Resume previous". Resetting that SQLite
+            // queue before the new UserDefaults plan is committed creates a
+            // crash window: a resumed old plan could silently skip historical
+            // imports. Require explicit permanent close before fresh consent.
+            if startRule == .onlyNew,
+               store.status(owner: selected)?.enabled == false {
+                errorMessage = "旧自动备份任务仍已暂停保留；请先选择恢复之前的任务，或明确永久关闭旧计划后再新建。"
+                return
+            }
             let scope = try await XDriveIOSForegroundBackupIdentity.shared
                 .existingLocalScope(owner: selected)
             guard displayEpoch == uiEpoch,
@@ -292,6 +310,16 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   managed.destination == expectedDestination,
                   UIApplication.shared.applicationState == .active else {
                 throw XDriveIOSNativeSessionError.staleSession
+            }
+            // A malformed or unsupported saved plan can coexist with a
+            // readable encrypted receipt journal. configure() would refuse
+            // that plan, but only AFTER the token installation below. Do not
+            // create or advance any durable PhotoKit queue baseline for a
+            // configuration that must be rejected by the schedule store.
+            if store.hasSavedRecord(owner: selected),
+               store.status(owner: selected) == nil {
+                errorMessage = "当前账户的旧自动备份计划无法读取；未写入新的照片增量基准，请先处理旧任务。"
+                return
             }
             if let consentEpoch {
                 // Persist the original, consent-time PhotoKit token ONLY after

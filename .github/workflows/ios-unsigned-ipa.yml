@@ -42,6 +42,9 @@ jobs:
       - name: Verify independent NAS original readback checker rejects false physical proof
         run: python3 ios/scripts/test_verify_nas_photo_original.py
 
+      - name: Simulate real Caddy DNS-SNI and pinned IP HTTPS over loopback
+        run: node --test desktop/tests/ios-native-lan-caddy-wire.cjs
+
   unsigned-ipa:
     runs-on: macos-15
     timeout-minutes: 35
@@ -428,6 +431,19 @@ jobs:
           node --test desktop/tests/ios-native-lan-ip-login.cjs
           bash ios/tests/check-native-lan-trust.sh "$RUNNER_TEMP"
 
+      - name: Reproduce Apple URLSession pinned Caddy IP trust with real loopback TLS
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeLANTrust.swift \
+            ios/tests/NativeLANURLSessionWireChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-lan-urlsession-wire-check"
+          # The alias is inside this temporary macOS CI runner, never on the user's NAS.
+          sudo ifconfig lo0 alias 192.168.2.4 255.255.255.255
+          trap 'sudo ifconfig lo0 -alias 192.168.2.4 || true' EXIT
+          XDRIVE_LAN_APPLE_TEST_BINARY="$RUNNER_TEMP/xdrive-ios-lan-urlsession-wire-check" \
+            node --test desktop/tests/ios-native-lan-caddy-wire.cjs
+
       - name: Reproduce and classify native login TLS, Owner/root and retry errors
         run: |
           set -euo pipefail
@@ -455,6 +471,7 @@ jobs:
             ios/tests/NativePasswordProfilesChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-saved-login-profiles"
           "$RUNNER_TEMP/xdrive-ios-saved-login-profiles"
+          node --test desktop/tests/ios-native-password-prefill.cjs
 
       - name: Verify native historical receipt counts never claim full-library completion
         run: |

@@ -22,6 +22,17 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     private var job: Task<Void, Never>?
     private var currentReader: XDriveIOSNativeMediaGalleryReader?
 
+    // Read-time visual fence, independent of the later SwiftUI onChange.
+    // Never paint a retained Owner A page under Owner B while a delayed
+    // Range, thumbnail or a 401/403 response is still arriving.
+    func visiblePage(for currentOwner: XDriveNativeOwnerRoot?) -> XDriveIOSNativeMediaRange? {
+        guard let page, let pageScope, let currentReader,
+              XDriveIOSNativePhotoOwnerScope.matches(currentOwner, pageScope),
+              XDriveIOSNativePhotoOwnerScope.matches(currentReader.owner, pageScope)
+        else { return nil }
+        return page
+    }
+
     func invalidate() {
         epoch = UUID()
         job?.cancel()
@@ -213,6 +224,10 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                     self?.error = "当前账户身份验证失败，已隐藏旧云端照片；请重新登录或重试。"
                     return
                 }
+                try Task.checkCancellation()
+                guard self?.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
                     self?.invalidate()
                     self?.error = "当前服务器或 Owner 已变化，旧图库已清除。"
@@ -240,7 +255,9 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 self?.failedOffset = nil
             } catch is CancellationError {
             } catch {
-                guard self?.epoch == ticket else { return }
+                guard self?.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 // A verified Server can still revoke access or delete an
                 // album between page requests. Never show cached rows after
                 // a definitive 4xx/invalid response, even if the Owner was
@@ -301,6 +318,7 @@ private struct XDriveIOSNativeMediaWallTileIdentity: Hashable {
 private struct XDriveIOSNativeMediaWallTile: View {
     let item: XDriveIOSNativeMediaItem
     let viewerActive: Bool
+    let framing: XDriveIOSNativePhotoWallFraming
     @ObservedObject var model: XDriveIOSNativeMediaWallModel
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @State private var image: UIImage?
@@ -311,7 +329,11 @@ private struct XDriveIOSNativeMediaWallTile: View {
                 GeometryReader { square in
                 Group {
                     if let image {
-                        Image(uiImage: image).resizable().scaledToFill()
+                        if framing == .complete {
+                            Image(uiImage: image).resizable().scaledToFit()
+                        } else {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        }
                     } else {
                         Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
                             .overlay {
@@ -1333,6 +1355,8 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     let offset: Int
     let expectedTotal: Int
     let density: XDriveIOSNativePhotoWallDensity
+    let timeScale: XDriveIOSNativePhotoWallTimeScale
+    let framing: XDriveIOSNativePhotoWallFraming
     let viewerActive: Bool
     let returnFocusID: UInt64?
     let onSelect: (XDriveIOSNativeMediaItem, XDriveIOSNativeMediaWallModel) -> Void
@@ -1341,6 +1365,23 @@ private struct XDriveIOSNativeServerVirtualRange: View {
 
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
     @AccessibilityFocusState private var focusedTileID: UInt64?
+
+    private func visibleSections(
+        _ verified: XDriveIOSNativeMediaRange
+    ) -> [XDriveIOSNativePhotoWallVisibleSection<XDriveIOSNativeMediaItem>] {
+        // One *Owner-reverified* 48-item Range only: do not invent an album-wide
+        // chronology or use dates to authorize tiles/Viewer admission.
+        xdriveIOSNativePhotoWallVisibleSections(
+            verified.items, scale: timeScale
+        ) { timeScale.key(forISO8601: $0.metadata.captured_at) }
+    }
+
+    // Owner IDs can be reused by another server/instance. The complete
+    // transient identity must restart a mounted virtual Range's .task.
+    private var ownerTaskScope: String {
+        guard let owner = login.owner else { return "signed-out" }
+        return "\(owner.origin.absoluteString)|\(owner.instanceID)|\(owner.ownerID)|\(owner.username)|\(owner.rootNodeID)"
+    }
 
     private var placeholders: some View {
         XDriveIOSNativePhotoWallGrid(density: density) {
@@ -1352,14 +1393,21 @@ private struct XDriveIOSNativeServerVirtualRange: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            if let verified = model.page,
+            if let verified = model.visiblePage(for: login.owner),
                verified.offset == offset, verified.total_count == expectedTotal {
-                XDriveIOSNativePhotoWallGrid(density: density) {
-                    ForEach(verified.items) { item in
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(visibleSections(verified)) { section in
+                        if timeScale != .all {
+                            XDriveIOSNativePhotoWallDayHeader(
+                                title: timeScale.label(for: section.key)
+                            )
+                        }
+                        XDriveIOSNativePhotoWallGrid(density: density) {
+                            ForEach(section.items) { item in
                         Button { onSelect(item, model) } label: {
                             XDriveIOSNativeMediaWallTile(
                                 item: item, viewerActive: viewerActive,
-                                model: model, login: login
+                                framing: framing, model: model, login: login
                             )
                             .id(XDriveIOSNativeMediaWallTileIdentity(
                                 item: item, owner: login.owner
@@ -1370,6 +1418,8 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                         .accessibilityIdentifier("native-ios-server-media-tile")
                         .id(item.id)
                         .accessibilityFocused($focusedTileID, equals: item.id)
+                            }
+                        }
                     }
                 }
             } else if model.error == nil {
@@ -1390,14 +1440,14 @@ private struct XDriveIOSNativeServerVirtualRange: View {
             }
         }
         .id("cloud-range:\(offset)")
-        .task(id: "\(offset)-\(search)-\(captureRange?.fromRFC3339 ?? "")-\(captureRange?.toRFC3339 ?? "")-\(albumID ?? "")-\(placeID ?? "")-\(login.owner?.ownerID ?? 0)-\(viewerActive)") {
+        .task(id: "\(offset)-\(search)-\(captureRange?.fromRFC3339 ?? "")-\(captureRange?.toRFC3339 ?? "")-\(albumID ?? "")-\(placeID ?? "")-\(ownerTaskScope)-\(viewerActive)") {
             guard !viewerActive else { return }
             model.load(login: login, albumID: albumID, placeID: placeID,
                        offset: offset, search: search,
                         captureRange: captureRange)
         }
         .onChange(of: model.busy) { pending in
-            guard !pending, let page = model.page else { return }
+            guard !pending, let page = model.visiblePage(for: login.owner) else { return }
             guard page.offset == offset, page.total_count == expectedTotal,
                   page.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
                   XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
@@ -1450,6 +1500,9 @@ struct XDriveIOSNativeServerMediaWall: View {
     // Presentation-only, shared with the already-native local PhotoKit wall.
     // Does not participate in Owner, Range, thumbnail request or Viewer keys.
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
     @State private var continuousFailure: String?
     @State private var returnRangeOffset: Int?
     @State private var pendingReturnID: UInt64?
@@ -1508,7 +1561,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                     Text("搜索词不能超过 200 个字符。")
                         .font(.caption).foregroundStyle(.red)
                 }
-                if let page = model.page {
+                if let page = model.visiblePage(for: login.owner) {
                     HStack(spacing: 8) {
                         Text(page.total_count == 0 ?
                             "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :
@@ -1516,7 +1569,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
                         Menu {
-                            xdrivePhotoWallDensityButtons($wallDensity)
+                            Section("照片网格") { xdrivePhotoWallDensityButtons($wallDensity) }
+                            Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
                         } label: {
                             Image(systemName: "square.grid.3x3")
                                 .frame(width: 44, height: 44)
@@ -1525,13 +1579,16 @@ struct XDriveIOSNativeServerMediaWall: View {
                         .accessibilityIdentifier("native-ios-cloud-wall-density")
                     }
                     if page.total_count > 0 {
+                        XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                            .accessibilityHint("仅按当前已加载并验证的照片分组")
                         ForEach(0..<((page.total_count - 1) / 48 + 1), id: \.self) { number in
                             let offset = number * 48
                             XDriveIOSNativeServerVirtualRange(
                                 login: login, albumID: album?.id, placeID: placeID,
                                 search: appliedSearch, captureRange: captureRange,
                                 offset: offset, expectedTotal: page.total_count,
-                                density: wallDensity, viewerActive: selected != nil,
+                                density: wallDensity, timeScale: wallTimeScale,
+                                framing: wallFraming, viewerActive: selected != nil,
                                 returnFocusID: pendingReturnID,
                                 onSelect: { item, source in
                                     openVerifiedMedia(item, from: source)

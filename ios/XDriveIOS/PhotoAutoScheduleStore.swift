@@ -109,6 +109,15 @@ final class XDriveIOSPhotoAutoScheduleStore {
         guard existing != nil || !hasSavedRecord(owner: owner) else {
             throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable
         }
+        // Cross-store crash safety: a fresh only-new plan resets its separate
+        // SQLite PhotoKit history BEFORE this UserDefaults write. If a paused
+        // plan still exists, a crash between those writes would leave the
+        // old resumable plan paired with the new (shorter) change history.
+        // Only explicit "resume previous" may reuse the saved plan; a fresh
+        // only-new scope requires the prior plan to be permanently disabled.
+        guard startRule != .onlyNew || existing == nil else {
+            throw XDriveIOSPhotoAutoScheduleError.invalidStartRule
+        }
         let sameTarget = XDriveIOSPhotoBackupDestinationCursorPolicy.sameManagedTarget(
             savedSourceID: existing?.targetSourceID,
             savedTargetNodeID: existing?.targetNodeID,

@@ -36,7 +36,11 @@ test('native PhotoAsset thumbnail state invalidates on revised Node and verified
 
   const virtual = source.slice(source.indexOf('private struct XDriveIOSNativeServerVirtualRange: View'),
     source.indexOf('/// Root and album-specific media wall'))
-  assert.match(virtual, /ForEach\(verified\.items\) \{ item in[\s\S]*?XDriveIOSNativeMediaWallTile\([\s\S]*?\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner\s*\)\)/)
+  // Grouping is presentation-only and is built exclusively from the signed
+  // current Range. Tile identity must still contain exact Node revision+Owner.
+  assert.match(virtual, /verified\.offset == offset, verified\.total_count == expectedTotal/)
+  assert.match(virtual, /xdriveIOSNativePhotoWallVisibleSections\(\s*verified\.items, scale: timeScale/)
+  assert.match(virtual, /ForEach\(visibleSections\(verified\)\) \{ section in[\s\S]*?ForEach\(section\.items\) \{ item in[\s\S]*?XDriveIOSNativeMediaWallTile\([\s\S]*?\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner\s*\)\)/)
   assert.match(virtual, /\.id\(item\.id\)/, 'keep Node ID for continuous Viewer scroll return')
   assert.match(virtual, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/)
 })

@@ -3,7 +3,7 @@ import Photos
 import SwiftUI
 import UIKit
 
-private final class XDriveIOSUnifiedPhotoObserver: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
+final class XDriveIOSUnifiedPhotoObserver: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     @Published private(set) var change = UUID()
     private var observing = false
 
@@ -48,10 +48,15 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var showingThumbnailCache = false
     @State private var sourceFilter: XDriveIOSNativeGalleryPresence?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .day
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
     @State private var openMapAfterFilterDismiss = false
+    @State private var openSourceMapAfterFilterDismiss = false
+    @State private var showingSourceFilteredMap = false
     @State private var pendingMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var pendingMapMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var pendingMapFilenameTerm = ""
@@ -61,6 +66,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var explicitOriginalAudit = false
     @State private var viewerReturnAnchor: String?
     @State private var viewerReturnPage = 0
+    // Exact Owner-authorized page that opened Viewer; its first frame is retained.
+    @State private var viewerOpeningPage: Int?
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var started = false
     @Environment(\.scenePhase) private var phase
@@ -102,13 +109,24 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 showingPeople = false; showingThumbnailCache = false
                 sourceFilter = nil; query = .init(); draft = .init()
                 openMapAfterFilterDismiss = false
+                openSourceMapAfterFilterDismiss = false
+                showingSourceFilteredMap = false
                 pendingMapCaptureRange = nil
                 pendingMapMediaFilter = .all
                 pendingMapFilenameTerm = ""
                 reset()
             }
-            .onChange(of: sourceFilter) { _ in resetWall() }
-            .onChange(of: query) { _ in resetWall() }
+            .onChange(of: sourceFilter) { _ in
+                // A query/presence transition is not authority to reuse old
+                // map markers while a full-screen source map is visible.
+                showingSourceFilteredMap = false
+                openSourceMapAfterFilterDismiss = false
+                resetWall()
+            }
+            .onChange(of: query) { _ in
+                showingSourceFilteredMap = false
+                resetWall()
+            }
             .onChange(of: timeline.indexRevision) { _ in resetWall() }
             .onChange(of: selected?.id) { _ in
                 // Leaving the page for Viewer also retires any explicit
@@ -134,6 +152,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 // UIKit cannot present the map while the filter editor sheet
                 // is still being dismissed. The owning Gallery remains live
                 // underneath; no source/page/filter state is rebuilt here.
+                if openSourceMapAfterFilterDismiss {
+                    openSourceMapAfterFilterDismiss = false
+                    showingSourceFilteredMap = true
+                    return
+                }
                 guard openMapAfterFilterDismiss else { return }
                 openMapAfterFilterDismiss = false
                 let selectedRange = pendingMapCaptureRange
@@ -156,6 +179,18 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     onViewed: { page, id in viewerReturnPage = page; viewerReturnAnchor = id },
                     pairing: { _ in reset() })
             }
+            .fullScreenCover(isPresented: $showingSourceFilteredMap) {
+                if let presence = sourceFilter {
+                    NavigationStack {
+                        XDriveIOSNativeUnifiedSourcePhotoMapScreen(
+                            login: login, presence: presence, query: query,
+                            onClose: { showingSourceFilteredMap = false })
+                    }
+                } else {
+                    Text("来源筛选已变化，请重新打开地图。")
+                        .accessibilityIdentifier("native-ios-unified-source-map-invalidated")
+                }
+            }
     }
 
     private var galleryContent: some View {
@@ -165,10 +200,33 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     Label(query == .init() ? "搜索与筛选" : "已筛选", systemImage: "line.3.horizontal.decrease.circle")
                 }
                 .accessibilityIdentifier("native-ios-gallery-open-filters")
+                // The native Photos-style menu applies the *committed* filter.
+                // Unsubmitted sheet edits are never allowed to leak into it.
+                if onShowMap != nil {
+                    Menu {
+                        Button("排序和筛选") {
+                            draft = query
+                            showFilters = true
+                        }
+                        Button {
+                            showMapForAppliedQuery()
+                        } label: {
+                            Label("显示地图", systemImage: "map")
+                        }
+                        .disabled(mapUnavailableReason(for: query) != nil)
+                        .accessibilityIdentifier("native-ios-gallery-sort-filter-show-map")
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("排序和筛选")
+                    .accessibilityIdentifier("native-ios-gallery-sort-filter-menu")
+                }
                 Spacer()
                 if query != .init() { Button("清除") { query = .init() } }
                 Menu {
-                    xdrivePhotoWallDensityButtons($wallDensity)
+                    Section("照片大小") { xdrivePhotoWallDensityButtons($wallDensity) }
+                    Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
                 } label: {
                     Image(systemName: "square.grid.3x3")
                 }
@@ -190,6 +248,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 .accessibilityIdentifier("native-ios-gallery-explicit-audit")
             }.padding(.horizontal, 12).padding(.vertical, 4)
             filters.padding(.horizontal, 12).padding(.vertical, 4)
+            XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                .padding(.horizontal, 12).padding(.vertical, 4)
             Divider()
             ScrollViewReader { scroll in
                 ScrollView {
@@ -199,6 +259,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             ForEach(wall.index.pages) { page in
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
                                     filter: sourceFilter, query: query, density: wallDensity,
+                                    framing: wallFraming, timeScale: wallTimeScale,
                                     displayActive: selected == nil && phase == .active && isTabActive,
                                      // A tab switch covers a loaded 48-row
                                      // window; ordinary off-screen scrolling
@@ -208,11 +269,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                          phase != .active || !isTabActive,
                                     open: { payload, position in
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+                                        viewerOpeningPage = payload.number
                                         selected = .init(owner: owner, page: payload, position: position)
                                     }, loaded: {
                                         if selected == nil, let anchor = viewerReturnAnchor, viewerReturnPage == page.id {
                                             scroll.scrollTo(anchor, anchor: .center)
                                             viewerReturnAnchor = nil
+                                            viewerOpeningPage = nil
                                         }
                                     }, pairing: { pairing = $0 })
                                     .id("unified-page-\(page.id)")
@@ -223,14 +286,23 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 }
                 .refreshable { reset() }
-                .simultaneousGesture(
-                    MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                        guard selected == nil, phase == .active, !showFilters else { return }
-                        wallDensity = wallDensity.applyingPinch(scale)
-                    }
+                .xdrivePhotoWallPinch(
+                    density: $wallDensity,
+                    enabled: selected == nil && phase == .active && !showFilters && isTabActive
                 )
                 .onChange(of: selected?.id) { selection in
-                    if selection == nil, viewerReturnAnchor != nil {
+                    guard selection == nil, phase == .active, isTabActive,
+                          let anchor = viewerReturnAnchor else { return }
+                    if viewerOpeningPage == viewerReturnPage {
+                        // Same retained verified page: restore the exact row directly
+                        // rather than flashing the page's top before final restoration.
+                        scroll.scrollTo(anchor, anchor: .center)
+                        // A retained page may not emit loaded() again. Consume once.
+                        viewerReturnAnchor = nil
+                        viewerOpeningPage = nil
+                    } else {
+                        // Filmstrip crossed a lazy page: materialize its signed page,
+                        // then let loaded() restore the exact authorized row.
                         scroll.scrollTo("unified-page-\(viewerReturnPage)", anchor: .top)
                     }
                 }
@@ -333,10 +405,17 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             // Gallery shown after MapKit has the same date
                             // criteria as the map that was just opened.
                             query = draft
-                            pendingMapCaptureRange = representableMapCaptureRange
-                            pendingMapMediaFilter = representableMapMediaFilter
-                            pendingMapFilenameTerm = draft.term
-                            openMapAfterFilterDismiss = true
+                            if sourceFilter != nil {
+                                // A source filter cannot borrow the ordinary
+                                // local/Owner map. Dismiss the editor before
+                                // presenting the exact reconciled source map.
+                                openSourceMapAfterFilterDismiss = true
+                            } else {
+                                pendingMapCaptureRange = representableMapCaptureRange
+                                pendingMapMediaFilter = representableMapMediaFilter
+                                pendingMapFilenameTerm = draft.term
+                                openMapAfterFilterDismiss = true
+                            }
                             showFilters = false
                         } label: {
                             Label("显示地图", systemImage: "map")
@@ -344,9 +423,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                         .disabled(mapUnavailableReason != nil || !draft.isValid)
                         .accessibilityIdentifier("native-ios-unified-gallery-show-map")
                         Text(mapUnavailableReason ??
-                             ((draft.media != .all || !draft.term.isEmpty)
-                                 ? "本机 PhotoKit 按文件名／媒体类型精确过滤；云端缺少对应的已授权地图筛选，已锁定本机来源。"
-                                 : "地图按本机 PhotoKit 或当前云端 Owner 分别显示有位置照片；来源可在地图内切换，不会将两端照片误称为同一个已筛选集合。"))
+                             (sourceFilter != nil
+                                 ? "按当前已核验的来源成员显示地图；缺失证据时不显示未经验证的位置或数量。"
+                                 : "地图在当前本机 PhotoKit 和 Owner 云端分别执行文件名、媒体类型及日期过滤，Owner 身份独立复核。"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("native-ios-unified-gallery-map-scope")
@@ -366,22 +445,55 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     // MapKit routes have separate PhotoKit/Owner scopes. Refuse every
     // predicate that MapKit cannot represent *exactly*; never display an
     // unfiltered map under an actively filtered Gallery heading.
-    private var mapUnavailableReason: String? {
+    private var mapUnavailableReason: String? { mapUnavailableReason(for: draft) }
+
+    private func mapUnavailableReason(
+        for criteria: XDriveIOSNativeUnifiedGalleryQuery
+    ) -> String? {
         if sourceFilter != nil {
-            return "当前“两端都有／仅本机／仅云端／待核验”来源筛选无法在地图中精确重现。请先选择“全部”来源。"
+            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                  login.owner != nil else {
+                return "来源地图需完整本机照片权限与已登录的云端 Owner。"
+            }
         }
-        if !draft.isValid {
+        if !criteria.isValid {
             return "请先修正日期范围或搜索条件。"
         }
-        if draft.from != nil || draft.until != nil {
-            guard let from = draft.from, let until = draft.until,
+        if criteria.from != nil || criteria.until != nil {
+            guard let from = criteria.from, let until = criteria.until,
                   XDriveIOSNativePhotoMapCaptureRange(
                     from: from, to: until, label: "当前图库日期筛选"
                   ).valid else {
-                return "所选日期超出地图支持的连续时间范围（最长 370 天）。"
+                return "日期区间无效，请选择正确的开始和结束日期。"
             }
         }
         return nil
+    }
+
+    private func showMapForAppliedQuery() {
+        guard mapUnavailableReason(for: query) == nil,
+              onShowMap != nil else { return }
+        if sourceFilter != nil {
+            showingSourceFilteredMap = true
+            return
+        }
+        let range: XDriveIOSNativePhotoMapCaptureRange?
+        if let from = query.from, let until = query.until {
+            let current = XDriveIOSNativePhotoMapCaptureRange(
+                from: from, to: until, label: "当前图库日期筛选")
+            guard current.valid else { return }
+            range = current
+        } else {
+            range = nil
+        }
+        let media: XDriveIOSNativePhotoMediaFilter
+        switch query.media {
+        case .all: media = .all
+        case .image: media = .photos
+        case .video: media = .videos
+        case .live: media = .livePhotos
+        }
+        onShowMap?(range, media, query.term)
     }
 
     private var representableMapMediaFilter: XDriveIOSNativePhotoMediaFilter {
@@ -431,7 +543,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         }
     }
 
-    private func resetWall() { selected = nil; viewerReturnAnchor = nil; wall.reset() }
+    private func resetWall() {
+        selected = nil
+        viewerReturnAnchor = nil
+        viewerOpeningPage = nil
+        wall.reset()
+    }
     private func requestOriginalAudit(retryUnavailable: Bool) {
         // An explicit diagnostic is independent from upload scheduling.
         self.retryUnavailable = retryUnavailable
@@ -495,6 +612,7 @@ struct XDriveIOSUnifiedPhotoTile: View {
     let presentingOwner: XDriveNativeOwnerRoot
     let displayActive: Bool
     let retainWhileCovered: Bool
+    let framing: XDriveIOSNativePhotoWallFraming
     @StateObject private var local = XDriveIOSPhotoImageLoader()
     @State private var remote: UIImage?
     @State private var fallback: Task<Void, Never>?
@@ -538,7 +656,8 @@ struct XDriveIOSUnifiedPhotoTile: View {
                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, presentingOwner),
                    retainedKey == thumbnailKey,
                    let image = local.image ?? retainedLocal ?? remote {
-                    Image(uiImage: image).resizable().scaledToFill()
+                    Image(uiImage: image).resizable()
+                        .aspectRatio(contentMode: framing == .complete ? .fit : .fill)
                 } else {
                     Image(systemName: row.isVideo ? "play.rectangle" : "photo")
                         .foregroundStyle(.secondary)

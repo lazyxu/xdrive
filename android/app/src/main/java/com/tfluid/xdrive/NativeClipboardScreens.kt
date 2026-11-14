@@ -68,6 +68,9 @@ internal fun NativeClipboardScreen(
     var message by remember(epoch) { mutableStateOf<String?>(null) }
     var clearConfirm by remember(epoch) { mutableStateOf(false) }
     var refreshing by remember(epoch) { mutableStateOf(false) }
+    var cloudPickerVisible by remember(epoch) { mutableStateOf(false) }
+    var cloudPickerIntent by remember(epoch) { mutableStateOf<Triple<Long,String,String>?>(null) }
+    var revokeCandidate by remember(epoch) { mutableStateOf<String?>(null) }
 
     fun stillOwner() = controller.state.value.nativeUiSessionId == epoch &&
         controller.state.value.server == state.server &&
@@ -88,6 +91,9 @@ internal fun NativeClipboardScreen(
         referenceKind = "text"
         referenceNodeID = ""
         pickerIntent = null
+        cloudPickerVisible = false
+        cloudPickerIntent = null
+        revokeCandidate = null
         busy = false
         refreshing = false
         message = null
@@ -266,6 +272,10 @@ internal fun NativeClipboardScreen(
             } else {
                 Text("此 Android 设备已启用单独授权的定向接收",
                     style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick={revokeCandidate=recipient?.enrolled?.deviceId},
+                    enabled=!busy && pendingDirected==null) {
+                    Text("撤销本机 Clipboard 接收授权")
+                }
             }
             // Target selection is explicit. A directed v2 message must never
             // be passed to the v1 broadcast send branch.
@@ -277,11 +287,13 @@ internal fun NativeClipboardScreen(
                 DropdownMenu(expanded=targetMenu,onDismissRequest={targetMenu=false}) {
                     DropdownMenuItem(text={Text("当前 Owner 广播")},onClick={
                         targetID="";targetMenu=false;referenceKind="text";referenceNodeID=""
+                        cloudPickerVisible=false
                     })
                     devices.forEach { device ->
                         DropdownMenuItem(text={Text(device.name+" · "+device.platform)},onClick={
                             targetID=device.deviceID;targetMenu=false
                             referenceKind="text";referenceNodeID=""
+                            cloudPickerVisible=false
                         })
                     }
                 }
@@ -294,6 +306,7 @@ internal fun NativeClipboardScreen(
                                 if (referenceKind != pair.first) {
                                     referenceKind = pair.first
                                     referenceNodeID = ""
+                                    cloudPickerVisible = false
                                 }
                             },label={Text(pair.second)},
                             enabled=!busy)
@@ -301,10 +314,18 @@ internal fun NativeClipboardScreen(
                 }
                 if (referenceKind!="text") {
                     OutlinedTextField(value=referenceNodeID,
-                        onValueChange={referenceNodeID=it.take(20).filter(Char::isDigit)},
+                        onValueChange={},readOnly=true,
                         modifier=Modifier.fillMaxWidth(),singleLine=true,
-                        label={Text("已上传 CAS 的文件 Node ID")},
+                        label={Text("已核验的云端文件 Node")},
                         keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number))
+                    OutlinedButton(onClick={
+                        if (busy || pending != null || pendingDirected != null ||
+                            targetID.isEmpty()) return@OutlinedButton
+                        cloudPickerIntent=Triple(actionFence.capture(),targetID,referenceKind)
+                        cloudPickerVisible=true
+                    },enabled=!busy && pending==null && pendingDirected==null) {
+                        Text("从云端 Files 选择现有文件")
+                    }
                     Text("只发送已存在的云端 Node 引用，不增加文件权限。",
                         style=MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick={
@@ -316,6 +337,53 @@ internal fun NativeClipboardScreen(
                     }, enabled = !busy && pending == null && pendingDirected == null) {
                         Text("选择本机文件并上传 CAS（不会自动发送）")
                     }
+                    if (referenceKind=="image") {
+                        OutlinedButton(onClick={
+                            if (busy || pending != null || pendingDirected != null ||
+                                targetID.isEmpty()) return@OutlinedButton
+                            // Explicit foreground gesture only; never inspect
+                            // OS clipboard from a lifecycle/background job.
+                            val clip=clipboard.primaryClip
+                            val uri=clip?.takeIf{it.itemCount>0}?.getItemAt(0)?.uri
+                            if (clip?.description?.hasMimeType("image/*") != true ||
+                                uri?.scheme != "content") {
+                                message="本机剪贴板没有可读取的图片 URI；请使用文件选择器。"
+                            } else {
+                                val snapshot=actionFence.capture()
+                                val capturedTarget=targetID
+                                val capturedKind=referenceKind
+                                referenceNodeID=""
+                                busy=true
+                                scope.launch {
+                                    try {
+                                        val result=controller.clipboardImportLocalFile(context,uri) {
+                                            stillSession(snapshot) && targetID==capturedTarget &&
+                                                referenceKind==capturedKind
+                                        }
+                                        if (stillSession(snapshot) && targetID==capturedTarget &&
+                                            referenceKind==capturedKind) {
+                                            referenceNodeID=result.id.toString()
+                                            message="剪贴板图片已上传并核验 CAS；请再次点击定向发送。"
+                                        }
+                                    } catch (e: CancellationException) { throw e }
+                                    catch (e: Exception) {
+                                        if (stillSession(snapshot)) {
+                                            referenceNodeID=""
+                                            message="图片上传未确认；请检查 Files，勿自动重传。"
+                                        }
+                                    } finally {
+                                        if (stillSession(snapshot)) busy=false
+                                    }
+                                }
+                            }
+                        },enabled=!busy && pending==null && pendingDirected==null) {
+                            Text("读取本机剪贴板图片并上传")
+                        }
+                    }
+                }
+                TextButton(onClick={revokeCandidate=targetID},
+                    enabled=!busy && pendingDirected==null) {
+                    Text("撤销所选设备的 Clipboard 接收授权")
                 }
             }
             OutlinedTextField(value=draft,onValueChange={ draft=it; requireAbandon=false },
@@ -523,6 +591,68 @@ internal fun NativeClipboardScreen(
                 }
             }
     }
+    if (cloudPickerVisible && cloudPickerIntent != null) {
+        val intent=cloudPickerIntent!!
+        NativeClipboardCloudFilePicker(
+            controller=controller, kind=intent.third,
+            stillCurrent={
+                stillSession(intent.first) && targetID==intent.second &&
+                    referenceKind==intent.third && !busy
+            },
+            onChoose={ verified ->
+                if (stillSession(intent.first) && targetID==intent.second &&
+                    referenceKind==intent.third) {
+                    referenceNodeID=verified.id.toString()
+                    message="已从当前 Owner 的 Files 核验文件；请确认目标后点击定向发送。"
+                }
+                cloudPickerVisible=false
+                cloudPickerIntent=null
+            },
+            onDismiss={cloudPickerVisible=false;cloudPickerIntent=null},
+        )
+    }
+    if (revokeCandidate != null) {
+        val candidate=revokeCandidate!!
+        AlertDialog(onDismissRequest={revokeCandidate=null},
+            title={Text("撤销设备的 Clipboard 接收授权？")},
+            text={Text("此操作会停止设备接收新的定向消息；已复制的本机内容无法追回。")},
+            confirmButton={TextButton(onClick={
+                if (busy || pendingDirected != null) return@TextButton
+                revokeCandidate=null
+                val snapshot=actionFence.capture()
+                busy=true
+                scope.launch {
+                    try {
+                        if (!stillSession(snapshot)) return@launch
+                        controller.clipboardRevokeDevice(candidate)
+                        if (stillSession(snapshot)) {
+                            devices=devices.filterNot{it.deviceID==candidate}
+                            if (recipient?.enrolled?.deviceId==candidate) recipient=null
+                            if (targetID==candidate) {
+                                targetID=""
+                                referenceKind="text"
+                                referenceNodeID=""
+                                cloudPickerVisible=false
+                                cloudPickerIntent=null
+                            }
+                            if (pendingDirected?.deviceID==candidate) {
+                                pendingDirected=null
+                                requireAbandon=false
+                            }
+                            message="已撤销该设备的 Clipboard 接收授权。"
+                            refresh()
+                        }
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) {
+                        if (stillSession(snapshot))
+                            message="撤销未确认，请刷新授权状态核对；不会自动重试。"
+                    } finally {
+                        if (stillSession(snapshot)) busy=false
+                    }
+                }
+            },enabled=!busy && pendingDirected==null){Text("确认撤销")}},
+            dismissButton={TextButton(onClick={revokeCandidate=null}){Text("取消")}})
+    }
     if(clearConfirm) AlertDialog(onDismissRequest={clearConfirm=false},
         title={Text("清空剪贴板历史？")},text={Text("不可撤销。")},
         confirmButton={TextButton(onClick={
@@ -544,4 +674,111 @@ internal fun NativeClipboardScreen(
             }
         }){Text("确认清空")}},
         dismissButton={TextButton(onClick={clearConfirm=false}){Text("取消")}})
+}
+
+
+/** One real Owner Files range at a time, never a copied WebView tree or an
+ * unbounded client-side 100k listing. Files/Node ACL stays on the Server.
+ */
+@Composable
+private fun NativeClipboardCloudFilePicker(
+    controller: DriveController, kind: String, stillCurrent: () -> Boolean,
+    onChoose: (DriveNode) -> Unit, onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var folders by remember { mutableStateOf(emptyList<DriveNode>()) }
+    var rows by remember { mutableStateOf(emptyList<DriveNode>()) }
+    var offset by remember { mutableIntStateOf(0) }
+    var total by remember { mutableLongStateOf(0L) }
+    var loading by remember { mutableStateOf(false) }
+    var choosing by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableIntStateOf(0) }
+    val folderID=folders.lastOrNull()?.id
+    val folderName=folders.lastOrNull()?.name ?: "云端根目录"
+    val imageExtensions=setOf("png","jpg","jpeg","gif","webp","avif","heic","heif","tif","tiff","bmp")
+
+    LaunchedEffect(folderID,offset,retry) {
+        if (!stillCurrent()) return@LaunchedEffect
+        loading=true
+        rows=emptyList()
+        error=null
+        try {
+            val folder=folders.lastOrNull() ?: controller.clipboardFilesRoot(stillCurrent)
+            val page=controller.clipboardFilesPage(folder,offset,stillCurrent)
+            if (stillCurrent() && folderID==folders.lastOrNull()?.id) {
+                rows=page.items
+                total=page.totalCount
+            }
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) {
+            if (stillCurrent()) error="目录权限已变化或 Files 分页无效；请返回或重试。"
+        } finally {
+            if (stillCurrent()) loading=false
+        }
+    }
+
+    AlertDialog(onDismissRequest=onDismiss,
+        title={Text("从云端 Files 选择 · $folderName")},
+        text={
+            Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                if (folders.isNotEmpty()) {
+                    TextButton(onClick={
+                        folders=folders.dropLast(1)
+                        offset=0
+                        rows=emptyList()
+                    }) { Text("返回上一级") }
+                }
+                if (loading || choosing) CircularProgressIndicator()
+                if (error!=null) {
+                    Text(error!!,color=MaterialTheme.colorScheme.error)
+                    TextButton(onClick={retry++}){Text("重试")}
+                } else if (!loading) {
+                    LazyColumn(modifier=Modifier.heightIn(max=340.dp),
+                        verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                        items(rows,key={it.id}) { node ->
+                            val image=node.name.substringAfterLast('.', "").lowercase() in imageExtensions
+                            if (node.isDirectory || (node.type=="file" &&
+                                    (kind=="file" || (kind=="image" && image)))) {
+                                TextButton(onClick={
+                                    if (!stillCurrent() || choosing || loading) return@TextButton
+                                    if (node.isDirectory) {
+                                        folders=folders+node
+                                        offset=0
+                                        rows=emptyList()
+                                    } else {
+                                        choosing=true
+                                        scope.launch {
+                                            try {
+                                                val selected=controller.clipboardVerifyExistingFile(
+                                                    node,stillCurrent)
+                                                if (stillCurrent()) onChoose(selected)
+                                            } catch (e: CancellationException) { throw e }
+                                            catch (_: Exception) {
+                                                if (stillCurrent())
+                                                    error="文件已移动、改变或授权失效，请刷新目录。"
+                                            } finally { choosing=false }
+                                        }
+                                    }
+                                },enabled=!choosing) {
+                                    Text((if (node.isDirectory) "📁 " else "📄 ")+node.name)
+                                }
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        if (offset>0) TextButton(onClick={offset=(offset-100).coerceAtLeast(0)}) {
+                            Text("上一页")
+                        }
+                        if (rows.size==100 && offset.toLong()+rows.size<total) {
+                            TextButton(onClick={offset+=100}) { Text("下一页") }
+                        }
+                    }
+                    Text("已读取 "+(offset+rows.size)+" / "+total+" 项",
+                        style=MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton={TextButton(onClick=onDismiss){Text("取消")}},
+    )
 }

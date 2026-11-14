@@ -97,6 +97,9 @@ TARGETS = {
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
+    # Real PhotoKit MapKit P0 route: the video gate supplies consecutive
+    # decoded frames; these named tap screenshots remain supplemental.
+    "testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted",
     "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",
     "testGalleryDismissedFilterThenForegroundDoesNotRebuildWall",
     "testGalleryPeopleBackThenForegroundKeepsVerifiedWall",
@@ -180,6 +183,14 @@ MINIMAL_TARGETS = {
 }
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
+TARGETS.update({
+    "testSavedSearchesSheetOriginalsAndFilesReturnKeepsContent",
+    "testOperationsHistoryGalleryPeopleAndFilesReturnKeepsContent",
+    "testTrashDenialGalleryFilterCancelAndFilesReturnKeepsContent",
+    "testFilesHomeEditGallerySourceRoundtripKeepsBrowse",
+    "testFilesSearchKeyboardMineCacheReturnKeepsFiles",
+    "testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent",
+})
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")

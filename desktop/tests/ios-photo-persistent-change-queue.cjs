@@ -241,3 +241,39 @@ test('iCloud-only original waits without BG download and has a bounded foregroun
   assert.match(issues, /case \.iCloudDownloadRequired/)
   assert.doesNotMatch(source + store, /UploadSessionTransport|uploadPrepared\(|\.finalize\(/)
 })
+
+test('Owner installation Keychain failure aborts all original runners without committing a scan window', () => {
+  const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const identity = read('ios/XDriveIOS/ForegroundPhotoBackupIdentity.swift')
+  const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+  assert.match(identity, /enum XDriveIOSForegroundBackupIdentityError: Error/)
+  assert.match(identity, /case keychain\(OSStatus\)/)
+  assert.match(identity, /case invalidKey/)
+  assert.match(identity, /func localScopeAndTag\(owner: XDriveNativeOwnerRoot/)
+  assert.match(runner, /try await XDriveIOSForegroundBackupIdentity\.shared\s*\.localScopeAndTag\(/)
+  const classifier = runner.slice(runner.indexOf('private static func mustAbortRun('),
+    runner.indexOf('private static func isTransientConfirmedReadbackFailure('))
+  assert.ok(classifier.includes('if error is XDriveIOSForegroundBackupIdentityError {'),
+    'Keychain/installation identity errors must abort the whole scan')
+  assert.match(classifier, /if error is XDriveIOSForegroundBackupIdentityError \{\s*return true\s*\}/)
+  // Priority queue, positional window and one-photo entry must ALL throw
+  // the global identity failure before recording an item-local result.
+  const queue = runner.slice(runner.indexOf('for candidate in queued {'),
+    runner.indexOf('scanning: while'))
+  const window = runner.slice(runner.indexOf('scanning: while'),
+    runner.indexOf('func runSingle('))
+  const single = runner.slice(runner.indexOf('func runSingle('),
+    runner.indexOf('private static func issueReason('))
+  for (const [name, section] of [['queue', queue], ['window', window], ['single', single]]) {
+    const abortAt = section.indexOf('Self.mustAbortRun(after: error) { throw error }')
+    const unavailableAt = section.indexOf(
+      name === 'single' ? 'report.unavailable = 1' : 'report.unavailable += 1', abortAt
+    )
+    assert.ok(abortAt >= 0 && unavailableAt > abortAt, 
+      name + ' must rethrow identity failure before local-unavailable classification')
+  }
+  const scan = controller.slice(controller.indexOf('let result = try await XDriveIOSForegroundPhotoBackupMVP('),
+    controller.indexOf('if kind == .automatic {\n                        let recorded ='))
+  assert.match(scan, /\.run\(allowICloudOriginals:/)
+  assert.doesNotMatch(scan, /recordResult\(/)
+})

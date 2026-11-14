@@ -26,7 +26,8 @@ export function createXDriveWebClipboardPort(api: XDriveApi, ownerScopeKey: stri
     requireActive(signal)
     if (result.skipped || result.node.type !== 'file' ||
         result.node.parent_id !== root.id || !Number.isSafeInteger(result.node.id) ||
-        result.node.id <= 0 || result.node.revision <= 0) {
+        result.node.id <= 0 || result.node.revision <= 0 ||
+        result.node.name !== file.name || result.node.size !== file.size) {
       throw new Error('文件已上传但未收到可用于 Clipboard 的有效节点收据，请到文件页面核对。')
     }
     return { node_id: result.node.id }

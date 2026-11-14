@@ -81,7 +81,8 @@ test('mounted native map source picker borrows parent route hints for local MapK
   assert.match(wrapper, /localMapCamera = next\s*\},\s*onFocusChange: onFocusChange/);
   // Cloud camera is never granted the guest-only local branch.
   assert.match(wrapper, /guard source == \.cloud, let expectedOwner,/);
-  assert.match(wrapper, /case \.cloud:\s*if cloudSourceAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
+  assert.match(wrapper, /let cloudAllowed = cloudSourceAllowed && ownerSelection\.valid/);
+  assert.match(wrapper, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
   assert.match(wrapper, /Picker\("地图照片来源", selection: \$source\)/);
   assert.match(wrapper, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/);
   assert.doesNotMatch(wrapper, /@State private var localMapScope|@State private var localMapPageOffset/);

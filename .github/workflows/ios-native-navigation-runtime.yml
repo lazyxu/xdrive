@@ -268,6 +268,57 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             "${native_test_args[@]}" \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
+      - name: Record continuous P0 MapKit place/Viewer/Back frames
+        if: matrix.source == 'candidate-mapkit'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
+            -p 'test_audit_native_map_video.py' -v
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          video="$RUNNER_TEMP/native-navigation-results/diagnostics/p0-map-viewer-continuous.mov"
+          xcrun simctl io "$SMOKE_SIM" recordVideo --codec=h264 --force "$video" \
+            > "$RUNNER_TEMP/native-navigation-results/diagnostics/p0-video-recorder.log" 2>&1 &
+          recorder_pid=$!
+          sleep 2
+          if ! kill -0 "$recorder_pid" 2>/dev/null; then
+            cat "$RUNNER_TEMP/native-navigation-results/diagnostics/p0-video-recorder.log"
+            echo "Simulator screen recorder exited before the actual test" >&2
+            exit 1
+          fi
+          # Use the same real PhotoKit fixtures and current app as the full
+          # candidate MapKit run. A recorded movie, not sparse screenshots,
+          # covers all three actual map->sheet->Viewer->Back cycles.
+          set +e
+          xcodebuild test \
+            -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
+            -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SMOKE_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/native-navigation-results/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/native-navigation-results/P0ContinuousFrames.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted \
+            2>&1 | tee "$RUNNER_TEMP/native-navigation-results/diagnostics/p0-video-xctest.log"
+          test_status=${PIPESTATUS[0]}
+          set -e
+          kill -INT "$recorder_pid" 2>/dev/null || true
+          for attempt in {1..20}; do
+            if ! kill -0 "$recorder_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if kill -0 "$recorder_pid" 2>/dev/null; then
+            kill -TERM "$recorder_pid" 2>/dev/null || true
+          fi
+          wait "$recorder_pid" || true
+          test "$test_status" -eq 0
+          test -s "$video"
+          python3 "$GITHUB_WORKSPACE/ios/scripts/audit_native_map_video.py" \
+            "$video" "$RUNNER_TEMP/native-navigation-results/diagnostics/p0-map-video-audit.json" \
+            --skip-first-seconds 8
       - name: Verify native PhotoKit MapKit in dark mode
         if: matrix.source == 'candidate-mapkit'
         shell: bash

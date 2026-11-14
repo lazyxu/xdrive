@@ -33,7 +33,7 @@ test('Web Clipboard imports user-chosen local file via current Owner Files Uploa
       assert.equal(policy, 'fail')
       assert.ok(file.name)
       assert.ok(file.size > 0)
-      return { node: { id: 118, parent_id: 7, type: 'file', revision: 1 }, skipped: false }
+      return { node: { id: 118, parent_id: 7, type: 'file', revision: 1, name: file.name, size: file.size }, skipped: false }
     },
   }
   const port = mod.exports.createXDriveWebClipboardPort(api, 'https://drive.example:7')
@@ -99,7 +99,7 @@ test('user-gesture PNG clipboard import precedes Owner root and canonical CAS up
         assert.equal(policy,'fail')
         assert.match(file.name,/^Clipboard-[0-9a-f-]+\.png$/)
         assert.equal(file.type,'image/png')
-        return { node:{id:92,parent_id:45,type:'file',revision:1},skipped:false }
+        return { node:{id:92,parent_id:45,type:'file',revision:1,name:file.name,size:file.size},skipped:false }
       },
     }
     const port=mod.exports.createXDriveWebClipboardPort(api,'https://drive.example:7')
@@ -250,7 +250,7 @@ test('Web Clipboard accepts JPEG without a legacy 64 MiB preflight and never pos
       uploadWithConflictPolicy:async(parent,file,policy)=>{
         assert.equal(parent,7);assert.equal(policy,'fail')
         saved.push({name:file.name,size:file.size,type:file.type})
-        return {node:{id:201,parent_id:7,type:'file',revision:1},skipped:false}
+        return {node:{id:201,parent_id:7,type:'file',revision:1,name:file.name,size:file.size},skipped:false}
       },
     }
     const port=module.exports.createXDriveWebClipboardPort(api,'owner')
@@ -266,3 +266,37 @@ test('Web Clipboard accepts JPEG without a legacy 64 MiB preflight and never pos
   }
 })
 
+
+test('Web Clipboard fails closed on same-Owner CAS receipts for wrong file name or byte count', async () => {
+  const compiled=ts.transpileModule(portSource,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+  })
+  const module={exports:{}}
+  new Function('module','exports','require',compiled.outputText)(
+    module,module.exports,name=>{
+      if(name==='./browserClipboard') return {xDriveBrowserCopyText:async()=>{}}
+      throw Error('unexpected dependency '+name)
+    },
+  )
+  const file=new File([Uint8Array.of(1,2,3)],'actual.png',{type:'image/png'})
+  let node={id:118,parent_id:23,type:'file',revision:1,name:'another.png',size:file.size}
+  let uploads=0
+  const api={
+    root:async()=>({id:23,type:'dir'}),
+    uploadWithConflictPolicy:async(parent,selected,policy)=>{
+      uploads++
+      assert.equal(parent,23)
+      assert.equal(selected,file)
+      assert.equal(policy,'fail')
+      return {node,skipped:false}
+    },
+  }
+  const port=module.exports.createXDriveWebClipboardPort(api,'current-owner')
+  const signal=new AbortController().signal
+  await assert.rejects(port.uploadLocalFile(file,signal),/未收到可用于 Clipboard 的有效节点收据/)
+  node={...node,name:file.name,size:file.size+1}
+  await assert.rejects(port.uploadLocalFile(file,signal),/未收到可用于 Clipboard 的有效节点收据/)
+  node={...node,size:file.size}
+  assert.deepEqual(await port.uploadLocalFile(file,signal),{node_id:118})
+  assert.equal(uploads,3)
+})

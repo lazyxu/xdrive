@@ -40,7 +40,7 @@ test('Nearby expansion still waits for the first place sheet to dismiss and chec
   assert.match(nearbyDismissal, /guard phase == \.active,[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
   assert.match(nearbyDismissal, /onLibraryCameraChange\?\(nil\)[\s\S]*?clearReturnCamera\(\)[\s\S]*?invalidate\(\)/)
   assert.match(screen, /onShowNearby: album == nil \? nil : \{[\s\S]*?pendingNearbySelection = chosen/)
-  assert.match(screen, /XDriveIOSMapSpatialSelection\([\s\S]*?mediaFilter: mediaFilter,\s*captureRange: activeCaptureRange,\s*filenameTerm: filenameTerm\)/)
+  assert.match(screen, /XDriveIOSMapSpatialSelection\([\s\S]*?mediaFilter: mediaFilter,\s*captureRange: activeCaptureRange,\s*filenameTerm: filenameTerm,\s*tripScope: chosenLocalTrip\)/)
 })
 
 test('a real single-image Viewer stays full-screen and the Owner map already uses matching native sheets', () => {
