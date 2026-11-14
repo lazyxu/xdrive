@@ -72,6 +72,7 @@ private final class XDriveIOSUnifiedSourceCover: MKAnnotationView {
         placeholder.isHidden = false
         isAccessibilityElement = false
         accessibilityLabel = nil
+        accessibilityIdentifier = nil
     }
 }
 
@@ -191,6 +192,8 @@ struct XDriveIOSNativeUnifiedSourceMapSurface: UIViewRepresentable {
                 cover.configure(image: images[pin.cell.id],
                                 unavailable: unavailable.contains(pin.cell.id),
                                 count: pin.cell.count, enabled: markersEnabled)
+                cover.accessibilityIdentifier = markersEnabled
+                    ? "native-ios-unified-source-map-cell-\(pin.cell.id)" : nil
             }
         }
 
@@ -204,6 +207,8 @@ struct XDriveIOSNativeUnifiedSourceMapSurface: UIViewRepresentable {
             cover?.configure(image: images[pin.cell.id],
                              unavailable: unavailable.contains(pin.cell.id),
                              count: pin.cell.count, enabled: markersEnabled)
+            cover?.accessibilityIdentifier = markersEnabled
+                ? "native-ios-unified-source-map-cell-\(pin.cell.id)" : nil
             return cover
         }
 
