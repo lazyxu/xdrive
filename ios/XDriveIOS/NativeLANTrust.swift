@@ -39,6 +39,7 @@ enum XDriveIOSLANPairingFailure: Error {
     case ipCertificateInvalid, ipCertificateIdentityInvalid, ipCertificateChainInvalid
     // Detailed evidence is produced ONLY by an explicitly requested pairing.
     case ipCertificateEvidence(XDriveIOSLANTrustEvidence), ipCertificateWithoutChallenge(Int)
+    case ipCertificatePostTrustFailure(Int)
     case ipTLSHandshakeFailed(Int), ipConnectionTimedOut, ipConnectionUnavailable(Int)
     case ipVersionRedirect, ipVersionStatus(Int), ipVersionInvalid
 
@@ -57,7 +58,9 @@ enum XDriveIOSLANPairingFailure: Error {
         case .ipCertificateEvidence(let evidence):
             return "第 3 步失败：App 已拒绝内网 HTTPS 的 TLS 身份校验。\n" + evidence.safeSummary
         case .ipCertificateWithoutChallenge(let code):
-            return "第 3 步失败：iOS 报告证书错误，但未收到可记录的 ServerTrust 拒绝回调（NO_TRUST_CHALLENGE，系统代码 \(code)）；不能据此判定 CA 或 IP SAN 不匹配。"
+            return "第 3 步失败：iOS 返回证书错误，但 App 未收到可用于批准或拒绝的 ServerTrust 回调（NO_TRUST_CHALLENGE，系统代码 \(code)）。尚不能证明 CA 或 IP SAN 错误。"
+        case .ipCertificatePostTrustFailure(let code):
+            return "第 3 步失败：App 已按配对根 CA 和 IP 身份接受 TLS 证书，但 iOS 随后仍拒绝请求（POST_TRUST_SYSTEM_REJECTION，系统代码 \(code)）。这是 URLSession 后续传输/系统信任错误，不能直接归咎于 Caddy 证书。"
         case .ipTLSHandshakeFailed(let code): return "第 3 步失败：内网 HTTPS TLS 握手失败（系统代码 \(code)），尚不能确定是证书问题。请检查 HTTPS 端口、TLS 服务及网络代理。"
         case .ipConnectionTimedOut: return "第 3 步失败：内网 IP HTTPS 探测超时。请检查 Wi-Fi、IP、HTTPS 端口及 iOS 本地网络权限。"
         case .ipConnectionUnavailable(let code): return "第 3 步失败：内网 IP HTTPS 连接异常（系统代码 \(code)）。请检查 IP、端口和网络。"
