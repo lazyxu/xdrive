@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -278,5 +277,4 @@ func TestIOSMapP0OwnerABAndRevocationCompoundHTTP(t *testing.T) {
 	if !okB || !deniedA {
 		t.Fatalf("concurrent revoked A/current B results missing: denied=%v B=%v", deniedA, okB)
 	}
-	_ = context.Background() // The router above exercised actual authenticated HTTP contexts.
 }
