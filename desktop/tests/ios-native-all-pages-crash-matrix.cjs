@@ -333,7 +333,10 @@ test('production startup recovery safe/retry and real remember-password controls
   assert.match(recovery, /\.accessibilityIdentifier\("native-ios-startup-recovery"\)/);
   assert.match(recovery, /\.accessibilityIdentifier\("native-ios-startup-safe-entry"\)/);
   assert.match(recovery, /\.accessibilityIdentifier\("native-ios-startup-retry"\)/);
-  assert.match(login, /Toggle\("安全保存当前账号密码", isOn: \$model\.rememberPassword\)/);
+  // The production Toggle intentionally uses a user-action Binding, not
+  // direct @Published assignment: only explicit taps may change Keychain intent.
+  // Require the real label, guarded get/set and AX identifier as one control.
+  assert.match(login, /Toggle\("安全保存当前账号密码", isOn: Binding\(\s*get:\s*\{\s*model\.rememberPassword\s*\},\s*set:\s*\{\s*model\.setRememberPasswordFromUser\(\$0\)\s*\}\s*\)\)\s*\.accessibilityIdentifier\("native-ios-remember-password"\)/);
   assert.doesNotMatch(swift, /fakeOwner|fakeToken|mockServerLogin|XCTSkip/);
 });
 
