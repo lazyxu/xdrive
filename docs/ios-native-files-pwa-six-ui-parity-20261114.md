@@ -49,3 +49,30 @@ Files changes.
 - Static source contracts for the expanded UI are in desktop/tests/ios-native-files-ui-six-parity-20261114.cjs; they are not proof of iOS rendering.
 - The read-only attributes sheet is based on one verified Node snapshot and must hide content after Owner switch. Writes continue to revalidate current Node/revision.
 - Exact HEAD Xcode/IPA build, full CI/Final Gate, candidate-gallery-files XCUITest/H.264 audit, signed iPhone 60/120 Hz and real media/10k/100k folders remain independent gates. Missing video samples are NOT MEASURED, never a pass.
+
+
+## Nine requested Files UI changes (single PR continuation)
+
+This section is the canonical user-requested scope; older six/eight-track
+sections above describe earlier commits in the same candidate.
+
+| Priority | Requested UI area | Implementation and gate |
+| --- | --- | --- |
+| P0 | Browse Home hierarchy | Smart folder entry and direct verified shortcuts, tag disclosure, favorites and less frequent editing in management; no extra global tab |
+| P0 | List/Grid visual parity | Shared native type badge, typography and metadata, bounded thumbnail geometry, native light/dark styling; native/PWA pixel capture still outstanding |
+| P0 | Viewer action parity | Exact-Node/revision export/share from Viewer, accessible Previous/Next and native media surfaces; real first video frame still needs exact-HEAD device evidence |
+| P0 | List/Grid anchor | Owner-scoped visible Node anchor, layout ticket and inactive-screen invalidation for Browse and collections |
+| P1 | Search entry | Browse Home has a visible tappable search row wired to the original SwiftUI searchable presentation and 400ms debounced Server Search |
+| P1 | File properties | Same-Owner verified quick info sheet with file type, size, revision and timestamps; full management is still explicitly accessible |
+| P1 | Folder upload | Current verified directory More menu directly invokes existing `uploadFolder` quick action and `.fileImporter(allowedContentTypes:[.folder])` behind Owner-scoped uploader, with original limits and receipts |
+| P1 | Favorites and smart folders | Favorite/pinned folders remain directly accessible; first four verified saved-search rules are opened from Home without an intermediate management sheet, with a Manage All fallback |
+| P2 | Visual polish | Shared type labels, dynamic typography, SF Symbols, system surface colors and minimum touch size; real Dynamic Type/VoiceOver/dark-mode visual proof outstanding |
+
+**Additional source contracts:** `desktop/tests/ios-native-files-folder-actions.cjs`
+enforces native searchable handoff, current-Owner saved-search entry admission,
+single-use folder uploader and absence of a second browser/FileImporter writer.
+
+**Verification boundary:** These code and source contracts do not establish
+pixel-perfect visual equivalence, successful unsigned IPA compilation or
+actual 60/120Hz flicker-free transitions. Keep the PR Draft until the current
+exact-HEAD CI, Simulator and relevant Final Gate checks pass.

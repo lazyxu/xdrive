@@ -1453,6 +1453,30 @@ struct XDriveIOSNativeFilesBrowser: View {
             .accessibilityIdentifier("native-ios-files-home-overview")
         }
         .listRowBackground(Color.clear)
+        // A visible Search affordance on Browse Home opens the same native
+        // searchable drawer and progressive Server search. No second reader.
+        Section {
+            Button {
+                guard login.owner != nil, login.hasLocalOwnerSession, !selecting else { return }
+                searchPresented = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    Text("搜索全部文件")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Image(systemName: "slider.horizontal.3")
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(minHeight: XDriveIOSNativeFilesUIStyle.tapHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(login.owner == nil || !login.hasLocalOwnerSession)
+            .accessibilityIdentifier("native-ios-files-home-search")
+        }
         Section("位置") {
             if let owner = login.owner {
                 NavigationLink {
@@ -1638,6 +1662,16 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .disabled(login.owner == nil)
             .accessibilityIdentifier("native-ios-files-open-saved-searches")
+            if let owner = login.owner, login.hasLocalOwnerSession {
+                // Directly open saved rules from Home; management stays a
+                // separate explicit action and Owner changes never reuse rows.
+                XDriveIOSNativeFilesHomeSavedSearchShortcuts(
+                    login: login, expectedOwner: owner,
+                    onManage: { presentSavedSearches() },
+                    onOpen: { saved in applySavedSearch(saved, expectedOwner: owner) }
+                )
+                .id("\(owner.instanceID):\(owner.ownerID):\(owner.rootNodeID):\(owner.origin.absoluteString)")
+            }
             DisclosureGroup("标签与分类", isExpanded: $homeTagsExpanded) {
                 Button { openTagManager() } label: {
                     Label("管理标签", systemImage: "tag.circle")
@@ -2930,6 +2964,16 @@ struct XDriveIOSNativeFilesBrowser: View {
                               batchExport.busy || !batchExport.prepared.isEmpty ||
                               login.owner == nil || !activeQuery.isEmpty)
                     .accessibilityIdentifier("native-ios-files-quick-multi-upload")
+                    Button {
+                        openManagement(for: nil, quickAction: .uploadFolder)
+                    } label: {
+                        Label("上传文件夹", systemImage: "folder.badge.plus")
+                    }
+                    .disabled(model.loading || !model.verifiedPage || selecting ||
+                              batchTrash.busy || batchTarget.busy ||
+                              batchExport.busy || !batchExport.prepared.isEmpty ||
+                              login.owner == nil || !activeQuery.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-quick-upload-folder")
                     if isGlobalSearch {
                         Button { presentSavedSearches() } label: {
                             Label("保存或管理智能文件夹", systemImage: "folder.badge.gearshape")
