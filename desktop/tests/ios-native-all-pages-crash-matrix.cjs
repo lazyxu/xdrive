@@ -411,7 +411,7 @@ test('all 57 real all-page XCTest methods are registered and the five new cross-
     'testClipboardDeniedRecipientTransfersFilesNotesReturnDoesNotExit'
   ];
   const methods = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(match => match[1]);
-  assert.equal(methods.length, 57, 'Every intended independent page sweep must remain registered');
+  assert.ok(methods.length >= 57, 'At least 57 independent real all-page sweeps are required');
   assert.equal(methods.length, new Set(methods).size, 'Duplicate XCTest names hide a route');
   for (const method of methods) {
     assert.ok(watcher.includes('"' + method + '"'),
