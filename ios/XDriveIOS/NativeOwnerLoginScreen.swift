@@ -1,10 +1,13 @@
 import Combine
 import SwiftUI
+import UIKit
 
 /// Native Owner-verified app root. A single controller owns the auto runner;
 /// the account card is shown ONLY while signed out, never behind a push route.
 struct XDriveIOSNativeOwnerLoginScreen: View {
     var safeStartup = false
+    var diagnosticWorkspace = false
+    var priorDiagnostic: String? = nil
 
     @StateObject private var model = XDriveIOSNativeOwnerLoginModel()
     @StateObject private var backup = XDriveIOSNativePhotoBackupController()
@@ -20,6 +23,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     @State private var clearSavedLoginConfirm = false
     @State private var emergencyStopBusy = false
     @State private var emergencyStopNotice: String?
+    @State private var showFullWorkspace = false
 
     var body: some View {
         Group {
@@ -28,6 +32,57 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             if !restoreFinished {
                 ProgressView("正在验证本机账户…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.owner != nil && diagnosticWorkspace && !showFullWorkspace {
+                NavigationStack {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Label("身份验证成功，主界面尚未加载",
+                                  systemImage: "checkmark.shield")
+                                .font(.title3.weight(.semibold))
+                            Text("已验证当前 Server、Owner 和云端根目录。本模式不自动恢复旧会话、启动备份或构建图库/文件 Dashboard。")
+                                .foregroundStyle(.secondary)
+                            if let priorDiagnostic {
+                                Text(priorDiagnostic)
+                                    .font(.footnote.monospaced())
+                                    .textSelection(.enabled)
+                                    .accessibilityIdentifier("native-ios-diagnostic-login-report")
+                                Button("复制上一次诊断摘要") {
+                                    UIPasteboard.general.string = priorDiagnostic
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            Button("尝试加载完整主界面") {
+                                XDriveIOSNativeLaunchCheckpoint.markPostLogin(
+                                    .openingDashboard
+                                )
+                                startupReady = false
+                                readinessTicket = UUID()
+                                readinessTask?.cancel()
+                                readinessTask = nil
+                                showFullWorkspace = true
+                                // Explicitly resume Owner-scoped status on the
+                                // user's first full Dashboard request.
+                                backup.refresh(owner: model.owner)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("native-ios-diagnostic-open-dashboard")
+                            Button("安全退出本次会话") {
+                                if let owner = model.owner {
+                                    Task { await signOutSafely(expectedOwner: owner) }
+                                }
+                            }
+                            .disabled(signingOut)
+                            .buttonStyle(.bordered)
+                            if let logoutWarning {
+                                Text(logoutWarning).foregroundStyle(.orange)
+                            }
+                        }
+                        .padding(24)
+                    }
+                    .navigationTitle("登录诊断")
+                }
+                .accessibilityIdentifier("native-ios-authenticated-diagnostic")
+                .onAppear { workspaceAppeared() }
             } else if model.owner != nil {
                 XDriveIOSNativePhotosDashboard(
                     login: model, backup: backup,
@@ -59,18 +114,9 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                 .font(.title3.weight(.semibold))
 
                             loginForm
-                                // The signed-out form itself is the definitive
-                                // visible workspace. SwiftUI may materialize
-                                // it after the ancestor's original onAppear,
-                                // so re-arm the existing guarded readiness
-                                // fence from the concrete mounted child too.
                                 .onAppear { workspaceAppeared() }
                                 .task(id: restoreFinished) {
                                     guard restoreFinished else { return }
-                                    // This is not a shortcut to ready:
-                                    // restoreComplete, visible scene and
-                                    // foreground are still required by
-                                    // armReadinessAfterMount().
                                     await MainActor.run { workspaceAppeared() }
                                 }
                             if let logoutWarning {
@@ -104,9 +150,6 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                                 .accessibilityIdentifier("native-ios-prelogin-build")
-                                // Non-secret readiness state for the real
-                                // cold-restart UI test. No fake credentials or
-                                // test-only success transition is introduced.
                                 .accessibilityValue(startupReady ? "ready" : "mounting")
                             // Stop-only operation remains available even
                             // when login/Keychain or the Server is unavailable.
@@ -137,9 +180,8 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .onAppear { workspaceAppeared() }
             }
         }
-        // The login and Dashboard are sibling workspaces. Their SwiftUI
-        // onDisappear callbacks can arrive after the next one appears; only
-        // the common app root may revoke the startup-visible lease.
+        // Only the stable app root can revoke the workspace-visible lease;
+        // sibling login/diagnostic/Dashboard disappear events may arrive late.
         .onAppear { workspaceAppeared() }
         .onDisappear {
             workspaceDisappeared()
@@ -159,7 +201,11 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             }
             guard !Task.isCancelled else { return }
             XDriveIOSNativeLaunchCheckpoint.mark(.mountingWorkspace)
-            backup.refresh(owner: model.owner)
+            // Isolated diagnostic login must not touch Owner backup state
+            // before the user explicitly requests the full Dashboard.
+            if !diagnosticWorkspace {
+                backup.refresh(owner: model.owner)
+            }
             restoreFinished = true
         }
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
@@ -169,10 +215,6 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             ) else { return }
             backup.tickIfDue(login: model)
         }
-        // A restored signed-out form may appear before SwiftUI publishes
-        // restoreFinished. Its onAppear can then fail readiness admission,
-        // leaving the process checkpoint stuck at mountingWorkspace even
-        // after the login field is visible. Re-arm at the completion boundary.
         .onChange(of: restoreFinished) { finished in
             if finished { workspaceAppeared() }
         }
@@ -198,9 +240,34 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             }
         }
         .onChange(of: model.owner) { _ in
+            // A signed-out form may already be marked ready. Every *new*
+            // verified Owner must re-arm its own post-login handoff.
+            startupReady = false
+            readinessTicket = UUID()
+            readinessTask?.cancel()
+            readinessTask = nil
+            backup.stopLibraryChangeMonitoring()
             backup.cancel()
-            backup.refresh(owner: model.owner)
-            if model.owner == nil { showPassword = false }
+            if model.owner != nil {
+                if diagnosticWorkspace && !showFullWorkspace {
+                    XDriveIOSNativeLaunchCheckpoint.markPostLogin(
+                        .diagnosticWorkspaceVisible
+                    )
+                } else {
+                    XDriveIOSNativeLaunchCheckpoint.markPostLogin(
+                        .refreshingOwnerBackup
+                    )
+                    backup.refresh(owner: model.owner)
+                }
+            } else {
+                showPassword = false
+                showFullWorkspace = false
+                XDriveIOSNativeLaunchCheckpoint.mark(.mountingWorkspace)
+                if !diagnosticWorkspace {
+                    backup.refresh(owner: nil)
+                }
+            }
+            armReadinessAfterMount()
             guard XDriveIOSNativeLaunchCheckpoint.mayAutoBackup(
                 startupReady: startupReady, safeStartup: safeStartup,
                 foreground: phase == .active
@@ -212,6 +279,12 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     @MainActor
     private func workspaceAppeared() {
         workspaceVisible = true
+        if model.owner != nil && !startupReady {
+            XDriveIOSNativeLaunchCheckpoint.markPostLogin(
+                diagnosticWorkspace && !showFullWorkspace
+                    ? .diagnosticWorkspaceVisible : .dashboardAppeared
+            )
+        }
         armReadinessAfterMount()
     }
 

@@ -20,6 +20,7 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
   assert.match(local, /options\.isNetworkAccessAllowed = true/)
   assert.match(local, /options\.deliveryMode = \.opportunistic/)
   assert.match(local, /targetSize: CGSize\(width: 128, height: 128\)/)
+  assert.match(local, /badge\.text = provisional \? nil : XDriveIOSNativeMapMarkerVisualPolicy\.badgeText\(count: count\)/)
   assert.match(local, /isAccessibilityElement = !provisional/)
   assert.match(cloud, /isAccessibilityElement = enabled/)
   assert.doesNotMatch(layout, /PHAsset|Owner|URLSession|upload|requestAuthorization/)

@@ -87,7 +87,7 @@ test('iOS boots only native SwiftUI Owner workspace; Android retains Compose and
 
   // Native Owner login is still the only app entry; safe startup is an
   // explicit flag, not a separate WebView or unauthenticated workspace.
-  assert.match(iosApp, /if normalStartup \{\s*XDriveIOSNativeOwnerLoginScreen\(safeStartup: safeStartup\)/)
+  assert.match(iosApp, /if normalStartup \{\s*XDriveIOSNativeOwnerLoginScreen\(\s*safeStartup: safeStartup,\s*diagnosticWorkspace: diagnosticWorkspace,\s*priorDiagnostic: diagnosticWorkspace/)
   assert.match(iosApp, /Button\("安全进入（不自动登录和备份）"\)[\s\S]*?safeStartup = true[\s\S]*?normalStartup = true/)
   assert.match(iosLogin, /if !safeStartup \{[\s\S]*?await model\.restore\(\)/)
   assert.match(iosLogin, /else if model\.owner != nil\s*\{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)

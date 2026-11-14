@@ -23,7 +23,7 @@ test('native Login remains SwiftUI and mounts only after native Photos integrati
   assert.doesNotMatch(screen, /showingNativeWorkspace|verifiedAccount\(|已验证的原生账户/)
   assert.doesNotMatch(screen, /WebView|URLSession|fetch\(|window\.webkit/)
   const app = read('ios/XDriveIOS/XDriveIOSApp.swift')
-  assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(safeStartup: safeStartup\)/, 'verified native Photos cutover')
+  assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\s*safeStartup: safeStartup,\s*diagnosticWorkspace: diagnosticWorkspace,\s*priorDiagnostic: diagnosticWorkspace/, 'verified native Photos cutover')
   assert.doesNotMatch(app, /XDriveWebAppHome\(\)/)
   assert.match(screen, /if model\.owner != nil \{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
 })

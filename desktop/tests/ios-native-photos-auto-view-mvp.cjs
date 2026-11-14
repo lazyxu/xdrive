@@ -17,7 +17,7 @@ const cloud = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
 const scope = read('ios/XDriveIOS/NativePhotoOwnerScope.swift')
 
 test('native Photos entry uses SwiftUI rather than WKWebView and supports verified login', () => {
-  assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(safeStartup: safeStartup\)/)
+  assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\s*safeStartup: safeStartup,\s*diagnosticWorkspace: diagnosticWorkspace,\s*priorDiagnostic: diagnosticWorkspace/)
   assert.doesNotMatch(app, /\bXDriveWebAppHome\(\)/)
   assert.match(login, /if model\.owner != nil \{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
   assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset,\s*mediaFilter: \$localGalleryMediaFilter,\s*onMapDateScope: \{ galleryMapCaptureRange = \$0 \}\s*\)/)

@@ -35,6 +35,21 @@ import Foundation
             precondition(!Policy.canRetrySavedSession(after: error),
                          "Identity or malformed-Server errors cannot retry")
         }
-        print("iOS native login failure diagnostics: \(cases.count) injected errors classified, bounded retry gates passed")
+        // Numeric codes are safe/stable and disambiguate certificate trust,
+        // Keychain lock and Owner HTTP status without raw URL/error.userInfo.
+        let expectedCodes: [(Error, String)] = [
+            (URLError(.serverCertificateUntrusted), "URLSession NSURLErrorDomain -1202"),
+            (URLError(.timedOut), "URLSession NSURLErrorDomain -1001"),
+            (XDriveIOSNativeSessionError.keychainUnavailable(-25291), "Keychain OSStatus -25291"),
+            (XDriveNativeOwnerRootFailure.serverStatus(403), "OWNER_ROOT HTTP 403"),
+            (AuthFailure.httpStatus(503), "AUTH HTTP 503"),
+            (AuthFailure.rejected, "AUTH_REJECTED"),
+            (XDriveNativeOwnerRootFailure.ownerChanged, "OWNER_ROOT_IDENTITY_CHANGED")
+        ]
+        for (failure, expected) in expectedCodes {
+            precondition(Policy.diagnosticCode(for: failure) == expected,
+                         "Non-secret diagnostic code mismatch: \(expected)")
+        }
+        print("iOS native login failure diagnostics: \(cases.count) injected errors classified, \(expectedCodes.count) numeric/fixed codes checked")
     }
 }

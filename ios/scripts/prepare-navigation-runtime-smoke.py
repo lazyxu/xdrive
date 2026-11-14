@@ -15,18 +15,39 @@ owner_needle = "@Published private(set) var owner: XDriveNativeOwnerRoot?"
 if login_source.count(owner_needle) != 1:
     raise SystemExit("Cannot prepare scoped synthetic Owner smoke harness")
 login.write_text(login_source.replace(owner_needle, "@Published var owner: XDriveNativeOwnerRoot?"))
-key = "            XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)"
-if s.count(key) != 1:
+# Original b9 and the new diagnostic recovery root have different,
+# explicitly whitelisted parameter labels. Unknown app entrypoints fail closed.
+entrypoints = (
+    "            XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)",
+    "            XDriveIOSNativeStartupRoot(interruption: interruption)",
+)
+matches = [entry for entry in entrypoints if s.count(entry) == 1]
+if len(matches) != 1 or sum(s.count(entry) for entry in entrypoints) != 1:
     raise SystemExit("Unexpected iOS App entry; test harness must be audited")
-s = s.replace(key, """#if DEBUG
+key = matches[0]
+fixture = """#if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
                 XDriveIOSNativeNavigationSmokeRoot()
             } else {
-                XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)
+""" + key + """
             }
 #else
-            XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)
-#endif""")
+""" + key + """
+#endif"""
+s = s.replace(key, fixture)
+# Test-fixture-only interrupted post-login transition. Never ship this launch
+# argument or a synthetic Owner in the production IPA. Only modern candidate
+# sources support stage diagnostics; published b9 stays unmodified.
+if matches[0].endswith("(interruption: interruption)"):
+    boot = "        interruption = XDriveIOSNativeLaunchCheckpoint.beginReport()"
+    if s.count(boot) != 1:
+        raise SystemExit("Unexpected candidate diagnostic boot; audit needed")
+    s = s.replace(boot, """#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-postlogin-recovery-fixture") {
+            XDriveIOSNativeLaunchCheckpoint.markPostLogin(.openingDashboard)
+        }
+#endif
+""" + boot)
 s += """
 #if DEBUG
 /// Simulator fixture mounts real native Files/Gallery with no saved Owner.
