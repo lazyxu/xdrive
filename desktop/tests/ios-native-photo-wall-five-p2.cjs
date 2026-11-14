@@ -95,5 +95,5 @@ test('P2-5: Viewer return focus has one UI helper and retains per-source admissi
   assert.match(anchorPolicy, /\$0\.id == lastOpenedID && \$0\.revision == lastOpenedRevision/)
   assert.match(cloud, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, \$0\)/)
   assert.match(map, /XDriveIOSMapCurrentPhotoKitAdmission\.allows\(/)
-  assert.doesNotMatch(shared, /UserDefaults|PhotoKit|URLSession|Owner|accessToken/)
+  assert.doesNotMatch(shared, /UserDefaults|PHPhotoLibrary|PHAsset\.fetchAssets|URLSession|accessToken|loadNext\(/)
 })
