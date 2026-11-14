@@ -113,7 +113,7 @@ test('native SwiftUI search collapses in the toolbar and restores directory on c
 
 
 test('native Files More menu keeps real sort, view and upload actions with bounded list model', () => {
-  assert.match(view, /Menu \{[\s\S]*?Picker\("显示方式", selection: \$viewMode\)/)
+  assert.match(view, /Menu \{[\s\S]*?Picker\("显示方式", selection: Binding\(/)
   assert.match(view, /Picker\("排序", selection: \$sort\)/)
   assert.match(view, /Picker\("顺序", selection: \$order\)/)
   assert.match(view, /native-ios-files-more-options/)

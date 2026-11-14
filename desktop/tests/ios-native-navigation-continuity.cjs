@@ -297,7 +297,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
+        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil &&\\s*quickInfoIntent == nil && quickRenameIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
         "flags": ""
       }
     ]
@@ -587,7 +587,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
+        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil &&\\s*quickInfoIntent == nil && quickRenameIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
         "flags": ""
       }
     ]

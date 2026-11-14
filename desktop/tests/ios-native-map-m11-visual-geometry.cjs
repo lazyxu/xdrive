@@ -15,7 +15,7 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
     assert.match(cloud, new RegExp('XDriveIOSNativeMapMarkerVisualPolicy\\.' + token))
   }
   assert.match(layout, /minimumTouchTarget: CGFloat = 44/)
-  assert.match(local, /\.fastFormat/)
+  assert.match(local, /XDriveIOSNativeMapMarkerVisualPolicy\.badgeText\(count: count\)/)
   assert.match(local, /isAccessibilityElement = !provisional/)
   assert.match(cloud, /isAccessibilityElement = enabled/)
   assert.doesNotMatch(layout, /PHAsset|Owner|URLSession|upload|requestAuthorization/)

@@ -41,8 +41,8 @@ test('Foreground resume never refreshes behind the collection Viewer', () => {
   assert.match(s, /selectedFile == nil && !viewerRefreshPending/);
 });
 test('Owner and collection kind changes revoke pending refresh hints', () => {
-  assert.match(collection, /\.onChange\(of: kind\) \{ _ in\s*viewerRefreshPending = false/);
-  assert.match(collection, /\.onChange\(of: login\.owner\) \{ _ in\s*viewerRefreshPending = false/);
+  assert.match(collection, /\.onChange\(of: kind\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
+  assert.match(collection, /\.onChange\(of: login\.owner\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
 });
 test('PhotoKit revision keeps authorized album Viewer or Map mounted', () => {
   const s = between(album, '.onChange(of: libraryMonitor.revision) { _ in', '.onChange(of: phase) { state in');
