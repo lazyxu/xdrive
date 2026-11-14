@@ -263,7 +263,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             }) else { return }
             selected = pin
         } label: {
-            ZStack(alignment: .topTrailing) {
+            ZStack(alignment: .topLeading) {
                 Group {
                     if let cover = coverImages[pin.id] {
                         Image(uiImage: cover).resizable().scaledToFill()
@@ -283,19 +283,31 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                     cornerRadius: XDriveIOSNativeMapMarkerVisualPolicy.coverCornerRadius)
                     .stroke(.white, lineWidth:
                         XDriveIOSNativeMapMarkerVisualPolicy.photoBorderWidth))
+                .offset(
+                    x: XDriveIOSNativeMapMarkerVisualPolicy.imageFrame.minX,
+                    y: XDriveIOSNativeMapMarkerVisualPolicy.imageFrame.minY)
                 if pin.count > 1 {
                     Text(XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: pin.count))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 5)
-                        .frame(minWidth: 24, minHeight: 24)
-                        .background(Color.blue, in: Capsule())
-                        .overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                        .frame(
+                            width: XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame.width,
+                            height: XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame.height)
+                        .background(Color.blue, in: RoundedRectangle(
+                            cornerRadius: XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius))
+                        .overlay(RoundedRectangle(
+                            cornerRadius: XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius)
+                            .stroke(.white, lineWidth:
+                                XDriveIOSNativeMapMarkerVisualPolicy.badgeBorderWidth))
+                        .offset(
+                            x: XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame.minX,
+                            y: XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame.minY)
                 }
             }
             .frame(
                 width: XDriveIOSNativeMapMarkerVisualPolicy.frame.width,
-                height: XDriveIOSNativeMapMarkerVisualPolicy.frame.height)
+                height: XDriveIOSNativeMapMarkerVisualPolicy.frame.height,
+                alignment: .topLeading)
             .overlay(RoundedRectangle(cornerRadius: 10)
                 .stroke(selected?.id == pin.id ? Color.accentColor : .clear,
                         lineWidth: 3))
