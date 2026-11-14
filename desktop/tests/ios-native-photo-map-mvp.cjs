@@ -306,7 +306,8 @@ test('both local MapKit album sheets browse a frozen authorized slice and restor
       name + ' must revalidate the currently authorized member');
     assert.match(screen, /\.fullScreenCover\(item: \$(selected|viewer), onDismiss: \{\s*restoreViewerTile\(using: returnScroll\)/,
       name + ' must restore after modal dismissal');
-    assert.match(screen, /scroll\.scrollTo\(id, anchor: \.center\)/, name);
+    assert.match(screen, /xdrivePhotoWallFocusVerifiedTile\(/, name);
+    assert.match(read('ios/XDriveIOS/NativePhotoWallComponents.swift'), /scroll\.scrollTo\(id, anchor: anchor\)/, name);
     assert.match(screen, /\.id\(item\.id\)/, name);
     assert.match(screen, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/, name);
     assert.match(screen, /defer \{ viewerReturnID = nil \}/, name);
@@ -520,7 +521,7 @@ test('album-scoped place wall exposes Show Nearby Photos into the full-library s
   assert.match(map, /pendingNearbySelection = chosen/)
   assert.match(map, /authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?onLibraryCameraChange\?\(nil\)[\s\S]*?clearReturnCamera\(\)[\s\S]*?invalidate\(\)/)
   assert.match(map, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true\s*\)/)
-  assert.match(map, /Text\(isNearbyExpansion \?[\s\S]*?"附近照片 · 已加载/)
+  assert.match(map, /XDriveIOSNativePhotoWallScopeSummary\(\s*message: isNearbyExpansion \?[\s\S]*?"附近照片 · 已加载/)
   assert.match(map, /onShowNearby: album == nil \? nil : \{[\s\S]*?phase == \.active[\s\S]*?authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?pendingNearbySelection = chosen/)
   assert.match(map, /globalSelection = nil\s*pendingNearbySelection = nil\s*nearbySelection = nil\s*singleViewer = nil/)
   assert.match(map, /selection == nil && globalSelection == nil &&\s*pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil/)

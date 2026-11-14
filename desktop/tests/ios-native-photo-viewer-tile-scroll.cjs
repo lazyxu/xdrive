@@ -169,5 +169,5 @@ test('PhotoKit album L3 Viewer navigates only a verified 64-item page at a time 
   assert.match(contents, /onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?clearViewerTileAnchor\(\)[\s\S]*?else if selected != nil \|\| showingAlbumMap \{[\s\S]*?viewerPageInvalidated = true[\s\S]*?suspendForViewer\(\)[\s\S]*?else \{\s*invalidate\(\)/)
   assert.match(contents, /if selected != nil \|\| showingAlbumMap \|\|\s*\(phase == \.active && albumAuthorized\) \{\s*suspendForViewer\(\)/)
   assert.match(contents, /else \{\s*libraryMonitor\.stop\(\)\s*invalidate\(\)\s*\}/)
-  assert.doesNotMatch(contents, /UserDefaults|CloudKit|UploadSession|isNetworkAccessAllowed = true|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/
+  assert.doesNotMatch(contents, /UserDefaults|CloudKit|UploadSession|isNetworkAccessAllowed = true|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/);
 });

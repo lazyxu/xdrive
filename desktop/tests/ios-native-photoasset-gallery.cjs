@@ -308,7 +308,7 @@ test('continuous cloud wall adopts only currently authorized range for L3 and re
   // scrolling/focus is delegated to the shared presentation helper.
   assert.match(wall, /range\.items\.contains\(where: \{[\s\S]*?\$0\.id == target && \$0\.node\.revision == pendingReturnRevision/)
   assert.match(wall, /xdrivePhotoWallFocusVerifiedTile\(\s*target, scroll: scroll, focus: \$accessibilityFocusedMediaID/)
-  const presentation = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
+  const presentation = src('ios/XDriveIOS/NativePhotoWallComponents.swift')
   assert.match(presentation, /func xdrivePhotoWallFocusVerifiedTile<ID: Hashable>/)
   assert.match(presentation, /scroll\.scrollTo\(id, anchor: anchor\)/)
   assert.match(virtual, /returnFocusID: UInt64\?/)
