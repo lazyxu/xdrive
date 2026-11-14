@@ -367,6 +367,17 @@ TARGETS.update({
     "testLocalPhotosFilesOrganizerBackgroundReturnKeepsChild",
 })
 
+# Six further real, tap-driven Gallery / Files lifecycle regressions.
+# simctl PNG probes detect candidates; a zero-flicker 60/120Hz claim requires video/device evidence.
+TARGETS.update({
+    "testThreeRoundsGalleryFilesSectionsKeepVerifiedWallAndPixels",
+    "testSavedSearchesTwoForegroundReturnsThenOriginalsRetiresSheet",
+    "testOperationHistoryRotationPeopleReturnDoesNotRepushSheet",
+    "testGalleryFilterCancelFilesSearchForegroundDoesNotGhostKeyboard",
+    "testLocalPhotoKitDeniedCloudRotationKeepsPhotoChild",
+    "testOriginalsHelpTwiceWithDeniedFilesKeepsPanelsRetired",
+})
+
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
