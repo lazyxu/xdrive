@@ -601,6 +601,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
     @Environment(\.scenePhase) private var phase
     @State private var selected: XDrivePhotoKitScanCandidate?
     @State private var viewerReturnID: String?
+    @State private var viewerOpeningID: String?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
@@ -640,6 +641,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
                             ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
                                 item, filter: mediaFilter, filenameTerm: filenameTerm
                             ) else { return }
+                            viewerOpeningID = item.id
                             viewerReturnID = item.id
                             focusedTileID = nil
                             selected = item
@@ -696,13 +698,18 @@ private struct XDriveIOSMapPhotoAlbum: View {
     }
 
     private func restoreViewerTile(using scroll: ScrollViewProxy) {
-        defer { viewerReturnID = nil }
+        defer { viewerReturnID = nil; viewerOpeningID = nil }
         guard let id = viewerReturnID,
               let target = previewItems.first(where: { $0.id == id }),
               XDriveIOSNativeMapViewerAdmission.allows(
                   target, in: previewItems, sceneActive: phase == .active
               ) else { return }
-        scroll.scrollTo(id, anchor: .center)
+        // The page stayed mounted under its Viewer. Unconditionally centering
+        // the same tile causes an observable scroll jump on every fast Back.
+        // Only an actual change of viewed photo needs a new visual anchor.
+        if viewerOpeningID != id {
+            scroll.scrollTo(id, anchor: .center)
+        }
         focusedTileID = id
     }
 }
@@ -758,6 +765,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @State private var viewer: XDrivePhotoKitScanCandidate?
     @State private var viewerItems: [XDrivePhotoKitScanCandidate] = []
     @State private var viewerReturnID: String?
+    @State private var viewerOpeningID: String?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
@@ -812,14 +820,18 @@ private struct XDriveIOSMapSpatialAlbum: View {
     }
 
     private func restoreViewerTile(using scroll: ScrollViewProxy) {
-        defer { viewerReturnID = nil }
+        defer { viewerReturnID = nil; viewerOpeningID = nil }
         guard let id = viewerReturnID,
               let target = visibleItems.first(where: { $0.id == id }) else { return }
         let loaded = loadedWindow(containing: id)
         guard XDriveIOSNativeMapViewerAdmission.allows(
             target, in: loaded, sceneActive: phase == .active
         ) else { return }
-        scroll.scrollTo(id, anchor: .center)
+        // A covered place-wall stays mounted. Do not re-center the very
+        // same tile: its original scroll position is already the right anchor.
+        if viewerOpeningID != id {
+            scroll.scrollTo(id, anchor: .center)
+        }
         focusedTileID = id
         viewerItems = []
     }
@@ -835,6 +847,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     filenameTerm: selection.filenameTerm,
                     tripScope: selection.tripScope
                   ) else { return }
+            viewerOpeningID = item.id
             viewerReturnID = item.id
             viewerItems = loaded
             focusedTileID = nil
@@ -844,6 +857,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-map-photo-wall-tile")
+        // No raw PhotoKit ID leaves the device; this process-local hash only
+        // lets the real XCTest prove the same item returned after rapid L3.
+        .accessibilityValue("return-anchor-\(item.id.hashValue)")
         .disabled(busy || !XDriveIOSNativeMapViewerAdmission.supported(item))
         .id(item.id)
         .accessibilityFocused($focusedTileID, equals: item.id)
