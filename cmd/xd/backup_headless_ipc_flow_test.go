@@ -131,7 +131,7 @@ func TestHeadlessCLIInitAndIncrementalsShareOneAuthenticatedAgent(t *testing.T) 
 				return
 			}
 			summary := localbackupipc.Summary{
-				SourceID: 42, Revision: 2, State: "partial", InspectedFiles: 1,
+				SourceID: 42, Revision: 2, State: "partial", ScanComplete: true, InspectedFiles: 1,
 			}
 			if runs == 1 {
 				summary.ConfirmedFiles = 1
