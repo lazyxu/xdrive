@@ -522,6 +522,10 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
 
 private struct XDriveIOSOwnerMapChosenPlace: Identifiable {
     let id: String
+    // A map pin is not an Owner authorization. Capture the exact Owner
+    // that selected this place, even when the canonical placeID is reused
+    // in a different account before SwiftUI's onChange runs.
+    let owner: XDriveNativeOwnerRoot
 }
 
 struct XDriveIOSNativeOwnerPhotoMapScreen: View {
@@ -682,7 +686,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                                 captureRange: activeCaptureRange,
                                 mapSelection: mapSelection)
                         } else {
-                            selected = XDriveIOSOwnerMapChosenPlace(id: item.id)
+                            selected = XDriveIOSOwnerMapChosenPlace(id: item.id, owner: expected)
                         }
                     }
                 },
@@ -890,9 +894,18 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             if phase == .active { reload() } else { invalidate() }
         }) { place in
             NavigationStack {
-                XDriveIOSNativeServerMediaWall(
-                    login: login, album: nil, placeID: place.id,
-                    captureRange: activeCaptureRange)
+                if XDriveIOSNativePhotoOwnerScope.matches(login.owner, place.owner),
+                   phase == .active {
+                    XDriveIOSNativeServerMediaWall(
+                        login: login, album: nil, placeID: place.id,
+                        captureRange: activeCaptureRange)
+                } else {
+                    // Never reinterpret an Owner A place pin under Owner B,
+                    // even when B happens to have the same canonical placeID.
+                    XDriveIOSNativePhotoWallStatusMessage(
+                        message: "账户或地点授权已变化；请返回地图重新选择。")
+                        .accessibilityIdentifier("native-ios-owner-map-place-revoked")
+                }
             }
             // One native map album sheet: medium preview grows into the same
             // verified 48-item PhotoAsset wall, without a fixed photo strip.
@@ -1040,7 +1053,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                             captureRange: activeCaptureRange,
                             mapSelection: mapSelection)
                     } else {
-                        selected = XDriveIOSOwnerMapChosenPlace(id: facet.id)
+                        selected = XDriveIOSOwnerMapChosenPlace(id: facet.id, owner: expected)
                     }
                 }
             } catch is CancellationError {
