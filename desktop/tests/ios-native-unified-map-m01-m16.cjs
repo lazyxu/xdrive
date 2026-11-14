@@ -146,6 +146,11 @@ test('M15 M16: camera is restored only within verified Owner session; MapKit rev
   assert.match(surface, /regionWillChangeAnimated/)
   assert.match(surface, /markersEnabled = false/)
   assert.match(surface, /accessibilityElementsHidden = !enabled/)
+  // Invalidated locations must drop their AX identifiers before a gesture
+  // can deliver a stale VoiceOver click; valid pins retain stable test IDs.
+  assert.match(surface, /cover\.accessibilityIdentifier = markersEnabled/)
+  assert.match(surface, /native-ios-unified-source-map-cell-/)
+  assert.match(surface, /accessibilityIdentifier = nil/)
   assert.match(surface, /mapView\(_ map: MKMapView, didSelect view: MKAnnotationView\)/)
   assert.doesNotMatch(surface, /WKWebView\(|BaiduMapSDK|UploadSession\(|performChanges\(/)
 })
