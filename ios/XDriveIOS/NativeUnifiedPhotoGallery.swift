@@ -75,6 +75,15 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var started = false
     @Environment(\.scenePhase) private var phase
 
+    private func restoreMapCameraForCurrentOwner() {
+        guard savedMapCamera == nil, login.hasLocalOwnerSession,
+              let owner = login.owner,
+              let stored = XDriveIOSUnifiedMapCameraStore.load(owner: owner)
+        else { return }
+        savedMapOwner = owner
+        savedMapCamera = stored
+    }
+
     var body: some View {
         galleryContent
             .accessibilityElement(children: .contain)
@@ -90,11 +99,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             .onAppear {
                 photoObserver.start()
-                if savedMapCamera == nil, let owner = login.owner,
-                   let stored = XDriveIOSUnifiedMapCameraStore.load(owner: owner) {
-                    savedMapOwner = owner
-                    savedMapCamera = stored
-                }
+                restoreMapCameraForCurrentOwner()
                 if !started {
                     started = true
                     wall.reset()
@@ -131,6 +136,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 pendingMapMediaFilter = .all
                 pendingMapFilenameTerm = ""
                 reset()
+                // Session restoration may complete after Gallery onAppear.
+                restoreMapCameraForCurrentOwner()
             }
             .onChange(of: sourceFilter) { _ in
                 // A query/presence transition is not authority to reuse old
@@ -139,6 +146,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 openSourceMapAfterFilterDismiss = false
                 savedMapCamera = nil; savedMapOwner = nil
                 resetWall()
+                restoreMapCameraForCurrentOwner()
             }
             .onChange(of: query) { _ in
                 showingSourceFilteredMap = false
