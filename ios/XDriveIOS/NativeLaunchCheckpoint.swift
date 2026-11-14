@@ -64,6 +64,11 @@ enum XDriveIOSNativeLaunchCheckpoint {
             report = nil
         }
         mark(.initializing, defaults: defaults)
+        // The previous diagnostic is now held in the immutable report.
+        // Do not let an old interrupted attempt suppress persistence of the
+        // next login's first breadcrumb or mislabel a second crash.
+        defaults.removeObject(forKey: stepKey)
+        defaults.removeObject(forKey: dateKey)
         return report
     }
 
@@ -79,15 +84,13 @@ enum XDriveIOSNativeLaunchCheckpoint {
         _ step: PostLoginStep, defaults: UserDefaults = .standard,
         now: Date = Date()
     ) {
-        let firstStep = defaults.string(forKey: stepKey) == nil
         defaults.set(Phase.mountingWorkspace.rawValue, forKey: key)
         defaults.set(step.rawValue, forKey: stepKey)
         defaults.set(now, forKey: dateKey)
-        if firstStep {
-            // Only once per transition: an immediate fatal trap may otherwise
-            // kill the process before the asynchronous preference flush.
-            _ = defaults.synchronize()
-        }
+        // Every step is a bounded sign-in/scene transition, not a high-rate
+        // event. An immediate fatal trap must not leave the *previous*
+        // step as the only evidence of the failing mount.
+        _ = defaults.synchronize()
     }
 
     static func mark(_ phase: Phase, defaults: UserDefaults = .standard) {
