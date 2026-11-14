@@ -142,6 +142,18 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 XCTAssertEqual(route, "notes.source.ios-backup")
                 XCTAssertEqual(source.value as? String, "我的备忘录")
             }
+        } else if route.hasPrefix("clipboard.") {
+            openLauncher("clipboard", app: app)
+            XCTAssertTrue(view("ios-clipboard-draft", app: app)
+                .waitForExistence(timeout: 15), "Native Clipboard editor missing")
+            if route == "clipboard.target-scope" {
+                let picker = view("native-ios-clipboard-target-picker", app: app)
+                XCTAssertTrue(picker.waitForExistence(timeout: 15))
+                XCTAssertTrue(picker.isHittable, "Native scope menu cannot be tapped")
+            } else {
+                XCTAssertEqual(route, "clipboard.history-scroll")
+                XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 15))
+            }
         } else if route.hasPrefix("transfers.") {
             openLauncher("transfers", app: app)
             XCTAssertTrue(view("native-ios-transfer-overview", app: app)
@@ -202,6 +214,11 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             tap("native-ios-tab-gallery", app: app)
             XCTAssertTrue(view("native-ios-gallery-people", app: app)
                 .waitForExistence(timeout: 15))
+        } else if route == "mine.gallery-shortcut" {
+            tap("native-ios-tab-mine", app: app)
+            let gallery = app.buttons["相册与照片墙"].firstMatch
+            XCTAssertTrue(gallery.waitForExistence(timeout: 15))
+            XCTAssertTrue(gallery.isHittable)
         } else if route == "mine.thumbnail-cache" {
             tap("native-ios-tab-mine", app: app)
             let button = app.buttons["缩略图缓存"].firstMatch
@@ -283,6 +300,24 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             XCTAssertTrue(mine.isHittable)
             mine.tap()
             ready = view("native-ios-notes-source-picker", app: app)
+        case "clipboard.target-scope":
+            tap("native-ios-clipboard-target-picker", app: app)
+            let option = view("native-ios-clipboard-broadcast-option", app: app)
+            let visibleChoice = app.buttons["当前 Owner 广播"].firstMatch
+            ready = option.exists && option.isHittable ? option : visibleChoice
+        case "clipboard.history-scroll":
+            let scroll = app.scrollViews.firstMatch
+            XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+            let footer = app.staticTexts[
+                "最多保存 50 条有效消息，24 小时后不可见；不会自动监听系统剪贴板。"
+            ].firstMatch
+            for _ in 0..<5 {
+                if footer.exists && footer.isHittable { break }
+                scroll.swipeUp()
+            }
+            XCTAssertTrue(footer.isHittable,
+                          "Real Clipboard scroll did not reach the existing footer")
+            ready = footer
         case "transfers.open-files":
             app.buttons["打开文件"].firstMatch.tap()
             ready = view("native-ios-files-section-browse", app: app)
@@ -322,6 +357,11 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "gallery.people.page":
             tap("native-ios-gallery-people", app: app)
             ready = view("native-ios-gallery-people-page", app: app)
+        case "mine.gallery-shortcut":
+            let shortcut = app.buttons["相册与照片墙"].firstMatch
+            XCTAssertTrue(shortcut.isHittable)
+            shortcut.tap()
+            ready = view("native-ios-unified-photo-gallery", app: app)
         case "mine.thumbnail-cache":
             let button = app.buttons["缩略图缓存"].firstMatch
             let link = button.waitForExistence(timeout: 8)
@@ -356,6 +396,9 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                       "Native child did not mount: \(route)")
         if route == "files.home.edit-mode" {
             XCTAssertEqual(ready.label, "完成", "Files Home edit state never changed")
+        }
+        if route == "clipboard.target-scope" {
+            XCTAssertTrue(ready.isHittable, "Native Clipboard menu never opened")
         }
         if route == "notes.source.ios-backup" {
             XCTAssertEqual(ready.value as? String, "iOS 备份")
@@ -446,6 +489,24 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             backup.tap()
             XCTAssertEqual(view("native-ios-notes-source-picker", app: app).value as? String,
                            "iOS 备份", "Notes source reverse transition failed")
+        case "clipboard.target-scope":
+            let option = view("native-ios-clipboard-broadcast-option", app: app)
+            let fallback = app.buttons["当前 Owner 广播"].firstMatch
+            let choice = option.exists && option.isHittable ? option : fallback
+            XCTAssertTrue(choice.waitForExistence(timeout: 15) && choice.isHittable,
+                          "Clipboard menu option was not selectable")
+            choice.tap()
+            XCTAssertTrue(view("native-ios-clipboard-target-picker", app: app)
+                .waitForExistence(timeout: 15))
+        case "clipboard.history-scroll":
+            let scroll = app.scrollViews.firstMatch
+            let editor = view("ios-clipboard-draft", app: app)
+            for _ in 0..<5 {
+                if editor.exists && editor.isHittable { break }
+                scroll.swipeDown()
+            }
+            XCTAssertTrue(editor.exists && editor.isHittable,
+                          "Clipboard reverse scroll did not restore the editor")
         case "transfers.open-files", "transfers.open-backup":
             tap("native-ios-tab-launcher", app: app)
             XCTAssertTrue(view("native-ios-launcher-files", app: app)
@@ -494,6 +555,10 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             XCTAssertTrue(back.waitForExistence(timeout: 15))
             back.tap()
             XCTAssertTrue(view("native-ios-unified-photo-gallery", app: app)
+                .waitForExistence(timeout: 15))
+        case "mine.gallery-shortcut":
+            tap("native-ios-tab-mine", app: app)
+            XCTAssertTrue(view("native-ios-mine-server-account", app: app)
                 .waitForExistence(timeout: 15))
         case "mine.thumbnail-cache":
             let back = app.navigationBars["缩略图缓存"].buttons.element(boundBy: 0)
@@ -622,4 +687,7 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     func testSubpageGalleryFiltersSheet() { run("gallery.filters.sheet") }
     func testSubpageGalleryPeoplePage() { run("gallery.people.page") }
     func testSubpageMineThumbnailCache() { run("mine.thumbnail-cache") }
+    func testSubpageMineGalleryShortcut() { run("mine.gallery-shortcut") }
+    func testSubpageClipboardTargetScope() { run("clipboard.target-scope") }
+    func testSubpageClipboardHistoryScroll() { run("clipboard.history-scroll") }
 }

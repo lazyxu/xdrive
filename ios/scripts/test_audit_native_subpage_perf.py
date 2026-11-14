@@ -79,11 +79,11 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertEqual(report["rows"][0]["app_peak_memory_p95_mib"], 3)
         self.assertFalse(report["real_signed_owner_data"])
 
-    def test_actual_repository_registration_has_all_thirty_three_routes(self):
+    def test_actual_repository_registration_has_all_thirty_six_routes(self):
         module.ROUTES = self.old
         registered = module.source_routes(module.SOURCE.read_text(encoding="utf-8"))
         self.assertEqual(set(registered.values()), set(module.ROUTES))
-        self.assertEqual(len(module.ROUTES), 33)
+        self.assertEqual(len(module.ROUTES), 36)
 
     def test_gallery_backup_routes_use_existing_product_navigation(self):
         gallery = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
@@ -183,6 +183,24 @@ class NativeSubpageAuditTests(unittest.TestCase):
         for route in ("notes.source.mine", "notes.source.ios-backup",
                       "transfers.open-files", "transfers.open-backup"):
             self.assertIn(f'run("{route}")', suite)
+
+    def test_native_clipboard_and_mine_shortcut_subpages(self):
+        clipboard = (module.ROOT / "ios/XDriveIOS/NativeClipboardScreen.swift").read_text(
+            encoding="utf-8"
+        )
+        dashboard = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
+            encoding="utf-8"
+        )
+        suite = module.SOURCE.read_text(encoding="utf-8")
+        for token in ("native-ios-clipboard-target-picker",
+                      "native-ios-clipboard-broadcast-option", "ios-clipboard-draft"):
+            self.assertIn(token, clipboard)
+            self.assertIn(token, suite)
+        self.assertIn('Button("相册与照片墙")', dashboard)
+        for route in ("clipboard.target-scope", "clipboard.history-scroll",
+                      "mine.gallery-shortcut"):
+            self.assertIn(f'run("{route}")', suite)
+        self.assertIn("Clipboard reverse scroll did not restore the editor", suite)
 
     def test_additional_real_files_gallery_mine_child_routes(self):
         suite = module.SOURCE.read_text(encoding="utf-8")

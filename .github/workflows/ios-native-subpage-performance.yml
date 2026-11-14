@@ -90,7 +90,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests \
             2>&1 | tee "$RUNNER_TEMP/native-subpage-perf/xcodebuild.log"
-      - name: Require 33 forward and reverse AX paths plus genuine XCTest resource samples
+      - name: Require 36 forward and reverse AX paths plus genuine XCTest resource samples
         shell: bash
         run: |
           set -euo pipefail

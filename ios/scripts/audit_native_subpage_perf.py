@@ -49,6 +49,9 @@ ROUTES = (
     "notes.source.mine",
     "transfers.open-files",
     "transfers.open-backup",
+    "clipboard.target-scope",
+    "clipboard.history-scroll",
+    "mine.gallery-shortcut",
 )
 SOURCE_METHOD = re.compile(
     r'func\s+(testSubpage[A-Za-z0-9]+)\(\)\s*\{\s*run\("([a-z0-9.-]+)"\)\s*\}'
