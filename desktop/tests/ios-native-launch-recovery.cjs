@@ -37,6 +37,12 @@ test('cold launch offers isolated rescue before native Owner and Photos construc
   assert.match(app, /native-ios-startup-diagnostic-login/)
   assert.match(app, /native-ios-system-crash-diagnostic/)
   assert.match(app, /XDriveIOSNativeCrashMetricCollector\.shared\.start\(\)/)
+  const harness = read('ios/scripts/prepare-navigation-runtime-smoke.py')
+  // The disposable CI fixture explicitly supports original b9 and current
+  // crash-recovery root calls, and rejects unknown app entry points.
+  assert.match(harness, /XDriveIOSNativeStartupRoot\(interruptedStage: interruptedStage\)/)
+  assert.match(harness, /XDriveIOSNativeStartupRoot\(interruption: interruption\)/)
+  assert.match(harness, /Unexpected iOS App entry; test harness must be audited/)
   assert.match(metrics, /func didReceive\(_ payloads: \[MXDiagnosticPayload\]\)/)
   assert.doesNotMatch(metrics, /jsonRepresentation|bearer|refreshToken|password/)
 })

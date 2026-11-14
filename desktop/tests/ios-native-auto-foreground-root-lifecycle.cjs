@@ -118,7 +118,17 @@ test('backup display and delayed original progress never cross Owner changes or 
   assert.match(refresh, /if !unchanged \{\s*displayEpoch = UUID\(\)\s*manualNextWindow = 0\s*manualLibraryEpoch = nil\s*manualAuthorizationRaw = nil\s*manualSourceID = nil\s*manualTargetNodeID = nil\s*progress = nil\s*message = "未启动相册备份"\s*errorMessage = nil\s*\}/)
   assert.ok(refresh.indexOf('displayOwner = owner') < refresh.indexOf('schedule = owner.flatMap'),
     'clear old UI before current Owner schedule is published')
-  assert.match(ownerChanged, /backup\.cancel\(\)\s*backup\.refresh\(owner: model\.owner\)/)
+  // Stop old Owner monitoring before cancelling; the isolated diagnostic
+  // login must not touch managed backup state until the user opts in.
+  assert.match(ownerChanged, /backup\.stopLibraryChangeMonitoring\(\)\s*backup\.cancel\(\)/)
+  const diagnosticStart = ownerChanged.indexOf('if diagnosticWorkspace && !showFullWorkspace')
+  const diagnosticEnd = ownerChanged.indexOf('} else {', diagnosticStart)
+  assert.ok(diagnosticStart >= 0 && diagnosticEnd > diagnosticStart)
+  assert.doesNotMatch(ownerChanged.slice(diagnosticStart, diagnosticEnd), /backup\.refresh/)
+  const newOwnerRefresh = ownerChanged.indexOf('backup.refresh(owner: model.owner)', diagnosticEnd)
+  assert.ok(newOwnerRefresh > diagnosticEnd &&
+    newOwnerRefresh > ownerChanged.indexOf('backup.cancel()'),
+    'normal login rebinds backup to the new Owner only after cancellation')
   const gate = start.indexOf('XDriveIOSOriginalRunGate.shared.acquire()')
   const bind = start.indexOf('refresh(owner: selected)')
   const ticket = start.indexOf('let uiEpoch = displayEpoch')
