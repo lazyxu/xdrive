@@ -517,19 +517,26 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     let presence: XDriveIOSNativeGalleryPresence
     let query: XDriveIOSNativeUnifiedGalleryQuery
     let pin: XDriveIOSUnifiedSourceMapPin
+    var isNearbyExpansion = false
 
     @Environment(\.scenePhase) private var phase
     @StateObject private var photoChanges = XDriveIOSUnifiedPhotoObserver()
     @State private var generation = UUID()
     @State private var request: Task<Void, Never>?
+    @State private var admissionTask: Task<Void, Never>?
     @State private var busy = false
+    @State private var opening = false
     @State private var error: String?
     @State private var previous: [XDriveIOSNativeUnifiedPhoto] = []
     @State private var current: [XDriveIOSNativeUnifiedPhoto] = []
     @State private var next: XDriveIOSNativeGalleryCursor?
     @State private var ended = false
     @State private var viewing: XDriveIOSUnifiedMapViewerChoice?
+    @State private var viewerReturnID: String?
+    @State private var nearbyPresented = false
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @State private var framing: XDriveIOSNativePhotoWallFraming = .square
+    @State private var timeScale: XDriveIOSNativePhotoWallTimeScale = .day
 
     private var active: Bool {
         phase == .active &&
@@ -538,31 +545,97 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         XDriveIOSNativePhotoFingerprintIndex.isCurrent(library)
     }
 
+    private var nearbyViewport: XDriveIOSNativeLocalMapViewport? {
+        guard isNearbyExpansion else { return nil }
+        let step = XDriveIOSNativeLocalMapSpatialPolicy.initialCellDegrees *
+            Double(1 << pin.key.level)
+        return XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
+            latitude: pin.latitude, longitude: pin.longitude,
+            latitudeSpan: min(90, max(0.35, step * 3)),
+            longitudeSpan: min(180, max(0.35, step * 3)))
+    }
+
+    private func matchesPlace(latitude: Double, longitude: Double) -> Bool {
+        if isNearbyExpansion {
+            guard let nearbyViewport else { return false }
+            return XDriveIOSNativeLocalMapSpatialPolicy.includes(
+                nearbyViewport, latitude: latitude, longitude: longitude)
+        }
+        return XDriveIOSUnifiedSourceMapPolicy.member(
+            latitude: latitude, longitude: longitude,
+            key: pin.key, viewport: pin.viewport)
+    }
+
     var body: some View {
         VStack(spacing: 8) {
-            Text("当前来源 · 此区域 \(pin.count) 张照片")
-                .font(.footnote).foregroundStyle(.secondary)
-            if let error {
-                XDriveIOSNativePhotoWallRetryMessage(
-                    message: error, buttonTitle: "重试核对当前区域",
-                    canRetry: active && !busy
-                ) { load(from: next ?? pin.firstCursor) }
-            }
-            if busy {
-                ProgressView("核对当前区域的照片…")
-            }
-            photoWall
-            if ended && previous.isEmpty && current.isEmpty && error == nil {
-                Text("该位置的照片已发生变化，请重新打开地图。")
-                    .foregroundStyle(.secondary)
+            if active {
+                XDriveIOSNativePhotoWallScopeSummary(
+                    message: isNearbyExpansion
+                        ? "附近照片 · 按当前来源和拍摄位置核验"
+                        : "当前来源 · 此区域 \(pin.count) 张照片")
+                if let error {
+                    XDriveIOSNativePhotoWallRetryMessage(
+                        message: error, buttonTitle: "重新核对当前区域",
+                        canRetry: !busy && !opening
+                    ) { load(from: next ?? (isNearbyExpansion ? .init() : pin.firstCursor)) }
+                }
+                if busy {
+                    XDriveIOSNativePhotoWallLoadingMessage(
+                        message: "核对当前区域的照片…")
+                }
+                photoWall
+                if ended && previous.isEmpty && current.isEmpty && error == nil {
+                    XDriveIOSNativePhotoWallStatusMessage(
+                        message: "该位置的照片已发生变化，请重新打开地图。")
+                }
+            } else {
+                XDriveIOSNativePhotoWallStatusMessage(
+                    message: "Owner 或本机照片权限已变化，旧照片已隐藏。")
             }
         }
-        .navigationTitle("此地点的照片")
+        .navigationTitle(isNearbyExpansion ? "附近照片" : "此地点的照片")
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu { xdrivePhotoWallDensityButtons($density) } label: {
-                    Image(systemName: "square.grid.3x3")
+            if !isNearbyExpansion {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("附近照片") {
+                        guard active, !busy, !opening else { return }
+                        nearbyPresented = true
+                    }
+                    .disabled(!active || busy || opening)
+                    .accessibilityIdentifier("native-ios-unified-source-map-nearby")
                 }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                XDriveIOSNativePhotoWallDisplayMenu(
+                    density: $density, framing: $framing,
+                    accessibilityID: "native-ios-unified-source-map-display"
+                ) {
+                    Section("时间分组") {
+                        ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
+                            Button {
+                                timeScale = option
+                            } label: {
+                                Label(option.title,
+                                    systemImage: option == timeScale
+                                        ? "checkmark.circle.fill" : "calendar")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $nearbyPresented) {
+            if active {
+                AnyView(NavigationStack {
+                    XDriveIOSNativeUnifiedSourceMapCellWall(
+                        login: login, owner: owner, library: library,
+                        presence: presence, query: query, pin: pin,
+                        isNearbyExpansion: true)
+                })
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            } else {
+                AnyView(Text("该地点来源核验已失效。"))
             }
         }
         .fullScreenCover(item: $viewing, onDismiss: {
@@ -581,7 +654,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         .onAppear {
             photoChanges.start()
             if current.isEmpty && !busy && error == nil {
-                load(from: pin.firstCursor)
+                load(from: isNearbyExpansion ? .init() : pin.firstCursor)
             }
         }
         .onChange(of: photoChanges.change) { _ in invalidate() }
@@ -590,70 +663,156 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             if state != .active { invalidate() }
         }
         .onDisappear {
-            request?.cancel()
-            request = nil
-            if viewing == nil {
+            request?.cancel(); request = nil
+            admissionTask?.cancel(); admissionTask = nil
+            if viewing == nil && !nearbyPresented {
                 photoChanges.stop()
                 invalidate()
             }
         }
     }
 
-    // Split the real PhotoKit wall from the sheet/Viewer modifier chain.
-    // Keeping the nested ForEach/Button/Grid expression in one SwiftUI body
-    // exceeded Xcode 16.4's type-check budget; there is no shortcut in tests.
     private var photoWall: some View {
-        ScrollView {
-            XDriveIOSNativePhotoWallGrid(density: density) {
-                ForEach(previous + current) { row in
-                    photoButton(for: row)
+        ScrollViewReader { scroll in
+            ScrollView {
+                let sections = xdriveIOSNativePhotoWallVisibleSections(
+                    previous + current, scale: timeScale
+                ) { timeScale.key(for: $0.capturedAt) }
+                XDriveIOSNativePhotoWallSectionList(
+                    sections: sections, density: density,
+                    title: { timeScale == .all ? nil : timeScale.label(for: $0.key) },
+                    items: { $0.items }
+                ) { row in
+                    photoButton(for: row).id(row.id)
                 }
-                if next != nil, !busy, error == nil {
+                if next != nil && !busy && error == nil && active &&
+                   viewing == nil && !opening {
                     Color.clear.frame(height: 32)
                         .onAppear { advance() }
                         .accessibilityHidden(true)
                 }
             }
             .padding(4)
+            .xdrivePhotoWallPinch(density: $density, enabled: viewing == nil)
+            .onChange(of: viewing?.id) { activeID in
+                guard activeID == nil, active, let anchor = viewerReturnID,
+                      XDriveIOSNativePhotoWallWindowPolicy.canRestore(
+                        anchor, in: (previous + current).map(\.id),
+                        scopeActive: active) else { return }
+                scroll.scrollTo(anchor, anchor: .center)
+                viewerReturnID = nil
+            }
         }
     }
 
     private func photoButton(for row: XDriveIOSNativeUnifiedPhoto) -> some View {
-        Button {
-            guard active, !busy,
-                  (previous + current).contains(where: { $0.id == row.id })
-            else { return }
-            viewing = .init(row: row)
-        } label: {
+        Button { openAfterLiveAdmission(row) } label: {
             XDriveIOSUnifiedPhotoTile(
                 row: row, login: login, presentingOwner: owner,
                 displayActive: active && viewing == nil,
-                retainWhileCovered: viewing != nil, framing: .square)
+                retainWhileCovered: viewing != nil, framing: framing)
         }
+        .disabled(!active || busy || opening)
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-unified-source-map-photo")
     }
 
+    private func openAfterLiveAdmission(_ row: XDriveIOSNativeUnifiedPhoto) {
+        guard active, !busy, !opening, viewing == nil,
+              row.presence == presence,
+              (previous + current).filter({ $0.id == row.id }).count == 1 else { return }
+        let ticket = generation
+        opening = true
+        admissionTask?.cancel()
+        admissionTask = Task { @MainActor in
+            defer {
+                if generation == ticket {
+                    admissionTask = nil
+                    opening = false
+                }
+            }
+            guard let currentRow = await revalidateCurrentMember(row),
+                  !Task.isCancelled, generation == ticket, active,
+                  (previous + current).filter({ $0.id == row.id }).count == 1
+            else {
+                if generation == ticket { error = "此照片的地点或权限已变化，请刷新后重试。" }
+                return
+            }
+            viewerReturnID = row.id
+            viewing = .init(row: currentRow)
+        }
+    }
+
+    /// G02: a verified page is not a permanent permission to open a photo.
+    /// PhotoKit GPS/filename/date/type and cloud Node revision/GPS are reread
+    /// on each actual tap. An old count can never authorize a changed member.
+    private func revalidateCurrentMember(
+        _ row: XDriveIOSNativeUnifiedPhoto
+    ) async -> XDriveIOSNativeUnifiedPhoto? {
+        guard active, row.presence == presence else { return nil }
+        if let local = row.local {
+            guard let asset = PHAsset.fetchAssets(
+                withLocalIdentifiers: [local.id], options: nil).firstObject,
+                let coordinate = asset.location?.coordinate,
+                matchesPlace(latitude: coordinate.latitude,
+                             longitude: coordinate.longitude)
+            else { return nil }
+            let video = asset.mediaType == .video
+            guard asset.mediaType == .image || video,
+                  (local.kind == "video") == video else { return nil }
+            let names = PHAssetResource.assetResources(for: asset)
+                .map(\.originalFilename) +
+                (row.cloud.map { [$0.node.name] + ($0.resources ?? []).map(\.name) } ?? [])
+            guard query.matches(
+                video: video, live: asset.mediaSubtypes.contains(.photoLive),
+                capturedAt: asset.creationDate, names: names) else { return nil }
+            return row
+        }
+        guard let cloud = row.cloud,
+              let auth = try? await login.verifiedAuthorization(),
+              XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
+        else { return nil }
+        let reader = XDriveIOSNativeMediaGalleryReader(
+            owner: owner, accessToken: auth.accessToken)
+        guard let updated = try? await reader.currentMapItem(cloud),
+              let latitude = updated.metadata.latitude,
+              let longitude = updated.metadata.longitude,
+              matchesPlace(latitude: latitude, longitude: longitude)
+        else { return nil }
+        let capturedAt: Date?
+        if let value = updated.metadata.captured_at {
+            capturedAt = try? Date(value, strategy: .iso8601)
+        } else {
+            capturedAt = nil
+        }
+        let checked = XDriveIOSNativeUnifiedPhoto(
+            local: nil, cloud: updated, match: row.match,
+            presence: row.presence, capturedAt: capturedAt, reason: row.reason)
+        guard checked.matches(query) else { return nil }
+        return checked
+    }
+
     private func invalidate() {
         generation = UUID()
-        request?.cancel()
-        request = nil
-        previous = []
-        current = []
-        next = nil
+        request?.cancel(); request = nil
+        admissionTask?.cancel(); admissionTask = nil
+        previous = []; current = []; next = nil
         ended = false
         viewing = nil
+        viewerReturnID = nil
+        nearbyPresented = false
         busy = false
+        opening = false
         error = nil
     }
 
     private func advance() {
-        guard !busy, active, let next else { return }
+        guard !busy, active, !opening, let next else { return }
         load(from: next)
     }
 
     private func load(from start: XDriveIOSNativeGalleryCursor) {
-        guard active, !busy, viewing == nil else { return }
+        guard active, !busy, !opening, viewing == nil else { return }
         let ticket = UUID()
         generation = ticket
         request?.cancel()
@@ -663,7 +822,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             defer { if generation == ticket { busy = false; request = nil } }
             var cursor: XDriveIOSNativeGalleryCursor? = start
             do {
-                for _ in 0..<XDriveIOSUnifiedSourceMapPolicy.maximumWallSeekPages {
+                for inspected in 0..<XDriveIOSUnifiedSourceMapPolicy.maximumWallSeekPages {
+                    if inspected > 0 && inspected % 256 == 0 { await Task.yield() }
                     try Task.checkCancellation()
                     guard generation == ticket, active, let from = cursor else { return }
                     let model = XDriveIOSNativeUnifiedPhotoTimeline()
@@ -677,9 +837,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                         guard row.presence == presence,
                               let coordinates = XDriveIOSUnifiedSourceMapPolicy.coordinates(for: row)
                         else { return false }
-                        return XDriveIOSUnifiedSourceMapPolicy.bucket(
+                        return matchesPlace(
                             latitude: coordinates.latitude,
-                            longitude: coordinates.longitude) == pin.id
+                            longitude: coordinates.longitude)
                     }
                     if !selected.isEmpty {
                         previous = current
