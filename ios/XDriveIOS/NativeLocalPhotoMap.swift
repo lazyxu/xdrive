@@ -1500,10 +1500,17 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                            activeCaptureRange == nil, globalViewport == nil,
                            globalComplete && !busy {
                             VStack(alignment: .trailing, spacing: 6) {
-                                Button("独立核对 PhotoKit GPS") {
+                                Button {
                                     runP0IndependentGPSAudit()
+                                } label: {
+                                    // The *button label*, not merely its parent
+                                    // layout frame, must be at least 44pt tall.
+                                    // XCTest measured the old AX button at
+                                    // only 34.3pt on the real iOS 18.5 Simulator.
+                                    Text("独立核对 PhotoKit GPS")
+                                        .frame(minWidth: 190, minHeight: 44)
+                                        .contentShape(Rectangle())
                                 }
-                                .frame(minHeight: 44)
                                 .buttonStyle(.borderedProminent)
                                 .disabled(p0IndependentGPSAuditRunning)
                                 .accessibilityIdentifier("native-ios-map-p0-audit-trigger")
