@@ -1015,6 +1015,91 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     /// G02: a verified page is not a permanent permission to open a photo.
     /// PhotoKit GPS/filename/date/type and cloud Node revision/GPS are reread
     /// on each actual tap. An old count can never authorize a changed member.
+    /// M05: all Viewer moves are from the SAME current GPS cell and source
+    /// filter. Recheck the selected media before opening the next frame.
+    private func admitViewerNeighbor(_ row: XDriveIOSNativeUnifiedPhoto) {
+        guard active, !opening, row.presence == presence,
+              (previous + current).filter({ $0.id == row.id }).count == 1
+        else { return }
+        let ticket = generation
+        opening = true
+        admissionTask?.cancel()
+        admissionTask = Task { @MainActor in
+            defer {
+                if generation == ticket { opening = false; admissionTask = nil }
+            }
+            guard let fresh = await revalidateCurrentMember(row),
+                  !Task.isCancelled, generation == ticket, active,
+                  (previous + current).filter({ $0.id == row.id }).count == 1
+            else {
+                if generation == ticket { error = "相邻照片或来源状态已变化，请刷新。" }
+                return
+            }
+            viewerReturnID = fresh.id
+            viewing = XDriveIOSUnifiedMapViewerChoice(row: fresh)
+        }
+    }
+
+    private func navigateViewer(_ direction: Int) {
+        guard (direction == -1 || direction == 1),
+              active, !opening, !busy, let opened = viewing else { return }
+        let rows = previous + current
+        guard let position = rows.firstIndex(where: { $0.id == opened.id }) else { return }
+        let target = position + direction
+        if rows.indices.contains(target) {
+            admitViewerNeighbor(rows[target])
+        } else if direction > 0, let next {
+            load(from: next, forViewer: true)
+        } else if direction < 0, windowIndex > 1 {
+            retreat(forViewer: true)
+        }
+    }
+
+    private var viewerNavigation: some View {
+        VStack(spacing: 5) {
+            if busy || opening { ProgressView("正在核对相邻照片…").font(.caption) }
+            HStack {
+                Button { navigateViewer(-1) } label: {
+                    Image(systemName: "chevron.left").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("上一张")
+                .disabled(!active || busy || opening || viewing == nil)
+                Spacer()
+                Text("此地点的照片").font(.caption)
+                Spacer()
+                Button { navigateViewer(1) } label: {
+                    Image(systemName: "chevron.right").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("下一张")
+                .disabled(!active || busy || opening || viewing == nil)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 4) {
+                    ForEach(previous + current) { row in
+                        Button { admitViewerNeighbor(row) } label: {
+                            XDriveIOSUnifiedPhotoTile(
+                                row: row, login: login, presentingOwner: owner,
+                                displayActive: active, retainWhileCovered: true,
+                                framing: framing
+                            )
+                            .frame(width: 48, height: 48)
+                            .overlay(RoundedRectangle(cornerRadius: 4)
+                                .stroke(viewing?.id == row.id
+                                    ? Color.accentColor : Color.clear, lineWidth: 2))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!active || busy || opening)
+                        .accessibilityLabel("选择此地点的照片")
+                    }
+                }
+                .padding(4)
+            }
+        }
+        .padding(.horizontal, 8)
+        .background(.ultraThinMaterial)
+        .accessibilityIdentifier("native-ios-unified-source-map-viewer-filmstrip")
+    }
+
     private func revalidateCurrentMember(
         _ row: XDriveIOSNativeUnifiedPhoto
     ) async -> XDriveIOSNativeUnifiedPhoto? {
@@ -1128,8 +1213,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     /// M04: one bounded backward virtual page, re-proved from its original
     /// cursor and exact location predicate. Preserve the visible first tile
     /// anchor while replacing the two 48-row windows.
-    private func retreat() {
-        guard active, !busy, !opening, viewing == nil,
+    private func retreat(forViewer: Bool = false) {
+        guard active, !busy, !opening, (viewing == nil || forViewer),
               windowIndex > 1, windowStarts.indices.contains(windowIndex - 2),
               let anchor = previous.first?.id else { return }
         let target = windowStarts[windowIndex - 2]
@@ -1162,12 +1247,17 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             windowIndex -= 1
             next = windowStarts[windowIndex + 1]
             ended = false
-            backfillAnchorID = anchor
+            if forViewer {
+                if let row = previous.last { admitViewerNeighbor(row) }
+            } else {
+                backfillAnchorID = anchor
+            }
         }
     }
 
-    private func load(from start: XDriveIOSNativeGalleryCursor) {
-        guard active, !busy, !opening, viewing == nil else { return }
+    private func load(from start: XDriveIOSNativeGalleryCursor,
+                      forViewer: Bool = false) {
+        guard active, !busy, !opening, (viewing == nil || forViewer) else { return }
         let ticket = UUID()
         generation = ticket
         request?.cancel()
@@ -1212,6 +1302,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                         current = Array(selected.prefix(48))
                         next = model.next
                         ended = model.next == nil
+                        if forViewer, let candidate = current.first {
+                            admitViewerNeighbor(candidate)
+                        }
                         return
                     }
                     guard let nextCursor = model.next else {
