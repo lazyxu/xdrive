@@ -1374,7 +1374,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                verified.offset == offset, verified.total_count == expectedTotal {
                 XDriveIOSNativePhotoWallSectionList(
                     sections: visibleSections(verified), density: density,
-                    spacing: 8,
+                    spacing: 10,
                     title: { section in
                         guard timeScale != .all else { return nil }
                         // Only suppress the first repeated day/month/year
