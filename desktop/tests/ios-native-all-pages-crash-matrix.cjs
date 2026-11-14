@@ -80,7 +80,7 @@ test('normal cold restart requires real visible startup readiness and preserves 
   // Completion re-enters via the mounted workspace, not a readiness shortcut.
   // The workspace itself still applies restore/visibility/foreground gates.
   assert.match(login, /\.onChange\(of: restoreFinished\) \{ finished in\s*if finished \{ workspaceAppeared\(\) \}/);
-  assert.match(login, /private func workspaceAppeared\(\) \{\s*workspaceVisible = true\s*armReadinessAfterMount\(\)/);
+  assert.match(login, /private func workspaceAppeared\(\) \{\s*workspaceVisible = true\s*if model\.owner != nil && !startupReady \{[\s\S]*?markPostLogin\([\s\S]*?\.dashboardAppeared[\s\S]*?\}\s*armReadinessAfterMount\(\)/);
   assert.match(login, /private func armReadinessAfterMount\(\) \{\s*guard !startupReady,[\s\S]*?XDriveIOSNativeLaunchCheckpoint\.mayFinishStartup\(/);
   assert.match(login, /\.accessibilityValue\(startupReady \? "ready" : "mounting"\)/);
   assert.match(login, /XDriveIOSNativeLaunchCheckpoint\.mark\(\.ready\)/);
