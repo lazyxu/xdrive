@@ -61,8 +61,27 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
     /// XCTest must scroll the *correct* horizontal rail before tapping it.
     private func revealFilesSizeFilter(_ app: XCUIApplication) -> XCUIElement {
         let rail = target("native-ios-files-search-filters-scroll", app)
-        XCTAssertTrue(rail.waitForExistence(timeout: 15),
-                      "Native Files horizontal filters rail is missing")
+        let homeList = target("native-ios-files-home-list", app)
+        // The real Files Browse List preserves its scroll anchor across
+        // Gallery/Files tabs. First return to the actual top section, then
+        // swipe the nested horizontal filter rail (not the whole app).
+        for _ in 0..<8 {
+            if rail.exists && rail.isHittable { break }
+            if homeList.exists && homeList.isHittable {
+                homeList.swipeDown()
+            } else {
+                app.swipeDown()
+            }
+        }
+        if !rail.waitForExistence(timeout: 6) || !rail.isHittable {
+            print("FILES_FILTER_RAIL_MISSING AX tree:\n\(app.debugDescription)")
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "files-search-filter-rail-missing"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        XCTAssertTrue(rail.exists && rail.isHittable,
+                      "Real Files horizontal filter rail is inaccessible on Browse Home")
         let control = target("native-ios-files-search-size-filter", app)
         for _ in 0..<5 {
             if control.exists && control.isHittable { break }

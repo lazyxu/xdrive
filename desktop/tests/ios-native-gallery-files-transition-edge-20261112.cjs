@@ -175,3 +175,16 @@ test('map date-menu AX label fallback taps the actual surfaced button', () => {
   assert.match(map, /XCTAssertTrue\(actualDateMenu\.isHittable/)
   assert.match(map, /actualDateMenu\.tap\(\)/)
 })
+
+test('native Files filter rail is exposed and reached by real vertical then horizontal scrolling', () => {
+  const files = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  const railMarker = '.accessibilityElement(children: .contain)\n                .accessibilityIdentifier("native-ios-files-search-filters-scroll")'
+  assert.ok(files.includes(railMarker), 'Lazy List filter rail has no accessible scroll container')
+  assert.ok(ui.includes('let homeList = target("native-ios-files-home-list", app)'))
+  assert.ok(ui.includes('homeList.swipeDown()'), 'Real Browse List must expose off-screen header')
+  assert.ok(ui.includes('rail.swipeLeft()'), 'Size chip must be found with a horizontal rail gesture')
+  assert.ok(ui.includes('XCTAssertTrue(rail.exists && rail.isHittable'), 'Unreachable real rail must remain a hard failure')
+  assert.ok(ui.includes('FILES_FILTER_RAIL_MISSING AX tree:'), 'Keep real AX hierarchy on failure')
+  assert.ok(ui.includes('files-search-filter-rail-missing'), 'Keep actual Simulator frame on failure')
+})

@@ -1792,6 +1792,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .padding(.vertical, 4)
                 }
+                // In a lazy List, the horizontal filter rail must expose its
+                // real accessible scroll container so that an iOS 18.5 user
+                // and XCUITest can reach off-screen Size/Tag filter controls.
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("native-ios-files-search-filters-scroll")
                 .disabled(login.owner == nil)
             }
