@@ -79,9 +79,15 @@ enum XDriveIOSNativeLaunchCheckpoint {
         _ step: PostLoginStep, defaults: UserDefaults = .standard,
         now: Date = Date()
     ) {
+        let firstStep = defaults.string(forKey: stepKey) == nil
         defaults.set(Phase.mountingWorkspace.rawValue, forKey: key)
         defaults.set(step.rawValue, forKey: stepKey)
         defaults.set(now, forKey: dateKey)
+        if firstStep {
+            // Only once per transition: an immediate fatal trap may otherwise
+            // kill the process before the asynchronous preference flush.
+            _ = defaults.synchronize()
+        }
     }
 
     static func mark(_ phase: Phase, defaults: UserDefaults = .standard) {
