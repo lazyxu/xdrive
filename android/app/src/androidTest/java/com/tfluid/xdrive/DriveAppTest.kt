@@ -91,6 +91,7 @@ class DriveAppTest {
     private var clipboardManyFiles = false
     private var clipboardImports = 0
     private var clipboardBadUploadReceipt = false
+    private var clipboardSecondOwner = false
     private var clipboardDevicesGate: CompletableDeferred<Unit>? = null
     private var clipboardImageUri: Uri? = null
     private val clipboardTargetID = "123e4567-e89b-42d3-a456-426614174000"
@@ -168,7 +169,9 @@ class DriveAppTest {
             if (!clipboardUiFixture || accessToken != "fixture") {
                 throw ApiException(501, "Clipboard fixture Owner identity unavailable")
             }
-            return NativeServerOwnerIdentity(7, "owner", "user", "fixture-instance")
+            return if (clipboardSecondOwner)
+                NativeServerOwnerIdentity(8, "other", "user", "fixture-second-instance")
+            else NativeServerOwnerIdentity(7, "owner", "user", "fixture-instance")
         }
         override suspend fun clipboardList(
             accessToken: String, before: Long?,
@@ -178,8 +181,12 @@ class DriveAppTest {
         }
         override suspend fun clipboardDevices(accessToken: String): List<OwnerClipboardDevice> {
             check(clipboardUiFixture && accessToken == "fixture")
+            // Capture response identity before suspension: a late Owner A
+            // directory reply must not be installed in Owner B's native UI.
+            val requestedBySecondOwner = clipboardSecondOwner
             clipboardDevicesGate?.await()
-            return if (clipboardRevoked) emptyList() else listOf(clipboardDevice)
+            return if (requestedBySecondOwner || clipboardRevoked)
+                emptyList() else listOf(clipboardDevice)
         }
         override suspend fun clipboardCreate(
             accessToken: String, item: XDriveClipboardWrite,
@@ -3809,6 +3816,48 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("native-clipboard-draft").assertDoesNotExist()
         compose.runOnIdle {
+            org.junit.Assert.assertTrue(clipboardWrites.isEmpty())
+            org.junit.Assert.assertEquals(0, clipboardRevokes)
+        }
+    }
+
+    @Test fun clipboardOwnerSwitchRejectsPriorOwnerDeviceDirectoryResponse() {
+        clipboardDevicesGate = CompletableDeferred()
+        clipboardUiFixture = true
+        startAndLogin()
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.CLIPBOARD)
+        compose.onNodeWithTag("native-clipboard-draft").assertExists()
+
+        // Retire the first authenticated Owner while the first directory
+        // request is still unresolved, then actually authenticate a distinct
+        // Owner ID/username through the existing DriveController session.
+        compose.runOnIdle { controller.logout() }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.LOGIN
+        }
+        compose.runOnIdle {
+            clipboardSecondOwner = true
+            controller.login("other", "fixture-password")
+        }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.username == "other" &&
+                controller.state.value.screen == Screen.FILES &&
+                controller.state.value.loaded
+        }
+        // Unblock the old response *after* the new Owner session is live.
+        clipboardDevicesGate?.complete(Unit)
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.CLIPBOARD)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                compose.onNodeWithText("发送范围：当前账号广播").assertExists()
+            }.isSuccess
+        }
+        compose.onNodeWithText("Fixture Clip · android").assertDoesNotExist()
+        compose.onNodeWithTag("native-clipboard-directed-send").assertDoesNotExist()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals("other", controller.state.value.username)
             org.junit.Assert.assertTrue(clipboardWrites.isEmpty())
             org.junit.Assert.assertEquals(0, clipboardRevokes)
         }
