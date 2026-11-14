@@ -50,7 +50,7 @@ The machine-audited inventory lives in ios/performance/native-seven-workloads.js
 - A pending row remains pending with explicit missing evidence. Green workflow
   registration only asserts that nobody falsely marked the incomplete
   work as measured.
-- The existing 25-page root suite on master, and this PR's 28-child route
+- The existing 25-page root suite on master, and this PR's 33-child route
   suite, establish the native measurement backbone, **not** complete Web
   parity. This PR remains Draft until required current-HEAD CI and Final Gate
   pass and the promised workload metrics are actually gathered.

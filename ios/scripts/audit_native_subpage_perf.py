@@ -16,6 +16,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "ios/UITests/XDriveIOSNativeSubpagePerformanceUITests.swift"
 ROUTES = (
+    "files.home.root-denied",
+    "files.home.trash-denied",
     "files.home.recent-denied",
     "files.home.favorites-denied",
     "files.home.saved-searches",
@@ -38,6 +40,9 @@ ROUTES = (
     "gallery.local.date-sheet",
     "gallery.map.from-filter",
     "gallery.map.from-launcher",
+    "gallery.filters.sheet",
+    "gallery.people.page",
+    "mine.thumbnail-cache",
     "launcher.recent-picker",
     "mine.signout.confirm",
     "notes.source.ios-backup",

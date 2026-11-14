@@ -11,6 +11,8 @@ on:
       - 'ios/XDriveIOS/NativeFilesManagementPanel.swift'
       - 'ios/XDriveIOS/NativePhotoBackupScreen.swift'
       - 'ios/XDriveIOS/NativeNotesScreen.swift'
+      - 'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift'
+      - 'ios/XDriveIOS/NativePhotoThumbnailCacheScreen.swift'
       - 'ios/XDriveIOS/NativeTransfers.swift'
       - 'ios/performance/native-seven-workloads.json'
       - 'ios/scripts/audit_native_seven_workloads.py'
@@ -88,7 +90,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests \
             2>&1 | tee "$RUNNER_TEMP/native-subpage-perf/xcodebuild.log"
-      - name: Require 28 forward and reverse AX paths plus genuine XCTest resource samples
+      - name: Require 33 forward and reverse AX paths plus genuine XCTest resource samples
         shell: bash
         run: |
           set -euo pipefail

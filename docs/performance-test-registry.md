@@ -2,7 +2,7 @@
 
 - Unified performance PR: https://github.com/lazyxu/xdrive/pull/4328
 - Seven machine-audited categories: [native-seven-workloads.json](../ios/performance/native-seven-workloads.json) and [explicit evidence audit](../ios/scripts/audit_native_seven_workloads.py).
-- The 28-entry native subpage suite includes n=3 AX/CPU/peak memory trials plus original post-AX screenshot attachments. Until its current exact HEAD passes, this is only implemented instrumentation. True first composed pixel, FPS, 100k authenticated data, real Viewer Go cancellation and 1/4GiB native transfer are **not** established by these results.
+- The 33-entry native subpage suite includes n=3 AX/CPU/peak memory trials plus original post-AX screenshot attachments. Until its current exact HEAD passes, this is only implemented instrumentation. True first composed pixel, FPS, 100k authenticated data, real Viewer Go cancellation and 1/4GiB native transfer are **not** established by these results.
 - The independent MapKit M13 performance audit #4344 depends on unmerged permission/Owner P0 #4305, and currently cannot be safely consolidated as source code into #4328. Preserve these prerequisites rather than bypassing security.
 - A workflow being green does not certify any seven-family category whose measurements are missing. Require exact source, fixture fingerprint, source-bound raw evidence, n>=3 and non-browser native runtime records for completion.
 

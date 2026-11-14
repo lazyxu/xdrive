@@ -9,8 +9,8 @@ The original 25-route AX-ready baseline passed 75/75 on \`a32cac1\`.
 This follow-up is now directly targeted at master, not stacked onto an
 unmerged development parent.
 
-This additive PR registers **28 native interaction/entry paths** (the earlier
-24 plus 2 Notes source switches and 2 Transfers child navigation paths),
+This additive PR registers **33 native interaction/entry paths** (the previous
+28 plus 5 existing Files/Gallery/Mine subpage journeys),
 without inventing Owner authentication or media fixtures. It retains separate
 route IDs and test cases even where multiple navigation paths render the same
 SwiftUI component. Repetition is deliberate: user-perceived entry costs and
@@ -18,6 +18,8 @@ resource lifetimes differ.
 
 | Route ID | Actual native child/sheet | Ready evidence | Test data |
 | --- | --- | --- | --- |
+| files.home.root-denied | Files Home → 云端文件入口（无有效 Session） | native-ios-files-error-page | Real fail-closed screen, no Server data |
+| files.home.trash-denied | Files Home → 回收站（无有效 Session） | native-ios-files-trash-error-page | Real fail-closed screen, no Server data |
 | files.home.recent-denied | Files Home → 最近使用 | native-ios-files-recent-error-page | Synthetic Owner, no Session |
 | files.home.favorites-denied | Files Home → 收藏夹 | native-ios-files-favorites-error-page | Synthetic Owner, no Session |
 | files.home.saved-searches | Files Home → 智能文件夹 Sheet | native-ios-files-saved-searches-page | Native direct Home entry, Owner no Session; no mutations |
@@ -36,6 +38,9 @@ resource lifetimes differ.
 | gallery.backup.audit | 图库备份菜单 → 云端原件核验详情 | native-ios-backup-portrait-form | Navigation only; no receipt mutation |
 | gallery.cache.sheet | 图库备份菜单 → 缩略图缓存 Sheet | native-ios-backup-cache-sheet-close | Real cache-management sheet; no deletion |
 | files.home.edit-mode | 文件 → 浏览首页 → 编辑 → 完成模式 | Native Files edit toolbar changes to 完成 | No authenticated files; UI mode only |
+| gallery.filters.sheet | 统一图库 → 搜索与筛选 Sheet | native-ios-unified-gallery-map-scope | Genuine filter sheet, no authorized search results |
+| gallery.people.page | 统一图库 → 人物页 | native-ios-gallery-people-page | Genuine screen, not face-content benchmark |
+| mine.thumbnail-cache | 我的 → 缩略图缓存 | native-ios-gallery-thumbnail-cache | Genuine cache screen, no deletion |
 | gallery.originals.help | 云端原件 → 说明弹窗 | 云端备份原件说明 alert | Genuine alert; no cloud media access |
 | gallery.local.date-sheet | 本机照片 → 按日期定位 Sheet | 按日期定位 navigation bar | Real PhotoKit UI; not 100k populated library |
 | gallery.map.from-filter | 统一图库 → 搜索与筛选 → 显示地图 | Native MapKit source selector | Real map shell; no Full Access/100k timing assertion |
@@ -47,7 +52,7 @@ resource lifetimes differ.
 | transfers.open-files | 传输 → 打开文件 | native-ios-files-section-browse | Native 5-slot navigation |
 | transfers.open-backup | 传输 → 相册备份 | native-ios-backup-overview | Native route; no upload |
 
-All twenty-eight routes use real product-owned SwiftUI views or native UI modes, but some are
+All thirty-three routes use real product-owned SwiftUI views or native UI modes, but some are
 **distinct entry paths into the same underlying screen**, not 15 unique
 screens. The original nine-path Simulator run [#43249473366](https://github.com/lazyxu/xdrive/actions/runs/43249473366)
 passed on `a39441a`. An actual 20-route Simulator run
@@ -100,7 +105,7 @@ AX-ready wall milliseconds and separately app-targeted
 \`XCTMemoryMetric(application: app)\` Memory Peak Physical in KiB.
 The raw .xcresult is exported as JSON and CSV.
 
-The strict audit requires 28 registered methods, 4 observed UI invocations
+The strict audit requires 33 registered methods, 4 observed UI invocations
 per route, 3 unique AX trial IDs per route, 3 **genuine XCTest CPU Time** and
 **Memory Peak Physical** numbers per route and nonempty original xcresult
 metrics export. Missing, duplicates, or invalid numerical results cause an
@@ -112,8 +117,8 @@ true Hitch Time Ratio or physical 60/120 Hz frame pacing. User-visible
 screens requiring an Owner will fail closed rather than load fabricated
 Server files. This suite does not modify backup/session/Server code.
 
-The 28-path contract requires **112 UI invocations, 84 retained AX trials,
-84 genuine app CPU and 84 app peak-memory values**, all from the same
+The 33-path contract requires **132 UI invocations, 99 retained AX trials,
+99 genuine app CPU and 99 app peak-memory values**, all from the same
 exact-head Xcode Simulator run. Existing 25 root/selected-child routes are
 measured separately; these matrices are not 45 unique pages. Alert, map
 source selector and edit mode readiness are explicitly not pixel/FPS timing.
@@ -180,3 +185,15 @@ The reverse metric remains AX-ready wall time including XCTest idling,
 not a composited frame, 60/120-Hz FPS measurement, signed Owner
 or populated Web benchmark parity. No such run is claimed green
 until original xcresult/log artifacts on this SHA pass.
+
+### 2026-11-14 — 33-route additive candidate (new SHA requires new CI)
+
+Five genuine existing subpages extend the earlier 28-route suite: Files
+cloud-root and Trash fail-closed screens, Gallery filters and People, and Mine
+thumbnail cache. Every route must produce real forward and reverse AX-ready
+intervals, app-targeted CPU and peak physical memory, plus one post-AX
+screenshot in the original xcresult. **33 XCTest methods × (warmup + n3)**
+means 132 invocations, 99 retained values for each metric, and 33 screenshots.
+This code registration is not evidence of a passed 33-route Simulator or CI.
+Authenticated 10k/100k, first composed media frame, MapKit #4344's #4305
+dependency, 60/120Hz and 1/4 GiB native transfers remain unverified.

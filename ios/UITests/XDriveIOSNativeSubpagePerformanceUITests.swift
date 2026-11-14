@@ -101,6 +101,10 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         if route.hasPrefix("files.") {
             filesBrowse(app)
             switch route {
+            case "files.home.root-denied":
+                _ = filesHomeAction("native-ios-files-open-root-location", app: app)
+            case "files.home.trash-denied":
+                _ = filesHomeAction("native-ios-files-open-trash", app: app)
             case "files.home.recent-denied":
                 _ = filesHomeAction("native-ios-files-open-recent", app: app)
             case "files.home.favorites-denied":
@@ -189,6 +193,21 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         } else if route == "gallery.map.from-launcher" {
             tap("native-ios-tab-launcher", app: app)
             _ = reveal(view("native-ios-launcher-map", app: app), app: app)
+        } else if route == "gallery.filters.sheet" {
+            tap("native-ios-tab-gallery", app: app)
+            let entry = view("native-ios-gallery-open-filters", app: app)
+            XCTAssertTrue(entry.waitForExistence(timeout: 15))
+            XCTAssertTrue(entry.isHittable, "Native Gallery filter entry is not hittable")
+        } else if route == "gallery.people.page" {
+            tap("native-ios-tab-gallery", app: app)
+            XCTAssertTrue(view("native-ios-gallery-people", app: app)
+                .waitForExistence(timeout: 15))
+        } else if route == "mine.thumbnail-cache" {
+            tap("native-ios-tab-mine", app: app)
+            let button = app.buttons["缩略图缓存"].firstMatch
+            let link = button.waitForExistence(timeout: 8)
+                ? button : app.staticTexts["缩略图缓存"].firstMatch
+            XCTAssertTrue(link.waitForExistence(timeout: 15))
         } else if route.hasPrefix("gallery.") {
             // Measure the real Gallery backup menu -> native child route,
             // not another direct-launch time of the same SwiftUI view.
@@ -221,6 +240,12 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     private func visit(_ route: String, app: XCUIApplication) {
         var ready: XCUIElement
         switch route {
+        case "files.home.root-denied":
+            tap("native-ios-files-open-root-location", app: app)
+            ready = view("native-ios-files-error-page", app: app)
+        case "files.home.trash-denied":
+            tap("native-ios-files-open-trash", app: app)
+            ready = view("native-ios-files-trash-error-page", app: app)
         case "files.home.recent-denied":
             tap("native-ios-files-open-recent", app: app)
             ready = view("native-ios-files-recent-error-page", app: app)
@@ -291,6 +316,19 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "gallery.cache.sheet":
             app.buttons["释放本机缓存空间（不删除照片原件）"].firstMatch.tap()
             ready = view("native-ios-backup-cache-sheet-close", app: app)
+        case "gallery.filters.sheet":
+            tap("native-ios-gallery-open-filters", app: app)
+            ready = view("native-ios-unified-gallery-map-scope", app: app)
+        case "gallery.people.page":
+            tap("native-ios-gallery-people", app: app)
+            ready = view("native-ios-gallery-people-page", app: app)
+        case "mine.thumbnail-cache":
+            let button = app.buttons["缩略图缓存"].firstMatch
+            let link = button.waitForExistence(timeout: 8)
+                ? button : app.staticTexts["缩略图缓存"].firstMatch
+            XCTAssertTrue(link.waitForExistence(timeout: 15))
+            link.tap()
+            ready = view("native-ios-gallery-thumbnail-cache", app: app)
         case "mine.signout.confirm":
             tap("native-ios-mine-server-account", app: app)
             ready = app.buttons["停止本机自动备份并退出"].firstMatch
@@ -344,6 +382,14 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
 
     private func cleanup(_ route: String, app: XCUIApplication) {
         switch route {
+        case "files.home.root-denied":
+            tap("native-ios-files-error-return", app: app)
+            XCTAssertTrue(view("native-ios-files-section-browse", app: app)
+                .waitForExistence(timeout: 15))
+        case "files.home.trash-denied":
+            tap("native-ios-files-trash-error-return", app: app)
+            XCTAssertTrue(view("native-ios-files-section-browse", app: app)
+                .waitForExistence(timeout: 15))
         case "files.home.recent-denied":
             tap("native-ios-files-recent-error-return", app: app)
             XCTAssertTrue(view("native-ios-files-section-browse", app: app)
@@ -436,6 +482,24 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "gallery.cache.sheet":
             tap("native-ios-backup-cache-sheet-close", app: app)
             XCTAssertTrue(view("native-ios-unified-photo-gallery", app: app)
+                .waitForExistence(timeout: 15))
+        case "gallery.filters.sheet":
+            let cancel = app.buttons["取消"].firstMatch
+            XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+            cancel.tap()
+            XCTAssertTrue(view("native-ios-unified-photo-gallery", app: app)
+                .waitForExistence(timeout: 15))
+        case "gallery.people.page":
+            let back = app.navigationBars.buttons.element(boundBy: 0)
+            XCTAssertTrue(back.waitForExistence(timeout: 15))
+            back.tap()
+            XCTAssertTrue(view("native-ios-unified-photo-gallery", app: app)
+                .waitForExistence(timeout: 15))
+        case "mine.thumbnail-cache":
+            let back = app.navigationBars["缩略图缓存"].buttons.element(boundBy: 0)
+            XCTAssertTrue(back.waitForExistence(timeout: 15))
+            back.tap()
+            XCTAssertTrue(view("native-ios-mine-server-account", app: app)
                 .waitForExistence(timeout: 15))
         case "mine.signout.confirm":
             let cancel = app.buttons["取消"].firstMatch
@@ -553,4 +617,9 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     func testSubpageGalleryLocalDateSheet() { run("gallery.local.date-sheet") }
     func testSubpageGalleryMapFromFilter() { run("gallery.map.from-filter") }
     func testSubpageGalleryMapFromLauncher() { run("gallery.map.from-launcher") }
+    func testSubpageFilesHomeRootDenied() { run("files.home.root-denied") }
+    func testSubpageFilesHomeTrashDenied() { run("files.home.trash-denied") }
+    func testSubpageGalleryFiltersSheet() { run("gallery.filters.sheet") }
+    func testSubpageGalleryPeoplePage() { run("gallery.people.page") }
+    func testSubpageMineThumbnailCache() { run("mine.thumbnail-cache") }
 }

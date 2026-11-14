@@ -79,11 +79,11 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertEqual(report["rows"][0]["app_peak_memory_p95_mib"], 3)
         self.assertFalse(report["real_signed_owner_data"])
 
-    def test_actual_repository_registration_has_all_twenty_eight_routes(self):
+    def test_actual_repository_registration_has_all_thirty_three_routes(self):
         module.ROUTES = self.old
         registered = module.source_routes(module.SOURCE.read_text(encoding="utf-8"))
         self.assertEqual(set(registered.values()), set(module.ROUTES))
-        self.assertEqual(len(module.ROUTES), 28)
+        self.assertEqual(len(module.ROUTES), 33)
 
     def test_gallery_backup_routes_use_existing_product_navigation(self):
         gallery = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
@@ -183,6 +183,28 @@ class NativeSubpageAuditTests(unittest.TestCase):
         for route in ("notes.source.mine", "notes.source.ios-backup",
                       "transfers.open-files", "transfers.open-backup"):
             self.assertIn(f'run("{route}")', suite)
+
+    def test_additional_real_files_gallery_mine_child_routes(self):
+        suite = module.SOURCE.read_text(encoding="utf-8")
+        files = (module.ROOT / "ios/XDriveIOS/NativeCloudFilesBrowser.swift").read_text(encoding="utf-8")
+        gallery = (module.ROOT / "ios/XDriveIOS/NativeUnifiedPhotoGallery.swift").read_text(encoding="utf-8")
+        dashboard = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(encoding="utf-8")
+        for route in ("files.home.root-denied", "files.home.trash-denied",
+                      "gallery.filters.sheet", "gallery.people.page", "mine.thumbnail-cache"):
+            self.assertIn(f'run("{route}")', suite)
+            self.assertEqual(suite.count(f'case "{route}":') +
+                             suite.count(f'else if route == "{route}"'), 3)
+        for token in ("native-ios-files-open-root-location", "native-ios-files-open-trash",
+                      "native-ios-files-error-return", "native-ios-files-trash-error-return"):
+            self.assertIn(token, files)
+            self.assertIn(token, suite)
+        for token in ("native-ios-gallery-open-filters", "native-ios-gallery-people",
+                      "native-ios-unified-gallery-map-scope", "native-ios-gallery-people-page"):
+            self.assertIn(token, gallery)
+            self.assertIn(token, suite)
+        self.assertIn('NavigationLink("缩略图缓存")', dashboard)
+        self.assertIn('native-ios-gallery-thumbnail-cache', suite)
+        self.assertIn('app.navigationBars["缩略图缓存"]', suite)
 
     def test_missing_actual_screenshot_fails(self):
         bad = "\n".join(x for x in fake_log().splitlines()
