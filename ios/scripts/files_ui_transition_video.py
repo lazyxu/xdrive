@@ -40,7 +40,8 @@ def classify_bright_blank(frames, tap_second):
         return "missing_post_tap_frames"
     run = 0
     for f in sample:
-        white = (f["ymax"] - f["ymin"] <= 6 and f["yavg"] >= 242)
+        # ffmpeg signalstats uses limited-range YUV: RGB white maps to Y=235.
+        white = (f["ymax"] - f["ymin"] <= 6 and f["yavg"] >= 230)
         run = run + 1 if white else 0
         if run >= 2:
             return "suspected_solid_white_transition"
