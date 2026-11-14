@@ -109,6 +109,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
     @State private var error: String?
     @State private var pins: [XDriveIOSUnifiedSourceMapPin] = []
     @State private var coverImages: [String: UIImage] = [:]
+    @State private var coverUnavailable: Set<String> = []
     @State private var selected: XDriveIOSUnifiedSourceMapPin?
     @State private var provedOwner: XDriveNativeOwnerRoot?
     @State private var provedLibrary: Data?
@@ -268,7 +269,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                     if let cover = coverImages[pin.id] {
                         Image(uiImage: cover).resizable().scaledToFill()
                     } else {
-                        Image(systemName: "photo.on.rectangle")
+                        Image(systemName: coverUnavailable.contains(pin.id)
+                            ? "icloud.slash" : "photo.on.rectangle")
                             .resizable().scaledToFit().padding(16)
                             .foregroundStyle(.secondary)
                     }
@@ -315,6 +317,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-unified-source-map-cell-\(pin.id)")
         .accessibilityLabel("当前筛选的此区域 \(pin.count) 张照片")
+        .accessibilityHint(coverUnavailable.contains(pin.id)
+            ? "位置封面暂不可用。可点击刷新重新读取缩略图。" : "双击打开当前区域照片")
     }
 
     private func invalidate() {
@@ -327,6 +331,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         }
         localCoverRequests = []
         coverImages = [:]
+        coverUnavailable = []
         pins = []
         selected = nil
         provedOwner = nil
@@ -366,8 +371,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                   generation == ticket, currentProof else { return }
             let reader = XDriveIOSNativeMediaGalleryReader(
                 owner: owner, accessToken: auth.accessToken)
-            // One trusted 64-cell window, progressive thumbnails, no original
-            // image buffer and no remote download for iCloud-only local assets.
+            // One trusted 64-cell window. Only bounded 128px PhotoKit posters
+            // may use iCloud networking; never fetch full-size media or originals.
             for pin in verifiedPins {
                 guard !Task.isCancelled, generation == ticket, currentProof else { return }
                 if let local = pin.representative.local,
@@ -378,17 +383,30 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                     latitude: coordinate.latitude, longitude: coordinate.longitude,
                     key: pin.key, viewport: pin.viewport) {
                     let options = PHImageRequestOptions()
-                    options.isNetworkAccessAllowed = false
-                    options.deliveryMode = .fastFormat
+                    // Same bounded opportunistic iCloud poster policy as
+                    // the native PhotoKit map: retain a degraded preview until
+                    // its final image arrives, even if the final request fails.
+                    options.isNetworkAccessAllowed = true
+                    options.deliveryMode = .opportunistic
+                    options.resizeMode = .fast
                     let request = PHImageManager.default().requestImage(
                         for: asset, targetSize: CGSize(width: 128, height: 128),
                         contentMode: .aspectFill, options: options
-                    ) { image, _ in
+                    ) { image, info in
+                        let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+                        let cancelled = info?[PHImageCancelledKey] as? Bool == true
+                        let failed = info?[PHImageErrorKey] != nil
                         Task { @MainActor in
-                            guard generation == ticket, currentProof,
-                                  pins.contains(where: { $0.id == pin.id }),
-                                  let image else { return }
-                            coverImages[pin.id] = image
+                            guard !cancelled, generation == ticket, currentProof,
+                                  pins.contains(where: { $0.id == pin.id })
+                            else { return }
+                            if let image {
+                                coverUnavailable.remove(pin.id)
+                                coverImages[pin.id] = image
+                            } else if !degraded && failed && coverImages[pin.id] == nil {
+                                // Never clear an already presented degraded poster.
+                                coverUnavailable.insert(pin.id)
+                            }
                         }
                     }
                     localCoverRequests.append(request)
