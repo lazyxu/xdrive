@@ -304,7 +304,13 @@ test('continuous cloud wall adopts only currently authorized range for L3 and re
   assert.match(wall, /pendingReturnRevision = rememberedRevision/)
   assert.match(wall, /returnScroll\.scrollTo\("cloud-range:/)
   assert.match(wall, /range\.items\.contains\(where: \{[\s\S]*?\$0\.node\.revision == pendingReturnRevision/)
-  assert.match(wall, /scroll\.scrollTo\(target, anchor: \.center\)/)
+  // The authorized exact Node+revision check remains in this source; only
+  // scrolling/focus is delegated to the shared presentation helper.
+  assert.match(wall, /range\.items\.contains\(where: \{[\s\S]*?\$0\.id == target && \$0\.node\.revision == pendingReturnRevision/)
+  assert.match(wall, /xdrivePhotoWallFocusVerifiedTile\(\s*target, scroll: scroll, focus: \$accessibilityFocusedMediaID/)
+  const presentation = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
+  assert.match(presentation, /func xdrivePhotoWallFocusVerifiedTile<ID: Hashable>/)
+  assert.match(presentation, /scroll\.scrollTo\(id, anchor: anchor\)/)
   assert.match(virtual, /returnFocusID: UInt64\?/)
   assert.match(virtual, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/)
   assert.match(wall, /for \(start, loaded\) in recentRangeIDs where[\s\S]*?isDisjoint\(with: Set\(loaded\)\)/)
