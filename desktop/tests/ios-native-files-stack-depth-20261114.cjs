@@ -35,10 +35,14 @@ test('iOS 26.6 Files main-thread stack-overflow regression: split every oversize
     ['filesArrangementLifecycle', 'AnyView(filesNavigationLifecycle(returnScroll: returnScroll))'],
     ['filesLoadingLifecycle', 'AnyView(filesArrangementLifecycle(returnScroll: returnScroll))'],
   ]
-  for (const [name, erased] of lifecycles) {
+  for (const [index, [name, erased]] of lifecycles.entries()) {
     const at = files.indexOf('private func ' + name + '(returnScroll: ScrollViewProxy)')
-    assert.ok(at > 0, 'Files lifecycle missing: ' + name)
-    assert.ok(files.slice(at, at + 1100).includes(erased),
+    const next = index + 1 < lifecycles.length
+      ? files.indexOf('private func ' + lifecycles[index + 1][0] +
+                      '(returnScroll: ScrollViewProxy)', at + 1)
+      : files.indexOf('var body: some View {', at + 1)
+    assert.ok(at > 0 && next > at, 'Files lifecycle segment missing: ' + name)
+    assert.ok(files.slice(at, next).includes(erased),
       name + ' must erase its nested view type at a stable boundary')
   }
   assert.match(files, /ScrollViewReader \{ returnScroll in\s*AnyView\(filesLoadingLifecycle\(returnScroll: returnScroll\)\)/)
