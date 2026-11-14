@@ -58,4 +58,11 @@ assert.match(nativeAndroid, /controller\.state\.value\.nativeUiSessionId == owne
 assert.match(nativeAndroid, /NativeNotesMarkdownPreview\(\s*controller, noteID, ownerEpoch, content/)
 assert.match(nativeAndroid, /导出此版本 Markdown/)
 
+assert.match(sharedNotes, /const historyReadSeq = useRef\\(0\\)/)
+assert.match(sharedNotes, /const historyGeneration = \\+\\+historyReadSeq\\.current/)
+assert.match(sharedNotes, /historyReadSeq\\.current === historyGeneration/)
+assert.match(sharedNotes, /onClose=\\{closeHistory\\}/)
+assert.match(screen, /@State private var versionReadGeneration = 0/)
+assert.match(screen, /guard generation == versionReadGeneration else \\{ return \\}/)
+
 console.log('iOS Notes history image readback and explicit Shortcut source identity: PASS')

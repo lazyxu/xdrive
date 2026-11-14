@@ -117,6 +117,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imageURLs, setImageURLs] = useState<Record<string, string>>({})
   const readSeq = useRef(0)
+  const historyReadSeq = useRef(0)
   const listSeq = useRef(0)
   const savingRef = useRef(false)
   const latestDraft = useRef({ title: '', markdown: '' })
@@ -408,39 +409,59 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
   const loadHistory = async () => {
     if (!selected) return
     const id = selected.id
+    const noteGeneration = readSeq.current
+    const historyGeneration = ++historyReadSeq.current
     setHistoryBusy(true)
     setHistoryError('')
+    setVersions([])
     setOldMarkdown(null)
     setOldVersion(null)
     setHistoryOpen(true)
     try {
       const items = await port.listVersions(id)
-      if (mounted.current && selected?.id === id) setVersions(items)
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setVersions(items)
     } catch (error) {
-      if (mounted.current) setHistoryError(errorMessage(error))
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setHistoryError(errorMessage(error))
     } finally {
-      if (mounted.current) setHistoryBusy(false)
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setHistoryBusy(false)
     }
   }
 
   const openVersion = async (item: XDriveNoteVersion) => {
     if (!selected || !port.readVersion) return
-    const generation = readSeq.current
+    const nodeID = selected.node_id
+    const noteGeneration = readSeq.current
+    const historyGeneration = ++historyReadSeq.current
     setOldMarkdown(null)
     setOldVersion(null)
     setHistoryBusy(true)
     setHistoryError('')
     try {
-      const content = await port.readVersion(selected.node_id, item.id)
-      if (mounted.current && readSeq.current === generation) {
+      const content = await port.readVersion(nodeID, item.id)
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) {
         setOldMarkdown(content)
         setOldVersion(item)
       }
     } catch (error) {
-      if (mounted.current && readSeq.current === generation) setHistoryError(errorMessage(error))
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setHistoryError(errorMessage(error))
     } finally {
-      if (mounted.current && readSeq.current === generation) setHistoryBusy(false)
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setHistoryBusy(false)
     }
+  }
+
+  const closeHistory = () => {
+    historyReadSeq.current++
+    setHistoryOpen(false)
+    setHistoryBusy(false)
+    setOldMarkdown(null)
+    setOldVersion(null)
+    setHistoryError('')
   }
 
   const exportOldVersion = () => {
@@ -636,7 +657,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
         <Button color="error" onClick={() => void remove()} disabled={busy}>删除</Button>
       </DialogActions>
     </Dialog>
-    <Dialog open={historyOpen} fullWidth maxWidth="sm" onClose={() => setHistoryOpen(false)}>
+    <Dialog open={historyOpen} fullWidth maxWidth="sm" onClose={closeHistory}>
       <DialogTitle>笔记版本历史</DialogTitle>
       <DialogContent>
         {historyError && <Alert severity="error">{historyError}</Alert>}
@@ -663,7 +684,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
           <XDriveNotesMarkdownPreview markdown={oldMarkdown} resolveImage={resolveImage} />
         </>}
       </DialogContent>
-      <DialogActions><Button onClick={() => setHistoryOpen(false)}>关闭</Button></DialogActions>
+      <DialogActions><Button onClick={closeHistory}>关闭</Button></DialogActions>
     </Dialog>
   </Box>
 }
