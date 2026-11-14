@@ -191,28 +191,44 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         // Map covers are visible, bounded 128px renditions. Allow PhotoKit to
         // fetch an iCloud-only thumbnail; this is not an original export/read.
         options.isNetworkAccessAllowed = true
-        options.deliveryMode = .fastFormat
+        // Opportunistic responses can supply a small local HEIC/video/Live
+        // poster and then a final iCloud rendition. A degraded callback must
+        // neither clear that poster nor falsely end the request.
+        options.deliveryMode = .opportunistic
         options.resizeMode = .fast
+        placeholder.image = UIImage(systemName: "photo")
         placeholder.isHidden = true
         loading.startAnimating()
         request = PHImageManager.default().requestImage(
             for: asset, targetSize: CGSize(width: 128, height: 128),
             contentMode: .aspectFill, options: options
-        ) { [weak self] value, _ in
+        ) { [weak self] value, info in
+            let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+            let cancelled = info?[PHImageCancelledKey] as? Bool == true
+            let failed = info?[PHImageErrorKey] != nil
+            let inCloud = info?[PHImageResultIsInCloudKey] as? Bool == true
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.epoch == snapshot,
                       [.authorized].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                      ) else { return }
-                self.loading.stopAnimating()
-                // PhotoKit/iCloud can return a degraded preview followed by
-                // a nil/error callback. Keep the last usable bounded poster
-                // instead of flashing the map thumbnail to an empty tile.
+                      ), !cancelled else { return }
+                // A degraded still or video poster stays visible while the
+                // iCloud final result is pending. A late error never flashes
+                // an already visible poster to an empty annotation.
                 if let value {
                     self.photo.image = value
                     self.placeholder.isHidden = true
-                } else if self.photo.image == nil {
-                    self.placeholder.isHidden = false
+                }
+                if !degraded || failed {
+                    self.loading.stopAnimating()
+                    if self.photo.image == nil {
+                        self.placeholder.image = UIImage(
+                            systemName: inCloud || failed ? "icloud.slash" : "photo"
+                        )
+                        self.placeholder.isHidden = false
+                        self.accessibilityHint =
+                            "位置封面暂不可用。可在地图操作中选择重新加载位置封面。"
+                    }
                 }
             }
         }
@@ -226,6 +242,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         }
         photo.image = nil
         loading.stopAnimating()
+        placeholder.image = UIImage(systemName: "photo")
         placeholder.isHidden = false
     }
 
