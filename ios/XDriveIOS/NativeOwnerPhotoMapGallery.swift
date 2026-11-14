@@ -1,7 +1,42 @@
 import Combine
+import Foundation
 import MapKit
 import SwiftUI
 import UIKit
+
+/// Only predicates that the Owner Server can apply to BOTH signed map
+/// Overview and current 48-photo Range are permitted. This source never
+/// transforms a local favorite or screenshot predicate into a cloud query.
+struct XDriveIOSNativeOwnerMapSelection: Equatable {
+    let mediaFilter: XDriveIOSNativePhotoMediaFilter
+    let filenameTerm: String
+
+    static let unfiltered = Self(mediaFilter: .all, filenameTerm: "")
+
+    var valid: Bool {
+        (mediaFilter == .all || mediaFilter == .photos ||
+         mediaFilter == .videos || mediaFilter == .livePhotos) &&
+        filenameTerm.count <= 120 &&
+        filenameTerm == filenameTerm.trimmingCharacters(in: .whitespacesAndNewlines) &&
+        !filenameTerm.contains("\0")
+    }
+
+    var isFiltered: Bool { mediaFilter != .all || !filenameTerm.isEmpty }
+
+    var queryItems: [URLQueryItem] {
+        var values: [URLQueryItem] = []
+        if !filenameTerm.isEmpty {
+            values.append(URLQueryItem(name: "filename", value: filenameTerm))
+        }
+        switch mediaFilter {
+        case .photos: values.append(URLQueryItem(name: "kind", value: "image"))
+        case .videos: values.append(URLQueryItem(name: "kind", value: "video"))
+        case .livePhotos: values.append(URLQueryItem(name: "asset_kind", value: "live_photo"))
+        default: break
+        }
+        return values
+    }
+}
 
 /// A cover read never has access to SwiftUI map state. Its result crosses
 /// back to the MainActor before any image is published or authorization revoked.
@@ -66,8 +101,8 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     @Binding var localMapCamera: MKCoordinateRegion?
     var onFocusChange: ((Bool) -> Void)?
     var onClose: (() -> Void)? = nil
-    // Shared Gallery media selection applies only to the local PhotoKit map.
-    // Cloud Owner Map remains governed by its signed Server PhotoScope.
+    // The same criteria are applied to local PhotoKit or to the Owner's
+    // canonical signed map/Range transport if that filter is supported.
     var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     var filenameTerm: String = ""
     var cloudSourceAllowed = true
@@ -75,6 +110,9 @@ struct XDriveIOSNativePhotoMapsScreen: View {
 
     var body: some View {
         let expectedOwner = login.owner
+        let ownerSelection = XDriveIOSNativeOwnerMapSelection(
+            mediaFilter: mediaFilter, filenameTerm: filenameTerm)
+        let cloudAllowed = cloudSourceAllowed && ownerSelection.valid
         return Group {
             switch source {
             case .local:
@@ -104,7 +142,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                     inheritedCaptureRange: inheritedCaptureRange
                 )
             case .cloud:
-                if cloudSourceAllowed {
+                if cloudAllowed {
                     XDriveIOSNativeOwnerPhotoMapScreen(
                     login: login, onFocusChange: onFocusChange,
                     cameraReturn: cloudMapCamera,
@@ -115,9 +153,10 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                               ) else { return }
                         cloudMapCamera = next
                     },
-                    inheritedCaptureRange: inheritedCaptureRange)
+                    inheritedCaptureRange: inheritedCaptureRange,
+                    mapSelection: ownerSelection)
                 } else {
-                    Text("当前文件名或媒体筛选仅允许查看本机位置地图。")
+                    Text("当前筛选条件未被 Owner 地图可信 Range 支持，请切回本机地图。")
                         .accessibilityIdentifier("native-ios-map-cloud-filter-unavailable")
                 }
             }
@@ -135,7 +174,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                 Menu {
                     Picker("地图照片来源", selection: $source) {
                         ForEach(XDriveIOSNativePhotoMapSource.allCases.filter {
-                            cloudSourceAllowed || $0 == .local
+                            cloudAllowed || $0 == .local
                         }, id: \.self) { item in
                             Text(item.label).tag(item)
                         }
@@ -466,6 +505,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     var cameraReturn: MKCoordinateRegion? = nil
     var onCameraChange: ((MKCoordinateRegion) -> Void)? = nil
     var inheritedCaptureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
+    var mapSelection: XDriveIOSNativeOwnerMapSelection = .unfiltered
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var overview: XDriveIOSNativeOwnerMapOverview?
@@ -587,7 +627,14 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                        XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(item) {
                         openSinglePhoto(item, expected: expected, bounds: verifiedBounds)
                     } else {
-                        selected = XDriveIOSOwnerMapChosenPlace(id: item.id)
+                        if mapSelection.isFiltered {
+                            selectedCluster = XDriveIOSOwnerMapChosenCluster(
+                                places: [item], owner: expected,
+                                captureRange: activeCaptureRange,
+                                mapSelection: mapSelection)
+                        } else {
+                            selected = XDriveIOSOwnerMapChosenPlace(id: item.id)
+                        }
                     }
                 },
                 onPlaces: { facets in
@@ -608,7 +655,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     coverTask = nil
                     selectedCluster = XDriveIOSOwnerMapChosenCluster(
                         places: facets, owner: expected,
-                        captureRange: activeCaptureRange)
+                        captureRange: activeCaptureRange,
+                        mapSelection: mapSelection)
                 },
                 onAggregate: {
                     error = "聚合区域已放大；相机稳定后自动刷新，必要时可手动刷新。"
@@ -834,6 +882,13 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             if phase == .active { invalidate(); reload() }
             else { invalidate() }
         }
+        .onChange(of: mapSelection) { _ in
+            selected = nil
+            selectedCluster = nil
+            singleViewer = nil
+            invalidate()
+            if phase == .active && login.owner != nil && mapSelection.valid { reload() }
+        }
         .onChange(of: login.owner) { _ in
             currentLocation.cancel()
             selected = nil
@@ -899,7 +954,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                           bounds, current: currentBounds()
                       ) else { return }
                 let reader = XDriveIOSNativeMediaGalleryReader(
-                    owner: auth.owner, accessToken: auth.accessToken)
+                    owner: auth.owner, accessToken: auth.accessToken,
+                    mapSelection: mapSelection)
                 // MapKit annotations are not access credentials. A fresh
                 // Owner-scoped single-place Range must prove the L3 item.
                 let result = try await reader.page(
@@ -921,7 +977,14 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     singleOwner = expected
                     singleViewer = item
                 } else {
-                    selected = XDriveIOSOwnerMapChosenPlace(id: facet.id)
+                    if mapSelection.isFiltered {
+                        selectedCluster = XDriveIOSOwnerMapChosenCluster(
+                            places: [facet], owner: expected,
+                            captureRange: activeCaptureRange,
+                            mapSelection: mapSelection)
+                    } else {
+                        selected = XDriveIOSOwnerMapChosenPlace(id: facet.id)
+                    }
                 }
             } catch is CancellationError {
             } catch let failure as XDriveIOSNativeMediaReadFailure {
@@ -1085,7 +1148,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     }
 
     private func reload() {
-        guard phase == .active, let expected = login.owner else {
+        guard phase == .active, let expected = login.owner,
+              mapSelection.valid else {
             invalidate()
             return
         }
@@ -1128,7 +1192,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                       XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
                 else { return }
                 let reader = XDriveIOSNativeMediaGalleryReader(
-                    owner: auth.owner, accessToken: auth.accessToken)
+                    owner: auth.owner, accessToken: auth.accessToken,
+                    mapSelection: mapSelection)
                 let result = try await reader.mapOverview(
                     bounds: bounds, detail: true, captureRange: activeCaptureRange)
                 try Task.checkCancellation()

@@ -11,7 +11,8 @@ private enum XDriveIOSMapCurrentPhotoKitAdmission {
     static func allows(
         _ candidate: XDrivePhotoKitScanCandidate,
         filter: XDriveIOSNativePhotoMediaFilter,
-        filenameTerm: String = ""
+        filenameTerm: String = "",
+        tripScope: XDriveIOSNativeLocalTripScope? = nil
     ) -> Bool {
         guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               let asset = PHAsset.fetchAssets(
@@ -25,6 +26,15 @@ private enum XDriveIOSMapCurrentPhotoKitAdmission {
         }
         guard candidate.kind == kind && filter.includes(asset: asset) else {
             return false
+        }
+        if let tripScope {
+            guard XDriveIOSNativePhotoFingerprintIndex.isCurrent(
+                    tripScope.libraryEpoch),
+                  let coordinate = asset.location?.coordinate,
+                  tripScope.contains(
+                    asset.creationDate, latitude: coordinate.latitude,
+                    longitude: coordinate.longitude
+                  ) else { return false }
         }
         return filenameTerm.isEmpty || PHAssetResource.assetResources(for: asset)
             .contains { $0.originalFilename.localizedStandardContains(filenameTerm) }
@@ -667,6 +677,15 @@ enum XDriveIOSNativeLocalMapScope: String, CaseIterable {
     }
 }
 
+// A photo map membership lease is not defined by its date bounds alone:
+// two trips and the unrestricted timeline can share identical [from, to)
+// while containing different GPS members. Compare the trip identity together
+// with the date scope to invalidate stale counts and selectable annotations.
+private struct XDriveIOSNativeLocalMapMembership: Equatable {
+    let captureRange: XDriveIOSNativePhotoMapCaptureRange?
+    let tripID: UUID?
+}
+
 private struct XDriveIOSMapSpatialSelection: Identifiable {
     let id = UUID()
     let cells: [XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>]
@@ -677,6 +696,7 @@ private struct XDriveIOSMapSpatialSelection: Identifiable {
     let mediaFilter: XDriveIOSNativePhotoMediaFilter
     let captureRange: XDriveIOSNativePhotoMapCaptureRange?
     let filenameTerm: String
+    let tripScope: XDriveIOSNativeLocalTripScope?
 }
 
 /// On-demand bounded local-only cell paging. Re-scan the lazy PhotoKit
@@ -773,7 +793,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     item, in: loaded, sceneActive: phase == .active
                   ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
                     item, filter: selection.mediaFilter,
-                    filenameTerm: selection.filenameTerm
+                    filenameTerm: selection.filenameTerm,
+                    tripScope: selection.tripScope
                   ) else { return }
             viewerReturnID = item.id
             viewerItems = loaded
@@ -1050,7 +1071,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 let total = try await scanner.startMap(
                     atOffset: 0, album: album, mediaFilter: selection.mediaFilter,
                     captureRange: selection.captureRange,
-                    filenameTerm: selection.filenameTerm
+                    filenameTerm: selection.filenameTerm,
+                    tripScope: selection.tripScope
                 )
                 let result = try await readWindow(
                     scanner: scanner, pending: [], pendingIndex: 0,
@@ -1235,6 +1257,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var usingCaptureOverride = false
     @State private var datePickerOpen = false
     @State private var requestedCaptureDay = Date()
+    @State private var showingRecentDaysAndTrips = false
+    @State private var pendingRecentDay: Date?
+    @State private var pendingTrip: XDriveIOSNativeLocalTripScope?
+    @State private var chosenLocalTrip: XDriveIOSNativeLocalTripScope?
     @State private var error: String?
     @State private var selection: XDriveIOSMapPhotoSelection?
     @State private var singleViewer: XDrivePhotoKitScanCandidate?
@@ -1273,10 +1299,18 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     }
 
     private var activeCaptureRange: XDriveIOSNativePhotoMapCaptureRange? {
-        usingCaptureOverride ? captureOverride : inheritedCaptureRange
+        if let chosenLocalTrip { return chosenLocalTrip.captureRange }
+        return usingCaptureOverride ? captureOverride : inheritedCaptureRange
+    }
+
+    private var activeMapMembership: XDriveIOSNativeLocalMapMembership {
+        .init(captureRange: activeCaptureRange, tripID: chosenLocalTrip?.id)
     }
 
     private func setCaptureRange(_ range: XDriveIOSNativePhotoMapCaptureRange?) {
+        // Manual date choices return to the full date/GPS membership. A
+        // previous curated GPS trip cannot silently stay active underneath.
+        chosenLocalTrip = nil
         usingCaptureOverride = true
         captureOverride = range
     }
@@ -1424,7 +1458,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                     sceneActive: phase == .active
                                 ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
                                     candidate, filter: mediaFilter,
-                                    filenameTerm: filenameTerm
+                                    filenameTerm: filenameTerm,
+                                    tripScope: chosenLocalTrip
                                 ) else { return }
                                 singleViewer = candidate
                             } else {
@@ -1432,7 +1467,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                     cells: cells, viewport: globalViewport,
                                     mediaFilter: mediaFilter,
                                     captureRange: activeCaptureRange,
-                                    filenameTerm: filenameTerm)
+                                    filenameTerm: filenameTerm,
+                                    tripScope: chosenLocalTrip)
                             }
                         },
                         onCamera: { current in
@@ -1525,7 +1561,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                           selected.allSatisfy({
                             XDriveIOSMapCurrentPhotoKitAdmission.allows(
                                 $0, filter: mediaFilter,
-                                filenameTerm: filenameTerm
+                                filenameTerm: filenameTerm,
+                                tripScope: chosenLocalTrip
                             )
                           }) else { return }
                     cameraReturn = region
@@ -1632,6 +1669,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button("全部日期") { setCaptureRange(nil) }
+                    Button("最近的日子与旅行") {
+                        showingRecentDaysAndTrips = true
+                    }
+                    .accessibilityIdentifier("native-ios-local-map-recent-trips")
                     Button("最近 7 天") {
                         setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
                     }
@@ -1723,6 +1764,32 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingRecentDaysAndTrips, onDismiss: {
+            // Presenters may stay covered while the sheet's UIKit dismissal
+            // runs. Commit a new exact scope only AFTER the sheet is gone.
+            if let trip = pendingTrip {
+                pendingTrip = nil
+                pendingRecentDay = nil
+                guard trip.valid,
+                      XDriveIOSNativePhotoFingerprintIndex.isCurrent(
+                        trip.libraryEpoch),
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                else { return }
+                mapScope = .library
+                chosenLocalTrip = trip
+                usingCaptureOverride = false
+                captureOverride = nil
+            } else if let day = pendingRecentDay {
+                pendingRecentDay = nil
+                mapScope = .library
+                setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.day(day))
+            }
+        }) {
+            XDriveIOSNativeLocalRecentDaysAndTrips(
+                chooseDay: { pendingRecentDay = $0; pendingTrip = nil },
+                chooseTrip: { pendingTrip = $0; pendingRecentDay = nil }
+            )
         }
         .alert(item: $currentLocation.alert) { issue in
             Alert(title: Text("无法获取当前位置"),
@@ -1847,7 +1914,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             globalCamera = target
             onLibraryCameraChange?(target)
         }
-        .onChange(of: activeCaptureRange) { _ in
+        .onChange(of: activeMapMembership) { _ in
+            // Even when capture timestamps are unchanged, a new trip's
+            // verified GPS day/cell set is a different map. One Equatable
+            // membership key coalesces a simultaneous date + trip change
+            // into a single cancellation and PhotoKit re-scan.
             onLibraryCameraChange?(nil)
             clearReturnCamera()
             if phase == .active && mapScope == .library { scanFullLibrary() }
@@ -2109,7 +2180,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 let total = try await worker.startMap(
                     atOffset: 0, album: album, mediaFilter: mediaFilter,
                     captureRange: activeCaptureRange,
-                    filenameTerm: filenameTerm
+                    filenameTerm: filenameTerm,
+                    tripScope: chosenLocalTrip
                 )
                 var index = XDriveIOSNativeLocalMapSpatialIndex<XDrivePhotoKitLocatedCandidate>()
                 var scanned = 0

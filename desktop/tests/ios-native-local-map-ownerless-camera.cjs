@@ -9,7 +9,7 @@ const read = p => fs.readFileSync(path.resolve(__dirname, '../..', p), 'utf8')
 const screen = read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
 const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 const local = screen.match(/case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(([\s\S]*?)\n\s*case \.cloud:/)?.[1]
-const cloud = screen.match(/case \.cloud:\s*if cloudSourceAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(([\s\S]*?)\n\s*\} else \{/)?.[1]
+const cloud = screen.match(/case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(([\s\S]*?)\n\s*\} else \{/)?.[1]
 
 test('signed-out local PhotoKit map can update its transient map camera', () => {
   assert.ok(local, 'native local map source must exist')
