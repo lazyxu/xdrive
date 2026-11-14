@@ -1,0 +1,111 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = p => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8')
+
+const shared = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
+const policy = read('ios/XDriveIOS/NativePhotoWallDensityPolicy.swift')
+const unified = read('ios/XDriveIOS/NativeUnifiedPhotoWall.swift')
+const gallery = read('ios/XDriveIOS/NativeUnifiedPhotoGallery.swift')
+const owner = read('ios/XDriveIOS/NativeOwnerMapClusterAlbum.swift')
+const cloud = read('ios/XDriveIOS/NativeServerMediaGallery.swift')
+const local = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
+const album = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
+const webState = read('ui/shared/src/mui/MediaGalleryPhotoWallState.ts')
+const webGallery = read('ui/shared/src/mui/MediaGallery.tsx')
+const webPlaces = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+const nativeUnit = read('ios/tests/NativePhotoWallDensityPolicyChecks.swift')
+const nativeRuntime = read('ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift')
+
+test('P1-1/P1-2: unified and Owner map use the identical UI-only Section List', () => {
+  for (const source of [unified, owner, local, album, cloud]) {
+    assert.match(source, /XDriveIOSNativePhotoWallSectionList\(/)
+  }
+  assert.match(shared, /struct XDriveIOSNativePhotoWallSectionList<Section: Identifiable, Item: Identifiable, Tile: View>/)
+  assert.match(shared, /XDriveIOSNativePhotoWallDayHeader\(title: heading\)/)
+  assert.match(shared, /XDriveIOSNativePhotoWallGrid\(density: density\)/)
+  assert.match(shared, /ForEach\(items\(section\)\) \{ item in tile\(item\) \}/)
+  assert.match(unified, /xdriveIOSNativePhotoWallVisibleSections\(\s*model\.rows, scale: timeScale/)
+  assert.match(owner, /xdriveIOSNativePhotoWallVisibleSections\(\s*tiles, scale: wallTimeScale/)
+  assert.match(owner, /if activeOwner \{\s*XDriveIOSNativePhotoWallSectionList\(/)
+  assert.doesNotMatch(unified, /Dictionary\(grouping: model\.rows\)/)
+  assert.doesNotMatch(owner, /XDriveIOSNativePhotoWallGrid\(density: wallDensity\)/)
+  assert.doesNotMatch(shared, /PHAsset|PHPhotoLibrary|URLSession|accessToken|verifiedAuthorization|UploadSession/)
+})
+
+test('P1-3: only adjacent, committed current-generation Gallery pages suppress dates', () => {
+  assert.match(policy, /struct XDriveIOSNativeUnifiedPageDateBoundary: Equatable/)
+  assert.match(policy, /nextPage == page \+ 1/)
+  assert.match(policy, /count > 0, count <= 48/)
+  assert.match(policy, /previous != "unknown" && previous == scale\.key\(for: firstCapturedAt\)/)
+  assert.match(unified, /guard index\.commit\(page: page, count: model\.rows\.count, next: model\.next\)/)
+  assert.match(unified, /index\.pages\[page - 1\]\.end == index\.pages\[page\]\.start/)
+  assert.match(unified, /pageDateBoundaries\[page\] = \.init\(/)
+  assert.match(unified, /pageDateBoundaries\.count > 4/)
+  assert.match(unified, /pageDateBoundaries\.removeValue\(forKey: farthest\)/)
+  assert.match(unified, /pageDateBoundaries = \[:\][\s\S]*?index = \.init/)
+  assert.match(unified, /section\.id == 0 && model\.completed &&[\s\S]*?continuesPreviousDate/)
+  assert.match(nativeUnit, /unified\.continues\(nextPage: 1/)
+  assert.match(nativeUnit, /!unified\.continues\(nextPage: 2/)
+  assert.doesNotMatch(policy, /PHAsset|URLSession|OwnerRoot|accessToken/)
+})
+
+test('P1-4: same native density, crop and accessible menu without copying unsafe actions', () => {
+  for (const source of [unified, owner, local, album, cloud]) {
+    if (source === unified) continue // The page receives density from the Gallery parent.
+    assert.match(source, /XDriveIOSNativePhotoWallDisplayMenu\(/)
+  }
+  assert.match(gallery, /XDriveIOSNativePhotoWallDisplayMenu\(/)
+  assert.match(owner, /accessibilityID: "native-ios-owner-map-cluster-more"/)
+  assert.match(gallery, /accessibilityID: "native-ios-unified-wall-density"/)
+  assert.match(shared, /\.frame\(minWidth: 44, minHeight: 44\)/)
+  assert.match(owner, /Button\("重新核对当前位置照片"\)[\s\S]*?\.disabled\(busy \|\| !activeOwner \|\| viewing != nil\)/)
+  assert.doesNotMatch(shared, /deleteAssets\(|PHAssetChangeRequest|NodeWriter/)
+})
+
+test('P1-5: no Viewer focus until current verified page grants the exact tile', () => {
+  assert.match(unified, /let loaded: \(\[String\]\) -> Void/)
+  assert.match(unified, /loaded\(model\.rows\.map\(\\\.id\)\)/)
+  assert.match(gallery, /loaded: \{ verifiedIDs in/)
+  assert.match(gallery, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
+  assert.match(gallery, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.match(gallery, /viewerOpeningPage != viewerReturnPage/)
+  assert.doesNotMatch(gallery, /scroll\.scrollTo\(anchor, anchor: \.center\)/)
+  assert.match(owner, /XDriveIOSNativePhotoWallWindowPolicy\.canRestore\(/)
+  assert.match(owner, /sameVisibleRevision\(as: \$1\)/)
+  assert.match(owner, /xdrivePhotoWallFocusVerifiedTile\(\s*anchor\.id, scroll: returnScroll, focus: \$focusedTileID/)
+  assert.match(owner, /focusedTileID = nil/)
+  assert.match(shared, /func xdrivePhotoWallScrollVerifiedTile<ID: Hashable>/)
+})
+
+test('P2-6: Gallery and trusted Places share numeric-only viewport identity and auto-page policy', () => {
+  assert.match(webState, /function useXDriveMediaGalleryViewportAnchor\(/)
+  assert.match(webState, /Number\.isSafeInteger\(index\)/)
+  assert.match(webState, /Math\.max\(-10_000/)
+  assert.match(webState, /function xDriveMediaGalleryShouldLoadVisibleTail\(/)
+  assert.match(webGallery, /useXDriveMediaGalleryViewportAnchor\(\)/)
+  assert.match(webPlaces, /useXDriveMediaGalleryViewportAnchor\(\)/)
+  assert.match(webPlaces, /xDriveMediaGalleryShouldLoadVisibleTail\(/)
+  assert.match(webPlaces, /requestAutoLoad\(list\.scrollHeight-list\.scrollTop-list\.clientHeight\)/)
+  assert.match(webPlaces, /onRangeChange: notifyRange/)
+  assert.match(webPlaces, /onWindowRange/)
+  assert.match(webPlaces, /onRetryWindow/)
+  assert.doesNotMatch(webState, /fetch\(|OwnerRoot|CellItems|photo_url|accessToken|localStorage\.setItem/)
+})
+
+test('P2-7: same native header, grid, spacing and repeatable real Simulator visual attachments', () => {
+  assert.match(shared, /XDriveIOSNativePhotoWallDayHeader\(title: heading\)/)
+  assert.match(shared, /spacing: CGFloat = 10/)
+  assert.match(owner, /LazyVStack\(alignment: \.leading, spacing: 10\)/)
+  assert.match(cloud, /sections: visibleSections\(verified\), density: density,\s*spacing: 10/)
+  assert.match(unified, /VStack\(alignment: \.leading, spacing: 10\)/)
+  assert.match(nativeRuntime, /func testGalleryAndPlaceWallShareDateControlsAndCaptureBothOrientations\(\)/)
+  assert.match(nativeRuntime, /"gallery-places-parity-" \+ stage/)
+  assert.match(nativeRuntime, /XCUIDevice\.shared\.orientation = \.landscapeLeft/)
+  assert.match(nativeRuntime, /XCUIDevice\.shared\.orientation = \.portrait/)
+  assert.match(nativeRuntime, /"native-ios-shared-photo-time-scale"/)
+  // Screenshots are generated by the real XCTest; this source guard is not
+  // a claim that physical iOS dark-mode, 100k or pixel-perfect checks ran.
+})
