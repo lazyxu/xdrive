@@ -1039,11 +1039,32 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             guard query.matches(video: video, live: live,
                                 capturedAt: asset.creationDate, names: names)
             else { return nil }
+            if row.presence == .localOnly {
+                // A prior unmatched result is not permanent. Re-hash this
+                // CURRENT local original (network disabled) and query the
+                // current Owner's exact-match index again before opening it.
+                // Unavailable iCloud-only originals fail closed, not "absent".
+                guard row.cloud == nil, row.match == nil,
+                      let auth = try? await login.verifiedAuthorization(),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner),
+                      let probe = try? await XDriveIOSNativeExactPhotoProbe.read(local),
+                      let replies = try? await XDriveIOSNativeMediaGalleryReader(
+                        owner: owner, accessToken: auth.accessToken
+                      ).exactMatches([probe]),
+                      replies.count == 1,
+                      replies[0].state == .unmatched,
+                      XDriveIOSNativePhotoFingerprintIndex.isCurrent(library)
+                else { return nil }
+            }
             return XDriveIOSNativeUnifiedPhoto(
                 local: local, cloud: currentCloud, match: row.match,
                 presence: row.presence, capturedAt: asset.creationDate, reason: row.reason)
         }
-        guard let cloud = row.cloud,
+        // A cloud-only negative match needs the original complete, still-
+        // current local library proof. New PhotoKit assets invalidate it.
+        guard row.presence == .cloudOnly, row.local == nil, row.match == nil,
+              XDriveIOSNativePhotoFingerprintIndex.isCurrent(library),
+              let cloud = row.cloud,
               let auth = try? await login.verifiedAuthorization(),
               XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
         else { return nil }
