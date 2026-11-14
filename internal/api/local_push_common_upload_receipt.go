@@ -17,8 +17,9 @@ import (
 const localPushCommonReceiptMaxBody = 256
 
 type localPushCommonReceiptSelector struct {
-	OperationID string `json:"operation_id"`
-	ResumeKey   string `json:"resume_key"`
+	OperationID      string `json:"operation_id"`
+	ResumeKey        string `json:"resume_key"`
+	OriginalRevision uint64 `json:"original_revision,omitempty"`
 }
 
 // This private reply is a SQL original-Operation checkpoint, not proof that a
@@ -71,6 +72,16 @@ func (s *Server) readBoundLocalPushCommonUploadOriginal(
 	if !ok || proof.SourceRevision != revision {
 		return out, deny
 	}
+	// The request always authenticates the CURRENT Source revision. An
+	// earlier original is readable only if its owning session, Root and
+	// managed target still match and its SQL outcome is committed.
+	originalRevision := sel.OriginalRevision
+	if originalRevision == 0 {
+		originalRevision = revision
+	}
+	if originalRevision > revision {
+		return out, deny
+	}
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		owner, source, fingerprint, err := s.localPushOperationIntentScopeTx(
 			tx, c, sourceID, revision, proof)
@@ -90,20 +101,23 @@ func (s *Server) readBoundLocalPushCommonUploadOriginal(
 		if op.ResumeKey != sel.ResumeKey || op.SourceID != sourceID ||
 			op.OwnerID != owner.ID || op.OwnerSession != owner.SessionVersion ||
 			op.DeviceID != proof.DeviceID || op.RootID != proof.RootID ||
-			op.RootFingerprint != fingerprint || op.SourceRevision != revision ||
+			op.RootFingerprint != fingerprint || op.SourceRevision != originalRevision ||
 			op.SourceTargetID != *source.TargetNodeID ||
 			op.TotalSize < 0 || !validSHA256(op.ContentSHA256) ||
 			(op.TargetParentID == nil) == (op.TargetNodeID == nil) {
 			return deny
 		}
 		out = localPushCommonReceiptDTO{
-			SourceID: sourceID, Revision: revision,
+			SourceID: sourceID, Revision: originalRevision,
 			OperationID: op.OperationID, State: op.State,
 			BackupComplete: false, RetirementSafe: false,
 			CurrentCASVerified: false,
 		}
 		switch op.State {
 		case meta.LocalPushCommonUploadReserved, meta.LocalPushCommonUploadBound:
+			if originalRevision != revision {
+				return deny // no cross-version replay of an unfinished Operation
+			}
 			if op.CommittedAt != nil || op.ResultNodeID != nil ||
 				op.ResultNodeRevision != 0 {
 				return deny

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent,
-  DialogTitle, Stack, TextField, Typography,
+  Alert, Button, Checkbox, Dialog, DialogActions, DialogContent,
+  DialogTitle, FormControlLabel, Stack, TextField, Typography,
 } from '@mui/material'
 
 // Only the owning Desktop can provide these capabilities. The Server
@@ -12,6 +12,8 @@ export interface XDriveLocalBackupCreateActions {
   create(name: string, targetNodeID: number): Promise<{ id: number; revision: number }>
   authorize(sourceID: number): Promise<{ cancelled: boolean }>
   discard(sourceID: number, revision: number): Promise<unknown>
+  // Explicit opt-in. The owning Agent alone saves the plan and starts the durable batch.
+  activateAuto?: (sourceID: number) => Promise<void>
 }
 
 type LocalDraft = { id: number; revision: number }
@@ -38,6 +40,7 @@ export function XDriveDeviceBackupLocalCreateDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [draft, setDraft] = useState<LocalDraft | null>(null)
+  const [startAutomatic, setStartAutomatic] = useState(false)
   const normalizedName = name.trim()
   const validName = normalizedName.length > 0 &&
     new TextEncoder().encode(normalizedName).length <= 128
@@ -46,6 +49,7 @@ export function XDriveDeviceBackupLocalCreateDialog({
     if (!open) return
     setName('')
     setDraft(null)
+    setStartAutomatic(false)
     setError('')
   }, [open])
 
@@ -59,8 +63,21 @@ export function XDriveDeviceBackupLocalCreateDialog({
         onClose()
         return
       }
+      // The Source is now bound: it is no longer a disposable, unbound draft.
+      // If a subsequent API result is unknown, do not reopen the native picker
+      // or try to discard/recreate the potentially active Source.
       setDraft(null)
-      onFinished('本机目录已授权；云端专属目标由 Server 自动创建，备份执行器尚未启用')
+      if (startAutomatic && actions.activateAuto) {
+        try {
+          await actions.activateAuto(current.id)
+          onFinished('本机目录已授权；已保存每 6 小时自动计划并提交首次增量备份。请查看本机运行状态；任务提交不代表文件已备份完成。')
+        } catch (failure) {
+          onFinished('本机目录已授权，但自动计划或首次运行的结果未确认：' +
+            safeMessage(failure) + '。请先检查该来源的计划与运行记录，勿重新创建来源或盲目重发未知任务。')
+        }
+      } else {
+        onFinished('本机目录已授权；云端专属目标由 Server 自动创建。可手动启动增量备份或单独配置自动计划。')
+      }
       onClose()
     } catch (failure) {
       // A timed-out native grant may have committed a Root binding. Never
@@ -131,7 +148,7 @@ export function XDriveDeviceBackupLocalCreateDialog({
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Alert severity="info">
             仅为当前 Desktop 创建备份来源。云端目标由 Server 根据已验证的设备身份自动创建；
-            本机 Root 须由原生选择器单独授权，当前不会自动扫描、上传或删除文件。
+            本机 Root 须由原生选择器单独授权；默认不自动扫描或上传，不会删除本机或云端文件。
           </Alert>
           <TextField
             label="同步文件夹名称"
@@ -142,6 +159,21 @@ export function XDriveDeviceBackupLocalCreateDialog({
             helperText="最多 128 字节"
             fullWidth size="small"
           />
+          {actions.activateAuto ? (
+            <FormControlLabel
+              control={(
+                <Checkbox checked={startAutomatic} disabled={busy}
+                  onChange={(_, checked) => setStartAutomatic(checked)} />
+              )}
+              label="授权后立即开始首次备份，并每 6 小时自动增量备份"
+            />
+          ) : null}
+          {startAutomatic && actions.activateAuto ? (
+            <Typography variant="caption" color="text.secondary">
+              本机 Agent 将在目录授权成功后立即扫描并上传文件。首次运行确认后，
+              已保存的自动计划才会生效；关闭窗口不会停止 Agent 的后台任务。
+            </Typography>
+          ) : null}
           <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
             云端目标由 Server 根据已验证的设备与 Source 自动创建；实际目录路径以 Server 返回的受管目标为准。
           </Typography>
