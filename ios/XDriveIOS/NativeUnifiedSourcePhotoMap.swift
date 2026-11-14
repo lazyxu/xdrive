@@ -9,7 +9,9 @@ import UIKit
 /// it never persists PhotoKit identifiers, coordinates or cloud credentials.
 private enum XDriveIOSUnifiedSourceMapPolicy {
     static let maximumPages = 10_000
-    static let maximumWallSeekPages = 256
+    // A sparse 48-row Gallery window may have >256 nonmatching pages
+    // between two GPS members. Do not stop before the proved map's bound.
+    static let maximumWallSeekPages = maximumPages
 
     static func canonicalLongitude(_ longitude: Double) -> Double {
         // WGS84's +180 and -180 describe the SAME meridian. Unify before
@@ -17,14 +19,24 @@ private enum XDriveIOSUnifiedSourceMapPolicy {
         longitude == 180 ? -180 : longitude
     }
 
-    static func bucket(latitude: Double, longitude: Double) -> Int? {
-        guard XDriveIOSNativePhotoMapPolicy.validCoordinate(
-            latitude: latitude, longitude: longitude
-        ) else { return nil }
-        let lat = min(7, max(0, Int(floor((latitude + 90) / 180 * 8))))
-        let canonical = canonicalLongitude(longitude)
-        let lon = min(7, max(0, Int(floor((canonical + 180) / 360 * 8))))
-        return lat * 8 + lon
+    // Exactly the same origin-aligned, power-of-two grid as the existing
+    // PhotoKit MapKit scanner. The verified source is re-enumerated on zoom
+    // rather than spreading an old global cell's count across smaller pins.
+    static func cellKey(latitude: Double, longitude: Double, level: Int)
+        -> XDriveIOSNativeLocalMapSpatialPolicy.Key? {
+        XDriveIOSNativeLocalMapSpatialPolicy.key(
+            latitude: latitude, longitude: longitude, level: level)
+    }
+
+    static func member(
+        latitude: Double, longitude: Double,
+        key: XDriveIOSNativeLocalMapSpatialPolicy.Key,
+        viewport: XDriveIOSNativeLocalMapViewport?
+    ) -> Bool {
+        XDriveIOSNativeLocalMapSpatialPolicy.includes(
+            viewport, latitude: latitude, longitude: longitude) &&
+        cellKey(latitude: latitude, longitude: longitude,
+                level: key.level) == key
     }
 
     static func coordinates(
@@ -37,7 +49,8 @@ private enum XDriveIOSUnifiedSourceMapPolicy {
                   let asset = PHAsset.fetchAssets(
                     withLocalIdentifiers: [local.id], options: nil
                   ).firstObject, let position = asset.location?.coordinate,
-                  bucket(latitude: position.latitude, longitude: position.longitude) != nil
+                  XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                      latitude: position.latitude, longitude: position.longitude)
             else { return nil }
             return CLLocationCoordinate2D(
                 latitude: position.latitude,
@@ -45,7 +58,8 @@ private enum XDriveIOSUnifiedSourceMapPolicy {
         }
         if let metadata = row.cloud?.metadata, let latitude = metadata.latitude,
            let longitude = metadata.longitude,
-           bucket(latitude: latitude, longitude: longitude) != nil {
+           XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                latitude: latitude, longitude: longitude) {
             return CLLocationCoordinate2D(
                 latitude: latitude,
                 longitude: canonicalLongitude(longitude))
@@ -54,13 +68,22 @@ private enum XDriveIOSUnifiedSourceMapPolicy {
     }
 }
 
+private struct XDriveIOSUnifiedSourceMapSeed {
+    let row: XDriveIOSNativeUnifiedPhoto
+    let cursor: XDriveIOSNativeGalleryCursor
+}
+
 private struct XDriveIOSUnifiedSourceMapPin: Identifiable {
-    let id: Int
-    var latitude: Double
-    var longitude: Double
-    var count: Int
-    // Offset/cursor only, never saved or trusted as a media access token.
+    let key: XDriveIOSNativeLocalMapSpatialPolicy.Key
+    let latitude: Double
+    let longitude: Double
+    let count: Int
+    // A display hint only; live membership and Owner admission are required
+    // before presenting its original image or Cloud Node.
+    let representative: XDriveIOSNativeUnifiedPhoto
+    let viewport: XDriveIOSNativeLocalMapViewport?
     let firstCursor: XDriveIOSNativeGalleryCursor
+    var id: String { key.id }
 }
 
 /// The map is published only after the COMPLETE verified source filter has
