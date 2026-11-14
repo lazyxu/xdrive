@@ -481,6 +481,89 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         }
     }
 
+    /// M03: viewport repartition is local O(N) arithmetic after the first
+    /// verified source scan. Reopen only representative source pages (<=64)
+    /// to recheck current Owner/PhotoKit authority and photo identity.
+    private func regroupCachedCoordinates() {
+        guard canReuseLocationIndex, let owner = cachedOwner,
+              let library = cachedLibrary else { reload(); return }
+        let ticket = generation
+        let scopedCamera = camera
+        let viewport = currentViewport
+        let cursors = cachedCursors
+        let coordinates = cachedCoordinates
+        busy = true
+        scanTask = Task { @MainActor in
+            defer { if generation == ticket { busy = false; scanTask = nil } }
+            do {
+                var index =
+                    XDriveIOSNativeLocalMapSpatialIndex<XDriveIOSUnifiedSourceCachedCoordinate>()
+                for point in coordinates {
+                    try Task.checkCancellation()
+                    if XDriveIOSNativeLocalMapSpatialPolicy.includes(
+                        viewport, latitude: point.latitude,
+                        longitude: point.longitude) {
+                        index.add(latitude: point.latitude,
+                                  longitude: point.longitude, representative: point)
+                    }
+                }
+                var validatedPages: [Int: [XDriveIOSNativeUnifiedPhoto]] = [:]
+                var result: [XDriveIOSUnifiedSourceMapPin] = []
+                for cell in index.cells {
+                    try Task.checkCancellation()
+                    let sample = cell.representative
+                    guard generation == ticket, canReuseLocationIndex,
+                          cursors.indices.contains(sample.page)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                    let rows: [XDriveIOSNativeUnifiedPhoto]
+                    if let cached = validatedPages[sample.page] {
+                        rows = cached
+                    } else {
+                        let page = XDriveIOSNativeUnifiedPhotoTimeline()
+                        await page.load(from: cursors[sample.page], filter: presence,
+                                        login: login, query: scopedQuery, library: library)
+                        try Task.checkCancellation()
+                        guard generation == ticket, canReuseLocationIndex,
+                              page.completed, page.notice == nil
+                        else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                        rows = page.rows
+                        validatedPages[sample.page] = rows
+                    }
+                    guard rows.indices.contains(sample.ordinal),
+                          rows[sample.ordinal].presence == presence,
+                          let live = XDriveIOSUnifiedSourceMapPolicy.coordinates(
+                            for: rows[sample.ordinal]),
+                          live.latitude == sample.latitude,
+                          live.longitude == sample.longitude,
+                          XDriveIOSUnifiedSourceMapPolicy.member(
+                            latitude: live.latitude, longitude: live.longitude,
+                            key: cell.key, viewport: viewport)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                    result.append(XDriveIOSUnifiedSourceMapPin(
+                        key: cell.key, latitude: cell.latitude,
+                        longitude: cell.longitude, count: cell.count,
+                        representative: rows[sample.ordinal],
+                        viewport: viewport, firstCursor: cursors[sample.page]))
+                }
+                guard generation == ticket, canReuseLocationIndex else { return }
+                pins = result
+                mapRevision = UUID()
+                provedOwner = owner
+                provedLibrary = library
+                provedCamera = scopedCamera
+                loadCovers(result, owner: owner, ticket: ticket)
+            } catch is CancellationError {
+            } catch {
+                guard generation == ticket else { return }
+                pins = []
+                cachedOwner = nil; cachedLibrary = nil
+                cachedCoordinates = []; cachedCursors = []
+                provedOwner = nil; provedLibrary = nil; provedCamera = nil
+                self.error = "来源位置索引已变化，需重新核验地图。"
+            }
+        }
+    }
+
     private func loadCovers(
         _ verifiedPins: [XDriveIOSUnifiedSourceMapPin],
         owner: XDriveNativeOwnerRoot, ticket: UUID
