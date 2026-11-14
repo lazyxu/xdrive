@@ -86,18 +86,22 @@ class DriveAppTest {
     // It is opt-in so existing File/Gallery tests retain their old policy.
     private var clipboardUiFixture = false
     private var clipboardNodeStale = false
-    private var clipboardRevoked = false
-    private var clipboardRevokes = 0
+    @Volatile private var clipboardRevoked = false
+    @Volatile private var clipboardRevokes = 0
     private var clipboardRevokeErrorCode: Int? = null
     private var clipboardUnknownAck = false
     private var clipboardManyFiles = false
-    private var clipboardImports = 0
+    @Volatile private var clipboardImports = 0
     private var clipboardBadUploadReceipt = false
     private var clipboardSecondOwner = false
     private var clipboardDevicesGate: CompletableDeferred<Unit>? = null
     private var clipboardImageUri: Uri? = null
     private val clipboardTargetID = "123e4567-e89b-42d3-a456-426614174000"
-    private val clipboardWrites = mutableListOf<XDriveClipboardWrite>()
+    // Emulator instrumentation observes these writes from its test thread,
+    // while Compose's coroutine writes on Main. Synchronize observation; an
+    // invisible fixture write must not masquerade as a timeout/failing UI.
+    private val clipboardWrites =
+        java.util.Collections.synchronizedList(mutableListOf<XDriveClipboardWrite>())
     private val clipboardFile = DriveNode(55, 1, "clip.png", "file", size = 32, revision = 4)
     private val clipboardDevice = OwnerClipboardDevice(clipboardTargetID, "Fixture Clip", "android")
     private var filesViewerFixture = false
