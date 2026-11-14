@@ -22,6 +22,17 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     private var job: Task<Void, Never>?
     private var currentReader: XDriveIOSNativeMediaGalleryReader?
 
+    // Read-time visual fence, independent of the later SwiftUI onChange.
+    // Never paint a retained Owner A page under Owner B while a delayed
+    // Range, thumbnail or a 401/403 response is still arriving.
+    func visiblePage(for currentOwner: XDriveNativeOwnerRoot?) -> XDriveIOSNativeMediaRange? {
+        guard let page, let pageScope, let currentReader,
+              XDriveIOSNativePhotoOwnerScope.matches(currentOwner, pageScope),
+              XDriveIOSNativePhotoOwnerScope.matches(currentReader.owner, pageScope)
+        else { return nil }
+        return page
+    }
+
     func invalidate() {
         epoch = UUID()
         job?.cancel()
@@ -213,6 +224,10 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                     self?.error = "当前账户身份验证失败，已隐藏旧云端照片；请重新登录或重试。"
                     return
                 }
+                try Task.checkCancellation()
+                guard self?.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
                     self?.invalidate()
                     self?.error = "当前服务器或 Owner 已变化，旧图库已清除。"
@@ -240,7 +255,9 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 self?.failedOffset = nil
             } catch is CancellationError {
             } catch {
-                guard self?.epoch == ticket else { return }
+                guard self?.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 // A verified Server can still revoke access or delete an
                 // album between page requests. Never show cached rows after
                 // a definitive 4xx/invalid response, even if the Owner was
@@ -1359,6 +1376,13 @@ private struct XDriveIOSNativeServerVirtualRange: View {
         ) { timeScale.key(forISO8601: $0.metadata.captured_at) }
     }
 
+    // Owner IDs can be reused by another server/instance. The complete
+    // transient identity must restart a mounted virtual Range's .task.
+    private var ownerTaskScope: String {
+        guard let owner = login.owner else { return "signed-out" }
+        return "\(owner.origin.absoluteString)|\(owner.instanceID)|\(owner.ownerID)|\(owner.username)|\(owner.rootNodeID)"
+    }
+
     private var placeholders: some View {
         XDriveIOSNativePhotoWallGrid(density: density) {
             ForEach(0..<min(48, max(0, expectedTotal - offset)), id: \.self) { _ in
@@ -1369,7 +1393,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            if let verified = model.page,
+            if let verified = model.visiblePage(for: login.owner),
                verified.offset == offset, verified.total_count == expectedTotal {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(visibleSections(verified)) { section in
@@ -1416,14 +1440,14 @@ private struct XDriveIOSNativeServerVirtualRange: View {
             }
         }
         .id("cloud-range:\(offset)")
-        .task(id: "\(offset)-\(search)-\(captureRange?.fromRFC3339 ?? "")-\(captureRange?.toRFC3339 ?? "")-\(albumID ?? "")-\(placeID ?? "")-\(login.owner?.ownerID ?? 0)-\(viewerActive)") {
+        .task(id: "\(offset)-\(search)-\(captureRange?.fromRFC3339 ?? "")-\(captureRange?.toRFC3339 ?? "")-\(albumID ?? "")-\(placeID ?? "")-\(ownerTaskScope)-\(viewerActive)") {
             guard !viewerActive else { return }
             model.load(login: login, albumID: albumID, placeID: placeID,
                        offset: offset, search: search,
                         captureRange: captureRange)
         }
         .onChange(of: model.busy) { pending in
-            guard !pending, let page = model.page else { return }
+            guard !pending, let page = model.visiblePage(for: login.owner) else { return }
             guard page.offset == offset, page.total_count == expectedTotal,
                   page.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
                   XDriveIOSNativePhotoAssetRangeCursorPolicy.validPage(
@@ -1537,7 +1561,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                     Text("搜索词不能超过 200 个字符。")
                         .font(.caption).foregroundStyle(.red)
                 }
-                if let page = model.page {
+                if let page = model.visiblePage(for: login.owner) {
                     HStack(spacing: 8) {
                         Text(page.total_count == 0 ?
                             "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :

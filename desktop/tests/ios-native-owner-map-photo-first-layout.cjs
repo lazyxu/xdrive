@@ -25,7 +25,7 @@ test('compact map status does not crowd ordinary portrait, but keeps truthful st
   assert.match(screen, /Text\("当前视窗已有 [\s\S]*?\.font\(\.caption\)\.monospacedDigit\(\)[\s\S]*?\.fixedSize\(horizontal: false, vertical: true\)[\s\S]*?native-ios-owner-map-verified-count/)
   assert.match(screen, /Text\("上次验证视窗有 [\s\S]*?\.foregroundStyle\(\.secondary\)[\s\S]*?\.fixedSize\(horizontal: false, vertical: true\)[\s\S]*?native-ios-owner-map-stale-count/)
   assert.match(screen, /Text\("区域仍为聚合结果[\s\S]*?\.fixedSize\(horizontal: false, vertical: true\)/)
-  const countBlock = screen.slice(screen.indexOf('if let overview {'),
+  const countBlock = screen.slice(screen.indexOf('if let overview, displayedOverviewMatchesLogin {'),
                                    screen.indexOf('if let activeCaptureRange'))
   assert.doesNotMatch(countBlock, /\.lineLimit\(1\)/)
   assert.match(screen, /if busy \{ ProgressView\("核对当前 Owner 地图位置…"\) \}/)

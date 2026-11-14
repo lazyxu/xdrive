@@ -440,14 +440,18 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
   assert.match(spatialAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/);
   assert.match(spatialAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/);
   assert.match(spatialAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard XDriveIOSNativePhotoWallWindowPolicy\.shouldAdvance\(\s*footVisible: scrollFootVisible, hasNext: hasNext, busy: busy,[\s\S]*?failed: error != nil, viewerOpen: viewer != nil,[\s\S]*?scopeActive: phase == \.active/);
-  assert.doesNotMatch(spatialAlbum, /DragGesture\(minimumDistance: 12\)|Button\("继续浏览下一批照片"\)/);
+  assert.doesNotMatch(spatialAlbum, /Button\("继续浏览下一批照片"\)/);
+  // Performance-only simultaneous touch observer never controls next-window
+  // paging; the lazy-grid sentinel above remains the sole paging trigger.
+  assert.match(spatialAlbum, /\.simultaneousGesture\(\s*DragGesture\(minimumDistance: 12\)[\s\S]*?\.onChanged[\s\S]*?beginFrameWindow\("place_wall_scroll"\)[\s\S]*?\.onEnded[\s\S]*?endFrameWindow\("place_wall_scroll"\)/);
+  assert.doesNotMatch(spatialAlbum, /onEnded\s*\{[^}]*?(loadNext|advanceIfVisible)\(/);
   assert.match(spatialAlbum, /priorWindow = departingItems\s*autoScrollReturnID = departingItems\.last\?\.id\s*items = result\.items/);
   assert.match(spatialAlbum, /returnScroll\.scrollTo\(anchor, anchor: \.bottom\)/);
   assert.match(spatialAlbum, /loadedItems: viewerItems/);
   assert.match(spatialAlbum, /loadedWindow\(containing: item\.id\)/);
   assert.match(spatialAlbum, /if result\.scannerFinished[\s\S]*?result\.pendingIndex >= result\.pending\.count[\s\S]*?scanner\.reset\(\)/);
   assert.match(spatialAlbum, /changes\.revision[\s\S]*?retire\(\)[\s\S]*?dismiss\(\)/);
-  assert.match(spatialAlbum, /\.onDisappear \{\s*if viewer == nil \{\s*retire\(\)[\s\S]*?changes\.stop\(\)[\s\S]*?Keep its PhotoKit cursor/);
+  assert.match(spatialAlbum, /\.onDisappear \{\s*#if DEBUG\s*XDriveIOSMapRealPerformanceProbe\.shared\.endFrameWindow\("place_wall_scroll"\)\s*#endif\s*if viewer == nil \{\s*retire\(\)[\s\S]*?changes\.stop\(\)[\s\S]*?Keep its PhotoKit cursor/);
   const loadNext = spatialAlbum.slice(spatialAlbum.indexOf('private func loadNext()'),
     spatialAlbum.indexOf('private func retire()'));
   assert.match(loadNext, /readWindow\(\s*scanner: scanner,\s*pending: pendingLocated/);

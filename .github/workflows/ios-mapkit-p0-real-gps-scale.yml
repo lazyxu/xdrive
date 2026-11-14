@@ -1,0 +1,245 @@
+name: iOS MapKit P0 real PhotoKit GPS scale audit
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled]
+    paths:
+      - '.github/workflows/ios-mapkit-p0-real-gps-scale.yml'
+      - 'ios/scripts/generate-mapkit-p0-gps-fixtures.py'
+      - 'ios/scripts/test_generate_mapkit_p0_gps_fixtures.py'
+      - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
+      - 'ios/XDriveIOS/NativeLocalPhotoMap.swift'
+      - 'ios/XDriveIOS/NativePhotoMapRealPerformanceProbe.swift'
+      - 'ios/scripts/audit_real_100k_map_perf.py'
+      - 'ios/scripts/test_audit_real_100k_map_perf.py'
+      - 'ios/scripts/import_real_gps_photos.py'
+      - 'ios/scripts/test_import_real_gps_photos.py'
+  workflow_dispatch:
+    inputs:
+      count:
+        description: Count of genuine EXIF-GPS JPEGs to import in an isolated iOS Simulator
+        required: true
+        default: '65'
+        type: choice
+        options: ['1', '10', '65', '1000', '10000', '100000']
+      pattern:
+        description: EXIF GPS distribution
+        required: true
+        default: 'distinct'
+        type: choice
+        options: ['distinct', 'same', 'dateline', 'mixed']
+permissions:
+  contents: read
+concurrency:
+  # Preserve the existing 100k group (and its non-cancellation semantics),
+  # but let cheap 65-photo PR acceptance run separately rather than queue
+  # behind a 100,000-file simulator import for hours.
+  group: ${{ ((github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'real-photokit-100k-once') || (github.event_name == 'workflow_dispatch' && inputs.count == '100000')) && format('ios-mapkit-p0-scale-{0}', github.event.pull_request.number || github.run_id) || format('ios-mapkit-p0-scale-{0}-small', github.event.pull_request.number || github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  actual-photokit-delta:
+    # Only the explicit, one-shot performance label may start a heavyweight
+    # run. Other PR labels do not launch this job.
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'real-photokit-100k-once' }}
+    runs-on: macos-15
+    # A full 100k import plus multiple real PHAsset rescans can exceed 3h.
+    # Keep the job bounded, but reserve enough time for genuine measurements.
+    timeout-minutes: 360
+    env:
+      MAP_P0_COUNT: ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'real-photokit-100k-once') && '100000' || inputs.count || '65' }}
+      MAP_P0_PATTERN: ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'real-photokit-100k-once') && 'mixed' || inputs.pattern || 'distinct' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Xcode setup and genuine isolated iOS 18.5 simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_16.4.app ]]; then
+            sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          fi
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          python3 -m unittest discover -s ios/scripts -p 'test_generate_mapkit_p0_gps_fixtures.py' -v
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_real_100k_map_perf.py' -v
+          python3 -m unittest discover -s ios/scripts -p 'test_import_real_gps_photos.py' -v
+          python3 ios/scripts/prepare-navigation-runtime-smoke.py "$GITHUB_WORKSPACE"
+          bash ios/scripts/prepare-assets.sh
+          (cd ios && xcodegen generate --spec project.yml)
+          case "$MAP_P0_COUNT" in 1|10|65|1000|10000|100000) ;; *) exit 2;; esac
+          case "$MAP_P0_PATTERN" in distinct|same|dateline|mixed) ;; *) exit 2;; esac
+          python3 - <<'PY'
+          import json,os,subprocess
+          rows=json.loads(subprocess.check_output(
+              ["xcrun","simctl","list","devices","available","-j"]))["devices"]
+          candidates=[(r,d) for r,arr in rows.items() for d in arr
+              if r.endswith("iOS-18-5") and d.get("isAvailable",True)
+              and d.get("name","")=="iPhone 16"]
+          if not candidates: raise SystemExit("iOS 18.5 iPhone 16 missing")
+          runtime,device=candidates[0]
+          sim=subprocess.check_output(["xcrun","simctl","create",
+              "xdrive-map-p0-"+os.environ["GITHUB_RUN_ID"],
+              device["deviceTypeIdentifier"],runtime],text=True).strip()
+          if not sim: raise SystemExit("Could not create isolated Simulator")
+          with open(os.environ["GITHUB_ENV"],"a") as f:
+              f.write("MAP_P0_SIM="+sim+"\n")
+          print("MAP_P0_CREATED_ISOLATED_SIMULATOR",sim)
+          PY
+          sim="$(sed -n 's/^MAP_P0_SIM=//p' "$GITHUB_ENV" | tail -1)"
+          test -n "$sim"
+          xcrun simctl erase "$sim"
+          xcrun simctl boot "$sim"
+          xcrun simctl bootstatus "$sim" -b
+      - name: Build and install real native app for baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/map-p0-results"
+          xcodebuild build -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$MAP_P0_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/map-p0-build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            > "$RUNNER_TEMP/map-p0-results/build.log" 2>&1
+          app="$RUNNER_TEMP/map-p0-build/Build/Products/Debug-iphonesimulator/xDriveIOS.app"
+          test -s "$app/xDriveIOS"
+          xcrun simctl install "$MAP_P0_SIM" "$app"
+          xcrun simctl privacy "$MAP_P0_SIM" reset all com.lazyxu.xdrive.ios
+      - name: Real PhotoKit baseline with explicit user Full Access
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$MAP_P0_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/map-p0-build" \
+            -resultBundlePath "$RUNNER_TEMP/map-p0-results/baseline.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP0RealPhotoKitIndependentGPSCountMatchesCurrentMap \
+            2>&1 | tee "$RUNNER_TEMP/map-p0-results/baseline.log"
+      - name: Import exact real EXIF-GPS asset count in bounded batches
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/map-p0-media"
+          python3 ios/scripts/generate-mapkit-p0-gps-fixtures.py \
+            --source ios/UITests/Fixtures/synthetic-gps-map.jpg \
+            --output "$output" --count "$MAP_P0_COUNT" --pattern "$MAP_P0_PATTERN"
+          # Independent import harness prints progress after *each successful*
+          # real simctl call and times out a stalled batch. Never treat the
+          # simctl exit status as proof that the Photos database has indexed
+          # all assets: the later independent PHAsset.location audit remains.
+          python3 -u ios/scripts/import_real_gps_photos.py \
+            --source-dir "$output" --simulator "$MAP_P0_SIM" \
+            --count "$MAP_P0_COUNT" --batch-size 400 --timeout-seconds 900 \
+            | tee "$RUNNER_TEMP/map-p0-results/import.log"
+      - name: Measure 100k genuine PhotoKit scans, cache reuse, wall scrolling and MapKit gestures
+        # The normal PR runs only 65 genuine assets. An explicit 100000
+        # workflow_dispatch exercises the expensive REAL 100k dataset.
+        # Do not report synthetic Swift 100k index tests as this result.
+        if: ${{ env.MAP_P0_COUNT == '100000' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$MAP_P0_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/map-p0-build" \
+            -resultBundlePath "$RUNNER_TEMP/map-p0-results/performance.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP1Real100KPhotoKitMapScanPerformance \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP1Real100KPhotoKitMapWallPerformance \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP1Real100KPhotoKitMapZoomPerformance \
+            2>&1 | tee "$RUNNER_TEMP/map-p0-results/performance.log"
+          # Copy only aggregate numeric evidence from the actual app sandbox,
+          # never a photo, filename, PHAsset ID, private GPS or iCloud original.
+          sandbox="$(xcrun simctl get_app_container "$MAP_P0_SIM" com.lazyxu.xdrive.ios data)"
+          for stage in scan wall zoom; do
+            test -s "$sandbox/tmp/ios-map-100k-${stage}-metrics.json"
+            cp "$sandbox/tmp/ios-map-100k-${stage}-metrics.json" \
+              "$RUNNER_TEMP/map-p0-results/real-app-${stage}.json"
+          done
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "map-p0-results"
+          events = []
+          for stage in ("scan", "wall", "zoom"):
+              path = root / ("real-app-" + stage + ".json")
+              report = json.loads(path.read_text(encoding="utf-8"))
+              if report.get("schema") != "xdrive.ios.map.real-photokit-perf.v1":
+                  raise SystemExit("Invalid real app performance schema")
+              if report.get("run_stage") != stage or not report.get("events"):
+                  raise SystemExit("Missing real app performance stage: " + stage)
+              events.extend(report["events"])
+          merged = {"schema": "xdrive.ios.map.real-photokit-perf.v1",
+                    "run_stages": ["scan", "wall", "zoom"],
+                    "events": events}
+          (root / "real-app-performance.json").write_text(
+              json.dumps(merged, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8")
+          print("IOS_MAP_REAL_PERF_MERGED_STAGES scan wall zoom events", len(events))
+          PY
+      - name: Independent PhotoKit and streaming MapKit count must increase by exact N
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$MAP_P0_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/map-p0-build" \
+            -resultBundlePath "$RUNNER_TEMP/map-p0-results/seeded.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests/testP0RealPhotoKitIndependentGPSCountMatchesCurrentMap \
+            2>&1 | tee "$RUNNER_TEMP/map-p0-results/seeded.log"
+          python3 - <<'PY'
+          import os,re,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"map-p0-results"
+          rx=re.compile(r"MAP_P0_REAL_PHOTOKIT_INDEPENDENT_COUNT 独立 GPS (\d+) 地图 GPS (\d+) 一致")
+          def read(name):
+              rows=rx.findall((root/name).read_text(errors="replace"))
+              if not rows: raise SystemExit("No genuine target PhotoKit GPS proof: "+name)
+              real,indexed=map(int,rows[-1])
+              if real!=indexed: raise SystemExit("Independent real GPS != MapKit GPS")
+              return real
+          before,after=read("baseline.log"),read("seeded.log")
+          wanted=int(os.environ["MAP_P0_COUNT"])
+          print(f"MAP_P0_GENUINE_PHOTOKIT_DELTA baseline={before} after={after} expected={wanted} actual={after-before}")
+          if after-before!=wanted: raise SystemExit("Real PhotoKit imported asset count did not match exact EXIF GPS delta")
+          PY
+      - name: Independently audit cold 100k evidence against real imported GPS delta
+        if: ${{ env.MAP_P0_COUNT == '100000' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ios/scripts/audit_real_100k_map_perf.py \
+            "$RUNNER_TEMP/map-p0-results/real-app-performance.json" \
+            --baseline "$RUNNER_TEMP/map-p0-results/baseline.log" \
+            --seeded "$RUNNER_TEMP/map-p0-results/seeded.log" \
+            --xctest-log "$RUNNER_TEMP/map-p0-results/performance.log" \
+            --expected 100000 \
+            --json-output "$RUNNER_TEMP/map-p0-results/100k-summary.json" \
+            --csv-output "$RUNNER_TEMP/map-p0-results/100k-summary.csv"
+      - name: Upload real PhotoKit measurements and failure logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-map-p0-real-gps-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/map-p0-results/*.log
+            ${{ runner.temp }}/map-p0-results/*.json
+            ${{ runner.temp }}/map-p0-results/*.csv
+          retention-days: 10
+          if-no-files-found: warn
+      - name: Delete only the isolated test Simulator
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${MAP_P0_SIM:-}" ]]; then
+            xcrun simctl shutdown "$MAP_P0_SIM" >/dev/null 2>&1 || true
+            xcrun simctl delete "$MAP_P0_SIM" >/dev/null 2>&1 || true
+          fi
