@@ -518,6 +518,20 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var isVisible = false
     // Match Browse's chosen presentation when switching between Files subroutes.
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
+    @State private var lastVisibleItemID: UInt64?
+    @State private var pendingModeSwitchAnchor: UInt64?
+    @State private var modeSwitchTicket = UUID()
+
+    private func chooseCollectionViewMode(_ next: String) {
+        guard (next == "list" || next == "grid"), viewMode != next else { return }
+        pendingModeSwitchAnchor = XDriveIOSNativeFilesViewModePolicy.anchor(
+            preferred: lastVisibleItemID, loaded: filteredItems.map { $0.node.id }
+        )
+        modeSwitchTicket = UUID()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { viewMode = next }
+    }
 
     /// Recent and Favorites are bounded Owner projections, not an index of all
     /// Server files. Filter locally; do not create a second search endpoint.
@@ -564,7 +578,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     ) {
                         ForEach(filteredItems) { item in
                             gridTile(item)
-                                .id(item.id)
+                                .id(item.node.id)
+                                .onAppear { lastVisibleItemID = item.node.id }
                                 .contextMenu {
                                     collectionQuickActions(for: item)
                                 }
@@ -580,7 +595,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 } else {
                     ForEach(filteredItems) { item in
                         row(item)
-                            .id(item.id)
+                            .id(item.node.id)
+                            .onAppear { lastVisibleItemID = item.node.id }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if model.verified && !model.loading && !favorites.busy {
                                     Button {
@@ -630,6 +646,36 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             )
             .navigationTitle(kind.title)
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: viewMode) { next in
+                let ticket = modeSwitchTicket
+                let anchor = pendingModeSwitchAnchor ??
+                    XDriveIOSNativeFilesViewModePolicy.anchor(
+                        preferred: lastVisibleItemID, loaded: filteredItems.map { $0.node.id }
+                    )
+                guard isVisible, model.verified, model.matches(login.owner, kind: kind),
+                      let owner = login.owner, let anchor else {
+                    pendingModeSwitchAnchor = nil
+                    return
+                }
+                Task { @MainActor in
+                    await Task.yield()
+                    guard XDriveIOSNativeFilesViewModePolicy.canRestore(
+                        ticketCurrent: ticket == modeSwitchTicket,
+                        ownerValid: XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                        pageValid: model.matches(login.owner, kind: kind),
+                        anchorVisible: filteredItems.contains(where: { $0.node.id == anchor }),
+                        expectedMode: next, currentMode: viewMode,
+                        active: phase == .active && isVisible
+                    ) else { return }
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        returnScroll.scrollTo(anchor, anchor: .center)
+                    }
+                    lastVisibleItemID = anchor
+                    pendingModeSwitchAnchor = nil
+                }
+            }
             .confirmationDialog(
                 "清空最近使用记录？",
                 isPresented: $showingClearRecentConfirmation,
@@ -650,7 +696,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Picker("显示方式", selection: $viewMode) {
+                        Picker("显示方式", selection: Binding(
+                            get: { viewMode }, set: { chooseCollectionViewMode($0) }
+                        )) {
                             Label("列表", systemImage: "list.bullet").tag("list")
                             Label("图标", systemImage: "square.grid.2x2").tag("grid")
                         }
@@ -979,14 +1027,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 node: item.node, login: login,
                 height: 72, viewerActive: selectedFile != nil
             )
-            Text(item.node.name)
-                .font(.footnote)
-                .lineLimit(2)
+            XDriveIOSNativeFilesUIStyle.tileName(item.node.name)
                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
-            Text(item.path)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            XDriveIOSNativeFilesUIStyle.metadata(item.path)
         }
         .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
         .contentShape(Rectangle())
@@ -1016,7 +1059,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
             }
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: XDriveIOSNativeFilesUIStyle.rowHeight)
     }
 
     private func entryLabel(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
@@ -1026,8 +1069,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 height: 40, width: 40, viewerActive: selectedFile != nil
             )
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.node.name).lineLimit(2)
-                Text(item.path).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                XDriveIOSNativeFilesUIStyle.rowName(item.node.name)
+                XDriveIOSNativeFilesUIStyle.metadata(item.path)
             }
             Spacer(minLength: 4)
         }
