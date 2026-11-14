@@ -89,3 +89,31 @@ test('no-session Trash child has no retry before or after landscape and foregrou
   assert.match(route, /XCUIDevice\.shared\.press\(\.home\)/)
   assert.match(route, /native-ios-files-trash-error-return/)
 })
+
+const additionalChildJourneys = [
+  'testPeopleThreeFilesQuickRailCyclesKeepUnchangedUnifiedWall',
+  'testFilesSearchBackgroundOriginalsReturnHasNoGhostKeyboard',
+  'testOriginalsHelpTwiceAcrossFilesDenialNeverLeavesGhostAlert',
+  'testFilesTrashDeniedThenPeopleChildReturnClearsOverlay',
+  'testGalleryFilterDraftForegroundFilesReturnKeepsWallGeneration',
+  'testRapidAlbumsOriginalsFilesAlternationRetainsNativeChildShells'
+]
+
+test('six more distinct real child navigation probes remain executable and frame-recorded', () => {
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  const watcher = read('ios/scripts/capture-navigation-smoke-frames.py')
+  const workflow = read('.github/workflows/ios-native-navigation-runtime.yml')
+  for (const name of additionalChildJourneys) {
+    assert.equal([...ui.matchAll(new RegExp('func\\s+' + name + '\\s*\\(', 'g'))].length, 1,
+      'Missing or duplicate native XCTest implementation: ' + name)
+    assert.equal(watcher.split('"' + name + '"').length - 1, 1,
+      'Missing or duplicate tap-adjacent frame registration: ' + name)
+  }
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSGalleryFilesTransitionEdgeUITests/)
+  assert.match(ui, /let generation = wall\.value as\? String/)
+  assert.match(ui, /XCTAssertFalse\(app\.keyboards\.firstMatch\.exists/)
+  assert.match(ui, /native-ios-files-trash-error-return/)
+  assert.match(ui, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(ui, /XCTAssertGreaterThan\(unique\.count, 8/)
+  assert.doesNotMatch(ui, /XCTSkip|fakeToken|mockPhotoKit/)
+})
