@@ -83,6 +83,39 @@ struct NativePhotoWallDensityPolicyChecks {
                      ungrouped[0].key == "all")
         precondition(xdriveIOSNativePhotoWallVisibleSections(
             [String](), scale: .day, key: { $0 }).isEmpty)
+        // Signed 48-item cloud pages suppress the repeated heading only
+        // for an immediately adjacent, same-total, verified chronology.
+        let boundary = XDriveIOSNativePhotoWallVerifiedPageDateBoundary(
+            offset: 0, count: 48, total: 96,
+            lastCapturedAt: "2026-11-14T08:00:00Z"
+        )
+        precondition(boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: "2026-11-14T09:10:00Z", scale: .day))
+        precondition(boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: "2026-11-30T09:10:00Z", scale: .month))
+        precondition(!boundary.continues(
+            nextOffset: 96, nextTotal: 96,
+            firstCapturedAt: "2026-11-14T09:10:00Z", scale: .day))
+        precondition(!boundary.continues(
+            nextOffset: 48, nextTotal: 97,
+            firstCapturedAt: "2026-11-14T09:10:00Z", scale: .day))
+        precondition(!boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: "2026-11-15T08:00:00Z", scale: .day))
+        precondition(!boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: nil, scale: .day))
+        precondition(!boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: "2026-11-14T08:00:00Z", scale: .all))
+        let incomplete = XDriveIOSNativePhotoWallVerifiedPageDateBoundary(
+            offset: 0, count: 22, total: 96,
+            lastCapturedAt: "2026-11-14T08:00:00Z")
+        precondition(!incomplete.continues(
+            nextOffset: 22, nextTotal: 96,
+            firstCapturedAt: "2026-11-14T08:00:00Z", scale: .day))
         print("native local PhotoKit square wall density and framing: PASS")
     }
 }
