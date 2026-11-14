@@ -1,3 +1,4 @@
+import CoreLocation
 import MapKit
 import Photos
 import SwiftUI
@@ -793,6 +794,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
     @State private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var timeScale: XDriveIOSNativePhotoWallTimeScale = .day
+    @State private var placeName: String?
+    @State private var placeGeocoder = CLGeocoder()
+    @State private var placeNameTask: Task<Void, Never>?
 
     private var active: Bool {
         phase == .active &&
@@ -809,6 +813,33 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             latitude: pin.latitude, longitude: pin.longitude,
             latitudeSpan: min(90, max(0.35, step * 3)),
             longitudeSpan: min(180, max(0.35, step * 3)))
+    }
+
+    /// M13: the already selected, authorized representative is mapped to
+    /// a human-readable locality by Apple's CoreLocation geocoder. No
+    /// reverse-geocoded result is stored or used as a media membership proof.
+    private func resolvePlaceName() {
+        guard active, placeName == nil, placeNameTask == nil else { return }
+        let ticket = generation
+        let geocoder = placeGeocoder
+        let target = CLLocation(latitude: pin.latitude, longitude: pin.longitude)
+        placeNameTask = Task { @MainActor in
+            defer { if generation == ticket { placeNameTask = nil } }
+            do {
+                let places = try await geocoder.reverseGeocodeLocation(target)
+                guard generation == ticket, active, !Task.isCancelled,
+                      let address = places.first else { return }
+                let components = [address.locality, address.subLocality,
+                                  address.administrativeArea]
+                    .compactMap { $0 }.filter { !$0.isEmpty }
+                if !components.isEmpty {
+                    placeName = components.prefix(2).joined(separator: " · ")
+                }
+            } catch is CancellationError {
+            } catch {
+                // Map/PhotoKit membership works normally without a geocoder.
+            }
+        }
     }
 
     private func matchesPlace(latitude: Double, longitude: Double) -> Bool {
@@ -829,6 +860,11 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     message: isNearbyExpansion
                         ? "附近照片 · 按当前来源和拍摄位置核验"
                         : "当前来源 · 此区域 \(pin.count) 张照片")
+                if let placeName {
+                    Text(placeName).font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-unified-map-place-name")
+                }
                 if let error {
                     XDriveIOSNativePhotoWallRetryMessage(
                         message: error, buttonTitle: "重新核对当前区域",
@@ -915,6 +951,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         }
         .onAppear {
             photoChanges.start()
+            resolvePlaceName()
             if current.isEmpty && !busy && error == nil {
                 load(from: isNearbyExpansion ? .init() : pin.firstCursor)
             }
@@ -925,6 +962,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             if state != .active { invalidate() }
         }
         .onDisappear {
+            placeNameTask?.cancel(); placeNameTask = nil
+            placeGeocoder.cancelGeocode()
             request?.cancel(); request = nil
             admissionTask?.cancel(); admissionTask = nil
             if viewing == nil && !nearbyPresented {
@@ -1205,6 +1244,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         ended = false
         viewing = nil
         viewerReturnID = nil
+        placeNameTask?.cancel(); placeNameTask = nil
+        placeGeocoder.cancelGeocode()
+        placeName = nil
         nearbyPresented = false
         busy = false
         opening = false
