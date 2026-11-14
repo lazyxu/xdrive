@@ -400,3 +400,38 @@ test('next five real Launcher/Notes/Backup/Originals/recovery crash journeys rem
   assert.doesNotMatch(swift, /fakeToken|fakeOwner|mockServerLogin|XCTSkip/);
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
 });
+
+
+test('all 57 real all-page XCTest methods are registered and the five new cross-child sweeps fail closed', () => {
+  const names = [
+    'testFourDeniedFilesChildrenAfterBackgroundCrossTabsDoNotExit',
+    'testSignedOutMinePhotosLinkAndDisabledCacheAcrossTabsDoNotExit',
+    'testUnavailableLauncherToolsForegroundAndFilesReturnDoNotExit',
+    'testRealSignedOutLoginFieldFocusBackgroundDoesNotExit',
+    'testClipboardDeniedRecipientTransfersFilesNotesReturnDoesNotExit'
+  ];
+  const methods = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(match => match[1]);
+  assert.equal(methods.length, 57, 'Every intended independent page sweep must remain registered');
+  assert.equal(methods.length, new Set(methods).size, 'Duplicate XCTest names hide a route');
+  for (const method of methods) {
+    assert.ok(watcher.includes('"' + method + '"'),
+      'All-page XCTest absent from real Simulator frame watcher: ' + method);
+  }
+  for (const name of names) {
+    assert.ok(methods.includes(name), 'New native child route missing: ' + name);
+  }
+  for (const id of [
+    'native-ios-files-recent-error-page', 'native-ios-files-favorites-error-page',
+    'native-ios-files-trash-error-page', 'native-ios-files-error-page',
+    'native-ios-files-grid', 'native-ios-mine-server-account',
+    'native-ios-login-username', 'native-ios-login-password',
+    'ios-clipboard-status', 'native-ios-transfer-overview'
+  ]) {
+    assert.ok(swift.includes('"' + id + '"'),
+      'Real child/Owner-denial assertion missing: ' + id);
+  }
+  assert.match(swift, /XCUIDevice\.shared\.press\(\.home\)/);
+  assert.match(swift, /XCTAssertFalse\(element\("native-ios-files-grid"/);
+  assert.doesNotMatch(swift, /fakeToken|mockServerLogin|XCTSkip/);
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
+});
