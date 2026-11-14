@@ -123,7 +123,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 reset()
             }
             .onChange(of: login.owner) { _ in
-                if let prior = savedMapOwner {
+                // A mutable Root revision is not an Owner identity switch.
+                // Preserve the same-account camera when a refreshed Owner
+                // object differs only in its revision; never reuse A in B.
+                if let prior = savedMapOwner,
+                   !XDriveIOSNativePhotoOwnerScope.matches(login.owner, prior) {
                     XDriveIOSUnifiedMapCameraStore.clear(owner: prior)
                 }
                 showingPeople = false; showingThumbnailCache = false
