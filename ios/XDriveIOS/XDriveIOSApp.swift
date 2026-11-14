@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -11,6 +12,7 @@ struct XDriveIOSApp: App {
     init() {
         // Read the previous process checkpoint BEFORE starting this one.
         interruption = XDriveIOSNativeLaunchCheckpoint.beginReport()
+        XDriveIOSNativeCrashMetricCollector.shared.start()
         XDriveIOSBackgroundPhotoTask.registerAtLaunch()
     }
 
@@ -27,6 +29,12 @@ private struct XDriveIOSNativeStartupRoot: View {
     @State private var normalStartup: Bool
     @State private var safeStartup = false
     @State private var diagnosticWorkspace = false
+    @State private var metricDiagnostic = XDriveIOSNativeCrashMetricCollector.latestSummary
+
+    private var diagnosticSummary: String {
+        [interruption?.summary(build: XDriveIOSNativeBuildIdentity.label), metricDiagnostic]
+            .compactMap { $0 }.joined(separator: "\n\n")
+    }
 
     init(interruption: XDriveIOSNativeLaunchCheckpoint.Interruption?) {
         self.interruption = interruption
@@ -39,9 +47,7 @@ private struct XDriveIOSNativeStartupRoot: View {
                 XDriveIOSNativeOwnerLoginScreen(
                     safeStartup: safeStartup,
                     diagnosticWorkspace: diagnosticWorkspace,
-                    priorDiagnostic: diagnosticWorkspace
-                        ? interruption?.summary(build: XDriveIOSNativeBuildIdentity.label)
-                        : nil
+                    priorDiagnostic: diagnosticWorkspace ? diagnosticSummary : nil
                 )
             } else {
                 NavigationStack {
@@ -67,13 +73,19 @@ private struct XDriveIOSNativeStartupRoot: View {
                                     .font(.footnote.monospaced())
                                     .textSelection(.enabled)
                             }
+                            if let metricDiagnostic {
+                                Text("系统诊断（可能来自更早的一次崩溃）：")
+                                    .font(.subheadline.weight(.medium))
+                                Text(metricDiagnostic)
+                                    .font(.footnote.monospaced())
+                                    .textSelection(.enabled)
+                                    .accessibilityIdentifier("native-ios-system-crash-diagnostic")
+                            }
                             Text("该步骤不是系统崩溃堆栈。fatalError、数组越界或非法内存访问不能安全地在进程内捕获后继续显示 UI。")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                             Button("复制诊断摘要（不含凭据）") {
-                                UIPasteboard.general.string = interruption?.summary(
-                                    build: XDriveIOSNativeBuildIdentity.label
-                                )
+                                UIPasteboard.general.string = diagnosticSummary
                             }
                             .buttonStyle(.bordered)
                             .accessibilityIdentifier("native-ios-startup-copy-diagnostics")
@@ -115,6 +127,11 @@ private struct XDriveIOSNativeStartupRoot: View {
                     XDriveIOSNativeLaunchCheckpoint.mark(.recovery)
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: XDriveIOSNativeCrashMetricCollector.notification
+        )) { _ in
+            metricDiagnostic = XDriveIOSNativeCrashMetricCollector.latestSummary
         }
     }
 }
