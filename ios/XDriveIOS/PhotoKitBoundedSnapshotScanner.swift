@@ -78,6 +78,9 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
     private var changeVersion: UInt64 = 0
     private var nextOffset = 0
     private var mapFilenameTerm = ""
+    // Only transient map scans may intersect a GPS day/cell trip. Backup
+    // scans never inherit this source filter or its spatial membership.
+    private var mapTripScope: XDriveIOSNativeLocalTripScope?
     // Transient backup-only mapping; at most one 256-item window is retained.
     // The snapshot, IDs and this mapping are discarded by reset().
     private var stableBoundaryPhysicalIndices: [Int: Int] = [:]
@@ -116,13 +119,19 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
                    album: XDriveLocalPhotoAlbumSummary? = nil,
                    mediaFilter: XDriveIOSNativePhotoMediaFilter,
                    captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil,
-                   filenameTerm: String) throws -> Int {
+                   filenameTerm: String,
+                   tripScope: XDriveIOSNativeLocalTripScope? = nil) throws -> Int {
         let term = filenameTerm.trimmingCharacters(in: .whitespacesAndNewlines)
         guard term.count <= 120 else {
             reset()
             throw XDrivePhotoKitScanFailure.invalidOffset
         }
-        guard captureRange == nil || captureRange!.valid else {
+        guard captureRange == nil || captureRange!.valid,
+              tripScope == nil || (tripScope!.valid &&
+                  captureRange == tripScope!.captureRange &&
+                  XDriveIOSNativePhotoFingerprintIndex.isCurrent(
+                    tripScope!.libraryEpoch))
+        else {
             reset()
             throw XDrivePhotoKitScanFailure.snapshotChanged
         }
@@ -135,6 +144,7 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
             album: album, mediaFilter: mediaFilter,
             requireFullLibrary: true, captureRange: captureRange)
         mapFilenameTerm = term
+        mapTripScope = tripScope
         return count
     }
 
@@ -354,6 +364,11 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
             }
             let latitude = location.coordinate.latitude
             let longitude = location.coordinate.longitude
+            if let tripScope = mapTripScope {
+                guard tripScope.contains(
+                    candidate.capturedAt, latitude: latitude, longitude: longitude
+                ) else { continue }
+            }
             if XDriveIOSNativePhotoMapPolicy.validCoordinate(
                 latitude: latitude, longitude: longitude
             ) {
@@ -377,6 +392,7 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         nextOffset = 0
         changeVersion = 0
         mapFilenameTerm = ""
+        mapTripScope = nil
         stableBoundaryPhysicalIndices.removeAll()
         if listening {
             PHPhotoLibrary.shared().unregisterChangeObserver(observer)

@@ -37,6 +37,8 @@ enum XDriveIOSLANPairingFailure: Error {
     // Stage-specific IP verification errors. A failed /version response is
     // never evidence that Caddy served the wrong CA or IP SAN.
     case ipCertificateInvalid, ipCertificateIdentityInvalid, ipCertificateChainInvalid
+    // Detailed evidence is produced ONLY by an explicitly requested pairing.
+    case ipCertificateEvidence(XDriveIOSLANTrustEvidence), ipCertificateWithoutChallenge(Int)
     case ipTLSHandshakeFailed(Int), ipConnectionTimedOut, ipConnectionUnavailable(Int)
     case ipVersionRedirect, ipVersionStatus(Int), ipVersionInvalid
 
@@ -52,6 +54,10 @@ enum XDriveIOSLANPairingFailure: Error {
         case .ipCertificateInvalid: return "第 3 步失败：内网 IP HTTPS 证书未通过 App 指定 CA 与 IP 身份校验，请检查服务端 Caddy 内网证书。"
         case .ipCertificateIdentityInvalid: return "第 3 步失败：证书链通过指定根 CA 的基础校验，但不符合当前内网 IP 的 SAN 或 TLS 服务器用途。请检查 Caddy 的内网 IP、default_sni 及当前实际连接的设备。"
         case .ipCertificateChainInvalid: return "第 3 步失败：当前内网 HTTPS 的根 CA、证书链、有效期或中间证书校验失败。请检查 Caddy 的内网根证书与当前 IP HTTPS 服务是否为同一套部署。"
+        case .ipCertificateEvidence(let evidence):
+            return "第 3 步失败：App 已拒绝内网 HTTPS 的 TLS 身份校验。\n" + evidence.safeSummary
+        case .ipCertificateWithoutChallenge(let code):
+            return "第 3 步失败：iOS 报告证书错误，但未收到可记录的 ServerTrust 拒绝回调（NO_TRUST_CHALLENGE，系统代码 \(code)）；不能据此判定 CA 或 IP SAN 不匹配。"
         case .ipTLSHandshakeFailed(let code): return "第 3 步失败：内网 HTTPS TLS 握手失败（系统代码 \(code)），尚不能确定是证书问题。请检查 HTTPS 端口、TLS 服务及网络代理。"
         case .ipConnectionTimedOut: return "第 3 步失败：内网 IP HTTPS 探测超时。请检查 Wi-Fi、IP、HTTPS 端口及 iOS 本地网络权限。"
         case .ipConnectionUnavailable(let code): return "第 3 步失败：内网 IP HTTPS 连接异常（系统代码 \(code)）。请检查 IP、端口和网络。"
@@ -166,6 +172,47 @@ enum XDriveIOSLANTrustVerdict: Equatable, Sendable {
     case trustSetupUnavailable
 }
 
+/// Bounded proof from the exact HTTPS peer observed during an explicit LAN
+/// pairing. Certificates are public, but never include their DER, subjects,
+/// hostnames, trust error descriptions, credentials, or URL in diagnostics.
+struct XDriveIOSLANTrustEvidence: Equatable, Sendable {
+    enum Reason: String, Sendable {
+        case challengeIdentity = "CHALLENGE_AUTHORITY"
+        case trustObjectMissing = "SERVER_TRUST_MISSING"
+        case retryChallenge = "REPEATED_CHALLENGE"
+        case trustSetup = "TRUST_SETUP"
+        case ipIdentity = "IP_IDENTITY"
+        case chainOrValidity = "CHAIN_OR_VALIDITY"
+    }
+
+    let reason: Reason
+    let rootSHA256: String
+    let leafSHA256: String?
+    let setupOSStatus: Int32?
+
+    static func digest(_ bytes: Data) -> String {
+        SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func peerLeafDigest(_ trust: SecTrust?) -> String? {
+        guard let trust, let certificates = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+              let leaf = certificates.first else { return nil }
+        return digest(SecCertificateCopyData(leaf) as Data)
+    }
+
+    var safeSummary: String {
+        var parts = ["诊断码：\(reason.rawValue)", "配对根 CA SHA-256：\(rootSHA256)"]
+        if let leafSHA256 { parts.append("对端叶证书 SHA-256：\(leafSHA256)") }
+        if let setupOSStatus { parts.append("Security OSStatus：\(setupOSStatus)") }
+        return parts.joined(separator: "\n")
+    }
+}
+
+struct XDriveIOSLANTrustInspection {
+    let verdict: XDriveIOSLANTrustVerdict
+    let setupOSStatus: Int32?
+}
+
 /// Existing transports keep their request and redirect policies. Only the
 /// server-trust challenge is shared, including foreground and BGProcessing.
 class XDriveIOSServerTLSDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
@@ -184,6 +231,10 @@ class XDriveIOSServerTLSDelegate: NSObject, URLSessionDelegate, @unchecked Senda
     /// Override only to record a fixed non-secret error category for the
     /// explicitly requested anonymous pairing probe. Never turn it into trust.
     func observedTrustRejection(_ verdict: XDriveIOSLANTrustVerdict) {}
+
+    /// No-op for normal authenticated sessions. Pairing's ephemeral delegate
+    /// retains only fixed codes and hashes, in memory and without upload.
+    func observedPairingEvidence(_ evidence: XDriveIOSLANTrustEvidence) {}
 
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -209,6 +260,11 @@ class XDriveIOSServerTLSDelegate: NSObject, URLSessionDelegate, @unchecked Senda
             }
         case let .verifyingPairing(expected, der):
             guard target == expected else {
+                observedPairingEvidence(XDriveIOSLANTrustEvidence(
+                    reason: .challengeIdentity, rootSHA256: XDriveIOSLANTrustEvidence.digest(der),
+                    leafSHA256: XDriveIOSLANTrustEvidence.peerLeafDigest(space.serverTrust),
+                    setupOSStatus: nil))
+                observedTrustRejection(.trustSetupUnavailable)
                 completionHandler(.cancelAuthenticationChallenge, nil)
                 return
             }
@@ -216,13 +272,32 @@ class XDriveIOSServerTLSDelegate: NSObject, URLSessionDelegate, @unchecked Senda
         }
         guard challenge.previousFailureCount == 0, let target,
               let trust = space.serverTrust else {
+            if case .verifyingPairing = mode {
+                observedPairingEvidence(XDriveIOSLANTrustEvidence(
+                    reason: challenge.previousFailureCount != 0 ? .retryChallenge : .trustObjectMissing,
+                    rootSHA256: XDriveIOSLANTrustEvidence.digest(root),
+                    leafSHA256: XDriveIOSLANTrustEvidence.peerLeafDigest(space.serverTrust),
+                    setupOSStatus: nil))
+            }
             observedTrustRejection(.trustSetupUnavailable)
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
-        let verdict = Self.inspect(trust, target: target, rootDER: root)
-        guard verdict == .trusted else {
-            observedTrustRejection(verdict)
+        let inspection = Self.inspectDetailed(trust, target: target, rootDER: root)
+        guard inspection.verdict == .trusted else {
+            if case .verifyingPairing = mode {
+                let reason: XDriveIOSLANTrustEvidence.Reason
+                switch inspection.verdict {
+                case .ipIdentityOrServerUsageMismatch: reason = .ipIdentity
+                case .chainOrValidityMismatch: reason = .chainOrValidity
+                default: reason = .trustSetup
+                }
+                observedPairingEvidence(XDriveIOSLANTrustEvidence(
+                    reason: reason, rootSHA256: XDriveIOSLANTrustEvidence.digest(root),
+                    leafSHA256: XDriveIOSLANTrustEvidence.peerLeafDigest(trust),
+                    setupOSStatus: inspection.setupOSStatus))
+            }
+            observedTrustRejection(inspection.verdict)
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
@@ -235,23 +310,38 @@ class XDriveIOSServerTLSDelegate: NSObject, URLSessionDelegate, @unchecked Senda
 
     static func inspect(_ trust: SecTrust, target: XDriveIOSLANAuthority,
                         rootDER: Data) -> XDriveIOSLANTrustVerdict {
-        guard let root = XDriveIOSLANPairing.rootCertificate(rootDER),
-              SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, target.ip as CFString)) == errSecSuccess,
-              SecTrustSetAnchorCertificates(trust, [root] as CFArray) == errSecSuccess,
-              SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
-              SecTrustSetNetworkFetchAllowed(trust, false) == errSecSuccess else {
-            return .trustSetupUnavailable
+        inspectDetailed(trust, target: target, rootDER: rootDER).verdict
+    }
+
+    static func inspectDetailed(_ trust: SecTrust, target: XDriveIOSLANAuthority,
+                                rootDER: Data) -> XDriveIOSLANTrustInspection {
+        let setup: (Int32?) -> XDriveIOSLANTrustInspection = { status in
+            XDriveIOSLANTrustInspection(verdict: .trustSetupUnavailable, setupOSStatus: status)
         }
+        guard let root = XDriveIOSLANPairing.rootCertificate(rootDER) else { return setup(nil) }
+        let policyStatus = SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, target.ip as CFString))
+        guard policyStatus == errSecSuccess else { return setup(policyStatus) }
+        let anchorStatus = SecTrustSetAnchorCertificates(trust, [root] as CFArray)
+        guard anchorStatus == errSecSuccess else { return setup(anchorStatus) }
+        let onlyStatus = SecTrustSetAnchorCertificatesOnly(trust, true)
+        guard onlyStatus == errSecSuccess else { return setup(onlyStatus) }
+        let networkStatus = SecTrustSetNetworkFetchAllowed(trust, false)
+        guard networkStatus == errSecSuccess else { return setup(networkStatus) }
+
         // This is the ONLY positive result allowed by a TLS challenge.
         // It requires the exact user-paired root, leaf validity, full server
         // certificate policy and literal IP SAN, with no network fetch.
-        if SecTrustEvaluateWithError(trust, nil) { return .trusted }
+        if SecTrustEvaluateWithError(trust, nil) {
+            return XDriveIOSLANTrustInspection(verdict: .trusted, setupOSStatus: nil)
+        }
 
         // Negative-result diagnosis only. Basic X.509 explicitly CANNOT
         // authenticate the HTTPS endpoint because it does not check IP SAN
         // or serverAuth EKU. Never return trusted from this path.
         guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
-              !chain.isEmpty else { return .chainOrValidityMismatch }
+              !chain.isEmpty else {
+            return XDriveIOSLANTrustInspection(verdict: .chainOrValidityMismatch, setupOSStatus: nil)
+        }
         var secondary: SecTrust?
         guard SecTrustCreateWithCertificates(chain as CFArray,
                   SecPolicyCreateBasicX509(), &secondary) == errSecSuccess,
@@ -263,9 +353,11 @@ class XDriveIOSServerTLSDelegate: NSObject, URLSessionDelegate, @unchecked Senda
               // regressions; a diagnostic may never silently change the time.
               SecTrustSetVerifyDate(secondary, Date(timeIntervalSinceReferenceDate:
                   SecTrustGetVerifyTime(trust)) as CFDate) == errSecSuccess else {
-            return .chainOrValidityMismatch
+            return XDriveIOSLANTrustInspection(verdict: .chainOrValidityMismatch, setupOSStatus: nil)
         }
-        return SecTrustEvaluateWithError(secondary, nil)
-            ? .ipIdentityOrServerUsageMismatch : .chainOrValidityMismatch
+        return XDriveIOSLANTrustInspection(
+            verdict: SecTrustEvaluateWithError(secondary, nil)
+                ? .ipIdentityOrServerUsageMismatch : .chainOrValidityMismatch,
+            setupOSStatus: nil)
     }
 }

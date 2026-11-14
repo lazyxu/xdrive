@@ -24,6 +24,13 @@ final class XDriveIOSNativeMapUserLocationController: NSObject, ObservableObject
     private var manager: CLLocationManager?
     private var pending = false
     private var requestedFix = false
+    private var locateTimeout: DispatchWorkItem?
+    private static let maximumLocationWait: TimeInterval = 15
+
+    private func stopLocateTimeout() {
+        locateTimeout?.cancel()
+        locateTimeout = nil
+    }
 
     /// One CoreLocation one-shot per explicit tap, even if an already-granted
     /// authorization callback arrives during manager initialization.
@@ -54,6 +61,16 @@ final class XDriveIOSNativeMapUserLocationController: NSObject, ObservableObject
         requestManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager = requestManager
         requestManager.delegate = self
+        // Only the current explicit request can time out. No polling and no
+        // implicit location prompt on normal map entry or photo scan.
+        let timeout = DispatchWorkItem { [weak self, weak requestManager] in
+            guard let self, let requestManager, self.pending,
+                  self.manager === requestManager else { return }
+            self.fail("定位超时。请检查定位权限和 GPS 信号后手动重试。")
+        }
+        locateTimeout = timeout
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.maximumLocationWait, execute: timeout)
         switch requestManager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
             requestLocationOnce(requestManager)
@@ -100,6 +117,7 @@ final class XDriveIOSNativeMapUserLocationController: NSObject, ObservableObject
             self.pending = false
             self.isLocating = false
             self.requestedFix = false
+            self.stopLocateTimeout()
             manager.delegate = nil
             self.manager = nil
             self.camera = MKCoordinateRegion(
@@ -122,6 +140,7 @@ final class XDriveIOSNativeMapUserLocationController: NSObject, ObservableObject
 
     /// Prevent any outstanding one-shot callback from affecting a closed map.
     func cancel() {
+        stopLocateTimeout()
         pending = false
         isLocating = false
         requestedFix = false
@@ -135,6 +154,7 @@ final class XDriveIOSNativeMapUserLocationController: NSObject, ObservableObject
     }
 
     private func fail(_ message: String) {
+        stopLocateTimeout()
         pending = false
         isLocating = false
         requestedFix = false

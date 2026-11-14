@@ -29,6 +29,7 @@ const timeline = load('ui/shared/src/mui/MediaGalleryVirtualTimeline.ts', {
   './MediaGalleryVirtualGrid': grid,
 })
 const gallerySource = read('ui/shared/src/mui/MediaGallery.tsx')
+const photoWallStateSource = read('ui/shared/src/mui/MediaGalleryPhotoWallState.ts')
 const densitySource = read('ui/shared/src/mui/MediaGalleryPhotoWallPreferences.ts')
 const sharedWallSource = read('ui/shared/src/mui/MediaGalleryPhotoWall.tsx')
 const chromeSource = read('ui/shared/src/mui/MobileGalleryChrome.tsx')
@@ -169,7 +170,9 @@ test('P0-2 pinch changes the minimum column count once, with drift threshold and
 test('P0-2 mobile gesture has one root, preserves Gallery anchor and uses same virtual components', () => {
   assert.match(densitySource, /XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY/)
   assert.match(densitySource, /year: 6, month: 5, day: 3, all: 3/)
-  assert.match(gallerySource, /xDriveReadMobileGalleryColumns/)
+  assert.match(gallerySource, /useXDriveMediaGalleryMobileColumns\(\)/)
+  assert.match(photoWallStateSource, /xDriveReadMobileGalleryColumns\(\)/)
+  assert.match(photoWallStateSource, /xDriveObserveMobileGalleryColumns\(setColumns\)/)
   assert.match(gallerySource, /xDriveWriteMobileGalleryColumn/)
   assert.match(gallerySource, /mobileColumnsByScale\[effectiveTimeScale\]/)
   assert.match(gallerySource, /XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH = 144/)

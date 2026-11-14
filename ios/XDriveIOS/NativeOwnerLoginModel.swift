@@ -100,6 +100,32 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         }
     }
 
+    /// A user turning OFF secure storage revokes the selected Keychain secret
+    /// immediately, even if they never submit another login. Programmatic
+    /// profile prefill must not enter this path.
+    func setRememberPasswordFromUser(_ enabled: Bool) {
+        guard !busy, active == nil else { return }
+        if enabled {
+            rememberPassword = true
+            noticeMessage = "下次成功登录并验证账号后，将安全保存该账号密码。"
+            return
+        }
+        guard let item = currentSavedProfile else {
+            rememberPassword = false
+            return
+        }
+        do {
+            // Do not report OFF until the exact Server/LAN/username secret
+            // is confirmed absent. A different saved account is unaffected.
+            try XDriveIOSNativePasswordProfiles.removePassword(for: item)
+            rememberPassword = false
+            noticeMessage = "已取消保存当前账号密码；输入框中的密码仅用于本次登录。"
+        } catch {
+            rememberPassword = true
+            errorMessage = "无法从系统 Keychain 删除当前账号保存的密码；请解锁设备后重试。"
+        }
+    }
+
     /// Account and route changes must not carry a prior account's typed password.
     func discardPasswordAfterIdentityEdit() {
         let now = [serverText, lanIPText, username].joined(separator: "\u{001F}")

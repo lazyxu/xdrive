@@ -99,8 +99,8 @@ test('an existing authorization callback cannot double-submit one location reque
     controller.indexOf('func locationManager(_ manager: CLLocationManager,\n                         didUpdateLocations'))
   assert.match(locate, /requestedFix = false[\s\S]*?case \.authorizedAlways, \.authorizedWhenInUse:\s*requestLocationOnce\(requestManager\)/)
   assert.match(auth, /status == \.authorizedAlways \|\| status == \.authorizedWhenInUse \{\s*self\.requestLocationOnce\(manager\)/)
-  assert.match(controller, /func cancel\(\) \{\s*pending = false\s*isLocating = false\s*requestedFix = false/)
-  assert.match(controller, /private func fail\(_ message: String\) \{\s*pending = false\s*isLocating = false\s*requestedFix = false/)
+  assert.match(controller, /func cancel\(\) \{\s*stopLocateTimeout\(\)\s*pending = false\s*isLocating = false\s*requestedFix = false/)
+  assert.match(controller, /private func fail\(_ message: String\) \{\s*stopLocateTimeout\(\)\s*pending = false\s*isLocating = false\s*requestedFix = false/)
 })
 
 test('re-locating revokes stale location on global disable or pending refresh', () => {

@@ -106,7 +106,10 @@ test('Owner PhotoAsset Viewer restores bounded cloud VoiceOver focus only to its
   assert.match(cloud, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?accessibilityFocusedMediaID = nil/);
   assert.match(cloud, /if state != \.active \{[\s\S]*?accessibilityFocusedMediaID = nil/);
   assert.match(cloud, /private func applySearch\(\) \{[\s\S]*?lastOpenedMediaID = nil\s*lastOpenedRevision = nil\s*lastOpenedOwner = nil\s*accessibilityFocusedMediaID = nil/);
-  assert.doesNotMatch(cloud, /UserDefaults|@AppStorage|Keychain/);
+  // Only the established cross-Gallery appearance setting may persist.
+  // Owner identity, Node/revision, Range cursors and Viewer anchors are not stored.
+  assert.match(cloud, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/);
+  assert.doesNotMatch(cloud, /UserDefaults|Keychain|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/);
 });
 
 

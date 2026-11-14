@@ -7,6 +7,7 @@ struct XDriveIOSOwnerMapChosenCluster: Identifiable {
     let places: [XDriveIOSNativeOwnerMapFacet]
     let owner: XDriveNativeOwnerRoot
     let captureRange: XDriveIOSNativePhotoMapCaptureRange?
+    var mapSelection: XDriveIOSNativeOwnerMapSelection? = nil
 }
 
 private struct XDriveIOSOwnerClusterCursor: Equatable {
@@ -430,7 +431,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                           page?.sameVisibleSnapshot(as: previous) == true
                     else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
                     let reader = XDriveIOSNativeMediaGalleryReader(
-                        owner: authorized.owner, accessToken: authorized.accessToken)
+                        owner: authorized.owner, accessToken: authorized.accessToken,
+                        mapSelection: selection.mapSelection)
                     // Even if a new page has a valid offset, the old snapshot
                     // must still be EXACTLY the one the Viewer left.
                     let reread = try await reader.page(
@@ -787,7 +789,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 guard XDriveIOSNativeOwnerMapSelectionPolicy.canOpenPhotoRange(facet)
                 else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
                 let reader = XDriveIOSNativeMediaGalleryReader(
-                    owner: auth.owner, accessToken: auth.accessToken)
+                    owner: auth.owner, accessToken: auth.accessToken,
+                    mapSelection: selection.mapSelection)
                 if let dateJump {
                     guard !autoAdvance, target.placeIndex == departingCursor.placeIndex,
                           target.offset == dateJump.offset

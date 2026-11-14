@@ -5,6 +5,17 @@ struct XDriveIOSNativePhotoMapPolicyChecks {
     static func main() {
         // Short-landscape layout is shared by local and Owner-cloud MapKit.
         // Check the measured safe-area viewport, not the size-class or rotation.
+        precondition(XDriveIOSNativePhotoMapPolicy.minimumInteractiveTarget >= 44)
+        for viewport in [(390.0, 844.0), (844.0, 390.0),
+                         (1024.0, 768.0), (507.0, 768.0), (744.0, 345.0)] {
+            precondition(XDriveIOSNativePhotoMapPolicy.accessibleMapViewport(
+                width: viewport.0, height: viewport.1))
+        }
+        for viewport in [(Double.nan, 800.0), (100.0, 0.0),
+                         (20.0, 400.0), (800.0, Double.infinity)] {
+            precondition(!XDriveIOSNativePhotoMapPolicy.accessibleMapViewport(
+                width: viewport.0, height: viewport.1))
+        }
         precondition(XDriveIOSNativePhotoMapPolicy.compactViewport(
             width: 844, height: 360, accessibilityText: false))
         precondition(XDriveIOSNativePhotoMapPolicy.compactViewport(

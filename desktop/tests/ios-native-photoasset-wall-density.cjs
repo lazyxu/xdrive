@@ -64,5 +64,8 @@ test('presentation-only density preserves exact Owner and Viewer/thumbnail gener
   assert.match(wall, /XDriveIOSNativeServerMediaPreview\(/)
   assert.match(wall, /onCrossRange: \{ previous, anchor, direction in/)
   assert.doesNotMatch(density, /URLSession|PHAsset|NodeReceipt|UploadSession|UserDefaults/)
-  assert.doesNotMatch(wall, /UserDefaults|@AppStorage/)
+  // Persist only the public presentation enum, never Owner, Node, session,
+  // credentials or Viewer anchors; cropping does not change thumbnail task ID.
+  assert.match(wall, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
+  assert.doesNotMatch(wall, /UserDefaults|Keychain|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/)
 })
