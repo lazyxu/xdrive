@@ -22,6 +22,7 @@ type Summary struct {
 	SkippedFiles       int64  `json:"skipped_files"`
 	UnsupportedFiles   int64  `json:"unsupported_files"`
 	UncertainFiles     int64  `json:"uncertain_files"`
+	ScanComplete       bool   `json:"scan_complete"`
 	ConfirmedBytes     int64  `json:"confirmed_bytes"`
 	StopRequested      string `json:"stop_requested,omitempty"`
 	BackupComplete     bool   `json:"backup_complete"`
@@ -36,6 +37,7 @@ func ValidSourceID(id uint64) bool { return id > 0 && id <= MaxSafeSourceID }
 func ValidateSummary(s Summary, sourceID uint64) bool {
 	if !ValidSourceID(sourceID) || s.SourceID != sourceID ||
 		s.BackupComplete || s.RetirementSafe || s.CurrentCASVerified ||
+		(s.ScanComplete && (s.State != "partial" || s.UncertainFiles != 0)) ||
 		s.Running != (s.State == "running") ||
 		(!s.Running && s.Revision == 0) ||
 		s.InspectedFiles < 0 || s.ConfirmedFiles < 0 || s.SkippedFiles < 0 ||
@@ -64,6 +66,7 @@ type HistoryItem struct {
 	SkippedFiles     int64     `json:"skipped_files"`
 	UnsupportedFiles int64     `json:"unsupported_files"`
 	UncertainFiles   int64     `json:"uncertain_files"`
+	ScanComplete     bool      `json:"scan_complete"`
 	ConfirmedBytes   int64     `json:"confirmed_bytes"`
 	StartedAt        time.Time `json:"started_at"`
 	FinishedAt       time.Time `json:"finished_at"`
@@ -86,7 +89,8 @@ func ValidateHistory(page HistoryPage, sourceID uint64) bool {
 			item.SkippedFiles > item.InspectedFiles-item.ConfirmedFiles ||
 			item.UnsupportedFiles > item.InspectedFiles-item.ConfirmedFiles-item.SkippedFiles ||
 			item.StartedAt.IsZero() || item.FinishedAt.IsZero() ||
-			item.FinishedAt.Before(item.StartedAt) {
+			item.FinishedAt.Before(item.StartedAt) ||
+			(item.ScanComplete && (item.State != "partial" || item.UncertainFiles != 0)) {
 			return false
 		}
 		switch item.State {
@@ -133,7 +137,7 @@ func ValidateSchedule(s Schedule, sourceID uint64) bool {
 		return s.ScheduleType == "" && s.NextScheduledAt == nil
 	case "manual":
 		return s.ScheduleType == "manual" && s.NextScheduledAt == nil
-	case "ineligible_source", "checkpoint_unverified", "review_required", "unavailable":
+	case "ineligible_source", "checkpoint_unverified", "review_required", "reconciliation_pending", "unavailable":
 		return (s.ScheduleType == "interval" || s.ScheduleType == "cron") &&
 			s.NextScheduledAt == nil
 	case "checkpoint_ready":

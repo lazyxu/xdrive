@@ -67,11 +67,11 @@ func localPushAutoOwnedFolderIDs(ctx context.Context, api *client.Client, device
 	return nil, errLocalPushAutoUnavailable // incomplete enumeration cannot trigger work
 }
 
-// Only an explicitly configured schedule and a VERIFIED previous own-Agent
-// partial run arm automation. "partial" describes per-file receipts, not a
-// trusted complete Source or present-day physical CAS verification.
-// Unknown/crashed/paused/cancelled runs require deliberate owning-Desktop
-// reconciliation first; do not automatically retry uncertain SQL operations.
+// Only an explicitly configured schedule and a verified owning-Agent
+// checkpoint arm automatic work. Failed/crashed runs enter the SAME original
+// per-file SQL operation reconciliation under the source-scoped OS lease.
+// Nothing retries with a new ID or implies present-day physical CAS proof.
+// Explicit pause/cancel remains manual-only.
 func localPushAutomaticDue(
 	saved client.LocalBoundBackupSchedule,
 	checkpoint localpush.CommonBatchCheckpoint,
@@ -85,7 +85,7 @@ func localPushAutomaticDue(
 		checkpoint.CurrentCASVerified {
 		return false, errLocalPushAutoUnavailable
 	}
-	if checkpoint.State != "partial" || checkpoint.UncertainFiles != 0 {
+	if !localpush.CommonCheckpointAutoAdmissible(checkpoint) {
 		return false, nil
 	}
 	spec, err := sourceschedule.Normalize(saved.ScheduleType,
@@ -95,6 +95,13 @@ func localPushAutomaticDue(
 	}
 	if spec.Type == "" || spec.Type == sourceschedule.TypeManual {
 		return false, nil
+	}
+	// An interrupted or uncertain original Operation is reconciled promptly;
+	// durable auto-admission backoff limits repeat attempts on persistent failure.
+	// The worker itself is responsible for immutable operation readback and
+	// same-ID resume, never this scheduler's clock.
+	if checkpoint.State == "running" || checkpoint.State == "uncertain" {
+		return !now.UTC().Before(checkpoint.UpdatedAt.UTC().Add(time.Minute)), nil
 	}
 	last := checkpoint.UpdatedAt.UTC()
 	source := meta.Source{
@@ -323,12 +330,11 @@ func (c *agentController) localPushAutoTick(
 		}
 		checkpoint, err := localpush.ReadVerifiedCommonBatchCheckpoint(
 			ctx, configDir, grant, account.SessionID, source.Revision)
-		if err != nil || checkpoint.State != "partial" ||
-			checkpoint.UncertainFiles != 0 {
+		if err != nil || !localpush.CommonCheckpointAutoAdmissible(checkpoint) {
 			if watch != nil {
 				watch.forget(sourceID)
 			}
-			continue // no owning manual run, stopped, uncertain or corrupt journal
+			continue // no owning run, stopped, or corrupt private checkpoint
 		}
 		due, err := localPushAutomaticDue(saved, checkpoint, now)
 		if err != nil {

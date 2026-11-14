@@ -58,6 +58,13 @@ export function xDriveLocalBackupAutoReadinessView(
         detail: '当前版本没有可信的私有备份检查点。可能尚未完成首次手动备份，或版本、原始记录已变化；请先从本机核对，不会盲目自动上传。',
         needsAttention: true,
       }
+    case 'reconciliation_pending':
+      if (!active) break
+      return {
+        title: '后台安全恢复等待中',
+        detail: '上次 Agent 中断或遇到不确定上传。后台会按持久退避重新进入原始 Operation 核对；当前还没有确认完整备份，也不会直接生成新的操作 ID。',
+        needsAttention: true,
+      }
     case 'review_required':
       if (!active) break
       return {

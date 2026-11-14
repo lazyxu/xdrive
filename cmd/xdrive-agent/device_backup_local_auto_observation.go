@@ -55,9 +55,13 @@ func projectLocalBoundAutoReadiness(
 		saved.AutoReadiness = "checkpoint_unverified"
 		return saved
 	}
-	if checkpoint.State != "partial" || checkpoint.UncertainFiles != 0 {
+	if !localpush.CommonCheckpointAutoAdmissible(*checkpoint) {
 		saved.AutoReadiness = "review_required"
 		return saved
+	}
+	if checkpoint.State == "running" || checkpoint.State == "uncertain" {
+		saved.AutoReadiness = "reconciliation_pending"
+		return saved // not a successful schedule run or CAS proof
 	}
 	last := checkpoint.UpdatedAt.UTC()
 	// Mirror precisely the due-rule calculation in localPushAutomaticDue.

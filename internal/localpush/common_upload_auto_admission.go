@@ -38,6 +38,23 @@ type commonAutoAdmissionRecord struct {
 	Streak              int       `json:"streak"`
 }
 
+// A stale Agent's running checkpoint and a failed batch may re-enter only
+// through the original lease and immutable per-file SQL operations. This
+// grants no independent write permission and never retries a new Operation ID.
+// Explicit pause/cancel always remain excluded from unattended retries.
+func CommonCheckpointAutoAdmissible(cp CommonBatchCheckpoint) bool {
+	switch cp.State {
+	case "partial":
+		return cp.UncertainFiles == 0
+	case "uncertain":
+		return cp.UncertainFiles > 0
+	case "running":
+		return true // a still-live worker is separately fenced by its Agent/OS lease
+	default:
+		return false
+	}
+}
+
 func commonAutoAdmissionDelay(streak int) time.Duration {
 	if streak < 1 {
 		streak = 1
@@ -115,9 +132,10 @@ func readCommonAutoAdmission(path string, grant RootGrant) (commonAutoAdmissionR
 
 // ReserveVerifiedCommonAutoAdmission persists a bounded, Owner-private
 // cooldown BEFORE asking the existing Runner to start. After Agent restart,
-// the SAME verified checkpoint keeps its cooldown; a NEW trusted terminal
-// checkpoint immediately resets it, even for an explicitly configured 1m
-// schedule. This file can NEVER authorize a run or promote a state to partial.
+// the SAME verified checkpoint keeps its cooldown. An uncertain/stale-running
+// checkpoint never bypasses the last attempt's retry delay. Only a new clean
+// terminal partial can reset that delay. This file never promotes a state to
+// partial, claims remote cancellation, or allocates a per-file Operation.
 func ReserveVerifiedCommonAutoAdmission(
 	ctx context.Context, configDir string, grant RootGrant,
 	session string, checkpoint CommonBatchCheckpoint, now time.Time,
@@ -126,7 +144,7 @@ func ReserveVerifiedCommonAutoAdmission(
 	if ctx == nil || ctx.Err() != nil || configDir == "" ||
 		!grant.StrongIdentity || session == "" || now.IsZero() ||
 		!checkpoint.valid(grant, session, checkpoint.SourceRevision) ||
-		checkpoint.State != "partial" || checkpoint.UncertainFiles != 0 {
+		!CommonCheckpointAutoAdmissible(checkpoint) {
 		return false, deny
 	}
 	current, err := LoadRootGrant(configDir, grant.Server, grant.Account, grant.RootID)
@@ -153,6 +171,13 @@ func ReserveVerifiedCommonAutoAdmission(
 	streak := 1
 	digest := commonUploadSessionDigest(session)
 	if exists {
+		// Retrying a failed/crashed run must not clear the retry delay just
+		// because the original Runner recorded a new uncertain checkpoint.
+		if checkpoint.State != "partial" && prior.SessionDigest == digest &&
+			prior.SourceRevision == checkpoint.SourceRevision &&
+			now.Before(prior.NextAttemptAt) {
+			return false, nil
+		}
 		sameCheckpoint := prior.SessionDigest == digest &&
 			prior.SourceRevision == checkpoint.SourceRevision &&
 			prior.CheckpointRunID == checkpoint.RunID &&
@@ -174,6 +199,14 @@ func ReserveVerifiedCommonAutoAdmission(
 			if checkpoint.RunID == prior.CheckpointRunID ||
 				!checkpoint.UpdatedAt.After(prior.AttemptAt) {
 				return false, deny
+			}
+			if checkpoint.State != "partial" &&
+				prior.SessionDigest == digest &&
+				prior.SourceRevision == checkpoint.SourceRevision {
+				streak = prior.Streak + 1
+				if streak > commonAutoAdmissionMaxStep {
+					streak = commonAutoAdmissionMaxStep
+				}
 			}
 		}
 	}

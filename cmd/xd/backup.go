@@ -379,6 +379,9 @@ func printBackupSummary(w io.Writer, s localbackupipc.Summary) {
 	fmt.Fprintf(w, "Source %d: %s inspected=%d uploaded=%d unchanged=%d unsupported=%d uncertain=%d bytes=%d",
 		s.SourceID, s.State, s.InspectedFiles, s.ConfirmedFiles, s.SkippedFiles,
 		s.UnsupportedFiles, s.UncertainFiles, s.ConfirmedBytes)
+	if s.ScanComplete {
+		fmt.Fprint(w, " scan_complete=true (not physical CAS verified)")
+	}
 	if s.StopRequested != "" {
 		fmt.Fprintf(w, " requested=%s", s.StopRequested)
 	}
