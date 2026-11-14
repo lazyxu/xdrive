@@ -45,6 +45,28 @@ struct NativeLaunchCheckpointChecks {
         ))
         checkpoint.mark(.ready, defaults: prefs)
         precondition(checkpoint.begin(defaults: prefs) == nil)
-        print("native cold-launch checkpoint recovery and safe boot policy: passed")
+
+        // Repro: a sign-out form marked ready, then a successful manual
+        // sign-in crashes while constructing the authenticated Dashboard.
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
+        checkpoint.mark(.ready, defaults: prefs)
+        checkpoint.markPostLogin(.manualOwnerVerified, defaults: prefs, now: timestamp)
+        let interrupted = checkpoint.beginReport(defaults: prefs)
+        precondition(interrupted?.phase == .mountingWorkspace)
+        precondition(interrupted?.lastStep == .manualOwnerVerified)
+        precondition(interrupted?.lastStepAt == timestamp)
+        let diagnostic = interrupted?.summary(build: "test-build") ?? ""
+        precondition(diagnostic.contains("manualOwnerVerified"))
+        precondition(diagnostic.contains("test-build"))
+        precondition(!diagnostic.contains("password="))
+        checkpoint.mark(.recovery, defaults: prefs)
+        checkpoint.mark(.ready, defaults: prefs)
+        precondition(checkpoint.beginReport(defaults: prefs) == nil)
+
+        // A stable diagnostic-only workspace is NOT a persistent crash loop.
+        checkpoint.markPostLogin(.diagnosticWorkspaceVisible, defaults: prefs)
+        checkpoint.mark(.ready, defaults: prefs)
+        precondition(checkpoint.beginReport(defaults: prefs) == nil)
+        print("native cold-launch and post-login crash diagnostics: passed")
     }
 }
