@@ -33,7 +33,10 @@ test('album selection only accepts currently authorized, immutable 64-slot page 
   assert.match(source, /batch\.count <= 64/)
   // Comments may forbid persistence; test executable Swift, not that prohibition text.
   const executable = source.replace(/^\s*\/\/[^\n]*/gm, '')
-  assert.doesNotMatch(executable, /UserDefaults|@AppStorage|persist.*PhotoKit|UploadSession/)
+  // The shared, cross-Gallery framing preference is allowed; never persist
+  // PhotoKit member IDs or private authorized selections.
+  assert.match(source, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
+  assert.doesNotMatch(executable, /UserDefaults|persist.*PhotoKit|UploadSession|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/)
 })
 
 test('exact collection membership and full current page are checked before each batch operation', () => {
