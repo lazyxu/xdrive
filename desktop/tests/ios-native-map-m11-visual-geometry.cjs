@@ -15,7 +15,13 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
     assert.match(cloud, new RegExp('XDriveIOSNativeMapMarkerVisualPolicy\\.' + token))
   }
   assert.match(layout, /minimumTouchTarget: CGFloat = 44/)
-  assert.match(local, /\.fastFormat/)
+  // PhotoKit's live 128px marker poster now uses opportunistic local/iCloud callbacks.
+  // Do not require the retired `.fastFormat` token; assert the real poster policy.
+  assert.match(local, /options\.isNetworkAccessAllowed = true/)
+  assert.match(local, /options\.deliveryMode = \.opportunistic/)
+  assert.match(local, /options\.resizeMode = \.fast/)
+  assert.match(local, /PHImageResultIsDegradedKey/)
+  assert.match(local, /self\.epoch == snapshot/)
   assert.match(local, /isAccessibilityElement = !provisional/)
   assert.match(cloud, /isAccessibilityElement = enabled/)
   assert.doesNotMatch(layout, /PHAsset|Owner|URLSession|upload|requestAuthorization/)

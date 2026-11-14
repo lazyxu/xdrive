@@ -1,0 +1,119 @@
+name: iOS Native Subpage AX CPU Memory Performance
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ios-native-subpage-performance.yml'
+      - 'ios/UITests/XDriveIOSNativeSubpagePerformanceUITests.swift'
+      - 'ios/scripts/audit_native_subpage_perf.py'
+      - 'ios/scripts/test_audit_native_subpage_perf.py'
+      - 'ios/scripts/prepare-navigation-runtime-smoke.py'
+      - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
+      - 'ios/XDriveIOS/NativeFilesManagementPanel.swift'
+      - 'ios/XDriveIOS/NativePhotoBackupScreen.swift'
+      - 'ios/XDriveIOS/NativeNotesScreen.swift'
+      - 'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift'
+      - 'ios/XDriveIOS/NativePhotoThumbnailCacheScreen.swift'
+      - 'ios/XDriveIOS/NativeTransfers.swift'
+      - 'ios/performance/native-seven-workloads.json'
+      - 'ios/scripts/audit_native_seven_workloads.py'
+      - 'ios/scripts/test_audit_native_seven_workloads.py'
+      - 'ios/XDriveIOS/NativePhotosDashboard.swift'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-subpage-perf-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  actual-native-subpage-metrics:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Audit real route registrations and negative evidence tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > "$RUNNER_TEMP/ios-native-subpage-source-sha"
+          echo "XD_PERF_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          python3 -m py_compile ios/scripts/audit_native_subpage_perf.py ios/scripts/test_audit_native_subpage_perf.py
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_subpage_perf.py' -v
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_seven_workloads.py' -v
+          python3 ios/scripts/audit_native_seven_workloads.py ios/performance/native-seven-workloads.json
+      - name: Prepare production-native app with test-only no-Session route harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_16.4.app ]]; then
+            sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          fi
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          python3 ios/scripts/prepare-navigation-runtime-smoke.py "$GITHUB_WORKSPACE"
+          bash ios/scripts/prepare-assets.sh
+          (cd ios && xcodegen generate --spec project.yml)
+      - name: Boot genuine iOS 18.5 iPhone Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          options=json.loads(subprocess.check_output(
+              ["xcrun","simctl","list","devices","available","-j"]))["devices"]
+          compatible=[d for runtime, devices in options.items() for d in devices
+                      if runtime.endswith("iOS-18-5") and d.get("isAvailable",True)
+                      and d.get("name","").startswith("iPhone")]
+          if not compatible: raise SystemExit("No iOS 18.5 iPhone Simulator")
+          d=next((x for x in compatible if x["name"]=="iPhone 16"), compatible[0])
+          with open(os.environ["GITHUB_ENV"],"a") as f:
+              f.write("SUBPAGE_SIM="+d["udid"]+"\n")
+          print("NATIVE_SUBPAGE_SIM",d["name"],d["udid"])
+          subprocess.run(["xcrun","simctl","boot",d["udid"]],check=True)
+          subprocess.run(["xcrun","simctl","bootstatus",d["udid"],"-b"],
+                         timeout=240,check=True)
+          PY
+      - name: Real child navigation and app CPU / peak memory n3
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-subpage-perf"
+          xcodebuild test \
+            -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SUBPAGE_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/native-subpage-perf/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/native-subpage-perf/Subpage.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests \
+            2>&1 | tee "$RUNNER_TEMP/native-subpage-perf/xcodebuild.log"
+      - name: Require 33 forward and reverse AX paths plus genuine XCTest resource samples
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/native-subpage-perf"
+          xcrun xcresulttool get test-results summary --path "$out/Subpage.xcresult" > "$out/test-summary.json"
+          xcrun xcresulttool get test-results metrics --path "$out/Subpage.xcresult" > "$out/metrics.json"
+          mkdir -p "$out/metrics-csv"
+          xcrun xcresulttool export metrics --path "$out/Subpage.xcresult" --output-path "$out/metrics-csv"
+          python3 ios/scripts/audit_native_subpage_perf.py \
+            "$out/xcodebuild.log" "$out/metrics.json" "$out/subpage-summary.json"
+          printf '%s\n' "SOURCE_HEAD=$(git rev-parse HEAD)"
+      - name: Preserve original logs, app metrics and failed route evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-subpage-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/native-subpage-perf/xcodebuild.log
+            ${{ runner.temp }}/native-subpage-perf/test-summary.json
+            ${{ runner.temp }}/native-subpage-perf/metrics.json
+            ${{ runner.temp }}/native-subpage-perf/metrics-csv/
+            ${{ runner.temp }}/native-subpage-perf/subpage-summary.json
+            ${{ runner.temp }}/native-subpage-perf/Subpage.xcresult/
+            ${{ runner.temp }}/ios-native-subpage-source-sha
+          if-no-files-found: warn
+          retention-days: 7
