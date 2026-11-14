@@ -25,6 +25,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -184,7 +186,10 @@ class DriveAppTest {
             // Capture response identity before suspension: a late Owner A
             // directory reply must not be installed in Owner B's native UI.
             val requestedBySecondOwner = clipboardSecondOwner
-            clipboardDevicesGate?.await()
+            // A remote response may ignore cancellation. Reproduce that
+            // adverse transport behavior instead of letting logout cancel
+            // the fixture before the stale reply reaches Owner fencing.
+            withContext(NonCancellable) { clipboardDevicesGate?.await() }
             return if (requestedBySecondOwner || clipboardRevoked)
                 emptyList() else listOf(clipboardDevice)
         }
@@ -3854,7 +3859,11 @@ class DriveAppTest {
                 compose.onNodeWithText("发送范围：当前账号广播").assertExists()
             }.isSuccess
         }
+        // Inspect the actual rendered recipient chooser: without opening it
+        // an old option can remain hidden and make a weak assertion pass.
+        compose.onNodeWithText("发送范围：当前账号广播").performClick()
         compose.onNodeWithText("Fixture Clip · android").assertDoesNotExist()
+        compose.onNodeWithText("当前 Owner 广播").assertExists().performClick()
         compose.onNodeWithTag("native-clipboard-directed-send").assertDoesNotExist()
         compose.runOnIdle {
             org.junit.Assert.assertEquals("other", controller.state.value.username)
