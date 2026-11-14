@@ -101,21 +101,53 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
     // immediately after edits rather than only on the next user gesture.
     @StateObject private var photoChanges = XDriveIOSUnifiedPhotoObserver()
     @State private var scanTask: Task<Void, Never>?
+    @State private var cameraSettleTask: Task<Void, Never>?
+    @State private var coverTask: Task<Void, Never>?
+    @State private var localCoverRequests: [PHImageRequestID] = []
     @State private var generation = UUID()
     @State private var busy = false
     @State private var error: String?
     @State private var pins: [XDriveIOSUnifiedSourceMapPin] = []
+    @State private var coverImages: [String: UIImage] = [:]
     @State private var selected: XDriveIOSUnifiedSourceMapPin?
     @State private var provedOwner: XDriveNativeOwnerRoot?
     @State private var provedLibrary: Data?
+    @State private var provedCamera: MKCoordinateRegion?
+    @State private var didFitFirstVerifiedMap = false
     @State private var camera = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
         span: MKCoordinateSpan(latitudeDelta: 160, longitudeDelta: 360)
     )
 
+    private var currentViewport: XDriveIOSNativeLocalMapViewport? {
+        if camera.span.longitudeDelta >= 359 && camera.span.latitudeDelta >= 159 {
+            return nil // The first global survey also includes polar GPS.
+        }
+        return XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
+            latitude: camera.center.latitude, longitude: camera.center.longitude,
+            latitudeSpan: camera.span.latitudeDelta,
+            longitudeSpan: camera.span.longitudeDelta)
+    }
+
+    private var cameraProof: Bool {
+        guard let scanned = provedCamera else { return false }
+        func longitudeDistance(_ a: Double, _ b: Double) -> Double {
+            let difference = abs(a - b).truncatingRemainder(dividingBy: 360)
+            return min(difference, 360 - difference)
+        }
+        return abs(camera.center.latitude - scanned.center.latitude)
+            <= max(0.00001, scanned.span.latitudeDelta * 0.015) &&
+            longitudeDistance(camera.center.longitude, scanned.center.longitude)
+            <= max(0.00001, scanned.span.longitudeDelta * 0.015) &&
+            abs(camera.span.latitudeDelta - scanned.span.latitudeDelta)
+            <= max(0.00001, scanned.span.latitudeDelta * 0.015) &&
+            abs(camera.span.longitudeDelta - scanned.span.longitudeDelta)
+            <= max(0.00001, scanned.span.longitudeDelta * 0.015)
+    }
+
     private var currentProof: Bool {
         guard let provedOwner else { return false }
-        return phase == .active && !busy && error == nil &&
+        return phase == .active && !busy && error == nil && cameraProof &&
             PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized &&
             XDriveIOSNativePhotoOwnerScope.matches(login.owner, provedOwner) &&
             provedLibrary.map(XDriveIOSNativePhotoFingerprintIndex.isCurrent) == true
