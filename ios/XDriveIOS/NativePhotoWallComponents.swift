@@ -378,6 +378,15 @@ struct XDriveIOSNativePhotoWallScopeSummary: View {
     }
 }
 
+/// Presentation-only scrolling after the caller has revalidated its
+/// own PhotoKit/Owner window and unique tile; never authorizes a photo read.
+@MainActor
+func xdrivePhotoWallScrollVerifiedTile<ID: Hashable>(
+    _ id: ID, scroll: ScrollViewProxy, anchor: UnitPoint = .center
+) {
+    scroll.scrollTo(id, anchor: anchor)
+}
+
 /// The caller MUST first verify the exact current PhotoKit/Owner range.
 /// This helper handles only presentation; it cannot grant Viewer access.
 @MainActor
