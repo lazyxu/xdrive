@@ -1307,6 +1307,142 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         load(from: next)
     }
 
+    /// M14: sort ALL verified nearby GPS samples by geodesic distance
+    /// (not by the temporal order of whichever 48 rows happened to load).
+    /// Source offsets are display hints and are re-admitted for every page.
+    private static func proximity(
+        latitude: Double, longitude: Double,
+        toLatitude: Double, toLongitude: Double
+    ) -> Double {
+        let radians = Double.pi / 180
+        let dLat = (latitude - toLatitude) * radians
+        let dLon = (longitude - toLongitude) * radians
+        let a = pow(sin(dLat / 2), 2) +
+            cos(toLatitude * radians) * cos(latitude * radians) *
+            pow(sin(dLon / 2), 2)
+        let bounded = min(1.0, max(0.0, a))
+        return 2 * atan2(sqrt(bounded), sqrt(1 - bounded))
+    }
+
+    private func prepareNearbyRanking() {
+        guard active, isNearbyExpansion, !busy, nearbyRanked.isEmpty else { return }
+        nearbyRanked = sourceCoordinates.filter {
+            matchesPlace(latitude: $0.latitude, longitude: $0.longitude)
+        }.sorted { left, right in
+            let a = Self.proximity(
+                latitude: left.latitude, longitude: left.longitude,
+                toLatitude: pin.latitude, toLongitude: pin.longitude)
+            let b = Self.proximity(
+                latitude: right.latitude, longitude: right.longitude,
+                toLatitude: pin.latitude, toLongitude: pin.longitude)
+            if a != b { return a < b }
+            if left.page != right.page { return left.page < right.page }
+            return left.ordinal < right.ordinal
+        }
+        if nearbyRanked.isEmpty {
+            ended = true
+        } else {
+            loadNearby(from: 0)
+        }
+    }
+
+    private func retreatNearby(forViewer: Bool = false) {
+        guard nearbyWindowIndex > 1,
+              nearbyStarts.indices.contains(nearbyWindowIndex - 2)
+        else { return }
+        loadNearby(from: nearbyStarts[nearbyWindowIndex - 2],
+                   forViewer: forViewer, backwards: true)
+    }
+
+    private func loadNearby(from start: Int, forViewer: Bool = false,
+                            backwards: Bool = false) {
+        guard isNearbyExpansion, active, !busy, !opening,
+              viewing == nil || forViewer,
+              start >= 0, start < nearbyRanked.count else { return }
+        let ticket = UUID()
+        generation = ticket
+        request?.cancel()
+        busy = true
+        error = nil
+        let sampleRows = Array(nearbyRanked[start..<min(start + 48, nearbyRanked.count)])
+        let oldAnchor = previous.first?.id
+        request = Task { @MainActor in
+            defer { if generation == ticket { busy = false; request = nil } }
+            do {
+                var verifiedPages: [Int: [XDriveIOSNativeUnifiedPhoto]] = [:]
+                var items: [XDriveIOSNativeUnifiedPhoto] = []
+                for sample in sampleRows {
+                    try Task.checkCancellation()
+                    guard generation == ticket, active,
+                          sourceCursors.indices.contains(sample.page)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                    let rows: [XDriveIOSNativeUnifiedPhoto]
+                    if let hit = verifiedPages[sample.page] {
+                        rows = hit
+                    } else {
+                        let model = XDriveIOSNativeUnifiedPhotoTimeline()
+                        await model.load(from: sourceCursors[sample.page],
+                                         filter: presence, login: login,
+                                         query: query, library: library)
+                        try Task.checkCancellation()
+                        guard generation == ticket, active,
+                              model.completed, model.notice == nil
+                        else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                        rows = model.rows
+                        verifiedPages[sample.page] = rows
+                    }
+                    guard rows.indices.contains(sample.ordinal),
+                          rows[sample.ordinal].presence == presence,
+                          let coord = XDriveIOSUnifiedSourceMapPolicy.coordinates(
+                            for: rows[sample.ordinal]),
+                          coord.latitude == sample.latitude,
+                          coord.longitude == sample.longitude,
+                          matchesPlace(latitude: coord.latitude,
+                                       longitude: coord.longitude)
+                    else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
+                    items.append(rows[sample.ordinal])
+                }
+                guard generation == ticket, active, !Task.isCancelled else { return }
+                if backwards {
+                    guard nearbyWindowIndex > 1, let oldAnchor else {
+                        throw XDriveIOSNativeMediaReadFailure.invalidPage
+                    }
+                    current = previous
+                    previous = items
+                    nearbyWindowIndex -= 1
+                    nearbyNext = nearbyStarts[nearbyWindowIndex + 1]
+                    if forViewer {
+                        if let row = previous.last { admitViewerNeighbor(row) }
+                    } else {
+                        backfillAnchorID = oldAnchor
+                    }
+                } else {
+                    if nearbyStarts.indices.contains(nearbyWindowIndex + 1) {
+                        guard nearbyStarts[nearbyWindowIndex + 1] == start else {
+                            throw XDriveIOSNativeMediaReadFailure.invalidPage
+                        }
+                        nearbyWindowIndex += 1
+                    } else {
+                        nearbyStarts.append(start)
+                        nearbyWindowIndex = nearbyStarts.count - 1
+                    }
+                    previous = current
+                    current = items
+                    let nextOffset = start + sampleRows.count
+                    nearbyNext = nextOffset < nearbyRanked.count ? nextOffset : nil
+                    if forViewer, let row = current.first { admitViewerNeighbor(row) }
+                }
+                next = nil
+                ended = nearbyNext == nil
+            } catch is CancellationError {
+            } catch {
+                guard generation == ticket else { return }
+                previous = []; current = []; nearbyNext = nil
+                error = "附近位置或来源索引已变化，请关闭后重新核验。"
+            }
+        }
+    }
+
     /// M04: one bounded backward virtual page, re-proved from its original
     /// cursor and exact location predicate. Preserve the visible first tile
     /// anchor while replacing the two 48-row windows.
