@@ -32,7 +32,7 @@ test('local filename + media/date scan is the same live admission as its sheet',
  assert.match(u,/onShowMap\?\(selectedRange, selectedMedia, selectedFilename\)/)
 })
 test('unrepresentable Owner/source filters cannot silently broaden map access',()=>{
- assert.match(u,/if sourceFilter != nil \{/)
+ assert.match(u,/if let sourceFilter \{/)
  assert.match(d,/unifiedMapFilenameTerm = filename/)
  assert.match(d,/cloudSourceAllowed: true/)
  assert.match(m,/let ownerSelection = XDriveIOSNativeOwnerMapSelection\(\s*mediaFilter: mediaFilter, filenameTerm: filenameTerm\)/)
