@@ -25,7 +25,7 @@ test('Opening Files Viewer arms a single return refresh before presentation', ()
 test('Files Viewer dismissal performs a single foreground read', () => {
   const s = between(collection, '.fullScreenCover(item: $selectedFile, onDismiss:', 'onNavigate: { next in');
   assert.match(s, /let shouldRefresh = viewerRefreshPending\s*viewerRefreshPending = false/);
-  assert.match(s, /if shouldRefresh && phase == \.active && !model\.loading/);
+  assert.match(s, /if shouldRefresh && isVisible && phase == \.active &&\s*!model\.loading && model\.matches\(login\.owner, kind: kind\)/);
   assert.doesNotMatch(s, /if !model\.loading \{ reload\(preserveVerifiedRows: true\) \}/);
 });
 test('SwiftUI onAppear while Viewer dismisses never races a second GET', () => {

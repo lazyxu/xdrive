@@ -797,8 +797,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .sheet(item: $locateIntent, onDismiss: {
                 locateOwner = nil
-                // The route only looked up a Node location; no write occurred.
-                if !model.matches(login.owner, kind: kind) { reload() }
+                // A late modal dismissal cannot refresh an invisible or retired Owner.
+                if isVisible && phase == .active && login.owner != nil &&
+                   !model.matches(login.owner, kind: kind) { reload() }
             }) { selected in
                 NavigationStack {
                     if let openedOwner = locateOwner,
@@ -818,8 +819,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 let shouldRefresh = viewerRefreshPending
                 viewerRefreshPending = false
                 // The presenter can reappear before onDismiss. Only this
-                // callback may refresh after a Viewer, and not in background.
-                if shouldRefresh && phase == .active && !model.loading {
+                // callback may refresh only for the still-visible, verified Owner
+                // and collection. A tab/Owner change must not fetch behind it.
+                if shouldRefresh && isVisible && phase == .active &&
+                   !model.loading && model.matches(login.owner, kind: kind) {
                     reload(preserveVerifiedRows: true)
                 }
             }) { initial in
@@ -855,7 +858,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     if !model.loading && model.error == nil { reload() }
                 } else if !model.loading &&
                           selectedFile == nil && locateIntent == nil &&
-                          managementIntent == nil {
+                          managementIntent == nil && quickInfoIntent == nil &&
+                          quickRenameIntent == nil {
                     // A child folder may mutate Recent or Favorites while
                     // hidden. Keep verified rows while refreshing silently.
                     reload(preserveVerifiedRows: true)
@@ -881,7 +885,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     // but do not drop a child NavigationLink's verified source.
                     model.suspendForNavigation()
                 } else if isVisible && !model.loading &&
-                          selectedFile == nil && !viewerRefreshPending {
+                          selectedFile == nil && !viewerRefreshPending &&
+                          locateIntent == nil && managementIntent == nil &&
+                          quickInfoIntent == nil && quickRenameIntent == nil {
                     // A screen that appeared while inactive must still load
                     // when foregrounded. Revalidate an old same-scope page
                     // silently, never revive a previous Owner or collection.
@@ -915,7 +921,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 model.invalidate()
                 favorites.invalidate()
                 recentClear.invalidate()
-                if phase == .active { reload() }
+                // State may be rebound while this Files route is covered.
+                // Wait for its next visible onAppear instead of fetching behind it.
+                if isVisible && phase == .active && login.owner != nil { reload() }
             }
             .onChange(of: login.owner) { _ in
                 modeSwitchTicket = UUID()
@@ -1045,7 +1053,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     }
 
     private func openQuickInfo(for item: XDriveIOSNativeFilesCollectionItem) {
-        guard phase == .active, model.verified, !model.loading,
+        guard isVisible, phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
               !favorites.busy, selectedFile == nil, locateIntent == nil,
               managementIntent == nil, let owner = login.owner,
               filteredItems.contains(item), model.items.contains(item) else { return }
@@ -1058,9 +1067,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
         for item: XDriveIOSNativeFilesCollectionItem,
         quickAction: XDriveIOSNativeFilesQuickAction? = nil
     ) {
-        guard phase == .active, model.verified, !model.loading,
+        guard isVisible, phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
               !favorites.busy, selectedFile == nil, locateIntent == nil,
-              managementIntent == nil,
+              managementIntent == nil, quickInfoIntent == nil,
+              quickRenameIntent == nil,
               let owner = login.owner, let parentID = item.node.parent_id,
               parentID > 0,
               XDriveIOSNativeFilesCollectionsPolicy.validItem(item, kind: kind),
@@ -1074,8 +1085,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     /// guessed navigation target. Use the existing authoritative Node location
     /// reader, which also validates exact Owner, root, parent and revision.
     private func showLocation(for item: XDriveIOSNativeFilesCollectionItem) {
-        guard phase == .active, model.verified, !model.loading,
+        guard isVisible, phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
               !favorites.busy, selectedFile == nil,
+              managementIntent == nil, quickInfoIntent == nil,
+              quickRenameIntent == nil,
               let owner = login.owner, filteredItems.contains(item),
               model.items.contains(item), item.node.parent_id != nil else { return }
         locateOwner = owner
@@ -1083,7 +1097,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     }
 
     private func openFile(_ item: XDriveIOSNativeFilesCollectionItem) {
-        guard model.verified, !model.loading, !favorites.busy,
+        guard isVisible, phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
+              !favorites.busy, locateIntent == nil, managementIntent == nil,
+              quickInfoIntent == nil, quickRenameIntent == nil,
               let owner = login.owner, filteredItems.contains(item),
               model.items.contains(item) else { return }
         selectedOwner = owner
