@@ -105,7 +105,7 @@ test('unified Gallery uses the canonical adaptive photo grid and bounded density
   assert.match(shared, /maximum: density\.maximumCellWidth/)
   assert.match(density, /case compact, standard, large/)
   assert.match(ui, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
-  assert.match(ui, /xdrivePhotoWallDensityButtons\(\$wallDensity\)/)
+  assert.match(ui, /XDriveIOSNativePhotoWallDisplayMenu\([\s\S]*?density: \$wallDensity, framing: \$wallFraming/)
   assert.match(ui, /native-ios-unified-wall-density/)
   assert.match(ui, /\.xdrivePhotoWallPinch\(/)
   assert.match(ui, /density: \$wallDensity/)
@@ -114,8 +114,8 @@ test('unified Gallery uses the canonical adaptive photo grid and bounded density
   assert.match(shared, /density = density\.applyingPinch\(scale\)/)
   assert.match(ui, /filter: sourceFilter, query: query, density: wallDensity,[\s\S]*?displayActive: selected == nil && phase == \.active/)
   assert.match(wall, /let density: XDriveIOSNativePhotoWallDensity/)
-  assert.match(wall, /if timeScale != \.all \{\s*XDriveIOSNativePhotoWallDayHeader\(title: timeScale\.label\(for: day\)\)/)
-  assert.match(wall, /XDriveIOSNativePhotoWallGrid\(density: density\) \{[\s\S]*?ForEach\(groups\[day\] \?\? \[\]\)/)
+  assert.match(wall, /XDriveIOSNativePhotoWallSectionList\([\s\S]*?guard timeScale != \.all else \{ return nil \}/)
+  assert.match(wall, /xdriveIOSNativePhotoWallVisibleSections\([\s\S]*?sections: sections, density: density/)
   assert.doesNotMatch(wall, /LazyVGrid\(|GridItem\(/)
   // Other Gallery/places surfaces retain their own existing master contract tests.
   // A purely visual density change must not alter source cursors, Owner membership,
