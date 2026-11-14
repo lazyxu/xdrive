@@ -365,7 +365,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 NavigationStack {
                     XDriveIOSNativeUnifiedSourceMapCellWall(
                         login: login, owner: owner, library: library,
-                        presence: presence, query: scopedQuery, pin: pin)
+                        presence: presence, query: scopedQuery, pin: pin,
+                        sourceCoordinates: cachedCoordinates, sourceCursors: cachedCursors)
                 }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -791,6 +792,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     let presence: XDriveIOSNativeGalleryPresence
     let query: XDriveIOSNativeUnifiedGalleryQuery
     let pin: XDriveIOSUnifiedSourceMapPin
+    let sourceCoordinates: [XDriveIOSUnifiedSourceCachedCoordinate]
+    let sourceCursors: [XDriveIOSNativeGalleryCursor]
     var isNearbyExpansion = false
 
     @Environment(\.scenePhase) private var phase
@@ -808,6 +811,10 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var windowStarts: [XDriveIOSNativeGalleryCursor] = []
     @State private var windowIndex = -1
     @State private var backfillAnchorID: String?
+    @State private var nearbyRanked: [XDriveIOSUnifiedSourceCachedCoordinate] = []
+    @State private var nearbyNext: Int?
+    @State private var nearbyStarts: [Int] = []
+    @State private var nearbyWindowIndex = -1
     @State private var ended = false
     @State private var viewing: XDriveIOSUnifiedMapViewerChoice?
     @State private var viewerReturnID: String?
@@ -943,7 +950,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     XDriveIOSNativeUnifiedSourceMapCellWall(
                         login: login, owner: owner, library: library,
                         presence: presence, query: query, pin: pin,
-                        isNearbyExpansion: true)
+                        sourceCoordinates: sourceCoordinates,
+                        sourceCursors: sourceCursors, isNearbyExpansion: true)
                 })
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
@@ -974,7 +982,11 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             photoChanges.start()
             resolvePlaceName()
             if current.isEmpty && !busy && error == nil {
-                load(from: isNearbyExpansion ? .init() : pin.firstCursor)
+                if isNearbyExpansion {
+                    prepareNearbyRanking()
+                } else {
+                    load(from: pin.firstCursor)
+                }
             }
         }
         .onChange(of: photoChanges.change) { _ in invalidate() }
@@ -997,10 +1009,13 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     private var photoWall: some View {
         ScrollViewReader { scroll in
             ScrollView {
-                if windowIndex > 1 && !busy && active &&
-                   viewing == nil && !opening {
+                if (isNearbyExpansion ? nearbyWindowIndex > 1 : windowIndex > 1)
+                    && !busy && active && viewing == nil && !opening {
                     Color.clear.frame(height: 32)
-                        .onAppear { retreat() }
+                        .onAppear {
+                            if isNearbyExpansion { retreatNearby() }
+                            else { retreat() }
+                        }
                         .accessibilityHidden(true)
                 }
                 let sections = xdriveIOSNativePhotoWallVisibleSections(
@@ -1013,10 +1028,15 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 ) { row in
                     photoButton(for: row).id(row.id)
                 }
-                if next != nil && !busy && error == nil && active &&
-                   viewing == nil && !opening {
+                if (isNearbyExpansion ? nearbyNext != nil : next != nil)
+                    && !busy && error == nil && active &&
+                    viewing == nil && !opening {
                     Color.clear.frame(height: 32)
-                        .onAppear { advance() }
+                        .onAppear {
+                            if isNearbyExpansion, let nearbyNext {
+                                loadNearby(from: nearbyNext)
+                            } else { advance() }
+                        }
                         .accessibilityHidden(true)
                 }
             }
@@ -1114,10 +1134,16 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         let target = position + direction
         if rows.indices.contains(target) {
             admitViewerNeighbor(rows[target])
-        } else if direction > 0, let next {
-            load(from: next, forViewer: true)
-        } else if direction < 0, windowIndex > 1 {
-            retreat(forViewer: true)
+        } else if direction > 0 {
+            if isNearbyExpansion, let nearbyNext {
+                loadNearby(from: nearbyNext, forViewer: true)
+            } else if let next { load(from: next, forViewer: true) }
+        } else if direction < 0 {
+            if isNearbyExpansion && nearbyWindowIndex > 1 {
+                retreatNearby(forViewer: true)
+            } else if windowIndex > 1 {
+                retreat(forViewer: true)
+            }
         }
     }
 
@@ -1262,6 +1288,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         admissionTask?.cancel(); admissionTask = nil
         previous = []; current = []; next = nil
         windowStarts = []; windowIndex = -1; backfillAnchorID = nil
+        nearbyRanked = []; nearbyNext = nil
+        nearbyStarts = []; nearbyWindowIndex = -1
         ended = false
         viewing = nil
         viewerReturnID = nil
