@@ -159,6 +159,24 @@ test('LAN pairing distinguishes handshake errors from strict pinned trust eviden
   assert.doesNotMatch(route + trust, /InsecureSkipVerify|trustAllHosts|allowUntrusted/)
 })
 
+test('iOS stage-3 uses bounded URLSessionDataDelegate and real session/task trust callbacks', () => {
+  assert.match(route, /URLSessionDataDelegate/)
+  assert.match(route, /session\.dataTask\(with: request\)/)
+  assert.match(route, /verifier\.boundedRead\(/)
+  assert.match(route, /maximumBytes - receivedBytes\.count/)
+  assert.match(route, /response\.expectedContentLength > Int64\(maximumBytes\)/)
+  assert.match(route, /task: URLSessionTask,[\s\S]*?didReceive challenge: URLAuthenticationChallenge/)
+  assert.match(route, /super\.urlSession\(session, didReceive: challenge\)/)
+  assert.match(route, /ipCertificatePostTrustFailure\(url\.errorCode\)/)
+  assert.doesNotMatch(route, /session\.bytes\(for: request\)/)
+  assert.match(trust, /POST_TRUST_SYSTEM_REJECTION/)
+  const sim = read('ios/tests/NativeLANSimulatorTrustTests.swift')
+  const harness = read('ios/tests/run-native-lan-simulator.sh')
+  assert.match(sim, /testProductStage3UsesBoundedDataTaskAndPinnedIPTrust/)
+  assert.match(sim, /XDriveIOSNativeLANLoginRoute\.probeVersion\(/)
+  assert.match(harness, /cp "\$repo\/ios\/XDriveIOS\/NativeLANLoginRoute\.swift"/)
+})
+
 test('only user-requested pairing emits bounded TLS evidence, never changes trust decision', () => {
   assert.match(route, /if pairing, let evidence = verifier\.pairingEvidence/)
   assert.match(route, /ipCertificateWithoutChallenge\(url\.errorCode\)/)
