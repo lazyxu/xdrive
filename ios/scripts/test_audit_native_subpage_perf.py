@@ -70,11 +70,11 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertEqual(report["rows"][0]["app_peak_memory_p95_mib"], 3)
         self.assertFalse(report["real_signed_owner_data"])
 
-    def test_actual_repository_registration_has_all_twenty_two_routes(self):
+    def test_actual_repository_registration_has_all_twenty_four_routes(self):
         module.ROUTES = self.old
         registered = module.source_routes(module.SOURCE.read_text(encoding="utf-8"))
         self.assertEqual(set(registered.values()), set(module.ROUTES))
-        self.assertEqual(len(module.ROUTES), 22)
+        self.assertEqual(len(module.ROUTES), 24)
 
     def test_gallery_backup_routes_use_existing_product_navigation(self):
         gallery = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
@@ -114,6 +114,31 @@ class NativeSubpageAuditTests(unittest.TestCase):
                       "gallery.local.date-sheet", "gallery.map.from-filter",
                       "gallery.map.from-launcher"):
             self.assertIn(f'run("{route}")', native_test)
+
+    def test_files_home_saved_searches_and_operation_history_are_real(self):
+        files = (module.ROOT / "ios/XDriveIOS/NativeCloudFilesBrowser.swift").read_text(
+            encoding="utf-8"
+        )
+        saved = (module.ROOT / "ios/XDriveIOS/NativeFilesSavedSearches.swift").read_text(
+            encoding="utf-8"
+        )
+        operations = (module.ROOT / "ios/XDriveIOS/NativeFilesOperationHistory.swift").read_text(
+            encoding="utf-8"
+        )
+        native_test = module.SOURCE.read_text(encoding="utf-8")
+        for route, entry, ready, done, component in (
+            ("files.home.saved-searches", "native-ios-files-open-saved-searches",
+             "native-ios-files-saved-searches-page", "native-ios-files-saved-searches-done", saved),
+            ("files.home.operation-history", "native-ios-files-open-operations",
+             "native-ios-files-operation-history-page", "native-ios-files-operation-history-done",
+             operations),
+        ):
+            self.assertIn(entry, files)
+            self.assertIn(ready, component)
+            self.assertIn(done, component)
+            self.assertIn(f'run("{route}")', native_test)
+            self.assertIn(f'case "{route}":', native_test)
+        self.assertIn("Native Files child remained after Done", native_test)
 
     def test_new_backup_setup_and_mine_consent_are_real(self):
         backup = (module.ROOT / "ios/XDriveIOS/NativePhotoBackupScreen.swift").read_text(

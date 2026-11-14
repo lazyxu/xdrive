@@ -1,4 +1,4 @@
-# iOS Native subpage performance coverage (2026-11-13)
+# iOS Native subpage performance coverage (2026-11-14)
 
 ## Scope, existing evidence, and merge boundary
 
@@ -9,9 +9,9 @@ The original 25-route AX-ready baseline passed 75/75 on \`a32cac1\`.
 This follow-up is now directly targeted at master, not stacked onto an
 unmerged development parent.
 
-This additive PR registers **22 native interaction/entry paths** (the original 9,
-6 added Backup/Gallery entries, 5 Files/Gallery/MapKit child paths, and 2 more
-Setup/Account consent routes),
+This additive PR registers **24 native interaction/entry paths** (the original 9,
+6 added Backup/Gallery entries, 5 Files/Gallery/MapKit child paths, 2
+Setup/Account consent routes, and 2 distinct Files Home child-entry paths),
 without inventing Owner authentication or media fixtures. It retains separate
 route IDs and test cases even where multiple navigation paths render the same
 SwiftUI component. Repetition is deliberate: user-perceived entry costs and
@@ -21,6 +21,8 @@ resource lifetimes differ.
 | --- | --- | --- | --- |
 | files.home.recent-denied | Files Home → 最近使用 | native-ios-files-recent-error-page | Synthetic Owner, no Session |
 | files.home.favorites-denied | Files Home → 收藏夹 | native-ios-files-favorites-error-page | Synthetic Owner, no Session |
+| files.home.saved-searches | Files Home → 智能文件夹 Sheet | native-ios-files-saved-searches-page | Native direct Home entry, Owner no Session; no mutations |
+| files.home.operation-history | Files Home → 操作历史及撤销 Sheet | native-ios-files-operation-history-page | Native direct Home entry, Owner no Session; no replay/cancel |
 | files.organizer | Files Home → 整理浏览首页 Sheet | Organizer navigation bar | Synthetic Owner, no Session |
 | files.organizer.saved-searches | Organizer → 智能文件夹 | native-ios-files-saved-searches-page | Synthetic Owner, no Session |
 | files.organizer.tags | Organizer → 标签管理 | native-ios-files-tag-management | Synthetic Owner, no Session |
@@ -42,7 +44,7 @@ resource lifetimes differ.
 | launcher.recent-picker | 笔记 → 最近功能 Sheet | Recent picker navigation bar | Genuine native launcher/session-free |
 | mine.signout.confirm | 我的 → 退出当前账户确认层 → 安全取消 | 停止本机自动备份并退出 | Synthetic Owner, no Session; never confirms destructive sign-out |
 
-All twenty-two routes use real product-owned SwiftUI views or native UI modes, but some are
+All twenty-four routes use real product-owned SwiftUI views or native UI modes, but some are
 **distinct entry paths into the same underlying screen**, not 15 unique
 screens. The original nine-path Simulator run [#43249473366](https://github.com/lazyxu/xdrive/actions/runs/43249473366)
 passed on `a39441a`. An actual 20-route Simulator run
@@ -63,6 +65,28 @@ contents, disabled operations and missing network grants are **not** bypassed.
 
 The genuine iOS 18.5/Xcode Simulator [run #43410173204](https://github.com/lazyxu/xdrive/actions/runs/43410173204) executed **22 methods: 20 passed, 2 failed**, so the previous SHA is **red**, not a completed 66-sample result. `backup.setup` could not reach a conditional setup button when Owner destination verification was unavailable; `mine.signout.confirm` could open its dialog but lacked a native explicit Cancel. The repair preserves 22 routes and adds a safe Setup view link in the existing overview plus an explicit cancellation action. Separately, full CI/IPA failed a stale compact Gallery Node source assertion still demanding backup actions inside the content row even after the real hit-tested toolbar repair. That assertion now verifies the actual toolbar and non-remounting short-row layout. No skips, Owner bypass, simulated data or automatic sign-out are introduced. **Fresh exact-HEAD 22-route metrics and full CI/IPA are still required.**
 
+### Confirmed 22-path Simulator success and two more Files Home entries (2026-11-14)
+
+At the prior exact HEAD `03e08f4`, the native 22-path performance run
+[#43465802892](https://github.com/lazyxu/xdrive/actions/runs/43465802892)
+finished **SUCCESS** (real iOS Simulator route transitions and app CPU/RSS).
+However the same SHA's full CI [#43465802996](https://github.com/lazyxu/xdrive/actions/runs/43465802996)
+and unsigned IPA [#43465802798](https://github.com/lazyxu/xdrive/actions/runs/43465802798)
+failed because the Desktop source contract still required the removed
+`native-ios-gallery-backup-settings-compact` ID. This was repaired on this
+performance branch to require the current unique actual toolbar
+`native-ios-gallery-backup-settings` ID, while retaining the hit-area checks.
+The candidate-mapkit navigation shard [#43465802787](https://github.com/lazyxu/xdrive/actions/runs/43465802787)
+also failed on an absent real AX `native-ios-local-map-basemap` control; it
+remains an **unresolved independent navigation failure**, not a performance pass.
+
+Two further genuine tap paths now measure **Files Home → Saved Searches** and
+**Files Home → Operation History** separately from Organizer/other route entries.
+Both require their actual page IDs and a real Done dismissal; no fake owner
+session, Server data, queued operation action, or cancellation is injected.
+The **24-path exact-new-HEAD run is pending**. Preserve historical 22/22
+success only for `03e08f4`, not for the amended 24-path source.
+
 ## Metrics and gates
 
 For each route, use the existing iOS18.5/Xcode16.4 simulator and genuine
@@ -73,7 +97,7 @@ AX-ready wall milliseconds and separately app-targeted
 \`XCTMemoryMetric(application: app)\` Memory Peak Physical in KiB.
 The raw .xcresult is exported as JSON and CSV.
 
-The strict audit requires 22 registered methods, 4 observed UI invocations
+The strict audit requires 24 registered methods, 4 observed UI invocations
 per route, 3 unique AX trial IDs per route, 3 **genuine XCTest CPU Time** and
 **Memory Peak Physical** numbers per route and nonempty original xcresult
 metrics export. Missing, duplicates, or invalid numerical results cause an
@@ -85,8 +109,8 @@ true Hitch Time Ratio or physical 60/120 Hz frame pacing. User-visible
 screens requiring an Owner will fail closed rather than load fabricated
 Server files. This suite does not modify backup/session/Server code.
 
-The 22-path contract requires **88 UI invocations, 66 retained AX trials,
-66 genuine app CPU and 66 app peak-memory values**, all from the same
+The 24-path contract requires **96 UI invocations, 72 retained AX trials,
+72 genuine app CPU and 72 app peak-memory values**, all from the same
 exact-head Xcode Simulator run. Existing 25 root/selected-child routes are
 measured separately; these matrices are not 45 unique pages. Alert, map
 source selector and edit mode readiness are explicitly not pixel/FPS timing.

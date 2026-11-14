@@ -18,6 +18,8 @@ SOURCE = ROOT / "ios/UITests/XDriveIOSNativeSubpagePerformanceUITests.swift"
 ROUTES = (
     "files.home.recent-denied",
     "files.home.favorites-denied",
+    "files.home.saved-searches",
+    "files.home.operation-history",
     "files.organizer",
     "files.organizer.saved-searches",
     "files.organizer.tags",

@@ -105,6 +105,10 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 _ = filesHomeAction("native-ios-files-open-recent", app: app)
             case "files.home.favorites-denied":
                 _ = filesHomeAction("native-ios-files-open-favorites", app: app)
+            case "files.home.saved-searches":
+                _ = filesHomeAction("native-ios-files-open-saved-searches", app: app)
+            case "files.home.operation-history":
+                _ = filesHomeAction("native-ios-files-open-operations", app: app)
             case "files.organizer":
                 _ = filesHomeAction("native-ios-files-organize-home", app: app)
             case "files.organizer.saved-searches", "files.organizer.tags":
@@ -203,6 +207,12 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "files.home.favorites-denied":
             tap("native-ios-files-open-favorites", app: app)
             ready = view("native-ios-files-favorites-error-page", app: app)
+        case "files.home.saved-searches":
+            tap("native-ios-files-open-saved-searches", app: app)
+            ready = view("native-ios-files-saved-searches-page", app: app)
+        case "files.home.operation-history":
+            tap("native-ios-files-open-operations", app: app)
+            ready = view("native-ios-files-operation-history-page", app: app)
         case "files.organizer":
             tap("native-ios-files-organize-home", app: app)
             ready = app.navigationBars["整理浏览首页"].firstMatch
@@ -301,6 +311,21 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             tap("native-ios-files-favorites-error-return", app: app)
             XCTAssertTrue(view("native-ios-files-section-browse", app: app)
                 .waitForExistence(timeout: 15))
+        case "files.home.saved-searches", "files.home.operation-history":
+            let doneID = route == "files.home.saved-searches"
+                ? "native-ios-files-saved-searches-done"
+                : "native-ios-files-operation-history-done"
+            tap(doneID, app: app)
+            XCTAssertTrue(view("native-ios-files-section-browse", app: app)
+                .waitForExistence(timeout: 15))
+            let pageID = route == "files.home.saved-searches"
+                ? "native-ios-files-saved-searches-page"
+                : "native-ios-files-operation-history-page"
+            let retired = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"),
+                object: view(pageID, app: app))
+            XCTAssertEqual(XCTWaiter.wait(for: [retired], timeout: 12), .completed,
+                           "Native Files child remained after Done")
         case "files.organizer":
             finishOrganizer(app)
         case "files.organizer.saved-searches", "files.organizer.tags":
@@ -428,6 +453,8 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
 
     func testSubpageFilesHomeRecentDenied() { run("files.home.recent-denied") }
     func testSubpageFilesHomeFavoritesDenied() { run("files.home.favorites-denied") }
+    func testSubpageFilesHomeSavedSearches() { run("files.home.saved-searches") }
+    func testSubpageFilesHomeOperationHistory() { run("files.home.operation-history") }
     func testSubpageFilesOrganizer() { run("files.organizer") }
     func testSubpageFilesOrganizerSavedSearches() { run("files.organizer.saved-searches") }
     func testSubpageFilesOrganizerTags() { run("files.organizer.tags") }
