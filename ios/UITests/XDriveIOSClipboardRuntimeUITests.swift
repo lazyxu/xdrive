@@ -101,4 +101,45 @@ final class XDriveIOSClipboardRuntimeUITests: XCTestCase {
             XCTAssertEqual(app.state, .runningForeground)
         }
     }
+
+    func testClipboardForegroundResumeDoesNotPromoteSyntheticOwnerToAuthorized() {
+        let app = openClipboard(syntheticOwner: true)
+        let enroll = app.buttons["启用本机设备定向接收"].firstMatch
+        XCTAssertTrue(enroll.exists)
+        enroll.tap()
+        XCTAssertTrue(find("ios-clipboard-status", in: app)
+            .waitForExistence(timeout: 15))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(find("ios-clipboard-draft", in: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["撤销所选设备的 Clipboard 接收授权"].exists)
+        XCTAssertFalse(app.buttons["从云端 Files 选择现有文件"].exists)
+        XCTAssertFalse(app.buttons["定向发送"].exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testRepeatedClipboardFilesGalleryReturnsRetainFailClosedOwner() {
+        let app = openClipboard(syntheticOwner: true)
+        for _ in 0..<3 {
+            find("native-ios-tab-files", in: app).tap()
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+                .waitForExistence(timeout: 15))
+            find("native-ios-tab-gallery", in: app).tap()
+            find("native-ios-tab-launcher", in: app).tap()
+            let shortcut = find("native-ios-launcher-clipboard", in: app)
+            let scroll = app.scrollViews.firstMatch
+            for _ in 0..<8 {
+                if shortcut.exists && shortcut.isHittable { break }
+                scroll.swipeUp()
+            }
+            XCTAssertTrue(shortcut.isHittable)
+            shortcut.tap()
+            XCTAssertTrue(find("ios-clipboard-draft", in: app)
+                .waitForExistence(timeout: 15))
+            XCTAssertFalse(app.buttons["定向发送"].exists)
+            XCTAssertFalse(app.buttons["从云端 Files 选择现有文件"].exists)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+    }
 }
