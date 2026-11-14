@@ -103,12 +103,14 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(copyReport.exists)
         let diagnostic = app.buttons["native-ios-startup-diagnostic-login"]
         XCTAssertTrue(diagnostic.waitForExistence(timeout: 5))
-        if !diagnostic.isHittable { recovery.swipeUp() }
+        if !diagnostic.isHittable { app.swipeUp() }
         XCTAssertTrue(diagnostic.isHittable)
         diagnostic.tap()
         XCTAssertTrue(app.textFields["native-ios-login-server"]
             .waitForExistence(timeout: 10))
-        XCTAssertTrue(app.secureTextFields["native-ios-login-password"].exists)
+        // Password identifier belongs to the containing native HStack.
+        XCTAssertTrue(app.descendants(matching: .any)
+            .matching(identifier: "native-ios-login-password").firstMatch.exists)
         XCTAssertFalse(app.buttons["native-ios-diagnostic-open-dashboard"].exists)
         XCTAssertFalse(app.descendants(matching: .any)
             .matching(identifier: "native-ios-five-slot-bar").firstMatch.exists)
