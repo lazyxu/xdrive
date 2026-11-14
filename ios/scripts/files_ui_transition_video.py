@@ -183,6 +183,10 @@ def audit(directory, report, minimum):
                 frames = read_frames(path)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 failures.append("undecodable_recording")
+        # An empty decoder result must never be accepted as a green gate.
+        # A playable header is not evidence of any actually decoded frames.
+        if not frames and not failures:
+            failures.append("missing_decoded_video_frames")
         if frames:
             times = [f["time"] for f in frames]
             if len(times) < 12 or any(b <= a for a, b in zip(times, times[1:])):
