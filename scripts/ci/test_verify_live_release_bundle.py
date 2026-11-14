@@ -190,6 +190,17 @@ class LiveReleaseBundleGateTests(unittest.TestCase):
                 audit.check_sigstore(COMMIT, self.raw)
 
 
+    def test_authenticated_two_range_evidence_rejects_one_byte_fixture(self):
+        # One 206 response is not proof of two independent resume ranges.
+        tiny = dict(self.item, cached=True, size=1)
+        with self.assertRaisesRegex(audit.GateError, "two independent Range"):
+            audit.check_authenticated_range_download(
+                "https://example.test", "fixture-owner", tiny)
+        tiny["size"] = True  # bool must not count as an integer package size
+        with self.assertRaisesRegex(audit.GateError, "two independent Range"):
+            audit.check_authenticated_range_download(
+                "https://example.test", "fixture-owner", tiny)
+
     def test_authenticated_resume_download_requires_exact_ranges_and_digest(self):
         payload = self.payload
         commit = COMMIT

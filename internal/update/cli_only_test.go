@@ -98,7 +98,7 @@ func createCLIOnlyTestTar(t *testing.T, members []cliOnlyArchiveMember) string {
 	tw := tar.NewWriter(gz)
 	for _, m := range members {
 		header := &tar.Header{Name: m.name, Size: int64(len(m.payload)), Mode: int64(m.mode.Perm())}
-		if m.name == "xdrive-backup/" {
+		if m.mode.IsDir() {
 			header.Size = 0
 			header.Typeflag = tar.TypeDir
 		} else if m.mode&os.ModeSymlink != 0 {
@@ -245,6 +245,99 @@ func TestCLIOnlyArchiveAllowsExactOriginalGoBinaryPair(t *testing.T) {
 		invalid = append(invalid, cliOnlyArchiveMember{"../outside", []byte("bad"), 0o644})
 		if err := ValidateCLIOnlyArchive(createCLIOnlyTestZIP(t, invalid), name); err == nil {
 			t.Fatal("ZIP traversal accepted")
+		}
+	}
+}
+
+func TestStandaloneCLIAssetNamesKeepBackupOnlyDefault(t *testing.T) {
+	for _, tc := range []struct {
+		goos, goarch, standalone, legacy string
+		ok                               bool
+	}{
+		{"linux", "amd64", "xdrive-cli-linux-amd64.tar.gz", "xdrive-backup-linux-amd64.tar.gz", true},
+		{"windows", "amd64", "xdrive-cli-windows-amd64.zip", "xdrive-backup-windows-amd64.zip", true},
+		{"darwin", "amd64", "", "", false},
+		{"linux", "arm64", "", "", false},
+	} {
+		standalone, err := StandaloneCLIAssetName(tc.goos, tc.goarch)
+		if (err == nil) != tc.ok || standalone != tc.standalone {
+			t.Fatalf("unexpected standalone target for %s/%s: %q %v", tc.goos, tc.goarch, standalone, err)
+		}
+		if tc.ok {
+			legacy, err := CLIOnlyAssetName(tc.goos, tc.goarch)
+			if err != nil || legacy != tc.legacy {
+				t.Fatalf("existing Backup-only target was silently changed: %q %v", legacy, err)
+			}
+		}
+	}
+}
+
+func TestStandaloneCLIArchiveExactGoPairAndRejectsDesktopOrHelpers(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "windows" {
+		t.Skip("portable CLI supports Linux and Windows")
+	}
+	xd := compileCLIOnlyFixture(t, runtime.GOOS, "xd")
+	agent := compileCLIOnlyFixture(t, runtime.GOOS, "xdrive-agent")
+	if runtime.GOOS == "linux" {
+		good := []cliOnlyArchiveMember{
+			{"xdrive-cli/", nil, os.ModeDir | 0o755},
+			{"xdrive-cli/README.md", []byte("independent xd/Agent"), 0o644},
+			{"xdrive-cli/xd", xd, 0o755},
+			{"xdrive-cli/xdrive-agent", agent, 0o755},
+		}
+		name := "xdrive-cli-linux-amd64.tar.gz"
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestTar(t, good), name); err != nil {
+			t.Fatalf("standalone source-exact Linux pair rejected: %v", err)
+		}
+		bad := append(append([]cliOnlyArchiveMember(nil), good...),
+			cliOnlyArchiveMember{"xdrive-cli/xdrive-desktop", []byte("GUI"), 0o755})
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestTar(t, bad), name); err == nil {
+			t.Fatal("extra Desktop binary accepted in standalone CLI")
+		}
+		bad = append([]cliOnlyArchiveMember(nil), good...)
+		bad[3].payload = xd
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestTar(t, bad), name); err == nil {
+			t.Fatal("standalone Agent could be substituted with xd")
+		}
+		bad = append([]cliOnlyArchiveMember(nil), good...)
+		bad[2].mode = os.ModeSymlink | 0o777
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestTar(t, bad), name); err == nil {
+			t.Fatal("symlinked standalone xd accepted")
+		}
+		bad = append([]cliOnlyArchiveMember(nil), good...)
+		bad = append(bad, good[2])
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestTar(t, bad), name); err == nil {
+			t.Fatal("duplicate standalone xd accepted")
+		}
+	} else {
+		good := []cliOnlyArchiveMember{
+			{"xdrive-cli/README.md", []byte("independent xd/Agent"), 0o644},
+			{"xdrive-cli/xd.exe", xd, 0o755},
+			{"xdrive-cli/xdrive-agent.exe", agent, 0o755},
+		}
+		name := "xdrive-cli-windows-amd64.zip"
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestZIP(t, good), name); err != nil {
+			t.Fatalf("standalone source-exact Windows pair rejected: %v", err)
+		}
+		bad := append(append([]cliOnlyArchiveMember(nil), good...),
+			cliOnlyArchiveMember{"xdrive-cli/install.ps1", []byte("bad"), 0o644})
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestZIP(t, bad), name); err == nil {
+			t.Fatal("unexpected standalone Windows installer helper accepted")
+		}
+		bad = append([]cliOnlyArchiveMember(nil), good...)
+		bad[2].payload = xd
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestZIP(t, bad), name); err == nil {
+			t.Fatal("wrong Windows Agent executable accepted")
+		}
+		bad = append([]cliOnlyArchiveMember(nil), good...)
+		bad[1].mode = os.ModeSymlink | 0o777
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestZIP(t, bad), name); err == nil {
+			t.Fatal("Windows symlinked xd accepted")
+		}
+		bad = append([]cliOnlyArchiveMember(nil), good...)
+		bad = append(bad, good[1])
+		if err := ValidateCLIOnlyArchive(createCLIOnlyTestZIP(t, bad), name); err == nil {
+			t.Fatal("duplicate Windows xd accepted")
 		}
 	}
 }

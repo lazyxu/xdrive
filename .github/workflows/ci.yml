@@ -226,8 +226,9 @@ jobs:
           python3 -m unittest discover -s scripts/ci -p 'test_package_standalone_cli.py'
           python3 -m unittest discover -s scripts/ci -p 'test_publish_release_bundle.py'
           python3 -m unittest discover -s scripts/ci -p 'test_verify_live_release_bundle.py'
+          python3 -m unittest discover -s scripts/ci -p 'test_release_bundle_closeout.py'
           bash scripts/ci/test-optional-client-release.sh
-          bash -n scripts/ci/publish-release-bundle.sh scripts/ci/collect-optional-native-release.sh scripts/ci/download-optional-client-artifacts.sh
+          bash -n scripts/ci/publish-release-bundle.sh scripts/ci/collect-optional-native-release.sh scripts/ci/download-optional-client-artifacts.sh scripts/ci/run-live-release-bundle-closeout.sh
       # A scoped PR can edit its own regression tests. Run the already trusted
       # master tests on the candidate publisher too, so changing tests cannot
       # silently weaken the existing security baseline.

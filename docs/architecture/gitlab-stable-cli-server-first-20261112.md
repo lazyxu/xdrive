@@ -19,8 +19,13 @@ The current-Server manual installer and Desktop automatic GitLab
   The archive is still checked for the expected xd and Agent Go binary layout;
   this action never extracts/installs binaries or starts a Desktop installer.
 - New standalone `xdrive-cli-*` manual archives are a distinct product from
-  the existing `xdrive-backup-*` CLI-only update command; this change does
-  not silently swap archive formats or enable automatic CLI in-place install.
+  the existing `xdrive-backup-*` CLI-only update command. The explicit
+  `xd update --cli-only --standalone --download` switch targets the independent
+  xd/Agent archives, verifies the exact Go binary/member allowlist, and may
+  use the authenticated Server cache only when the separately selected GitLab
+  release, Commit/version/channel and independent SHA-256 all agree.
+  The default `--cli-only` remains Backup-only. Neither command installs
+  in place or automatically updates the Server or Desktop.
 - An xd Server upgrades via its *independent* GitLab/GitHub Server release
   image and signature/health gates, not through its currently installed
   client's Release Bundle. Client Bundle failures never roll back a healthy
