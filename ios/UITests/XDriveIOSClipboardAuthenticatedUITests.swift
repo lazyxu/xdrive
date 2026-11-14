@@ -164,8 +164,8 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         let observedWrites = try await currentStats(user)
         XCTAssertEqual(observedWrites.writes, 0)
         app.buttons["定向发送"].tap()
-        let observedWrites = try await currentStats(user)
-        XCTAssertEqual(observedWrites.writes, 0)
+        let afterAttempt = try await currentStats(user)
+        XCTAssertEqual(afterAttempt.writes, 0)
     }
 
     private func rejectedRevoke(_ user: String) async throws {
