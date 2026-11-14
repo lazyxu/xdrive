@@ -125,10 +125,10 @@ func TestBackupOnceCallsSharedOwnerRunnerAndWaitsForTerminal(t *testing.T) {
 
 func TestBackupOnceDoesNotClaimUnsupportedOrUncertainComplete(t *testing.T) {
 	for name, changed := range map[string]func(*localbackupipc.Summary){
-		"unsupported": func(s *localbackupipc.Summary) { s.UnsupportedFiles = 1; s.InspectedFiles = 2 },
-		"uncertain":   func(s *localbackupipc.Summary) { s.State = "uncertain"; s.UncertainFiles = 1 },
-		"paused":      func(s *localbackupipc.Summary) { s.State = "paused" },
-		"cancelled":   func(s *localbackupipc.Summary) { s.State = "cancelled" },
+		"unsupported":   func(s *localbackupipc.Summary) { s.UnsupportedFiles = 1; s.InspectedFiles = 2 },
+		"uncertain":     func(s *localbackupipc.Summary) { s.State = "uncertain"; s.UncertainFiles = 1 },
+		"paused":        func(s *localbackupipc.Summary) { s.State = "paused" },
+		"cancelled":     func(s *localbackupipc.Summary) { s.State = "cancelled" },
 		"unproven_scan": func(s *localbackupipc.Summary) { s.ScanComplete = false },
 	} {
 		t.Run(name, func(t *testing.T) {

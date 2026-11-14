@@ -58,8 +58,8 @@ func TestCommonBatchScanCompleteNeverForgesSourceOrCASCompletion(t *testing.T) {
 		Version: commonBatchCheckpointVersion, RunID: uuid.NewString(),
 		SourceID: f.grant.SourceID, SourceRevision: 7,
 		RootFingerprint: f.grant.Fingerprint,
-		SessionDigest: commonUploadSessionDigest(f.secret),
-		State: "partial", ScanComplete: true, UpdatedAt: time.Now().UTC(),
+		SessionDigest:   commonUploadSessionDigest(f.secret),
+		State:           "partial", ScanComplete: true, UpdatedAt: time.Now().UTC(),
 	}
 	if err := StoreVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7, cp); err != nil {
 		t.Fatal(err)

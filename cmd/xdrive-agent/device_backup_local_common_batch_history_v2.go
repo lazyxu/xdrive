@@ -62,7 +62,7 @@ func (c *agentController) CloudLocalBoundBackupCommonBatchHistory(
 			ConfirmedFiles: cp.ConfirmedFiles, SkippedFiles: cp.SkippedFiles,
 			UnsupportedFiles: cp.UnsupportedFiles, UncertainFiles: cp.UncertainFiles,
 			ConfirmedBytes: cp.ConfirmedBytes, ScanComplete: cp.ScanComplete,
-			StartedAt:      cp.StartedAt, FinishedAt: cp.UpdatedAt,
+			StartedAt: cp.StartedAt, FinishedAt: cp.UpdatedAt,
 		})
 	}
 	return out, nil
