@@ -66,10 +66,15 @@ func TestIOSMapP0OwnerABAndRevocationCompoundHTTP(t *testing.T) {
 	defer sqlDB.Close()
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{},
-		&meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
+		&meta.FileVersion{}, &meta.AuditEvent{},
+		&meta.Source{}, &meta.SourceItem{},
+		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
+		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
+		&meta.MediaGroup{}, &meta.MediaGroupItem{},
 		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{},
 		&meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoMetadata{}, &meta.PhotoResource{},
+		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {
 		t.Fatal(err)
 	}
