@@ -677,23 +677,42 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             XCTAssertTrue(marker.isEnabled, "A fresh verified marker must be selectable")
             XCTAssertFalse(marker.frame.isEmpty)
             XCTAssertTrue(marker.frame.intersects(map.frame))
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-map-place-marker")
             marker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             let tile = element("native-ios-map-photo-wall-tile", in: app)
             XCTAssertTrue(tile.waitForExistence(timeout: 45),
                           "Iteration \(pass) failed to show real place photos")
+            let wall = element("native-ios-map-place-scroll", in: app)
+            XCTAssertTrue(wall.waitForExistence(timeout: 10))
+            XCTAssertTrue(tile.isHittable)
+            let stableID = tile.value as? String ?? ""
+            XCTAssertTrue(stableID.hasPrefix("return-anchor-"),
+                          "Real PhotoKit tile identity must be observable without logging its raw asset ID")
+            let beforeBackFrame = tile.frame
+            XCTAssertTrue(beforeBackFrame.intersects(wall.frame),
+                          "Selected photo must be visible before Viewer presentation")
             let sheetShot = XCTAttachment(screenshot: app.screenshot())
             sheetShot.name = "p0-map-place-sheet-\(pass)"
             sheetShot.lifetime = .keepAlways
             add(sheetShot)
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-map-place-viewer")
             tile.tap()
             let back = element("native-ios-local-viewer-back", in: app)
             XCTAssertTrue(back.waitForExistence(timeout: 30),
                           "Iteration \(pass) failed Viewer route")
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-map-viewer-back")
             back.tap()
             XCTAssertTrue(tile.waitForExistence(timeout: 25),
                           "Iteration \(pass) did not return to the same place wall")
+            XCTAssertEqual(tile.value as? String, stableID,
+                           "Rapid Viewer return changed the PhotoKit identity at the same wall tile")
+            XCTAssertTrue(tile.frame.intersects(wall.frame),
+                          "Returned PhotoKit tile is no longer visible")
+            XCTAssertLessThanOrEqual(abs(tile.frame.midY - beforeBackFrame.midY), 12,
+                                     "Unchanged Viewer return re-centered an already visible wall tile")
             let closeSheet = element("native-ios-map-place-dismiss", in: app)
             XCTAssertTrue(closeSheet.waitForExistence(timeout: 15))
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-map-place-dismiss")
             closeSheet.tap()
             XCTAssertTrue(map.waitForExistence(timeout: 25),
                           "Iteration \(pass) detached the native map canvas")
