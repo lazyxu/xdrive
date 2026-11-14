@@ -9,18 +9,19 @@ const gallery = read('ios/XDriveIOS/NativeUnifiedPhotoGallery.swift')
 const transport = read('ios/XDriveIOS/NativeServerMediaGalleryTransport.swift')
 const camera = read('ios/XDriveIOS/NativeUnifiedMapCameraPolicy.swift')
 const walls = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
+const surface = read('ios/XDriveIOS/NativeUnifiedSourceMapSurface.swift')
 
 test('G01: each settled camera resamples exactly verified source membership in native bounded 64-cell grid', () => {
   assert.match(map, /var index = XDriveIOSNativeLocalMapSpatialIndex<XDriveIOSUnifiedSourceMapSeed>\(\)/)
   assert.match(map, /XDriveIOSNativeLocalMapSpatialPolicy\.includes\(\s*scannedViewport/)
   assert.match(map, /index\.add\(\s*latitude: coordinate\.latitude/)
   assert.match(map, /let verifiedPins = index\.cells\.map/)
-  assert.match(map, /pins = verifiedPins\s*provedOwner = owner\s*provedLibrary = library\s*provedCamera = scannedCamera/)
+  assert.match(map, /pins = verifiedPins\s*mapRevision = UUID\(\)\s*provedOwner = owner\s*provedLibrary = library\s*provedCamera = scannedCamera/)
   assert.match(map, /XDriveIOSNativeLocalMapAutoRefinePolicy\.settleNanoseconds/)
   for (const field of ['camera.center.latitude','camera.center.longitude','camera.span.latitudeDelta','camera.span.longitudeDelta']) {
     assert.ok(map.includes('.onChange(of: '+field+') { _ in scheduleCameraRefinement() }'))
   }
-  assert.match(map, /guard currentProof, pins\.contains/)
+  assert.match(map, /guard currentProof, let pin = pins\.first\(where:/)
   assert.doesNotMatch(map, /\/ 180 \* 8|\/ 360 \* 8|static func bucket\(/)
   assert.match(map, /static let maximumWallSeekPages = maximumPages/)
 })
@@ -45,9 +46,9 @@ test('G02: tapping a wall item rereads live PhotoKit or verified Owner node befo
 })
 
 test('G03: source markers share native 68/64 point photo geometry and bounded progressive cover lifetime', () => {
-  assert.match(map, /XDriveIOSNativeMapMarkerVisualPolicy\.frame\.width/)
-  assert.match(map, /XDriveIOSNativeMapMarkerVisualPolicy\.imageFrame\.width/)
-  assert.match(map, /XDriveIOSNativeMapMarkerVisualPolicy\.badgeText\(count: pin\.count\)/)
+  assert.match(surface, /XDriveIOSNativeMapMarkerVisualPolicy\.frame/)
+  assert.match(surface, /XDriveIOSNativeMapMarkerVisualPolicy\.imageFrame/)
+  assert.match(surface, /XDriveIOSNativeMapMarkerVisualPolicy\.badgeText\(count: count\)/)
   assert.match(map, /PHImageRequestOptions\(\)/)
   assert.match(map, /options\.isNetworkAccessAllowed = true/)
   assert.match(map, /options\.deliveryMode = \.opportunistic/)
@@ -62,7 +63,9 @@ test('G03: source markers share native 68/64 point photo geometry and bounded pr
   assert.match(map, /coverTask\?\.cancel\(\)/)
   assert.match(map, /cancelImageRequest\(request\)/)
   assert.match(map, /guard !cancelled, generation == ticket, currentProof/)
-  assert.doesNotMatch(map, /Label\("\\\(pin\.count\\\)", systemImage: "photo.on.rectangle"\)/)
+  assert.match(surface, /markersEnabled = false/)
+  assert.match(surface, /mapViewDidFailLoadingMap/)
+  assert.match(surface, /accessibilityElementsHidden = !enabled/)
 })
 
 test('G04: a first completed GPS scope auto-fits antimeridian-safe representatives, never later gestures', () => {
@@ -108,4 +111,22 @@ test('no map filter or Viewer can silently grant Server or PhotoKit write rights
   assert.match(map, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
   assert.match(map, /XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(library\)/)
   assert.match(map, /guard nextCursor != from else \{/)
+})
+
+test('M01 M07 M08 M09 M10 M15 M16: native source map has scoped refresh and parity controls', () => {
+  assert.match(map, /remotePollTask = Task/)
+  assert.match(map, /Task\.sleep\(nanoseconds: 30_000_000_000\)/)
+  assert.match(map, /XDriveIOSNativeUnifiedSourceMapSurface\(/)
+  assert.match(map, /Picker\("底图样式", selection: \$mapType\)/)
+  assert.match(map, /currentLocation\.locate\(\)/)
+  assert.match(map, /setDateRange\(XDriveIOSNativePhotoMapCaptureRange\.month\(/)
+  assert.match(map, /basemapUnavailable = \$0/)
+  assert.match(surface, /map\.delegate = nil[\s\S]*?map\.mapType = mapType/)
+  assert.match(surface, /regionWillChangeAnimated/)
+  assert.match(surface, /markersEnabled = false/)
+  assert.match(surface, /onCameraWillChange\(\)/)
+  assert.match(surface, /cameraRequestID != id/)
+  assert.match(gallery, /savedMapOwner = owner/)
+  assert.match(gallery, /savedMapCamera = region/)
+  assert.match(gallery, /savedMapCamera = nil; savedMapOwner = nil/)
 })
