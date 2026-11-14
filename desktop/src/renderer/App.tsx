@@ -546,6 +546,45 @@ export default function App({
       },
       authorize: (sourceID: number) => sourceManagerAdapter.authorizeLocalFolder!(sourceID),
       discard: (sourceID: number, revision: number) => sourceManagerAdapter.deleteSource(sourceID, revision),
+      // Only an explicit choice in the native Root picker flow may arm an
+      // automatic Source. Saving a schedule alone never starts Server work.
+      ...(agent.hello?.capabilities.includes('device-backup-local-schedule') &&
+        agent.hello?.capabilities.includes('device-backup-local-common-batch') ? {
+        activateAuto: async (sourceID: number) => {
+          const read = await window.xdriveDesktop.agent.getDeviceBackupLocalSchedule(sourceID)
+          if (!read.ok) throw new Error(read.error.message)
+          const before = read.data
+          if (before.source_id !== sourceID || !Number.isSafeInteger(before.revision) ||
+              before.revision < 1 || before.schedule_type !== 'manual') {
+            throw new Error('当前来源的计划已经变化；请检查后手动启用自动备份。')
+          }
+          const write = await window.xdriveDesktop.agent.setDeviceBackupLocalSchedule(
+            sourceID, before.revision, {
+              schedule_type: 'interval', schedule_expression: '6h', schedule_timezone: '',
+            },
+          )
+          if (!write.ok) throw new Error(write.error.message)
+          const saved = write.data
+          if (saved.source_id !== sourceID || !Number.isSafeInteger(saved.revision) ||
+              saved.revision <= before.revision || saved.schedule_type !== 'interval' ||
+              saved.schedule_expression !== '6h' || saved.schedule_timezone !== '') {
+            // Unknown ACK: never launch a second request speculatively.
+            throw new Error('自动计划回执未确认；请读取已保存计划后再操作。')
+          }
+          // Reuse the regular full-folder incremental worker. A 202/running
+          // response only acknowledges admission, never finished backup bytes.
+          const start = await window.xdriveDesktop.agent.startDeviceBackupLocalCommonBatch(sourceID)
+          if (!start.ok) throw new Error(start.error.message)
+          const batch = start.data
+          if (batch.source_id !== sourceID ||
+              (batch.revision !== 0 && batch.revision !== saved.revision) ||
+              (batch.state !== 'running' && batch.state !== 'partial') ||
+              batch.running !== (batch.state === 'running') ||
+              batch.uncertain_files !== 0 || batch.backup_complete !== false) {
+            throw new Error('首次备份执行状态未确认；请查看原始运行记录，勿盲目重试。')
+          }
+        },
+      } : {}),
     }
   }, [deviceBackupSource, localFolderGrantSupported, agent.hello?.capabilities, sourceManagerAdapter])
 

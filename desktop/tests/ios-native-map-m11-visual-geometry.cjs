@@ -20,6 +20,9 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
   assert.match(local, /options\.isNetworkAccessAllowed = true/)
   assert.match(local, /options\.deliveryMode = \.opportunistic/)
   assert.match(local, /options\.resizeMode = \.fast/)
+  // Keep latest master's bounded network/cleanup checks too.
+  assert.match(local, /targetSize: CGSize\(width: 128, height: 128\)/)
+  assert.match(local, /PHImageManager\.default\(\)\.cancelImageRequest\(request\)/)
   assert.match(local, /PHImageResultIsDegradedKey/)
   assert.match(local, /self\.epoch == snapshot/)
   assert.match(local, /isAccessibilityElement = !provisional/)
