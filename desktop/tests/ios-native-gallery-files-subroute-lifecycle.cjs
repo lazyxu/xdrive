@@ -25,7 +25,7 @@ test('Opening Files Viewer arms a single return refresh before presentation', ()
 test('Files Viewer dismissal performs a single foreground read', () => {
   const s = between(collection, '.fullScreenCover(item: $selectedFile, onDismiss:', 'onNavigate: { next in');
   assert.match(s, /let shouldRefresh = viewerRefreshPending\s*viewerRefreshPending = false/);
-  assert.match(s, /if shouldRefresh && phase == \.active && !model\.loading/);
+  assert.match(s, /if shouldRefresh && isVisible && phase == \.active &&\s*!model\.loading && model\.matches\(login\.owner, kind: kind\)/);
   assert.doesNotMatch(s, /if !model\.loading \{ reload\(preserveVerifiedRows: true\) \}/);
 });
 test('SwiftUI onAppear while Viewer dismisses never races a second GET', () => {
@@ -41,8 +41,8 @@ test('Foreground resume never refreshes behind the collection Viewer', () => {
   assert.match(s, /selectedFile == nil && !viewerRefreshPending/);
 });
 test('Owner and collection kind changes revoke pending refresh hints', () => {
-  assert.match(collection, /\.onChange\(of: kind\) \{ _ in\s*viewerRefreshPending = false/);
-  assert.match(collection, /\.onChange\(of: login\.owner\) \{ _ in\s*viewerRefreshPending = false/);
+  assert.match(collection, /\.onChange\(of: kind\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
+  assert.match(collection, /\.onChange\(of: login\.owner\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
 });
 test('PhotoKit revision keeps authorized album Viewer or Map mounted', () => {
   const s = between(album, '.onChange(of: libraryMonitor.revision) { _ in', '.onChange(of: phase) { state in');

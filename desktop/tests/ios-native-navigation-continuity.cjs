@@ -297,7 +297,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
+        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil &&\\s*quickInfoIntent == nil && quickRenameIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
         "flags": ""
       }
     ]
@@ -322,7 +322,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{\\s*selectedOwner = nil\\s*let shouldRefresh = viewerRefreshPending\\s*viewerRefreshPending = false[\\s\\S]*?if shouldRefresh && phase == \\.active && !model\\.loading \\{\\s*reload\\(preserveVerifiedRows: true\\)",
+        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{\\s*selectedOwner = nil\\s*let shouldRefresh = viewerRefreshPending\\s*viewerRefreshPending = false[\\s\\S]*?if shouldRefresh && isVisible && phase == \\.active &&\\s*!model\\.loading && model\\.matches\\(login\\.owner, kind: kind\\) \\{\\s*reload\\(preserveVerifiedRows: true\\)",
         "flags": ""
       }
     ]
@@ -347,7 +347,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.sheet\\(item: \\$locateIntent, onDismiss: \\{[\\s\\S]*?if !model\\.matches\\(login\\.owner, kind: kind\\) \\{ reload\\(\\) \\}",
+        "pattern": "\\.sheet\\(item: \\$locateIntent, onDismiss: \\{\\s*locateOwner = nil[\\s\\S]*?if isVisible && phase == \\.active && login\\.owner != nil &&\\s*!model\\.matches\\(login\\.owner, kind: kind\\) \\{ reload\\(\\) \\}",
         "flags": ""
       }
     ]
@@ -492,7 +492,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.sheet\\(item: \\$locateIntent, onDismiss: \\{[\\s\\S]*?if !model\\.matches\\(login\\.owner, kind: kind\\) \\{ reload\\(\\) \\}",
+        "pattern": "\\.sheet\\(item: \\$locateIntent, onDismiss: \\{\\s*locateOwner = nil[\\s\\S]*?if isVisible && phase == \\.active && login\\.owner != nil &&\\s*!model\\.matches\\(login\\.owner, kind: kind\\) \\{ reload\\(\\) \\}",
         "flags": ""
       }
     ]
@@ -567,7 +567,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.onChange\\(of: kind\\) \\{ _ in[\\s\\S]*?model\\.invalidate\\(\\)[\\s\\S]*?if phase == \\.active \\{ reload\\(\\)",
+        "pattern": "\\.onChange\\(of: kind\\) \\{ _ in[\\s\\S]*?model\\.invalidate\\(\\)\\s*favorites\\.invalidate\\(\\)\\s*recentClear\\.invalidate\\(\\)[\\s\\S]*?if isVisible && phase == \\.active && login\\.owner != nil \\{ reload\\(\\) \\}",
         "flags": ""
       }
     ]
@@ -587,7 +587,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
+        "pattern": "if !viewerRefreshPending && selectedFile == nil &&\\s*locateIntent == nil && managementIntent == nil &&\\s*quickInfoIntent == nil && quickRenameIntent == nil \\{[\\s\\S]*?model\\.suspendForNavigation\\(\\)",
         "flags": ""
       }
     ]
@@ -692,7 +692,7 @@ const scenarios = [
     "checks": [
       {
         "file": "c",
-        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{[\\s\\S]*?let shouldRefresh = viewerRefreshPending\\s*viewerRefreshPending = false[\\s\\S]*?if shouldRefresh && phase == \\.active && !model\\.loading \\{\\s*reload\\(preserveVerifiedRows: true\\)",
+        "pattern": "\\.fullScreenCover\\(item: \\$selectedFile, onDismiss: \\{[\\s\\S]*?let shouldRefresh = viewerRefreshPending\\s*viewerRefreshPending = false[\\s\\S]*?if shouldRefresh && isVisible && phase == \\.active &&\\s*!model\\.loading && model\\.matches\\(login\\.owner, kind: kind\\) \\{\\s*reload\\(preserveVerifiedRows: true\\)",
         "flags": ""
       }
     ]

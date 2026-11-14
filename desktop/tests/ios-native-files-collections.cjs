@@ -77,10 +77,10 @@ test('recent and favorites match Browse list/icon presentation without duplicati
   // The same setting is shared with the main native Files browser.
   assert.match(browser, /@AppStorage\("xdrive\.ios\.files\.view-mode\.v1"\)/)
   assert.match(screen, /@AppStorage\("xdrive\.ios\.files\.view-mode\.v1"\)/)
-  assert.match(screen, /Picker\("显示方式", selection: \$viewMode\)/)
+  assert.match(screen, /Picker\("显示方式", selection: Binding\(/)
   assert.match(screen, /if viewMode == "grid" \{[\s\S]*?LazyVGrid\(/)
   assert.match(screen, /GridItem\(\.adaptive\(minimum: 128, maximum: 184\)/)
-  assert.match(screen, /gridTile\(item\)[\s\S]*?\.id\(item\.id\)/)
+  assert.match(screen, /gridTile\(item\)\s*\.id\(item\.node\.id\)/)
   assert.match(screen, /native-ios-files-collection-grid/)
   assert.match(screen, /native-ios-files-collection-view-mode/)
   assert.match(screen, /private func gridTile\([\s\S]*?XDriveIOSNativeFilesBrowser\([\s\S]*?folderID: item\.node\.id/)
@@ -102,10 +102,10 @@ test('Recent and Favorites locate both list and grid items in the real Owner fol
   assert.match(screen, /guard phase == \.active, model\.verified, !model\.loading,/)
   assert.match(screen, /let owner = login\.owner, filteredItems\.contains\(item\),\s*model\.items\.contains\(item\)/)
   assert.match(screen, /locateOwner = owner\s*locateIntent = item/)
-  assert.match(screen, /\.sheet\(item: \$locateIntent, onDismiss: \{\s*locateOwner = nil[\s\S]*?if !model\.matches\(login\.owner, kind: kind\) \{ reload\(\) \}/)
+  assert.match(screen, /\.sheet\(item: \$locateIntent, onDismiss: \{\s*locateOwner = nil[\s\S]*?if isVisible && phase == \.active && login\.owner != nil &&\s*!model\.matches\(login\.owner, kind: kind\) \{ reload\(\) \}/)
   assert.match(screen, /XDriveIOSNativeFilesLocateScreen\(\s*login: login, selected: selected\.node,/)
   assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, openedOwner\)/)
-  assert.match(screen, /if !viewerRefreshPending && selectedFile == nil &&\s*locateIntent == nil && managementIntent == nil \{[\s\S]*?model\.suspendForNavigation\(\)/)
+  assert.match(screen, /if !viewerRefreshPending && selectedFile == nil &&\s*locateIntent == nil && managementIntent == nil &&\s*quickInfoIntent == nil && quickRenameIntent == nil \{[\s\S]*?model\.suspendForNavigation\(\)/)
   assert.match(screen, /locateIntent = nil\s*locateOwner = nil\s*managementIntent = nil\s*filterQuery = ""\s*showingClearRecentConfirmation = false\s*model\.invalidate\(\)\s*favorites\.invalidate\(\)\s*recentClear\.invalidate\(\)/)
   // Root-originated results must open the cloud root itself, not Browse home.
   assert.match(location, /login: login, folderID: openedOwner\.rootNodeID,/)
@@ -165,9 +165,12 @@ test('Recent and Favorites expose native long-press and swipe operations through
   assert.match(screen, /private struct XDriveIOSNativeFilesCollectionManageIntent: Identifiable/)
   assert.match(screen, /@State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent\?/)
   assert.match(screen, /private func collectionQuickActions\(/)
-  for (const action of ['copy', 'move', 'rename', 'shareLink', 'download', 'trash']) {
+  for (const action of ['copy', 'move', 'shareLink', 'download', 'trash']) {
     assert.match(screen, new RegExp('openManagement\\(for: item, quickAction: \\.' + action + '\\)'))
   }
+  assert.match(screen, /requestQuickRename\(for: item\)/)
+  assert.match(screen, /private func requestQuickRename\([\s\S]*?model\.matches\(login\.owner, kind: kind\)/)
+  assert.match(screen, /quickRenameMutation\.perform\([\s\S]*?kind: \.rename\(quickRenameDraft\)/)
   assert.match(screen, /if kind == \.favorites \{[\s\S]*?favorites\.remove\(item, login: login\) \{ reload\(\) \}/)
   assert.match(screen, /openManagement\(for: item, quickAction: \.favorite\)/)
   assert.match(screen, /if !item\.node\.isDirectory \{\s*Button \{ openFile\(item\) \}/)
@@ -221,7 +224,7 @@ test('Recent and Favorites share uncluttered native Files list/grid chrome with 
   assert.match(screen, /native-ios-files-unfavorite-/)
   assert.match(screen, /private func showLocation\([\s\S]*?model\.items\.contains\(item\)/)
   assert.match(screen, /\.toolbar \{\s*ToolbarItem\(placement: \.navigationBarTrailing\) \{\s*Menu \{/)
-  assert.match(screen, /Picker\("显示方式", selection: \$viewMode\)/)
+  assert.match(screen, /Picker\("显示方式", selection: Binding\(/)
   assert.match(screen, /Label\("刷新", systemImage: "arrow\.clockwise"\)/)
   assert.match(screen, /native-ios-files-collection-more-options/)
   assert.match(screen, /@AppStorage\("xdrive\.ios\.files\.view-mode\.v1"\)/)

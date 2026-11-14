@@ -48,6 +48,12 @@ on:
       - 'ios/XDriveIOS/NativeLocalContinuousGallery.swift'
       - 'ios/XDriveIOS/NativePhotoVideoSurface.swift'
       - 'ios/scripts/test_summarize_navigation_latency.py'
+      - 'ios/scripts/files_ui_transition_video.py'
+      - 'ios/scripts/test_files_ui_transition_video.py'
+      - 'ios/XDriveIOS/NativeFilesUIStyle.swift'
+      - 'ios/XDriveIOS/NativeFilesViewModePolicy.swift'
+      - 'ios/tests/NativeFilesViewModeChecks.swift'
+      - 'desktop/tests/ios-native-files-ui-six-parity-20261114.cjs'
       - 'desktop/tests/ios-native-files-video-firstframe.cjs'
   workflow_dispatch:
 permissions:
@@ -213,15 +219,34 @@ jobs:
             -p 'test_audit_navigation_frames.py' -v
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
             -p 'test_assert_native_ios_no_crash.py' -v
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
+            -p 'test_files_ui_transition_video.py' -v
+          if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
+            swiftc "$GITHUB_WORKSPACE/ios/XDriveIOS/NativeFilesViewModePolicy.swift" \
+              "$GITHUB_WORKSPACE/ios/tests/NativeFilesViewModeChecks.swift" \
+              -o "$RUNNER_TEMP/native-navigation-results/native-files-view-mode-checks"
+            "$RUNNER_TEMP/native-navigation-results/native-files-view-mode-checks"
+            node --test "$GITHUB_WORKSPACE/desktop/tests/ios-native-files-ui-six-parity-20261114.cjs"
+          fi
           # Keep a few frames from the LIVE failed route, not SpringBoard after
           # xcodebuild exits. Never use AX queries from this observer.
-          if [[ "${{ matrix.source }}" != "release-c83" ]]; then
+          if [[ "${{ matrix.source }}" != "release-c83" && "${{ matrix.source }}" != "candidate-gallery-files" ]]; then
             python3 "$SMOKE_ROOT/ios/scripts/capture-navigation-smoke-frames.py" \
               "$SMOKE_SIM" \
               "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
               "$RUNNER_TEMP/native-navigation-results/diagnostics/live-frames" &
             frame_watcher=$!
             trap 'kill "$frame_watcher" >/dev/null 2>&1 || true' EXIT
+          fi
+          # For Gallery-Files use real H.264 instead of slow serial screenshots.
+          # No fake test starts or tap markers. The watcher is always reaped.
+          if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
+            python3 "$SMOKE_ROOT/ios/scripts/files_ui_transition_video.py" watch \
+              "$SMOKE_SIM" \
+              "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
+              "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video" &
+            video_watcher=$!
+            trap 'kill -TERM "$video_watcher" >/dev/null 2>&1 || true; wait "$video_watcher" >/dev/null 2>&1 || true' EXIT
           fi
           # Legacy release is only an informational baseline: it does not
           # contain new child content IDs, so run the compatible tab smoke.
@@ -322,6 +347,15 @@ jobs:
               --output-path "$RUNNER_TEMP/native-navigation-results/diagnostics/failure-attachments" \
               --only-failures > /dev/null 2>&1 || true
           fi
+      - name: Verify real Files Gallery transition video evidence
+        if: ${{ always() && matrix.source == 'candidate-gallery-files' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/ios/scripts/files_ui_transition_video.py" audit \
+            "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video" \
+            "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video-audit.json" \
+            --minimum 4
       - name: Reject candidate xDriveIOS process crash reports
         if: ${{ always() && matrix.source != 'release-c83' }}
         shell: bash

@@ -505,6 +505,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @StateObject private var model = XDriveIOSNativeFilesCollectionPageModel()
     @StateObject private var favorites = XDriveIOSNativeFilesFavoriteMutationModel()
     @StateObject private var recentClear = XDriveIOSNativeFilesRecentClearModel()
+    @StateObject private var quickRenameMutation = XDriveIOSNativeFilesMutationModel()
     @State private var showingClearRecentConfirmation = false
     @State private var selectedFile: XDriveIOSNativeFilesCollectionItem?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
@@ -514,10 +515,27 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var locateIntent: XDriveIOSNativeFilesCollectionItem?
     @State private var locateOwner: XDriveNativeOwnerRoot?
     @State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent?
+    @State private var quickInfoIntent: XDriveIOSNativeFilesCollectionManageIntent?
+    @State private var quickRenameIntent: XDriveIOSNativeFilesCollectionManageIntent?
+    @State private var quickRenameDraft = ""
     @State private var filterQuery = ""
     @State private var isVisible = false
     // Match Browse's chosen presentation when switching between Files subroutes.
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
+    @State private var lastVisibleItemID: UInt64?
+    @State private var pendingModeSwitchAnchor: UInt64?
+    @State private var modeSwitchTicket = UUID()
+
+    private func chooseCollectionViewMode(_ next: String) {
+        guard (next == "list" || next == "grid"), viewMode != next else { return }
+        pendingModeSwitchAnchor = XDriveIOSNativeFilesViewModePolicy.anchor(
+            preferred: lastVisibleItemID, loaded: filteredItems.map { $0.node.id }
+        )
+        modeSwitchTicket = UUID()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { viewMode = next }
+    }
 
     /// Recent and Favorites are bounded Owner projections, not an index of all
     /// Server files. Filter locally; do not create a second search endpoint.
@@ -564,7 +582,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     ) {
                         ForEach(filteredItems) { item in
                             gridTile(item)
-                                .id(item.id)
+                                .id(item.node.id)
+                                .onAppear { lastVisibleItemID = item.node.id }
                                 .contextMenu {
                                     collectionQuickActions(for: item)
                                 }
@@ -580,7 +599,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 } else {
                     ForEach(filteredItems) { item in
                         row(item)
-                            .id(item.id)
+                            .id(item.node.id)
+                            .onAppear { lastVisibleItemID = item.node.id }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if model.verified && !model.loading && !favorites.busy {
                                     Button {
@@ -613,6 +633,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if let status = favorites.status {
                     Text(status).foregroundStyle(.secondary).font(.footnote)
                 }
+                if quickRenameMutation.busy {
+                    HStack { ProgressView(); Text("正在核验文件重命名…") }
+                }
+                if let status = quickRenameMutation.status {
+                    Text(status).foregroundStyle(.secondary).font(.footnote)
+                        .accessibilityIdentifier("native-ios-files-collection-rename-status")
+                }
                 if recentClear.busy {
                     HStack { ProgressView(); Text("正在清空最近记录…") }
                 }
@@ -630,6 +657,40 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             )
             .navigationTitle(kind.title)
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: viewMode) { next in
+                let ticket = modeSwitchTicket
+                let anchor = pendingModeSwitchAnchor ??
+                    XDriveIOSNativeFilesViewModePolicy.anchor(
+                        preferred: lastVisibleItemID, loaded: filteredItems.map { $0.node.id }
+                    )
+                guard isVisible, model.verified, model.matches(login.owner, kind: kind),
+                      let owner = login.owner, let anchor else {
+                    pendingModeSwitchAnchor = nil
+                    return
+                }
+                Task { @MainActor in
+                    await Task.yield()
+                    guard XDriveIOSNativeFilesViewModePolicy.canRestore(
+                        ticketCurrent: ticket == modeSwitchTicket,
+                        ownerValid: XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                        pageValid: model.matches(login.owner, kind: kind),
+                        anchorVisible: filteredItems.contains(where: { $0.node.id == anchor }),
+                        screenVisible: isVisible,
+                        expectedMode: next, currentMode: viewMode,
+                        active: phase == .active && isVisible
+                    ) else {
+                        if ticket == modeSwitchTicket { pendingModeSwitchAnchor = nil }
+                        return
+                    }
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        returnScroll.scrollTo(anchor, anchor: .center)
+                    }
+                    lastVisibleItemID = anchor
+                    pendingModeSwitchAnchor = nil
+                }
+            }
             .confirmationDialog(
                 "清空最近使用记录？",
                 isPresented: $showingClearRecentConfirmation,
@@ -650,7 +711,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Picker("显示方式", selection: $viewMode) {
+                        Picker("显示方式", selection: Binding(
+                            get: { viewMode }, set: { chooseCollectionViewMode($0) }
+                        )) {
                             Label("列表", systemImage: "list.bullet").tag("list")
                             Label("图标", systemImage: "square.grid.2x2").tag("grid")
                         }
@@ -684,6 +747,30 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
 
+            .alert("重命名", isPresented: Binding(
+                get: { quickRenameIntent != nil },
+                set: { if !$0 { quickRenameIntent = nil } }
+            )) {
+                TextField("新名称", text: $quickRenameDraft)
+                Button("保存") { confirmQuickRename() }
+                Button("取消", role: .cancel) { quickRenameIntent = nil }
+            } message: {
+                Text("当前账户和文件版本会重新核验，冲突或未知回执不自动重试。")
+            }
+            .sheet(item: $quickInfoIntent) { intent in
+                if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+                   model.matches(login.owner, kind: kind),
+                   model.verified, model.items.contains(intent.item) {
+                    XDriveIOSNativeFilesQuickInfoPanel(
+                        login: login, expectedOwner: intent.owner,
+                        node: intent.item.node,
+                        onClose: { quickInfoIntent = nil }
+                    )
+                } else {
+                    Text("文件或账户已变化，请关闭后重新打开。")
+                        .foregroundStyle(.secondary)
+                }
+            }
             .sheet(item: $managementIntent, onDismiss: {
                 // Closing read-only management must not blank a verified
                 // Recent/Favorites list. Revalidate same-Owner rows in place.
@@ -710,8 +797,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .sheet(item: $locateIntent, onDismiss: {
                 locateOwner = nil
-                // The route only looked up a Node location; no write occurred.
-                if !model.matches(login.owner, kind: kind) { reload() }
+                // A late modal dismissal cannot refresh an invisible or retired Owner.
+                if isVisible && phase == .active && login.owner != nil &&
+                   !model.matches(login.owner, kind: kind) { reload() }
             }) { selected in
                 NavigationStack {
                     if let openedOwner = locateOwner,
@@ -731,8 +819,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 let shouldRefresh = viewerRefreshPending
                 viewerRefreshPending = false
                 // The presenter can reappear before onDismiss. Only this
-                // callback may refresh after a Viewer, and not in background.
-                if shouldRefresh && phase == .active && !model.loading {
+                // callback may refresh only for the still-visible, verified Owner
+                // and collection. A tab/Owner change must not fetch behind it.
+                if shouldRefresh && isVisible && phase == .active &&
+                   !model.loading && model.matches(login.owner, kind: kind) {
                     reload(preserveVerifiedRows: true)
                 }
             }) { initial in
@@ -768,7 +858,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     if !model.loading && model.error == nil { reload() }
                 } else if !model.loading &&
                           selectedFile == nil && locateIntent == nil &&
-                          managementIntent == nil {
+                          managementIntent == nil && quickInfoIntent == nil &&
+                          quickRenameIntent == nil {
                     // A child folder may mutate Recent or Favorites while
                     // hidden. Keep verified rows while refreshing silently.
                     reload(preserveVerifiedRows: true)
@@ -776,8 +867,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .onDisappear {
                 isVisible = false
+                modeSwitchTicket = UUID()
+                pendingModeSwitchAnchor = nil
                 if !viewerRefreshPending && selectedFile == nil &&
-                    locateIntent == nil && managementIntent == nil {
+                    locateIntent == nil && managementIntent == nil &&
+                    quickInfoIntent == nil && quickRenameIntent == nil {
                     // NavigationLink child must not lose its source identity.
                     model.suspendForNavigation()
                     favorites.invalidate()
@@ -791,7 +885,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     // but do not drop a child NavigationLink's verified source.
                     model.suspendForNavigation()
                 } else if isVisible && !model.loading &&
-                          selectedFile == nil && !viewerRefreshPending {
+                          selectedFile == nil && !viewerRefreshPending &&
+                          locateIntent == nil && managementIntent == nil &&
+                          quickInfoIntent == nil && quickRenameIntent == nil {
                     // A screen that appeared while inactive must still load
                     // when foregrounded. Revalidate an old same-scope page
                     // silently, never revive a previous Owner or collection.
@@ -805,6 +901,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
             .onChange(of: kind) { _ in
+                modeSwitchTicket = UUID()
+                pendingModeSwitchAnchor = nil
+                lastVisibleItemID = nil
                 viewerRefreshPending = false
                 // SwiftUI may reuse a StateObject when switching collection
                 // subroutes. Neither the old items nor async reads may cross.
@@ -814,14 +913,22 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 locateIntent = nil
                 locateOwner = nil
                 managementIntent = nil
+                quickInfoIntent = nil
+                quickRenameIntent = nil
+                quickRenameMutation.invalidate()
                 filterQuery = ""
                 showingClearRecentConfirmation = false
                 model.invalidate()
                 favorites.invalidate()
                 recentClear.invalidate()
-                if phase == .active { reload() }
+                // State may be rebound while this Files route is covered.
+                // Wait for its next visible onAppear instead of fetching behind it.
+                if isVisible && phase == .active && login.owner != nil { reload() }
             }
             .onChange(of: login.owner) { _ in
+                modeSwitchTicket = UUID()
+                pendingModeSwitchAnchor = nil
+                lastVisibleItemID = nil
                 viewerRefreshPending = false
                 selectedFile = nil
                 selectedOwner = nil
@@ -829,6 +936,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 locateIntent = nil
                 locateOwner = nil
                 managementIntent = nil
+                quickInfoIntent = nil
+                quickRenameIntent = nil
+                quickRenameMutation.invalidate()
                 filterQuery = ""
                 showingClearRecentConfirmation = false
                 model.invalidate()
@@ -841,7 +951,12 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .onChange(of: model.loading) { now in
                 guard !now, selectedFile == nil, let target = returnFile else { return }
-                if model.items.contains(where: { $0.node == target }) {
+                // Read completion can arrive after the account, collection or
+                // visible native tab has changed. Never scroll an invisible
+                // or no-longer-authorized Recent/Favorites List.
+                if isVisible && phase == .active && model.verified &&
+                   model.matches(login.owner, kind: kind) &&
+                   model.items.contains(where: { $0.node == target }) {
                     returnScroll.scrollTo(target.id, anchor: .center)
                 }
                 returnFile = nil
@@ -868,7 +983,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             Button { openManagement(for: item, quickAction: .move) } label: {
                 Label("移动到…", systemImage: "folder")
             }
-            Button { openManagement(for: item, quickAction: .rename) } label: {
+            Button { openQuickInfo(for: item) } label: {
+                Label("属性", systemImage: "info.circle")
+            }
+            .accessibilityIdentifier("native-ios-files-collection-quick-info")
+            Button { requestQuickRename(for: item) } label: {
                 Label("重命名", systemImage: "pencil")
             }
             if kind == .favorites {
@@ -904,13 +1023,55 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
         }
     }
 
+    /// Reuse Browse's revision-checked Node rename writer, not a second API.
+    private func requestQuickRename(for item: XDriveIOSNativeFilesCollectionItem) {
+        guard phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
+              !favorites.busy, !recentClear.busy, !quickRenameMutation.busy,
+              selectedFile == nil, locateIntent == nil,
+              quickInfoIntent == nil, managementIntent == nil,
+              let owner = login.owner, filteredItems.contains(item),
+              model.items.contains(item) else { return }
+        quickRenameDraft = item.node.name
+        quickRenameIntent = .init(owner: owner, item: item, quickAction: .rename)
+    }
+
+    private func confirmQuickRename() {
+        guard let intent = quickRenameIntent else { return }
+        quickRenameIntent = nil
+        guard phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+              !favorites.busy, !recentClear.busy,
+              filteredItems.contains(intent.item),
+              model.items.contains(intent.item) else { return }
+        quickRenameMutation.perform(
+            node: intent.item.node, kind: .rename(quickRenameDraft), login: login
+        ) {
+            reload(preserveVerifiedRows: true)
+        }
+    }
+
+    private func openQuickInfo(for item: XDriveIOSNativeFilesCollectionItem) {
+        guard isVisible, phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
+              !favorites.busy, selectedFile == nil, locateIntent == nil,
+              managementIntent == nil, let owner = login.owner,
+              filteredItems.contains(item), model.items.contains(item) else { return }
+        quickInfoIntent = XDriveIOSNativeFilesCollectionManageIntent(
+            owner: owner, item: item, quickAction: nil
+        )
+    }
+
     private func openManagement(
         for item: XDriveIOSNativeFilesCollectionItem,
         quickAction: XDriveIOSNativeFilesQuickAction? = nil
     ) {
-        guard phase == .active, model.verified, !model.loading,
+        guard isVisible, phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
               !favorites.busy, selectedFile == nil, locateIntent == nil,
-              managementIntent == nil,
+              managementIntent == nil, quickInfoIntent == nil,
+              quickRenameIntent == nil,
               let owner = login.owner, let parentID = item.node.parent_id,
               parentID > 0,
               XDriveIOSNativeFilesCollectionsPolicy.validItem(item, kind: kind),
@@ -924,8 +1085,11 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     /// guessed navigation target. Use the existing authoritative Node location
     /// reader, which also validates exact Owner, root, parent and revision.
     private func showLocation(for item: XDriveIOSNativeFilesCollectionItem) {
-        guard phase == .active, model.verified, !model.loading,
+        guard isVisible, phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
               !favorites.busy, selectedFile == nil,
+              managementIntent == nil, quickInfoIntent == nil,
+              quickRenameIntent == nil,
               let owner = login.owner, filteredItems.contains(item),
               model.items.contains(item), item.node.parent_id != nil else { return }
         locateOwner = owner
@@ -933,7 +1097,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     }
 
     private func openFile(_ item: XDriveIOSNativeFilesCollectionItem) {
-        guard model.verified, !model.loading, !favorites.busy,
+        guard isVisible, phase == .active, model.verified, !model.loading,
+              model.matches(login.owner, kind: kind),
+              !favorites.busy, locateIntent == nil, managementIntent == nil,
+              quickInfoIntent == nil, quickRenameIntent == nil,
               let owner = login.owner, filteredItems.contains(item),
               model.items.contains(item) else { return }
         selectedOwner = owner
@@ -979,14 +1146,14 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 node: item.node, login: login,
                 height: 72, viewerActive: selectedFile != nil
             )
-            Text(item.node.name)
-                .font(.footnote)
-                .lineLimit(2)
+            XDriveIOSNativeFilesUIStyle.tileName(item.node.name)
                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
-            Text(item.path)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            HStack(spacing: 5) {
+                if !item.node.isDirectory {
+                    XDriveIOSNativeFilesUIStyle.typeBadge(item.node)
+                }
+                XDriveIOSNativeFilesUIStyle.metadata(item.path)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
         .contentShape(Rectangle())
@@ -1016,7 +1183,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
             }
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: XDriveIOSNativeFilesUIStyle.rowHeight)
     }
 
     private func entryLabel(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
@@ -1026,8 +1193,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 height: 40, width: 40, viewerActive: selectedFile != nil
             )
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.node.name).lineLimit(2)
-                Text(item.path).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                XDriveIOSNativeFilesUIStyle.rowName(item.node.name)
+                HStack(spacing: 6) {
+                    if !item.node.isDirectory {
+                        XDriveIOSNativeFilesUIStyle.typeBadge(item.node)
+                    }
+                    XDriveIOSNativeFilesUIStyle.metadata(item.path)
+                }
             }
             Spacer(minLength: 4)
         }

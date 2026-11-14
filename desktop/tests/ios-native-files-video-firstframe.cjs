@@ -132,7 +132,7 @@ test('P1 100k files use at most four verified 64-row pages and O(1) ordinal jump
 })
 
 test('P2 existing Native buttons keep dynamic size/touch safety with consistent PWA grouping', () => {
-  assert.ok(files.includes('.frame(minHeight: 52)'))
+  assert.ok(files.includes('.frame(minHeight: XDriveIOSNativeFilesUIStyle.rowHeight)'))
   assert.ok(files.includes('native-ios-files-quick-rail'))
   assert.ok(files.includes('native-ios-files-batch-direct-download'))
   assert.ok(files.includes('native-ios-files-batch-direct-trash'))

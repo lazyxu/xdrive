@@ -9,10 +9,10 @@ const policy = read('ios/XDriveIOS/NativeCloudFilesPolicy.swift')
 
 test('native Files list/grid switch is a real persisted presentation preference', () => {
   assert.match(browser, /@AppStorage\("xdrive\.ios\.files\.view-mode\.v1"\) private var viewMode = "list"/)
-  assert.match(browser, /Picker\("显示方式", selection: \$viewMode\)/)
+  assert.match(browser, /Picker\("显示方式", selection: Binding\(/)
   assert.match(browser, /Text\("列表"\)\.tag\("list"\)/)
   assert.match(browser, /Text\("图标"\)\.tag\("grid"\)/)
-  assert.match(browser, /Menu \{[\s\S]*?Picker\("显示方式", selection: \$viewMode\)/)
+  assert.match(browser, /Menu \{[\s\S]*?Picker\("显示方式", selection: Binding\(/)
   assert.match(browser, /native-ios-files-more-options/)
   assert.doesNotMatch(browser, /\.pickerStyle\(\.segmented\)/)
   assert.match(browser, /private func filesGrid\(_ items: \[XDriveIOSNativeFilesEntry\]\) -> some View \{\s*LazyVGrid\(/)
@@ -34,7 +34,7 @@ test('list and grid share verified-page selection, folder navigation, Viewer and
   assert.match(browser, /NavigationLink\(value: XDriveIOSNativeFilesFolder\(/)
   // Management stays in the native long-press context menu, not a permanent row control.
   assert.match(browser, /\.contextMenu \{[\s\S]*?nativeQuickActions\(for: entry\)/)
-  assert.match(browser, /Label\("显示简介", systemImage: "info\.circle"\)/)
+  assert.match(browser, /Label\("属性", systemImage: "info\.circle"\)/)
   assert.match(browser, /native-ios-files-folder-more-/)
   assert.match(browser, /native-ios-files-file-/)
   assert.match(browser, /native-ios-files-select-/)
