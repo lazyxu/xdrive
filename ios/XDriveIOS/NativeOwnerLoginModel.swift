@@ -413,6 +413,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 accessToken: accessToken, refreshToken: refreshed.refresh_token,
                 verifiedOwner: verified
             )
+            XDriveIOSNativeLaunchCheckpoint.markPostLogin(.restoredOwnerVerified)
             owner = verified
             password = ""
             // A restored refresh credential may be pinned to the selected LAN IP.
@@ -630,6 +631,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 accessToken: accessToken, refreshToken: response.refresh_token,
                 verifiedOwner: verified
             )
+            XDriveIOSNativeLaunchCheckpoint.markPostLogin(.manualOwnerVerified)
             owner = verified
             password = ""
             // Only an authenticated, verified Server+Owner may gain a saved
