@@ -60,7 +60,12 @@ test('album viewer returns exact last-viewed tile on the crossed page, then forg
   assert.match(contents, /private func restoreAfterViewer\(\) \{\s*let wasInvalidated = viewerPageInvalidated\s*viewerPageInvalidated = false\s*viewerPage = nil[\s\S]*?shouldRestoreViewerTile = !wasInvalidated/)
   assert.match(contents, /private func invalidate\(\) \{[\s\S]*?viewerPage = nil/)
   assert.match(contents, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
-  // Source checks exact Page/PhotoKit membership; the shared UI helper now owns\n  // the actual scroll+VoiceOver focus instead of duplicating that code.\n  assert.match(contents, /xdrivePhotoWallFocusVerifiedTile\(\s*target, scroll: scroll, focus: \$accessibilityFocusedTileID/)\n  const shared = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotoWallComponents.swift'), 'utf8')\n  assert.match(shared, /scroll\.scrollTo\(id, anchor: anchor\)/)\n  assert.match(shared, /focus\.wrappedValue = id/)
+  // Source checks exact Page/PhotoKit membership; the shared UI helper now owns
+  // the actual scroll+VoiceOver focus instead of duplicating that code.
+  assert.match(contents, /xdrivePhotoWallFocusVerifiedTile\(\s*target, scroll: scroll, focus: \$accessibilityFocusedTileID/)
+  const shared = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotoWallComponents.swift'), 'utf8')
+  assert.match(shared, /scroll\.scrollTo\(id, anchor: anchor\)/)
+  assert.match(shared, /focus\.wrappedValue = id/)
   assert.doesNotMatch(contents, /savedAssetIDs|persist.*localIdentifier|sendPhotoKitIDs/)
 })
 

@@ -40,7 +40,14 @@ test('native PhotoAsset thumbnail state invalidates on revised Node and verified
   // current Range. Tile identity must still contain exact Node revision+Owner.
   assert.match(virtual, /verified\.offset == offset, verified\.total_count == expectedTotal/)
   assert.match(virtual, /xdriveIOSNativePhotoWallVisibleSections\(\s*verified\.items, scale: timeScale/)
-  // The SectionList now renders verified Range rows. The tile and\n  // exact Owner/Node-revision identity are still in the per-range callback.\n  assert.match(virtual, /XDriveIOSNativePhotoWallSectionList\(\s*sections: visibleSections\(verified\), density: density/)\n  assert.match(virtual, /items: \{ \$0\.items \}/)\n  assert.match(virtual, /XDriveIOSNativeMediaWallTile\([\s\S]*?\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner\s*\)\)/)\n  const shared = fs.readFileSync(path.join(__dirname, '../../ios/XDriveIOS/NativePhotoWallComponents.swift'), 'utf8')\n  assert.match(shared, /ForEach\(sections\) \{ section in/)\n  assert.match(shared, /ForEach\(items\(section\)\) \{ item in tile\(item\) \}/)
+  // The SectionList now renders verified Range rows. The tile and
+  // exact Owner/Node-revision identity are still in the per-range callback.
+  assert.match(virtual, /XDriveIOSNativePhotoWallSectionList\(\s*sections: visibleSections\(verified\), density: density/)
+  assert.match(virtual, /items: \{ \$0\.items \}/)
+  assert.match(virtual, /XDriveIOSNativeMediaWallTile\([\s\S]*?\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner\s*\)\)/)
+  const shared = fs.readFileSync(path.join(__dirname, '../../ios/XDriveIOS/NativePhotoWallComponents.swift'), 'utf8')
+  assert.match(shared, /ForEach\(sections\) \{ section in/)
+  assert.match(shared, /ForEach\(items\(section\)\) \{ item in tile\(item\) \}/)
   assert.match(virtual, /\.id\(item\.id\)/, 'keep Node ID for continuous Viewer scroll return')
   assert.match(virtual, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/)
 })
