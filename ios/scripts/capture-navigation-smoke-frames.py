@@ -356,6 +356,17 @@ TARGETS.update({
     "testClipboardDeniedRecipientTransfersFilesNotesReturnDoesNotExit",
 })
 
+# Six further real, non-authenticated crash/lifecycle sweeps for sibling
+# native pages. These register tap-adjacent Simulator evidence, not iPhone FPS.
+TARGETS.update({
+    "testGalleryQueueAndCacheSheetsRepeatedAcrossFilesDoNotExit",
+    "testFilesTagsSavedHistorySubpageRetirementDoesNotExit",
+    "testNotesSourceTripleToggleClipboardFilesReturnDoesNotExit",
+    "testRealSignedOutLANKeyboardRotationForegroundDoesNotExit",
+    "testBackupAuditQueueNotesFilesCrossChildReturnDoesNotExit",
+    "testUnimplementedLauncherPagesRotateForegroundFilesFailClosed",
+})
+
 # Six more real Gallery/Files child transitions; diagnostic Simulator PNG only.
 # This must not be presented as physical iPhone 60/120 Hz smoothness proof.
 TARGETS.update({

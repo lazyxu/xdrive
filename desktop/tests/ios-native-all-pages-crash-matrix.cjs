@@ -402,7 +402,7 @@ test('next five real Launcher/Notes/Backup/Originals/recovery crash journeys rem
 });
 
 
-test('all 57 real all-page XCTest methods are registered and the five new cross-child sweeps fail closed', () => {
+test('all 63 real all-page XCTest methods are registered and the five new cross-child sweeps fail closed', () => {
   const names = [
     'testFourDeniedFilesChildrenAfterBackgroundCrossTabsDoNotExit',
     'testSignedOutMinePhotosLinkAndDisabledCacheAcrossTabsDoNotExit',
@@ -411,7 +411,7 @@ test('all 57 real all-page XCTest methods are registered and the five new cross-
     'testClipboardDeniedRecipientTransfersFilesNotesReturnDoesNotExit'
   ];
   const methods = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(match => match[1]);
-  assert.ok(methods.length >= 57, 'At least 57 independent real all-page sweeps are required');
+  assert.ok(methods.length >= 63, 'At least 63 independent real all-page sweeps are required');
   assert.equal(methods.length, new Set(methods).size, 'Duplicate XCTest names hide a route');
   for (const method of methods) {
     assert.ok(watcher.includes('"' + method + '"'),
@@ -432,6 +432,34 @@ test('all 57 real all-page XCTest methods are registered and the five new cross-
   }
   assert.match(swift, /XCUIDevice\.shared\.press\(\.home\)/);
   assert.match(swift, /XCTAssertFalse\(element\("native-ios-files-grid"/);
+  assert.doesNotMatch(swift, /fakeToken|mockServerLogin|XCTSkip/);
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
+});
+
+
+test('six more independent Gallery, Files, Notes, Login and Backup crash sweeps remain in real Simulator watcher', () => {
+  const names = [
+    'testGalleryQueueAndCacheSheetsRepeatedAcrossFilesDoNotExit',
+    'testFilesTagsSavedHistorySubpageRetirementDoesNotExit',
+    'testNotesSourceTripleToggleClipboardFilesReturnDoesNotExit',
+    'testRealSignedOutLANKeyboardRotationForegroundDoesNotExit',
+    'testBackupAuditQueueNotesFilesCrossChildReturnDoesNotExit',
+    'testUnimplementedLauncherPagesRotateForegroundFilesFailClosed',
+  ];
+  const methods = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(match => match[1]);
+  assert.ok(methods.length >= 63, 'Native all-page crash matrix lost a subpage journey');
+  assert.equal(methods.length, new Set(methods).size, 'Duplicate XCTest method hides an independent route');
+  for (const name of names) {
+    assert.ok(methods.includes(name), 'Actual XCTest method missing: ' + name);
+    assert.ok(watcher.includes('"' + name + '"'), 'No tap-adjacent frame capture for ' + name);
+  }
+  for (const id of [
+    'native-ios-gallery-thumbnail-cache', 'native-ios-photo-task-list-done',
+    'native-ios-files-tag-management', 'native-ios-files-saved-searches-page',
+    'native-ios-files-operation-history-page', 'native-ios-notes-source-picker',
+    'native-ios-lan-certificate-help', 'native-ios-backup-portrait-form'
+  ]) assert.ok(swift.includes('"' + id + '"'), 'No actual child assertion: ' + id);
+  assert.match(swift, /XCTAssertEqual\(app\.state, \.runningForeground/);
   assert.doesNotMatch(swift, /fakeToken|mockServerLogin|XCTSkip/);
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
 });

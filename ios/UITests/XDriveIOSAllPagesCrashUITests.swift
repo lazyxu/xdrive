@@ -1223,4 +1223,186 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "clipboard-denied-tools-foreground-return")
     }
 
+
+    // Repeat the real Gallery queue/cache sheets while the Files tab is
+    // independently remounted. No cache removal or backup upload is started.
+    func testGalleryQueueAndCacheSheetsRepeatedAcrossFilesDoNotExit() {
+        let app = launch()
+        for cycle in 0..<2 {
+            openGalleryBackup("查看备份任务队列", app: app)
+            ready("native-ios-photo-task-list-done", app: app)
+            tap("native-ios-photo-task-list-done", app: app)
+            waitRetired("native-ios-photo-task-list-done", app: app)
+            ready("native-ios-backup-overview", app: app)
+            openGalleryBackup("释放本机缓存空间（不删除照片原件）", app: app)
+            ready("native-ios-gallery-thumbnail-cache", app: app)
+            if cycle == 0 {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                ready("native-ios-gallery-thumbnail-cache", app: app)
+            }
+            tap("native-ios-backup-cache-sheet-close", app: app)
+            waitRetired("native-ios-gallery-thumbnail-cache", app: app)
+            ready("native-ios-unified-photo-gallery", app: app)
+            tap("native-ios-tab-files", app: app)
+            ready("native-ios-files-section-browse", app: app)
+            tap("native-ios-tab-gallery", app: app)
+            ready("native-ios-unified-photo-gallery", app: app)
+            XCTAssertFalse(element("native-ios-gallery-thumbnail-cache", app: app).exists)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        capture(app, "gallery-queue-cache-files-repeated")
+    }
+
+    // All three Files management sheets must retire in the same live process;
+    // none may expose protected rows when the synthetic Owner has no bearer.
+    func testFilesTagsSavedHistorySubpageRetirementDoesNotExit() {
+        let app = launch()
+        openFilesHomeChild("native-ios-files-home-manage-tags",
+                           pageID: "native-ios-files-tag-management", app: app)
+        tapNamed("完成", route: "native-ios-files-tags-done", app: app)
+        waitRetired("native-ios-files-tag-management", app: app)
+        for (entry, page, done) in [
+            ("native-ios-files-open-saved-searches", "native-ios-files-saved-searches-page",
+             "native-ios-files-saved-searches-done"),
+            ("native-ios-files-open-operations", "native-ios-files-operation-history-page",
+             "native-ios-files-operation-history-done")
+        ] {
+            openFilesHomeChild(entry, pageID: page, app: app)
+            XCTAssertFalse(element("native-ios-files-grid", app: app).exists,
+                           "No-Session management child exposed protected Files")
+            tap(done, app: app)
+            waitRetired(page, app: app)
+        }
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-home-list", app: app)
+        for stale in ["native-ios-files-tag-management", "native-ios-files-saved-searches-page",
+                      "native-ios-files-operation-history-page"] {
+            XCTAssertFalse(element(stale, app: app).exists, "Stale Files sheet: \(stale)")
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "files-tags-saved-history-no-ghost")
+    }
+
+    // Multiple actual Notes source changes with no writes, followed by a
+    // Clipboard lifecycle and Files return, stress retained dynamic routing.
+    func testNotesSourceTripleToggleClipboardFilesReturnDoesNotExit() {
+        let app = launch()
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        let picker = element("native-ios-notes-source-picker", app: app)
+        for _ in 0..<3 {
+            let backup = picker.buttons["iOS 备份"].firstMatch
+            XCTAssertTrue(backup.waitForExistence(timeout: 15))
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-notes-ios-backup")
+            backup.tap()
+            ready("native-ios-notes-page", app: app)
+            XCTAssertTrue(app.buttons["导入 Markdown 和图片"].firstMatch.exists)
+            let mine = picker.buttons["我的备忘录"].firstMatch
+            XCTAssertTrue(mine.waitForExistence(timeout: 15))
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-notes-my-notes")
+            mine.tap()
+            ready("native-ios-notes-page", app: app)
+            XCTAssertTrue(app.buttons["新建笔记"].firstMatch.exists)
+        }
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("ios-clipboard-draft", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-dynamic", app: app)
+        ready("ios-clipboard-draft", app: app)
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        capture(app, "notes-triple-source-clipboard-files")
+    }
+
+    // Exercise the production signed-out LAN/certificate child after keyboard,
+    // rotation and background; the TEST-NET address is never submitted.
+    func testRealSignedOutLANKeyboardRotationForegroundDoesNotExit() {
+        let app = launchRealSignedOutWorkspace()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        let lan = element("native-ios-login-lan-ip", app: app)
+        XCTAssertTrue(lan.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-login-lan-ip")
+        lan.tap()
+        lan.typeText("192.0.2.9")
+        ready("native-ios-lan-certificate-help", app: app)
+        device.orientation = .landscapeLeft
+        ready("native-ios-login-server", app: app)
+        device.orientation = .portrait
+        device.press(.home)
+        app.activate()
+        ready("native-ios-login-username", app: app)
+        ready("native-ios-login-password", app: app)
+        ready("native-ios-lan-certificate-help", app: app)
+        XCTAssertFalse(element("native-ios-mine-server-account", app: app).exists,
+                       "Unsubmitted LAN form cannot publish an Owner")
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "real-login-lan-keyboard-rotation")
+    }
+
+    // Navigate Backup audit, task queue, Files and Notes without starting an
+    // upload; a retired audit view must never repush on dynamic tab return.
+    func testBackupAuditQueueNotesFilesCrossChildReturnDoesNotExit() {
+        let app = launch()
+        openLauncher("backup", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tapNamed("逐项核验当前云端原件", route: "native-ios-backup-audit", app: app)
+        ready("native-ios-backup-portrait-form", app: app)
+        tapNamed("返回相册备份", route: "native-ios-backup-audit-return", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tap("native-ios-photos-task-list", app: app)
+        ready("native-ios-photo-task-list-done", app: app)
+        tap("native-ios-photo-task-list-done", app: app)
+        waitRetired("native-ios-photo-task-list-done", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-dynamic", app: app)
+        ready("native-ios-notes-page", app: app)
+        XCTAssertFalse(element("native-ios-backup-portrait-form", app: app).exists,
+                       "Retired Backup audit child reappeared in Notes")
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "backup-audit-queue-notes-files")
+    }
+
+    // Unimplemented native launcher children remain honest placeholders after
+    // each real rotation/foreground and Files transition, not stale Owner data.
+    func testUnimplementedLauncherPagesRotateForegroundFilesFailClosed() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        let routes = [
+            ("sync", "同步尚未接通"), ("storage", "存储尚未接通"),
+            ("devices", "设备尚未接通"), ("diagnostics", "诊断尚未接通")
+        ]
+        for (index, item) in routes.enumerated() {
+            openLauncher(item.0, app: app)
+            let placeholder = app.staticTexts[item.1].firstMatch
+            XCTAssertTrue(placeholder.waitForExistence(timeout: 15))
+            if index.isMultiple(of: 2) {
+                device.orientation = .landscapeLeft
+                XCTAssertTrue(placeholder.waitForExistence(timeout: 15))
+                device.orientation = .portrait
+                device.press(.home)
+                app.activate()
+                XCTAssertTrue(placeholder.waitForExistence(timeout: 15))
+            }
+            tap("native-ios-tab-files", app: app)
+            ready("native-ios-files-section-browse", app: app)
+            XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        capture(app, "unimplemented-tools-rotation-foreground-files")
+    }
+
 }
