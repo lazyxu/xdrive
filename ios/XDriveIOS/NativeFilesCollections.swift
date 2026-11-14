@@ -901,7 +901,12 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .onChange(of: model.loading) { now in
                 guard !now, selectedFile == nil, let target = returnFile else { return }
-                if model.items.contains(where: { $0.node == target }) {
+                // Read completion can arrive after the account, collection or
+                // visible native tab has changed. Never scroll an invisible
+                // or no-longer-authorized Recent/Favorites List.
+                if isVisible && phase == .active && model.verified &&
+                   model.matches(login.owner, kind: kind) &&
+                   model.items.contains(where: { $0.node == target }) {
                     returnScroll.scrollTo(target.id, anchor: .center)
                 }
                 returnFile = nil

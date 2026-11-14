@@ -3641,7 +3641,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                    model.entries.contains(where: { $0.id == saved }) {
                     Task { @MainActor in
                         await Task.yield()
-                        guard quickSection == .browse, !model.loading,
+                        guard filesViewVisible, phase == .active,
+                              quickSection == .browse, !model.loading,
                               model.entries.contains(where: { $0.id == saved })
                         else { return }
                         returnScroll.scrollTo(saved, anchor: .center)
@@ -3859,7 +3860,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             else { return }
             Task { @MainActor in
                 await Task.yield()
-                guard quickSection == .browse, parentID == folderID,
+                guard filesViewVisible, phase == .active,
+                      quickSection == .browse, parentID == folderID,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
                       model.canResume(
                         owner: owner, folderID: folderID,
@@ -3969,7 +3971,12 @@ struct XDriveIOSNativeFilesBrowser: View {
         } else {
         filesArrangementLifecycle(returnScroll: returnScroll)
         .onChange(of: model.loading) { loading in
-            if !loading, model.verifiedPage, let target = pendingJumpIndex,
+            // A completed background metadata read must not command a scroll
+            // in the tab obscured by Gallery or another Files subroute.
+            let routeVisible = filesViewVisible && phase == .active &&
+                quickSection == .browse
+            if !loading, routeVisible, model.verifiedPage,
+               let target = pendingJumpIndex,
                let expectedOwner = login.owner,
                target >= model.startOffset,
                target - model.startOffset < model.entries.count {
@@ -3982,7 +3989,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                 pendingJumpStartedAt = nil
                 Task { @MainActor in
                     await Task.yield()
-                    guard parentID == expectedFolder,
+                    guard filesViewVisible, phase == .active,
+                          quickSection == .browse, parentID == expectedFolder,
                           XDriveIOSNativePhotoOwnerScope.matches(
                               login.owner, expectedOwner
                           ), model.verifiedPage,
@@ -4012,7 +4020,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
             }
             if !loading && model.verifiedPage { persistVerifiedFolder() }
-            guard !loading, selectedFile == nil else { return }
+            guard !loading, selectedFile == nil, routeVisible else { return }
             if let returnID = pendingNavigationReturnNodeID,
                let folderID = parentID,
                model.canResume(
