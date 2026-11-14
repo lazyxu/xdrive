@@ -77,6 +77,7 @@ struct XDriveIOSNativeClipboardScreen: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .accessibilityIdentifier("ios-clipboard-target-picker")
                 .disabled(busy)
                 .onChange(of: targetID) { _ in
                     referenceKind = "text"
