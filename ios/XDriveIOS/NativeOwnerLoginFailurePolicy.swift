@@ -52,6 +52,49 @@ enum XDriveIOSNativeOwnerLoginFailurePolicy {
         return "无法验证当前服务器、账户或云端根目录；未建立原生会话。"
     }
 
+    /// Stable diagnostic *codes* only. Never turn Error.localizedDescription,
+    /// underlying URLSession userInfo, request URLs or response bodies into UI:
+    /// those may carry authenticated endpoints and secrets.
+    static func diagnosticCode(for failure: Error) -> String {
+        if let error = failure as? URLError {
+            return "URLSession NSURLErrorDomain \(error.code.rawValue)"
+        }
+        if let error = failure as? XDriveIOSNativeSessionError {
+            switch error {
+            case .keychainUnavailable(let osStatus):
+                return "Keychain OSStatus \(osStatus)"
+            case .malformedCredential: return "OWNER_SESSION_MALFORMED"
+            case .staleSession: return "OWNER_SESSION_STALE"
+            case .ownerChanged: return "OWNER_SESSION_CHANGED"
+            case .passwordChangeRequired: return "OWNER_PASSWORD_CHANGE_REQUIRED"
+            case .notSignedIn: return "OWNER_SESSION_NOT_SIGNED_IN"
+            }
+        }
+        if let error = failure as? XDriveNativeOwnerRootFailure {
+            switch error {
+            case .serverStatus(let status): return "OWNER_ROOT HTTP \(status)"
+            case .invalidSession: return "OWNER_ROOT_INVALID_SESSION"
+            case .missingServerIdentity: return "OWNER_ROOT_MISSING_SERVER_ID"
+            case .ownerChanged: return "OWNER_ROOT_IDENTITY_CHANGED"
+            case .invalidServerReply: return "OWNER_ROOT_INVALID_REPLY"
+            }
+        }
+        if let error = failure as? AuthFailure {
+            switch error {
+            case .httpStatus(let status): return "AUTH HTTP \(status)"
+            case .invalidServer: return "AUTH_INVALID_SERVER"
+            case .invalidResponse: return "AUTH_INVALID_RESPONSE"
+            case .invalidLANIP: return "AUTH_INVALID_LAN_IP"
+            case .invalidLANProbe: return "AUTH_INVALID_LAN_PROBE"
+            case .redirectRefused: return "AUTH_REDIRECT_REFUSED"
+            case .rejected: return "AUTH_REJECTED"
+            case .rateLimited: return "AUTH_RATE_LIMITED"
+            case .unavailable: return "AUTH_UNAVAILABLE"
+            }
+        }
+        return "UNCLASSIFIED_FAILURE"
+    }
+
     /// Only a user click may initiate a new saved refresh. Retry the *same*
     /// Keychain Owner after transport errors or real 429/5xx, not bad TLS,
     /// malformed /me, identity drift, credential revocation or invalid roots.
