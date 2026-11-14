@@ -120,9 +120,22 @@ test('P0 real Settings return may re-request Full Photos only after an explicit 
   const systemStop = ui.indexOf('if app.state == .notRunning {', prompt)
   const secondResume = ui.indexOf('resumeMapAfterSystemPhotosChange(', systemStop)
   const readback = ui.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings")', secondResume)
-  const mapGate = ui.indexOf('if !element("native-ios-full-library-gps-map"', readback)
+  // The current real iOS recovery path checks MapKit during a bounded
+  // foreground poll. The legacy one-shot "if !element" guard was removed
+  // to recover actual OS-terminated TCC processes, NOT to waive the gate.
+  const deadline = ui.indexOf('let reentryDeadline = Date().addingTimeInterval(35)', readback)
+  const poll = ui.indexOf('while Date() < reentryDeadline {', deadline)
+  const lateStop = ui.indexOf('if app.state == .notRunning {', poll)
+  const lateResume = ui.indexOf('resumeMapAfterSystemPhotosChange(', lateStop)
+  const mapGate = ui.indexOf('element("native-ios-full-library-gps-map", in: app).exists', lateResume)
+  const admitted = ui.indexOf('mapRestored = true', mapGate)
+  const rejection = ui.indexOf('if !mapRestored {', admitted)
+  const failClosed = ui.indexOf('XCTFail(systemRelaunched', rejection)
   assert.ok(selection >= 0 && selection < prompt && prompt < systemStop &&
-            systemStop < secondResume && secondResume < readback && readback < mapGate)
+            systemStop < secondResume && secondResume < readback && readback < deadline &&
+            deadline < poll && poll < lateStop && lateStop < lateResume &&
+            lateResume < mapGate && mapGate < admitted && admitted < rejection &&
+            rejection < failClosed)
   assert.match(ui, /if app\.state != \.notRunning \{\s*app\.activate\(\)/)
   assert.match(ui, /The still-running app must resume immediately from Settings/)
   assert.match(ui, /A still-running app must mount real MapKit immediately on Settings return/)
