@@ -617,52 +617,46 @@ private struct XDriveIOSMapPhotoAlbum: View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
-                    ForEach(previewSections) { section in
-                        if wallTimeScale != .all {
-                            XDriveIOSNativePhotoWallDayHeader(
-                                title: wallTimeScale.label(for: section.key)
-                            )
-                        }
-                        XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                            ForEach(section.items) { item in
-                        Button {
-                            guard XDriveIOSNativeMapViewerAdmission.allows(
-                                item, in: previewItems, sceneActive: phase == .active
-                            ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
-                                item, filter: mediaFilter, filenameTerm: filenameTerm
-                            ) else { return }
-                            viewerReturnID = item.id
-                            focusedTileID = nil
-                            selected = item
-                        } label: {
-                            XDriveIOSNativeSquarePhotoTile(candidate: item, framing: wallFraming)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!XDriveIOSNativeMapViewerAdmission.supported(item) ||
-                                  phase != .active)
-                        .id(item.id)
-                        .accessibilityFocused($focusedTileID, equals: item.id)
-                            }
-                        }
+                XDriveIOSNativePhotoWallSectionList(
+                    sections: previewSections, density: wallDensity,
+                    title: { wallTimeScale == .all ? nil :
+                        wallTimeScale.label(for: $0.key) },
+                    items: { $0.items }
+                ) { item in
+                    Button {
+                        guard XDriveIOSNativeMapViewerAdmission.allows(
+                            item, in: previewItems, sceneActive: phase == .active
+                        ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                            item, filter: mediaFilter, filenameTerm: filenameTerm
+                        ) else { return }
+                        viewerReturnID = item.id
+                        focusedTileID = nil
+                        selected = item
+                    } label: {
+                        XDriveIOSNativeSquarePhotoTile(
+                            candidate: item, framing: wallFraming
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .disabled(!XDriveIOSNativeMapViewerAdmission.supported(item) ||
+                              phase != .active)
+                    .id(item.id)
+                    .accessibilityFocused($focusedTileID, equals: item.id)
                 }
                 .padding(8)
             }
             .navigationTitle("此处照片 · 当前页")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Section("照片网格") { xdrivePhotoWallDensityButtons($wallDensity) }
-                        Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
-                    } label: {
-                        Label("缩略图大小", systemImage: "square.grid.3x3")
-                    }
-                    .accessibilityIdentifier("native-ios-map-page-wall-density")
+                    XDriveIOSNativePhotoWallDisplayMenu(
+                        density: $wallDensity, framing: $wallFraming,
+                        accessibilityID: "native-ios-map-page-wall-density"
+                    ) { EmptyView() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
+                        .frame(minWidth: 44, minHeight: 44)
                 }
             }
             .xdrivePhotoWallPinch(
@@ -690,13 +684,19 @@ private struct XDriveIOSMapPhotoAlbum: View {
 
     private func restoreViewerTile(using scroll: ScrollViewProxy) {
         defer { viewerReturnID = nil }
-        guard let id = viewerReturnID,
+        guard let id = XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+                  viewerReturnID, in: previewItems.map(\.id),
+                  authorized: phase == .active
+              ),
               let target = previewItems.first(where: { $0.id == id }),
               XDriveIOSNativeMapViewerAdmission.allows(
                   target, in: previewItems, sceneActive: phase == .active
+              ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                  target, filter: mediaFilter, filenameTerm: filenameTerm
               ) else { return }
-        scroll.scrollTo(id, anchor: .center)
-        focusedTileID = id
+        xdrivePhotoWallFocusVerifiedTile(
+            id, scroll: scroll, focus: $focusedTileID
+        )
     }
 }
 
@@ -809,11 +809,18 @@ private struct XDriveIOSMapSpatialAlbum: View {
         guard let id = viewerReturnID,
               let target = visibleItems.first(where: { $0.id == id }) else { return }
         let loaded = loadedWindow(containing: id)
-        guard XDriveIOSNativeMapViewerAdmission.allows(
-            target, in: loaded, sceneActive: phase == .active
-        ) else { return }
-        scroll.scrollTo(id, anchor: .center)
-        focusedTileID = id
+        guard let checkedID = XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+                  id, in: loaded.map(\.id), authorized: phase == .active
+              ),
+              XDriveIOSNativeMapViewerAdmission.allows(
+                  target, in: loaded, sceneActive: phase == .active
+              ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                  target, filter: selection.mediaFilter,
+                  filenameTerm: selection.filenameTerm
+              ) else { return }
+        xdrivePhotoWallFocusVerifiedTile(
+            checkedID, scroll: scroll, focus: $focusedTileID
+        )
         viewerItems = []
     }
 
@@ -846,14 +853,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             VStack(spacing: 8) {
-                Text(isNearbyExpansion ?
-                     "附近照片 · 已加载 \(visibleItems.count) 张" :
-                     "此处照片 · \(selectedPhotoCount) 张")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityValue(
-                        busy ? "正在读取位置照片" :
+                XDriveIOSNativePhotoWallScopeSummary(
+                    message: isNearbyExpansion ?
+                        "附近照片 · 已加载 \(visibleItems.count) 张" :
+                        "此处照片 · \(selectedPhotoCount) 张",
+                    progress: busy ? "正在读取位置照片" :
                         (hasNext ? "可继续向下滚动浏览" : "已显示全部可访问照片")
-                    )
+                )
                 if busy { XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取位置照片…") }
                 if let error {
                     XDriveIOSNativePhotoWallRetryMessage(
@@ -870,16 +876,12 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
-                        ForEach(visibleSections) { section in
-                            if wallTimeScale != .all {
-                                XDriveIOSNativePhotoWallDayHeader(
-                                    title: wallTimeScale.label(for: section.key)
-                                )
-                            }
-                            XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                                ForEach(section.items) { item in photoTile(item) }
-                            }
-                        }
+                        XDriveIOSNativePhotoWallSectionList(
+                            sections: visibleSections, density: wallDensity,
+                            title: { wallTimeScale == .all ? nil :
+                                wallTimeScale.label(for: $0.key) },
+                            items: { $0.items }
+                        ) { item in photoTile(item) }
                         // The lazy-grid sentinel is the native infinite-scroll
                         // trigger. It advances only as the last visible window
                         // approaches the viewport; busy/error guards prevent repeats.
@@ -913,9 +915,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
             }
             .navigationTitle(isNearbyExpansion ? "附近照片" :
                 (album.map { "\($0.name) · 此处照片" } ?? "此处照片"))
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
+                    XDriveIOSNativePhotoWallDisplayMenu(
+                        density: $wallDensity, framing: $wallFraming,
+                        accessibilityID: "native-ios-map-cluster-more"
+                    ) {
                         if album != nil, onShowNearby != nil {
                             Button("显示附近照片") {
                                 onShowNearby?()
@@ -925,16 +931,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         }
                         Button("重新核对当前位置照片") { loadInitial() }
                             .disabled(busy || viewer != nil || phase != .active)
-                        Section("照片网格") {
-                            xdrivePhotoWallDensityButtons($wallDensity)
-                        }
-                        Section("显示比例") {
-                            xdrivePhotoWallFramingButtons($wallFraming)
-                        }
-                    } label: {
-                        Label("位置照片操作", systemImage: "ellipsis.circle")
                     }
-                    .accessibilityIdentifier("native-ios-map-cluster-more")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
