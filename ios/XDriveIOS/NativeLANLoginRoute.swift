@@ -114,7 +114,9 @@ enum XDriveIOSNativeLANLoginRoute {
                 return .ipTLSHandshakeFailed(url.errorCode)
             case .serverCertificateUntrusted, .serverCertificateHasBadDate,
                  .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot:
-                return .ipCertificateInvalid
+                // No captured rejection means URLSession reported a TLS error
+                // without a usable serverTrust challenge. Do not claim CA/SAN.
+                return .ipCertificateWithoutChallenge(url.errorCode)
             default:
                 return .ipConnectionUnavailable(url.errorCode)
             }
@@ -208,6 +210,9 @@ enum XDriveIOSNativeLANLoginRoute {
             // as NSURLErrorCancelled (-999), rather than a certificate code.
             // Only a recorded trust rejection is diagnosed as IP TLS failure.
             if verifier.rejectedServerTrust {
+                if pairing, let evidence = verifier.pairingEvidence {
+                    throw XDriveIOSLANPairingFailure.ipCertificateEvidence(evidence)
+                }
                 if pairing {
                     switch verifier.trustRejection {
                     case .ipIdentityOrServerUsageMismatch:
@@ -231,6 +236,13 @@ private final class XDriveIOSLANProbeRejectRedirects: XDriveIOSServerTLSDelegate
     private let stateLock = NSLock()
     private var trustWasRejected = false
     private var lastTrustRejection: XDriveIOSLANTrustVerdict?
+    private var lastPairingEvidence: XDriveIOSLANTrustEvidence?
+
+    var pairingEvidence: XDriveIOSLANTrustEvidence? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return lastPairingEvidence
+    }
 
     var rejectedServerTrust: Bool {
         stateLock.lock()
@@ -247,6 +259,12 @@ private final class XDriveIOSLANProbeRejectRedirects: XDriveIOSServerTLSDelegate
     override func observedTrustRejection(_ verdict: XDriveIOSLANTrustVerdict) {
         stateLock.lock()
         lastTrustRejection = verdict
+        stateLock.unlock()
+    }
+
+    override func observedPairingEvidence(_ evidence: XDriveIOSLANTrustEvidence) {
+        stateLock.lock()
+        lastPairingEvidence = evidence
         stateLock.unlock()
     }
 
