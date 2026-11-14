@@ -116,7 +116,8 @@ test('P0-06: Viewer return restores exact visible tile, never stale PhotoKit or 
   const { map, cluster, album, cloud } = sources
   assert.match(map, /restoreViewerTile\(using: returnScroll\)/)
   assert.match(map, /XDriveIOSNativeMapViewerAdmission\.allows\(\s*target, in: loaded, sceneActive: phase == \.active/)
-  assert.match(map, /scroll\.scrollTo\(id, anchor: \.center\)/)
+  assert.match(map, /xdrivePhotoWallFocusVerifiedTile\(/)
+  assert.match(map, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
   assert.match(map, /viewerReturnID = nil/)
   assert.match(cluster, /sameVisibleRevision\(as: anchor\)/)
   assert.match(cluster, /returnScroll\.scrollTo\(anchor\.id, anchor: \.center\)/)
@@ -153,14 +154,17 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
   assert.match(density, /case compact, standard, large/)
   assert.match(density, /func applyingPinch\(/)
   for (const [name, source, expected] of [
-    ['local gallery', gallery, 2], ['local album', album, 2],
-    ['local location', map, 2], ['cloud gallery', cloud, 2],
+    ['local gallery', gallery, 2], ['local album', album, 1],
+    ['local location', map, 0], ['cloud gallery', cloud, 1],
     ['cloud cluster', cluster, 1]
   ]) {
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
       expected, name)
   }
   assert.equal((map.match(/\.xdrivePhotoWallPinch\(/g) || []).length, 2)
+  assert.equal((map.match(/XDriveIOSNativePhotoWallSectionList\(/g) || []).length, 2)
+  assert.match(album, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(cloud, /XDriveIOSNativePhotoWallSectionList\(/)
   assert.doesNotMatch(map, /MagnificationGesture\(minimumScaleDelta:/)
   assert.match(shared, /struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier/)
   assert.match(shared, /density = density\.applyingPinch\(scale\)/)
@@ -186,7 +190,7 @@ test('P1-09: videos, Live badges and date groups match Gallery; map cannot acqui
   assert.match(tile, /seconds: asset\.duration/)
   assert.match(shared, /else if isLive \{\s*Image\(systemName: "livephoto"\)/)
   assert.match(tile, /loader\.cancel\(\)/)
-  assert.equal((map.match(/XDriveIOSNativeSquarePhotoTile\(candidate: item, framing: wallFraming\)/g) || []).length, 2)
+  assert.equal((map.match(/XDriveIOSNativeSquarePhotoTile\(\s*candidate: item, framing: wallFraming\s*\)/g) || []).length, 2)
   assert.equal((map.match(/XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/g) || []).length, 2)
   assert.match(gallery, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
   assert.match(album, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
