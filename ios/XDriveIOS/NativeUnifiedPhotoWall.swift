@@ -11,11 +11,13 @@ struct XDriveIOSNativeUnifiedGalleryPage {
 final class XDriveIOSNativeUnifiedPhotoWall: ObservableObject {
     @Published private(set) var index = XDriveIOSNativeUnifiedPageIndex(start: XDriveIOSNativeGalleryCursor())
     @Published private(set) var generation = UUID()
+    @Published private(set) var pageDateBoundaries: [Int: XDriveIOSNativeUnifiedPageDateBoundary] = [:]
     @Published private(set) var failure: String?
     private(set) var library: Data?
 
     func reset() {
         generation = UUID()
+        pageDateBoundaries = [:]
         index = .init(start: .init())
         library = (try? XDriveIOSPhotoKitLibraryEpoch.capture())?.serialized
         failure = nil
@@ -25,9 +27,31 @@ final class XDriveIOSNativeUnifiedPhotoWall: ObservableObject {
         guard model.completed else { return false }
         guard index.commit(page: page, count: model.rows.count, next: model.next) else {
             failure = "图库排序或配对结果已变化，请刷新以继续浏览。"
+            pageDateBoundaries = [:]
             return false
         }
+        // Only keep four *accepted* date tails, never any photo IDs, original
+        // bytes, or additional PhotoKit/Owner query capabilities.
+        pageDateBoundaries[page] = .init(
+            page: page, count: model.rows.count,
+            lastCapturedAt: model.rows.last?.capturedAt
+        )
+        if pageDateBoundaries.count > 4,
+           let farthest = pageDateBoundaries.keys.max(by: {
+               abs($0 - page) < abs($1 - page)
+           }) {
+            pageDateBoundaries.removeValue(forKey: farthest)
+        }
         return true
+    }
+
+    func continuesPreviousDate(page: Int, firstCapturedAt: Date?,
+                               scale: XDriveIOSNativePhotoWallTimeScale) -> Bool {
+        guard page > 0, index.pages.indices.contains(page),
+              index.pages[page - 1].end == index.pages[page].start,
+              let previous = pageDateBoundaries[page - 1] else { return false }
+        return previous.continues(nextPage: page,
+                                  firstCapturedAt: firstCapturedAt, scale: scale)
     }
 
     func measure(page: Int, height: Double) {
@@ -73,7 +97,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     let displayActive: Bool
     let retainWhileCovered: Bool
     let open: (XDriveIOSNativeUnifiedGalleryPage, Int) -> Void
-    let loaded: () -> Void
+    let loaded: ([String]) -> Void
     let pairing: (XDriveIOSNativeUnifiedPhoto) -> Void
     @StateObject private var model = XDriveIOSNativeUnifiedPhotoTimeline()
     @State private var visible = false
@@ -205,7 +229,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 // child/Viewer return; ordinary scroll eviction still drops it.
                 if acceptedGeneration == ticket, model.completed,
                    model.belongs(to: login.owner) {
-                    loaded()
+                    loaded(model.rows.map(\.id))
                     await readVisibleQueueBadges()
                     return
                 }
@@ -220,7 +244,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 }
                 if wall.accept(model, page: page.id) {
                     acceptedGeneration = ticket
-                    loaded()
+                    loaded(model.rows.map(\.id))
                     await readVisibleQueueBadges()
                 }
             }
@@ -232,17 +256,26 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
         // advance mixed cursor pagination until the bounded window commits.
         if model.belongs(to: login.owner) &&
             (model.completed || (!model.rows.isEmpty && filter == nil && query == .init())) {
-            let groups = Dictionary(grouping: model.rows) { timeScale.key(for: $0.capturedAt) }
-            let dates = groups.keys.sorted { a, b in
-                a == "unknown" ? false : b == "unknown" ? true : a > b
-            }
+            let sections = xdriveIOSNativePhotoWallVisibleSections(
+                model.rows, scale: timeScale
+            ) { timeScale.key(for: $0.capturedAt) }
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(dates, id: \.self) { day in
-                    if timeScale != .all {
-                        XDriveIOSNativePhotoWallDayHeader(title: timeScale.label(for: day))
-                    }
-                    XDriveIOSNativePhotoWallGrid(density: density) {
-                        ForEach(groups[day] ?? []) { row in
+                XDriveIOSNativePhotoWallSectionList(
+                    sections: sections, density: density,
+                    title: { section in
+                        guard timeScale != .all else { return nil }
+                        // Only the current generation's adjacent *completed*
+                        // pages may suppress the repeated first heading.
+                        if section.id == 0 && model.completed &&
+                           wall.continuesPreviousDate(
+                               page: page.id,
+                               firstCapturedAt: section.items.first?.capturedAt,
+                               scale: timeScale
+                           ) { return nil }
+                        return timeScale.label(for: section.key)
+                    },
+                    items: { $0.items }
+                ) { row in
                             Button {
                                 guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
                                       let position = model.rows.firstIndex(where: { $0.id == row.id }) else { return }
@@ -284,8 +317,6 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                                     }
                                 }
                             }
-                        }
-                    }
                 }
                 if model.rows.isEmpty {
                     XDriveIOSNativePhotoWallStatusMessage(
