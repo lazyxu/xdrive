@@ -22,7 +22,7 @@ test('M01: current cloud source is periodically reverified and revoked on scope 
 
 test('M02: negative source evidence is reclassified on the exact current Owner page without extra full-file hashing', () => {
   assert.match(map, /if row\.presence == \.localOnly/)
-  assert.match(map, /reproveCurrentSourcePresence\(\)/)
+  assert.match(map, /await reproveCurrentSourcePresence\(row\)/)
   assert.doesNotMatch(map, /XDriveIOSNativeExactPhotoProbe\.read\(local\)/)
   assert.match(map, /await reproveCurrentSourcePresence\(row\)/)
   assert.match(map, /model\.load\(from: cursor, filter: presence, login: login,/)
