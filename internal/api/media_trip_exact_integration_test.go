@@ -139,7 +139,10 @@ func TestMediaExactTripOwnerGPSMembersExcludeSameDayHomeAndUnlocatedMedia(t *tes
 	var firstAway uint64
 	for day := 4; day <= 5; day++ {
 		first := add(owner.ID, root.ID, fmt.Sprintf("trip-%d-a.jpg", day), day, awayLat, awayLon)
-		if day == 4 {
+		if day == 5 {
+			// Mutate a photo on the high-cardinality travel day so both
+			// independently identified away days remain after the GPS edit.
+			// This exercises stale ID revocation without erasing the trip.
 			firstAway = first
 		}
 		included[first] = true
