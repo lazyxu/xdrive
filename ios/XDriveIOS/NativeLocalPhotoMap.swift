@@ -616,7 +616,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
     var body: some View {
         ScrollViewReader { returnScroll in
         NavigationStack {
-            ScrollView {
+            XDriveIOSNativePhotoWallScrollContainer {
                 VStack(alignment: .leading, spacing: 10) {
                     XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
                     XDriveIOSNativePhotoWallSectionList(
@@ -876,7 +876,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 if !busy && items.isEmpty && priorWindow.isEmpty && error == nil {
                     XDriveIOSNativePhotoWallStatusMessage(message: "此位置没有可访问的照片或视频。")
                 }
-                ScrollView {
+                XDriveIOSNativePhotoWallScrollContainer {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
                         XDriveIOSNativePhotoWallSectionList(

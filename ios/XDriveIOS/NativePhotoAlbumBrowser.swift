@@ -545,7 +545,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         let compactGallery = viewport.size.width >= 680 &&
             viewport.size.height < 500 && !dynamicTypeSize.isAccessibilitySize
         ScrollViewReader { returnScroll in
-        ScrollView {
+        XDriveIOSNativePhotoWallScrollContainer {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if permission == .limited {
                     Label("仅显示 iOS 已授权的部分照片", systemImage: "lock.shield")

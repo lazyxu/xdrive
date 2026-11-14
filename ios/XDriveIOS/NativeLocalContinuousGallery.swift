@@ -598,7 +598,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
 
     var body: some View {
         ScrollViewReader { scroll in
-            ScrollView {
+            XDriveIOSNativePhotoWallScrollContainer {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if permission == .notDetermined {
                         Button("允许查看本机相册") {

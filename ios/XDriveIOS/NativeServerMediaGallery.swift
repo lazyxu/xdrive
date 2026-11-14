@@ -1518,7 +1518,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         let compactGallery = viewport.size.width >= 680 &&
             viewport.size.height < 500 && !dynamicTypeSize.isAccessibilitySize
         ScrollViewReader { returnScroll in
-        ScrollView {
+        XDriveIOSNativePhotoWallScrollContainer {
             LazyVStack(alignment: .leading, spacing: 12) {
                 // Place sheets already identify the signed GPS scope in their
                 // title; transport explanations belong to the full Gallery.

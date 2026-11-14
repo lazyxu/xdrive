@@ -248,7 +248,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 .padding(.horizontal, 12).padding(.vertical, 4)
             Divider()
             ScrollViewReader { scroll in
-                ScrollView {
+                XDriveIOSNativePhotoWallScrollContainer {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         galleryStatus.id("gallery-page-top")
                         if let owner = login.owner {

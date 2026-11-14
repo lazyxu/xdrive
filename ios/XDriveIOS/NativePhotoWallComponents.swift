@@ -331,6 +331,48 @@ struct XDriveIOSNativePhotoWallSectionList<Section: Identifiable, Item: Identifi
     }
 }
 
+
+/// Shared scrolling host for native Gallery/Places photo walls. The caller
+/// retains ScrollViewReader, authorization, paging sentinel, Viewer lifecycle,
+/// and all current media/thumbnail identities.
+struct XDriveIOSNativePhotoWallScrollContainer<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView {
+            content
+        }
+    }
+}
+
+/// Loading and retry messages share a visual layout across local and cloud
+/// place sheets. Source readers still own onRetry, cancellation and authority.
+struct XDriveIOSNativePhotoWallFeedback: View {
+    let isLoading: Bool
+    let loadingMessage: String
+    let error: String?
+    let canRetry: Bool
+    let buttonTitle: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let error {
+                XDriveIOSNativePhotoWallRetryMessage(
+                    message: error, buttonTitle: buttonTitle, canRetry: canRetry
+                ) { onRetry() }
+            }
+            if isLoading {
+                XDriveIOSNativePhotoWallLoadingMessage(message: loadingMessage)
+            }
+        }
+    }
+}
+
 /// Consistent layout actions without exporting PhotoKit/cloud permissions.
 /// Extra actions (sort, map, refresh) belong to the authorized caller.
 struct XDriveIOSNativePhotoWallDisplayMenu<Extra: View>: View {
