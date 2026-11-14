@@ -301,7 +301,11 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Button("恢复原始日期范围") { setDateRange(nil) }
+                    Button("恢复图库日期范围") {
+                        scopedQuery = query
+                        reload()
+                    }
+                    Button("全部日期") { setDateRange(nil) }
                     Button("最近 7 天") {
                         setDateRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
                     }
