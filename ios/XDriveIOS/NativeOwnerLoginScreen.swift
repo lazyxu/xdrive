@@ -236,6 +236,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             readinessTicket = UUID()
             readinessTask?.cancel()
             readinessTask = nil
+            backup.stopLibraryChangeMonitoring()
             backup.cancel()
             if model.owner != nil {
                 if diagnosticWorkspace && !showFullWorkspace {
