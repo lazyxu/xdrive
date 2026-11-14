@@ -41,7 +41,7 @@ test('background and hidden tab never start return scroll', () => {
     /guard selection == nil, phase == \.active, isTabActive,\s+let anchor = viewerReturnAnchor else \{ return \}/);
 });
 test('verified page load finishes exact-row restore and retires pending anchor', () => {
-  const section = from('loaded: { verifiedIDs in', 1000);
+  const section = from('loaded: { verifiedIDs in', 1400);
   assert.match(section, /viewerReturnPage == page\.id/);
   assert.match(section, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/);
   assert.match(section, /xdrivePhotoWallScrollVerifiedTile\(target, scroll: scroll\)/);
