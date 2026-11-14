@@ -70,6 +70,22 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             self.assertFalse(audit(root, report, 4))
             self.assertIn('"status": "fail"', report.read_text())
 
+    def test_decoder_zero_frames_fails_closed(self):
+        import json
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            name = sorted(TARGETS)[0]
+            (root / (name + ".mp4")).write_bytes(b"0" * 4097)
+            (root / "clips.jsonl").write_text(
+                json.dumps({"test": name, "file": name + ".mp4",
+                            "recorded": True, "tap_markers": [{"at": 0.3}]}) + "\\n"
+            )
+            report = root / "audit.json"
+            with patch("files_ui_transition_video.read_frames", return_value=[]):
+                self.assertFalse(audit(root, report, 1))
+            self.assertIn("missing_decoded_video_frames", report.read_text())
+
     def test_fake_or_missing_video_fails_closed(self):
         with tempfile.TemporaryDirectory() as d:
             root = pathlib.Path(d)
