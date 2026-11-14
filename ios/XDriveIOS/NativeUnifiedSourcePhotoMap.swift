@@ -254,16 +254,140 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         }
     }
 
+    private func verifiedMarker(for pin: XDriveIOSUnifiedSourceMapPin) -> some View {
+        Button {
+            // Old MapKit hit testing cannot be treated as a source grant.
+            guard currentProof, pins.contains(where: {
+                $0.id == pin.id && $0.count == pin.count &&
+                $0.firstCursor == pin.firstCursor
+            }) else { return }
+            selected = pin
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if let cover = coverImages[pin.id] {
+                        Image(uiImage: cover).resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "photo.on.rectangle")
+                            .resizable().scaledToFit().padding(16)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(
+                    width: XDriveIOSNativeMapMarkerVisualPolicy.imageFrame.width,
+                    height: XDriveIOSNativeMapMarkerVisualPolicy.imageFrame.height)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(
+                    cornerRadius: XDriveIOSNativeMapMarkerVisualPolicy.coverCornerRadius))
+                .overlay(RoundedRectangle(
+                    cornerRadius: XDriveIOSNativeMapMarkerVisualPolicy.coverCornerRadius)
+                    .stroke(.white, lineWidth:
+                        XDriveIOSNativeMapMarkerVisualPolicy.photoBorderWidth))
+                if pin.count > 1 {
+                    Text(XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: pin.count))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 24, minHeight: 24)
+                        .background(Color.blue, in: Capsule())
+                        .overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                }
+            }
+            .frame(
+                width: XDriveIOSNativeMapMarkerVisualPolicy.frame.width,
+                height: XDriveIOSNativeMapMarkerVisualPolicy.frame.height)
+            .overlay(RoundedRectangle(cornerRadius: 10)
+                .stroke(selected?.id == pin.id ? Color.accentColor : .clear,
+                        lineWidth: 3))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("native-ios-unified-source-map-cell-\(pin.id)")
+        .accessibilityLabel("当前筛选的此区域 \(pin.count) 张照片")
+    }
+
     private func invalidate() {
         generation = UUID()
-        scanTask?.cancel()
-        scanTask = nil
+        scanTask?.cancel(); scanTask = nil
+        cameraSettleTask?.cancel(); cameraSettleTask = nil
+        coverTask?.cancel(); coverTask = nil
+        for request in localCoverRequests {
+            PHImageManager.default().cancelImageRequest(request)
+        }
+        localCoverRequests = []
+        coverImages = [:]
         pins = []
         selected = nil
         provedOwner = nil
         provedLibrary = nil
+        provedCamera = nil
         busy = false
         error = nil
+    }
+
+    private func scheduleCameraRefinement() {
+        guard phase == .active, selected == nil else { return }
+        // Revoke old markers immediately, not after 900ms quiet, so an old
+        // regional count cannot be opened during a pinch/rapid pan.
+        invalidate()
+        let ticket = generation
+        busy = true
+        cameraSettleTask = Task { @MainActor in
+            do {
+                try await Task.sleep(
+                    nanoseconds: XDriveIOSNativeLocalMapAutoRefinePolicy.settleNanoseconds)
+            } catch { return }
+            guard !Task.isCancelled, generation == ticket,
+                  phase == .active, selected == nil else { return }
+            cameraSettleTask = nil
+            reload()
+        }
+    }
+
+    private func loadCovers(
+        _ verifiedPins: [XDriveIOSUnifiedSourceMapPin],
+        owner: XDriveNativeOwnerRoot, ticket: UUID
+    ) {
+        coverTask?.cancel()
+        coverTask = Task { @MainActor in
+            guard let auth = try? await login.verifiedAuthorization(),
+                  XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner),
+                  generation == ticket, currentProof else { return }
+            let reader = XDriveIOSNativeMediaGalleryReader(
+                owner: owner, accessToken: auth.accessToken)
+            // One trusted 64-cell window, progressive thumbnails, no original
+            // image buffer and no remote download for iCloud-only local assets.
+            for pin in verifiedPins {
+                guard !Task.isCancelled, generation == ticket, currentProof else { return }
+                if let local = pin.representative.local,
+                   let asset = PHAsset.fetchAssets(
+                    withLocalIdentifiers: [local.id], options: nil).firstObject,
+                   let coordinate = asset.location?.coordinate,
+                   XDriveIOSUnifiedSourceMapPolicy.member(
+                    latitude: coordinate.latitude, longitude: coordinate.longitude,
+                    key: pin.key, viewport: pin.viewport) {
+                    let options = PHImageRequestOptions()
+                    options.isNetworkAccessAllowed = false
+                    options.deliveryMode = .fastFormat
+                    let request = PHImageManager.default().requestImage(
+                        for: asset, targetSize: CGSize(width: 128, height: 128),
+                        contentMode: .aspectFill, options: options
+                    ) { image, _ in
+                        Task { @MainActor in
+                            guard generation == ticket, currentProof,
+                                  pins.contains(where: { $0.id == pin.id }),
+                                  let image else { return }
+                            coverImages[pin.id] = image
+                        }
+                    }
+                    localCoverRequests.append(request)
+                } else if let cloud = pin.representative.cloud,
+                          let image = try? await reader.thumbnail(cloud) {
+                    guard !Task.isCancelled, generation == ticket, currentProof,
+                          pins.contains(where: { $0.id == pin.id }) else { return }
+                    coverImages[pin.id] = image
+                }
+            }
+        }
     }
 
     private func reload() {
