@@ -89,7 +89,7 @@ private struct XDriveIOSNativeFileAudioSurface: View {
             guard phase == .active else { return }
             let seconds = player.currentTime().seconds
             let total = player.currentItem?.duration.seconds ?? 0
-            if total.isFinite && total > 0 { duration = total }
+            duration = XDriveIOSNativeFileAudioTimecodePolicy.acceptedDuration(total)
             if !seeking && seconds.isFinite && seconds >= 0 {
                 // Slider range is 0...max(duration, 1): never publish an out-of-range value.
                 position = min(seconds, max(duration, 1))
@@ -100,8 +100,7 @@ private struct XDriveIOSNativeFileAudioSurface: View {
     }
 
     private func timestamp(_ seconds: Double) -> String {
-        let safe = Int(max(0, seconds.isFinite ? seconds : 0))
-        return String(format: "%02d:%02d", safe / 60, safe % 60)
+        return XDriveIOSNativeFileAudioTimecodePolicy.label(seconds: seconds)
     }
 }
 

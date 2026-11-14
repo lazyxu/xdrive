@@ -127,6 +127,15 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-launch-check"
           node --test desktop/tests/ios-native-launch-recovery.cjs
 
+      - name: Verify native Files audio timecode bounded conversion
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeFileAudioTimecodePolicy.swift \
+            ios/tests/NativeFileAudioTimecodeChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-audio-timecode"
+          "$RUNNER_TEMP/xdrive-ios-files-audio-timecode"
+
       # Pure Foundation contract test is quick and independent of signing.
       - name: Verify native cloud OCR detail privacy and decoding
         run: |
