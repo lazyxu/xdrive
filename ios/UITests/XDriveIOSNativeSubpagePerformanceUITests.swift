@@ -125,6 +125,26 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             default:
                 XCTFail("Unregistered Files subpage: \(route)")
             }
+        } else if route.hasPrefix("notes.") {
+            openLauncher("notes", app: app)
+            let source = view("native-ios-notes-source-picker", app: app)
+            XCTAssertTrue(source.waitForExistence(timeout: 15), "Real Notes picker absent")
+            if route == "notes.source.mine" {
+                let backup = app.segmentedControls.buttons["iOS 备份"].firstMatch
+                XCTAssertTrue(backup.waitForExistence(timeout: 15))
+                backup.tap()
+                XCTAssertEqual(source.value as? String, "iOS 备份")
+            } else {
+                XCTAssertEqual(route, "notes.source.ios-backup")
+                XCTAssertEqual(source.value as? String, "我的备忘录")
+            }
+        } else if route.hasPrefix("transfers.") {
+            openLauncher("transfers", app: app)
+            XCTAssertTrue(view("native-ios-transfer-overview", app: app)
+                .waitForExistence(timeout: 15), "Real Transfers form absent")
+            let label = route == "transfers.open-files" ? "打开文件" : "打开相册备份"
+            XCTAssertTrue(["transfers.open-files", "transfers.open-backup"].contains(route))
+            XCTAssertTrue(app.buttons[label].firstMatch.waitForExistence(timeout: 15))
         } else if route.hasPrefix("backup.") {
             openLauncher("backup", app: app)
             XCTAssertTrue(view("native-ios-backup-overview", app: app)
@@ -228,6 +248,22 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "files.home.edit-mode":
             tap("native-ios-files-home-edit-toggle", app: app)
             ready = view("native-ios-files-home-edit-toggle", app: app)
+        case "notes.source.ios-backup":
+            let backup = app.segmentedControls.buttons["iOS 备份"].firstMatch
+            XCTAssertTrue(backup.isHittable)
+            backup.tap()
+            ready = view("native-ios-notes-source-picker", app: app)
+        case "notes.source.mine":
+            let mine = app.segmentedControls.buttons["我的备忘录"].firstMatch
+            XCTAssertTrue(mine.isHittable)
+            mine.tap()
+            ready = view("native-ios-notes-source-picker", app: app)
+        case "transfers.open-files":
+            app.buttons["打开文件"].firstMatch.tap()
+            ready = view("native-ios-files-section-browse", app: app)
+        case "transfers.open-backup":
+            app.buttons["打开相册备份"].firstMatch.tap()
+            ready = view("native-ios-backup-overview", app: app)
         case "backup.tasks":
             tap("native-ios-photos-task-list", app: app)
             ready = view("native-ios-photo-task-list-done", app: app)
@@ -282,6 +318,11 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                       "Native child did not mount: \(route)")
         if route == "files.home.edit-mode" {
             XCTAssertEqual(ready.label, "完成", "Files Home edit state never changed")
+        }
+        if route == "notes.source.ios-backup" {
+            XCTAssertEqual(ready.value as? String, "iOS 备份")
+        } else if route == "notes.source.mine" {
+            XCTAssertEqual(ready.value as? String, "我的备忘录")
         }
         XCTAssertEqual(app.state, .runningForeground)
     }
@@ -346,6 +387,19 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             tap("native-ios-files-home-edit-toggle", app: app)
             XCTAssertEqual(view("native-ios-files-home-edit-toggle", app: app).label,
                            "编辑", "Files Home edit mode did not exit")
+        case "notes.source.ios-backup":
+            let mine = app.segmentedControls.buttons["我的备忘录"].firstMatch
+            XCTAssertTrue(mine.waitForExistence(timeout: 15))
+            mine.tap()
+            XCTAssertEqual(view("native-ios-notes-source-picker", app: app).value as? String,
+                           "我的备忘录")
+        case "notes.source.mine":
+            XCTAssertEqual(view("native-ios-notes-source-picker", app: app).value as? String,
+                           "我的备忘录")
+        case "transfers.open-files", "transfers.open-backup":
+            tap("native-ios-tab-launcher", app: app)
+            XCTAssertTrue(view("native-ios-launcher-files", app: app)
+                .waitForExistence(timeout: 15))
         case "backup.tasks":
             tap("native-ios-photo-task-list-done", app: app)
             let done = view("native-ios-photo-task-list-done", app: app)
@@ -445,12 +499,24 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             if iterations > 1 {
                 print("IOS_NATIVE_SUBPAGE_PERF_MS route=\(route) trial=\(iterations - 1) value=\(milliseconds)")
             }
+            // Capture after the measured interval. This is NOT first pixel.
+            if iterations == 2 {
+                let frame = XCTAttachment(screenshot: app.screenshot())
+                frame.name = "post-ax-" + route
+                frame.lifetime = .keepAlways
+                add(frame)
+                print("IOS_NATIVE_SUBPAGE_POST_AX_SCREENSHOT route=\(route) trial=1")
+            }
             cleanup(route, app: app)
         }
         print("IOS_NATIVE_SUBPAGE_COMPLETE route=\(route) iterations=\(iterations)")
         app.terminate()
     }
 
+    func testSubpageNotesSourceIOSBackup() { run("notes.source.ios-backup") }
+    func testSubpageNotesSourceMine() { run("notes.source.mine") }
+    func testSubpageTransfersOpenFiles() { run("transfers.open-files") }
+    func testSubpageTransfersOpenBackup() { run("transfers.open-backup") }
     func testSubpageFilesHomeRecentDenied() { run("files.home.recent-denied") }
     func testSubpageFilesHomeFavoritesDenied() { run("files.home.favorites-denied") }
     func testSubpageFilesHomeSavedSearches() { run("files.home.saved-searches") }

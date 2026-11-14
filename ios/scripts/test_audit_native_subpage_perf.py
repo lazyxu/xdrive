@@ -48,6 +48,7 @@ def fake_log(routes=tuple(METHODS)):
                 f"[{metric}] average: 1, relative standard deviation: 1%, "
                 f"values: [{unit}], performanceMetricID:app"
             )
+        rows.append(f"IOS_NATIVE_SUBPAGE_POST_AX_SCREENSHOT route={route} trial=1")
         rows.append(f"IOS_NATIVE_SUBPAGE_COMPLETE route={route} iterations=4")
     return "\n".join(rows)
 
@@ -65,16 +66,18 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertEqual(report["route_count"], 2)
         self.assertEqual(report["recorded_test_invocations"], 8)
         self.assertEqual(report["total_ax_samples"], 6)
+        self.assertEqual(report["post_ax_screenshot_routes"], 2)
+        self.assertFalse(report["true_composited_first_frame_measured"])
         self.assertEqual(report["rows"][0]["ax_ready_p50_ms"], 20)
         self.assertEqual(report["rows"][0]["app_cpu_time_p50_s"], 0.2)
         self.assertEqual(report["rows"][0]["app_peak_memory_p95_mib"], 3)
         self.assertFalse(report["real_signed_owner_data"])
 
-    def test_actual_repository_registration_has_all_twenty_four_routes(self):
+    def test_actual_repository_registration_has_all_twenty_eight_routes(self):
         module.ROUTES = self.old
         registered = module.source_routes(module.SOURCE.read_text(encoding="utf-8"))
         self.assertEqual(set(registered.values()), set(module.ROUTES))
-        self.assertEqual(len(module.ROUTES), 24)
+        self.assertEqual(len(module.ROUTES), 28)
 
     def test_gallery_backup_routes_use_existing_product_navigation(self):
         gallery = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
@@ -162,6 +165,24 @@ class NativeSubpageAuditTests(unittest.TestCase):
             self.assertIn(f'run("{route}")', native_test)
         self.assertIn('XCTCPUMetric(application: app)', native_test)
         self.assertIn('XCTMemoryMetric(application: app)', native_test)
+
+    def test_real_notes_and_transfers_subpages(self):
+        notes = (module.ROOT / "ios/XDriveIOS/NativeNotesScreen.swift").read_text(encoding="utf-8")
+        transfers = (module.ROOT / "ios/XDriveIOS/NativeTransfers.swift").read_text(encoding="utf-8")
+        suite = module.SOURCE.read_text(encoding="utf-8")
+        self.assertIn('accessibilityIdentifier("native-ios-notes-source-picker")', notes)
+        self.assertIn('accessibilityValue(source.title)', notes)
+        self.assertIn('Button("打开文件", action: openFiles)', transfers)
+        self.assertIn('Button("打开相册备份", action: openBackup)', transfers)
+        for route in ("notes.source.mine", "notes.source.ios-backup",
+                      "transfers.open-files", "transfers.open-backup"):
+            self.assertIn(f'run("{route}")', suite)
+
+    def test_missing_actual_screenshot_fails(self):
+        bad = "\n".join(x for x in fake_log().splitlines()
+                        if "POST_AX_SCREENSHOT" not in x)
+        with self.assertRaisesRegex(ValueError, "screenshot"):
+            module.audit(fake_source(), bad, {"metrics": [1]})
 
     def test_missing_actual_metric_fails(self):
         stripped = "\n".join(

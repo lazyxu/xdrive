@@ -9,9 +9,8 @@ The original 25-route AX-ready baseline passed 75/75 on \`a32cac1\`.
 This follow-up is now directly targeted at master, not stacked onto an
 unmerged development parent.
 
-This additive PR registers **24 native interaction/entry paths** (the original 9,
-6 added Backup/Gallery entries, 5 Files/Gallery/MapKit child paths, 2
-Setup/Account consent routes, and 2 distinct Files Home child-entry paths),
+This additive PR registers **28 native interaction/entry paths** (the earlier
+24 plus 2 Notes source switches and 2 Transfers child navigation paths),
 without inventing Owner authentication or media fixtures. It retains separate
 route IDs and test cases even where multiple navigation paths render the same
 SwiftUI component. Repetition is deliberate: user-perceived entry costs and
@@ -43,8 +42,12 @@ resource lifetimes differ.
 | gallery.map.from-launcher | 全部功能 → 地图 | Native MapKit source selector | Real independent launcher path; no GPS dataset claim |
 | launcher.recent-picker | 笔记 → 最近功能 Sheet | Recent picker navigation bar | Genuine native launcher/session-free |
 | mine.signout.confirm | 我的 → 退出当前账户确认层 → 安全取消 | 停止本机自动备份并退出 | Synthetic Owner, no Session; never confirms destructive sign-out |
+| notes.source.ios-backup | 笔记 → iOS 备份来源 | native-ios-notes-source-picker | Native segmented source transition; no Server notes |
+| notes.source.mine | iOS 备份 → 我的备忘录 | native-ios-notes-source-picker | Native reverse transition; no Server notes |
+| transfers.open-files | 传输 → 打开文件 | native-ios-files-section-browse | Native 5-slot navigation |
+| transfers.open-backup | 传输 → 相册备份 | native-ios-backup-overview | Native route; no upload |
 
-All twenty-four routes use real product-owned SwiftUI views or native UI modes, but some are
+All twenty-eight routes use real product-owned SwiftUI views or native UI modes, but some are
 **distinct entry paths into the same underlying screen**, not 15 unique
 screens. The original nine-path Simulator run [#43249473366](https://github.com/lazyxu/xdrive/actions/runs/43249473366)
 passed on `a39441a`. An actual 20-route Simulator run
@@ -97,7 +100,7 @@ AX-ready wall milliseconds and separately app-targeted
 \`XCTMemoryMetric(application: app)\` Memory Peak Physical in KiB.
 The raw .xcresult is exported as JSON and CSV.
 
-The strict audit requires 24 registered methods, 4 observed UI invocations
+The strict audit requires 28 registered methods, 4 observed UI invocations
 per route, 3 unique AX trial IDs per route, 3 **genuine XCTest CPU Time** and
 **Memory Peak Physical** numbers per route and nonempty original xcresult
 metrics export. Missing, duplicates, or invalid numerical results cause an
@@ -109,8 +112,8 @@ true Hitch Time Ratio or physical 60/120 Hz frame pacing. User-visible
 screens requiring an Owner will fail closed rather than load fabricated
 Server files. This suite does not modify backup/session/Server code.
 
-The 24-path contract requires **96 UI invocations, 72 retained AX trials,
-72 genuine app CPU and 72 app peak-memory values**, all from the same
+The 28-path contract requires **112 UI invocations, 84 retained AX trials,
+84 genuine app CPU and 84 app peak-memory values**, all from the same
 exact-head Xcode Simulator run. Existing 25 root/selected-child routes are
 measured separately; these matrices are not 45 unique pages. Alert, map
 source selector and edit mode readiness are explicitly not pixel/FPS timing.
@@ -155,3 +158,7 @@ implemented pages or valid performance equivalents.
 - Check latest master semantic compatibility, wait for exact-HEAD native
   performance and full CI/Final Gate, and only then merge this PR.
 - Real signed hardware / genuine Owner population: **跳过（未验收）**.
+
+### 2026-11-14 — 28-route candidate and raw screenshot provenance
+
+Four genuine Notes/Transfers entry transitions extend the earlier 24-route baseline. The test now retains one post-AX screenshot attachment per route in the original uploaded xcresult; the independent audit fails closed if its log marker is missing or duplicated. Capture takes place **after** the measured CPU/AX interval, never counts as a first composed frame. New HEAD Simulator/CI/IPA evidence is required; signed Owner, true FPS/hitches, 100k assets and real transfer throughput remain unverified.

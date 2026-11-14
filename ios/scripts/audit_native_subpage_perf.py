@@ -40,6 +40,10 @@ ROUTES = (
     "gallery.map.from-launcher",
     "launcher.recent-picker",
     "mine.signout.confirm",
+    "notes.source.ios-backup",
+    "notes.source.mine",
+    "transfers.open-files",
+    "transfers.open-backup",
 )
 SOURCE_METHOD = re.compile(
     r'func\s+(testSubpage[A-Za-z0-9]+)\(\)\s*\{\s*run\("([a-z0-9.-]+)"\)\s*\}'
@@ -49,6 +53,7 @@ READY = re.compile(
     r'IOS_NATIVE_SUBPAGE_PERF_MS route=([a-z0-9.-]+) trial=(\d+) value=(\d+)'
 )
 COMPLETE = re.compile(r'IOS_NATIVE_SUBPAGE_COMPLETE route=([a-z0-9.-]+) iterations=(\d+)')
+POST_AX_SHOT = re.compile(r'IOS_NATIVE_SUBPAGE_POST_AX_SCREENSHOT route=([a-z0-9.-]+) trial=(\d+)')
 METRIC = re.compile(
     r"Test Case '-\[xDriveIOSNavigationUITests\."
     r"XDriveIOSNativeSubpagePerformanceUITests (testSubpage[A-Za-z0-9]+)\]'"
@@ -109,6 +114,9 @@ def audit(content, log, raw_metrics):
                                         for v in observed.values()):
         raise ValueError("Missing/duplicate real subpage iterations")
 
+    shots = POST_AX_SHOT.findall(log)
+    if len(shots) != len(required) or set(shots) != {(route, "1") for route in required}:
+        raise ValueError("Missing or duplicate native post-AX screenshot evidence")
     elapsed = {}
     for route, trial, value in READY.findall(log):
         elapsed.setdefault(route, []).append((int(trial), int(value)))
@@ -158,6 +166,8 @@ def audit(content, log, raw_metrics):
         "recorded_test_invocations": sum(map(len, observed.values())),
         "retained_trials_per_route": 3,
         "total_ax_samples": sum(map(len, elapsed.values())),
+        "post_ax_screenshot_routes": len(shots),
+        "true_composited_first_frame_measured": False,
         "raw_xcresult_metrics_present": True,
         "includes_xctest_and_ax_idling": True,
         "real_signed_owner_data": False,

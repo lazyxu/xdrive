@@ -10,6 +10,8 @@ on:
       - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
       - 'ios/XDriveIOS/NativeFilesManagementPanel.swift'
       - 'ios/XDriveIOS/NativePhotoBackupScreen.swift'
+      - 'ios/XDriveIOS/NativeNotesScreen.swift'
+      - 'ios/XDriveIOS/NativeTransfers.swift'
       - 'ios/XDriveIOS/NativePhotosDashboard.swift'
   workflow_dispatch:
 permissions:
@@ -81,7 +83,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests \
             2>&1 | tee "$RUNNER_TEMP/native-subpage-perf/xcodebuild.log"
-      - name: Require all 24 actual subpage paths and genuine per-route XCTest resource samples
+      - name: Require all 28 actual subpage paths and genuine per-route XCTest resource samples
         shell: bash
         run: |
           set -euo pipefail
@@ -104,6 +106,7 @@ jobs:
             ${{ runner.temp }}/native-subpage-perf/metrics.json
             ${{ runner.temp }}/native-subpage-perf/metrics-csv/
             ${{ runner.temp }}/native-subpage-perf/subpage-summary.json
+            ${{ runner.temp }}/native-subpage-perf/Subpage.xcresult/
             ${{ runner.temp }}/ios-native-subpage-source-sha
           if-no-files-found: warn
           retention-days: 7
