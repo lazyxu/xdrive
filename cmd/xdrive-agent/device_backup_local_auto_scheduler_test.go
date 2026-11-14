@@ -40,15 +40,25 @@ func TestLocalPushAutoOnlyAfterOwnVerifiedPreviousPartial(t *testing.T) {
 	if err != nil || !due {
 		t.Fatalf("configured six-hour interval was not due: due=%t err=%v", due, err)
 	}
-	for _, state := range []string{"running", "paused", "cancelled", "uncertain"} {
+	for _, state := range []string{"running", "uncertain"} {
 		t.Run(state, func(t *testing.T) {
-			unsafe := cp
-			unsafe.State = state
-			due, err := localPushAutomaticDue(spec, unsafe, last.Add(48*time.Hour))
-			if err != nil || due {
-				t.Fatalf("old %s run automatically bypassed original reconciliation: due=%t err=%v", state, due, err)
+			recovering := cp
+			recovering.State = state
+			if state == "uncertain" { recovering.UncertainFiles = 1 }
+			if due, err := localPushAutomaticDue(spec, recovering, last.Add(30*time.Second)); err != nil || due {
+				t.Fatalf("original %s retry fired before bounded recovery delay: %t %v", state, due, err)
+			}
+			if due, err := localPushAutomaticDue(spec, recovering, last.Add(time.Minute)); err != nil || !due {
+				t.Fatalf("original %s retry did not enter owning-Agent reconciliation: %t %v", state, due, err)
 			}
 		})
+	}
+	for _, state := range []string{"paused", "cancelled"} {
+		stopped := cp
+		stopped.State = state
+		if due, err := localPushAutomaticDue(spec, stopped, last.Add(48*time.Hour)); err != nil || due {
+			t.Fatalf("explicit %s was silently resumed: %t %v", state, due, err)
+		}
 	}
 	unsafe := cp
 	unsafe.UncertainFiles = 1
@@ -69,6 +79,21 @@ func TestLocalPushAutoOnlyAfterOwnVerifiedPreviousPartial(t *testing.T) {
 	wrong.SourceRevision++
 	if due, err := localPushAutomaticDue(spec, wrong, last.Add(48*time.Hour)); err == nil || due {
 		t.Fatalf("old-Source-revision checkpoint armed automatic run: due=%t err=%v", due, err)
+	}
+	newPlan := spec
+	newPlan.Revision++
+	if due, err := localPushAutomaticDue(newPlan, cp, last.Add(time.Minute)); err != nil || !due {
+		t.Fatalf("same-owner clean checkpoint did not start new-revision reconciliation: %t %v", due, err)
+	}
+	tooFar := newPlan
+	tooFar.Revision += localPushAutoMaxRevisionRearm
+	if due, err := localPushAutomaticDue(tooFar, cp, last.Add(time.Minute)); err == nil || due {
+		t.Fatalf("unbounded old-version checkpoint triggered auto: %t %v", due, err)
+	}
+	oldUnknown := cp
+	oldUnknown.State, oldUnknown.UncertainFiles = "uncertain", 1
+	if due, err := localPushAutomaticDue(newPlan, oldUnknown, last.Add(time.Minute)); err != nil || due {
+		t.Fatalf("pending old-version SQL result allowed cross-revision resume: %t %v", due, err)
 	}
 	claim := cp
 	claim.BackupComplete = true

@@ -102,6 +102,30 @@ func TestVerifiedCommonBatchHistoryBoundsAndInvalidRecordFailsClosed(t *testing.
 	}
 }
 
+func TestVerifiedCommonBatchHistoryRebaselineArchivesOnlyCleanPriorRevision(t *testing.T) {
+	f := makeCommonPlanFixture(t)
+	ctx := context.Background()
+	cp := commonBatchHistoryFixture(f, "partial", 1, time.Now().UTC())
+	cp.ScanComplete = true
+	if err := StoreVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7, cp); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcileVerifiedCommonBatchHistoryBeforeRun(ctx, f.config, f.grant, f.secret, 8); err != nil {
+		t.Fatalf("clean previous version blocked first current-version scan: %v", err)
+	}
+	records, err := ListVerifiedCommonBatchHistory(ctx, f.config, f.grant, f.secret)
+	if err != nil || len(records) != 1 || records[0] != cp {
+		t.Fatalf("older checkpoint not archived without inventing completion: %+v %v", records, err)
+	}
+	unsafe := cp
+	unsafe.State, unsafe.UncertainFiles, unsafe.ScanComplete = "uncertain", 1, false
+	unsafe.UpdatedAt = unsafe.UpdatedAt.Add(time.Second)
+	if err := StoreVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7, unsafe); err != nil { t.Fatal(err) }
+	if err := ReconcileVerifiedCommonBatchHistoryBeforeRun(ctx, f.config, f.grant, f.secret, 8); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("old-version pending SQL was silently made current: %v", err)
+	}
+}
+
 func TestVerifiedCommonBatchHistoryBackfillsCrashWindowWithoutFakeCommit(t *testing.T) {
 	f := makeCommonPlanFixture(t)
 	ctx := context.Background()
