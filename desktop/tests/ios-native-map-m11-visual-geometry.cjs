@@ -15,7 +15,12 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
     assert.match(cloud, new RegExp('XDriveIOSNativeMapMarkerVisualPolicy\\.' + token))
   }
   assert.match(layout, /minimumTouchTarget: CGFloat = 44/)
-  assert.match(local, /\.fastFormat/)
+  // The real 128px PhotoKit cover now keeps degraded poster frames visible
+  // while the final iCloud rendition arrives; fastFormat was superseded.
+  assert.match(local, /options\.deliveryMode = \.opportunistic/)
+  assert.match(local, /targetSize: CGSize\(width: 128, height: 128\)/)
+  assert.match(local, /PHImageResultIsDegradedKey/)
+  assert.match(local, /if !degraded \|\| failed \{/)
   assert.match(local, /isAccessibilityElement = !provisional/)
   assert.match(cloud, /isAccessibilityElement = enabled/)
   assert.doesNotMatch(layout, /PHAsset|Owner|URLSession|upload|requestAuthorization/)
