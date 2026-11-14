@@ -159,17 +159,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 MapAnnotation(coordinate: CLLocationCoordinate2D(
                     latitude: pin.latitude, longitude: pin.longitude
                 )) {
-                    Button {
-                        guard currentProof else { return }
-                        selected = pin
-                    } label: {
-                        Label("\(pin.count)", systemImage: "photo.on.rectangle")
-                            .font(.caption.weight(.semibold))
-                            .padding(7)
-                            .background(.regularMaterial, in: Capsule())
-                    }
-                    .accessibilityIdentifier("native-ios-unified-source-map-cell-\(pin.id)")
-                    .accessibilityLabel("当前筛选的此区域 \(pin.count) 张照片")
+                    verifiedMarker(for: pin)
                 }
             }
             .accessibilityIdentifier("native-ios-unified-source-map")
@@ -184,15 +174,15 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 ) { reload() }
             } else if currentProof {
                 let total = pins.reduce(0) { $0 + $1.count }
-                Text("\(presence.title) · 已核对 \(total) 张有定位的照片")
+                Text("\(presence.title) · 当前视窗已核对 \(total) 张有定位的照片")
                     .font(.footnote).monospacedDigit()
                     .accessibilityIdentifier("native-ios-unified-source-map-total")
                 if pins.isEmpty {
-                    Text("当前经过核对的筛选结果没有拍摄位置。")
+                    Text("当前已核验的筛选结果在这个地图视窗没有拍摄位置。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             } else {
-                Text("照片访问或来源核验已失效，请重新核对。")
+                Text("当前地图视窗或来源权限待核验，旧地点不可打开。")
                     .foregroundStyle(.secondary)
             }
         }
@@ -212,7 +202,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             // a vanished Owner or a different PhotoKit generation.
             if !currentProof { invalidate() }
         }) { pin in
-            if let owner = provedOwner, let library = provedLibrary, currentProof {
+            if let owner = provedOwner, let library = provedLibrary, currentProof,
+               pins.contains(where: { $0.id == pin.id && $0.count == pin.count }) {
                 NavigationStack {
                     XDriveIOSNativeUnifiedSourceMapCellWall(
                         login: login, owner: owner, library: library,
@@ -229,14 +220,27 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             if pins.isEmpty && !busy { reload() }
         }
         .onChange(of: photoChanges.change) { _ in
-            // A PhotoKit edit invalidates both published map counts and the
-            // selected sheet. No old coordinate becomes a new membership.
             invalidate()
+            didFitFirstVerifiedMap = false
             if phase == .active { reload() }
         }
-        .onChange(of: login.owner) { _ in invalidate() }
-        .onChange(of: presence) { _ in reload() }
-        .onChange(of: query) { _ in reload() }
+        .onChange(of: login.owner) { _ in
+            invalidate()
+            didFitFirstVerifiedMap = false
+            if phase == .active && login.owner != nil { reload() }
+        }
+        .onChange(of: presence) { _ in
+            didFitFirstVerifiedMap = false
+            reload()
+        }
+        .onChange(of: query) { _ in
+            didFitFirstVerifiedMap = false
+            reload()
+        }
+        .onChange(of: camera.center.latitude) { _ in scheduleCameraRefinement() }
+        .onChange(of: camera.center.longitude) { _ in scheduleCameraRefinement() }
+        .onChange(of: camera.span.latitudeDelta) { _ in scheduleCameraRefinement() }
+        .onChange(of: camera.span.longitudeDelta) { _ in scheduleCameraRefinement() }
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
         }
