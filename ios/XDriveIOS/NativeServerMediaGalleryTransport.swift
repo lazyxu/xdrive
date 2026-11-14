@@ -339,6 +339,8 @@ struct XDriveIOSNativeMediaGalleryReader {
     static let pageSize = 48
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
+    // Only map-scoped Readers carry this immutable filter snapshot.
+    var mapSelection: XDriveIOSNativeOwnerMapSelection? = nil
 
     private func session() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
@@ -459,6 +461,7 @@ struct XDriveIOSNativeMediaGalleryReader {
         guard offset >= 0 && offset <= 10_000_000,
               query.unicodeScalars.count <= 200,
               (captureRange == nil || captureRange!.valid),
+              (mapSelection == nil || mapSelection!.valid),
               (person == nil || (person!.isValid && albumID == nil && placeID == nil)),
               (placeID == nil || (
                   albumID == nil &&
@@ -494,6 +497,8 @@ struct XDriveIOSNativeMediaGalleryReader {
             // Original Server Owner GPS place, never synthetic map-region.
             parameters.append(URLQueryItem(name: "place", value: placeID))
             parameters.append(URLQueryItem(name: "has_location", value: "true"))
+            // Never fall back to an unfiltered old-Server range on 400.
+            if let mapSelection { parameters += mapSelection.queryItems }
         }
         let url = try endpoint(path, query: parameters)
         // Offset-zero place Ranges can include up to 100k date groups;
@@ -626,7 +631,8 @@ struct XDriveIOSNativeMediaGalleryReader {
         captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
     ) async throws -> XDriveIOSNativeOwnerMapOverview {
         guard XDriveIOSNativeOwnerMapOverviewPolicy.validBounds(bounds),
-              (captureRange == nil || captureRange!.valid) else {
+              (captureRange == nil || captureRange!.valid),
+              (mapSelection == nil || mapSelection!.valid) else {
             throw XDriveIOSNativeMediaReadFailure.invalidPage
         }
         var query = [
@@ -636,6 +642,7 @@ struct XDriveIOSNativeMediaGalleryReader {
             URLQueryItem(name: "north", value: String(bounds.north))
         ]
         if detail { query.append(URLQueryItem(name: "detail", value: "1")) }
+        if let mapSelection { query += mapSelection.queryItems }
         if let captureRange {
             query.append(URLQueryItem(name: "captured_from",
                                       value: captureRange.fromRFC3339))

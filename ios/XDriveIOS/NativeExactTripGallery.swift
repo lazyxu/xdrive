@@ -34,7 +34,7 @@ struct XDriveIOSNativeExactTripsScreen: View {
                 .font(.subheadline.weight(selected ? .semibold : .regular))
                 .foregroundStyle(selected ? Color.white : Color.primary)
                 .padding(.horizontal, 14)
-                .frame(minHeight: 36)
+                .frame(minHeight: CGFloat(XDriveIOSNativePhotoMapPolicy.minimumInteractiveTarget))
                 .background(
                     selected ? Color.accentColor :
                         Color(uiColor: .secondarySystemGroupedBackground),

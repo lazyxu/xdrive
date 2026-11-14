@@ -17,6 +17,7 @@ new Function('exports','module','require',js)(mod.exports,mod,require)
 const prefs = mod.exports
 const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
 const drawer = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+const visualState = read('ui/shared/src/mui/MediaGalleryPhotoWallState.ts')
 const parent = read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
 const key = prefs.XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY
 const defaultColumns = {year:6,month:5,day:3,all:3}
@@ -117,13 +118,16 @@ test('same-document and cross-tab updates reach both mounted Gallery and Places'
 })
 
 test('mounted Gallery and Places both read/observe one preference port',()=>{
-  assert.match(gallery,/xDriveReadMobileGalleryColumns/)
-  assert.match(drawer,/xDriveReadMobileGalleryColumns\(\)/)
-  assert.match(gallery,/xDriveObserveMobileGalleryColumns\(setMobileColumnsByScale\)/)
-  assert.match(drawer,/xDriveObserveMobileGalleryColumns\(setColumnsByScale\)/)
+  assert.match(gallery,/useXDriveMediaGalleryMobileColumns\(\)/)
+  assert.match(drawer,/useXDriveMediaGalleryMobileColumns\(\{/)
+  assert.match(visualState,/xDriveReadMobileGalleryColumns\(\)/)
+  assert.match(visualState,/xDriveObserveMobileGalleryColumns\(setColumns\)/)
+  assert.doesNotMatch(gallery,/xDriveObserveMobileGalleryColumns\(/)
+  assert.doesNotMatch(drawer,/xDriveObserveMobileGalleryColumns\(/)
   assert.match(gallery,/xDriveWriteMobileGalleryColumn\(effectiveTimeScale, columns\)/)
   assert.match(drawer,/xDriveWriteMobileGalleryColumn\(timeScale,columns\)/)
-  assert.match(drawer,/initialPresentation\?\.columns !== undefined/)
+  assert.match(drawer,/columns: initialPresentation\?\.columns/)
+  assert.match(visualState,/Number\.isFinite\(n\)/)
   assert.match(drawer,/XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT/)
   assert.doesNotMatch(drawer,/window\.localStorage\.(setItem|getItem)/)
   assert.doesNotMatch(gallery,/window\.localStorage\.setItem\(\s*XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY/)

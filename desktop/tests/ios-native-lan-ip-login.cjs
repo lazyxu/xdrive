@@ -43,11 +43,12 @@ test('one anonymous no-redirect HTTPS probe selects a fixed origin before creden
   assert.match(route, /throw XDriveIOSLANPairingFailure\.ipCertificateInvalid/)
   assert.match(route, /let timeout: TimeInterval = pairing \? 8 : 3/)
   assert.match(trust, /SecTrustSetAnchorCertificatesOnly\(trust, true\)/)
-  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{ return \.trusted \}/)
+  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{\s*return XDriveIOSLANTrustInspection\(verdict: \.trusted, setupOSStatus: nil\)/)
   assert.match(trust, /SecTrustCopyCertificateChain\(trust\)/)
   assert.match(trust, /SecPolicyCreateBasicX509\(\)/)
-  assert.ok(trust.indexOf('if SecTrustEvaluateWithError(trust, nil) { return .trusted }') <
-    trust.indexOf('SecTrustCopyCertificateChain(trust)'),
+  const strictInspect = trust.slice(trust.indexOf('static func inspectDetailed('))
+  assert.ok(strictInspect.indexOf('if SecTrustEvaluateWithError(trust, nil) {') <
+    strictInspect.indexOf('SecTrustCopyCertificateChain(trust)'),
   'secondary certificate-chain diagnosis must follow strict IP SAN + paired CA trust refusal')
   assert.doesNotMatch(route, /http:\/\//)
   assert.match(route, /\.cannotConnectToHost, \.timedOut, \.networkConnectionLost/)
@@ -153,7 +154,23 @@ test('LAN pairing distinguishes handshake errors from strict pinned trust eviden
   assert.match(trust, /SecPolicyCreateSSL\(true, target\.ip as CFString\)/)
   assert.match(trust, /SecPolicyCreateBasicX509\(\)/)
   assert.match(trust, /Negative-result diagnosis only/)
-  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{ return \.trusted \}/)
+  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{\s*return XDriveIOSLANTrustInspection\(verdict: \.trusted, setupOSStatus: nil\)/)
   assert.match(trust, /SecTrustGetVerifyTime\(trust\)/)
   assert.doesNotMatch(route + trust, /InsecureSkipVerify|trustAllHosts|allowUntrusted/)
+})
+
+test('only user-requested pairing emits bounded TLS evidence, never changes trust decision', () => {
+  assert.match(route, /if pairing, let evidence = verifier\.pairingEvidence/)
+  assert.match(route, /ipCertificateWithoutChallenge\(url\.errorCode\)/)
+  assert.match(route, /override func observedPairingEvidence\(/)
+  assert.match(trust, /if case \.verifyingPairing = mode/)
+  assert.match(trust, /reason: \.challengeIdentity/)
+  assert.match(trust, /reason: challenge\.previousFailureCount != 0 \? \.retryChallenge : \.trustObjectMissing/)
+  assert.match(trust, /peerLeafDigest\(trust\)/)
+  assert.match(trust, /SecCertificateCopyData\(leaf\)/)
+  assert.match(trust, /setupOSStatus/)
+  assert.match(trust, /SecTrustSetAnchorCertificatesOnly\(trust, true\)/)
+  assert.match(trust, /SecTrustSetNetworkFetchAllowed\(trust, false\)/)
+  assert.doesNotMatch(trust, /print\(|NSLog\(|debugPrint\(|os_log\(/)
+  assert.doesNotMatch(trust, /privateKey|SecKeyCopyExternalRepresentation|Authorization:|Cookie:|Bearer /)
 })

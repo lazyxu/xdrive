@@ -38,6 +38,7 @@ type mediaQueryOptions struct {
 	UnknownFirst       bool
 	MediaKind          string
 	Search             string
+	FileName           string
 	AssetKind          string
 	Category           string
 	FolderID           *uint64
@@ -136,6 +137,16 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 		return mediaQueryOptions{}, false
 	}
 	out.Search = strings.TrimSpace(c.Query("q"))
+	if values, found := c.Request.URL.Query()["filename"]; found {
+		if len(values) != 1 || values[0] == "" ||
+			strings.TrimSpace(values[0]) != values[0] ||
+			strings.ContainsRune(values[0], 0) ||
+			len([]rune(values[0])) > 120 {
+			fail(c, http.StatusBadRequest, "invalid filename scope")
+			return mediaQueryOptions{}, false
+		}
+		out.FileName = values[0]
+	}
 	if len([]rune(out.Search)) > mediaSearchMaxRunes {
 		fail(c, http.StatusBadRequest, "q must be at most 200 characters")
 		return mediaQueryOptions{}, false
@@ -364,6 +375,24 @@ func (options mediaQueryOptions) withoutFormats() mediaQueryOptions {
 	return options
 }
 
+// The native Gallery's filename predicate is literal and narrower than the
+// general search (OCR/tags/camera). Use the SAME current Owner asset Resource
+// membership for both Map Overview and selected 48-photo Range.
+func applyMediaFilenameFilter(query *gorm.DB, filename string) *gorm.DB {
+	if filename == "" {
+		return query
+	}
+	return query.Where(
+		"POSITION(LOWER(?) IN LOWER(n.name)) > 0 OR EXISTS ("+
+			"SELECT 1 FROM xd_photo_resources AS map_resource "+
+			"JOIN xd_nodes AS map_resource_node ON map_resource_node.id = map_resource.node_id "+
+			"AND map_resource_node.owner_id = pa.owner_id AND map_resource_node.deleted_at IS NULL "+
+			"WHERE map_resource.asset_id = pa.id AND "+
+			"POSITION(LOWER(?) IN LOWER(map_resource_node.name)) > 0)",
+		filename, filename,
+	)
+}
+
 func applyMediaSearchFilter(query *gorm.DB, search string) *gorm.DB {
 	search = strings.TrimSpace(search)
 	if search == "" {
@@ -462,6 +491,7 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions, ownerID u
 		query = query.Where("LOWER(TRIM(xd_media_metadata.mime_type)) IN ?", options.Formats)
 	}
 	query = applyMediaSearchFilter(query, options.Search)
+	query = applyMediaFilenameFilter(query, options.FileName)
 	if options.CapturedFrom != nil {
 		query = query.Where("xd_media_metadata.captured_at >= ?", *options.CapturedFrom)
 	}

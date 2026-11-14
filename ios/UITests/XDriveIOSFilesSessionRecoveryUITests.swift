@@ -351,6 +351,9 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         let app = launch()
         files(app)
         tap("native-ios-files-open-root-location", app)
+        // The root link must display its deterministic no-Session child
+        // immediately, rather than waiting for a doomed folder API request.
+        expect("native-ios-files-cloud-no-session", app)
         expect("native-ios-files-error-page", app)
         tap("native-ios-files-error-return", app)
         openHomeShortcut("native-ios-files-open-favorites", app)

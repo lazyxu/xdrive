@@ -164,11 +164,11 @@ enum XDriveIOSLiveOriginalArchive {
             try write(name)
             try write(extra)
             if let original = entry.source {
-                let input = try FileHandle(forReadingFrom: original)
+                let input = try openOriginal(original)
                 defer { try? input.close() }
                 var copied: UInt64 = 0
                 var checksum = UInt32.max
-                while let bytes = try input.read(upToCount: bufferSize), !bytes.isEmpty {
+                while let bytes = try nextOriginalChunk(input), !bytes.isEmpty {
                     try Task.checkCancellation()
                     copied += UInt64(bytes.count)
                     guard copied <= UInt64(entry.size) else {
@@ -289,17 +289,38 @@ enum XDriveIOSLiveOriginalArchive {
     private static func crc32(_ data: Data) -> UInt32 {
         ~rollingCRC32(data, previous: UInt32.max)
     }
+    // A transient read/open failure of protected PhotoKit staging is a
+    // shared local I/O fault, not evidence that one media asset is missing.
+    // Normalize both Live ZIP passes to the existing whole-run abort error:
+    // otherwise a raw Cocoa/FileHandle error would be recorded as an
+    // item-local "unavailable", letting a 256-slot backup cursor advance.
+    private static func openOriginal(_ source: URL) throws -> FileHandle {
+        do {
+            return try FileHandle(forReadingFrom: source)
+        } catch {
+            throw XDriveIOSLiveArchiveFailure.storageUnavailable
+        }
+    }
+
+    private static func nextOriginalChunk(_ file: FileHandle) throws -> Data? {
+        do {
+            return try file.read(upToCount: bufferSize)
+        } catch {
+            throw XDriveIOSLiveArchiveFailure.storageUnavailable
+        }
+    }
+
     private static func checksum(_ source: URL, expected: Int64) throws -> UInt32 {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: source.path),
               (attributes[.type] as? FileAttributeType) == .typeRegular,
               (attributes[.size] as? NSNumber)?.int64Value == expected else {
             throw XDriveIOSLiveArchiveFailure.invalidSource
         }
-        let file = try FileHandle(forReadingFrom: source)
+        let file = try openOriginal(source)
         defer { try? file.close() }
         var count: Int64 = 0
         var crc = UInt32.max
-        while let data = try file.read(upToCount: bufferSize), !data.isEmpty {
+        while let data = try nextOriginalChunk(file), !data.isEmpty {
             try Task.checkCancellation()
             count += Int64(data.count)
             guard count <= expected else {

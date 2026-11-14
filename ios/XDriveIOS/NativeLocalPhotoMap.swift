@@ -11,7 +11,8 @@ private enum XDriveIOSMapCurrentPhotoKitAdmission {
     static func allows(
         _ candidate: XDrivePhotoKitScanCandidate,
         filter: XDriveIOSNativePhotoMediaFilter,
-        filenameTerm: String = ""
+        filenameTerm: String = "",
+        tripScope: XDriveIOSNativeLocalTripScope? = nil
     ) -> Bool {
         guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               let asset = PHAsset.fetchAssets(
@@ -25,6 +26,15 @@ private enum XDriveIOSMapCurrentPhotoKitAdmission {
         }
         guard candidate.kind == kind && filter.includes(asset: asset) else {
             return false
+        }
+        if let tripScope {
+            guard XDriveIOSNativePhotoFingerprintIndex.isCurrent(
+                    tripScope.libraryEpoch),
+                  let coordinate = asset.location?.coordinate,
+                  tripScope.contains(
+                    asset.creationDate, latitude: coordinate.latitude,
+                    longitude: coordinate.longitude
+                  ) else { return false }
         }
         return filenameTerm.isEmpty || PHAssetResource.assetResources(for: asset)
             .contains { $0.originalFilename.localizedStandardContains(filenameTerm) }
@@ -125,34 +135,34 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
     }
 
     private func setup() {
-        frame = CGRect(x: 0, y: 0, width: 68, height: 68)
-        centerOffset = CGPoint(x: 0, y: -16)
+        frame = XDriveIOSNativeMapMarkerVisualPolicy.frame
+        centerOffset = XDriveIOSNativeMapMarkerVisualPolicy.centerOffset
         clipsToBounds = false
         collisionMode = .circle
         displayPriority = .defaultHigh
-        photo.frame = CGRect(x: 2, y: 2, width: 64, height: 64)
+        photo.frame = XDriveIOSNativeMapMarkerVisualPolicy.imageFrame
         photo.contentMode = .scaleAspectFill
         photo.clipsToBounds = true
-        photo.layer.cornerRadius = 9
-        photo.layer.borderWidth = 2
+        photo.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.coverCornerRadius
+        photo.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.photoBorderWidth
         photo.layer.borderColor = UIColor.white.cgColor
         photo.backgroundColor = .secondarySystemGroupedBackground
         addSubview(photo)
-        placeholder.frame = CGRect(x: 20, y: 20, width: 28, height: 28)
+        placeholder.frame = XDriveIOSNativeMapMarkerVisualPolicy.placeholderFrame
         placeholder.contentMode = .scaleAspectFit
         placeholder.tintColor = .secondaryLabel
         addSubview(placeholder)
-        loading.frame = CGRect(x: 20, y: 20, width: 28, height: 28)
+        loading.frame = XDriveIOSNativeMapMarkerVisualPolicy.placeholderFrame
         loading.hidesWhenStopped = true
         addSubview(loading)
-        badge.frame = CGRect(x: 43, y: -7, width: 28, height: 28)
+        badge.frame = XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame
         badge.textAlignment = .center
-        badge.font = .boldSystemFont(ofSize: 12)
+        badge.font = XDriveIOSNativeMapMarkerVisualPolicy.badgeFont
         badge.textColor = .white
         badge.backgroundColor = .systemBlue
-        badge.layer.cornerRadius = 14
+        badge.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius
         badge.layer.borderColor = UIColor.white.cgColor
-        badge.layer.borderWidth = 2
+        badge.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.badgeBorderWidth
         badge.clipsToBounds = true
         addSubview(badge)
     }
@@ -163,7 +173,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         // An incomplete 64-cell preview has neither a final member count
         // nor permission to open a PhotoKit location album.
         badge.isHidden = provisional || count <= 1
-        badge.text = provisional ? nil : (count > 999 ? "999+" : String(count))
+        badge.text = provisional ? nil : XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: count)
         isAccessibilityElement = !provisional
         accessibilityTraits = provisional ? [] : .button
         accessibilityLabel = provisional ?
@@ -181,28 +191,44 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         // Map covers are visible, bounded 128px renditions. Allow PhotoKit to
         // fetch an iCloud-only thumbnail; this is not an original export/read.
         options.isNetworkAccessAllowed = true
-        options.deliveryMode = .fastFormat
+        // Opportunistic responses can supply a small local HEIC/video/Live
+        // poster and then a final iCloud rendition. A degraded callback must
+        // neither clear that poster nor falsely end the request.
+        options.deliveryMode = .opportunistic
         options.resizeMode = .fast
+        placeholder.image = UIImage(systemName: "photo")
         placeholder.isHidden = true
         loading.startAnimating()
         request = PHImageManager.default().requestImage(
             for: asset, targetSize: CGSize(width: 128, height: 128),
             contentMode: .aspectFill, options: options
-        ) { [weak self] value, _ in
+        ) { [weak self] value, info in
+            let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+            let cancelled = info?[PHImageCancelledKey] as? Bool == true
+            let failed = info?[PHImageErrorKey] != nil
+            let inCloud = info?[PHImageResultIsInCloudKey] as? Bool == true
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.epoch == snapshot,
                       [.authorized].contains(
                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                      ) else { return }
-                self.loading.stopAnimating()
-                // PhotoKit/iCloud can return a degraded preview followed by
-                // a nil/error callback. Keep the last usable bounded poster
-                // instead of flashing the map thumbnail to an empty tile.
+                      ), !cancelled else { return }
+                // A degraded still or video poster stays visible while the
+                // iCloud final result is pending. A late error never flashes
+                // an already visible poster to an empty annotation.
                 if let value {
                     self.photo.image = value
                     self.placeholder.isHidden = true
-                } else if self.photo.image == nil {
-                    self.placeholder.isHidden = false
+                }
+                if !degraded || failed {
+                    self.loading.stopAnimating()
+                    if self.photo.image == nil {
+                        self.placeholder.image = UIImage(
+                            systemName: inCloud || failed ? "icloud.slash" : "photo"
+                        )
+                        self.placeholder.isHidden = false
+                        self.accessibilityHint =
+                            "位置封面暂不可用。可在地图操作中选择重新加载位置封面。"
+                    }
                 }
             }
         }
@@ -216,6 +242,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         }
         photo.image = nil
         loading.stopAnimating()
+        placeholder.image = UIImage(systemName: "photo")
         placeholder.isHidden = false
     }
 
@@ -252,11 +279,14 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     var onCells: (([Cell], MKCoordinateRegion) -> Void)? = nil
     var onCamera: ((MKCoordinateRegion) -> Void)? = nil
     var onCameraWillChange: (() -> Void)? = nil
+    var onBasemapStatus: ((Bool) -> Void)? = nil
     let onOpen: ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onOpen: onOpen, onCells: onCells, onCamera: onCamera,
-                    onCameraWillChange: onCameraWillChange)
+        let coordinator = Coordinator(onOpen: onOpen, onCells: onCells, onCamera: onCamera,
+                                      onCameraWillChange: onCameraWillChange)
+        coordinator.onBasemapStatus = onBasemapStatus
+        return coordinator
     }
 
     func makeUIView(context: Context) -> MKMapView {
@@ -282,6 +312,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         context.coordinator.onCells = onCells
         context.coordinator.onCamera = onCamera
         context.coordinator.onCameraWillChange = onCameraWillChange
+        context.coordinator.onBasemapStatus = onBasemapStatus
         context.coordinator.canSelectCells = canSelectCells
         context.coordinator.cameraBoundCells = cameraBoundCells
         context.coordinator.showingProvisional = provisional
@@ -375,6 +406,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         var onCells: (([Cell], MKCoordinateRegion) -> Void)?
         var onCamera: ((MKCoordinateRegion) -> Void)?
         var onCameraWillChange: (() -> Void)?
+        var onBasemapStatus: ((Bool) -> Void)?
         var canSelectCells = true
         var cameraBoundCells = false
         var showingProvisional = false
@@ -390,6 +422,16 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
             self.onCells = onCells
             self.onCamera = onCamera
             self.onCameraWillChange = onCameraWillChange
+        }
+
+        func mapViewDidFailLoadingMap(_ mapView: MKMapView, withError error: Error) {
+            // A map tile failure is a presentation error only. Never change
+            // Full PhotoKit membership, map pin authority or Viewer admission.
+            DispatchQueue.main.async { [weak self] in self?.onBasemapStatus?(true) }
+        }
+
+        func mapViewDidFinishLoadingMap(_ mapView: MKMapView) {
+            DispatchQueue.main.async { [weak self] in self?.onBasemapStatus?(false) }
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
@@ -553,6 +595,9 @@ private struct XDriveIOSMapPhotoAlbum: View {
     @State private var selected: XDrivePhotoKitScanCandidate?
     @State private var viewerReturnID: String?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
     @AccessibilityFocusState private var focusedTileID: String?
 
     private var previewItems: [XDrivePhotoKitScanCandidate] {
@@ -561,12 +606,27 @@ private struct XDriveIOSMapPhotoAlbum: View {
         }
     }
 
+    private var previewSections: [XDriveIOSNativePhotoWallVisibleSection<XDrivePhotoKitScanCandidate>] {
+        xdriveIOSNativePhotoWallVisibleSections(
+            Array(items.prefix(XDriveIOSNativePhotoMapPolicy.pageSize)),
+            scale: wallTimeScale
+        ) { wallTimeScale.key(for: $0.capturedAt) }
+    }
+
     var body: some View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             ScrollView {
-                XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                    ForEach(items.prefix(XDriveIOSNativePhotoMapPolicy.pageSize)) { item in
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                    ForEach(previewSections) { section in
+                        if wallTimeScale != .all {
+                            XDriveIOSNativePhotoWallDayHeader(
+                                title: wallTimeScale.label(for: section.key)
+                            )
+                        }
+                        XDriveIOSNativePhotoWallGrid(density: wallDensity) {
+                            ForEach(section.items) { item in
                         Button {
                             guard XDriveIOSNativeMapViewerAdmission.allows(
                                 item, in: previewItems, sceneActive: phase == .active
@@ -577,21 +637,25 @@ private struct XDriveIOSMapPhotoAlbum: View {
                             focusedTileID = nil
                             selected = item
                         } label: {
-                            XDriveIOSNativeSquarePhotoTile(candidate: item)
+                            XDriveIOSNativeSquarePhotoTile(candidate: item, framing: wallFraming)
                         }
                         .buttonStyle(.plain)
                         .disabled(!XDriveIOSNativeMapViewerAdmission.supported(item) ||
                                   phase != .active)
                         .id(item.id)
                         .accessibilityFocused($focusedTileID, equals: item.id)
+                            }
+                        }
                     }
-                }.padding(8)
+                }
+                .padding(8)
             }
             .navigationTitle("此处照片 · 当前页")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        xdrivePhotoWallDensityButtons($wallDensity)
+                        Section("照片网格") { xdrivePhotoWallDensityButtons($wallDensity) }
+                        Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
                     } label: {
                         Label("缩略图大小", systemImage: "square.grid.3x3")
                     }
@@ -601,11 +665,9 @@ private struct XDriveIOSMapPhotoAlbum: View {
                     Button("完成") { dismiss() }
                 }
             }
-            .simultaneousGesture(
-                MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                    guard selected == nil, phase == .active else { return }
-                    wallDensity = wallDensity.applyingPinch(scale)
-                }
+            .xdrivePhotoWallPinch(
+                density: $wallDensity,
+                enabled: selected == nil && phase == .active
             )
             .fullScreenCover(item: $selected, onDismiss: {
                 restoreViewerTile(using: returnScroll)
@@ -647,6 +709,15 @@ enum XDriveIOSNativeLocalMapScope: String, CaseIterable {
     }
 }
 
+// A photo map membership lease is not defined by its date bounds alone:
+// two trips and the unrestricted timeline can share identical [from, to)
+// while containing different GPS members. Compare the trip identity together
+// with the date scope to invalidate stale counts and selectable annotations.
+private struct XDriveIOSNativeLocalMapMembership: Equatable {
+    let captureRange: XDriveIOSNativePhotoMapCaptureRange?
+    let tripID: UUID?
+}
+
 private struct XDriveIOSMapSpatialSelection: Identifiable {
     let id = UUID()
     let cells: [XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>]
@@ -657,6 +728,7 @@ private struct XDriveIOSMapSpatialSelection: Identifiable {
     let mediaFilter: XDriveIOSNativePhotoMediaFilter
     let captureRange: XDriveIOSNativePhotoMapCaptureRange?
     let filenameTerm: String
+    let tripScope: XDriveIOSNativeLocalTripScope?
 }
 
 /// On-demand bounded local-only cell paging. Re-scan the lazy PhotoKit
@@ -680,6 +752,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @State private var viewerItems: [XDrivePhotoKitScanCandidate] = []
     @State private var viewerReturnID: String?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
     @AccessibilityFocusState private var focusedTileID: String?
     @State private var worker: XDrivePhotoKitBoundedSnapshotScanner?
     @State private var readTask: Task<Void, Never>?
@@ -708,6 +783,12 @@ private struct XDriveIOSMapSpatialAlbum: View {
 
     private var visibleItems: [XDrivePhotoKitScanCandidate] {
         priorWindow + items
+    }
+
+    private var visibleSections: [XDriveIOSNativePhotoWallVisibleSection<XDrivePhotoKitScanCandidate>] {
+        xdriveIOSNativePhotoWallVisibleSections(
+            visibleItems, scale: wallTimeScale
+        ) { wallTimeScale.key(for: $0.capturedAt) }
     }
 
     private var hasNext: Bool {
@@ -744,14 +825,15 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     item, in: loaded, sceneActive: phase == .active
                   ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
                     item, filter: selection.mediaFilter,
-                    filenameTerm: selection.filenameTerm
+                    filenameTerm: selection.filenameTerm,
+                    tripScope: selection.tripScope
                   ) else { return }
             viewerReturnID = item.id
             viewerItems = loaded
             focusedTileID = nil
             viewer = item
         } label: {
-            XDriveIOSNativeSquarePhotoTile(candidate: item)
+            XDriveIOSNativeSquarePhotoTile(candidate: item, framing: wallFraming)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-map-photo-wall-tile")
@@ -786,9 +868,18 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     XDriveIOSNativePhotoWallStatusMessage(message: "此位置没有可访问的照片或视频。")
                 }
                 ScrollView {
-                    XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                        ForEach(priorWindow) { item in photoTile(item) }
-                        ForEach(items) { item in photoTile(item) }
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                        ForEach(visibleSections) { section in
+                            if wallTimeScale != .all {
+                                XDriveIOSNativePhotoWallDayHeader(
+                                    title: wallTimeScale.label(for: section.key)
+                                )
+                            }
+                            XDriveIOSNativePhotoWallGrid(density: wallDensity) {
+                                ForEach(section.items) { item in photoTile(item) }
+                            }
+                        }
                         // The lazy-grid sentinel is the native infinite-scroll
                         // trigger. It advances only as the last visible window
                         // approaches the viewport; busy/error guards prevent repeats.
@@ -837,6 +928,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         Section("照片网格") {
                             xdrivePhotoWallDensityButtons($wallDensity)
                         }
+                        Section("显示比例") {
+                            xdrivePhotoWallFramingButtons($wallFraming)
+                        }
                     } label: {
                         Label("位置照片操作", systemImage: "ellipsis.circle")
                     }
@@ -847,11 +941,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         .accessibilityIdentifier("native-ios-map-place-dismiss")
                 }
             }
-            .simultaneousGesture(
-                MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                    guard viewer == nil, !busy, phase == .active else { return }
-                    wallDensity = wallDensity.applyingPinch(scale)
-                }
+            .xdrivePhotoWallPinch(
+                density: $wallDensity,
+                enabled: viewer == nil && !busy && phase == .active
             )
             .fullScreenCover(item: $viewer, onDismiss: {
                 restoreViewerTile(using: returnScroll)
@@ -1011,7 +1103,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 let total = try await scanner.startMap(
                     atOffset: 0, album: album, mediaFilter: selection.mediaFilter,
                     captureRange: selection.captureRange,
-                    filenameTerm: selection.filenameTerm
+                    filenameTerm: selection.filenameTerm,
+                    tripScope: selection.tripScope
                 )
                 let result = try await readWindow(
                     scanner: scanner, pending: [], pendingIndex: 0,
@@ -1196,7 +1289,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var usingCaptureOverride = false
     @State private var datePickerOpen = false
     @State private var requestedCaptureDay = Date()
+    @State private var showingRecentDaysAndTrips = false
+    @State private var pendingRecentDay: Date?
+    @State private var pendingTrip: XDriveIOSNativeLocalTripScope?
+    @State private var chosenLocalTrip: XDriveIOSNativeLocalTripScope?
     @State private var error: String?
+    @State private var basemapUnavailable = false
     @State private var selection: XDriveIOSMapPhotoSelection?
     @State private var singleViewer: XDrivePhotoKitScanCandidate?
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -1234,10 +1332,18 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     }
 
     private var activeCaptureRange: XDriveIOSNativePhotoMapCaptureRange? {
-        usingCaptureOverride ? captureOverride : inheritedCaptureRange
+        if let chosenLocalTrip { return chosenLocalTrip.captureRange }
+        return usingCaptureOverride ? captureOverride : inheritedCaptureRange
+    }
+
+    private var activeMapMembership: XDriveIOSNativeLocalMapMembership {
+        .init(captureRange: activeCaptureRange, tripID: chosenLocalTrip?.id)
     }
 
     private func setCaptureRange(_ range: XDriveIOSNativePhotoMapCaptureRange?) {
+        // Manual date choices return to the full date/GPS membership. A
+        // previous curated GPS trip cannot silently stay active underneath.
+        chosenLocalTrip = nil
         usingCaptureOverride = true
         captureOverride = range
     }
@@ -1385,7 +1491,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                     sceneActive: phase == .active
                                 ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
                                     candidate, filter: mediaFilter,
-                                    filenameTerm: filenameTerm
+                                    filenameTerm: filenameTerm,
+                                    tripScope: chosenLocalTrip
                                 ) else { return }
                                 singleViewer = candidate
                             } else {
@@ -1393,7 +1500,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                     cells: cells, viewport: globalViewport,
                                     mediaFilter: mediaFilter,
                                     captureRange: activeCaptureRange,
-                                    filenameTerm: filenameTerm)
+                                    filenameTerm: filenameTerm,
+                                    tripScope: chosenLocalTrip)
                             }
                         },
                         onCamera: { current in
@@ -1425,6 +1533,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                             }
                             if globalViewport != nil { globalCameraMoving = true }
                         },
+                        onBasemapStatus: { basemapUnavailable = $0 },
                         onOpen: { _, _ in }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1486,7 +1595,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                           selected.allSatisfy({
                             XDriveIOSMapCurrentPhotoKitAdmission.allows(
                                 $0, filter: mediaFilter,
-                                filenameTerm: filenameTerm
+                                filenameTerm: filenameTerm,
+                                tripScope: chosenLocalTrip
                             )
                           }) else { return }
                     cameraReturn = region
@@ -1538,9 +1648,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-local-map-capture-range")
             }
+            if basemapUnavailable {
+                Text("地图底图暂时无法加载。已核对的本机位置照片仍受 Full Access 保护；联网后平移地图或切换底图样式重试。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-local-map-basemap-unavailable")
+            }
             if let error { Text(error).foregroundStyle(.secondary).font(.footnote) }
             if mapScope == .page {
                 Button("刷新当前页") { refresh(at: offset) }
+                    .frame(minHeight: CGFloat(XDriveIOSNativePhotoMapPolicy.minimumInteractiveTarget))
                     .disabled(busy || authorization == .denied || authorization == .restricted)
             }
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
@@ -1593,6 +1709,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button("全部日期") { setCaptureRange(nil) }
+                    Button("最近的日子与旅行") {
+                        showingRecentDaysAndTrips = true
+                    }
+                    .accessibilityIdentifier("native-ios-local-map-recent-trips")
                     Button("最近 7 天") {
                         setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
                     }
@@ -1684,6 +1804,32 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingRecentDaysAndTrips, onDismiss: {
+            // Presenters may stay covered while the sheet's UIKit dismissal
+            // runs. Commit a new exact scope only AFTER the sheet is gone.
+            if let trip = pendingTrip {
+                pendingTrip = nil
+                pendingRecentDay = nil
+                guard trip.valid,
+                      XDriveIOSNativePhotoFingerprintIndex.isCurrent(
+                        trip.libraryEpoch),
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                else { return }
+                mapScope = .library
+                chosenLocalTrip = trip
+                usingCaptureOverride = false
+                captureOverride = nil
+            } else if let day = pendingRecentDay {
+                pendingRecentDay = nil
+                mapScope = .library
+                setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.day(day))
+            }
+        }) {
+            XDriveIOSNativeLocalRecentDaysAndTrips(
+                chooseDay: { pendingRecentDay = $0; pendingTrip = nil },
+                chooseTrip: { pendingTrip = $0; pendingRecentDay = nil }
+            )
         }
         .alert(item: $currentLocation.alert) { issue in
             Alert(title: Text("无法获取当前位置"),
@@ -1808,7 +1954,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             globalCamera = target
             onLibraryCameraChange?(target)
         }
-        .onChange(of: activeCaptureRange) { _ in
+        .onChange(of: activeMapMembership) { _ in
+            // Even when capture timestamps are unchanged, a new trip's
+            // verified GPS day/cell set is a different map. One Equatable
+            // membership key coalesces a simultaneous date + trip change
+            // into a single cancellation and PhotoKit re-scan.
             onLibraryCameraChange?(nil)
             clearReturnCamera()
             if phase == .active && mapScope == .library { scanFullLibrary() }
@@ -2070,7 +2220,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 let total = try await worker.startMap(
                     atOffset: 0, album: album, mediaFilter: mediaFilter,
                     captureRange: activeCaptureRange,
-                    filenameTerm: filenameTerm
+                    filenameTerm: filenameTerm,
+                    tripScope: chosenLocalTrip
                 )
                 var index = XDriveIOSNativeLocalMapSpatialIndex<XDrivePhotoKitLocatedCandidate>()
                 var scanned = 0

@@ -3,6 +3,15 @@ import Foundation
 /// One currently scanned PhotoKit page, not a spatial index of 100k media.
 enum XDriveIOSNativePhotoMapPolicy {
     static let pageSize = 64
+    // Apple's minimum interactive target also applies in iPad split-screen,
+    // landscape and Accessibility Dynamic Type. Measurements are in points.
+    static let minimumInteractiveTarget: Double = 44
+
+    static func accessibleMapViewport(width: Double, height: Double) -> Bool {
+        width.isFinite && height.isFinite &&
+            width >= minimumInteractiveTarget &&
+            height >= minimumInteractiveTarget
+    }
 
     /// Both native PhotoKit and Owner-cloud maps use the *actual* safe-area
     /// viewport. Rotation alone never changes the L1/L2 navigation level.
@@ -83,7 +92,7 @@ enum XDriveIOSNativePhotoMapPolicy {
 /// map + signed 48-item Range. Always use *absolute* instants for the wire;
 /// Calendar supplies each local midnight, including DST/non-24-hour days.
 /// Missing capture dates never enter a bounded map selection.
-struct XDriveIOSNativePhotoMapCaptureRange: Equatable {
+struct XDriveIOSNativePhotoMapCaptureRange: Equatable, Sendable {
     let from: Date
     let to: Date
     let label: String
@@ -91,8 +100,7 @@ struct XDriveIOSNativePhotoMapCaptureRange: Equatable {
     var valid: Bool {
         from.timeIntervalSince1970.isFinite &&
         to.timeIntervalSince1970.isFinite &&
-        from < to && to.timeIntervalSince(from) <= 370 * 86_400 &&
-        !label.isEmpty && label.utf8.count <= 80
+        from < to && !label.isEmpty && label.utf8.count <= 80
     }
 
     func contains(_ capturedAt: Date?) -> Bool {

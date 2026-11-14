@@ -183,10 +183,12 @@ import {
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
-  xDriveReadMobileGalleryColumns,
   xDriveWriteMobileGalleryColumn,
-  xDriveObserveMobileGalleryColumns,
 } from './MediaGalleryPhotoWallPreferences'
+import {
+  useXDriveMediaGalleryMobileColumns,
+  useXDriveMediaGalleryTimelineJump,
+} from './MediaGalleryPhotoWallState'
 import { XDriveMediaGalleryVirtualTimeline as MediaVirtualTimeline } from './MediaGallerySharedTimeline'
 import { xDrivePlacesVisiblePanels } from '../media-gallery-places-presentation'
 import { XDriveMediaGalleryPlacesHierarchy } from './MediaGalleryPlacesHierarchy'
@@ -5165,7 +5167,6 @@ const mediaGalleryTimeScaleValues: readonly MediaGalleryTimeScale[] = [
 // items are independently tappable; cap its default at 6 columns so the
 // 320px viewport still has >=44px targets (with the existing 4px gap).
 // iOS 27 physical-device screenshot comparison remains the final visual gate.
-type MobileGalleryColumns = Record<MediaGalleryTimeScale, number>
 const XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH = 144
 
 function mediaGalleryNormalizeDensity(value: unknown, fallback: number) {
@@ -5594,9 +5595,8 @@ export function XDriveMediaGallery({
   const [viewPreferences, setViewPreferences] = useState<MediaGalleryViewPreferences>(
     xDriveReadMediaGalleryViewPreferences,
   )
-  const [mobileColumnsByScale, setMobileColumnsByScale] = useState<MobileGalleryColumns>(
-    xDriveReadMobileGalleryColumns,
-  )
+  const [mobileColumnsByScale, setMobileColumnsByScale] =
+    useXDriveMediaGalleryMobileColumns()
   const [viewAnchorRevision, setViewAnchorRevision] = useState(0)
   // A pinch carries its screen-space position for only one restore revision.
   // Other navigation and density-slider changes stay top-aligned.
@@ -5624,9 +5624,13 @@ export function XDriveMediaGallery({
   }, [mobileCollectionsOverview, section, preferenceScope, collectionKey])
   const viewAnchorIndexRef = useRef(0)
   const [currentTimelineGroupKey, setCurrentTimelineGroupKey] = useState<string | null>(null)
-  const [timelineReturnAnchor, setTimelineReturnAnchor] = useState<number | null>(null)
-  const [dayJumpInput, setDayJumpInput] = useState('')
-  const [dayJumpFeedback, setDayJumpFeedback] = useState('')
+  const {
+    returnAnchor: timelineReturnAnchor,
+    setReturnAnchor: setTimelineReturnAnchor,
+    dayInput: dayJumpInput, setDayInput: setDayJumpInput,
+    dayFeedback: dayJumpFeedback, setDayFeedback: setDayJumpFeedback,
+    reset: resetTimelineJump,
+  } = useXDriveMediaGalleryTimelineJump<number>()
   const galleryRootRef = useRef<HTMLDivElement | null>(null)
   const timeScale = viewPreferences.timeScale
   const effectiveTimeScale: MediaGalleryTimeScale =
@@ -5676,7 +5680,7 @@ export function XDriveMediaGallery({
   // Both an opened Places sheet and a mounted Gallery may change the same
   // visual density. Listen for same-document and cross-tab preference edits;
   // do not write a stale four-scale snapshot on every Gallery re-render.
-  useEffect(() => xDriveObserveMobileGalleryColumns(setMobileColumnsByScale), [])
+  // The shared visual columns hook owns the Gallery/Places storage observer.
 
   // The existing virtual Grid/Timeline anchor restoration supports an external
   // logical index; only a new sort generation should apply it.
@@ -5947,11 +5951,8 @@ export function XDriveMediaGallery({
       ? current : group?.key ?? null)
   }, [timelineNavigationGroups, effectiveTimeScale, collectionKey])
 
-  useEffect(() => {
-    setTimelineReturnAnchor(null)
-    setDayJumpFeedback('')
-    setDayJumpInput('')
-  }, [collectionKey, sortBy, sortDir, timeZone, logicalItemCount])
+  useEffect(() => resetTimelineJump(),
+    [collectionKey, sortBy, sortDir, timeZone, logicalItemCount, resetTimelineJump])
 
   // The non-virtual timeline also reports its visible date. Keep header DOM
   // references once per layout, then find the current header by binary search

@@ -30,7 +30,8 @@ test('100k local PhotoKit refinement reuses at most two exact checked camera win
   assert.match(local, /recentVerifiedWindows = \[\]/)
   assert.match(local, /\.onChange\(of: changes\.revision\)[\s\S]*?invalidate\(\)/)
   assert.match(local, /\.onChange\(of: mediaFilter\)/)
-  assert.match(local, /\.onChange\(of: activeCaptureRange\)/)
+  assert.match(local, /\.onChange\(of: activeMapMembership\)/)
+  assert.match(local, /captureRange: activeCaptureRange, tripID: chosenLocalTrip\?\.id/)
   assert.match(local, /\.onChange\(of: phase\)/)
   assert.match(checks, /Auto\.canReuse\(cached: expandedSF, camera: nearby\)/)
   assert.match(checks, /!Auto\.canReuse\(cached: expandedSF, camera: zoomed\)/)
@@ -64,7 +65,12 @@ test('iCloud/HEIC/Live/video MapKit cover never discards the usable degraded pos
   assert.match(cover, /options\.isNetworkAccessAllowed = true/)
   assert.match(cover, /targetSize: CGSize\(width: 128, height: 128\)/)
   assert.match(cover, /if let value \{\s*self\.photo\.image = value/)
-  assert.match(cover, /else if self\.photo\.image == nil/)
+  // The final/degraded response is handled independently; a previously
+  // usable cover must not be wiped by a nil, cancelled or late callback.
+  assert.match(cover, /if !degraded \|\| failed \{[\s\S]*?if self\.photo\.image == nil \{/)
+  assert.match(cover, /if let value \{\s*self\.photo\.image = value/)
+  assert.match(cover, /self\.epoch == snapshot/)
+  assert.match(cover, /!cancelled/)
   assert.match(cover, /self\.epoch == snapshot/)
   assert.match(cover, /PHImageManager\.default\(\)\.cancelImageRequest\(request\)/)
   assert.match(local, /Button\("重新加载位置封面"\)/)

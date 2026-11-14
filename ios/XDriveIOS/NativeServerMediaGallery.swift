@@ -301,6 +301,7 @@ private struct XDriveIOSNativeMediaWallTileIdentity: Hashable {
 private struct XDriveIOSNativeMediaWallTile: View {
     let item: XDriveIOSNativeMediaItem
     let viewerActive: Bool
+    let framing: XDriveIOSNativePhotoWallFraming
     @ObservedObject var model: XDriveIOSNativeMediaWallModel
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @State private var image: UIImage?
@@ -311,7 +312,11 @@ private struct XDriveIOSNativeMediaWallTile: View {
                 GeometryReader { square in
                 Group {
                     if let image {
-                        Image(uiImage: image).resizable().scaledToFill()
+                        if framing == .complete {
+                            Image(uiImage: image).resizable().scaledToFit()
+                        } else {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        }
                     } else {
                         Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
                             .overlay {
@@ -1333,6 +1338,8 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     let offset: Int
     let expectedTotal: Int
     let density: XDriveIOSNativePhotoWallDensity
+    let timeScale: XDriveIOSNativePhotoWallTimeScale
+    let framing: XDriveIOSNativePhotoWallFraming
     let viewerActive: Bool
     let returnFocusID: UInt64?
     let onSelect: (XDriveIOSNativeMediaItem, XDriveIOSNativeMediaWallModel) -> Void
@@ -1341,6 +1348,16 @@ private struct XDriveIOSNativeServerVirtualRange: View {
 
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
     @AccessibilityFocusState private var focusedTileID: UInt64?
+
+    private func visibleSections(
+        _ verified: XDriveIOSNativeMediaRange
+    ) -> [XDriveIOSNativePhotoWallVisibleSection<XDriveIOSNativeMediaItem>] {
+        // One *Owner-reverified* 48-item Range only: do not invent an album-wide
+        // chronology or use dates to authorize tiles/Viewer admission.
+        xdriveIOSNativePhotoWallVisibleSections(
+            verified.items, scale: timeScale
+        ) { timeScale.key(forISO8601: $0.metadata.captured_at) }
+    }
 
     private var placeholders: some View {
         XDriveIOSNativePhotoWallGrid(density: density) {
@@ -1354,12 +1371,19 @@ private struct XDriveIOSNativeServerVirtualRange: View {
         VStack(spacing: 4) {
             if let verified = model.page,
                verified.offset == offset, verified.total_count == expectedTotal {
-                XDriveIOSNativePhotoWallGrid(density: density) {
-                    ForEach(verified.items) { item in
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(visibleSections(verified)) { section in
+                        if timeScale != .all {
+                            XDriveIOSNativePhotoWallDayHeader(
+                                title: timeScale.label(for: section.key)
+                            )
+                        }
+                        XDriveIOSNativePhotoWallGrid(density: density) {
+                            ForEach(section.items) { item in
                         Button { onSelect(item, model) } label: {
                             XDriveIOSNativeMediaWallTile(
                                 item: item, viewerActive: viewerActive,
-                                model: model, login: login
+                                framing: framing, model: model, login: login
                             )
                             .id(XDriveIOSNativeMediaWallTileIdentity(
                                 item: item, owner: login.owner
@@ -1370,6 +1394,8 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                         .accessibilityIdentifier("native-ios-server-media-tile")
                         .id(item.id)
                         .accessibilityFocused($focusedTileID, equals: item.id)
+                            }
+                        }
                     }
                 }
             } else if model.error == nil {
@@ -1450,6 +1476,9 @@ struct XDriveIOSNativeServerMediaWall: View {
     // Presentation-only, shared with the already-native local PhotoKit wall.
     // Does not participate in Owner, Range, thumbnail request or Viewer keys.
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
     @State private var continuousFailure: String?
     @State private var returnRangeOffset: Int?
     @State private var pendingReturnID: UInt64?
@@ -1516,7 +1545,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
                         Menu {
-                            xdrivePhotoWallDensityButtons($wallDensity)
+                            Section("照片网格") { xdrivePhotoWallDensityButtons($wallDensity) }
+                            Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
                         } label: {
                             Image(systemName: "square.grid.3x3")
                                 .frame(width: 44, height: 44)
@@ -1525,13 +1555,16 @@ struct XDriveIOSNativeServerMediaWall: View {
                         .accessibilityIdentifier("native-ios-cloud-wall-density")
                     }
                     if page.total_count > 0 {
+                        XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                            .accessibilityHint("仅按当前已加载并验证的照片分组")
                         ForEach(0..<((page.total_count - 1) / 48 + 1), id: \.self) { number in
                             let offset = number * 48
                             XDriveIOSNativeServerVirtualRange(
                                 login: login, albumID: album?.id, placeID: placeID,
                                 search: appliedSearch, captureRange: captureRange,
                                 offset: offset, expectedTotal: page.total_count,
-                                density: wallDensity, viewerActive: selected != nil,
+                                density: wallDensity, timeScale: wallTimeScale,
+                                framing: wallFraming, viewerActive: selected != nil,
                                 returnFocusID: pendingReturnID,
                                 onSelect: { item, source in
                                     openVerifiedMedia(item, from: source)

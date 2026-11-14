@@ -54,10 +54,13 @@ test('local GPS photos reuse the canonical album square thumbnail without changi
   const spatial = map.slice(map.indexOf('private struct XDriveIOSMapSpatialAlbum: View'),
     map.indexOf('/// One native map route'))
   for (const source of [localPage, spatial]) {
-    assert.match(source, /XDriveIOSNativeSquarePhotoTile\(candidate: item\)/)
+    assert.match(source, /XDriveIOSNativeSquarePhotoTile\(candidate: item, framing: wallFraming\)/)
     assert.match(source, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
     assert.match(source, /XDriveIOSNativePhotoWallGrid\(density: wallDensity\)/)
-    assert.match(source, /wallDensity = wallDensity\.applyingPinch\(scale\)/)
+    assert.match(source, /\.xdrivePhotoWallPinch\(\s*density: \$wallDensity,/)
+    assert.match(source, /XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
+    assert.match(source, /xdriveIOSNativePhotoWallVisibleSections\(/)
+    assert.match(source, /xdrivePhotoWallFramingButtons\(\$wallFraming\)/)
     assert.doesNotMatch(source, /XDriveIOSLocalPhotoTile\(candidate: item\)/)
   }
   assert.match(map, /XDriveIOSMapCurrentPhotoKitAdmission\.allows\(/)
@@ -107,7 +110,9 @@ test('local, album and cloud ranges share skeleton cells; only chronological pag
   }
   assert.match(local, /XDriveIOSNativePhotoWallDayHeader\(\s*title: section.title, topPadding: 4/)
   assert.match(album, /XDriveIOSNativePhotoWallDayHeader\(title: section.title\)/)
-  assert.doesNotMatch(map, /XDriveIOSNativePhotoWallDayHeader\(/)
+  assert.match(map, /if wallTimeScale != \.all \{[\s\S]*?XDriveIOSNativePhotoWallDayHeader\(/)
+  assert.match(map, /visibleItems, scale: wallTimeScale/)
+  assert.doesNotMatch(map, /MagnificationGesture\(minimumScaleDelta:/)
   // Owner MapKit now uses headings only for verified visible windows; it never
   // claims that the sparse 48-item prefix is the entire location date index.
   assert.match(cluster, /XDriveIOSNativePhotoWallDayHeader\(/)

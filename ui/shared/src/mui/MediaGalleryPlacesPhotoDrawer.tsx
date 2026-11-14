@@ -25,11 +25,13 @@ import { XDriveMediaGalleryDateNavigation } from './MediaGalleryDateNavigation'
 import { XDriveMediaGalleryTimeScaleControls } from './MediaGalleryTimeScaleControls'
 import {
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT,
-  xDriveReadMobileGalleryColumns,
   xDriveWriteMobileGalleryColumn,
-  xDriveObserveMobileGalleryColumns,
 } from './MediaGalleryPhotoWallPreferences'
 import type { XDriveGalleryPhotoWallScale } from './MediaGalleryPhotoWallPreferences'
+import {
+  useXDriveMediaGalleryMobileColumns,
+  useXDriveMediaGalleryTimelineJump,
+} from './MediaGalleryPhotoWallState'
 import { XDriveMediaGalleryVirtualTimeline } from './MediaGallerySharedTimeline'
 import { xDriveMediaGalleryTimelineGroupLabel } from './MediaGalleryVirtualTimeline'
 import {
@@ -119,20 +121,12 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     setFraming(next)
     xDriveMediaGalleryWriteFraming(next)
   }, [])
-  const [columnsByScale, setColumnsByScale] = useState<Record<TimeScale, number>>(() => {
-    // Gallery/Places share only bounded visual column preferences. Viewer
-    // return may override the current scale for one short-lived UI intent;
-    // it never writes an old authenticated item's state to browser storage.
-    const defaults = xDriveReadMobileGalleryColumns()
-    const scale = initialPresentation?.timeScale ?? 'all'
-    return initialPresentation?.columns !== undefined
-      ? {...defaults,[scale]:initialPresentation.columns} : defaults
+  const [columnsByScale, setColumnsByScale] = useXDriveMediaGalleryMobileColumns({
+    scale: initialPresentation?.timeScale ?? 'all',
+    columns: initialPresentation?.columns,
   })
   const baselineColumns: Record<TimeScale, number> =
     XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT
-  // Gallery remains mounted beneath the map Dialog. Refresh cosmetic column
-  // choices after same-document or cross-tab changes without touching Cells.
-  useEffect(() => xDriveObserveMobileGalleryColumns(setColumnsByScale), [])
   const [layoutRestore, setLayoutRestore] = useState<{
     index: number; offset: number; revision: number
   } | null>(null)
@@ -190,11 +184,15 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   const [visibleIndex, setVisibleIndex] = useState<number | null>(null)
   // Numeric UI-only navigation intents. A deep date jump still triggers a
   // fresh Owner-signed /cell-items window through the trusted Parent.
-  const [timelineReturnAnchor, setTimelineReturnAnchor] = useState<{
+  const {
+    returnAnchor: timelineReturnAnchor,
+    setReturnAnchor: setTimelineReturnAnchor,
+    dayInput: dayJumpInput, setDayInput: setDayJumpInput,
+    dayFeedback: dayJumpFeedback, setDayFeedback: setDayJumpFeedback,
+    reset: resetTimelineJump,
+  } = useXDriveMediaGalleryTimelineJump<{
     index: number; viewportOffset: number
-  } | null>(null)
-  const [dayJumpInput, setDayJumpInput] = useState('')
-  const [dayJumpFeedback, setDayJumpFeedback] = useState('')
+  }>()
   const visibleItem = resident.get(visibleIndex ?? windowStart)
   const timelineJumpGroups = (timeScale === 'year'
     ? timelineGroups?.year ?? []
@@ -203,12 +201,8 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     ? xDriveMediaGalleryTimelineGroupAtIndex(
         timelineGroups[timeScale], visibleIndex ?? 0)
     : null
-  useEffect(() => {
-    // A new authenticated date index means a different photo snapshot.
-    setTimelineReturnAnchor(null)
-    setDayJumpInput('')
-    setDayJumpFeedback('')
-  }, [timelineGroups])
+  // A new *Owner-authenticated* date index retires all UI-only jump intents.
+  useEffect(() => resetTimelineJump(), [timelineGroups, resetTimelineJump])
   // Ref-backed callback preserves the shared Gallery scroll/ResizeObserver
   // lifetime when Parent's authorized page state changes.
   const anchorPort = useRef(onVisibleAnchorChange)

@@ -54,3 +54,31 @@ test('Server retains Owner-scoped admission and global quota instead of iOS size
   assert.match(shared, /expectedSize := expectedPartSize/)
   assert.match(bg, /req.ChunkSize == defaultUploadChunkSize/)
 })
+
+test('Live original staging read/open I/O errors abort the whole PhotoKit window', () => {
+  const live = file('ios/XDriveIOS/LiveOriginalArchive.swift')
+  const runner = file('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const preparer = file('ios/XDriveIOS/PhotoKitStagedIntentPreparer.swift')
+  // Both the CRC preflight and the actual ZIP data-copy pass use one typed
+  // I/O adapter. A raw FileHandle Cocoa error would otherwise be counted as
+  // a single retryable unavailable photo and could advance the scan cursor.
+  assert.match(live, /private static func openOriginal\(_ source: URL\) throws -> FileHandle/)
+  assert.match(live, /private static func nextOriginalChunk\(_ file: FileHandle\) throws -> Data\?/)
+  const io = live.slice(live.indexOf('private static func openOriginal('),
+    live.indexOf('private static func checksum('))
+  assert.match(io, /try FileHandle\(forReadingFrom: source\)/)
+  assert.match(io, /try file\.read\(upToCount: bufferSize\)/)
+  assert.equal((io.match(/throw XDriveIOSLiveArchiveFailure\.storageUnavailable/g) || []).length, 2)
+  const copying = live.slice(live.indexOf('for entry in content {'), live.indexOf('let directoryOffset = cursor'))
+  const hashing = live.slice(live.indexOf('private static func checksum('))
+  assert.match(copying, /let input = try openOriginal\(original\)/)
+  assert.match(copying, /while let bytes = try nextOriginalChunk\(input\)/)
+  assert.match(hashing, /let file = try openOriginal\(source\)/)
+  assert.match(hashing, /while let data = try nextOriginalChunk\(file\)/)
+  assert.doesNotMatch(copying + hashing, /try (?:input|file)\.read\(upToCount:/)
+  assert.match(preparer, /XDriveIOSLiveOriginalArchive\.create\(/)
+  const classifier = runner.slice(runner.indexOf('private static func mustAbortRun('),
+    runner.indexOf('private static func isTransientConfirmedReadbackFailure('))
+  assert.match(classifier, /case \.storageUnavailable = archive \{\s*return true/)
+  assert.match(runner, /Self\.mustAbortRun\(after: error\) \{ throw error \}/)
+})
