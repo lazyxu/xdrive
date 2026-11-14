@@ -403,8 +403,23 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let app = openLocalMap()
         let map = element("native-ios-full-library-gps-map", in: app)
         XCTAssertTrue(map.exists)
-        XCTAssertTrue(element("native-ios-local-map-basemap", in: app).exists)
-        XCTAssertTrue(element("native-ios-local-map-capture-menu", in: app).exists)
+        // SwiftUI Toolbar Menu on iOS 18.5 may expose the actual label rather
+        // than a Menu accessibility ID after the navigation bar is composed.
+        // Accept ONLY the real production button/label, not an unrelated map.
+        let basemapByID = element("native-ios-local-map-basemap", in: app)
+        let basemapByLabel = app.navigationBars.buttons["底图样式"].firstMatch
+        if !basemapByID.exists && !basemapByLabel.exists {
+            diagnose("MapKit basemap toolbar menu is not accessible by ID or label", in: app)
+        }
+        XCTAssertTrue(basemapByID.exists || basemapByLabel.exists,
+                      "Real native basemap style menu must be accessible")
+        let dateByID = element("native-ios-local-map-capture-menu", in: app)
+        let dateByLabel = app.navigationBars.buttons["地图日期"].firstMatch
+        if !dateByID.exists && !dateByLabel.exists {
+            diagnose("MapKit capture-date toolbar menu is missing", in: app)
+        }
+        XCTAssertTrue(dateByID.exists || dateByLabel.exists,
+                      "Real native map date menu must be accessible")
         // UI date → month selection exists on the real MapKit route, and
         // cancelling it does not destroy the previously verified photo scope.
         element("native-ios-local-map-capture-menu", in: app).tap()
