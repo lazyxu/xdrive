@@ -191,7 +191,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             }
             ScrollViewReader { returnScroll in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                LazyVStack(alignment: .leading, spacing: 10) {
                     // Render no stale Owner pixels even before onChange clears
                     // thumbnail tasks and expired server revisions.
                     if activeOwner {
