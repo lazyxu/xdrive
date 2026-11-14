@@ -110,7 +110,7 @@ func TestBackupOnceCallsSharedOwnerRunnerAndWaitsForTerminal(t *testing.T) {
 	r := &fakeBackupOnceRunner{
 		start: localbackupipc.Summary{SourceID: 42, State: "running", Running: true},
 		next: localbackupipc.Summary{SourceID: 42, Revision: 3, State: "partial",
-			InspectedFiles: 3, ConfirmedFiles: 2, SkippedFiles: 1},
+			ScanComplete: true, InspectedFiles: 3, ConfirmedFiles: 2, SkippedFiles: 1},
 	}
 	var output bytes.Buffer
 	if err := runBackupOnce(context.Background(), r, 42, 250*time.Millisecond, &output); err != nil {
@@ -129,10 +129,11 @@ func TestBackupOnceDoesNotClaimUnsupportedOrUncertainComplete(t *testing.T) {
 		"uncertain":   func(s *localbackupipc.Summary) { s.State = "uncertain"; s.UncertainFiles = 1 },
 		"paused":      func(s *localbackupipc.Summary) { s.State = "paused" },
 		"cancelled":   func(s *localbackupipc.Summary) { s.State = "cancelled" },
+		"unproven_scan": func(s *localbackupipc.Summary) { s.ScanComplete = false },
 	} {
 		t.Run(name, func(t *testing.T) {
 			result := localbackupipc.Summary{SourceID: 9, Revision: 1, State: "partial",
-				InspectedFiles: 1, ConfirmedFiles: 1}
+				InspectedFiles: 1, ConfirmedFiles: 1, ScanComplete: true}
 			changed(&result)
 			if err := backupTerminalResult(result); err == nil {
 				t.Fatal("invalid file-level terminal outcome was reported as success")
