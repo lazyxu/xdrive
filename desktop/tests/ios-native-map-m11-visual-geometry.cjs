@@ -15,10 +15,15 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
     assert.match(cloud, new RegExp('XDriveIOSNativeMapMarkerVisualPolicy\\.' + token))
   }
   assert.match(layout, /minimumTouchTarget: CGFloat = 44/)
-  // The real 128px PhotoKit cover now keeps degraded poster frames visible
-  // while the final iCloud rendition arrives; fastFormat was superseded.
+  // Current PhotoKit previews use fast-resized opportunistic callbacks,
+  // not the retired fastFormat mode. Keep iCloud, bound-size and
+  // cancellation guards while checking the shared marker geometry.
   assert.match(local, /options\.deliveryMode = \.opportunistic/)
+  assert.match(local, /options\.resizeMode = \.fast/)
+  assert.match(local, /options\.isNetworkAccessAllowed = true/)
   assert.match(local, /targetSize: CGSize\(width: 128, height: 128\)/)
+  assert.match(local, /PHImageManager\.default\(\)\.cancelImageRequest\(request\)/)
+  // Preserve tested degraded-poster and final-rendition transitions.
   assert.match(local, /PHImageResultIsDegradedKey/)
   assert.match(local, /if !degraded \|\| failed \{/)
   assert.match(local, /isAccessibilityElement = !provisional/)

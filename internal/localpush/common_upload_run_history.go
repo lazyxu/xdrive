@@ -215,7 +215,27 @@ func ReconcileVerifiedCommonBatchHistoryBeforeRun(ctx context.Context,
 	}
 	checkpoint, err := ReadVerifiedCommonBatchCheckpoint(ctx, configDir, grant, session, revision)
 	if err != nil {
-		return deny
+		// Retire the prior read-only checkpoint into immutable history before
+		// the new Source revision writes its first running record. Never claim
+		// the old completed files as the current revision's backup result.
+		found := false
+		for lookback := uint64(1); lookback <= 16 && lookback < revision; lookback++ {
+			older, oldErr := ReadVerifiedCommonBatchCheckpoint(
+				ctx, configDir, grant, session, revision-lookback)
+			if oldErr != nil {
+				continue
+			}
+			if older.State != "partial" || older.UncertainFiles != 0 {
+				return deny
+			}
+			checkpoint = older
+			found = true
+			break
+		}
+		if !found {
+			return deny
+		}
+		return AppendVerifiedCommonBatchHistory(ctx, configDir, grant, session, checkpoint)
 	}
 	if checkpoint.State == "running" {
 		checkpoint.State = "uncertain"
