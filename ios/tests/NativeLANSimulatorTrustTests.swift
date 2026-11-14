@@ -77,6 +77,61 @@ final class NativeLANSimulatorTrustTests: XCTestCase {
         }
     }
 
+    /// Exercise the exact production stage-3 /version request, not merely a
+    /// separately written data(for:) URLSession fixture. The installed phone
+    /// hit -1202 at this boundary on c511f73ebac0.
+    private func productStage3(port: Int, rootDER: Data,
+                               expected: XDriveIOSLANTrustEvidence.Reason?) async throws {
+        let ip = "192.168.2.4"
+        let target = try XCTUnwrap(XDriveIOSLANAuthority(ip: ip, port: port))
+        let url = try XCTUnwrap(URL(string: "https://\(ip):\(port)"))
+        do {
+            try await XDriveIOSNativeLANLoginRoute.probeVersion(
+                url, mode: .verifyingPairing(target, rootDER), pairing: true
+            )
+            XCTAssertNil(expected, "Production stage-3 silently accepted a bad certificate")
+        } catch let failure as XDriveIOSLANPairingFailure {
+            guard let expected else {
+                XCTFail("Production stage-3 rejected valid pinned TLS with \(failure.message)")
+                return
+            }
+            guard case .ipCertificateEvidence(let evidence) = failure else {
+                XCTFail("Production stage-3 returned wrong failure class: \(failure.message)")
+                return
+            }
+            XCTAssertEqual(evidence.reason, expected)
+            XCTAssertEqual(evidence.rootSHA256,
+                           XDriveIOSLANTrustEvidence.digest(rootDER))
+            XCTAssertEqual(evidence.leafSHA256?.count, 64)
+            XCTAssertNil(evidence.setupOSStatus)
+        } catch {
+            XCTFail("Production stage-3 escaped strict trust classification: \(type(of: error))")
+        }
+    }
+
+    func testProductStage3UsesBoundedDataTaskAndPinnedIPTrust() async throws {
+        let rootPEM = try XCTUnwrap(Data(base64Encoded: NativeLANSimulatorConfig.trustedRootPEMBase64))
+        let otherRootPEM = try XCTUnwrap(Data(base64Encoded: NativeLANSimulatorConfig.otherRootPEMBase64))
+        let root = try XCTUnwrap(XDriveIOSLANPairing.rootDER(from: rootPEM))
+        let other = try XCTUnwrap(XDriveIOSLANPairing.rootDER(from: otherRootPEM))
+        try await productStage3(port: NativeLANSimulatorConfig.validPort,
+                                rootDER: root, expected: nil)
+        try await productStage3(port: NativeLANSimulatorConfig.wrongIPPort,
+                                rootDER: root, expected: .ipIdentity)
+        try await productStage3(port: NativeLANSimulatorConfig.validPort,
+                                rootDER: other, expected: .chainOrValidity)
+    }
+
+    func testNoTrustChallengeAndPostAcceptedTrustErrorsRemainDistinct() {
+        let absent = XDriveIOSNativeLANLoginRoute
+            .pairingProbeFailure(URLError(.serverCertificateUntrusted)).message
+        XCTAssertTrue(absent.contains("NO_TRUST_CHALLENGE"))
+        let later = XDriveIOSLANPairingFailure
+            .ipCertificatePostTrustFailure(-1202).message
+        XCTAssertTrue(later.contains("POST_TRUST_SYSTEM_REJECTION"))
+        XCTAssertFalse(later.contains("NO_TRUST_CHALLENGE"))
+    }
+
     func testActualSimulatorURLSessionPrivateIPTrust() async throws {
         let rootPEM = try XCTUnwrap(Data(base64Encoded: NativeLANSimulatorConfig.trustedRootPEMBase64))
         let otherRootPEM = try XCTUnwrap(Data(base64Encoded: NativeLANSimulatorConfig.otherRootPEMBase64))
