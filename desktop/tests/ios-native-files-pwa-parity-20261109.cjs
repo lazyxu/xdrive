@@ -31,7 +31,9 @@ test('P0 native Files lifecycle is split into bounded SwiftUI view types', () =>
   ]) {
     assert.match(files, new RegExp('private func ' + method + '\\(returnScroll: ScrollViewProxy\\) -> some View'))
   }
-  assert.match(files, /var body: some View \{\s*ScrollViewReader \{ returnScroll in\s*filesLoadingLifecycle\(returnScroll: returnScroll\)/)
+  // The real iOS 26.6 stack overflow required a stable AnyView boundary
+  // between the ScrollViewReader and the oversized Files lifecycle graph.
+  assert.match(files, /var body: some View \{\s*ScrollViewReader \{ returnScroll in\s*AnyView\(filesLoadingLifecycle\(returnScroll: returnScroll\)\)/)
   assert.doesNotMatch(files, /var body: some View \{\s*ScrollViewReader \{ returnScroll in\s*filesModals/)
 })
 

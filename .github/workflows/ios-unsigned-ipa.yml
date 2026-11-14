@@ -127,6 +127,14 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-launch-check"
           node --test desktop/tests/ios-native-launch-recovery.cjs
 
+      # An actual iOS 26.6 iPhone SIGSEGV entered the deeply nested Files
+      # SwiftUI lifecycle. Keep the separate stack-depth/source safety test
+      # mandatory before spending time on the full unsigned IPA build.
+      - name: Guard iOS 26.6 native Files SwiftUI stack depth and Owner fences
+        run: |
+          set -euo pipefail
+          node --test desktop/tests/ios-native-files-stack-depth-20261114.cjs
+
       # Pure Foundation contract test is quick and independent of signing.
       - name: Verify native cloud OCR detail privacy and decoding
         run: |

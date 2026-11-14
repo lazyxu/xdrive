@@ -53,7 +53,13 @@ test('retained-range loading feedback is delayed, cancellable, and never hides r
 })
 
 test('Viewer and read-only sheets return to verified list without forced first-range refetch', () => {
-  const modals = section('    private var filesModals: some View', '    private func rememberedPosition()')
+  // The 22 original sheets/alerts/Viewer now span three stable generic
+  // batches to prevent the iOS 26.6 AttributeGraph main-thread stack fault.
+  // Continue testing the entire modal sequence, not only the final batch.
+  const modals = section('    private var filesModalsPrimary: some View',
+    '    private func rememberedPosition()')
+  assert.match(modals, /private var filesModalsSecondary: some View \{\s*AnyView\(filesModalsPrimary\)/)
+  assert.match(modals, /private var filesModals: some View \{\s*AnyView\(filesModalsSecondary\)/)
   assert.match(modals, /\.sheet\(item: \$locateIntent\) \{ intent in/)
   assert.match(modals, /\.sheet\(item: \$managementIntent, onDismiss: \{\s*if managementWriteConfirmed \{[\s\S]*?reload\(\)/)
   assert.match(modals, /managementWriteConfirmed = true\s*managementIntent = nil/)

@@ -100,6 +100,33 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         shot.lifetime = .keepAlways
         add(shot)
     }
+    /// iOS 26.6 physical-device SIGSEGV hit the Files deep SwiftUI
+    /// Foreground → Owner → Navigation → Arrangement → Loading view stack.
+    /// This UI test exercises the real sections and lifecycle repeatedly.
+    /// Synthetic Owner has no bearer session; protected reads still deny.
+    func testFilesDeepLifecycleViewStackSurvivesOwnerAndForegroundTransitions() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        for round in 0..<3 {
+            for section in ["browse", "recent", "browse", "favorites", "browse"] {
+                select("native-ios-files-section-\(section)", in: app)
+                XCTAssertEqual(app.state, .runningForeground,
+                               "Files view graph terminated at \(round):\(section)")
+            }
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertEqual(app.state, .runningForeground,
+                           "Files foreground rebuild exited on round \(round)")
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+            select("native-ios-tab-gallery", in: app)
+            select("native-ios-tab-files", in: app)
+        }
+        let captured = XCTAttachment(screenshot: app.screenshot())
+        captured.name = "files-stack-depth-owner-foreground-three-rounds"
+        captured.lifetime = .keepAlways
+        add(captured)
+    }
+
     func testFilesRecentBrowseFavoritesRepeatedWithoutCrash() {
         let app = launch()
         select("native-ios-tab-files", in: app)

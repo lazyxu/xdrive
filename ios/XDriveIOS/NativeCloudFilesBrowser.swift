@@ -2990,8 +2990,13 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
-    private var filesModals: some View {
-        filesMain
+    // iOS 26.6: the former single giant sheet/alert generic view type was
+    // evaluated inside five chained Files lifecycle modifiers and exhausted
+    // the main-thread stack in SwiftUI/AttributeGraph on a signed iPhone.
+    // Keep every modal and Owner fence, but introduce stable AnyView boundaries
+    // after bounded batches so SwiftUI does not walk one enormous type tree.
+    private var filesModalsPrimary: some View {
+        AnyView(filesMain)
         .sheet(isPresented: $showingOrganizeHome, onDismiss: {
             organizeHomeOwner = nil
             quickAccess.load(login: login, force: true)
@@ -3165,6 +3170,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 files: batchExport.prepared.map(\.fileURL)
             )
         }
+    }
+
+    private var filesModalsSecondary: some View {
+        AnyView(filesModalsPrimary)
         .sheet(isPresented: $showingFileOperations, onDismiss: {
             fileOperationsOwner = nil
             if operationWasAccepted {
@@ -3348,6 +3357,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    // Last batch includes version history, location, properties and Viewer.
+    // The outermost property name remains unchanged for existing callers.
+    private var filesModals: some View {
+        AnyView(filesModalsSecondary)
         .sheet(item: $versionHistoryIntent, onDismiss: {
             if versionRestoreConfirmed {
                 versionRestoreConfirmed = false
@@ -3550,9 +3565,11 @@ struct XDriveIOSNativeFilesBrowser: View {
         model.suspendForNavigation()
     }
 
-    // Keep the SwiftUI type-checker's work in separate opaque view segments.
+    // A distinct opaque return type alone is not an AttributeGraph boundary:
+    // erase the nested modal and modifier types at EACH lifecycle stage.
+    // This does not gate authorization, hide a route or invalidate a file row.
     private func filesForegroundLifecycle(returnScroll: ScrollViewProxy) -> some View {
-        filesModals
+        AnyView(filesModals)
         .onAppear {
             filesViewVisible = true
             restoreFilesSectionIfNeeded()
@@ -3675,7 +3692,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func filesOwnerLifecycle(returnScroll: ScrollViewProxy) -> some View {
-        filesForegroundLifecycle(returnScroll: returnScroll)
+        AnyView(filesForegroundLifecycle(returnScroll: returnScroll))
         .onChange(of: login.owner) { _ in
             quickHistoryReadAttempted = false
             showingAncestorsSheet = false
@@ -3788,7 +3805,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func filesNavigationLifecycle(returnScroll: ScrollViewProxy) -> some View {
-        filesOwnerLifecycle(returnScroll: returnScroll)
+        AnyView(filesOwnerLifecycle(returnScroll: returnScroll))
         .onChange(of: quickSection) { next in
             guard next == .browse, !isHome, !isGlobalSearch,
                   let folderID = parentID, let owner = login.owner,
@@ -3840,7 +3857,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func filesArrangementLifecycle(returnScroll: ScrollViewProxy) -> some View {
-        filesNavigationLifecycle(returnScroll: returnScroll)
+        AnyView(filesNavigationLifecycle(returnScroll: returnScroll))
         .onChange(of: sort) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: order) { _ in reloadKeepingArrangementAnchor() }
         .onChange(of: viewMode) { next in
@@ -3886,7 +3903,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     selectedSnapshots.removeAll()
                 }
         } else {
-        filesArrangementLifecycle(returnScroll: returnScroll)
+        AnyView(filesArrangementLifecycle(returnScroll: returnScroll))
         .onChange(of: model.loading) { loading in
             if !loading, model.verifiedPage, let target = pendingJumpIndex,
                let expectedOwner = login.owner,
@@ -3967,7 +3984,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     var body: some View {
         ScrollViewReader { returnScroll in
-            filesLoadingLifecycle(returnScroll: returnScroll)
+            AnyView(filesLoadingLifecycle(returnScroll: returnScroll))
         }
     }
 
