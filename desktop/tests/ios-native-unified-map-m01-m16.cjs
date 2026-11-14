@@ -134,6 +134,7 @@ test('M13 M14: locality is display only; nearby uses whole verified GPS distance
 
 test('M15 M16: camera is restored only within verified Owner session; MapKit revokes gestures synchronously', () => {
   assert.match(gallery, /savedMapOwner = owner/)
+  assert.match(gallery, /!XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, prior\)/)
   assert.match(gallery, /savedMapCamera = region/)
   assert.match(gallery, /savedMapCamera = nil; savedMapOwner = nil/)
   assert.match(gallery, /XDriveIOSUnifiedMapCameraStore\.save\(region, owner: owner\)/)
