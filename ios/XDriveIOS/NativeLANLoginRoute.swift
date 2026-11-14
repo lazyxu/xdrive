@@ -131,7 +131,8 @@ enum XDriveIOSNativeLANLoginRoute {
         return .ipVersionInvalid
     }
 
-    private static func probeVersion(
+    // Internal for the exact product-path iPhone Simulator TLS regression.
+    static func probeVersion(
         _ origin: URL, mode: XDriveIOSServerTLSDelegate.TrustMode,
         pairing: Bool = false
     ) async throws {
@@ -176,7 +177,17 @@ enum XDriveIOSNativeLANLoginRoute {
         let session = URLSession(configuration: config, delegate: verifier, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         do {
-            let (bytes, response) = try await session.bytes(for: request)
+            // The installed iPhone reported -1202 with no recorded rejecting
+            // challenge on the previous async bytes(for:) probe. Use a real
+            // URLSession dataTask with a bounded URLSessionDataDelegate instead:
+            // it follows the same TLS callback path as native URLSession tasks,
+            // and rejects overlong content before buffering unbounded bytes.
+            let invalidBody: Error = pairing
+                ? XDriveIOSLANPairingFailure.ipVersionInvalid : AuthFailure.invalidLANProbe
+            let (data, response) = try await verifier.boundedRead(
+                request: request, session: session, maxBytes: maxBytes,
+                overLimitError: invalidBody
+            )
             try Task.checkCancellation()
             guard let http = response as? HTTPURLResponse else {
                 if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
@@ -195,13 +206,9 @@ enum XDriveIOSNativeLANLoginRoute {
                 if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
                 throw AuthFailure.invalidLANProbe
             }
-            var data = Data()
-            for try await byte in bytes {
-                guard data.count < maxBytes else {
-                    if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
-                    throw AuthFailure.invalidLANProbe
-                }
-                data.append(byte)
+            guard data.count <= maxBytes else {
+                if pairing { throw XDriveIOSLANPairingFailure.ipVersionInvalid }
+                throw AuthFailure.invalidLANProbe
             }
             return data
         } catch {
@@ -225,6 +232,15 @@ enum XDriveIOSNativeLANLoginRoute {
                 }
                 throw URLError(.serverCertificateUntrusted)
             }
+            // Do not label this a missing challenge: Apple may accept the
+            // strict pinned CA/IP identity first and still return -1202 at
+            // a later CFNetwork stage. Report that case separately.
+            if pairing, verifier.acceptedServerTrust, let url = error as? URLError,
+               [.serverCertificateUntrusted, .serverCertificateHasBadDate,
+                .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot]
+                  .contains(url.code) {
+                throw XDriveIOSLANPairingFailure.ipCertificatePostTrustFailure(url.errorCode)
+            }
             throw error
         }
     }
@@ -232,11 +248,26 @@ enum XDriveIOSNativeLANLoginRoute {
 
 private struct XDriveIOSLANVersion: Decodable { let version: String }
 
-private final class XDriveIOSLANProbeRejectRedirects: XDriveIOSServerTLSDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+/// Anonymous, single-task IP /version read. It shares the *same* strict
+/// pinned-CA trust decision as normal native transport. No password, bearer
+/// credential, TLS bypass or DNS fallback is allowed on this request.
+private final class XDriveIOSLANProbeRejectRedirects: XDriveIOSServerTLSDelegate,
+    URLSessionDataDelegate, @unchecked Sendable {
     private let stateLock = NSLock()
     private var trustWasRejected = false
+    private var trustWasAccepted = false
     private var lastTrustRejection: XDriveIOSLANTrustVerdict?
     private var lastPairingEvidence: XDriveIOSLANTrustEvidence?
+
+    // The URLSessionDataDelegate owns a single bounded read. Mutable state is
+    // protected because cancellation and URLSession callbacks may race.
+    private var continuation: CheckedContinuation<(Data, URLResponse), Error>?
+    private var activeTask: URLSessionDataTask?
+    private var receivedResponse: URLResponse?
+    private var receivedBytes = Data()
+    private var maximumBytes = 0
+    private var overLimitFailure: Error = AuthFailure.invalidLANProbe
+    private var cancelled = false
 
     var pairingEvidence: XDriveIOSLANTrustEvidence? {
         stateLock.lock()
@@ -248,6 +279,12 @@ private final class XDriveIOSLANProbeRejectRedirects: XDriveIOSServerTLSDelegate
         stateLock.lock()
         defer { stateLock.unlock() }
         return trustWasRejected
+    }
+
+    var acceptedServerTrust: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return trustWasAccepted
     }
 
     var trustRejection: XDriveIOSLANTrustVerdict? {
@@ -268,13 +305,116 @@ private final class XDriveIOSLANProbeRejectRedirects: XDriveIOSServerTLSDelegate
         stateLock.unlock()
     }
 
+    func boundedRead(request: URLRequest, session: URLSession, maxBytes: Int,
+                     overLimitError: Error) async throws -> (Data, URLResponse) {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { pending in
+                let task = session.dataTask(with: request)
+                stateLock.lock()
+                if cancelled {
+                    stateLock.unlock()
+                    pending.resume(throwing: CancellationError())
+                    return
+                }
+                continuation = pending
+                activeTask = task
+                maximumBytes = maxBytes
+                overLimitFailure = overLimitError
+                stateLock.unlock()
+                task.resume()
+            }
+        } onCancel: {
+            cancelActiveTask()
+        }
+    }
+
+    private func cancelActiveTask() {
+        stateLock.lock()
+        cancelled = true
+        let task = activeTask
+        stateLock.unlock()
+        task?.cancel()
+        finish(.failure(CancellationError()))
+    }
+
+    private func finish(_ result: Result<(Data, URLResponse), Error>) {
+        stateLock.lock()
+        let pending = continuation
+        continuation = nil
+        activeTask = nil
+        stateLock.unlock()
+        pending?.resume(with: result)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                    didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        stateLock.lock()
+        let active = continuation != nil
+        let tooLarge = response.expectedContentLength > Int64(maximumBytes)
+        if active && !tooLarge { receivedResponse = response }
+        let failure = overLimitFailure
+        stateLock.unlock()
+        guard active else { completionHandler(.cancel); return }
+        if tooLarge {
+            completionHandler(.cancel)
+            finish(.failure(failure))
+            dataTask.cancel()
+        } else {
+            completionHandler(.allow)
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                    didReceive data: Data) {
+        stateLock.lock()
+        let active = continuation != nil
+        let overLimit = active && data.count > maximumBytes - receivedBytes.count
+        if active && !overLimit { receivedBytes.append(data) }
+        let failure = overLimitFailure
+        stateLock.unlock()
+        if overLimit {
+            finish(.failure(failure))
+            dataTask.cancel()
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    didCompleteWithError error: Error?) {
+        stateLock.lock()
+        let response = receivedResponse
+        let data = receivedBytes
+        stateLock.unlock()
+        if let error {
+            finish(.failure(error))
+        } else if let response {
+            finish(.success((data, response)))
+        } else {
+            finish(.failure(AuthFailure.invalidLANProbe))
+        }
+    }
+
+    // A task-specific challenge is forwarded to the same strict root/IP trust
+    // inspector; the session-level challenge remains supported on Apple OSes
+    // that invoke URLSessionDelegate for serverTrust.
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        urlSession(session, didReceive: challenge, completionHandler: completionHandler)
+    }
+
     override func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                              completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let isServerTrust =
+            challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust
         super.urlSession(session, didReceive: challenge) { [weak self] disposition, credential in
-            if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust &&
-                disposition == .cancelAuthenticationChallenge, let self {
+            if isServerTrust, let self {
                 self.stateLock.lock()
-                self.trustWasRejected = true
+                if disposition == .cancelAuthenticationChallenge {
+                    self.trustWasRejected = true
+                } else if disposition == .useCredential {
+                    self.trustWasAccepted = true
+                }
                 self.stateLock.unlock()
             }
             completionHandler(disposition, credential)
