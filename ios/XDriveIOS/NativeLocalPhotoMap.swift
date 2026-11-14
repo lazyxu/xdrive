@@ -617,7 +617,9 @@ private struct XDriveIOSMapPhotoAlbum: View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             ScrollView {
-                XDriveIOSNativePhotoWallSectionList(
+                VStack(alignment: .leading, spacing: 10) {
+                    XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                    XDriveIOSNativePhotoWallSectionList(
                     sections: previewSections, density: wallDensity,
                     title: { wallTimeScale == .all ? nil :
                         wallTimeScale.label(for: $0.key) },
@@ -642,6 +644,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
                               phase != .active)
                     .id(item.id)
                     .accessibilityFocused($focusedTileID, equals: item.id)
+                    }
                 }
                 .padding(8)
             }
