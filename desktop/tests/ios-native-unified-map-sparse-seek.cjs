@@ -1,0 +1,30 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = relative => fs.readFileSync(path.join(__dirname, '../..', relative), 'utf8')
+const source = read('ios/XDriveIOS/NativeUnifiedSourcePhotoMap.swift')
+const policy = read('ios/XDriveIOS/NativeUnifiedMapSeekPolicy.swift')
+const swiftCheck = read('ios/tests/NativeUnifiedMapSeekPolicyChecks.swift')
+
+test('sparse GPS place walls traverse the same 10k-page bound as the verified source map', () => {
+  assert.match(source, /static let maximumPages = XDriveIOSNativeUnifiedMapSeekPolicy\.maximumPages/)
+  assert.match(source, /static let maximumWallSeekPages = maximumPages/)
+  assert.match(source, /for inspected in 0\.\.<XDriveIOSUnifiedSourceMapPolicy\.maximumWallSeekPages/)
+  assert.match(source, /if XDriveIOSNativeUnifiedMapSeekPolicy\.shouldYield\(beforePage: inspected\) \{\s*await Task\.yield\(\)/)
+  assert.match(source, /try Task\.checkCancellation\(\)\s*guard generation == ticket, active, let from = cursor/)
+  assert.match(source, /guard nextCursor != from else \{/)
+  assert.match(policy, /static let maximumPages = 10_000/)
+  assert.match(policy, /static let cooperativeYieldPages = 256/)
+  assert.match(swiftCheck, /let sparseNextHit = 258/)
+  assert.doesNotMatch(source, /static let maximumWallSeekPages = 256\b/)
+})
+
+test('stale Owner or PhotoKit scope never renders old place-wall rows', () => {
+  assert.match(source, /private var active: Bool \{[\s\S]*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)[\s\S]*PHPhotoLibrary\.authorizationStatus[\s\S]*XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(library\)/)
+  assert.match(source, /VStack\(spacing: 8\) \{\s*if active \{\s*Text\("当前来源 · 此区域/)
+  assert.match(source, /\}\s*else \{\s*Text\("当前 Owner 或照片访问已失效，请返回地图重新核对。"\)/)
+  assert.match(source, /guard active, !busy,\s*\(previous \+ current\)\.contains/)
+  assert.match(source, /\.onChange\(of: login\.owner\) \{ _ in invalidate\(\) \}/)
+})
