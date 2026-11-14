@@ -52,8 +52,8 @@ enum XDriveIOSNativeOwnerLoginFailurePolicy {
         return "无法验证当前服务器、账户或云端根目录；未建立原生会话。"
     }
 
-    /// Stable diagnostic *codes* only. Never turn Error.localizedDescription,
-    /// underlying URLSession userInfo, request URLs or response bodies into UI:
+    /// Stable diagnostic *codes* only. Never expose raw exception text,
+    /// underlying URLSession userInfo, request URLs or response bodies in UI:
     /// those may carry authenticated endpoints and secrets.
     static func diagnosticCode(for failure: Error) -> String {
         if let error = failure as? URLError {
