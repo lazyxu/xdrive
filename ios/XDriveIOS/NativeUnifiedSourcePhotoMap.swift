@@ -897,14 +897,20 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         .fullScreenCover(item: $viewing, onDismiss: {
             if !active { invalidate() }
         }) { choice in
-            if active, let local = choice.row.local {
-                XDriveIOSNativeLocalPhotoDetail(candidate: local)
-            } else if active, let cloud = choice.row.cloud {
-                XDriveIOSNativeServerMediaPreview(
-                    item: cloud, login: login, loadedItems: [cloud],
-                    openedOwner: owner)
-            } else {
-                Text("该照片已不可访问。")
+            Group {
+                if active, let local = choice.row.local {
+                    XDriveIOSNativeLocalPhotoDetail(
+                        candidate: local, onUnifiedNavigate: navigateViewer)
+                } else if active, let cloud = choice.row.cloud {
+                    XDriveIOSNativeServerMediaPreview(
+                        item: cloud, login: login, loadedItems: [cloud],
+                        openedOwner: owner, onUnifiedNavigate: navigateViewer)
+                } else {
+                    Text("该照片已不可访问。")
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if active { viewerNavigation }
             }
         }
         .onAppear {
