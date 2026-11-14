@@ -36,7 +36,7 @@ test('M07: source identity map never broadens to unfiltered local or cloud cells
   assert.match(sourceMap, /longitude: canonicalLongitude\(position\.longitude\)/)
   assert.match(sourceMap, /longitude: canonicalLongitude\(longitude\)/)
   // Both scan and sparse place-wall seek must share the same 10k bound.
-  assert.match(sourceMap, /static let maximumPages = XDriveIOSNativeUnifiedMapSeekPolicy\\.maximumPages/)
+  assert.match(sourceMap, /static let maximumPages = XDriveIOSNativeUnifiedMapSeekPolicy\.maximumPages/)
   assert.match(sourceMap, /static let maximumWallSeekPages = maximumPages/)
   assert.match(seekPolicy, /static let maximumPages = 10_000/)
   assert.match(sourceMap, /var counted: \[Int: XDriveIOSUnifiedSourceMapPin\] = \[:\]/)
