@@ -8,6 +8,8 @@ const source = (name) => fs.readFileSync(path.join(root, name), 'utf8')
 const browse = source('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
 const collection = source('ios/XDriveIOS/NativeFilesCollections.swift')
 const viewer = source('ios/XDriveIOS/NativeFilesViewer.swift')
+const thumbnail = source('ios/XDriveIOS/NativeFilesThumbnail.swift')
+const transitions = source('ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift')
 const tokens = source('ios/XDriveIOS/NativeFilesUIStyle.swift')
 const policy = source('ios/XDriveIOS/NativeFilesViewModePolicy.swift')
 const workflow = source('.github/workflows/ios-native-navigation-runtime.yml')
@@ -87,4 +89,53 @@ test('F6 Browse/Recent/Favorites/Viewer share typography tokens', () => {
   assert.match(collection, /XDriveIOSNativeFilesUIStyle\.tileName/)
   assert.match(viewer, /XDriveIOSNativeFilesUIStyle\.metadataFont/)
   assert.match(tokens, /static func metadata\(_ value: String\) -> some View/)
+})
+
+
+test('F7 lightweight attributes do not replace verified mutation entry points', () => {
+  assert.match(browse, /private func presentQuickInfo\(for node: XDriveIOSNativeFilesNode\)/)
+  assert.match(browse, /model\.verifiedPage, selectedFile == nil/)
+  assert.match(browse, /containsVerifiedNode\(node\) else \{ return \}/)
+  assert.match(browse, /\.sheet\(item: \$quickInfoIntent\)/)
+  assert.match(browse, /native-ios-files-quick-info-\\\(entry\.node\.id\)/)
+  assert.match(browse, /private func requestQuickRename\(/)
+  assert.match(browse, /quickMutation\.perform\(/)
+  assert.match(collection, /private func openQuickInfo\(/)
+  assert.match(collection, /model\.items\.contains\(intent\.item\)/)
+  assert.match(tokens, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\)/)
+  assert.match(tokens, /native-ios-files-quick-info-sheet/)
+  assert.match(tokens, /LabeledContent\("版本"/)
+})
+
+test('F8 compact Browse exposes smart folders, tags, search and verified path jump', () => {
+  assert.match(browse, /DisclosureGroup\("更多管理", isExpanded: \$homeMoreExpanded\)/)
+  assert.match(browse, /native-ios-files-open-saved-searches/)
+  assert.match(browse, /DisclosureGroup\("标签与分类", isExpanded: \$homeTagsExpanded\)/)
+  assert.match(browse, /native-ios-files-search-shortcut/)
+  assert.match(browse, /Button \{ searchPresented = true \}/)
+  assert.match(browse, /native-ios-files-path-shortcut/)
+  assert.match(browse, /showingPathPrompt = true/)
+  assert.match(browse, /resolveTypedPath\(\)/)
+  assert.match(browse, /namedDirectory\(parentID:/)
+})
+
+test('F9 extension icons and metadata reuse existing bounded thumbnails', () => {
+  assert.match(tokens, /static func fileAppearance\(/)
+  assert.match(tokens, /switch \(node\.name as NSString\)\.pathExtension\.lowercased\(\)/)
+  for (const format of ['pdf', 'docx', 'xlsx', 'pptx', 'heic', 'mp4', 'swift']) {
+    assert.ok(tokens.includes('"' + format + '"'), format)
+  }
+  assert.match(thumbnail, /XDriveIOSNativeFilesUIStyle\.fileAppearance\(node\)\.symbol/)
+  assert.match(browse, /XDriveIOSNativeFilesUIStyle\.typeBadge\(entry\.node\)/)
+  assert.match(collection, /XDriveIOSNativeFilesUIStyle\.typeBadge\(item\.node\)/)
+  assert.match(thumbnail, /XDriveIOSNativeFilesThumbnailPolicy\.canRequest\(node\)/)
+})
+
+test('F10 Viewer first displayed frame and all-file subroute gate remain explicit', () => {
+  assert.match(viewer, /recordVideoFirstFrame\(/)
+  assert.match(viewer, /onFirstFrame: \{ recordVideoFirstFrame\(player\) \}/)
+  assert.match(viewer, /IOS_NATIVE_FILES_VIDEO_FIRST_FRAME_MS/)
+  assert.match(transitions, /testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail/)
+  assert.match(transitions, /testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage/)
+  assert.match(workflow, /candidate-gallery-files/)
 })
