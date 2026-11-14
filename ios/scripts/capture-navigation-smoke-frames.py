@@ -345,6 +345,17 @@ TARGETS.update({
     "testCredentialRetirementRecoverySafeModeForegroundDoesNotExit",
 })
 
+
+# Five additional all-page cross-child process-survival journeys. These are
+# real XCTests with tap markers, not a verified live-iPhone crash-free claim.
+TARGETS.update({
+    "testFourDeniedFilesChildrenAfterBackgroundCrossTabsDoNotExit",
+    "testSignedOutMinePhotosLinkAndDisabledCacheAcrossTabsDoNotExit",
+    "testUnavailableLauncherToolsForegroundAndFilesReturnDoNotExit",
+    "testRealSignedOutLoginFieldFocusBackgroundDoesNotExit",
+    "testClipboardDeniedRecipientTransfersFilesNotesReturnDoesNotExit",
+})
+
 # Six more real Gallery/Files child transitions; diagnostic Simulator PNG only.
 # This must not be presented as physical iPhone 60/120 Hz smoothness proof.
 TARGETS.update({
