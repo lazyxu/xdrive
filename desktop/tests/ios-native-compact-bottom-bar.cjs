@@ -56,6 +56,8 @@ test('Gallery short landscape uses one safe-area row without remounting its acti
   assert.match(ui, /else \{\s*galleryStatusRow\s*gallerySourceRow/);
   assert.match(ui, /private var gallerySourceRow: some View \{[\s\S]*?ScrollView\(\.horizontal, showsIndicators: false\)/);
   assert.match(ui, /\.accessibilityValue\([\s\S]*?"自动备份已暂停，需核对收据"/);
-  assert.match(ui, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings-compact"\)/);
+  assert.match(ui, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings"\)/);
+  assert.doesNotMatch(ui, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings-compact"\)/);
+  assert.equal((ui.match(/\.accessibilityIdentifier\("native-ios-gallery-backup-settings"\)/g) || []).length, 1);
   assert.equal((ui.match(/switch gallerySource/g) || []).length, 1);
 });
