@@ -90,6 +90,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             .onAppear {
                 photoObserver.start()
+                if savedMapCamera == nil, let owner = login.owner,
+                   let stored = XDriveIOSUnifiedMapCameraStore.load(owner: owner) {
+                    savedMapOwner = owner
+                    savedMapCamera = stored
+                }
                 if !started {
                     started = true
                     wall.reset()
@@ -108,10 +113,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 indexRequest = UUID()
             }
             .onChange(of: photoObserver.change) { _ in
+                if let owner = login.owner { XDriveIOSUnifiedMapCameraStore.clear(owner: owner) }
                 savedMapCamera = nil; savedMapOwner = nil
                 reset()
             }
             .onChange(of: login.owner) { _ in
+                if let prior = savedMapOwner {
+                    XDriveIOSUnifiedMapCameraStore.clear(owner: prior)
+                }
                 showingPeople = false; showingThumbnailCache = false
                 sourceFilter = nil; query = .init(); draft = .init()
                 openMapAfterFilterDismiss = false
@@ -201,6 +210,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                         == .authorized else { return }
                                 savedMapOwner = owner
                                 savedMapCamera = region
+                                XDriveIOSUnifiedMapCameraStore.save(region, owner: owner)
                             },
                             onClose: { showingSourceFilteredMap = false })
                     }
