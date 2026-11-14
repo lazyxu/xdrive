@@ -15,7 +15,7 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
     assert.match(cloud, new RegExp('XDriveIOSNativeMapMarkerVisualPolicy\\.' + token))
   }
   assert.match(layout, /minimumTouchTarget: CGFloat = 44/)
-  assert.match(local, /\.fastFormat/)
+  // Prefer the real MapKit visibility/collision policy over a retired\n  // image-format modifier. Verified and provisional map pins stay distinct.\n  assert.match(local, /collisionMode = \.circle/)\n  assert.match(local, /displayPriority = \.defaultHigh/)
   assert.match(local, /isAccessibilityElement = !provisional/)
   assert.match(cloud, /isAccessibilityElement = enabled/)
   assert.doesNotMatch(layout, /PHAsset|Owner|URLSession|upload|requestAuthorization/)
