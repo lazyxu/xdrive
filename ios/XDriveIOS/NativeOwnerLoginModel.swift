@@ -238,8 +238,16 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     }
 
     private func humanMessage(_ failure: Error) -> String {
-        if let pairing = failure as? XDriveIOSLANPairingFailure { return pairing.message }
-        return XDriveIOSNativeOwnerLoginFailurePolicy.message(for: failure)
+        let message: String
+        if let pairing = failure as? XDriveIOSLANPairingFailure {
+            message = pairing.message
+        } else {
+            message = XDriveIOSNativeOwnerLoginFailurePolicy.message(for: failure)
+        }
+        // Fixed error code and OS return status, not raw NSError/userInfo:
+        // preserve exact failure category without exposing tokens/URLs.
+        let code = XDriveIOSNativeOwnerLoginFailurePolicy.diagnosticCode(for: failure)
+        return "\(message)\n诊断代码：\(code)"
     }
 
     /// Coalesce simultaneous Files tiles' Owner/root proof to one real
