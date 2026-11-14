@@ -7,7 +7,7 @@
 | 项 | 本 PR 的实现 | 验证与剩余限制 |
 | --- | --- | --- |
 | G01 P0 动态聚合 | 取消全局 8×8 静态桶；当前 MapKit 摄像机变化即使旧 pin 失效，静止 900ms 后用**同一已核验来源 Timeline** + 本机已有 64-cell 自适应空间网格完整重扫；新计数和 Member cursor 完成后一次发布 | 无旧桶数字按视口拆分；真实 Owner+100k 性能及连续手势仍未验收；最多 10k 个 48-item 结果页 |
-| G02 P0 点击实时复核 | 地点墙每次触摸重新读取本机 PHAsset 当前 GPS/种类/Live/日期/文件名，或由已验证 Owner 对 `/media/items/:id` GET 当前 Node 检查 ID/revision/content identity/GPS 和 query，失败阻止 Viewer | 仅当前授权、当前窗口的唯一成员可打开；仍需生产 Owner 403/修订并发 E2E |
+| G02 P0 点击实时复核 | 地点墙每次触摸重新读取本机 PHAsset 当前 GPS/种类/Live/拍摄及修改日期/文件名；对「两端都有」还通过当前 Owner 重新读取并核对匹配的云端 Node（ID/revision/content identity），对仅云端照片实时检查 Node GPS 和 query，失败阻止 Viewer | 仅当前授权、当前窗口的唯一成员可打开；仍需生产 Owner 403/修订并发 E2E |
 | G03 P1 Marker | 与本机/云端 MapKit 共用 `NativeMapMarkerVisualPolicy` 的 68pt frame、64pt cover、33×28 count badge、圆角/偏移/选中描边。仅允许 PhotoKit 请求 128px iCloud 缩略图（不取原件），支持 degraded→final 渐进图与失败保持已有海报；Owner 令牌读取云端封面，并在 scope 变化取消 | 实际同 iOS 系统截图/动画/聚合过渡未逐像素核验 |
 | G04 P1 相机 | 首次完整已验证的 GPS Marker 代表点计算最短经线包围弧（支持 ±180°）与纬度范围，自动定位一次；后续用户 pan/pinch 保留相机，不因服务端响应而自动重置 | 需真实经纬度分布、横竖屏和 MapKit 行为验证 |
 | G05 P1 地点照片墙 | 引入与现有 #4351 同形的共用 SectionList / DisplayMenu，时间分组、密度、裁切共用展示；滚动返回必须处于当前两窗、唯一且已验证 ID；48-item cursor 不越权 | 与 #4351 待合入共用文件可能存在文本冲突，需要保全两者代码与测试 |

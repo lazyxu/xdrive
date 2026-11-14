@@ -788,15 +788,38 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                              longitude: coordinate.longitude)
             else { return nil }
             let video = asset.mediaType == .video
+            let live = asset.mediaSubtypes.contains(.photoLive)
             guard asset.mediaType == .image || video,
-                  (local.kind == "video") == video else { return nil }
+                  (local.kind == "video") == video,
+                  local.isLive == live,
+                  local.capturedAt == asset.creationDate,
+                  local.modifiedAt == asset.modificationDate else { return nil }
+            // A source-filtered "both" row can outlive its cloud match even
+            // while the local PhotoKit asset and GPS remain unchanged.
+            // Admission requires the same current Owner Node, exact match,
+            // revision and content identity, not just the local half.
+            var currentCloud = row.cloud
+            if row.presence == .both {
+                guard let expectedCloud = row.cloud, let match = row.match,
+                      match.matches(expectedCloud),
+                      let auth = try? await login.verifiedAuthorization(),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
+                else { return nil }
+                let reader = XDriveIOSNativeMediaGalleryReader(
+                    owner: owner, accessToken: auth.accessToken)
+                guard let liveCloud = try? await reader.currentMapItem(expectedCloud),
+                      match.matches(liveCloud) else { return nil }
+                currentCloud = liveCloud
+            }
             let names = PHAssetResource.assetResources(for: asset)
                 .map(\.originalFilename) +
-                (row.cloud.map { [$0.node.name] + ($0.resources ?? []).map(\.name) } ?? [])
-            guard query.matches(
-                video: video, live: asset.mediaSubtypes.contains(.photoLive),
-                capturedAt: asset.creationDate, names: names) else { return nil }
-            return row
+                (currentCloud.map { [$0.node.name] + ($0.resources ?? []).map(\.name) } ?? [])
+            guard query.matches(video: video, live: live,
+                                capturedAt: asset.creationDate, names: names)
+            else { return nil }
+            return XDriveIOSNativeUnifiedPhoto(
+                local: local, cloud: currentCloud, match: row.match,
+                presence: row.presence, capturedAt: asset.creationDate, reason: row.reason)
         }
         guard let cloud = row.cloud,
               let auth = try? await login.verifiedAuthorization(),
