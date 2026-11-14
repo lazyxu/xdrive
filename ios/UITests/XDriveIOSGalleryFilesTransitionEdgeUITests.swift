@@ -500,13 +500,33 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
         XCTAssertTrue(dateToggle.waitForExistence(timeout: 15),
                       "Actual Gallery date filter toggle missing")
         dateToggle.tap()
-        // Compact-style SwiftUI DatePicker is a button-like AX control on
-        // iOS 18.5, not necessarily an XCUIElementTypeDatePicker. Assert
-        // the actual mounted start/end editors by stable production IDs.
-        XCTAssertTrue(target("native-ios-gallery-filter-date-start", app)
-            .waitForExistence(timeout: 15), "Date range start editor not mounted")
-        XCTAssertTrue(target("native-ios-gallery-filter-date-end", app)
-            .waitForExistence(timeout: 15), "Date range end editor not mounted")
+        XCTAssertEqual(dateToggle.value as? String, "1",
+                       "The real date filter switch failed to enable")
+        // UIKit can lazily mount SwiftUI Form cells that are below the
+        // compact sheet viewport. Scroll that ACTUAL form, tracking each
+        // editor as it becomes accessible; never accept a missing editor.
+        let form = target("native-ios-gallery-filter-form", app)
+        XCTAssertTrue(form.waitForExistence(timeout: 15),
+                      "Real Gallery filter sheet Form did not mount")
+        let dateStart = target("native-ios-gallery-filter-date-start", app)
+        let dateEnd = target("native-ios-gallery-filter-date-end", app)
+        var sawStart = dateStart.exists
+        var sawEnd = dateEnd.exists
+        for _ in 0..<6 {
+            if sawStart && sawEnd { break }
+            form.swipeUp()
+            sawStart = sawStart || dateStart.exists
+            sawEnd = sawEnd || dateEnd.exists
+        }
+        if !sawStart || !sawEnd {
+            print("GALLERY_DATE_FILTER_AX_TREE:\\n\\(app.debugDescription)")
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "gallery-date-filter-missing-real-editor"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        XCTAssertTrue(sawStart, "Date range start editor not mounted after real Form scrolling")
+        XCTAssertTrue(sawEnd, "Date range end editor not mounted after real Form scrolling")
         let cancel = app.navigationBars.buttons["取消"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 15))
         cancel.tap()

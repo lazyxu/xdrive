@@ -145,3 +145,33 @@ test('iOS 18.5 native date editors and off-screen Files size chip are tested thr
   assert.doesNotMatch(ui, /app\.datePickers\["开始"\]/)
   assert.doesNotMatch(ui, /XCTSkip/)
 })
+
+test('denied Owner global Files filters stay resettable without showing unverified rows', () => {
+  const files = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  assert.match(files, /if !isHome && !isGlobalSearch && !model\.loading && !model\.verifiedPage/)
+  assert.match(files, /if !isGlobalSearch \|\| model\.verifiedPage \{/)
+  assert.match(files, /if isGlobalSearch \{ searchOptions\.load\(login: login\) \}/)
+  assert.match(files, /\.accessibilityIdentifier\("native-ios-files-search-filters-scroll"\)/)
+  assert.match(ui, /let activeSize = revealFilesSizeFilter\(app\)/)
+  assert.match(ui, /let restoredSize = revealFilesSizeFilter\(app\)/)
+  assert.match(ui, /native-ios-files-search-size-filter-reset/)
+})
+
+test('date filter scrolls the real SwiftUI sheet and validates both actual editors', () => {
+  const gallery = read('ios/XDriveIOS/NativeUnifiedPhotoGallery.swift')
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  assert.match(gallery, /\.accessibilityIdentifier\("native-ios-gallery-filter-form"\)/)
+  assert.match(ui, /dateToggle\.value as\? String, "1"/)
+  assert.match(ui, /form\.swipeUp\(\)/)
+  assert.match(ui, /XCTAssertTrue\(sawStart,/)
+  assert.match(ui, /XCTAssertTrue\(sawEnd,/)
+  assert.doesNotMatch(ui, /XCTSkip/)
+})
+
+test('map date-menu AX label fallback taps the actual surfaced button', () => {
+  const map = read('ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift')
+  assert.match(map, /let actualDateMenu = dateByID\.exists \? dateByID : dateByLabel/)
+  assert.match(map, /XCTAssertTrue\(actualDateMenu\.isHittable/)
+  assert.match(map, /actualDateMenu\.tap\(\)/)
+})

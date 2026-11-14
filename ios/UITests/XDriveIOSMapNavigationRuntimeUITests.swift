@@ -422,7 +422,11 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
                       "Real native map date menu must be accessible")
         // UI date → month selection exists on the real MapKit route, and
         // cancelling it does not destroy the previously verified photo scope.
-        element("native-ios-local-map-capture-menu", in: app).tap()
+        // If iOS 18.5 exposes the real Menu by its visible label but not
+        // its SwiftUI AX ID, tap that SAME production menu, not a stale ID.
+        let actualDateMenu = dateByID.exists ? dateByID : dateByLabel
+        XCTAssertTrue(actualDateMenu.isHittable, "Native capture-date toolbar menu is not tappable")
+        actualDateMenu.tap()
         // SwiftUI Menu children are menuItems on some iOS 18.5 builds,
         // not XCUIElementTypeButton. Query the real app's stable item ID,
         // then its label across AX types; never pretend a missing menu passed.

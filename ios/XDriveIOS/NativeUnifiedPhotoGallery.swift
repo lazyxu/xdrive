@@ -375,6 +375,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     }
                 }
             }
+            .accessibilityIdentifier("native-ios-gallery-filter-form")
             .navigationTitle("搜索与筛选").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { showFilters = false } }

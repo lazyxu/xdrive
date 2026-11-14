@@ -2501,6 +2501,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 filesHome
             } else {
                 filesLoadStatus
+                // Filtered global search must keep its filter controls on a
+                // denied/unverified Owner read, while never exposing a stale
+                // result list before the current scoped page is verified.
+                if !isGlobalSearch || model.verifiedPage {
                 if let notice = inlineFolders.status {
                     Text(notice).foregroundStyle(.orange)
                         .accessibilityIdentifier("native-ios-files-inline-limit")
@@ -2546,6 +2550,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 filesContinuousStatus
                 filesBatchOperations
+                }
             }
         }
         // Identify the exact Files List for AX scrolling. A retained Gallery
@@ -2585,7 +2590,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             // virtual List/thumbnail/navigation AX tree alive under a failed
             // authorization. This also gives XCTest a bounded accessibility
             // hierarchy on the recoverable child route.
-            if !isHome && !model.loading && !model.verifiedPage,
+            if !isHome && !isGlobalSearch && !model.loading && !model.verifiedPage,
                let failure = model.errorMessage {
                 VStack(alignment: .leading, spacing: 18) {
                     Label("无法读取当前目录", systemImage: "exclamationmark.triangle")
