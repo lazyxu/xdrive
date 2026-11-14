@@ -281,6 +281,7 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     var focusRequestID: UUID? = nil
     var focusCamera: MKCoordinateRegion? = nil
     var showsUserDot = false
+    var onBasemapStatus: ((Bool) -> Void)? = nil
     let onCameraWillChange: () -> Void
     let onCamera: (MKCoordinateRegion) -> Void
     let onPlace: (XDriveIOSNativeOwnerMapFacet) -> Void
@@ -288,9 +289,11 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
     let onAggregate: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onCameraWillChange: onCameraWillChange,
-                    onCamera: onCamera, onPlace: onPlace,
-                    onPlaces: onPlaces, onAggregate: onAggregate)
+        let coordinator = Coordinator(onCameraWillChange: onCameraWillChange,
+                                      onCamera: onCamera, onPlace: onPlace,
+                                      onPlaces: onPlaces, onAggregate: onAggregate)
+        coordinator.onBasemapStatus = onBasemapStatus
+        return coordinator
     }
 
     func makeUIView(context: Context) -> MKMapView {
@@ -318,6 +321,7 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
             map.delegate = context.coordinator
         }
         context.coordinator.onCameraWillChange = onCameraWillChange
+        context.coordinator.onBasemapStatus = onBasemapStatus
         context.coordinator.onCamera = onCamera
         context.coordinator.onPlace = onPlace
         context.coordinator.onPlaces = onPlaces
@@ -361,6 +365,7 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
         var focusRequestID: UUID?
         var coverImages: [String: UIImage] = [:]
         var markersEnabled = false
+        var onBasemapStatus: ((Bool) -> Void)?
         var onCameraWillChange: () -> Void
         var onCamera: (MKCoordinateRegion) -> Void
         var onPlace: (XDriveIOSNativeOwnerMapFacet) -> Void
@@ -377,6 +382,16 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
             self.onPlace = onPlace
             self.onPlaces = onPlaces
             self.onAggregate = onAggregate
+        }
+
+        func mapViewDidFailLoadingMap(_ mapView: MKMapView, withError error: Error) {
+            // Tile failures do not authorize a photo or invalidate the
+            // Owner-scoped Range token. Old markers remain governed by ACL.
+            DispatchQueue.main.async { [weak self] in self?.onBasemapStatus?(true) }
+        }
+
+        func mapViewDidFinishLoadingMap(_ mapView: MKMapView) {
+            DispatchQueue.main.async { [weak self] in self?.onBasemapStatus?(false) }
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
@@ -517,6 +532,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var cameraSettleTask: Task<Void, Never>?
     @State private var busy = false
     @State private var error: String?
+    @State private var basemapUnavailable = false
     @State private var revision = UUID()
     @State private var epoch = UUID()
     @State private var task: Task<Void, Never>?
@@ -585,6 +601,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 focusRequestID: currentLocation.requestID,
                 focusCamera: currentLocation.camera,
                 showsUserDot: currentLocation.showsUserDot,
+                onBasemapStatus: { basemapUnavailable = $0 },
                 onCameraWillChange: { revokeCameraAuthorization() },
                 onCamera: { next in
                     camera = next
@@ -691,6 +708,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     .accessibilityIdentifier("native-ios-owner-map-capture-range")
             }
             if busy { ProgressView("核对当前 Owner 地图位置…") }
+            if basemapUnavailable {
+                Text("地图底图暂不可用。云端位置仍需保持当前 Owner 授权；联网后平移地图或切换底图样式重试。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-owner-map-basemap-unavailable")
+            }
             if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
                 Text("选择真实地点后仅打开当前 Owner 重新验证的 48 项 PhotoAsset 分页与原生 Viewer；聚合区域不能当成照片访问凭证。")

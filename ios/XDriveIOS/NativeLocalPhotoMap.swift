@@ -279,11 +279,14 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     var onCells: (([Cell], MKCoordinateRegion) -> Void)? = nil
     var onCamera: ((MKCoordinateRegion) -> Void)? = nil
     var onCameraWillChange: (() -> Void)? = nil
+    var onBasemapStatus: ((Bool) -> Void)? = nil
     let onOpen: ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onOpen: onOpen, onCells: onCells, onCamera: onCamera,
-                    onCameraWillChange: onCameraWillChange)
+        let coordinator = Coordinator(onOpen: onOpen, onCells: onCells, onCamera: onCamera,
+                                      onCameraWillChange: onCameraWillChange)
+        coordinator.onBasemapStatus = onBasemapStatus
+        return coordinator
     }
 
     func makeUIView(context: Context) -> MKMapView {
@@ -309,6 +312,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         context.coordinator.onCells = onCells
         context.coordinator.onCamera = onCamera
         context.coordinator.onCameraWillChange = onCameraWillChange
+        context.coordinator.onBasemapStatus = onBasemapStatus
         context.coordinator.canSelectCells = canSelectCells
         context.coordinator.cameraBoundCells = cameraBoundCells
         context.coordinator.showingProvisional = provisional
@@ -402,6 +406,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         var onCells: (([Cell], MKCoordinateRegion) -> Void)?
         var onCamera: ((MKCoordinateRegion) -> Void)?
         var onCameraWillChange: (() -> Void)?
+        var onBasemapStatus: ((Bool) -> Void)?
         var canSelectCells = true
         var cameraBoundCells = false
         var showingProvisional = false
@@ -417,6 +422,16 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
             self.onCells = onCells
             self.onCamera = onCamera
             self.onCameraWillChange = onCameraWillChange
+        }
+
+        func mapViewDidFailLoadingMap(_ mapView: MKMapView, withError error: Error) {
+            // A map tile failure is a presentation error only. Never change
+            // Full PhotoKit membership, map pin authority or Viewer admission.
+            DispatchQueue.main.async { [weak self] in self?.onBasemapStatus?(true) }
+        }
+
+        func mapViewDidFinishLoadingMap(_ mapView: MKMapView) {
+            DispatchQueue.main.async { [weak self] in self?.onBasemapStatus?(false) }
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
@@ -1279,6 +1294,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var pendingTrip: XDriveIOSNativeLocalTripScope?
     @State private var chosenLocalTrip: XDriveIOSNativeLocalTripScope?
     @State private var error: String?
+    @State private var basemapUnavailable = false
     @State private var selection: XDriveIOSMapPhotoSelection?
     @State private var singleViewer: XDrivePhotoKitScanCandidate?
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -1517,6 +1533,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                             }
                             if globalViewport != nil { globalCameraMoving = true }
                         },
+                        onBasemapStatus: { basemapUnavailable = $0 },
                         onOpen: { _, _ in }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1630,6 +1647,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 Text("位置时间范围：\(activeCaptureRange.label)")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-local-map-capture-range")
+            }
+            if basemapUnavailable {
+                Text("地图底图暂时无法加载。已核对的本机位置照片仍受 Full Access 保护；联网后平移地图或切换底图样式重试。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-local-map-basemap-unavailable")
             }
             if let error { Text(error).foregroundStyle(.secondary).font(.footnote) }
             if mapScope == .page {
