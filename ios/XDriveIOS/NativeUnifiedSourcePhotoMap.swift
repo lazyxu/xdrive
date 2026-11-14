@@ -504,7 +504,10 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             do {
                 var index =
                     XDriveIOSNativeLocalMapSpatialIndex<XDriveIOSUnifiedSourceCachedCoordinate>()
-                for point in coordinates {
+                for (position, point) in coordinates.enumerated() {
+                    // Keep pinch/scroll, accessibility and cancel events
+                    // responsive during 100k+ exact local repartitions.
+                    if position > 0 && position % 1_024 == 0 { await Task.yield() }
                     try Task.checkCancellation()
                     if XDriveIOSNativeLocalMapSpatialPolicy.includes(
                         viewport, latitude: point.latitude,
