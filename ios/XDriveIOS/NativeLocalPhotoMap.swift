@@ -553,6 +553,9 @@ private struct XDriveIOSMapPhotoAlbum: View {
     @State private var selected: XDrivePhotoKitScanCandidate?
     @State private var viewerReturnID: String?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
     @AccessibilityFocusState private var focusedTileID: String?
 
     private var previewItems: [XDrivePhotoKitScanCandidate] {
@@ -561,12 +564,27 @@ private struct XDriveIOSMapPhotoAlbum: View {
         }
     }
 
+    private var previewSections: [XDriveIOSNativePhotoWallVisibleSection<XDrivePhotoKitScanCandidate>] {
+        xdriveIOSNativePhotoWallVisibleSections(
+            Array(items.prefix(XDriveIOSNativePhotoMapPolicy.pageSize)),
+            scale: wallTimeScale
+        ) { wallTimeScale.key(for: $0.capturedAt) }
+    }
+
     var body: some View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             ScrollView {
-                XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                    ForEach(items.prefix(XDriveIOSNativePhotoMapPolicy.pageSize)) { item in
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                    ForEach(previewSections) { section in
+                        if wallTimeScale != .all {
+                            XDriveIOSNativePhotoWallDayHeader(
+                                title: wallTimeScale.label(for: section.key)
+                            )
+                        }
+                        XDriveIOSNativePhotoWallGrid(density: wallDensity) {
+                            ForEach(section.items) { item in
                         Button {
                             guard XDriveIOSNativeMapViewerAdmission.allows(
                                 item, in: previewItems, sceneActive: phase == .active
@@ -577,21 +595,25 @@ private struct XDriveIOSMapPhotoAlbum: View {
                             focusedTileID = nil
                             selected = item
                         } label: {
-                            XDriveIOSNativeSquarePhotoTile(candidate: item)
+                            XDriveIOSNativeSquarePhotoTile(candidate: item, framing: wallFraming)
                         }
                         .buttonStyle(.plain)
                         .disabled(!XDriveIOSNativeMapViewerAdmission.supported(item) ||
                                   phase != .active)
                         .id(item.id)
                         .accessibilityFocused($focusedTileID, equals: item.id)
+                            }
+                        }
                     }
-                }.padding(8)
+                }
+                .padding(8)
             }
             .navigationTitle("此处照片 · 当前页")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        xdrivePhotoWallDensityButtons($wallDensity)
+                        Section("照片网格") { xdrivePhotoWallDensityButtons($wallDensity) }
+                        Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
                     } label: {
                         Label("缩略图大小", systemImage: "square.grid.3x3")
                     }
@@ -601,11 +623,9 @@ private struct XDriveIOSMapPhotoAlbum: View {
                     Button("完成") { dismiss() }
                 }
             }
-            .simultaneousGesture(
-                MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                    guard selected == nil, phase == .active else { return }
-                    wallDensity = wallDensity.applyingPinch(scale)
-                }
+            .xdrivePhotoWallPinch(
+                density: $wallDensity,
+                enabled: selected == nil && phase == .active
             )
             .fullScreenCover(item: $selected, onDismiss: {
                 restoreViewerTile(using: returnScroll)
@@ -680,6 +700,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @State private var viewerItems: [XDrivePhotoKitScanCandidate] = []
     @State private var viewerReturnID: String?
     @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
     @AccessibilityFocusState private var focusedTileID: String?
     @State private var worker: XDrivePhotoKitBoundedSnapshotScanner?
     @State private var readTask: Task<Void, Never>?
@@ -708,6 +731,12 @@ private struct XDriveIOSMapSpatialAlbum: View {
 
     private var visibleItems: [XDrivePhotoKitScanCandidate] {
         priorWindow + items
+    }
+
+    private var visibleSections: [XDriveIOSNativePhotoWallVisibleSection<XDrivePhotoKitScanCandidate>] {
+        xdriveIOSNativePhotoWallVisibleSections(
+            visibleItems, scale: wallTimeScale
+        ) { wallTimeScale.key(for: $0.capturedAt) }
     }
 
     private var hasNext: Bool {
@@ -751,7 +780,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
             focusedTileID = nil
             viewer = item
         } label: {
-            XDriveIOSNativeSquarePhotoTile(candidate: item)
+            XDriveIOSNativeSquarePhotoTile(candidate: item, framing: wallFraming)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-map-photo-wall-tile")
@@ -786,9 +815,18 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     XDriveIOSNativePhotoWallStatusMessage(message: "此位置没有可访问的照片或视频。")
                 }
                 ScrollView {
-                    XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                        ForEach(priorWindow) { item in photoTile(item) }
-                        ForEach(items) { item in photoTile(item) }
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                        ForEach(visibleSections) { section in
+                            if wallTimeScale != .all {
+                                XDriveIOSNativePhotoWallDayHeader(
+                                    title: wallTimeScale.label(for: section.key)
+                                )
+                            }
+                            XDriveIOSNativePhotoWallGrid(density: wallDensity) {
+                                ForEach(section.items) { item in photoTile(item) }
+                            }
+                        }
                         // The lazy-grid sentinel is the native infinite-scroll
                         // trigger. It advances only as the last visible window
                         // approaches the viewport; busy/error guards prevent repeats.
@@ -837,6 +875,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         Section("照片网格") {
                             xdrivePhotoWallDensityButtons($wallDensity)
                         }
+                        Section("显示比例") {
+                            xdrivePhotoWallFramingButtons($wallFraming)
+                        }
                     } label: {
                         Label("位置照片操作", systemImage: "ellipsis.circle")
                     }
@@ -847,11 +888,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         .accessibilityIdentifier("native-ios-map-place-dismiss")
                 }
             }
-            .simultaneousGesture(
-                MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                    guard viewer == nil, !busy, phase == .active else { return }
-                    wallDensity = wallDensity.applyingPinch(scale)
-                }
+            .xdrivePhotoWallPinch(
+                density: $wallDensity,
+                enabled: viewer == nil && !busy && phase == .active
             )
             .fullScreenCover(item: $viewer, onDismiss: {
                 restoreViewerTile(using: returnScroll)

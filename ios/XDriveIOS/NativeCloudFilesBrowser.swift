@@ -1417,10 +1417,18 @@ struct XDriveIOSNativeFilesBrowser: View {
         Section("位置") {
             if let owner = login.owner {
                 NavigationLink {
-                    XDriveIOSNativeFilesBrowser(
-                        login: login, folderID: owner.rootNodeID,
-                        folderName: "xDrive 云端"
-                    )
+                    // The Home cloud entry must fail closed before creating a
+                    // folder Reader when the Owner is only a synthetic/stale
+                    // identity without a valid native Session. Recent and
+                    // Favorites already use this same read-only route.
+                    if login.hasLocalOwnerSession {
+                        XDriveIOSNativeFilesBrowser(
+                            login: login, folderID: owner.rootNodeID,
+                            folderName: "xDrive 云端"
+                        )
+                    } else {
+                        XDriveIOSNativeFilesNoSessionRoute(kind: .cloud)
+                    }
                 } label: {
                     HStack(spacing: 12) {
                         Label("xDrive 云端", systemImage: "externaldrive")

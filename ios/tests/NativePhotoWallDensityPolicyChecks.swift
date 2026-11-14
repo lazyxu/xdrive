@@ -63,6 +63,26 @@ struct NativePhotoWallDensityPolicyChecks {
             in: revisions + [(id: 2, revision: 3)], scopeActive: true,
             matches: { $0.id == $1.id && $0.revision == $1.revision }
         ), "duplicate exact Node revisions must not restore ambiguously")
+        // Local PhotoKit and signed cloud use the same bounded,
+        // order-preserving *visible-window* date sections. Never infer the
+        // dates of an entire 100k library from a 48-item verified Range.
+        let captured = ["2026-11-12", "2026-11-12", "unknown",
+                        "2026-11-12", "2026-11-11"]
+        let grouped = xdriveIOSNativePhotoWallVisibleSections(
+            captured, scale: .day, key: { $0 }
+        )
+        precondition(grouped.map(\.key) ==
+            ["2026-11-12", "unknown", "2026-11-12", "2026-11-11"])
+        precondition(grouped.map(\.id) == [0, 1, 2, 3])
+        precondition(grouped.flatMap(\.items) == captured)
+        let ungrouped = xdriveIOSNativePhotoWallVisibleSections(
+            captured, scale: .all, key: { $0 }
+        )
+        precondition(ungrouped.count == 1 &&
+                     ungrouped[0].items == captured &&
+                     ungrouped[0].key == "all")
+        precondition(xdriveIOSNativePhotoWallVisibleSections(
+            [String](), scale: .day, key: { $0 }).isEmpty)
         print("native local PhotoKit square wall density and framing: PASS")
     }
 }
