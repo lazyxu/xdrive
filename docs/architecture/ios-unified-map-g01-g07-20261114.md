@@ -56,7 +56,7 @@
 | M12 封面并发 | 云端最多 3 个并发缩略图；本机128px渐进海报；旧世代回调拒绝 | 下载耗时/内存待测 |
 | M13 地点名称 | 用户打开地点时短期 Apple CLGeocoder 解析 locality；不缓存、不做权限证据 | 网络不可用时保持原地点标题 |
 | M14 附近排序 | 完整已证 GPS 样本按球面距离有序；分页每行重新核对精确来源 | 首次完整扫描必须成功 |
-| M15 相机恢复 | 保存当前 Owner 会话的相机，Owner/照片库变化即清空 | 未跨进程持久化，避免无加密私密 GPS |
+| M15 相机恢复 | 当前 Owner + PhotoKit 变化 Token 绑定的设备专属 Keychain 加密相机快照；图库恢复后重建 MKRegion，Owner/照片库变化即撤销旧值 | 仍需实机重启、Keychain 权限和多 Owner/照片撤权恢复测试 |
 | M16 系统交互 | 真实 UIKit MKMapView/AnnotationView、系统手势、同步拒绝旧点击与 VoiceOver | Apple Photos 私有动画参数/像素无法直接保证相同 |
 
 ### 合并门槛
