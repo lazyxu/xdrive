@@ -1078,4 +1078,149 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "credential-retirement-safe-foreground")
     }
 
+
+    // Sweep four actual Owner-scoped Files child screens using one no-bearer
+    // process. Every denial must retire before another Gallery/Files entry.
+    func testFourDeniedFilesChildrenAfterBackgroundCrossTabsDoNotExit() {
+        let app = launch()
+        let routes: [(String, String, String)] = [
+            ("native-ios-files-open-root-location", "native-ios-files-error-page",
+             "native-ios-files-error-return"),
+            ("native-ios-files-open-recent", "native-ios-files-recent-error-page",
+             "native-ios-files-recent-error-return"),
+            ("native-ios-files-open-favorites", "native-ios-files-favorites-error-page",
+             "native-ios-files-favorites-error-return"),
+            ("native-ios-files-open-trash", "native-ios-files-trash-error-page",
+             "native-ios-files-trash-error-return")
+        ]
+        for (index, route) in routes.enumerated() {
+            openFilesHomeChild(route.0, pageID: route.1, app: app)
+            XCTAssertFalse(element("native-ios-files-grid", app: app).exists,
+                           "No-session child must not expose protected Files rows")
+            if index.isMultiple(of: 2) {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                ready(route.1, app: app)
+            }
+            tap(route.2, app: app)
+            waitRetired(route.1, app: app)
+            ready("native-ios-files-home-list", app: app)
+            tap("native-ios-tab-gallery", app: app)
+            ready("native-ios-unified-photo-gallery", app: app)
+            tap("native-ios-tab-files", app: app)
+            ready("native-ios-files-section-browse", app: app)
+        }
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        capture(app, "four-files-denied-children-gallery")
+    }
+
+    // The real Mine Form can route back to Gallery without verifying an Owner.
+    // Its thumbnail-cache child must stay unavailable after all tab returns.
+    func testSignedOutMinePhotosLinkAndDisabledCacheAcrossTabsDoNotExit() {
+        let app = launch(offlineOwner: false)
+        tap("native-ios-tab-mine", app: app)
+        ready("native-ios-mine-server-account", app: app)
+        let cache = app.buttons["缩略图缓存"].firstMatch
+        XCTAssertTrue(cache.waitForExistence(timeout: 15))
+        XCTAssertFalse(cache.isEnabled, "No authenticated Owner exists")
+        let photos = app.buttons["相册与照片墙"].firstMatch
+        let form = app.tables.firstMatch
+        for _ in 0..<5 {
+            if photos.exists && photos.isHittable { break }
+            if form.exists { form.swipeUp() }
+        }
+        XCTAssertTrue(photos.exists && photos.isHittable,
+                      "Mine's actual Photos entry must be reachable")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-mine-open-photo-wall")
+        photos.tap()
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-mine", app: app)
+        ready("native-ios-mine-server-account", app: app)
+        XCTAssertFalse(cache.isEnabled, "Tab return cannot grant Owner cache access")
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        capture(app, "mine-photos-files-cache-disabled")
+    }
+
+    // These four destinations are deliberately NOT implemented. Repeated
+    // navigation cannot convert their placeholders into stale Owner content.
+    func testUnavailableLauncherToolsForegroundAndFilesReturnDoNotExit() {
+        let app = launch()
+        for (index, route) in ["sync", "storage", "devices", "diagnostics"].enumerated() {
+            openLauncher(route, app: app)
+            let placeholder = ["同步尚未接通", "存储尚未接通",
+                               "设备尚未接通", "诊断尚未接通"][index]
+            XCTAssertTrue(app.staticTexts[placeholder].firstMatch.waitForExistence(timeout: 15),
+                          "Unavailable native tool must show a real placeholder")
+            if index.isMultiple(of: 2) {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                XCTAssertTrue(app.staticTexts[placeholder].firstMatch.exists,
+                              "Placeholder child disappeared on foreground return")
+            }
+            tap("native-ios-tab-files", app: app)
+            ready("native-ios-files-section-browse", app: app)
+            XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        }
+        capture(app, "unavailable-tools-files-foreground")
+    }
+
+    // Focus the actual signed-out input fields (no fake credentials or Submit)
+    // and verify the native form survives keyboard, background and foreground.
+    func testRealSignedOutLoginFieldFocusBackgroundDoesNotExit() {
+        let app = launchRealSignedOutWorkspace()
+        for id in ["native-ios-login-server", "native-ios-login-username",
+                   "native-ios-login-password"] {
+            let field = element(id, app: app)
+            XCTAssertTrue(field.waitForExistence(timeout: 15),
+                          "Production login form is missing field: \(id)")
+            print("IOS_NATIVE_NAV_TAP_START route=\(id)")
+            field.tap()
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        for id in ["native-ios-login-server", "native-ios-login-username",
+                   "native-ios-login-password"] {
+            ready(id, app: app)
+        }
+        ready("native-ios-login-submit", app: app)
+        XCTAssertFalse(element("native-ios-mine-server-account", app: app).exists,
+                       "Keyboard/foreground cannot silently authenticate Owner")
+        capture(app, "real-login-fields-keyboard-background")
+    }
+
+    // A denied device-receiver enrollment cannot be resurrected by re-entering
+    // Clipboard after Transfers, Files and Notes have replaced the child tree.
+    func testClipboardDeniedRecipientTransfersFilesNotesReturnDoesNotExit() {
+        let app = launch()
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        let enable = app.buttons["启用本机设备定向接收"].firstMatch
+        XCTAssertTrue(enable.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-clipboard-enroll-no-bearer")
+        enable.tap()
+        ready("ios-clipboard-status", app: app)
+        XCTAssertFalse(app.staticTexts["设备定向接收已启用"].firstMatch.exists)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("ios-clipboard-draft", app: app)
+        openLauncher("transfers", app: app)
+        ready("native-ios-transfer-overview", app: app)
+        let openFiles = app.buttons["打开文件"].firstMatch
+        XCTAssertTrue(openFiles.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-transfers-files-after-denial")
+        openFiles.tap()
+        ready("native-ios-files-section-browse", app: app)
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        XCTAssertFalse(app.staticTexts["设备定向接收已启用"].firstMatch.exists,
+                       "A denied recipient must not become active after route replacement")
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "clipboard-denied-tools-foreground-return")
+    }
+
 }
