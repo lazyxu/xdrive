@@ -210,6 +210,15 @@ MINIMAL_TARGETS.update({
     "testRealInterruptedStartupRetryRendersLoginWithoutExit",
     "testRealSignedOutRememberPasswordToggleForegroundDoesNotExit",
 })
+MINIMAL_TARGETS.update({
+    # Consolidated true-route post-login and cross-page crash probes.
+    "testPostLoginCrashCopyAndDiagnosticForegroundDoesNotExit",
+    "testPostLoginCrashFullRetrySignedOutReturnDoesNotExit",
+    "testPostLoginCrashSafeEntryRotationDoesNotExit",
+    "testMapFilesRecentDenialBackupQueueMapReturnDoesNotExit",
+    "testNotesClipboardTransfersFilesForegroundCycleDoesNotExit",
+    "testFilesManagementSheetsRotationAndGalleryReturnDoesNotExit",
+})
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
 TARGETS.update({

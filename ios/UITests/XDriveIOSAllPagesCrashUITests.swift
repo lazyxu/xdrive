@@ -1405,4 +1405,164 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "unimplemented-tools-rotation-foreground-files")
     }
 
+
+    /// Genuine recovery page constructed by the disposable Simulator fixture,
+    /// not a fake Owner or a catchable synthetic fatal error.
+    private func launchPostLoginRecovery() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-postlogin-recovery-fixture"]
+        app.launch()
+        ready("native-ios-startup-recovery", app: app)
+        let step = element("native-ios-postlogin-crash-step", app: app)
+        XCTAssertTrue(step.waitForExistence(timeout: 15))
+        XCTAssertTrue(step.label.contains("openingDashboard"))
+        XCTAssertEqual(app.state, .runningForeground)
+        return app
+    }
+
+    private func tapVisibleRecovery(_ id: String, app: XCUIApplication) {
+        let target = element(id, app: app)
+        let scroll = app.scrollViews.firstMatch
+        for _ in 0..<8 {
+            if target.exists && target.isHittable { break }
+            if scroll.exists { scroll.swipeUp() }
+        }
+        XCTAssertTrue(target.exists && target.isHittable,
+                      "Actual startup recovery control is unreachable: \(id)")
+        tap(id, app: app)
+    }
+
+    func testPostLoginCrashCopyAndDiagnosticForegroundDoesNotExit() {
+        let app = launchPostLoginRecovery()
+        tapVisibleRecovery("native-ios-startup-copy-diagnostics", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-postlogin-crash-step", app: app)
+        tapVisibleRecovery("native-ios-startup-diagnostic-login", app: app)
+        ready("native-ios-startup-safe-mode", app: app)
+        ready("native-ios-login-server", app: app)
+        ready("native-ios-login-username", app: app)
+        XCTAssertFalse(element("native-ios-five-slot-bar", app: app).exists,
+                       "Diagnostic login cannot mount an unverified Owner Dashboard")
+        XCTAssertFalse(element("native-ios-diagnostic-open-dashboard", app: app).exists,
+                       "No-session form cannot expose a verified-Owner Dashboard action")
+        capture(app, "postlogin-diagnostic-foreground")
+    }
+
+    func testPostLoginCrashFullRetrySignedOutReturnDoesNotExit() {
+        let app = launchPostLoginRecovery()
+        tapVisibleRecovery("native-ios-startup-retry", app: app)
+        ready("native-ios-login-server", app: app)
+        ready("native-ios-login-password", app: app)
+        waitRetired("native-ios-startup-recovery", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-login-server", app: app)
+        XCTAssertFalse(element("native-ios-five-slot-bar", app: app).exists)
+        capture(app, "postlogin-retry-signed-out")
+    }
+
+    func testPostLoginCrashSafeEntryRotationDoesNotExit() {
+        let app = launchPostLoginRecovery()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        tapVisibleRecovery("native-ios-startup-safe-entry", app: app)
+        ready("native-ios-startup-safe-mode", app: app)
+        device.orientation = .landscapeLeft
+        ready("native-ios-login-server", app: app)
+        device.orientation = .portrait
+        device.press(.home)
+        app.activate()
+        ready("native-ios-login-username", app: app)
+        XCTAssertFalse(element("native-ios-five-slot-bar", app: app).exists)
+        capture(app, "postlogin-safe-rotation")
+    }
+
+    // All following taps use real native routes under the NO-bearer Owner
+    // fixture. A protected grid is never expected or asserted as success.
+    func testMapFilesRecentDenialBackupQueueMapReturnDoesNotExit() {
+        let app = launch()
+        openLauncher("map", app: app)
+        ready("native-ios-map-source-selector", app: app)
+        openFilesHomeChild("native-ios-files-open-recent",
+                           pageID: "native-ios-files-recent-error-page", app: app)
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        tap("native-ios-files-recent-error-return", app: app)
+        waitRetired("native-ios-files-recent-error-page", app: app)
+        openLauncher("backup", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tap("native-ios-photos-task-list", app: app)
+        ready("native-ios-photo-task-list-done", app: app)
+        tap("native-ios-photo-task-list-done", app: app)
+        waitRetired("native-ios-photo-task-list-done", app: app)
+        openLauncher("map", app: app)
+        ready("native-ios-map-source-selector", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-map-source-selector", app: app)
+        capture(app, "map-files-backup-map-return")
+    }
+
+    func testNotesClipboardTransfersFilesForegroundCycleDoesNotExit() {
+        let app = launch()
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-source-picker", app: app)
+        let backup = element("native-ios-notes-source-picker", app: app)
+            .buttons["iOS 备份"].firstMatch
+        XCTAssertTrue(backup.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-notes-ios-backup")
+        backup.tap()
+        ready("native-ios-notes-page", app: app)
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        openLauncher("transfers", app: app)
+        ready("native-ios-transfer-overview", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-files-section-browse", app: app)
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        capture(app, "notes-clipboard-transfers-files")
+    }
+
+    func testFilesManagementSheetsRotationAndGalleryReturnDoesNotExit() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        openFilesHomeChild("native-ios-files-home-manage-tags",
+                           pageID: "native-ios-files-tag-management", app: app)
+        device.orientation = .landscapeLeft
+        ready("native-ios-files-tag-management", app: app)
+        device.orientation = .portrait
+        tapNamed("完成", route: "native-ios-tags-management-done", app: app)
+        waitRetired("native-ios-files-tag-management", app: app)
+        for (entry, page, done) in [
+            ("native-ios-files-open-saved-searches",
+             "native-ios-files-saved-searches-page", "native-ios-files-saved-searches-done"),
+            ("native-ios-files-open-operations",
+             "native-ios-files-operation-history-page", "native-ios-files-operation-history-done")
+        ] {
+            openFilesHomeChild(entry, pageID: page, app: app)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            ready(page, app: app)
+            tap(done, app: app)
+            waitRetired(page, app: app)
+            tap("native-ios-tab-gallery", app: app)
+            ready("native-ios-unified-photo-gallery", app: app)
+            tap("native-ios-tab-files", app: app)
+            ready("native-ios-files-home-list", app: app)
+        }
+        for stale in ["native-ios-files-tag-management",
+                      "native-ios-files-saved-searches-page",
+                      "native-ios-files-operation-history-page"] {
+            XCTAssertFalse(element(stale, app: app).exists)
+        }
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        capture(app, "files-management-sheets-rotation")
+    }
+
 }

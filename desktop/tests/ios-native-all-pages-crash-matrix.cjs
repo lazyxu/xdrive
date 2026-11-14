@@ -463,3 +463,36 @@ test('six more independent Gallery, Files, Notes, Login and Backup crash sweeps 
   assert.doesNotMatch(swift, /fakeToken|mockServerLogin|XCTSkip/);
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
 });
+
+
+test('69 all-page crash XCTest journeys include post-login diagnostic and cross-route recovery', () => {
+  const names = [
+    'testPostLoginCrashCopyAndDiagnosticForegroundDoesNotExit',
+    'testPostLoginCrashFullRetrySignedOutReturnDoesNotExit',
+    'testPostLoginCrashSafeEntryRotationDoesNotExit',
+    'testMapFilesRecentDenialBackupQueueMapReturnDoesNotExit',
+    'testNotesClipboardTransfersFilesForegroundCycleDoesNotExit',
+    'testFilesManagementSheetsRotationAndGalleryReturnDoesNotExit'
+  ];
+  const methods = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(m => m[1]);
+  assert.ok(methods.length >= 69, 'All 69 real native page paths must run');
+  assert.equal(new Set(methods).size, methods.length, 'Duplicate XCTest path hides a crash');
+  for (const name of names) {
+    assert.ok(methods.includes(name), 'Missing native XCTest: ' + name);
+    assert.ok(watcher.includes('"' + name + '"'), 'Unregistered live Simulator frames: ' + name);
+  }
+  const login = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8');
+  const recovery = fs.readFileSync(path.join(root, 'ios/XDriveIOS/XDriveIOSApp.swift'), 'utf8');
+  assert.match(swift, /-xdrive-ui-postlogin-recovery-fixture/);
+  assert.match(swift, /native-ios-postlogin-crash-step/);
+  assert.match(swift, /native-ios-startup-diagnostic-login/);
+  assert.match(swift, /native-ios-files-recent-error-page/);
+  assert.match(swift, /native-ios-map-source-selector/);
+  assert.match(swift, /native-ios-notes-source-picker/);
+  assert.match(recovery, /native-ios-startup-diagnostic-login/);
+  assert.match(login, /diagnosticWorkspace && !showFullWorkspace/);
+  assert.match(login, /\.onChange\(of: restoreFinished\)/);
+  assert.doesNotMatch(login, /\.onDisappear \{ workspaceDisappeared\(\) \}/);
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
+  assert.doesNotMatch(swift, /fakeToken|mockServerLogin|XCTSkip/);
+});
