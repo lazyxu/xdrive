@@ -1540,6 +1540,11 @@ struct XDriveIOSNativeServerMediaWall: View {
                         Button("清除") {
                             searchDraft = ""
                             appliedSearch = ""
+                            // A cleared query is a new Owner-scoped collection,
+                            // never inherit old Range adjacency or date tails.
+                            recentRangeIDs.removeAll()
+                            datePageBoundaries.removeAll()
+                            dateBoundaryOwner = nil
                             model.load(login: login, albumID: album?.id, placeID: placeID, search: "", captureRange: captureRange)
                         }
                         .disabled(model.busy)
@@ -1561,7 +1566,6 @@ struct XDriveIOSNativeServerMediaWall: View {
                             density: $wallDensity, framing: $wallFraming,
                             accessibilityID: "native-ios-cloud-wall-density"
                         ) { EmptyView() }
-                        .accessibilityIdentifier("native-ios-cloud-wall-density")
                     }
                     if page.total_count > 0 {
                         XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
@@ -1600,8 +1604,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                     ) {
                         self.continuousFailure = nil
                         recentRangeIDs.removeAll()
-            datePageBoundaries.removeAll()
-            dateBoundaryOwner = nil
+                        datePageBoundaries.removeAll()
+                        dateBoundaryOwner = nil
                         model.load(login: login, albumID: album?.id, placeID: placeID,
                                    offset: 0, search: appliedSearch, captureRange: captureRange)
                     }
@@ -1884,8 +1888,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             if state != .active {
                 continuousFailure = nil
                 recentRangeIDs.removeAll()
-            datePageBoundaries.removeAll()
-            dateBoundaryOwner = nil
+                datePageBoundaries.removeAll()
+                dateBoundaryOwner = nil
                 pendingReturnID = nil
                 pendingReturnRevision = nil
                 returnRangeOffset = nil
@@ -1910,8 +1914,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             } else {
                 continuousFailure = nil
                 recentRangeIDs.removeAll()
-            datePageBoundaries.removeAll()
-            dateBoundaryOwner = nil
+                datePageBoundaries.removeAll()
+                dateBoundaryOwner = nil
                 pendingReturnID = nil
                 pendingReturnRevision = nil
                 returnRangeOffset = nil
@@ -1957,8 +1961,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         guard phase == .active, selected == nil else { return }
         continuousFailure = reason
         recentRangeIDs.removeAll()
-            datePageBoundaries.removeAll()
-            dateBoundaryOwner = nil
+        datePageBoundaries.removeAll()
+        dateBoundaryOwner = nil
         pendingReturnID = nil
         pendingReturnRevision = nil
         returnRangeOffset = nil
@@ -2030,8 +2034,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         appliedSearch = query
         continuousFailure = nil
         recentRangeIDs.removeAll()
-            datePageBoundaries.removeAll()
-            dateBoundaryOwner = nil
+        datePageBoundaries.removeAll()
+        dateBoundaryOwner = nil
         pendingReturnID = nil
         pendingReturnRevision = nil
         returnRangeOffset = nil
