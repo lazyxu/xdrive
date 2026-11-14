@@ -76,6 +76,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // Restore the last successfully viewed Node+revision in the bounded
     // Owner page after L3 closes, without persisting any photo identities.
     @State private var viewerReturn: XDriveIOSNativeMediaItem?
+    @State private var viewerOpeningItem: XDriveIOSNativeMediaItem?
     // During a verified automatic append, preserve the last visible tile
     // while the former two-window head rotates out of the LazyVGrid.
     @State private var autoScrollReturn: XDriveIOSNativeMediaItem?
@@ -288,8 +289,16 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     viewerReturn = nil
                     return
                 }
-                returnScroll.scrollTo(anchor.id, anchor: .center)
+                // A full-screen Viewer did not unmount the source wall.
+                // Re-centering the exact same Node+revision on Back would
+                // shift the grid even when no scrolling or mutation occurred.
+                if viewerOpeningItem.map({
+                    !$0.sameVisibleRevision(as: anchor)
+                }) ?? true {
+                    returnScroll.scrollTo(anchor.id, anchor: .center)
+                }
                 viewerReturn = nil
+                viewerOpeningItem = nil
             }
             .onChange(of: busy) { isBusy in
                 if !isBusy { advanceIfVisible() }
@@ -595,6 +604,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 priorWindow = nil
                 priorWindowCursor = nil
             }
+            viewerOpeningItem = item
             viewerReturn = item
             viewing = item
         } label: {
@@ -721,6 +731,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         coverLoading = false
         page = nil
         viewerReturn = nil
+        viewerOpeningItem = nil
         autoScrollReturn = nil
         priorWindow = nil
         priorWindowCursor = nil
