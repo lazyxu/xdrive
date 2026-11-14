@@ -45,7 +45,7 @@ assert.match(policyTests, /noIdentifier\.externalID\.isEmpty/,
 // supported presentation surfaces; this is a source contract, not device proof.
 const sharedNotes = read('ui/shared/src/mui/NotesPage.tsx')
 const nativeAndroid = read('android/app/src/main/java/com/tfluid/xdrive/NativeNotesScreens.kt')
-assert.match(sharedNotes, /await port\.readVersion\(selected\.node_id, item\.id\)/)
+assert.match(sharedNotes, /await port\.readVersion\(nodeID, item\.id\)/)
 assert.match(sharedNotes, /new Blob\(\[oldMarkdown\], \{ type: 'text\/markdown;charset=utf-8' \}\)/)
 assert.match(sharedNotes, /anchor\.download = selected\.id \+ '-r' \+ oldVersion\.revision \+ '\.md'/)
 assert.match(sharedNotes, /下载此版本 Markdown/)
@@ -58,11 +58,11 @@ assert.match(nativeAndroid, /controller\.state\.value\.nativeUiSessionId == owne
 assert.match(nativeAndroid, /NativeNotesMarkdownPreview\(\s*controller, noteID, ownerEpoch, content/)
 assert.match(nativeAndroid, /导出此版本 Markdown/)
 
-assert.match(sharedNotes, /const historyReadSeq = useRef\\(0\\)/)
-assert.match(sharedNotes, /const historyGeneration = \\+\\+historyReadSeq\\.current/)
-assert.match(sharedNotes, /historyReadSeq\\.current === historyGeneration/)
-assert.match(sharedNotes, /onClose=\\{closeHistory\\}/)
+assert.match(sharedNotes, /const historyReadSeq = useRef\(0\)/)
+assert.match(sharedNotes, /const historyGeneration = \+\+historyReadSeq\.current/)
+assert.match(sharedNotes, /historyReadSeq\.current === historyGeneration/)
+assert.match(sharedNotes, /onClose=\{closeHistory\}/)
 assert.match(screen, /@State private var versionReadGeneration = 0/)
-assert.match(screen, /guard generation == versionReadGeneration else \\{ return \\}/)
+assert.match(screen, /guard generation == versionReadGeneration else \{ return \}/)
 
 console.log('iOS Notes history image readback and explicit Shortcut source identity: PASS')
