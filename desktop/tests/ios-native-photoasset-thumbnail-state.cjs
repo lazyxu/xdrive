@@ -40,7 +40,7 @@ test('native PhotoAsset thumbnail state invalidates on revised Node and verified
   // current Range. Tile identity must still contain exact Node revision+Owner.
   assert.match(virtual, /verified\.offset == offset, verified\.total_count == expectedTotal/)
   assert.match(virtual, /xdriveIOSNativePhotoWallVisibleSections\(\s*verified\.items, scale: timeScale/)
-  assert.match(virtual, /ForEach\(visibleSections\(verified\)\) \{ section in[\s\S]*?ForEach\(section\.items\) \{ item in[\s\S]*?XDriveIOSNativeMediaWallTile\([\s\S]*?\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner\s*\)\)/)
+  assert.match(virtual, /XDriveIOSNativePhotoWallSectionList\([\s\S]*?sections: visibleSections\(verified\)[\s\S]*?items: \{ \$0\.items \}[\s\S]*?XDriveIOSNativeMediaWallTile\([\s\S]*?\.id\(XDriveIOSNativeMediaWallTileIdentity\(\s*item: item, owner: login\.owner\s*\)\)/)
   assert.match(virtual, /\.id\(item\.id\)/, 'keep Node ID for continuous Viewer scroll return')
   assert.match(virtual, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/)
 })
