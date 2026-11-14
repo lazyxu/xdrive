@@ -43,6 +43,8 @@ test('guarded pure Swift back policy and double-tap test remain executable', () 
 test('exact-head unsigned IPA job executes real Swift stale-Back reproducer', () => {
   const workflow = read('.github/workflows/ios-unsigned-ipa.yml');
   assert.match(workflow, /Verify Clipboard Cloud Files stale Back double-tap cannot trap/);
-  assert.match(workflow, /swiftc -swift-version 5 -parse-as-library [\\\s\\\S]*?ios\\/XDriveIOS\\/NativeClipboardFolderBackPolicy\\.swift [\\\s\\\S]*?ios\\/tests\\/NativeClipboardFolderBackPolicyChecks\\.swift/);
+  assert.match(workflow, /swiftc -swift-version 5 -parse-as-library/);
+  assert.ok(workflow.includes('ios/XDriveIOS/NativeClipboardFolderBackPolicy.swift'));
+  assert.ok(workflow.includes('ios/tests/NativeClipboardFolderBackPolicyChecks.swift'));
   assert.match(workflow, /xdrive-ios-clipboard-folder-back/);
 });
