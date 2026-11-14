@@ -198,10 +198,17 @@ class NativeSubpageAuditTests(unittest.TestCase):
                       "native-ios-files-error-return", "native-ios-files-trash-error-return"):
             self.assertIn(token, files)
             self.assertIn(token, suite)
+        # The people-page AX marker belongs to the actual destination view,
+        # not the Gallery navigation entry that links to that destination.
         for token in ("native-ios-gallery-open-filters", "native-ios-gallery-people",
-                      "native-ios-unified-gallery-map-scope", "native-ios-gallery-people-page"):
+                      "native-ios-unified-gallery-map-scope"):
             self.assertIn(token, gallery)
             self.assertIn(token, suite)
+        people = (module.ROOT / "ios/XDriveIOS/NativeGalleryPeople.swift").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('accessibilityIdentifier("native-ios-gallery-people-page")', people)
+        self.assertIn("native-ios-gallery-people-page", suite)
         self.assertIn('NavigationLink("缩略图缓存")', dashboard)
         self.assertIn('native-ios-gallery-thumbnail-cache', suite)
         self.assertIn('app.navigationBars["缩略图缓存"]', suite)
