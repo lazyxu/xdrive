@@ -25,6 +25,16 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         self.assertEqual(classify_bright_blank(frames, 0.1),
                          "suspected_solid_white_transition")
 
+    def test_ffmpeg_limited_yuv_white_is_not_missed(self):
+        # Real ffmpeg signalstats of a pure white H264/MPEG4 frame: Y=235,
+        # not RGB 255. Regression for threshold mistakenly set at 242.
+        frames = [
+            {"time": 0.35 + i * 0.1, "ymin": 235, "ymax": 235, "yavg": 235}
+            for i in range(8)
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.1),
+                         "suspected_solid_white_transition")
+
     def test_textured_frames_are_not_solid_white(self):
         frames = [
             {"time": 0.35 + i * 0.1, "ymin": 14, "ymax": 251, "yavg": 220}
