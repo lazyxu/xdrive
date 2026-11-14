@@ -73,6 +73,14 @@ private struct XDriveIOSUnifiedSourceMapSeed {
     let cursor: XDriveIOSNativeGalleryCursor
 }
 
+/// Compact, ephemeral GPS + source cursor (never raw media IDs or pixels).
+private struct XDriveIOSUnifiedSourceCachedCoordinate {
+    let latitude: Double
+    let longitude: Double
+    let page: Int
+    let ordinal: Int
+}
+
 struct XDriveIOSUnifiedSourceMapPin: Identifiable {
     let key: XDriveIOSNativeLocalMapSpatialPolicy.Key
     let latitude: Double
@@ -110,6 +118,12 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
     @State private var mapRevision = UUID()
     @State private var cameraRequestID: UUID?
     @State private var remotePollTask: Task<Void, Never>?
+    @State private var cachedCoordinates: [XDriveIOSUnifiedSourceCachedCoordinate] = []
+    @State private var cachedCursors: [XDriveIOSNativeGalleryCursor] = []
+    @State private var cachedOwner: XDriveNativeOwnerRoot?
+    @State private var cachedLibrary: Data?
+    @State private var cachedQuery: XDriveIOSNativeUnifiedGalleryQuery?
+    @State private var cachedPresence: XDriveIOSNativeGalleryPresence?
     @State private var scanTask: Task<Void, Never>?
     @State private var cameraSettleTask: Task<Void, Never>?
     @State private var coverTask: Task<Void, Never>?
@@ -172,6 +186,15 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 if phase == .active && selected == nil && !busy { reload() }
             }
         }
+    }
+
+    private var canReuseLocationIndex: Bool {
+        guard let owner = cachedOwner, let library = cachedLibrary else { return false }
+        return phase == .active && scopedQuery == cachedQuery &&
+            cachedPresence == presence &&
+            PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized &&
+            XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) &&
+            XDriveIOSNativePhotoFingerprintIndex.isCurrent(library)
     }
 
     private var currentViewport: XDriveIOSNativeLocalMapViewport? {
@@ -405,7 +428,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         }
     }
 
-    private func invalidate() {
+    private func invalidate(keepCoordinates: Bool = false) {
         generation = UUID()
         scanTask?.cancel(); scanTask = nil
         cameraSettleTask?.cancel(); cameraSettleTask = nil
@@ -424,13 +447,22 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         provedCamera = nil
         busy = false
         error = nil
+        if !keepCoordinates {
+            cachedCoordinates = []
+            cachedCursors = []
+            cachedOwner = nil
+            cachedLibrary = nil
+            cachedQuery = nil
+            cachedPresence = nil
+        }
     }
 
     private func scheduleCameraRefinement() {
         guard phase == .active, selected == nil else { return }
         // Revoke old markers immediately, not after 900ms quiet, so an old
         // regional count cannot be opened during a pinch/rapid pan.
-        invalidate()
+        let reuseIndex = canReuseLocationIndex
+        invalidate(keepCoordinates: reuseIndex)
         let ticket = generation
         busy = true
         cameraSettleTask = Task { @MainActor in
@@ -441,7 +473,11 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             guard !Task.isCancelled, generation == ticket,
                   phase == .active, selected == nil else { return }
             cameraSettleTask = nil
-            reload()
+            if reuseIndex && canReuseLocationIndex {
+                regroupCachedCoordinates()
+            } else {
+                reload()
+            }
         }
     }
 
