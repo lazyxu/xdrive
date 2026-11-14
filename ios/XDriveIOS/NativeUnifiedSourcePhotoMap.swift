@@ -397,11 +397,13 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               let stamp = try? XDriveIOSPhotoKitLibraryEpoch.capture()
         else {
-            error = "来源地图需要完整照片权限、当前 Owner 及有效筛选。"
+            error = "精确来源地图需要完整照片权限及当前 Owner。未登录时请使用本机照片地图。"
             return
         }
         let library = stamp.serialized
         let ticket = generation
+        let scannedCamera = camera
+        let scannedViewport = currentViewport
         busy = true
         scanTask = Task { @MainActor in
             defer {
@@ -410,7 +412,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                     scanTask = nil
                 }
             }
-            var counted: [Int: XDriveIOSUnifiedSourceMapPin] = [:]
+            var index = XDriveIOSNativeLocalMapSpatialIndex<XDriveIOSUnifiedSourceMapSeed>()
             var cursor: XDriveIOSNativeGalleryCursor? = .init()
             do {
                 for _ in 0..<XDriveIOSUnifiedSourceMapPolicy.maximumPages {
@@ -431,21 +433,16 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                     else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
                     for row in page.rows where row.presence == presence {
                         guard let coordinate = XDriveIOSUnifiedSourceMapPolicy.coordinates(for: row),
-                              let id = XDriveIOSUnifiedSourceMapPolicy.bucket(
-                                latitude: coordinate.latitude, longitude: coordinate.longitude
-                              ) else { continue }
-                        if var known = counted[id] {
-                            let n = Double(known.count)
-                            known.latitude = (known.latitude * n + coordinate.latitude) / (n + 1)
-                            known.longitude = (known.longitude * n + coordinate.longitude) / (n + 1)
-                            known.count += 1
-                            counted[id] = known
-                        } else {
-                            counted[id] = .init(
-                                id: id, latitude: coordinate.latitude,
-                                longitude: coordinate.longitude, count: 1,
-                                firstCursor: start)
-                        }
+                              XDriveIOSNativeLocalMapSpatialPolicy.includes(
+                                scannedViewport,
+                                latitude: coordinate.latitude,
+                                longitude: coordinate.longitude)
+                        else { continue }
+                        index.add(
+                            latitude: coordinate.latitude,
+                            longitude: coordinate.longitude,
+                            representative: XDriveIOSUnifiedSourceMapSeed(
+                                row: row, cursor: start))
                     }
                     if let next = page.next {
                         guard next != start else {
@@ -458,9 +455,36 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                               XDriveIOSNativePhotoFingerprintIndex.isCurrent(library),
                               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
                         else { return }
-                        pins = counted.values.sorted { $0.id < $1.id }
+                        let verifiedPins = index.cells.map { cell in
+                            XDriveIOSUnifiedSourceMapPin(
+                                key: cell.key, latitude: cell.latitude,
+                                longitude: cell.longitude, count: cell.count,
+                                representative: cell.representative.row,
+                                viewport: scannedViewport,
+                                firstCursor: cell.representative.cursor)
+                        }
+                        pins = verifiedPins
                         provedOwner = owner
                         provedLibrary = library
+                        provedCamera = scannedCamera
+                        if !didFitFirstVerifiedMap {
+                            didFitFirstVerifiedMap = true
+                            if let fit = XDriveIOSNativeUnifiedMapCameraPolicy.fit(
+                                verifiedPins.map {
+                                    .init(latitude: $0.latitude, longitude: $0.longitude)
+                                }),
+                               scannedCamera.span.longitudeDelta >= 359 {
+                                // One-time initial framing; a later pan/zoom
+                                // always belongs to the user and is not reset.
+                                camera = MKCoordinateRegion(
+                                    center: CLLocationCoordinate2D(
+                                        latitude: fit.latitude, longitude: fit.longitude),
+                                    span: MKCoordinateSpan(
+                                        latitudeDelta: fit.latitudeDelta,
+                                        longitudeDelta: fit.longitudeDelta))
+                            }
+                        }
+                        loadCovers(verifiedPins, owner: owner, ticket: ticket)
                         return
                     }
                 }
@@ -471,6 +495,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 pins = []
                 provedOwner = nil
                 provedLibrary = nil
+                provedCamera = nil
                 self.error = "当前来源或分页核验未完成，不显示可能错误的地图，请重试。"
             }
         }
