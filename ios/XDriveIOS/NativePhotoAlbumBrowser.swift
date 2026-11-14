@@ -320,6 +320,14 @@ private struct XDriveIOSNativeAlbumCover: View {
 }
 
 
+// Only the section header/layout is shared. PhotoKit page membership, cache
+// lifetime and Viewer admission remain in XDriveIOSNativeAlbumVirtualPage.
+private struct XDriveIOSNativeAlbumWallSection: Identifiable {
+    let id: Int
+    let heading: String?
+    let items: [XDrivePhotoKitScanCandidate]
+}
+
 /// A visible 64-slot album range only; offscreen pages release their PhotoKit IDs.
 private struct XDriveIOSNativeAlbumVirtualPage: View {
     let album: XDriveLocalPhotoAlbumSummary
@@ -327,6 +335,8 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
     let expectedTotal: Int
     let generation: UUID
     let density: XDriveIOSNativePhotoWallDensity
+    let framing: XDriveIOSNativePhotoWallFraming
+    let timeScale: XDriveIOSNativePhotoWallTimeScale
     let sortOrder: XDriveIOSNativeAlbumSortOrder
     let selectionMode: Bool
     let selectedIDs: Set<String>
@@ -346,43 +356,68 @@ private struct XDriveIOSNativeAlbumVirtualPage: View {
         XDriveIOSNativePhotoWallPlaceholderTile()
     }
 
+    private func sections(for page: XDrivePhotoKitScanPage) -> [XDriveIOSNativeAlbumWallSection] {
+        if timeScale == .day {
+            // Preserve the existing calendar-aware day labels and verified
+            // preceding 64-slot member used by local PhotoKit albums.
+            return XDriveIOSNativePhotoDayGroupingPolicy.sections(
+                dates: page.items.map(\.capturedAt),
+                previousCapturedAt: precedingCapturedAt,
+                hasPreviousPage: offset > 0,
+                calendar: .current
+            ).map { section in
+                XDriveIOSNativeAlbumWallSection(
+                    id: section.startIndex,
+                    heading: section.continuesPreviousPage ? nil : section.title,
+                    items: Array(page.items[section.startIndex..<section.endIndex])
+                )
+            }
+        }
+        let previousKey = timeScale.key(for: precedingCapturedAt)
+        return xdriveIOSNativePhotoWallVisibleSections(
+            page.items, scale: timeScale
+        ) { timeScale.key(for: $0.capturedAt) }.map { section in
+            let continues = offset > 0 && section.id == 0 &&
+                previousKey != "unknown" && previousKey == section.key
+            return XDriveIOSNativeAlbumWallSection(
+                id: section.id,
+                heading: (timeScale == .all || continues) ? nil :
+                    timeScale.label(for: section.key),
+                items: section.items
+            )
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             if let page {
-                let daySections = XDriveIOSNativePhotoDayGroupingPolicy.sections(
-                    dates: page.items.map(\.capturedAt),
-                    previousCapturedAt: precedingCapturedAt,
-                    hasPreviousPage: offset > 0,
-                    calendar: .current
-                )
-                ForEach(daySections) { section in
-                    if !section.continuesPreviousPage {
-                        XDriveIOSNativePhotoWallDayHeader(title: section.title)
-                    }
-                    XDriveIOSNativePhotoWallGrid(density: density) {
-                        ForEach(page.items[section.startIndex..<section.endIndex]) { item in
-                            if item.kind == "unsupported" {
-                                placeholder
-                            } else {
-                                Button { onSelect(item, page) } label: {
-                                    ZStack(alignment: .topTrailing) {
-                                        XDriveIOSNativeSquarePhotoTile(candidate: item)
-                                        if selectionMode {
-                                            XDriveIOSNativePhotoWallSelectionIndicator(
-                                                selected: selectedIDs.contains(item.id)
-                                            )
-                                        }
-                                    }
+                XDriveIOSNativePhotoWallSectionList(
+                    sections: sections(for: page), density: density,
+                    title: { $0.heading },
+                    items: { $0.items }
+                ) { item in
+                    if item.kind == "unsupported" {
+                        placeholder
+                    } else {
+                        Button { onSelect(item, page) } label: {
+                            ZStack(alignment: .topTrailing) {
+                                XDriveIOSNativeSquarePhotoTile(
+                                    candidate: item, framing: framing
+                                )
+                                if selectionMode {
+                                    XDriveIOSNativePhotoWallSelectionIndicator(
+                                        selected: selectedIDs.contains(item.id)
+                                    )
                                 }
-                                .buttonStyle(.plain)
-                                .id(item.id)
-                                .accessibilityFocused(accessibilityFocus, equals: item.id)
-                                .accessibilityLabel(selectionMode
-                                    ? (selectedIDs.contains(item.id)
-                                        ? "已选择照片" : "选择照片")
-                                    : (item.kind == "video" ? "播放视频" : "查看照片"))
                             }
                         }
+                        .buttonStyle(.plain)
+                        .id(item.id)
+                        .accessibilityFocused(accessibilityFocus, equals: item.id)
+                        .accessibilityLabel(selectionMode
+                            ? (selectedIDs.contains(item.id)
+                                ? "已选择照片" : "选择照片")
+                            : (item.kind == "video" ? "播放视频" : "查看照片"))
                     }
                 }
             } else {
@@ -465,6 +500,9 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @State private var pageRevision = 0
     @State private var total: Int?
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .day
     @State private var sortOrder: XDriveIOSNativeAlbumSortOrder = .newest
     @State private var selected: XDrivePhotoKitScanCandidate?
     @State private var selectionMode = false
@@ -515,27 +553,19 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                 }
                 if let total {
                     HStack(spacing: 8) {
-                        Text(total == 0 ? "相簿内没有可访问的媒体。" : "\(total) 项")
-                            .font(.caption).foregroundStyle(.secondary)
+                        XDriveIOSNativePhotoWallScopeSummary(
+                            message: total == 0 ? "相簿内没有可访问的媒体。" : "\(total) 项"
+                        )
                         Spacer(minLength: 4)
-                        Menu {
-                            xdrivePhotoWallDensityButtons($density)
+                        XDriveIOSNativePhotoWallDisplayMenu(
+                            density: $density, framing: $wallFraming,
+                            accessibilityID: "native-ios-album-display-options"
+                        ) {
                             Section("拍摄时间顺序") {
                                 ForEach(XDriveIOSNativeAlbumSortOrder.allCases) { option in
                                     Button {
                                         sortOrder = option
-                                    } label: {
-                                        Label(option.title, systemImage: sortOrder == option
-                                            ? "checkmark.circle.fill" : "arrow.up.arrow.down")
                                     }
-                                    .disabled(loading || albumActionBusy || albumShareBusy)
-                                    .accessibilityIdentifier("native-ios-album-sort-order")
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "square.grid.3x3")
-                                .frame(width: 44, height: 44)
-                        }
                         .accessibilityLabel("缩略图大小：\(density.title)")
                         Button(selectionMode ? "取消选择" : "选择") {
                             selectionMode.toggle()
@@ -591,11 +621,13 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                         Text(albumActionMessage).font(.caption).foregroundStyle(.secondary)
                     }
                     if total > 0 {
+                        XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
                         ForEach(0..<XDriveIOSNativePhotoVirtualPagePolicy.pageCount(total: total), id: \.self) { number in
                             let offset = number * 64
                             XDriveIOSNativeAlbumVirtualPage(
                                 album: album, offset: offset, expectedTotal: total,
                                 generation: epoch, density: density,
+                                framing: wallFraming, timeScale: wallTimeScale,
                                 sortOrder: sortOrder, selectionMode: selectionMode,
                                 selectedIDs: Set(selectedCandidates.keys),
                                 retainWhileCovered: selected != nil || showingAlbumMap,
@@ -655,12 +687,10 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             }
             .padding(12)
         }
-        .simultaneousGesture(
-            MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
-                guard albumAuthorized, phase == .active, selected == nil,
-                      !loading && !albumActionBusy && !albumShareBusy else { return }
-                density = density.applyingPinch(scale)
-            }
+        .xdrivePhotoWallPinch(
+            density: $density,
+            enabled: albumAuthorized && phase == .active && selected == nil &&
+                     !loading && !albumActionBusy && !albumShareBusy
         )
         .onChange(of: sortOrder) { _ in
             // Sort order changes the numeric PhotoKit slot identity. Discard
@@ -1151,9 +1181,10 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         )
         clearViewerTileAnchor()
         if let target {
-            scroll.scrollTo(target, anchor: .center)
-            // Restore VoiceOver only to the reauthorized originating tile.
-            accessibilityFocusedTileID = target
+            // Source admission ran before this pure UI focus restoration.
+            xdrivePhotoWallFocusVerifiedTile(
+                target, scroll: scroll, focus: $accessibilityFocusedTileID
+            )
         }
     }
 
