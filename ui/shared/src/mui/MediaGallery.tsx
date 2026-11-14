@@ -188,6 +188,7 @@ import {
 import {
   useXDriveMediaGalleryMobileColumns,
   useXDriveMediaGalleryTimelineJump,
+  useXDriveMediaGalleryViewportAnchor,
 } from './MediaGalleryPhotoWallState'
 import { XDriveMediaGalleryVirtualTimeline as MediaVirtualTimeline } from './MediaGallerySharedTimeline'
 import { xDrivePlacesVisiblePanels } from '../media-gallery-places-presentation'
@@ -5623,6 +5624,7 @@ export function XDriveMediaGallery({
     overviewTransitionRef.current = { showing: mobileCollectionsOverview, section }
   }, [mobileCollectionsOverview, section, preferenceScope, collectionKey])
   const viewAnchorIndexRef = useRef(0)
+  const {record: recordGalleryViewport} = useXDriveMediaGalleryViewportAnchor()
   const [currentTimelineGroupKey, setCurrentTimelineGroupKey] = useState<string | null>(null)
   const {
     returnAnchor: timelineReturnAnchor,
@@ -5936,14 +5938,15 @@ export function XDriveMediaGallery({
   const timelineGroupsRef = useRef(timelineNavigationGroups)
   timelineGroupsRef.current = timelineNavigationGroups
   const captureVisibleAnchor = useCallback((index: number) => {
-    if (!Number.isSafeInteger(index) || index < 0) return
-    viewAnchorIndexRef.current = index
+    const safe = recordGalleryViewport(index, 0)
+    if (!safe) return
+    viewAnchorIndexRef.current = safe.index
     const visible = virtualCollection?.itemAt(index) ?? items[index]
     if (visible?.node?.id) onVisibleAnchorNode?.(visible.node.id, index)
     const group = xDriveMediaGalleryTimelineGroupAtIndex(timelineGroupsRef.current, index)
     const key = group?.key ?? null
     setCurrentTimelineGroupKey((current) => current === key ? current : key)
-  }, [items, onVisibleAnchorNode, virtualCollection])
+  }, [items, onVisibleAnchorNode, virtualCollection, recordGalleryViewport])
 
   useEffect(() => {
     const group = xDriveMediaGalleryTimelineGroupAtIndex(timelineNavigationGroups, viewAnchorIndexRef.current)
