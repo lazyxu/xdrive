@@ -348,8 +348,29 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
         print("MAP_PHOTOS_FULL_ACCESS_REENTRY os_relaunch=\(systemRelaunched)")
         recordActualPhotoKitReadback(app, stage: "after-settings")
-        if !element("native-ios-full-library-gps-map", in: app)
-            .waitForExistence(timeout: 35) {
+        // An actual Photos TCC change can terminate the target *after* the
+        // Settings UI has been dismissed and the Full Access prompt was
+        // accepted. A single 35-second AX wait can retain a dead app PID
+        // and abort XCTest before it can observe/relaunch that OS-stopped app.
+        // Poll the target process and distinguish system termination from
+        // a still-running app that failed to update PhotoKit permissions.
+        // Reopening an already running app is never used to pass this gate.
+        var mapRestored = false
+        let reentryDeadline = Date().addingTimeInterval(35)
+        while Date() < reentryDeadline {
+            if app.state == .notRunning {
+                systemRelaunched = resumeMapAfterSystemPhotosChange(
+                    app, stage: "delayed-post-full-access-TCC-termination"
+                ) || systemRelaunched
+            }
+            if app.state == .runningForeground,
+               element("native-ios-full-library-gps-map", in: app).exists {
+                mapRestored = true
+                break
+            }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        if !mapRestored {
             // Diagnose whether this is an unrefreshed SwiftUI map or a real
             // persistent TCC denial. A deliberate cold restart of a *live*
             // app remains diagnostic only and cannot pass this assertion.
