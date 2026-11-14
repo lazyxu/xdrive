@@ -86,6 +86,35 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         control.tap()
         XCTAssertEqual(app.state, .runningForeground, "App exited at \(identifier)")
     }
+    /// This simulates a prior *incomplete* Dashboard handoff in the disposable
+    /// Simulator build; it is not a claim of reproducing a device SIGABRT.
+    func testInterruptedPostLoginOpensRecoveryAndIsolatedSignInWithoutDashboard() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-postlogin-recovery-fixture"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        let recovery = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-startup-recovery").firstMatch
+        XCTAssertTrue(recovery.waitForExistence(timeout: 10))
+        let stage = app.staticTexts["native-ios-postlogin-crash-step"]
+        XCTAssertTrue(stage.waitForExistence(timeout: 5))
+        XCTAssertTrue(stage.label.contains("openingDashboard"))
+        let copyReport = app.buttons["native-ios-startup-copy-diagnostics"]
+        XCTAssertTrue(copyReport.exists)
+        let diagnostic = app.buttons["native-ios-startup-diagnostic-login"]
+        XCTAssertTrue(diagnostic.waitForExistence(timeout: 5))
+        if !diagnostic.isHittable { recovery.swipeUp() }
+        XCTAssertTrue(diagnostic.isHittable)
+        diagnostic.tap()
+        XCTAssertTrue(app.textFields["native-ios-login-server"]
+            .waitForExistence(timeout: 10))
+        XCTAssertTrue(app.secureTextFields["native-ios-login-password"].exists)
+        XCTAssertFalse(app.buttons["native-ios-diagnostic-open-dashboard"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)
+            .matching(identifier: "native-ios-five-slot-bar").firstMatch.exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     func testFilesFirstOpenAndSixGalleryReturnsDoNotExit() {
         let app = launch()
         XCTAssertTrue(find("native-ios-tab-gallery", in: app).exists)

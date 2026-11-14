@@ -35,6 +35,19 @@ fixture = """#if DEBUG
 """ + key + """
 #endif"""
 s = s.replace(key, fixture)
+# Test-fixture-only interrupted post-login transition. Never ship this launch
+# argument or a synthetic Owner in the production IPA. Only modern candidate
+# sources support stage diagnostics; published b9 stays unmodified.
+if matches[0].endswith("(interruption: interruption)"):
+    boot = "        interruption = XDriveIOSNativeLaunchCheckpoint.beginReport()"
+    if s.count(boot) != 1:
+        raise SystemExit("Unexpected candidate diagnostic boot; audit needed")
+    s = s.replace(boot, """#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-postlogin-recovery-fixture") {
+            XDriveIOSNativeLaunchCheckpoint.markPostLogin(.openingDashboard)
+        }
+#endif
+""" + boot)
 s += """
 #if DEBUG
 /// Simulator fixture mounts real native Files/Gallery with no saved Owner.
