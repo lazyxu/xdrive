@@ -13,6 +13,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -85,6 +91,8 @@ class DriveAppTest {
     // The real Compose Clipboard page uses this Owner-authenticated fixture.
     // It is opt-in so existing File/Gallery tests retain their old policy.
     private var clipboardUiFixture = false
+    @Volatile private var clipboardDeviceReads = 0
+    private var clipboardLifecycleOwner: LifecycleOwner? = null
     private var clipboardNodeStale = false
     @Volatile private var clipboardRevoked = false
     @Volatile private var clipboardRevokes = 0
@@ -190,6 +198,7 @@ class DriveAppTest {
             // Capture response identity before suspension: a late Owner A
             // directory reply must not be installed in Owner B's native UI.
             val requestedBySecondOwner = clipboardSecondOwner
+            clipboardDeviceReads++
             // A remote response may ignore cancellation. Reproduce that
             // adverse transport behavior instead of letting logout cancel
             // the fixture before the stale reply reaches Owner fencing.
@@ -749,9 +758,22 @@ class DriveAppTest {
         compose.setContent {
             val observedImeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
             SideEffect { imeBottomPx.set(observedImeBottom) }
-            XDriveTheme {
-                DriveApp(controller, onDownload = onDownload, onUpload = onUpload,
-                    galleryFirstOnLogin = galleryFirstOnLogin)
+            // Tests normally use the real Activity lifecycle. The Clipboard
+            // STOP/START test supplies one LifecycleRegistry to the REAL app
+            // UI; production lifecycle and controller logic remain untouched.
+            val appContent: @Composable () -> Unit = {
+                XDriveTheme {
+                    DriveApp(controller, onDownload = onDownload, onUpload = onUpload,
+                        galleryFirstOnLogin = galleryFirstOnLogin)
+                }
+            }
+            val customLifecycle = clipboardLifecycleOwner
+            if (customLifecycle != null) {
+                CompositionLocalProvider(LocalLifecycleOwner provides customLifecycle) {
+                    appContent()
+                }
+            } else {
+                appContent()
             }
         }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
@@ -3873,6 +3895,49 @@ class DriveAppTest {
             org.junit.Assert.assertEquals("other", controller.state.value.username)
             org.junit.Assert.assertTrue(clipboardWrites.isEmpty())
             org.junit.Assert.assertEquals(0, clipboardRevokes)
+        }
+    }
+
+    @Test fun clipboardActualLifecycleStopStartRechecksDeviceWithoutAutoSend() {
+        val owner = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry(this)
+        }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            owner.lifecycle.currentState = Lifecycle.State.CREATED
+            owner.lifecycle.currentState = Lifecycle.State.STARTED
+        }
+        clipboardLifecycleOwner = owner
+        try {
+            openClipboardFixture()
+            compose.waitUntil(timeoutMillis = 10_000) {
+                clipboardDeviceReads >= 1
+            }
+            val beforeStop = clipboardDeviceReads
+            instrumentation.runOnMainSync {
+                // This is Android ON_STOP. The production Clipboard
+                // repeatOnLifecycle must cancel the visible-page reader.
+                owner.lifecycle.currentState = Lifecycle.State.CREATED
+            }
+            compose.waitForIdle()
+            compose.runOnIdle {
+                org.junit.Assert.assertEquals(beforeStop, clipboardDeviceReads)
+                org.junit.Assert.assertTrue(clipboardWrites.isEmpty())
+            }
+            instrumentation.runOnMainSync {
+                owner.lifecycle.currentState = Lifecycle.State.STARTED
+            }
+            compose.waitUntil(timeoutMillis = 10_000) {
+                clipboardDeviceReads >= beforeStop + 1
+            }
+            compose.onNodeWithTag("native-clipboard-draft").assertExists()
+            compose.onNodeWithText("发送范围：当前账号广播").assertExists()
+            compose.onNodeWithTag("native-clipboard-directed-send").assertDoesNotExist()
+            compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
+        } finally {
+            instrumentation.runOnMainSync {
+                owner.lifecycle.currentState = Lifecycle.State.DESTROYED
+            }
         }
     }
 }
