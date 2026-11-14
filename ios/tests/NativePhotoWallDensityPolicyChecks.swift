@@ -116,6 +116,30 @@ struct NativePhotoWallDensityPolicyChecks {
         precondition(!incomplete.continues(
             nextOffset: 22, nextTotal: 96,
             firstCapturedAt: "2026-11-14T08:00:00Z", scale: .day))
+        // Mixed PhotoKit/cloud reconciliation never exposes full-library
+        // membership through display-only date continuity. Test boundaries.
+        let midday = Calendar.current.startOfDay(for: Date())
+            .addingTimeInterval(12 * 3600)
+        let sameDay = midday.addingTimeInterval(60)
+        let nextDay = midday.addingTimeInterval(24 * 3600)
+        let unified = XDriveIOSNativeUnifiedPageDateBoundary(
+            page: 0, count: 48, lastCapturedAt: midday
+        )
+        precondition(unified.continues(nextPage: 1,
+            firstCapturedAt: sameDay, scale: .day))
+        precondition(!unified.continues(nextPage: 2,
+            firstCapturedAt: sameDay, scale: .day))
+        precondition(!unified.continues(nextPage: 1,
+            firstCapturedAt: nextDay, scale: .day))
+        precondition(!unified.continues(nextPage: 1,
+            firstCapturedAt: nil, scale: .day))
+        precondition(!unified.continues(nextPage: 1,
+            firstCapturedAt: sameDay, scale: .all))
+        let empty = XDriveIOSNativeUnifiedPageDateBoundary(
+            page: 0, count: 0, lastCapturedAt: midday
+        )
+        precondition(!empty.continues(nextPage: 1,
+            firstCapturedAt: sameDay, scale: .day))
         print("native local PhotoKit square wall density and framing: PASS")
     }
 }
