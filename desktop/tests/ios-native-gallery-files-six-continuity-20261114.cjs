@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, '../..')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
 const watcher = read('ios/scripts/capture-navigation-smoke-frames.py')
+const video = read('ios/scripts/navigation_video_probe.py')
 const workflow = read('.github/workflows/ios-native-navigation-runtime.yml')
 const routes = [
   "testThreeRoundsGalleryFilesSectionsKeepVerifiedWallAndPixels",
@@ -21,6 +22,7 @@ test('six new genuine Gallery/Files XCUITest journeys are registered exactly onc
   for (const name of routes) {
     assert.equal((ui.match(new RegExp('\\bfunc\\s+' + name + '\\(', 'g')) || []).length, 1, 'missing/duplicate XCTest: ' + name)
     assert.equal(watcher.split('"' + name + '"').length - 1, 1, 'missing/duplicate frame case: ' + name)
+    assert.equal(video.split("'" + name + "':").length - 1, 1, 'missing/duplicate real H264 route: ' + name)
   }
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSGalleryFilesTransitionEdgeUITests/)
   assert.match(ui, /IOS_NATIVE_NAV_TAP_START route=/)

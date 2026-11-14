@@ -38,6 +38,13 @@ TEST_ROUTES = {
     'testFilesTrashDeniedThenPeopleChildReturnClearsOverlay': 'trash-denial-people-return',
     'testGalleryFilterDraftForegroundFilesReturnKeepsWallGeneration': 'gallery-filter-foreground-files',
     'testRapidAlbumsOriginalsFilesAlternationRetainsNativeChildShells': 'albums-originals-files-rapid',
+    # Six additional genuine, recorded Gallery/Files multi-route journeys.
+    'testThreeRoundsGalleryFilesSectionsKeepVerifiedWallAndPixels': 'files-3round-unified-generation',
+    'testSavedSearchesTwoForegroundReturnsThenOriginalsRetiresSheet': 'saved-search-2foreground',
+    'testOperationHistoryRotationPeopleReturnDoesNotRepushSheet': 'operations-rotate-people',
+    'testGalleryFilterCancelFilesSearchForegroundDoesNotGhostKeyboard': 'filter-search-foreground',
+    'testLocalPhotoKitDeniedCloudRotationKeepsPhotoChild': 'local-denied-rotate',
+    'testOriginalsHelpTwiceWithDeniedFilesKeepsPanelsRetired': 'originals-help-2denied',
 }
 START = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 FINISH = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")

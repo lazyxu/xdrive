@@ -88,6 +88,20 @@ class VideoEvidenceTests(unittest.TestCase):
         self.assertEqual(len(set(groups)), 6)
         self.assertTrue(all(group.endswith('.mp4') is False for group in groups))
 
+    def test_six_new_multiroute_journeys_each_gets_distinct_real_h264_group(self):
+        names = [
+            'testThreeRoundsGalleryFilesSectionsKeepVerifiedWallAndPixels',
+            'testSavedSearchesTwoForegroundReturnsThenOriginalsRetiresSheet',
+            'testOperationHistoryRotationPeopleReturnDoesNotRepushSheet',
+            'testGalleryFilterCancelFilesSearchForegroundDoesNotGhostKeyboard',
+            'testLocalPhotoKitDeniedCloudRotationKeepsPhotoChild',
+            'testOriginalsHelpTwiceWithDeniedFilesKeepsPanelsRetired',
+        ]
+        groups = [TEST_ROUTES[name] for name in names]
+        self.assertEqual(len(groups), 6)
+        self.assertEqual(len(set(groups)), 6)
+        self.assertTrue(all(group.endswith('.mp4') is False for group in groups))
+
     def test_six_or_more_distinct_real_route_groups(self):
         self.assertGreaterEqual(len(set(TEST_ROUTES.values())), 8)
         self.assertEqual(len(set(TEST_ROUTES)), len(TEST_ROUTES))
@@ -99,7 +113,7 @@ class VideoEvidenceTests(unittest.TestCase):
         stability = (pathlib.Path(__file__).resolve().parents[1] /
                      'UITests/XDriveIOSGalleryFilesStabilityUITests.swift').read_text(
                          encoding='utf-8')
-        self.assertEqual(len(TEST_ROUTES), 22)
+        self.assertEqual(len(TEST_ROUTES), 28)
         self.assertEqual(len(TEST_ROUTES), len(set(TEST_ROUTES.values())))
         for method in TEST_ROUTES:
             if method in (
@@ -118,6 +132,12 @@ class VideoEvidenceTests(unittest.TestCase):
                 'testFilesTrashDeniedThenPeopleChildReturnClearsOverlay',
                 'testGalleryFilterDraftForegroundFilesReturnKeepsWallGeneration',
                 'testRapidAlbumsOriginalsFilesAlternationRetainsNativeChildShells',
+                'testThreeRoundsGalleryFilesSectionsKeepVerifiedWallAndPixels',
+                'testSavedSearchesTwoForegroundReturnsThenOriginalsRetiresSheet',
+                'testOperationHistoryRotationPeopleReturnDoesNotRepushSheet',
+                'testGalleryFilterCancelFilesSearchForegroundDoesNotGhostKeyboard',
+                'testLocalPhotoKitDeniedCloudRotationKeepsPhotoChild',
+                'testOriginalsHelpTwiceWithDeniedFilesKeepsPanelsRetired',
             ):
                 path = (pathlib.Path(__file__).resolve().parents[1] /
                         'UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
@@ -137,7 +157,7 @@ class VideoEvidenceTests(unittest.TestCase):
         self.assertFalse(report['pass'])
         self.assertEqual(report['usable_routes'], 1)
         self.assertEqual(report['required_routes'], 6)
-        self.assertEqual(report['registered_routes'], 22)
+        self.assertEqual(report['registered_routes'], 28)
         self.assertEqual(report['rejected_by_reason'], {'no_post_tap_video': 1})
 
     def test_video_timestamp_duplicate_negative_and_nan_fail(self):
@@ -251,13 +271,13 @@ class VideoEvidenceTests(unittest.TestCase):
         self.assertFalse(report['pass'])
         self.assertEqual(report['usable_routes'], 5)
 
-    def test_all_sixteen_routes_satisfy_six_route_coverage(self):
+    def test_all_twenty_eight_routes_satisfy_six_route_coverage(self):
         rows = [self.clip(name) for name in TEST_ROUTES]
         (self.root / 'trace.jsonl').write_text(
             '\n'.join(json.dumps(x) for x in rows) + '\n')
         report = audit(self.root, required=6, probe=self.probe)
         self.assertTrue(report['pass'])
-        self.assertEqual(report['usable_routes'], 22)
+        self.assertEqual(report['usable_routes'], 28)
 
     def test_corrupt_manifest_line_fails_closed(self):
         (self.root / 'trace.jsonl').write_text('bad json\n')
