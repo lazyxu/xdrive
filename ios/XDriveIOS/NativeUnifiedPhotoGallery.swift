@@ -1,4 +1,5 @@
 import Combine
+import MapKit
 import Photos
 import SwiftUI
 import UIKit
@@ -57,6 +58,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var openMapAfterFilterDismiss = false
     @State private var openSourceMapAfterFilterDismiss = false
     @State private var showingSourceFilteredMap = false
+    @State private var savedMapCamera: MKCoordinateRegion?
+    @State private var savedMapOwner: XDriveNativeOwnerRoot?
     @State private var pendingMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var pendingMapMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var pendingMapFilenameTerm = ""
@@ -104,13 +107,17 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 explicitOriginalAudit = false
                 indexRequest = UUID()
             }
-            .onChange(of: photoObserver.change) { _ in reset() }
+            .onChange(of: photoObserver.change) { _ in
+                savedMapCamera = nil; savedMapOwner = nil
+                reset()
+            }
             .onChange(of: login.owner) { _ in
                 showingPeople = false; showingThumbnailCache = false
                 sourceFilter = nil; query = .init(); draft = .init()
                 openMapAfterFilterDismiss = false
                 openSourceMapAfterFilterDismiss = false
                 showingSourceFilteredMap = false
+                savedMapCamera = nil; savedMapOwner = nil
                 pendingMapCaptureRange = nil
                 pendingMapMediaFilter = .all
                 pendingMapFilenameTerm = ""
@@ -121,6 +128,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 // map markers while a full-screen source map is visible.
                 showingSourceFilteredMap = false
                 openSourceMapAfterFilterDismiss = false
+                savedMapCamera = nil; savedMapOwner = nil
                 resetWall()
             }
             .onChange(of: query) { _ in
@@ -184,6 +192,16 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     NavigationStack {
                         XDriveIOSNativeUnifiedSourcePhotoMapScreen(
                             login: login, presence: presence, query: query,
+                            restoredCamera: savedMapOwner.map {
+                                XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+                            } == true ? savedMapCamera : nil,
+                            onSaveCamera: { region in
+                                guard let owner = login.owner,
+                                      PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                                        == .authorized else { return }
+                                savedMapOwner = owner
+                                savedMapCamera = region
+                            },
                             onClose: { showingSourceFilteredMap = false })
                     }
                 } else {
