@@ -738,6 +738,8 @@ private struct XDriveIOSNativeNoteHistorySheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var versions: [XDriveIOSNativeNoteVersion] = []
     @State private var oldMarkdown: String?
+    @State private var selectedVersion: XDriveIOSNativeNoteVersion?
+    @State private var exportingOldVersion = false
     @State private var errorMessage: String?
     @State private var loading = false
 
@@ -758,6 +760,13 @@ private struct XDriveIOSNativeNoteHistorySheet: View {
                 }
                 if let oldMarkdown {
                     Section("旧版内容（只读）") {
+                        if selectedVersion != nil {
+                            Button {
+                                exportingOldVersion = true
+                            } label: {
+                                Label("导出此版本 Markdown", systemImage: "square.and.arrow.up")
+                            }
+                        }
                         XDriveIOSNativeNotesMarkdownPreview(
                             login: login, noteID: noteID, markdown: oldMarkdown
                         )
@@ -773,6 +782,16 @@ private struct XDriveIOSNativeNoteHistorySheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
                 }
+            }
+        }
+        .fileExporter(
+            isPresented: $exportingOldVersion,
+            document: XDriveIOSNativeMarkdownDocument(markdown: oldMarkdown ?? ""),
+            contentType: .plainText,
+            defaultFilename: noteID + "-r" + String(selectedVersion?.revision ?? 0) + ".md"
+        ) { result in
+            if case .failure(let error) = result {
+                errorMessage = error.localizedDescription
             }
         }
         .task {
@@ -801,11 +820,18 @@ private struct XDriveIOSNativeNoteHistorySheet: View {
     @MainActor
     private func read(_ version: XDriveIOSNativeNoteVersion) async {
         loading = true
+        oldMarkdown = nil
+        selectedVersion = nil
         defer { loading = false }
         do {
-            oldMarkdown = try await client().previousMarkdown(
+            let content = try await client().previousMarkdown(
                 nodeID: nodeID, version: version
             )
+            try Task.checkCancellation()
+            oldMarkdown = content
+            selectedVersion = version
+        } catch is CancellationError {
+            return
         } catch {
             errorMessage = error.localizedDescription
         }
