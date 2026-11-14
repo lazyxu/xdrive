@@ -1,4 +1,5 @@
 import Combine
+import MapKit
 import Photos
 import SwiftUI
 import UIKit
@@ -57,6 +58,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var openMapAfterFilterDismiss = false
     @State private var openSourceMapAfterFilterDismiss = false
     @State private var showingSourceFilteredMap = false
+    @State private var savedMapCamera: MKCoordinateRegion?
+    @State private var savedMapOwner: XDriveNativeOwnerRoot?
     @State private var pendingMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var pendingMapMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var pendingMapFilenameTerm = ""
@@ -71,6 +74,15 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var started = false
     @Environment(\.scenePhase) private var phase
+
+    private func restoreMapCameraForCurrentOwner() {
+        guard savedMapCamera == nil, login.hasLocalOwnerSession,
+              let owner = login.owner,
+              let stored = XDriveIOSUnifiedMapCameraStore.load(owner: owner)
+        else { return }
+        savedMapOwner = owner
+        savedMapCamera = stored
+    }
 
     var body: some View {
         galleryContent
@@ -87,6 +99,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             .onAppear {
                 photoObserver.start()
+                restoreMapCameraForCurrentOwner()
                 if !started {
                     started = true
                     wall.reset()
@@ -104,24 +117,40 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 explicitOriginalAudit = false
                 indexRequest = UUID()
             }
-            .onChange(of: photoObserver.change) { _ in reset() }
+            .onChange(of: photoObserver.change) { _ in
+                if let owner = login.owner { XDriveIOSUnifiedMapCameraStore.clear(owner: owner) }
+                savedMapCamera = nil; savedMapOwner = nil
+                reset()
+            }
             .onChange(of: login.owner) { _ in
+                // A mutable Root revision is not an Owner identity switch.
+                // Preserve the same-account camera when a refreshed Owner
+                // object differs only in its revision; never reuse A in B.
+                if let prior = savedMapOwner,
+                   !XDriveIOSNativePhotoOwnerScope.matches(login.owner, prior) {
+                    XDriveIOSUnifiedMapCameraStore.clear(owner: prior)
+                }
                 showingPeople = false; showingThumbnailCache = false
                 sourceFilter = nil; query = .init(); draft = .init()
                 openMapAfterFilterDismiss = false
                 openSourceMapAfterFilterDismiss = false
                 showingSourceFilteredMap = false
+                savedMapCamera = nil; savedMapOwner = nil
                 pendingMapCaptureRange = nil
                 pendingMapMediaFilter = .all
                 pendingMapFilenameTerm = ""
                 reset()
+                // Session restoration may complete after Gallery onAppear.
+                restoreMapCameraForCurrentOwner()
             }
             .onChange(of: sourceFilter) { _ in
                 // A query/presence transition is not authority to reuse old
                 // map markers while a full-screen source map is visible.
                 showingSourceFilteredMap = false
                 openSourceMapAfterFilterDismiss = false
+                savedMapCamera = nil; savedMapOwner = nil
                 resetWall()
+                restoreMapCameraForCurrentOwner()
             }
             .onChange(of: query) { _ in
                 showingSourceFilteredMap = false
@@ -184,6 +213,17 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     NavigationStack {
                         XDriveIOSNativeUnifiedSourcePhotoMapScreen(
                             login: login, presence: presence, query: query,
+                            restoredCamera: savedMapOwner.map {
+                                XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+                            } == true ? savedMapCamera : nil,
+                            onSaveCamera: { region in
+                                guard let owner = login.owner,
+                                      PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                                        == .authorized else { return }
+                                savedMapOwner = owner
+                                savedMapCamera = region
+                                XDriveIOSUnifiedMapCameraStore.save(region, owner: owner)
+                            },
                             onClose: { showingSourceFilteredMap = false })
                     }
                 } else {
@@ -365,6 +405,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             Text("“仅云端”仅显示已确认本机没有相同原件的照片；想浏览全部云端照片，请使用上方“单独浏览 → 云端图库”。")
                 .font(.footnote).foregroundStyle(.secondary)
         }
+        if sourceFilter == .localOnly && login.owner == nil {
+            Text("未登录时无法证明云端没有同一原件。“显示地图”将使用已授权的本机 PhotoKit 地图，不标记为已核验的“仅本机”。")
+                .font(.footnote).foregroundStyle(.secondary)
+                .accessibilityIdentifier("native-ios-unified-local-map-unverified-source")
+        }
         if query != .init() {
             Text("\(query.media.title)\(query.term.isEmpty ? "" : " · 文件名包含「\(query.term)」")")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -405,12 +450,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             // Gallery shown after MapKit has the same date
                             // criteria as the map that was just opened.
                             query = draft
-                            if sourceFilter != nil {
-                                // A source filter cannot borrow the ordinary
-                                // local/Owner map. Dismiss the editor before
-                                // presenting the exact reconciled source map.
+                            if sourceFilter != nil &&
+                               !(sourceFilter == .localOnly && login.owner == nil) {
+                                // Exact source identity remains Owner-bound.
                                 openSourceMapAfterFilterDismiss = true
                             } else {
+                                // With no Owner, "localOnly" cannot prove cloud
+                                // absence. Open the existing local-only MapKit
+                                // PhotoKit route, never invent a paired status.
                                 pendingMapCaptureRange = representableMapCaptureRange
                                 pendingMapMediaFilter = representableMapMediaFilter
                                 pendingMapFilenameTerm = draft.term
@@ -450,10 +497,16 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private func mapUnavailableReason(
         for criteria: XDriveIOSNativeUnifiedGalleryQuery
     ) -> String? {
-        if sourceFilter != nil {
-            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
-                  login.owner != nil else {
-                return "来源地图需完整本机照片权限与已登录的云端 Owner。"
+        if let sourceFilter {
+            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
+                return "来源地图需要完整的本机照片访问权限。"
+            }
+            if login.owner == nil {
+                // No cloud authority means "only local" is a browsing scope,
+                // never a positive claim that the same original is not remote.
+                guard sourceFilter == .localOnly, onShowMap != nil else {
+                    return "精确的来源配对地图需要已登录的云端 Owner。"
+                }
             }
         }
         if !criteria.isValid {
@@ -473,7 +526,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private func showMapForAppliedQuery() {
         guard mapUnavailableReason(for: query) == nil,
               onShowMap != nil else { return }
-        if sourceFilter != nil {
+        if sourceFilter != nil &&
+           !(sourceFilter == .localOnly && login.owner == nil) {
             showingSourceFilteredMap = true
             return
         }

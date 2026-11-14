@@ -722,6 +722,29 @@ struct XDriveIOSNativeMediaGalleryReader {
         return reply.fingerprints
     }
 
+    /// Exact current Node read for a map-wall tap. A previously proved map
+    /// count is not a lease to show a photo after a Node revision or metadata
+    /// change. This endpoint has the same Owner/TLS/no-redirect gate as page().
+    func currentMapItem(_ expected: XDriveIOSNativeMediaItem) async throws
+        -> XDriveIOSNativeMediaItem {
+        guard expected.id > 0, expected.node.revision > 0,
+              expected.validContentIdentity, expected.supportsPreview else {
+            throw XDriveIOSNativeMediaReadFailure.invalidScope
+        }
+        let bytes = try await read(
+            try endpoint("/api/v1/media/items/\(expected.id)"),
+            maximum: 262_144)
+        let item = try JSONDecoder().decode(XDriveIOSNativeMediaItem.self, from: bytes)
+        try Task.checkCancellation()
+        guard item.id == expected.id,
+              item.node.revision == expected.node.revision,
+              item.contentIdentity == expected.contentIdentity,
+              item.validContentIdentity, item.supportsPreview else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        return item
+    }
+
     func matchedMedia(_ match: XDriveIOSNativeExactPhotoMatch) async throws -> XDriveIOSNativeMediaItem {
         guard match.state == .matched, let id = match.node_id else {
             throw XDriveIOSNativeMediaReadFailure.invalidPage

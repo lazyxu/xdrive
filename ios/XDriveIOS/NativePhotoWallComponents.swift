@@ -288,3 +288,104 @@ extension View {
         ))
     }
 }
+
+// Pure view composition for local album, local map and signed Owner pages.
+// The enclosing ScrollViewReader, paging sentinel and authorization stay
+// with each caller; only chronological headers, adaptive grid and tiles live
+// here. A visible section never implies an unrequested page was loaded.
+struct XDriveIOSNativePhotoWallSectionList<Section: Identifiable, Item: Identifiable, Tile: View>: View {
+    let sections: [Section]
+    let density: XDriveIOSNativePhotoWallDensity
+    let spacing: CGFloat
+    private let title: (Section) -> String?
+    private let items: (Section) -> [Item]
+    private let tile: (Item) -> Tile
+
+    init(
+        sections: [Section], density: XDriveIOSNativePhotoWallDensity,
+        spacing: CGFloat = 10,
+        title: @escaping (Section) -> String?,
+        items: @escaping (Section) -> [Item],
+        @ViewBuilder tile: @escaping (Item) -> Tile
+    ) {
+        self.sections = sections
+        self.density = density
+        self.spacing = spacing
+        self.title = title
+        self.items = items
+        self.tile = tile
+    }
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: spacing) {
+            ForEach(sections) { section in
+                if let heading = title(section) {
+                    XDriveIOSNativePhotoWallDayHeader(title: heading)
+                }
+                XDriveIOSNativePhotoWallGrid(density: density) {
+                    ForEach(items(section)) { item in tile(item) }
+                }
+            }
+        }
+    }
+}
+
+/// Consistent layout actions without exporting PhotoKit/cloud permissions.
+/// Extra actions (sort, map, refresh) belong to the authorized caller.
+struct XDriveIOSNativePhotoWallDisplayMenu<Extra: View>: View {
+    @Binding var density: XDriveIOSNativePhotoWallDensity
+    @Binding var framing: XDriveIOSNativePhotoWallFraming
+    let accessibilityID: String
+    private let extra: () -> Extra
+
+    init(
+        density: Binding<XDriveIOSNativePhotoWallDensity>,
+        framing: Binding<XDriveIOSNativePhotoWallFraming>,
+        accessibilityID: String,
+        @ViewBuilder extra: @escaping () -> Extra
+    ) {
+        _density = density
+        _framing = framing
+        self.accessibilityID = accessibilityID
+        self.extra = extra
+    }
+
+    var body: some View {
+        Menu {
+            Section("照片网格") { xdrivePhotoWallDensityButtons($density) }
+            Section("显示比例") { xdrivePhotoWallFramingButtons($framing) }
+            extra()
+        } label: {
+            Label("显示选项", systemImage: "square.grid.3x3")
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .accessibilityLabel("照片显示选项")
+        .accessibilityIdentifier(accessibilityID)
+    }
+}
+
+/// Identical low-emphasis summary styling across all photo-wall scopes.
+struct XDriveIOSNativePhotoWallScopeSummary: View {
+    let message: String
+    var progress: String? = nil
+
+    var body: some View {
+        Text(message)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityValue(progress ?? message)
+    }
+}
+
+/// The caller MUST first verify the exact current PhotoKit/Owner range.
+/// This helper handles only presentation; it cannot grant Viewer access.
+@MainActor
+func xdrivePhotoWallFocusVerifiedTile<ID: Hashable>(
+    _ id: ID,
+    scroll: ScrollViewProxy,
+    focus: AccessibilityFocusState<ID?>.Binding,
+    anchor: UnitPoint = .center
+) {
+    scroll.scrollTo(id, anchor: anchor)
+    focus.wrappedValue = id
+}
