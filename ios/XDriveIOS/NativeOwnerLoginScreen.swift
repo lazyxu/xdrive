@@ -194,7 +194,11 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             }
             guard !Task.isCancelled else { return }
             XDriveIOSNativeLaunchCheckpoint.mark(.mountingWorkspace)
-            backup.refresh(owner: model.owner)
+            // Isolated diagnostic login must not touch Owner backup state
+            // before the user explicitly requests the full Dashboard.
+            if !diagnosticWorkspace {
+                backup.refresh(owner: model.owner)
+            }
             restoreFinished = true
         }
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
@@ -234,15 +238,24 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             readinessTask = nil
             backup.cancel()
             if model.owner != nil {
-                XDriveIOSNativeLaunchCheckpoint.markPostLogin(
-                    .refreshingOwnerBackup
-                )
+                if diagnosticWorkspace && !showFullWorkspace {
+                    XDriveIOSNativeLaunchCheckpoint.markPostLogin(
+                        .diagnosticWorkspaceVisible
+                    )
+                } else {
+                    XDriveIOSNativeLaunchCheckpoint.markPostLogin(
+                        .refreshingOwnerBackup
+                    )
+                    backup.refresh(owner: model.owner)
+                }
             } else {
                 showPassword = false
                 showFullWorkspace = false
                 XDriveIOSNativeLaunchCheckpoint.mark(.mountingWorkspace)
+                if !diagnosticWorkspace {
+                    backup.refresh(owner: nil)
+                }
             }
-            backup.refresh(owner: model.owner)
             armReadinessAfterMount()
             guard XDriveIOSNativeLaunchCheckpoint.mayAutoBackup(
                 startupReady: startupReady, safeStartup: safeStartup,
