@@ -1304,19 +1304,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                                 capturedAt: asset.creationDate, names: names)
             else { return nil }
             if row.presence == .localOnly {
-                // A prior unmatched result is not permanent. Re-hash this
-                // CURRENT local original (network disabled) and query the
-                // current Owner's exact-match index again before opening it.
-                // Unavailable iCloud-only originals fail closed, not "absent".
+                // reproveCurrentSourcePresence() already reloaded the exact
+                // current Owner+PhotoKit page. Its timeline recomputed the
+                // server's unmatched decision using the current bounded,
+                // already-proven original fingerprint index. Do not trigger
+                // a second full-asset SHA read on a Viewer tap (4GiB video).
                 guard row.cloud == nil, row.match == nil,
-                      let auth = try? await login.verifiedAuthorization(),
-                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner),
-                      let probe = try? await XDriveIOSNativeExactPhotoProbe.read(local),
-                      let replies = try? await XDriveIOSNativeMediaGalleryReader(
-                        owner: owner, accessToken: auth.accessToken
-                      ).exactMatches([probe]),
-                      replies.count == 1,
-                      replies[0].state == .unmatched,
                       XDriveIOSNativePhotoFingerprintIndex.isCurrent(library)
                 else { return nil }
             }

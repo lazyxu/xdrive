@@ -43,7 +43,7 @@
 | 任务 | 当前代码实现 | 尚待证明的边界 |
 | --- | --- | --- |
 | M01 云端变更 | 前台无地点 Sheet 时每 30s 重新枚举当前 Owner 来源，最终核对后一次发布 Marker；过时请求取消 | 是定期刷新而非实时 SSE |
-| M02 来源状态 | both 重新校验 Node/内容；localOnly 点击前重算离线原件 SHA 并向当前 Owner exactMatches 取得 unmatched；cloudOnly 复用完整库 epoch 证明并读当前 Node | iCloud-only 原件暂不可读时拒绝负向证明 |
+| M02 来源状态 | both 重新校验 Node/内容；localOnly 点击前重新加载当前 Owner+PhotoKit 来源分页，复核由现有完整指纹索引及 Owner exactMatches 计算的 unmatched，避免 Viewer 重复读取大文件；cloudOnly 复用完整库 epoch 证明并读当前 Node | iCloud-only 原件暂不可读时拒绝负向证明 |
 | M03 10万缩放 | 完整来源扫描后只保留临时 GPS 与经授权分页游标/页内序号；缩放本地重聚合并最多重读 64 个代表页 | 初始扫描与真实 100k iPhone FPS/耗时尚未验证 |
 | M04 双向滚动 | 两个不超过 48 行窗口，保存无媒体 ID 的来源游标历史，向前/向后重新核验，保留可见锚点 | 尚无真实帧级无跳动证据 |
 | M05 地点 Viewer | 同 GPS Cell/筛选来源相邻页、48px 缩略图导航；每次切图前重新核验 | 真机视频/Live/图片切换尚未验证 |

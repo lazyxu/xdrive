@@ -20,11 +20,10 @@ test('M01: current cloud source is periodically reverified and revoked on scope 
   assert.match(map, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, provedOwner\)/)
 })
 
-test('M02: local-only re-hashes current original and gets current Owner negative proof', () => {
+test('M02: negative source evidence is reclassified on the exact current Owner page without extra full-file hashing', () => {
   assert.match(map, /if row\.presence == \.localOnly/)
-  assert.match(map, /XDriveIOSNativeExactPhotoProbe\.read\(local\)/)
-  assert.match(map, /exactMatches\(\[probe\]\)/)
-  assert.match(map, /replies\[0\]\.state == \.unmatched/)
+  assert.match(map, /reproveCurrentSourcePresence\(\)/)
+  assert.doesNotMatch(map, /XDriveIOSNativeExactPhotoProbe\.read\(local\)/)
   assert.match(map, /await reproveCurrentSourcePresence\(row\)/)
   assert.match(map, /model\.load\(from: cursor, filter: presence, login: login,/)
   assert.match(map, /matches\.count == 1/)
