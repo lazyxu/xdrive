@@ -394,8 +394,12 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             XCTAssertEqual(view("native-ios-notes-source-picker", app: app).value as? String,
                            "我的备忘录")
         case "notes.source.mine":
+            // Return through a genuine reverse source switch, not a no-op.
+            let backup = app.segmentedControls.buttons["iOS 备份"].firstMatch
+            XCTAssertTrue(backup.waitForExistence(timeout: 15))
+            backup.tap()
             XCTAssertEqual(view("native-ios-notes-source-picker", app: app).value as? String,
-                           "我的备忘录")
+                           "iOS 备份", "Notes source reverse transition failed")
         case "transfers.open-files", "transfers.open-backup":
             tap("native-ios-tab-launcher", app: app)
             XCTAssertTrue(view("native-ios-launcher-files", app: app)
@@ -507,7 +511,15 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 add(frame)
                 print("IOS_NATIVE_SUBPAGE_POST_AX_SCREENSHOT route=\(route) trial=1")
             }
+            // Measure actual dismiss/back/restore separately from the
+            // forward app CPU/memory interval. AX-ready is not first pixels.
+            let returnStarted = ProcessInfo.processInfo.systemUptime
             cleanup(route, app: app)
+            let returnMilliseconds = Int(max(0,
+                (ProcessInfo.processInfo.systemUptime - returnStarted) * 1000))
+            if iterations > 1 {
+                print("IOS_NATIVE_SUBPAGE_RETURN_MS route=\(route) trial=\(iterations - 1) value=\(returnMilliseconds)")
+            }
         }
         print("IOS_NATIVE_SUBPAGE_COMPLETE route=\(route) iterations=\(iterations)")
         app.terminate()

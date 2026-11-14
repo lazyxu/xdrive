@@ -18,6 +18,7 @@ options.invocationOptions = [.manuallyStart, .manuallyStop]
 startMeasuring()
 stopMeasuring()
 IOS_NATIVE_SUBPAGE_PERF_MS
+IOS_NATIVE_SUBPAGE_RETURN_MS
 """
 METHODS = {
     "files.organizer": "testSubpageFilesOrganizer",
@@ -39,6 +40,8 @@ def fake_log(routes=tuple(METHODS)):
         rows += [f"IOS_NATIVE_SUBPAGE_ITERATION route={route} index={n}"
                  for n in range(1, 5)]
         rows += [f"IOS_NATIVE_SUBPAGE_PERF_MS route={route} trial={n} value={n*10}"
+                 for n in range(1, 4)]
+        rows += [f"IOS_NATIVE_SUBPAGE_RETURN_MS route={route} trial={n} value={n*7}"
                  for n in range(1, 4)]
         for metric, unit in (("CPU Time (ios), s", "0.1, 0.2, 0.3"),
                              ("Memory Peak Physical (ios), kB", "1024.0, 2048.0, 3072.0")):
@@ -66,9 +69,12 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertEqual(report["route_count"], 2)
         self.assertEqual(report["recorded_test_invocations"], 8)
         self.assertEqual(report["total_ax_samples"], 6)
+        self.assertEqual(report["total_return_samples"], 6)
         self.assertEqual(report["post_ax_screenshot_routes"], 2)
         self.assertFalse(report["true_composited_first_frame_measured"])
         self.assertEqual(report["rows"][0]["ax_ready_p50_ms"], 20)
+        self.assertEqual(report["rows"][0]["return_ax_ready_p50_ms"], 14)
+        self.assertEqual(report["rows"][0]["return_ax_ready_p95_ms"], 21)
         self.assertEqual(report["rows"][0]["app_cpu_time_p50_s"], 0.2)
         self.assertEqual(report["rows"][0]["app_peak_memory_p95_mib"], 3)
         self.assertFalse(report["real_signed_owner_data"])
@@ -195,6 +201,21 @@ class NativeSubpageAuditTests(unittest.TestCase):
         bad = fake_log() + "\nIOS_NATIVE_SUBPAGE_PERF_MS route=backup.tasks trial=1 value=10"
         with self.assertRaisesRegex(ValueError, "AX-ready"):
             module.audit(fake_source(), bad, {"metrics": [1]})
+
+    def test_missing_return_sample_fails(self):
+        bad = "\n".join(x for x in fake_log().splitlines()
+                        if "RETURN_MS route=backup.tasks trial=2" not in x)
+        with self.assertRaisesRegex(ValueError, "return-ready"):
+            module.audit(fake_source(), bad, {"metrics": [1]})
+
+    def test_duplicate_return_sample_fails(self):
+        bad = fake_log() + "\nIOS_NATIVE_SUBPAGE_RETURN_MS route=backup.tasks trial=1 value=7"
+        with self.assertRaisesRegex(ValueError, "return-ready"):
+            module.audit(fake_source(), bad, {"metrics": [1]})
+
+    def test_reverse_native_notes_source_is_real(self):
+        native_test = module.SOURCE.read_text(encoding="utf-8")
+        self.assertIn('"iOS 备份", "Notes source reverse transition failed"', native_test)
 
     def test_missing_warmup_fails(self):
         bad = fake_log().replace("route=backup.tasks iterations=4",

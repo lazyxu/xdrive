@@ -162,3 +162,21 @@ implemented pages or valid performance equivalents.
 ### 2026-11-14 — 28-route candidate and raw screenshot provenance
 
 Four genuine Notes/Transfers entry transitions extend the earlier 24-route baseline. The test now retains one post-AX screenshot attachment per route in the original uploaded xcresult; the independent audit fails closed if its log marker is missing or duplicated. Capture takes place **after** the measured CPU/AX interval, never counts as a first composed frame. New HEAD Simulator/CI/IPA evidence is required; signed Owner, true FPS/hitches, 100k assets and real transfer throughput remain unverified.
+
+
+### 2026-11-14 — native reverse-path performance gate
+
+All 28 actual child interactions now retain three additional measured
+dismiss/back/restore timings, independent of the forward AX-ready and
+app-targeted CPU/physical-memory intervals. The test emits
+IOS_NATIVE_SUBPAGE_RETURN_MS only after real native cleanup has
+completed; the audit rejects missing/duplicated return trials and
+reports return P50/P95 (n=3 nearest-rank P95). For the Notes mine
+source switch, cleanup executes a real reverse switch to iOS backup
+rather than a no-op. A successful exact-HEAD Simulator run must provide
+84 forward + 84 reverse AX timings, along with 84 app CPU and
+84 peak-memory values and 28 post-AX screenshots.
+The reverse metric remains AX-ready wall time including XCTest idling,
+not a composited frame, 60/120-Hz FPS measurement, signed Owner
+or populated Web benchmark parity. No such run is claimed green
+until original xcresult/log artifacts on this SHA pass.

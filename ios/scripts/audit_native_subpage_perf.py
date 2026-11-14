@@ -52,6 +52,9 @@ ITER = re.compile(r'IOS_NATIVE_SUBPAGE_ITERATION route=([a-z0-9.-]+) index=(\d+)
 READY = re.compile(
     r'IOS_NATIVE_SUBPAGE_PERF_MS route=([a-z0-9.-]+) trial=(\d+) value=(\d+)'
 )
+RETURN = re.compile(
+    r'IOS_NATIVE_SUBPAGE_RETURN_MS route=([a-z0-9.-]+) trial=(\d+) value=(\d+)'
+)
 COMPLETE = re.compile(r'IOS_NATIVE_SUBPAGE_COMPLETE route=([a-z0-9.-]+) iterations=(\d+)')
 POST_AX_SHOT = re.compile(r'IOS_NATIVE_SUBPAGE_POST_AX_SCREENSHOT route=([a-z0-9.-]+) trial=(\d+)')
 METRIC = re.compile(
@@ -81,6 +84,7 @@ def source_routes(content):
         "options.invocationOptions = [.manuallyStart, .manuallyStop]",
         "startMeasuring()", "stopMeasuring()",
         "IOS_NATIVE_SUBPAGE_PERF_MS",
+        "IOS_NATIVE_SUBPAGE_RETURN_MS",
     ):
         if token not in content:
             raise ValueError("Missing app-targeted performance measurement: " + token)
@@ -127,6 +131,16 @@ def audit(content, log, raw_metrics):
     ):
         raise ValueError("Missing/duplicate real AX-ready subpage timing trials")
 
+    returned = {}
+    for route, trial, value in RETURN.findall(log):
+        returned.setdefault(route, []).append((int(trial), int(value)))
+    if set(returned) != required or any(
+        sorted(trial for trial, _ in values) != [1, 2, 3]
+        or any(ms < 0 or ms > 300_000 for _, ms in values)
+        for values in returned.values()
+    ):
+        raise ValueError("Missing/duplicate real return-ready subpage timing trials")
+
     raw = {}
     for method, name, values in METRIC.findall(log):
         if method not in methods:
@@ -147,6 +161,7 @@ def audit(content, log, raw_metrics):
     for route in ROUTES:
         ms = sorted(elapsed[route])
         values = [v for _, v in ms]
+        return_values = [v for _, v in sorted(returned[route])]
         peak = raw[route]["peak_memory_kb"]
         cpu = raw[route]["cpu_s"]
         rows.append({
@@ -154,6 +169,9 @@ def audit(content, log, raw_metrics):
             "ax_ready_trial_ms": values,
             "ax_ready_p50_ms": statistics.median(values),
             "ax_ready_p95_ms": max(values),
+            "return_ax_ready_trial_ms": return_values,
+            "return_ax_ready_p50_ms": statistics.median(return_values),
+            "return_ax_ready_p95_ms": max(return_values),
             "app_cpu_time_trial_s": cpu,
             "app_cpu_time_p50_s": statistics.median(cpu),
             "app_peak_memory_trial_kb": peak,
@@ -166,6 +184,7 @@ def audit(content, log, raw_metrics):
         "recorded_test_invocations": sum(map(len, observed.values())),
         "retained_trials_per_route": 3,
         "total_ax_samples": sum(map(len, elapsed.values())),
+        "total_return_samples": sum(map(len, returned.values())),
         "post_ax_screenshot_routes": len(shots),
         "true_composited_first_frame_measured": False,
         "raw_xcresult_metrics_present": True,
@@ -190,7 +209,8 @@ def main():
     destination.write_text(json.dumps(outcome, ensure_ascii=False, indent=2) + "\n",
                            encoding="utf-8")
     print(f"IOS_NATIVE_SUBPAGE_COMPLETE_ALL routes={outcome['route_count']} "
-          f"samples={outcome['total_ax_samples']}")
+          f"samples={outcome['total_ax_samples']} "
+          f"return_samples={outcome['total_return_samples']}")
 
 
 if __name__ == "__main__":
