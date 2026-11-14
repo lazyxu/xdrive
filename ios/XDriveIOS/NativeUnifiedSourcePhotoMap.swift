@@ -1333,19 +1333,22 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
 
     private func prepareNearbyRanking() {
         guard active, isNearbyExpansion, !busy, nearbyRanked.isEmpty else { return }
-        nearbyRanked = sourceCoordinates.filter {
+        // Evaluate the spherical distance exactly ONCE per matching GPS
+        // sample, not O(N log N) repeated trig inside the sort comparator.
+        let scored = sourceCoordinates.filter {
             matchesPlace(latitude: $0.latitude, longitude: $0.longitude)
+        }.map { sample in
+            (point: sample, distance: Self.proximity(
+                latitude: sample.latitude, longitude: sample.longitude,
+                toLatitude: pin.latitude, toLongitude: pin.longitude))
         }.sorted { left, right in
-            let a = Self.proximity(
-                latitude: left.latitude, longitude: left.longitude,
-                toLatitude: pin.latitude, toLongitude: pin.longitude)
-            let b = Self.proximity(
-                latitude: right.latitude, longitude: right.longitude,
-                toLatitude: pin.latitude, toLongitude: pin.longitude)
-            if a != b { return a < b }
-            if left.page != right.page { return left.page < right.page }
-            return left.ordinal < right.ordinal
+            if left.distance != right.distance { return left.distance < right.distance }
+            if left.point.page != right.point.page {
+                return left.point.page < right.point.page
+            }
+            return left.point.ordinal < right.point.ordinal
         }
+        nearbyRanked = scored.map(\.point)
         if nearbyRanked.isEmpty {
             ended = true
         } else {
