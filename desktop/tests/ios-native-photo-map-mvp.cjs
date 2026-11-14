@@ -306,7 +306,8 @@ test('both local MapKit album sheets browse a frozen authorized slice and restor
       name + ' must revalidate the currently authorized member');
     assert.match(screen, /\.fullScreenCover\(item: \$(selected|viewer), onDismiss: \{\s*restoreViewerTile\(using: returnScroll\)/,
       name + ' must restore after modal dismissal');
-    assert.match(screen, /scroll\.scrollTo\(id, anchor: \.center\)/, name);
+    assert.match(screen, /xdrivePhotoWallFocusVerifiedTile\(/, name);
+    assert.match(read('ios/XDriveIOS/NativePhotoWallComponents.swift'), /scroll\.scrollTo\(id, anchor: anchor\)/, name);
     assert.match(screen, /\.id\(item\.id\)/, name);
     assert.match(screen, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/, name);
     assert.match(screen, /defer \{ viewerReturnID = nil \}/, name);
@@ -436,7 +437,7 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
   // Its sentinel must remain immediately after those bounded visible sections.
   assert.match(spatialAlbum, /private var visibleItems:[\s\S]*?priorWindow \+ items/);
   assert.match(spatialAlbum, /xdriveIOSNativePhotoWallVisibleSections\(\s*visibleItems, scale: wallTimeScale/);
-  assert.match(spatialAlbum, /ForEach\(visibleSections\) \{ section in[\s\S]*?XDriveIOSNativePhotoWallGrid\(density: wallDensity\)[\s\S]*?ForEach\(section\.items\) \{ item in photoTile\(item\) \}[\s\S]*?if hasNext \{\s*Color\.clear/);
+  assert.match(spatialAlbum, /XDriveIOSNativePhotoWallSectionList\([\s\S]*?sections: visibleSections, density: wallDensity,[\s\S]*?items: \{ \$0\.items \}[\s\S]*?\{ item in photoTile\(item\) \}[\s\S]*?if hasNext \{\s*Color\.clear/);
   assert.match(spatialAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/);
   assert.match(spatialAlbum, /\.onChange\(of: busy\) \{ isBusy in[\s\S]*?if !isBusy \{ advanceIfVisible\(\) \}/);
   assert.match(spatialAlbum, /private func advanceIfVisible\(\)[\s\S]*?guard XDriveIOSNativePhotoWallWindowPolicy\.shouldAdvance\(\s*footVisible: scrollFootVisible, hasNext: hasNext, busy: busy,[\s\S]*?failed: error != nil, viewerOpen: viewer != nil,[\s\S]*?scopeActive: phase == \.active/);
@@ -520,7 +521,7 @@ test('album-scoped place wall exposes Show Nearby Photos into the full-library s
   assert.match(map, /pendingNearbySelection = chosen/)
   assert.match(map, /authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?onLibraryCameraChange\?\(nil\)[\s\S]*?clearReturnCamera\(\)[\s\S]*?invalidate\(\)/)
   assert.match(map, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true\s*\)/)
-  assert.match(map, /Text\(isNearbyExpansion \?[\s\S]*?"附近照片 · 已加载/)
+  assert.match(map, /XDriveIOSNativePhotoWallScopeSummary\(\s*message: isNearbyExpansion \?[\s\S]*?"附近照片 · 已加载/)
   assert.match(map, /onShowNearby: album == nil \? nil : \{[\s\S]*?phase == \.active[\s\S]*?authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?pendingNearbySelection = chosen/)
   assert.match(map, /globalSelection = nil\s*pendingNearbySelection = nil\s*nearbySelection = nil\s*singleViewer = nil/)
   assert.match(map, /selection == nil && globalSelection == nil &&\s*pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil/)

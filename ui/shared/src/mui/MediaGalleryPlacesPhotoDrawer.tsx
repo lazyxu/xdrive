@@ -31,6 +31,9 @@ import type { XDriveGalleryPhotoWallScale } from './MediaGalleryPhotoWallPrefere
 import {
   useXDriveMediaGalleryMobileColumns,
   useXDriveMediaGalleryTimelineJump,
+  useXDriveMediaGalleryViewportAnchor,
+  xDriveMediaGallerySafeViewportAnchor,
+  xDriveMediaGalleryShouldLoadVisibleTail,
 } from './MediaGalleryPhotoWallState'
 import { XDriveMediaGalleryVirtualTimeline } from './MediaGallerySharedTimeline'
 import { xDriveMediaGalleryTimelineGroupLabel } from './MediaGalleryVirtualTimeline'
@@ -180,7 +183,8 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     itemAt,
     onRangeChange: notifyRange,
   }), [sparse, phase, total, loadedDepth, resident, itemAt, notifyRange])
-  const visibleAnchor = useRef<{index:number;viewportOffset:number}|null>(null)
+  const {anchor: visibleAnchor, record: recordVisibleAnchor,
+    clear: clearVisibleAnchor} = useXDriveMediaGalleryViewportAnchor()
   const [visibleIndex, setVisibleIndex] = useState<number | null>(null)
   // Numeric UI-only navigation intents. A deep date jump still triggers a
   // fresh Owner-signed /cell-items window through the trusted Parent.
@@ -202,17 +206,21 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
         timelineGroups[timeScale], visibleIndex ?? 0)
     : null
   // A new *Owner-authenticated* date index retires all UI-only jump intents.
-  useEffect(() => resetTimelineJump(), [timelineGroups, resetTimelineJump])
+  useEffect(() => {
+    resetTimelineJump()
+    clearVisibleAnchor()
+  }, [timelineGroups, resetTimelineJump, clearVisibleAnchor])
   // Ref-backed callback preserves the shared Gallery scroll/ResizeObserver
   // lifetime when Parent's authorized page state changes.
   const anchorPort = useRef(onVisibleAnchorChange)
   anchorPort.current = onVisibleAnchorChange
   const captureVisibleAnchor = useCallback(
     (index:number,viewportOffset:number,gridWidth:number) => {
-      visibleAnchor.current={index,viewportOffset:Math.round(viewportOffset)}
-      setVisibleIndex(current => current===index ? current : index)
-      anchorPort.current?.(index,viewportOffset,gridWidth)
-    }, [])
+      const safe = recordVisibleAnchor(index, viewportOffset)
+      if (!safe) return
+      setVisibleIndex(current => current===safe.index ? current : safe.index)
+      anchorPort.current?.(safe.index, safe.viewportOffset, gridWidth)
+    }, [recordVisibleAnchor])
   const captureTimelineAnchor = useCallback((index:number) => {
     const list=listRef.current
     const tile=list?.querySelector<HTMLElement>(
@@ -222,7 +230,10 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     captureVisibleAnchor(index,offset,list?.clientWidth ?? 0)
   }, [captureVisibleAnchor])
   const restoreLayout = useCallback((index:number,offset:number) => {
-    setLayoutRestore({index,offset,revision:++layoutRevision.current})
+    const anchor = xDriveMediaGallerySafeViewportAnchor(index, offset)
+    if (!anchor) return
+    setLayoutRestore({index: anchor.index,offset: anchor.viewportOffset,
+      revision: ++layoutRevision.current})
   }, [])
   // Capture the signed virtual viewport BEFORE collapsing to the eight-tile
   // strip. Restore its numeric row/offset before the expanded grid repaints;
@@ -313,6 +324,14 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       ? items.find(item => item.node.id === id) ?? null : null
   }
   const openTile = (item: MediaItem) => onOpenPhoto(item, position(item))
+  const requestAutoLoad = useCallback((remaining:number) => {
+    if (sparse) return
+    if (xDriveMediaGalleryShouldLoadVisibleTail({
+      phase, expanded, loading: loadingMore, failed: pageError,
+      loaded: loadedDepth, total, remaining,
+    })) onLoadMore()
+  }, [sparse, phase, expanded, loadingMore, pageError,
+      loadedDepth, total, onLoadMore])
   // A small Cell still loads real 48-item pages, but does so continuously.
   // If its first page is shorter than the viewport, fill it without requiring
   // a synthetic scroll event; all request/Owner/revision guards remain in Parent.
@@ -320,8 +339,8 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     if (sparse || phase!=='ready' || !expanded || loadingMore ||
         pageError || loadedDepth>=total) return
     const list=listRef.current
-    if (list && list.scrollHeight-list.clientHeight < 180) onLoadMore()
-  }, [sparse,phase,expanded,loadingMore,pageError,loadedDepth,total,items.length,onLoadMore])
+    if (list) requestAutoLoad(list.scrollHeight-list.clientHeight)
+  }, [sparse,phase,expanded,loadingMore,pageError,loadedDepth,total,items.length,requestAutoLoad])
   // The date timeline describes the complete signed total, not only the
   // resident prefix. For <=480 photos, complete the original 48-item
   // sequential authorization BEFORE displaying grouped virtual geometry.
@@ -577,9 +596,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
           <Box ref={listRef} data-xdrive-places-photo-drawer-items
             onScroll={event => {
               const list=event.currentTarget
-              if (!sparse && expanded && !loadingMore && !pageError &&
-                  loadedDepth < total &&
-                  list.scrollHeight-list.scrollTop-list.clientHeight < 180) onLoadMore()
+              requestAutoLoad(list.scrollHeight-list.scrollTop-list.clientHeight)
             }}
             onPointerDownCapture={event => {
               if (event.pointerType === 'mouse') { touchActivated.current=null; return }

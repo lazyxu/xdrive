@@ -76,6 +76,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // Restore the last successfully viewed Node+revision in the bounded
     // Owner page after L3 closes, without persisting any photo identities.
     @State private var viewerReturn: XDriveIOSNativeMediaItem?
+    @AccessibilityFocusState private var focusedTileID: UInt64?
     // During a verified automatic append, preserve the last visible tile
     // while the former two-window head rotates out of the LazyVGrid.
     @State private var autoScrollReturn: XDriveIOSNativeMediaItem?
@@ -128,28 +129,15 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         let origin: XDriveIOSNativeMediaRange
         var id: UInt64 { item.id }
     }
-    private struct VisibleSection: Identifiable {
-        let id: Int
-        let key: String
-        var tiles: [VisibleTile]
-    }
-
-    // Retain only the two current, Owner-signed 48-item windows; date headings
-    // describe exactly these loaded tiles, never a fabricated 100k-place index.
-    private var visibleSections: [VisibleSection] {
+    // One presentation-only chronology over the two currently signed windows.
+    // Never infer a whole-place date index from the visible 48-item ranges.
+    private var visibleSections: [XDriveIOSNativePhotoWallVisibleSection<VisibleTile>] {
         let tiles: [VisibleTile] =
             (priorWindow.map { range in range.items.map { VisibleTile(item: $0, origin: range) } } ?? []) +
             (page.map { range in range.items.map { VisibleTile(item: $0, origin: range) } } ?? [])
-        var sections: [VisibleSection] = []
-        for tile in tiles {
-            let key = wallTimeScale.key(forISO8601: tile.item.metadata.captured_at)
-            if !sections.isEmpty && sections[sections.count - 1].key == key {
-                sections[sections.count - 1].tiles.append(tile)
-            } else {
-                sections.append(VisibleSection(id: sections.count, key: key, tiles: [tile]))
-            }
-        }
-        return sections
+        return xdriveIOSNativePhotoWallVisibleSections(
+            tiles, scale: wallTimeScale
+        ) { wallTimeScale.key(forISO8601: $0.item.metadata.captured_at) }
     }
 
     var body: some View {
@@ -202,38 +190,24 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     .padding(.horizontal, 12)
             }
             ScrollViewReader { returnScroll in
-            ScrollView {
-                XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                    // Fail closed during Owner switch *in body*, before the
-                    // onChange invalidation effect can clear the old UIImage.
+            XDriveIOSNativePhotoWallScrollContainer {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    // Render no stale Owner pixels even before onChange clears
+                    // thumbnail tasks and expired server revisions.
                     if activeOwner {
-                        if wallTimeScale == .all {
-                            if let priorWindow {
-                                ForEach(priorWindow.items) { item in
-                                    photoTile(item, from: priorWindow)
-                                }
-                            }
-                            if let page {
-                                ForEach(page.items) { item in
-                                    photoTile(item, from: page)
-                                }
-                            }
-                        } else {
-                            ForEach(visibleSections) { section in
-                                Section {
-                                    ForEach(section.tiles) { entry in
-                                        photoTile(entry.item, from: entry.origin)
-                                    }
-                                } header: {
-                                    XDriveIOSNativePhotoWallDayHeader(
-                                        title: wallTimeScale.label(for: section.key))
-                                }
-                            }
+                        XDriveIOSNativePhotoWallSectionList(
+                            sections: visibleSections, density: wallDensity,
+                            title: { section in
+                                wallTimeScale == .all ? nil :
+                                    wallTimeScale.label(for: section.key)
+                            },
+                            items: { $0.items }
+                        ) { entry in
+                            photoTile(entry.item, from: entry.origin)
                         }
                     }
-                    // The lazy-grid foot advances the verified Owner Range
-                    // when it approaches the viewport, like native Photos.
-                    // It remains guarded by Owner, busy, cover and error state.
+                    // The current page's verified paging sentinel remains
+                    // OUTSIDE the shared presentation-only Section List.
                     if activeOwner, let next {
                         Color.clear
                             .frame(height: 24)
@@ -272,7 +246,10 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                            scopeActive: activeOwner,
                            matches: { $0.sameVisibleRevision(as: $1) }
                        ) {
-                        returnScroll.scrollTo(anchor.id, anchor: .top)
+                        xdrivePhotoWallFocusVerifiedTile(
+                            anchor.id, scroll: returnScroll,
+                            focus: $focusedTileID, anchor: .top
+                        )
                     }
                     dateJumpReturn = nil
                 }
@@ -288,7 +265,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     viewerReturn = nil
                     return
                 }
-                returnScroll.scrollTo(anchor.id, anchor: .center)
+                xdrivePhotoWallFocusVerifiedTile(
+                    anchor.id, scroll: returnScroll, focus: $focusedTileID
+                )
                 viewerReturn = nil
             }
             .onChange(of: busy) { isBusy in
@@ -300,23 +279,16 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    // Paging is driven by the visible grid sentinels; expose
-                    // only an explicit refresh, not transport-page controls.
+                XDriveIOSNativePhotoWallDisplayMenu(
+                    density: $wallDensity, framing: $wallFraming,
+                    accessibilityID: "native-ios-owner-map-cluster-more"
+                ) {
                     Button("重新核对当前位置照片") {
                         load(cursor, history: earlier)
                     }
                     .disabled(busy || !activeOwner || viewing != nil)
-                    Section("照片网格") {
-                        xdrivePhotoWallDensityButtons($wallDensity)
-                    }
-                    Section("显示比例") {
-                        xdrivePhotoWallFramingButtons($wallFraming)
-                    }
-                } label: {
-                    Label("位置照片操作", systemImage: "ellipsis.circle")
                 }
-                .accessibilityIdentifier("native-ios-owner-map-cluster-more")
+                .accessibilityLabel("位置照片操作")
             }
         }
         .sheet(isPresented: $dateJumpVisible) {
@@ -622,6 +594,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         }
         .buttonStyle(.plain)
         .id(item.id)
+        .accessibilityFocused($focusedTileID, equals: item.id)
         .accessibilityLabel(item.isLive ? "实况照片" :
                              item.isVideo ? "视频" : "照片")
     }
@@ -718,6 +691,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         coverLoading = false
         page = nil
         viewerReturn = nil
+        focusedTileID = nil
         autoScrollReturn = nil
         priorWindow = nil
         priorWindowCursor = nil

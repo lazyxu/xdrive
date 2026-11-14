@@ -83,6 +83,63 @@ struct NativePhotoWallDensityPolicyChecks {
                      ungrouped[0].key == "all")
         precondition(xdriveIOSNativePhotoWallVisibleSections(
             [String](), scale: .day, key: { $0 }).isEmpty)
+        // Signed 48-item cloud pages suppress the repeated heading only
+        // for an immediately adjacent, same-total, verified chronology.
+        let boundary = XDriveIOSNativePhotoWallVerifiedPageDateBoundary(
+            offset: 0, count: 48, total: 96,
+            lastCapturedAt: "2026-11-14T08:00:00Z"
+        )
+        precondition(boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: "2026-11-14T09:10:00Z", scale: .day))
+        precondition(boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: "2026-11-30T09:10:00Z", scale: .month))
+        precondition(!boundary.continues(
+            nextOffset: 96, nextTotal: 96,
+            firstCapturedAt: "2026-11-14T09:10:00Z", scale: .day))
+        precondition(!boundary.continues(
+            nextOffset: 48, nextTotal: 97,
+            firstCapturedAt: "2026-11-14T09:10:00Z", scale: .day))
+        precondition(!boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: "2026-11-15T08:00:00Z", scale: .day))
+        precondition(!boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: nil, scale: .day))
+        precondition(!boundary.continues(
+            nextOffset: 48, nextTotal: 96,
+            firstCapturedAt: "2026-11-14T08:00:00Z", scale: .all))
+        let incomplete = XDriveIOSNativePhotoWallVerifiedPageDateBoundary(
+            offset: 0, count: 22, total: 96,
+            lastCapturedAt: "2026-11-14T08:00:00Z")
+        precondition(!incomplete.continues(
+            nextOffset: 22, nextTotal: 96,
+            firstCapturedAt: "2026-11-14T08:00:00Z", scale: .day))
+        // Mixed PhotoKit/cloud reconciliation never exposes full-library
+        // membership through display-only date continuity. Test boundaries.
+        let midday = Calendar.current.startOfDay(for: Date())
+            .addingTimeInterval(12 * 3600)
+        let sameDay = midday.addingTimeInterval(60)
+        let nextDay = midday.addingTimeInterval(24 * 3600)
+        let unified = XDriveIOSNativeUnifiedPageDateBoundary(
+            page: 0, count: 48, lastCapturedAt: midday
+        )
+        precondition(unified.continues(nextPage: 1,
+            firstCapturedAt: sameDay, scale: .day))
+        precondition(!unified.continues(nextPage: 2,
+            firstCapturedAt: sameDay, scale: .day))
+        precondition(!unified.continues(nextPage: 1,
+            firstCapturedAt: nextDay, scale: .day))
+        precondition(!unified.continues(nextPage: 1,
+            firstCapturedAt: nil, scale: .day))
+        precondition(!unified.continues(nextPage: 1,
+            firstCapturedAt: sameDay, scale: .all))
+        let empty = XDriveIOSNativeUnifiedPageDateBoundary(
+            page: 0, count: 0, lastCapturedAt: midday
+        )
+        precondition(!empty.continues(nextPage: 1,
+            firstCapturedAt: sameDay, scale: .day))
         print("native local PhotoKit square wall density and framing: PASS")
     }
 }

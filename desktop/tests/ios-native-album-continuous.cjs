@@ -28,7 +28,11 @@ test('local album member wall renders virtual 64-slot photo tiles without page c
   assert.match(albums, /private struct XDriveIOSNativeAlbumVirtualPage: View/)
   assert.match(albums, /ForEach\(0\.\.<XDriveIOSNativePhotoVirtualPagePolicy\.pageCount\(total: total\)/)
   assert.match(albums, /let offset = number \* 64/)
-  assert.match(albums, /XDriveIOSNativeSquarePhotoTile\(candidate: item\)/)
+  // Rendering moved to the shared Section List; the authorized album still
+  // owns selection, exact 64-slot membership and the PhotoKit tile callback.
+  assert.match(albums, /XDriveIOSNativePhotoWallSectionList\(\s*sections: sections\(for: page\), density: density/)
+  assert.match(albums, /Button \{ onSelect\(item, page\) \} label:/)
+  assert.match(albums, /XDriveIOSNativeSquarePhotoTile\(\s*candidate: item, framing: framing/)
   assert.match(albums, /ForEach\(0\.\.<min\(64, max\(0, expectedTotal - offset\)\)/)
   assert.match(albums, /\.task\(id: "\\\(generation\)-\\\(album\.collectionIdentifier\)-\\\(offset\)-\\\(sortOrder\.rawValue\)"\)/)
   assert.match(albums, /let count = try await next\.open\(album, sortOrder: sortOrder\)/)
@@ -149,14 +153,23 @@ test('album contents share native capture-day headers with exact 64-slot PhotoKi
   assert.match(page, /dates: page\.items\.map\(\\\.capturedAt\)/)
   assert.match(page, /previousCapturedAt: precedingCapturedAt/)
   assert.match(page, /hasPreviousPage: offset > 0/)
-  assert.match(page, /ForEach\(daySections\) \{ section in/)
-  assert.match(page, /if !section\.continuesPreviousPage \{/)
-  assert.match(page, /XDriveIOSNativePhotoWallDayHeader\(title: section\.title\)/)
+  // The source converts each verified PhotoKit day section into shared
+  // presentation rows; a same-day boundary must not emit a duplicate header.
+  assert.match(page, /heading: section\.continuesPreviousPage \? nil : section\.title/)
+  assert.match(page, /XDriveIOSNativePhotoWallSectionList\(\s*sections: sections\(for: page\), density: density/)
+  assert.match(page, /title: \{ \$0\.heading \}/)
+  assert.match(page, /items: \{ \$0\.items \}/)
   const shared = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
   assert.match(shared, /struct XDriveIOSNativePhotoWallDayHeader: View/)
   assert.match(shared, /\.accessibilityAddTraits\(\.isHeader\)/)
-  assert.match(page, /ForEach\(page\.items\[section\.startIndex\.\.<section\.endIndex\]\)/)
-  assert.match(page, /XDriveIOSNativeSquarePhotoTile\(candidate: item\)/)
+  assert.match(page, /items: Array\(page\.items\[section\.startIndex\.\.<section\.endIndex\]\)/)
+  assert.match(page, /XDriveIOSNativeSquarePhotoTile\(\s*candidate: item, framing: framing/)
+  // The shared section container, not the data-source view, renders header and
+  // tile loops; it must not read PhotoKit or carry authorization decisions.
+  assert.match(shared, /ForEach\(sections\) \{ section in/)
+  assert.match(shared, /XDriveIOSNativePhotoWallDayHeader\(title: heading\)/)
+  assert.match(shared, /ForEach\(items\(section\)\) \{ item in tile\(item\) \}/)
+  assert.doesNotMatch(shared, /PHAsset\.fetchAssets|verifiedAuthorization|URLSession/)
   assert.match(page, /ForEach\(0\.\.<min\(64, max\(0, expectedTotal - offset\)\)/)
   assert.match(reader, /func precedingCaptureDate\(beforeOffset offset: Int\) throws -> Date\?/)
   assert.match(reader, /offset > 0, offset <= result\.count, offset % 64 == 0/)

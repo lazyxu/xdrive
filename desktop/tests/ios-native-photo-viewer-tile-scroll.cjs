@@ -34,14 +34,22 @@ for (const [name, view, tile] of [['PhotoKit full wall', local, 'candidate'], ['
     assert.match(view, /pageRenderRevision &\+= 1/);
     assert.match(view, /shouldRestoreViewerTile = (?:!wasInvalidated &&\s*)?viewerReturnID != nil && phase == \.active/);
     assert.match(view, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/);
-    assert.match(view, /scroll\.scrollTo\(target, anchor: \.center\)/);
+    if (name === 'PhotoKit album wall') {
+      assert.match(view, /xdrivePhotoWallFocusVerifiedTile\(/);
+    } else {
+      assert.match(view, /scroll\.scrollTo\(target, anchor: \.center\)/);
+    }
     assert.match(view, /@AccessibilityFocusState private var accessibilityFocusedTileID: String\?/);
     if (name === 'PhotoKit album wall') {
       assert.match(tileSurface, /\.accessibilityFocused\(accessibilityFocus, equals: item\.id\)/);
     } else {
       assert.match(view, /\.accessibilityFocused\(\$accessibilityFocusedTileID, equals: candidate\.id\)/);
     }
-    assert.match(view, /scroll\.scrollTo\(target, anchor: \.center\)[\s\S]*?accessibilityFocusedTileID = target/);
+    if (name === 'PhotoKit album wall') {
+      assert.match(view, /xdrivePhotoWallFocusVerifiedTile\(\s*target, scroll: scroll, focus: \$accessibilityFocusedTileID/);
+    } else {
+      assert.match(view, /scroll\.scrollTo\(target, anchor: \.center\)[\s\S]*?accessibilityFocusedTileID = target/);
+    }
     assert.match(view, /private func clearViewerTileAnchor\(\) \{[\s\S]*?accessibilityFocusedTileID = nil/);
     assert.match(view, /clearViewerTileAnchor\(\)/);
     if (name === 'PhotoKit album wall') {
@@ -53,7 +61,7 @@ for (const [name, view, tile] of [['PhotoKit full wall', local, 'candidate'], ['
       assert.match(view, /else if phase == \.active &&[\s\S]*?\[\.authorized, \.limited\]\.contains\([\s\S]*?suspendForViewer\(\)/)
     }
     assert.match(view, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
-    assert.doesNotMatch(view, /UserDefaults|@AppStorage|WKWebView/);
+    assert.doesNotMatch(view, /UserDefaults|WKWebView|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/);
   });
 }
 test('active continuous PhotoKit wall revalidates the Viewer return tile and VoiceOver target', () => {
@@ -161,5 +169,5 @@ test('PhotoKit album L3 Viewer navigates only a verified 64-item page at a time 
   assert.match(contents, /onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?clearViewerTileAnchor\(\)[\s\S]*?else if selected != nil \|\| showingAlbumMap \{[\s\S]*?viewerPageInvalidated = true[\s\S]*?suspendForViewer\(\)[\s\S]*?else \{\s*invalidate\(\)/)
   assert.match(contents, /if selected != nil \|\| showingAlbumMap \|\|\s*\(phase == \.active && albumAuthorized\) \{\s*suspendForViewer\(\)/)
   assert.match(contents, /else \{\s*libraryMonitor\.stop\(\)\s*invalidate\(\)\s*\}/)
-  assert.doesNotMatch(contents, /UserDefaults|@AppStorage|CloudKit|UploadSession|isNetworkAccessAllowed = true/)
+  assert.doesNotMatch(contents, /UserDefaults|CloudKit|UploadSession|isNetworkAccessAllowed = true|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/);
 });

@@ -224,14 +224,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 }
                 Spacer()
                 if query != .init() { Button("清除") { query = .init() } }
-                Menu {
-                    Section("照片大小") { xdrivePhotoWallDensityButtons($wallDensity) }
-                    Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
-                } label: {
-                    Image(systemName: "square.grid.3x3")
-                }
-                .accessibilityLabel("缩略图大小")
-                .accessibilityIdentifier("native-ios-unified-wall-density")
+                XDriveIOSNativePhotoWallDisplayMenu(
+                    density: $wallDensity, framing: $wallFraming,
+                    accessibilityID: "native-ios-unified-wall-density"
+                ) { EmptyView() }
                 NavigationLink(isActive: $showingThumbnailCache) {
                     XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
                 } label: {
@@ -252,7 +248,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 .padding(.horizontal, 12).padding(.vertical, 4)
             Divider()
             ScrollViewReader { scroll in
-                ScrollView {
+                XDriveIOSNativePhotoWallScrollContainer {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         galleryStatus.id("gallery-page-top")
                         if let owner = login.owner {
@@ -271,12 +267,21 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                         guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
                                         viewerOpeningPage = payload.number
                                         selected = .init(owner: owner, page: payload, position: position)
-                                    }, loaded: {
-                                        if selected == nil, let anchor = viewerReturnAnchor, viewerReturnPage == page.id {
-                                            scroll.scrollTo(anchor, anchor: .center)
-                                            viewerReturnAnchor = nil
-                                            viewerOpeningPage = nil
+                                    }, loaded: { verifiedIDs in
+                                        guard selected == nil, viewerReturnPage == page.id,
+                                              let anchor = viewerReturnAnchor,
+                                              phase == .active, isTabActive,
+                                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+                                        else { return }
+                                        // Only the *currently admitted* exact
+                                        // 48-row mixed page may restore a tile.
+                                        if let target = XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+                                            anchor, in: verifiedIDs, authorized: true
+                                        ) {
+                                            xdrivePhotoWallScrollVerifiedTile(target, scroll: scroll)
                                         }
+                                        viewerReturnAnchor = nil
+                                        viewerOpeningPage = nil
                                     }, pairing: { pairing = $0 })
                                     .id("unified-page-\(page.id)")
                             }
@@ -293,17 +298,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 .onChange(of: selected?.id) { selection in
                     guard selection == nil, phase == .active, isTabActive,
                           let anchor = viewerReturnAnchor else { return }
-                    if viewerOpeningPage == viewerReturnPage {
-                        // Same retained verified page: restore the exact row directly
-                        // rather than flashing the page's top before final restoration.
-                        scroll.scrollTo(anchor, anchor: .center)
-                        // A retained page may not emit loaded() again. Consume once.
-                        viewerReturnAnchor = nil
-                        viewerOpeningPage = nil
-                    } else {
-                        // Filmstrip crossed a lazy page: materialize its signed page,
-                        // then let loaded() restore the exact authorized row.
-                        scroll.scrollTo("unified-page-\(viewerReturnPage)", anchor: .top)
+                    // A retained page remains in place without first
+                    // scrolling to its top. The child loaded callback performs
+                    // the final scope/unique-row verification after dismissal.
+                    if viewerOpeningPage != viewerReturnPage {
+                        xdrivePhotoWallScrollVerifiedTile(
+                            "unified-page-\(viewerReturnPage)",
+                            scroll: scroll, anchor: .top
+                        )
                     }
                 }
                 .onChange(of: wall.generation) { _ in scroll.scrollTo("gallery-page-top", anchor: .top) }

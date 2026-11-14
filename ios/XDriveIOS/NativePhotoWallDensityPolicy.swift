@@ -174,6 +174,49 @@ func xdriveIOSNativePhotoWallVisibleSections<Item>(
     return result
 }
 
+/// An accepted unified Gallery window contributes only a display-only tail.
+/// The parent verifies adjacent committed source cursors and resets this
+/// bounded metadata on Owner, filter, library or generation changes.
+struct XDriveIOSNativeUnifiedPageDateBoundary: Equatable {
+    let page: Int
+    let count: Int
+    let lastCapturedAt: Date?
+
+    func continues(nextPage: Int, firstCapturedAt: Date?,
+                   scale: XDriveIOSNativePhotoWallTimeScale) -> Bool {
+        guard scale != .all, page >= 0, nextPage == page + 1,
+              count > 0, count <= 48,
+              let firstCapturedAt, let lastCapturedAt else { return false }
+        let previous = scale.key(for: lastCapturedAt)
+        return previous != "unknown" && previous == scale.key(for: firstCapturedAt)
+    }
+}
+
+/// Cosmetic cross-page date-header continuity. Both pages must have been
+/// freshly authorized by the owning reader in the same Owner/filter scope.
+/// The caller retains only a bounded number of these transient summaries,
+/// clears them on scope/revision/failure changes, and never fetches a page
+/// just to hide a header. Unknown timestamps keep an explicit heading.
+struct XDriveIOSNativePhotoWallVerifiedPageDateBoundary: Equatable {
+    let offset: Int
+    let count: Int
+    let total: Int
+    let lastCapturedAt: String?
+
+    func continues(
+        nextOffset: Int, nextTotal: Int, firstCapturedAt: String?,
+        scale: XDriveIOSNativePhotoWallTimeScale
+    ) -> Bool {
+        guard scale != .all, offset >= 0, count == 48, total > 0,
+              offset + count == nextOffset, nextOffset < total,
+              nextTotal == total
+        else { return false }
+        let previous = scale.key(forISO8601: lastCapturedAt)
+        let next = scale.key(forISO8601: firstCapturedAt)
+        return previous != "unknown" && previous == next
+    }
+}
+
 /// Shared state-only auto-advance gate. No platform permissions, PhotoKit scan,
 /// signed Owner range or Viewer is ever started by the shared presentation.
 enum XDriveIOSNativePhotoWallWindowPolicy {

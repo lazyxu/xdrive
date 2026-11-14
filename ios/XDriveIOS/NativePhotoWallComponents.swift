@@ -288,3 +288,156 @@ extension View {
         ))
     }
 }
+
+
+// Pure view composition for local album, local map and signed Owner pages.
+// The enclosing ScrollViewReader, paging sentinel and authorization stay
+// with each caller; only chronological headers, adaptive grid and tiles live
+// here. A visible section never implies an unrequested page was loaded.
+struct XDriveIOSNativePhotoWallSectionList<Section: Identifiable, Item: Identifiable, Tile: View>: View {
+    let sections: [Section]
+    let density: XDriveIOSNativePhotoWallDensity
+    let spacing: CGFloat
+    private let title: (Section) -> String?
+    private let items: (Section) -> [Item]
+    private let tile: (Item) -> Tile
+
+    init(
+        sections: [Section], density: XDriveIOSNativePhotoWallDensity,
+        spacing: CGFloat = 10,
+        title: @escaping (Section) -> String?,
+        items: @escaping (Section) -> [Item],
+        @ViewBuilder tile: @escaping (Item) -> Tile
+    ) {
+        self.sections = sections
+        self.density = density
+        self.spacing = spacing
+        self.title = title
+        self.items = items
+        self.tile = tile
+    }
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: spacing) {
+            ForEach(sections) { section in
+                if let heading = title(section) {
+                    XDriveIOSNativePhotoWallDayHeader(title: heading)
+                }
+                XDriveIOSNativePhotoWallGrid(density: density) {
+                    ForEach(items(section)) { item in tile(item) }
+                }
+            }
+        }
+    }
+}
+
+
+/// Shared scrolling host for native Gallery/Places photo walls. The caller
+/// retains ScrollViewReader, authorization, paging sentinel, Viewer lifecycle,
+/// and all current media/thumbnail identities.
+struct XDriveIOSNativePhotoWallScrollContainer<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView {
+            content
+        }
+    }
+}
+
+/// Loading and retry messages share a visual layout across local and cloud
+/// place sheets. Source readers still own onRetry, cancellation and authority.
+struct XDriveIOSNativePhotoWallFeedback: View {
+    let isLoading: Bool
+    let loadingMessage: String
+    let error: String?
+    let canRetry: Bool
+    let buttonTitle: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let error {
+                XDriveIOSNativePhotoWallRetryMessage(
+                    message: error, buttonTitle: buttonTitle, canRetry: canRetry
+                ) { onRetry() }
+            }
+            if isLoading {
+                XDriveIOSNativePhotoWallLoadingMessage(message: loadingMessage)
+            }
+        }
+    }
+}
+
+/// Consistent layout actions without exporting PhotoKit/cloud permissions.
+/// Extra actions (sort, map, refresh) belong to the authorized caller.
+struct XDriveIOSNativePhotoWallDisplayMenu<Extra: View>: View {
+    @Binding var density: XDriveIOSNativePhotoWallDensity
+    @Binding var framing: XDriveIOSNativePhotoWallFraming
+    let accessibilityID: String
+    private let extra: () -> Extra
+
+    init(
+        density: Binding<XDriveIOSNativePhotoWallDensity>,
+        framing: Binding<XDriveIOSNativePhotoWallFraming>,
+        accessibilityID: String,
+        @ViewBuilder extra: @escaping () -> Extra
+    ) {
+        _density = density
+        _framing = framing
+        self.accessibilityID = accessibilityID
+        self.extra = extra
+    }
+
+    var body: some View {
+        Menu {
+            Section("照片网格") { xdrivePhotoWallDensityButtons($density) }
+            Section("显示比例") { xdrivePhotoWallFramingButtons($framing) }
+            extra()
+        } label: {
+            Label("显示选项", systemImage: "square.grid.3x3")
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .accessibilityLabel("照片显示选项")
+        .accessibilityIdentifier(accessibilityID)
+    }
+}
+
+/// Identical low-emphasis summary styling across all photo-wall scopes.
+struct XDriveIOSNativePhotoWallScopeSummary: View {
+    let message: String
+    var progress: String? = nil
+
+    var body: some View {
+        Text(message)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityValue(progress ?? message)
+    }
+}
+
+/// Presentation-only scrolling after the caller has revalidated its
+/// own PhotoKit/Owner window and unique tile; never authorizes a photo read.
+@MainActor
+func xdrivePhotoWallScrollVerifiedTile<ID: Hashable>(
+    _ id: ID, scroll: ScrollViewProxy, anchor: UnitPoint = .center
+) {
+    scroll.scrollTo(id, anchor: anchor)
+}
+
+/// The caller MUST first verify the exact current PhotoKit/Owner range.
+/// This helper handles only presentation; it cannot grant Viewer access.
+@MainActor
+func xdrivePhotoWallFocusVerifiedTile<ID: Hashable>(
+    _ id: ID,
+    scroll: ScrollViewProxy,
+    focus: AccessibilityFocusState<ID?>.Binding,
+    anchor: UnitPoint = .center
+) {
+    scroll.scrollTo(id, anchor: anchor)
+    focus.wrappedValue = id
+}

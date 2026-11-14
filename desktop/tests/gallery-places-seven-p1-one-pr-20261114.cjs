@@ -1,0 +1,78 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = p => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8')
+const shared = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
+const sourceMap = read('ios/XDriveIOS/NativeUnifiedSourcePhotoMap.swift')
+const localMap = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
+const cloud = read('ios/XDriveIOS/NativeServerMediaGallery.swift')
+const ownerMap = read('ios/XDriveIOS/NativeOwnerMapClusterAlbum.swift')
+const gallery = read('ios/XDriveIOS/NativeUnifiedPhotoGallery.swift')
+const galleryWall = read('ios/XDriveIOS/NativeUnifiedPhotoWall.swift')
+const webState = read('ui/shared/src/mui/MediaGalleryPhotoWallState.ts')
+const webDrawer = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+const webGallery = read('ui/shared/src/mui/MediaGallery.tsx')
+
+test('P1-01 one shared native scrolling shell, loading/retry feedback, source-owned paging', () => {
+  assert.match(shared, /struct XDriveIOSNativePhotoWallScrollContainer<Content: View>: View/)
+  assert.match(shared, /ScrollView \{\s*content\s*\}/)
+  assert.match(shared, /struct XDriveIOSNativePhotoWallFeedback: View/)
+  assert.match(shared, /XDriveIOSNativePhotoWallRetryMessage\(/)
+  assert.match(shared, /XDriveIOSNativePhotoWallLoadingMessage\(/)
+  for (const file of [
+    'NativeLocalContinuousGallery.swift', 'NativeLocalPhotoGallery.swift',
+    'NativeUnifiedPhotoGallery.swift', 'NativePhotoAlbumBrowser.swift',
+    'NativeLocalPhotoMap.swift', 'NativeOwnerMapClusterAlbum.swift',
+    'NativeServerMediaGallery.swift', 'NativeUnifiedSourcePhotoMap.swift'
+  ]) assert.match(read('ios/XDriveIOS/' + file), /XDriveIOSNativePhotoWallScrollContainer\s*\{/, file)
+  assert.match(cloud, /XDriveIOSNativeServerVirtualRange\(/)
+  assert.match(ownerMap, /advanceIfVisible\(\)/)
+  assert.match(localMap, /advanceIfVisible\(\)/)
+})
+test('P1-02 shared year/month/day, crop/contain and density menus, separate source actions', () => {
+  for (const content of [gallery, ownerMap, cloud, localMap, sourceMap])
+    assert.match(content, /XDriveIOSNativePhotoWallDisplayMenu\(/)
+  for (const content of [gallery, ownerMap, cloud, localMap, sourceMap])
+    assert.match(content, /XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
+  assert.match(shared, /Section\("显示比例"\) \{ xdrivePhotoWallFramingButtons\(\$framing\) \}/)
+  assert.match(sourceMap, /wallFraming: XDriveIOSNativePhotoWallFraming = \.square/)
+})
+test('P1-03 cross-range date headers use verified chronology rather than guessed memberships', () => {
+  assert.match(cloud, /precedingBoundary: dateBoundaryOwner\.map/)
+  assert.match(cloud, /datePageBoundaries\[offset - 48\]/)
+  assert.match(galleryWall, /wall\.continuesPreviousDate\(/)
+  assert.match(sourceMap, /xdriveIOSNativePhotoWallVisibleSections\(/)
+  assert.match(ownerMap, /xdriveIOSNativePhotoWallVisibleSections\(/)
+})
+test('P1-04 Viewer focus only returns to one exact live and authorized tile', () => {
+  assert.match(sourceMap, /guard active, viewing == nil, let id = viewerReturnID/)
+  assert.match(sourceMap, /filter\(\{ \$0\.id == id \}\)\.count == 1/)
+  assert.match(sourceMap, /xdrivePhotoWallFocusVerifiedTile\(/)
+  assert.match(localMap, /XDriveIOSMapCurrentPhotoKitAdmission\.allows\(/)
+  assert.match(ownerMap, /sameVisibleRevision\(as:/)
+})
+test('P1-05 Web Gallery and Places reuse bounded UI-only state, not Owner readers', () => {
+  for (const content of [webGallery, webDrawer])
+    assert.match(content, /useXDriveMediaGalleryTimelineJump/)
+  assert.match(webDrawer, /useXDriveMediaGalleryViewportAnchor/)
+  assert.match(webDrawer, /xDriveMediaGalleryShouldLoadVisibleTail\(/)
+  assert.match(webState, /Owner, URL, media bytes, or a read permission/)
+})
+test('P1-06 local preview and continuous GPS walls share section/tile policy', () => {
+  assert.equal((localMap.match(/XDriveIOSNativePhotoWallSectionList\(/g) || []).length, 2)
+  assert.match(localMap, /XDriveIOSNativeSquarePhotoTile\(/)
+  assert.match(localMap, /loadedWindow\(containing id: String\)/)
+  assert.match(localMap, /XDriveIOSMapCurrentPhotoKitAdmission\.allows\(/)
+})
+test('P1-07 unified-source wall matches native/Owner date, menu, framing, pinch, Viewer return', () => {
+  assert.match(sourceMap, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(sourceMap, /XDriveIOSNativePhotoWallDisplayMenu\(/)
+  assert.match(sourceMap, /XDriveIOSNativePhotoWallFeedback\(/)
+  assert.match(sourceMap, /\.xdrivePhotoWallPinch\(/)
+  assert.match(sourceMap, /retainWhileCovered: viewing != nil, framing: wallFraming/)
+  assert.match(sourceMap, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.match(sourceMap, /XDriveIOSUnifiedSourceMapPolicy\.maximumWallSeekPages/)
+  assert.doesNotMatch(sourceMap, /UploadSession\(|URLSession\(/)
+})

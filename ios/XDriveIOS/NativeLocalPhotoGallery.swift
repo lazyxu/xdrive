@@ -1263,7 +1263,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         let compactGallery = viewport.size.width >= 680 &&
             viewport.size.height < 500 && !dynamicTypeSize.isAccessibilitySize
         ScrollViewReader { returnScroll in
-        ScrollView {
+        XDriveIOSNativePhotoWallScrollContainer {
             VStack(alignment: .leading, spacing: 16) {
                 // Always display the limited-access notice, even when short.
                 if authorization == .limited || !compactGallery {

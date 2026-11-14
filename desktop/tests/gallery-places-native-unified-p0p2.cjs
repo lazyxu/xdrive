@@ -22,8 +22,8 @@ test('iOS MapKit and Gallery use the same SwiftUI framing, density and date-scal
   assert.match(sharedComponents,/func xdrivePhotoWallFramingButtons/)
   assert.match(ownerMap,/XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
   assert.match(unifiedGallery,/XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
-  assert.match(ownerMap,/xdrivePhotoWallFramingButtons\(\$wallFraming\)/)
-  assert.match(unifiedGallery,/xdrivePhotoWallFramingButtons\(\$wallFraming\)/)
+  assert.match(ownerMap,/XDriveIOSNativePhotoWallDisplayMenu\([\s\S]*?framing: \$wallFraming/)
+  assert.match(unifiedGallery,/XDriveIOSNativePhotoWallDisplayMenu\([\s\S]*?framing: \$wallFraming/)
   assert.match(ownerMap,/wallFraming == \.complete \? \.fit : \.fill/)
   assert.match(ownerMap, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
   assert.match(unifiedGallery, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
@@ -35,7 +35,7 @@ test('iOS MapKit and Gallery use the same SwiftUI framing, density and date-scal
 
 test('Owner MapKit shows no previous Owner count, image or tiles during synchronous render transition',()=>{
   assert.match(ownerMap,/if activeOwner \{\s+Text\(/)
-  assert.match(ownerMap,/if activeOwner \{\s+if wallTimeScale == \.all/)
+  assert.match(ownerMap,/if activeOwner \{\s+XDriveIOSNativePhotoWallSectionList\(/)
   assert.match(ownerMap,/if activeOwner, let next/)
   assert.match(ownerMap,/if activeOwner, let error/)
   assert.match(ownerMap,/XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selection\.owner\)/)
@@ -54,7 +54,7 @@ test('native dates are presentation-only on at most two signed pages, never inve
   assert.match(sharedPolicy, /Date\(value, strategy: \.iso8601\)/)
   assert.match(sharedPolicy, /return key\(for: instant\)/)
   assert.doesNotMatch(ownerMap,/fetchAllOwner|loadAllPhotos|while.*hasNext/)
-  assert.match(unifiedWall,/Dictionary\(grouping: model\.rows\)/)
+  assert.match(unifiedWall,/xdriveIOSNativePhotoWallVisibleSections\([\s\S]*?XDriveIOSNativePhotoWallSectionList\(/)
 })
 
 test('Web/PWA routes share date switches while Places never gains an unrestricted bulk action',()=>{

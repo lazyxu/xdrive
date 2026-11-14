@@ -322,6 +322,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var ended = false
     @State private var viewing: XDriveIOSUnifiedMapViewerChoice?
     @State private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
+    @State private var viewerReturnID: String?
+    @State private var shouldRestoreViewerTile = false
+    @AccessibilityFocusState private var focusedTileID: String?
 
     private var active: Bool {
         phase == .active &&
@@ -334,16 +340,17 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         VStack(spacing: 8) {
             Text("当前来源 · 此区域 \(pin.count) 张照片")
                 .font(.footnote).foregroundStyle(.secondary)
-            if let error {
-                XDriveIOSNativePhotoWallRetryMessage(
-                    message: error, buttonTitle: "重试核对当前区域",
-                    canRetry: active && !busy
-                ) { load(from: next ?? pin.firstCursor) }
-            }
-            if busy {
-                ProgressView("核对当前区域的照片…")
-            }
+            XDriveIOSNativePhotoWallFeedback(
+                isLoading: busy, loadingMessage: "核对当前区域的照片…",
+                error: active ? error : nil, canRetry: active && !busy,
+                buttonTitle: "重试核对当前区域"
+            ) { load(from: next ?? pin.firstCursor) }
+            XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                .disabled(!active || busy || viewing != nil)
             photoWall
+                .xdrivePhotoWallPinch(
+                    density: $density, enabled: active && !busy && viewing == nil
+                )
             if ended && previous.isEmpty && current.isEmpty && error == nil {
                 Text("该位置的照片已发生变化，请重新打开地图。")
                     .foregroundStyle(.secondary)
@@ -352,13 +359,15 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         .navigationTitle("此地点的照片")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Menu { xdrivePhotoWallDensityButtons($density) } label: {
-                    Image(systemName: "square.grid.3x3")
-                }
+                XDriveIOSNativePhotoWallDisplayMenu(
+                    density: $density, framing: $wallFraming,
+                    accessibilityID: "native-ios-unified-source-map-more"
+                ) { EmptyView() }
             }
         }
         .fullScreenCover(item: $viewing, onDismiss: {
             if !active { invalidate() }
+            else { shouldRestoreViewerTile = true }
         }) { choice in
             if active, let local = choice.row.local {
                 XDriveIOSNativeLocalPhotoDetail(candidate: local)
@@ -395,18 +404,44 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     // Keeping the nested ForEach/Button/Grid expression in one SwiftUI body
     // exceeded Xcode 16.4's type-check budget; there is no shortcut in tests.
     private var photoWall: some View {
-        ScrollView {
-            XDriveIOSNativePhotoWallGrid(density: density) {
-                ForEach(previous + current) { row in
-                    photoButton(for: row)
+        ScrollViewReader { returnScroll in
+            XDriveIOSNativePhotoWallScrollContainer {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    // Dates are presentation hints, never a new Owner grant.
+                    if active {
+                        let sections = xdriveIOSNativePhotoWallVisibleSections(
+                            previous + current, scale: wallTimeScale
+                        ) { wallTimeScale.key(for: $0.capturedAt) }
+                        XDriveIOSNativePhotoWallSectionList(
+                            sections: sections, density: density,
+                            title: { wallTimeScale == .all ? nil :
+                                wallTimeScale.label(for: $0.key) },
+                            items: { $0.items }
+                        ) { row in
+                            photoButton(for: row)
+                        }
+                        // Preserve the exact source cursor and bounded
+                        // lazy-loading sentinel outside the shared view.
+                        if next != nil, !busy, error == nil {
+                            Color.clear.frame(height: 32)
+                                .onAppear { advance() }
+                                .accessibilityHidden(true)
+                        }
+                    }
                 }
-                if next != nil, !busy, error == nil {
-                    Color.clear.frame(height: 32)
-                        .onAppear { advance() }
-                        .accessibilityHidden(true)
-                }
+                .padding(4)
             }
-            .padding(4)
+            .onChange(of: shouldRestoreViewerTile) { restore in
+                guard restore else { return }
+                shouldRestoreViewerTile = false
+                defer { viewerReturnID = nil }
+                guard active, viewing == nil, let id = viewerReturnID,
+                      (previous + current).filter({ $0.id == id }).count == 1
+                else { return }
+                xdrivePhotoWallFocusVerifiedTile(
+                    id, scroll: returnScroll, focus: $focusedTileID
+                )
+            }
         }
     }
 
@@ -415,15 +450,19 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             guard active, !busy,
                   (previous + current).contains(where: { $0.id == row.id })
             else { return }
+            viewerReturnID = row.id
+            focusedTileID = nil
             viewing = .init(row: row)
         } label: {
             XDriveIOSUnifiedPhotoTile(
                 row: row, login: login, presentingOwner: owner,
                 displayActive: active && viewing == nil,
-                retainWhileCovered: viewing != nil, framing: .square)
+                retainWhileCovered: viewing != nil, framing: wallFraming)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-unified-source-map-photo")
+        .id(row.id)
+        .accessibilityFocused($focusedTileID, equals: row.id)
     }
 
     private func invalidate() {
@@ -435,6 +474,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         next = nil
         ended = false
         viewing = nil
+        viewerReturnID = nil
+        shouldRestoreViewerTile = false
+        focusedTileID = nil
         busy = false
         error = nil
     }
