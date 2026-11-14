@@ -306,13 +306,16 @@ test('both local MapKit album sheets browse a frozen authorized slice and restor
       name + ' must revalidate the currently authorized member');
     assert.match(screen, /\.fullScreenCover\(item: \$(selected|viewer), onDismiss: \{\s*restoreViewerTile\(using: returnScroll\)/,
       name + ' must restore after modal dismissal');
-    assert.match(screen, /scroll\.scrollTo\(id, anchor: \.center\)/, name);
+    // UI-only return focus is shared; the source still guards current PhotoKit admission.
+    assert.match(screen, /xdrivePhotoWallFocusVerifiedTile\(/, name);
     assert.match(screen, /\.id\(item\.id\)/, name);
     assert.match(screen, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/, name);
     assert.match(screen, /defer \{ viewerReturnID = nil \}/, name);
   }
   assert.match(bounded, /items\.prefix\(XDriveIOSNativePhotoMapPolicy\.pageSize\)/);
   assert.match(spatialAlbum, /private func loadedWindow\(containing id: String\)/);
+  const sharedWall = read('ios/XDriveIOS/NativePhotoWallComponents.swift');
+  assert.match(sharedWall, /scroll\.scrollTo\(id, anchor: anchor\)/);
   assert.match(spatialAlbum, /loadedItems: viewerItems/);
   assert.match(spatialAlbum, /guard !busy,[\s\S]*?XDriveIOSNativeMapViewerAdmission\.allows\(/);
   assert.match(spatialAlbum, /viewerReturnID = nil[\s\S]*?viewer = nil[\s\S]*?priorWindow = \[\][\s\S]*?items = \[\][\s\S]*?dismiss\(\)/);
@@ -520,7 +523,7 @@ test('album-scoped place wall exposes Show Nearby Photos into the full-library s
   assert.match(map, /pendingNearbySelection = chosen/)
   assert.match(map, /authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?onLibraryCameraChange\?\(nil\)[\s\S]*?clearReturnCamera\(\)[\s\S]*?invalidate\(\)/)
   assert.match(map, /XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: nil, isNearbyExpansion: true\s*\)/)
-  assert.match(map, /Text\(isNearbyExpansion \?[\s\S]*?"附近照片 · 已加载/)
+  assert.match(map, /XDriveIOSNativePhotoWallScopeSummary\(\s*message: isNearbyExpansion \?[\s\S]*?"附近照片 · 已加载/)
   assert.match(map, /onShowNearby: album == nil \? nil : \{[\s\S]*?phase == \.active[\s\S]*?authorizationStatus\(for: \.readWrite\) == \.authorized[\s\S]*?pendingNearbySelection = chosen/)
   assert.match(map, /globalSelection = nil\s*pendingNearbySelection = nil\s*nearbySelection = nil\s*singleViewer = nil/)
   assert.match(map, /selection == nil && globalSelection == nil &&\s*pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil/)
