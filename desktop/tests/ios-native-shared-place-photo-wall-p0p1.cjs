@@ -120,7 +120,7 @@ test('P0-06: Viewer return restores exact visible tile, never stale PhotoKit or 
   assert.match(map, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
   assert.match(map, /viewerReturnID = nil/)
   assert.match(cluster, /sameVisibleRevision\(as: anchor\)/)
-  assert.match(cluster, /returnScroll\.scrollTo\(anchor\.id, anchor: \.center\)/)
+  assert.match(cluster, /xdrivePhotoWallFocusVerifiedTile\(\s*anchor\.id, scroll: returnScroll, focus: \$focusedTileID/)
   assert.match(cluster, /load\(cursor, history: earlier\)/)
   assert.match(cluster, /pendingViewerCross = nil/)
   assert.match(cloud, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.cloudTarget\(/)
@@ -156,7 +156,7 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
   for (const [name, source, expected] of [
     ['local gallery', gallery, 2], ['local album', album, 1],
     ['local location', map, 0], ['cloud gallery', cloud, 1],
-    ['cloud cluster', cluster, 1]
+    ['cloud cluster', cluster, 0]
   ]) {
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
       expected, name)
