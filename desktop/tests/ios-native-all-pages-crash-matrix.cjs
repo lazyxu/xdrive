@@ -351,7 +351,7 @@ test('six additional native all-page crash journeys use real subpage taps and st
     'testRealSignedOutPasswordShowHideRotationForegroundDoesNotExit'
   ];
   const allMethods = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(m => m[1]);
-  assert.ok(allMethods.length >= 47, 'All-page child routes were silently removed');
+  assert.ok(allMethods.length >= 52, 'All-page child routes were silently removed');
   assert.equal(allMethods.length, new Set(allMethods).size,
     'Duplicate XCTest methods mask missing real navigation journeys');
   for (const name of names) {
@@ -376,3 +376,27 @@ test('six additional native all-page crash journeys use real subpage taps and st
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
 });
 
+
+test('next five real Launcher/Notes/Backup/Originals/recovery crash journeys remain registered', () => {
+  const names = [
+    'testLauncherSearchFilterForegroundFilesReturnDoesNotExit',
+    'testNotesBackupSourceRotationForegroundFilesReturnDoesNotExit',
+    'testBackupDetailsQueueRotationForegroundFilesReturnDoesNotExit',
+    'testOriginalsDeniedCloudNotesGalleryReturnDoesNotExit',
+    'testCredentialRetirementRecoverySafeModeForegroundDoesNotExit'
+  ];
+  const methods = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(match => match[1]);
+  assert.ok(methods.length >= 52, 'Missing independent all-pages crash journeys');
+  assert.equal(methods.length, new Set(methods).size, 'Duplicate XCUITest name hides a case');
+  for (const name of names) {
+    assert.ok(methods.includes(name), 'Missing real native XCTest: ' + name);
+    assert.ok(watcher.includes('"' + name + '"'), 'Unregistered Simulator capture: ' + name);
+  }
+  assert.match(swift, /search\.typeText\("zzzz-no-native-route"\)/);
+  assert.match(swift, /picker\.buttons\["iOS 备份"\]/);
+  assert.match(swift, /waitRetired\("native-ios-photo-task-list-done"/);
+  assert.match(swift, /launchRealInterruptedStartup\("retiringCredential"\)/);
+  assert.match(swift, /XCTAssertFalse\(element\("native-ios-files-grid"/);
+  assert.doesNotMatch(swift, /fakeToken|fakeOwner|mockServerLogin|XCTSkip/);
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
+});

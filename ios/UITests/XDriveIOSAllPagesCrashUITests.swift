@@ -953,4 +953,129 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "real-password-reveal-hide-rotation")
     }
 
+
+    // Launcher keyboard filtering and cross-tab returns must not materialize
+    // a filtered-out navigation action or exit the real native process.
+    func testLauncherSearchFilterForegroundFilesReturnDoesNotExit() {
+        let app = launch()
+        tap("native-ios-tab-launcher", app: app)
+        let search = app.textFields["native-ios-launcher-search"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15), "Actual Launcher search missing")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-launcher-search")
+        search.tap()
+        search.typeText("zzzz-no-native-route")
+        XCTAssertFalse(element("native-ios-launcher-notes", app: app).exists,
+                       "Filtered Launcher retained an old Notes entry")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-launcher-search", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-launcher", app: app)
+        ready("native-ios-launcher-search", app: app)
+        XCTAssertFalse(element("native-ios-launcher-notes", app: app).exists,
+                       "Files return resurrected a filtered Launcher child")
+        capture(app, "launcher-filter-foreground-files")
+    }
+
+    // Notes' real iOS backup source must keep its child workspace through
+    // rotation, foreground and a Files/dynamic tab round trip.
+    func testNotesBackupSourceRotationForegroundFilesReturnDoesNotExit() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        let picker = element("native-ios-notes-source-picker", app: app)
+        let source = picker.buttons["iOS 备份"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 15), "Real Notes backup source missing")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-notes-ios-backup")
+        source.tap()
+        ready("native-ios-notes-page", app: app)
+        device.orientation = .landscapeLeft
+        ready("native-ios-notes-page", app: app)
+        device.orientation = .portrait
+        device.press(.home)
+        app.activate()
+        ready("native-ios-notes-page", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-dynamic", app: app)
+        ready("native-ios-notes-page", app: app)
+        capture(app, "notes-backup-rotation-files-return")
+    }
+
+    // Real Backup details and queue sheets must retire across rotation and
+    // foreground transitions before Gallery/Files/dynamic navigation.
+    func testBackupDetailsQueueRotationForegroundFilesReturnDoesNotExit() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        openLauncher("backup", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tapNamed("备份详情", route: "native-ios-backup-details", app: app)
+        ready("native-ios-backup-portrait-form", app: app)
+        device.orientation = .landscapeLeft
+        XCTAssertEqual(app.state, .runningForeground)
+        device.orientation = .portrait
+        device.press(.home)
+        app.activate()
+        ready("native-ios-backup-portrait-form", app: app)
+        tapNamed("返回相册备份", route: "native-ios-backup-details-return", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tap("native-ios-photos-task-list", app: app)
+        ready("native-ios-photo-task-list-done", app: app)
+        tap("native-ios-photo-task-list-done", app: app)
+        waitRetired("native-ios-photo-task-list-done", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-dynamic", app: app)
+        ready("native-ios-backup-overview", app: app)
+        capture(app, "backup-details-queue-rotation-return")
+    }
+
+    // Denied Cloud Files and a Notes visit must never leave a private Files
+    // grid alive behind the retained Cloud Originals native Gallery.
+    func testOriginalsDeniedCloudNotesGalleryReturnDoesNotExit() {
+        let app = launch()
+        openLauncher("originals", app: app)
+        ready("native-ios-cloud-original-layout-help", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-files-open-root-location", app: app)
+        ready("native-ios-files-error-page", app: app)
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        tap("native-ios-files-error-return", app: app)
+        waitRetired("native-ios-files-error-page", app: app)
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-cloud-original-layout-help", app: app)
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists,
+                       "Cloud Originals reused an unauthorized Files child")
+        capture(app, "originals-denied-files-notes-return")
+    }
+
+    // The credential-retirement recovery root is distinct from restore/mount.
+    // A launch checkpoint exercises genuine recovery UI, not a simulated
+    // process-level fatal exception or verified post-login crash.
+    func testCredentialRetirementRecoverySafeModeForegroundDoesNotExit() {
+        let app = launchRealInterruptedStartup("retiringCredential")
+        let phase = element("native-ios-startup-phase", app: app)
+        XCTAssertTrue(phase.label.contains("retiringCredential"),
+                       "Recovery lost its interrupted startup stage")
+        tap("native-ios-startup-safe-entry", app: app)
+        ready("native-ios-startup-safe-mode", app: app)
+        ready("native-ios-login-server", app: app)
+        ready("native-ios-login-username", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-startup-safe-mode", app: app)
+        XCTAssertFalse(element("native-ios-startup-retry", app: app).exists,
+                       "Safe workspace retained the interrupted startup root")
+        capture(app, "credential-retirement-safe-foreground")
+    }
+
 }

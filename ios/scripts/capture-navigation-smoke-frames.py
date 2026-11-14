@@ -335,6 +335,15 @@ TARGETS.update({
     "testRecentFeaturePickerRotationFilesGalleryReturnDoesNotExit",
     "testRealSignedOutPasswordShowHideRotationForegroundDoesNotExit",
 })
+# Next five independent real subpage and process-survival cases.
+# Screenshots remain diagnostic; they do not establish device FPS.
+TARGETS.update({
+    "testLauncherSearchFilterForegroundFilesReturnDoesNotExit",
+    "testNotesBackupSourceRotationForegroundFilesReturnDoesNotExit",
+    "testBackupDetailsQueueRotationForegroundFilesReturnDoesNotExit",
+    "testOriginalsDeniedCloudNotesGalleryReturnDoesNotExit",
+    "testCredentialRetirementRecoverySafeModeForegroundDoesNotExit",
+})
 
 # Six more real Gallery/Files child transitions; diagnostic Simulator PNG only.
 # This must not be presented as physical iPhone 60/120 Hz smoothness proof.
