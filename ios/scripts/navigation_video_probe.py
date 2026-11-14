@@ -31,6 +31,13 @@ TEST_ROUTES = {
     'testGalleryPeopleAfterFilesQuickRailReturnKeepsUnifiedWall': 'people-files-return',
     'testFilesSearchFocusThenGalleryReturnPreservesShell': 'files-search-return',
     'testRepeatedForegroundResumesAlternatingGalleryAndFilesNoBlank': 'foreground-roundtrip',
+    # The six newest real Gallery/Files child journeys also receive H264.
+    'testPeopleThreeFilesQuickRailCyclesKeepUnchangedUnifiedWall': 'people-files-three-rails',
+    'testFilesSearchBackgroundOriginalsReturnHasNoGhostKeyboard': 'search-background-originals',
+    'testOriginalsHelpTwiceAcrossFilesDenialNeverLeavesGhostAlert': 'originals-alert-denial-reopen',
+    'testFilesTrashDeniedThenPeopleChildReturnClearsOverlay': 'trash-denial-people-return',
+    'testGalleryFilterDraftForegroundFilesReturnKeepsWallGeneration': 'gallery-filter-foreground-files',
+    'testRapidAlbumsOriginalsFilesAlternationRetainsNativeChildShells': 'albums-originals-files-rapid',
 }
 START = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 FINISH = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
