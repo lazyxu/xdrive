@@ -14,7 +14,11 @@ assert.match(album, /PHPhotoLibrary\.shared\(\)\.register/);
 assert.match(album, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
 assert.match(album, /PHAsset\.fetchAssets\(in: collection, options: options\)/);
 assert.match(album, /offset \+ 64/);
-assert.match(album, /XDriveIOSNativeSquarePhotoTile\(candidate: item\)/);
+// PhotoKit membership stays in the album's exact 64-slot page; presentation
+// is delegated to the shared list without changing Viewer authorization.
+assert.match(album, /XDriveIOSNativePhotoWallSectionList\(\s*sections: sections\(for: page\), density: density/);
+assert.match(album, /Button \{ onSelect\(item, page\) \} label:/);
+assert.match(album, /XDriveIOSNativeSquarePhotoTile\(\s*candidate: item, framing: framing/);
 assert.match(album, /XDriveIOSNativeLocalPhotoDetail\(\s*candidate: initial,/);
 // The active Viewer may cross a 64-item album boundary; its single verified
 // current page replaces the initially mounted wall page, without a full album
