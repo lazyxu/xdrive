@@ -142,7 +142,10 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             (root / (name + ".mp4")).write_bytes(b"0" * 4097)
             (root / "clips.jsonl").write_text(
                 json.dumps({"test": name, "file": name + ".mp4",
-                            "recorded": True, "tap_markers": [{"at": 0.3}]}) + "\n"
+                            "recorded": True,
+                            "tap_markers": [{"route": "native-ios-tab-files", "at": 0.3}],
+                            "record_exit": 0, "stop_reason": "test_finished",
+                            "test_outcome": "passed"}) + "\n"
             )
             report = root / "audit.json"
             with patch("files_ui_transition_video.read_frames", return_value=[]):
