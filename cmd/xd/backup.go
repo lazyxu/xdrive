@@ -379,6 +379,9 @@ func printBackupSummary(w io.Writer, s localbackupipc.Summary) {
 	fmt.Fprintf(w, "Source %d: %s inspected=%d uploaded=%d unchanged=%d unsupported=%d uncertain=%d bytes=%d",
 		s.SourceID, s.State, s.InspectedFiles, s.ConfirmedFiles, s.SkippedFiles,
 		s.UnsupportedFiles, s.UncertainFiles, s.ConfirmedBytes)
+	if s.ScanComplete {
+		fmt.Fprint(w, " scan_complete=true (not physical CAS verified)")
+	}
 	if s.StopRequested != "" {
 		fmt.Fprintf(w, " requested=%s", s.StopRequested)
 	}
@@ -386,7 +389,8 @@ func printBackupSummary(w io.Writer, s localbackupipc.Summary) {
 }
 
 func backupTerminalResult(s localbackupipc.Summary) error {
-	if s.State != "partial" || s.UncertainFiles != 0 || s.UnsupportedFiles != 0 ||
+	if s.State != "partial" || !s.ScanComplete ||
+		s.UncertainFiles != 0 || s.UnsupportedFiles != 0 ||
 		s.ConfirmedFiles+s.SkippedFiles != s.InspectedFiles {
 		return fmt.Errorf("Source %d: file-level backup finished with %s or unsupported/unverified items; see status/history",
 			s.SourceID, s.State)
