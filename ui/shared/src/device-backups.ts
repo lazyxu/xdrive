@@ -115,7 +115,7 @@ export interface XDriveLocalBoundBackupSchedule {
   // Only the owning Agent can project these optional private checkpoint
   // observations. A saved plan alone does not prove automatic execution.
   auto_readiness?: 'not_enabled' | 'manual' | 'ineligible_source' |
-    'checkpoint_unverified' | 'review_required' | 'reconciliation_pending' | 'checkpoint_ready' | 'unavailable'
+    'checkpoint_unverified' | 'review_required' | 'reconciliation_pending' | 'revision_rebaseline_pending' | 'checkpoint_ready' | 'unavailable'
   /** Agent-computed schedule-rule due time, never a promised upload ETA. */
   next_scheduled_at?: string
 }

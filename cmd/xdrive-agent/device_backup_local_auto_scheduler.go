@@ -18,6 +18,9 @@ import (
 )
 
 const (
+	// Bounded lookback supports multiple saved plan revisions while preventing
+	// an unbounded search through old account/source history.
+	localPushAutoMaxRevisionRearm uint64 = 16
 	localPushAutoInterval         = time.Minute
 	localPushAutoTickTimeout      = 50 * time.Second
 	localPushAutoAttemptCooldown  = 15 * time.Minute
@@ -79,13 +82,21 @@ func localPushAutomaticDue(
 ) (bool, error) {
 	if now.IsZero() || saved.SourceID == 0 || saved.Revision == 0 ||
 		checkpoint.SourceID != saved.SourceID ||
-		checkpoint.SourceRevision != saved.Revision ||
+		checkpoint.SourceRevision > saved.Revision ||
+		saved.Revision-checkpoint.SourceRevision > localPushAutoMaxRevisionRearm ||
 		checkpoint.UpdatedAt.IsZero() ||
 		checkpoint.BackupComplete || checkpoint.RetirementSafe ||
 		checkpoint.CurrentCASVerified {
 		return false, errLocalPushAutoUnavailable
 	}
 	if !localpush.CommonCheckpointAutoAdmissible(checkpoint) {
+		return false, nil
+	}
+	// A newer Source revision has no CURRENT checkpoint yet. Only the same
+	// owning private Root's clean last run may permit a new baseline; the
+	// worker checks all old original SQL receipts against the CURRENT target.
+	if checkpoint.SourceRevision != saved.Revision &&
+		(checkpoint.State != "partial" || checkpoint.UncertainFiles != 0) {
 		return false, nil
 	}
 	spec, err := sourceschedule.Normalize(saved.ScheduleType,
@@ -95,6 +106,9 @@ func localPushAutomaticDue(
 	}
 	if spec.Type == "" || spec.Type == sourceschedule.TypeManual {
 		return false, nil
+	}
+	if checkpoint.SourceRevision != saved.Revision {
+		return true, nil // rebaseline under current revision, never reuse old proof
 	}
 	// An interrupted or uncertain original Operation is reconciled promptly;
 	// durable auto-admission backoff limits repeat attempts on persistent failure.
@@ -163,6 +177,32 @@ func localPushAutoFairOrder(
 		return out[i] < out[j]
 	})
 	return out
+}
+
+// The private single-slot journal is only read after current Owner/Device/
+// Source/Root verification. An older clean terminal record may request a
+// fresh *attempt* after a configuration revision change, not confirm data.
+func localPushAutoReadCheckpoint(ctx context.Context, configDir string,
+	grant localpush.RootGrant, session string, revision uint64,
+) (localpush.CommonBatchCheckpoint, error) {
+	checkpoint, err := localpush.ReadVerifiedCommonBatchCheckpoint(
+		ctx, configDir, grant, session, revision)
+	if err == nil {
+		return checkpoint, nil
+	}
+	for lookback := uint64(1); lookback <= localPushAutoMaxRevisionRearm &&
+		lookback < revision; lookback++ {
+		older, olderErr := localpush.ReadVerifiedCommonBatchCheckpoint(
+			ctx, configDir, grant, session, revision-lookback)
+		if olderErr != nil {
+			continue
+		}
+		if older.State == "partial" && older.UncertainFiles == 0 {
+			return older, nil
+		}
+		return localpush.CommonBatchCheckpoint{}, errLocalPushAutoUnavailable
+	}
+	return localpush.CommonBatchCheckpoint{}, errLocalPushAutoUnavailable
 }
 
 func (c *agentController) runLocalPushAutoScheduler() {
@@ -328,7 +368,7 @@ func (c *agentController) localPushAutoTick(
 			}
 			continue
 		}
-		checkpoint, err := localpush.ReadVerifiedCommonBatchCheckpoint(
+		checkpoint, err := localPushAutoReadCheckpoint(
 			ctx, configDir, grant, account.SessionID, source.Revision)
 		if err != nil || !localpush.CommonCheckpointAutoAdmissible(checkpoint) {
 			if watch != nil {

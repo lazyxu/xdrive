@@ -50,13 +50,22 @@ func projectLocalBoundAutoReadiness(
 		return saved
 	}
 	if checkpoint == nil || checkpoint.SourceID != saved.SourceID ||
-		checkpoint.SourceRevision != saved.Revision || checkpoint.UpdatedAt.IsZero() ||
+		checkpoint.SourceRevision > saved.Revision ||
+		saved.Revision-checkpoint.SourceRevision > localPushAutoMaxRevisionRearm || checkpoint.UpdatedAt.IsZero() ||
 		checkpoint.BackupComplete || checkpoint.RetirementSafe || checkpoint.CurrentCASVerified {
 		saved.AutoReadiness = "checkpoint_unverified"
 		return saved
 	}
 	if !localpush.CommonCheckpointAutoAdmissible(*checkpoint) {
 		saved.AutoReadiness = "review_required"
+		return saved
+	}
+	if checkpoint.SourceRevision != saved.Revision {
+		if checkpoint.State != "partial" || checkpoint.UncertainFiles != 0 {
+			saved.AutoReadiness = "review_required"
+		} else {
+			saved.AutoReadiness = "revision_rebaseline_pending"
+		}
 		return saved
 	}
 	if checkpoint.State == "running" || checkpoint.State == "uncertain" {
@@ -113,7 +122,7 @@ func localBoundAgentAutoReadiness(
 		saved.NextScheduledAt = nil
 		return saved
 	}
-	checkpoint, err := localpush.ReadVerifiedCommonBatchCheckpoint(
+	checkpoint, err := localPushAutoReadCheckpoint(
 		ctx, configDir, grant, cfg.SessionID, source.Revision)
 	if err != nil {
 		return projectLocalBoundAutoReadiness(source, saved, nil, time.Now().UTC())

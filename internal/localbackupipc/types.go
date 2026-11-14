@@ -137,7 +137,7 @@ func ValidateSchedule(s Schedule, sourceID uint64) bool {
 		return s.ScheduleType == "" && s.NextScheduledAt == nil
 	case "manual":
 		return s.ScheduleType == "manual" && s.NextScheduledAt == nil
-	case "ineligible_source", "checkpoint_unverified", "review_required", "reconciliation_pending", "unavailable":
+	case "ineligible_source", "checkpoint_unverified", "review_required", "reconciliation_pending", "revision_rebaseline_pending", "unavailable":
 		return (s.ScheduleType == "interval" || s.ScheduleType == "cron") &&
 			s.NextScheduledAt == nil
 	case "checkpoint_ready":
