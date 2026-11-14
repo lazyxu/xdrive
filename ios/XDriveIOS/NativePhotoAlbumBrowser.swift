@@ -565,8 +565,15 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                                 ForEach(XDriveIOSNativeAlbumSortOrder.allCases) { option in
                                     Button {
                                         sortOrder = option
+                                    } label: {
+                                        Label(option.title, systemImage: sortOrder == option
+                                            ? "checkmark.circle.fill" : "arrow.up.arrow.down")
                                     }
-                        .accessibilityLabel("缩略图大小：\(density.title)")
+                                    .disabled(loading || albumActionBusy || albumShareBusy)
+                                    .accessibilityIdentifier("native-ios-album-sort-order")
+                                }
+                            }
+                        }
                         Button(selectionMode ? "取消选择" : "选择") {
                             selectionMode.toggle()
                             selectedCandidates.removeAll()
