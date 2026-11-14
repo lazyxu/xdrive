@@ -54,7 +54,7 @@ test('P0 401/403 + delayed Owner A auth: old response cannot invalidate or publi
   assert.match(fn.slice(fence, mismatch), /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
   assert.match(fn.slice(read, publish), /self\?\.epoch == ticket[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
   assert.match(fn, /guard self\?\.epoch == ticket,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)[\s\S]*?canRetainPage\(after: error\)/)
-  assert.match(fn, /case \.response\(let status\):[\s\S]*?permitsRetainingPreviousPage/)
+  assert.match(wall, /case \.response\(let status\):[\s\S]*?permitsRetainingPreviousPage/)
 })
 
 test('P0 Owner map: old cover/overview and stale 401/403 cannot re-enter after revocation', () => {
