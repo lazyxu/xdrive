@@ -34,7 +34,7 @@ test('one anonymous no-redirect HTTPS probe selects a fixed origin before creden
   assert.match(route, /config\.urlCache = nil/)
   assert.match(route, /completionHandler\(nil\)/)
   assert.match(route, /URLSession\(configuration: config, delegate: verifier, delegateQueue: nil\)/)
-  const anonymousProbe = route.slice(route.indexOf('private static func probeVersion('),
+  const anonymousProbe = route.slice(route.indexOf('static func probeVersion('),
     route.indexOf('private struct XDriveIOSLANVersion'))
   assert.ok(anonymousProbe.length > 100, 'real anonymous probe implementation found')
   assert.doesNotMatch(anonymousProbe,
