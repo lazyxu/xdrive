@@ -45,7 +45,13 @@ test('CI native launch harness preserves both known b9 and diagnostic recovery r
     'XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)',
     'XDriveIOSNativeStartupRoot(interruption: interruption)'
   ]
-  for (const entry of [...known, 'UnrecognizedNativeRoot()']) {
+  const cases = [
+    { entry: known[0], expected: 0 },
+    { entry: known[1], expected: 0, withBoot: true },
+    { entry: known[1], expected: 1 }, // missing checkpoint must remain rejected
+    { entry: 'UnrecognizedNativeRoot()', expected: 1 }
+  ]
+  for (const { entry, expected, withBoot = false } of cases) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-ios-crash-harness-'))
     try {
       const ios = path.join(dir, 'ios')
@@ -53,11 +59,11 @@ test('CI native launch harness preserves both known b9 and diagnostic recovery r
       fs.mkdirSync(source, { recursive: true })
       const app = path.join(source, 'XDriveIOSApp.swift')
       const model = path.join(source, 'NativeOwnerLoginModel.swift')
-      // The modern production App records the interrupted boot before mounting
-      // WindowGroup; the old published b9 entry has no such checkpoint.
-      const candidate = entry === known[1]
-      const boot = candidate
-        ? '        interruption = XDriveIOSNativeLaunchCheckpoint.beginReport()\n'
+      // Real candidate App runs beginReport() before WindowGroup. Keep this
+      // exact checkpoint in the positive fixture, and separately prove that
+      // a candidate missing it fails closed.
+      const boot = withBoot
+        ? '    init() {\n        interruption = XDriveIOSNativeLaunchCheckpoint.beginReport()\n    }\n'
         : ''
       fs.writeFileSync(app, 'import SwiftUI\n' + boot +
         'WindowGroup {\n            ' + entry + '\n}\n')
@@ -66,7 +72,7 @@ test('CI native launch harness preserves both known b9 and diagnostic recovery r
         'var launchNonce: UUID\n')
       fs.writeFileSync(path.join(ios, 'project.yml'), 'name: xDriveIOS\ntargets:\n')
       const run = spawnSync('python3', [script, dir], { encoding: 'utf8', timeout: 10000 })
-      if (known.includes(entry)) {
+      if (expected === 0) {
         assert.equal(run.status, 0, run.stderr)
         const result = fs.readFileSync(app, 'utf8')
         assert.equal(result.split(entry).length - 1, 2,
@@ -74,17 +80,14 @@ test('CI native launch harness preserves both known b9 and diagnostic recovery r
         assert.match(result, /if ProcessInfo\.processInfo\.arguments\.contains\("-xdrive-ui-navigation-smoke"\)/)
         assert.match(result, /#else[\s\S]*?#endif/)
         assert.match(fs.readFileSync(model, 'utf8'), /@Published var owner:/)
-        if (candidate) {
-          // Only the modern diagnostic App accepts this synthetic DEBUG-only
-          // recovery checkpoint; no release/b9 fixture gets it.
-          assert.match(result, /#if DEBUG[\s\\S]*?-xdrive-ui-postlogin-recovery-fixture[\s\\S]*?markPostLogin\(\.openingDashboard\)/)
-          assert.equal((result.match(/markPostLogin\(\.openingDashboard\)/g) || []).length, 1)
-        } else {
-          assert.doesNotMatch(result, /xdrive-ui-postlogin-recovery-fixture/)
+        if (withBoot) {
+          assert.equal(result.split('XDriveIOSNativeLaunchCheckpoint.markPostLogin(.openingDashboard)').length - 1, 1)
         }
       } else {
-        assert.notEqual(run.status, 0, 'Unknown App root must not be silently instrumented')
-        assert.match(run.stderr, /Unexpected iOS App entry/)
+        assert.notEqual(run.status, 0, 'Unexpected or incomplete App startup must be rejected')
+        assert.match(run.stderr, entry === known[1]
+          ? /Unexpected candidate diagnostic boot/
+          : /Unexpected iOS App entry/)
       }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
