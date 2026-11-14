@@ -219,28 +219,28 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
     }
 
     private func setup() {
-        frame = CGRect(x: 0, y: 0, width: 68, height: 68)
-        centerOffset = CGPoint(x: 0, y: -16)
+        frame = XDriveIOSNativeMapMarkerVisualPolicy.frame
+        centerOffset = XDriveIOSNativeMapMarkerVisualPolicy.centerOffset
         collisionMode = .circle
         displayPriority = .defaultHigh
-        imageView.frame = CGRect(x: 2, y: 2, width: 64, height: 64)
+        imageView.frame = XDriveIOSNativeMapMarkerVisualPolicy.imageFrame
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
-        imageView.layer.cornerRadius = 9
+        imageView.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.coverCornerRadius
         imageView.layer.borderColor = UIColor.white.cgColor
-        imageView.layer.borderWidth = 2
+        imageView.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.photoBorderWidth
         imageView.backgroundColor = .secondarySystemGroupedBackground
         addSubview(imageView)
-        placeholder.frame = CGRect(x: 20, y: 20, width: 28, height: 28)
+        placeholder.frame = XDriveIOSNativeMapMarkerVisualPolicy.placeholderFrame
         placeholder.tintColor = .secondaryLabel
         addSubview(placeholder)
-        badge.frame = CGRect(x: 41, y: -7, width: 33, height: 28)
-        badge.font = .boldSystemFont(ofSize: 11)
+        badge.frame = XDriveIOSNativeMapMarkerVisualPolicy.badgeFrame
+        badge.font = XDriveIOSNativeMapMarkerVisualPolicy.badgeFont
         badge.textAlignment = .center
         badge.textColor = .white
         badge.backgroundColor = .systemBlue
-        badge.layer.cornerRadius = 14
-        badge.layer.borderWidth = 2
+        badge.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius
+        badge.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.badgeBorderWidth
         badge.layer.borderColor = UIColor.white.cgColor
         badge.clipsToBounds = true
         addSubview(badge)
@@ -250,7 +250,7 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
         imageView.image = image
         placeholder.isHidden = image != nil
         badge.isHidden = !enabled || count <= 1
-        badge.text = count >= 1000 ? "999+" : String(count)
+        badge.text = XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: count)
         // Old pins may remain visually during a gesture, but must not
         // become actionable VoiceOver targets or stale SDK selections.
         isEnabled = enabled

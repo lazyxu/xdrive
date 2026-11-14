@@ -91,7 +91,12 @@ test('MapKit refreshes settled current WGS84 camera with one fenced Owner reques
 
 test('Owner cloud MapKit uses native 64px photo covers from current place-filtered signed Reader only', () => {
   assert.match(map, /class XDriveIOSOwnerMapPhotoCover: MKAnnotationView/)
-  assert.match(map, /imageView\.frame = CGRect\(x: 2, y: 2, width: 64, height: 64\)/)
+  // This geometry must be shared with the local PhotoKit MapKit surface;
+  // no inline CGRect that can silently drift from the canonical 64px cover.
+  const geometry = read('ios/XDriveIOS/NativeMapMarkerVisualPolicy.swift')
+  assert.match(map, /imageView\.frame = XDriveIOSNativeMapMarkerVisualPolicy\.imageFrame/)
+  assert.match(geometry, /imageFrame = CGRect\(x: 2, y: 2, width: 64, height: 64\)/)
+  assert.match(map, /badge\.frame = XDriveIOSNativeMapMarkerVisualPolicy\.badgeFrame/)
   assert.match(map, /map\.register\(XDriveIOSOwnerMapPhotoCover\.self,/)
   assert.match(map, /coverImages: \[String: UIImage\]/)
   assert.match(map, /context\.coordinator\.refreshVisibleCovers\(map\)/)
