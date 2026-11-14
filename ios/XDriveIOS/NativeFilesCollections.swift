@@ -846,7 +846,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 modeSwitchTicket = UUID()
                 pendingModeSwitchAnchor = nil
                 if !viewerRefreshPending && selectedFile == nil &&
-                    locateIntent == nil && managementIntent == nil {
+                    locateIntent == nil && managementIntent == nil &&
+                    quickInfoIntent == nil {
                     // NavigationLink child must not lose its source identity.
                     model.suspendForNavigation()
                     favorites.invalidate()
