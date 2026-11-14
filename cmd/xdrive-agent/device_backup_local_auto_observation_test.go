@@ -66,10 +66,26 @@ func TestLocalAutoReadinessRejectsUncertainStoppedOrWrongRevision(t *testing.T) 
 			unverified := checkpoint
 			unverified.State = state
 			got := projectLocalBoundAutoReadiness(source, plan, &unverified, now)
-			if got.AutoReadiness != "review_required" || got.NextScheduledAt != nil {
-				t.Fatalf("unsafe %s checkpoint signalled runnable schedule: %+v", state, got)
+			expected := "review_required"
+			if state == "running" {
+				expected = "reconciliation_pending"
+			}
+			if got.AutoReadiness != expected || got.NextScheduledAt != nil {
+				t.Fatalf("unexpected %s recovery readiness: %+v", state, got)
 			}
 		})
+	}
+	pending := checkpoint
+	pending.State, pending.UncertainFiles = "uncertain", 1
+	if got := projectLocalBoundAutoReadiness(source, plan, &pending, now); got.AutoReadiness != "reconciliation_pending" {
+		t.Fatalf("uncertain original did not expose safe readback pending state: %+v", got)
+	}
+	revisedPlan := plan
+	revisedPlan.Revision++
+	revisedSource := source
+	revisedSource.Revision++
+	if got := projectLocalBoundAutoReadiness(revisedSource, revisedPlan, &checkpoint, now); got.AutoReadiness != "revision_rebaseline_pending" {
+		t.Fatalf("same-owner schedule revision did not require new baseline: %+v", got)
 	}
 	unknownReceipt := checkpoint
 	unknownReceipt.UncertainFiles = 1
