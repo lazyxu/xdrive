@@ -626,7 +626,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
 
     private func reload() {
         invalidate()
-        guard phase == .active, query.isValid,
+        guard phase == .active, scopedQuery.isValid,
               let owner = login.owner,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               let stamp = try? XDriveIOSPhotoKitLibraryEpoch.capture()
@@ -647,6 +647,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 }
             }
             var index = XDriveIOSNativeLocalMapSpatialIndex<XDriveIOSUnifiedSourceMapSeed>()
+            var coordinates: [XDriveIOSUnifiedSourceCachedCoordinate] = []
+            var pageCursors: [XDriveIOSNativeGalleryCursor] = []
             var cursor: XDriveIOSNativeGalleryCursor? = .init()
             do {
                 for _ in 0..<XDriveIOSUnifiedSourceMapPolicy.maximumPages {
@@ -665,13 +667,21 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
                           XDriveIOSNativePhotoFingerprintIndex.isCurrent(library)
                     else { throw XDriveIOSNativeMediaReadFailure.invalidPage }
-                    for row in page.rows where row.presence == presence {
-                        guard let coordinate = XDriveIOSUnifiedSourceMapPolicy.coordinates(for: row),
-                              XDriveIOSNativeLocalMapSpatialPolicy.includes(
-                                scannedViewport,
-                                latitude: coordinate.latitude,
-                                longitude: coordinate.longitude)
+                    var indexedPage: Int?
+                    for (ordinal, row) in page.rows.enumerated() where row.presence == presence {
+                        guard let coordinate =
+                            XDriveIOSUnifiedSourceMapPolicy.coordinates(for: row)
                         else { continue }
+                        if indexedPage == nil {
+                            indexedPage = pageCursors.count
+                            pageCursors.append(start)
+                        }
+                        coordinates.append(XDriveIOSUnifiedSourceCachedCoordinate(
+                            latitude: coordinate.latitude, longitude: coordinate.longitude,
+                            page: indexedPage!, ordinal: ordinal))
+                        guard XDriveIOSNativeLocalMapSpatialPolicy.includes(
+                            scannedViewport, latitude: coordinate.latitude,
+                            longitude: coordinate.longitude) else { continue }
                         index.add(
                             latitude: coordinate.latitude,
                             longitude: coordinate.longitude,
@@ -697,6 +707,12 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                                 viewport: scannedViewport,
                                 firstCursor: cell.representative.cursor)
                         }
+                        cachedCoordinates = coordinates
+                        cachedCursors = pageCursors
+                        cachedOwner = owner
+                        cachedLibrary = library
+                        cachedQuery = scopedQuery
+                        cachedPresence = presence
                         pins = verifiedPins
                         mapRevision = UUID()
                         provedOwner = owner
@@ -705,7 +721,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                         if !didFitFirstVerifiedMap {
                             didFitFirstVerifiedMap = true
                             if let fit = XDriveIOSNativeUnifiedMapCameraPolicy.fit(
-                                verifiedPins.map {
+                                coordinates.map {
                                     .init(latitude: $0.latitude, longitude: $0.longitude)
                                 }),
                                scannedCamera.span.longitudeDelta >= 359 {
