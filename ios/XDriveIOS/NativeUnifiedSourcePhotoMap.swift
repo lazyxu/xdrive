@@ -782,6 +782,10 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var previous: [XDriveIOSNativeUnifiedPhoto] = []
     @State private var current: [XDriveIOSNativeUnifiedPhoto] = []
     @State private var next: XDriveIOSNativeGalleryCursor?
+    // Display-only window checkpoints, never media IDs or admission tokens.
+    @State private var windowStarts: [XDriveIOSNativeGalleryCursor] = []
+    @State private var windowIndex = -1
+    @State private var backfillAnchorID: String?
     @State private var ended = false
     @State private var viewing: XDriveIOSUnifiedMapViewerChoice?
     @State private var viewerReturnID: String?
@@ -927,6 +931,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     private var photoWall: some View {
         ScrollViewReader { scroll in
             ScrollView {
+                if windowIndex > 1 && !busy && active &&
+                   viewing == nil && !opening {
+                    Color.clear.frame(height: 32)
+                        .onAppear { retreat() }
+                        .accessibilityHidden(true)
+                }
                 let sections = xdriveIOSNativePhotoWallVisibleSections(
                     previous + current, scale: timeScale
                 ) { timeScale.key(for: $0.capturedAt) }
@@ -946,6 +956,13 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             }
             .padding(4)
             .xdrivePhotoWallPinch(density: $density, enabled: viewing == nil)
+            .onChange(of: backfillAnchorID) { anchor in
+                guard active, let anchor,
+                      (previous + current).contains(where: { $0.id == anchor })
+                else { return }
+                scroll.scrollTo(anchor, anchor: .top)
+                backfillAnchorID = nil
+            }
             .onChange(of: viewing?.id) { activeID in
                 guard activeID == nil, active, let anchor = viewerReturnID,
                       XDriveIOSNativePhotoWallWindowPolicy.canRestore(
@@ -1093,6 +1110,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         request?.cancel(); request = nil
         admissionTask?.cancel(); admissionTask = nil
         previous = []; current = []; next = nil
+        windowStarts = []; windowIndex = -1; backfillAnchorID = nil
         ended = false
         viewing = nil
         viewerReturnID = nil
@@ -1105,6 +1123,47 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     private func advance() {
         guard !busy, active, !opening, let next else { return }
         load(from: next)
+    }
+
+    /// M04: one bounded backward virtual page, re-proved from its original
+    /// cursor and exact location predicate. Preserve the visible first tile
+    /// anchor while replacing the two 48-row windows.
+    private func retreat() {
+        guard active, !busy, !opening, viewing == nil,
+              windowIndex > 1, windowStarts.indices.contains(windowIndex - 2),
+              let anchor = previous.first?.id else { return }
+        let target = windowStarts[windowIndex - 2]
+        let ticket = UUID()
+        generation = ticket
+        request?.cancel()
+        busy = true
+        request = Task { @MainActor in
+            defer { if generation == ticket { busy = false; request = nil } }
+            let model = XDriveIOSNativeUnifiedPhotoTimeline()
+            await model.load(from: target, filter: presence, login: login,
+                             query: query, library: library)
+            guard generation == ticket, active, !Task.isCancelled else { return }
+            let selected = model.rows.filter { row in
+                guard row.presence == presence,
+                      let coordinate = XDriveIOSUnifiedSourceMapPolicy.coordinates(for: row)
+                else { return false }
+                return matchesPlace(latitude: coordinate.latitude,
+                                    longitude: coordinate.longitude)
+            }
+            guard model.completed, model.notice == nil, !selected.isEmpty,
+                  selected.count <= 48 else {
+                error = "此前照片窗口已变更，请重新打开地点。"
+                previous = []; current = []; next = nil
+                return
+            }
+            let retained = previous
+            previous = selected
+            current = retained
+            windowIndex -= 1
+            next = windowStarts[windowIndex + 1]
+            ended = false
+            backfillAnchorID = anchor
+        }
     }
 
     private func load(from start: XDriveIOSNativeGalleryCursor) {
@@ -1138,6 +1197,17 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                             longitude: coordinates.longitude)
                     }
                     if !selected.isEmpty {
+                        // A revisited forward page must match the checkpoint
+                        // already verified for this exact Owner and source.
+                        if windowStarts.indices.contains(windowIndex + 1) {
+                            guard windowStarts[windowIndex + 1] == from else {
+                                throw XDriveIOSNativeMediaReadFailure.invalidPage
+                            }
+                            windowIndex += 1
+                        } else {
+                            windowStarts.append(from)
+                            windowIndex = windowStarts.count - 1
+                        }
                         previous = current
                         current = Array(selected.prefix(48))
                         next = model.next
