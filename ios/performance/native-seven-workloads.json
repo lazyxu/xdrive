@@ -1,0 +1,137 @@
+{
+  "schema": 1,
+  "platform": "ios-native",
+  "purpose": "Proof inventory, not fabricated completed performance results",
+  "families": [
+    {
+      "id": "p0-gallery-files-all-child-transitions",
+      "priority": "P0",
+      "required_metrics": [
+        "ax_ready_ms",
+        "composited_first_frame_ms",
+        "app_cpu_s",
+        "peak_rss_mib",
+        "frame_hitch_ratio"
+      ],
+      "status": "instrumented_unverified",
+      "native_code": "ios/UITests/XDriveIOSNativeSubpagePerformanceUITests.swift",
+      "outstanding": [
+        "Full Gallery/Files child-route inventory including verified Owner",
+        "first truly composited content frame",
+        "native frame pacing/hitches",
+        "current 28-route Simulator completion"
+      ]
+    },
+    {
+      "id": "p0-files-search-sort-group-viewer-return",
+      "priority": "P0",
+      "required_metrics": [
+        "search_response_ms",
+        "sort_response_ms",
+        "group_response_ms",
+        "viewer_return_ms",
+        "scroll_anchor_delta_px",
+        "peak_rss_mib"
+      ],
+      "status": "not_measured",
+      "outstanding": [
+        "Authorized Files nodes and search/sort/group results",
+        "genuine Viewer next/previous/return and anchor",
+        "long-scroll memory and cancellation"
+      ]
+    },
+    {
+      "id": "p0-gallery-scroll-map-place-wall",
+      "priority": "P0",
+      "required_metrics": [
+        "display_fps",
+        "frame_interval_p95_ms",
+        "thumbnail_visible_ms",
+        "map_pan_zoom_ms",
+        "place_wall_scroll_ms"
+      ],
+      "status": "dependency_pending",
+      "dependency_prs": [
+        4305,
+        4344
+      ],
+      "outstanding": [
+        "Real GPS/PhotoKit scale fixtures and exact count audit",
+        "first visibly drawn thumbnail and place wall",
+        "60/120Hz device frame cadence"
+      ]
+    },
+    {
+      "id": "p1-notes-clipboard-transfers-settings-children",
+      "priority": "P1",
+      "required_metrics": [
+        "entry_ready_ms",
+        "return_ready_ms",
+        "scroll_latency_ms",
+        "app_cpu_s",
+        "peak_rss_mib"
+      ],
+      "status": "instrumented_unverified",
+      "native_code": "ios/UITests/XDriveIOSNativeSubpagePerformanceUITests.swift",
+      "outstanding": [
+        "Populated Notes and Clipboard, Transfer details and Settings",
+        "real child route scrolling, return and media",
+        "current native 28-route Simulator completion"
+      ]
+    },
+    {
+      "id": "p1-100k-files-photos",
+      "priority": "P1",
+      "required_metrics": [
+        "cold_start_ms",
+        "warm_start_ms",
+        "first_page_ms",
+        "next_page_ms",
+        "far_scroll_ms",
+        "peak_rss_mib"
+      ],
+      "status": "not_measured",
+      "outstanding": [
+        "Authenticated 100k Files fixture and 100k real PhotoKit assets",
+        "repeatable cold/warm cache state",
+        "n>=3 actual page/window/scroll timings"
+      ]
+    },
+    {
+      "id": "p1-image-video-live-pdf-viewer",
+      "priority": "P1",
+      "required_metrics": [
+        "image_first_presented_ms",
+        "video_first_presented_ms",
+        "live_first_presented_ms",
+        "pdf_first_presented_ms",
+        "media_switch_ms",
+        "cancel_to_go_ms"
+      ],
+      "status": "not_measured",
+      "outstanding": [
+        "Real authorized JPEG/HEIC/H264/Live/PDF original bytes",
+        "first composited frame from layer not .readyToPlay",
+        "signed native URLSession cancellation to Go Context.Done"
+      ]
+    },
+    {
+      "id": "p1-1gib-4gib-transfers",
+      "priority": "P1",
+      "required_metrics": [
+        "upload_mib_s",
+        "download_mib_s",
+        "peak_rss_mib",
+        "sha256_verified",
+        "resumed_verified",
+        "cancellation_ms"
+      ],
+      "status": "not_measured",
+      "outstanding": [
+        "Real 1GiB and 4GiB iOS CAS uploads/downloads",
+        "resume and original-byte SHA-256 on device",
+        "per-phase CPU/memory and cancellation evidence"
+      ]
+    }
+  ]
+}

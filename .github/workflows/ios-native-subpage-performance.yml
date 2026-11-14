@@ -12,6 +12,9 @@ on:
       - 'ios/XDriveIOS/NativePhotoBackupScreen.swift'
       - 'ios/XDriveIOS/NativeNotesScreen.swift'
       - 'ios/XDriveIOS/NativeTransfers.swift'
+      - 'ios/performance/native-seven-workloads.json'
+      - 'ios/scripts/audit_native_seven_workloads.py'
+      - 'ios/scripts/test_audit_native_seven_workloads.py'
       - 'ios/XDriveIOS/NativePhotosDashboard.swift'
   workflow_dispatch:
 permissions:
@@ -36,6 +39,8 @@ jobs:
           echo "XD_PERF_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           python3 -m py_compile ios/scripts/audit_native_subpage_perf.py ios/scripts/test_audit_native_subpage_perf.py
           python3 -m unittest discover -s ios/scripts -p 'test_audit_native_subpage_perf.py' -v
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_seven_workloads.py' -v
+          python3 ios/scripts/audit_native_seven_workloads.py ios/performance/native-seven-workloads.json
       - name: Prepare production-native app with test-only no-Session route harness
         shell: bash
         run: |

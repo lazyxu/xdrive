@@ -1,3 +1,11 @@
+## iOS seven-family native performance workstream (2026-11-14)
+
+- Unified performance PR: https://github.com/lazyxu/xdrive/pull/4328
+- Seven machine-audited categories: [native-seven-workloads.json](../ios/performance/native-seven-workloads.json) and [explicit evidence audit](../ios/scripts/audit_native_seven_workloads.py).
+- The 28-entry native subpage suite includes n=3 AX/CPU/peak memory trials plus original post-AX screenshot attachments. Until its current exact HEAD passes, this is only implemented instrumentation. True first composed pixel, FPS, 100k authenticated data, real Viewer Go cancellation and 1/4GiB native transfer are **not** established by these results.
+- The independent MapKit M13 performance audit #4344 depends on unmerged permission/Owner P0 #4305, and currently cannot be safely consolidated as source code into #4328. Preserve these prerequisites rather than bypassing security.
+- A workflow being green does not certify any seven-family category whose measurements are missing. Require exact source, fixture fingerprint, source-bound raw evidence, n>=3 and non-browser native runtime records for completion.
+
 ## IOS-PERF-SUBPAGE · Native child-page AX / app CPU / peak RSS (2026-11-13)
 
 - Existing [#4307](https://github.com/lazyxu/xdrive/pull/4307) is merged; the sole open same-purpose child-page PR is [#4328](https://github.com/lazyxu/xdrive/pull/4328), deliberately **draft** until exact-HEAD Simulator, required CI and Final Gate complete. The earlier 20-route Simulator attempt [#43367128606](https://github.com/lazyxu/xdrive/actions/runs/43367128606) had five Gallery hit-target failures. The actual 22-route Simulator [#43410173204](https://github.com/lazyxu/xdrive/actions/runs/43410173204) ran 22 tests and failed exactly two: Backup Setup was inaccessible during destination failure and the Mine sign-out confirmation lacked Cancel. Full CI/IPA additionally found a stale compact-layout source assertion. Targeted fixes add the safe Setup entry and explicit Cancel, and update the layout assertion to the real toolbar; no complete 22-route green evidence has been produced yet.
