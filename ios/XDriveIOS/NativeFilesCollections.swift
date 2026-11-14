@@ -514,6 +514,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var locateIntent: XDriveIOSNativeFilesCollectionItem?
     @State private var locateOwner: XDriveNativeOwnerRoot?
     @State private var managementIntent: XDriveIOSNativeFilesCollectionManageIntent?
+    @State private var quickInfoIntent: XDriveIOSNativeFilesCollectionManageIntent?
     @State private var filterQuery = ""
     @State private var isVisible = false
     // Match Browse's chosen presentation when switching between Files subroutes.
@@ -736,6 +737,20 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
             }
 
+            .sheet(item: $quickInfoIntent) { intent in
+                if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+                   model.matches(login.owner, kind: kind),
+                   model.verified, model.items.contains(intent.item) {
+                    XDriveIOSNativeFilesQuickInfoPanel(
+                        login: login, expectedOwner: intent.owner,
+                        node: intent.item.node,
+                        onClose: { quickInfoIntent = nil }
+                    )
+                } else {
+                    Text("文件或账户已变化，请关闭后重新打开。")
+                        .foregroundStyle(.secondary)
+                }
+            }
             .sheet(item: $managementIntent, onDismiss: {
                 // Closing read-only management must not blank a verified
                 // Recent/Favorites list. Revalidate same-Owner rows in place.
@@ -871,6 +886,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 locateIntent = nil
                 locateOwner = nil
                 managementIntent = nil
+                quickInfoIntent = nil
                 filterQuery = ""
                 showingClearRecentConfirmation = false
                 model.invalidate()
@@ -889,6 +905,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 locateIntent = nil
                 locateOwner = nil
                 managementIntent = nil
+                quickInfoIntent = nil
                 filterQuery = ""
                 showingClearRecentConfirmation = false
                 model.invalidate()
@@ -933,6 +950,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             Button { openManagement(for: item, quickAction: .move) } label: {
                 Label("移动到…", systemImage: "folder")
             }
+            Button { openQuickInfo(for: item) } label: {
+                Label("属性", systemImage: "info.circle")
+            }
+            .accessibilityIdentifier("native-ios-files-collection-quick-info")
             Button { openManagement(for: item, quickAction: .rename) } label: {
                 Label("重命名", systemImage: "pencil")
             }
@@ -967,6 +988,16 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 Label("移入回收站", systemImage: "trash")
             }
         }
+    }
+
+    private func openQuickInfo(for item: XDriveIOSNativeFilesCollectionItem) {
+        guard phase == .active, model.verified, !model.loading,
+              !favorites.busy, selectedFile == nil, locateIntent == nil,
+              managementIntent == nil, let owner = login.owner,
+              filteredItems.contains(item), model.items.contains(item) else { return }
+        quickInfoIntent = XDriveIOSNativeFilesCollectionManageIntent(
+            owner: owner, item: item, quickAction: nil
+        )
     }
 
     private func openManagement(
@@ -1046,7 +1077,12 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             )
             XDriveIOSNativeFilesUIStyle.tileName(item.node.name)
                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
-            XDriveIOSNativeFilesUIStyle.metadata(item.path)
+            HStack(spacing: 5) {
+                if !item.node.isDirectory {
+                    XDriveIOSNativeFilesUIStyle.typeBadge(item.node)
+                }
+                XDriveIOSNativeFilesUIStyle.metadata(item.path)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
         .contentShape(Rectangle())
@@ -1087,7 +1123,12 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             )
             VStack(alignment: .leading, spacing: 3) {
                 XDriveIOSNativeFilesUIStyle.rowName(item.node.name)
-                XDriveIOSNativeFilesUIStyle.metadata(item.path)
+                HStack(spacing: 6) {
+                    if !item.node.isDirectory {
+                        XDriveIOSNativeFilesUIStyle.typeBadge(item.node)
+                    }
+                    XDriveIOSNativeFilesUIStyle.metadata(item.path)
+                }
             }
             Spacer(minLength: 4)
         }
