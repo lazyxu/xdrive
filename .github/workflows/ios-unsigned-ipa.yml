@@ -127,6 +127,14 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-launch-check"
           node --test desktop/tests/ios-native-launch-recovery.cjs
 
+      # A real signed iPhone on iOS 26.6 produced EXC_BAD_ACCESS stack
+      # exhaustion in NativeFilesBrowser's nested SwiftUI lifecycle chain.
+      # Verify stable type-erasure and Owner/Viewer boundaries before IPA.
+      - name: Guard iOS 26.6 native Files SwiftUI stack depth and Owner fences
+        run: |
+          set -euo pipefail
+          node --test desktop/tests/ios-native-files-stack-depth-20261114.cjs
+
       # Pure Foundation contract test is quick and independent of signing.
       - name: Verify native cloud OCR detail privacy and decoding
         run: |
