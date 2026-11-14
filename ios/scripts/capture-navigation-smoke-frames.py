@@ -324,6 +324,18 @@ TARGETS.update({
     "testClipboardUnverifiedRecipientChildFailsClosedWithoutExit",
     "testMineOwnerOnlyThumbnailCacheCannotOpenSignedOut",
 })
+
+# More actual Files Home child, no-session, recent-picker and signed-out Login
+# crash journeys. Real tap-adjacent frames are diagnostics, not zero-FPS-loss proof.
+TARGETS.update({
+    "testFilesHomeSavedSearchesForegroundGalleryReturnDoesNotExit",
+    "testFilesHomeOperationHistoryRotationNotesReturnDoesNotExit",
+    "testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit",
+    "testDeniedCloudThenSavedSearchesDoesNotExposePrivateGrid",
+    "testRecentFeaturePickerRotationFilesGalleryReturnDoesNotExit",
+    "testRealSignedOutPasswordShowHideRotationForegroundDoesNotExit",
+})
+
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")

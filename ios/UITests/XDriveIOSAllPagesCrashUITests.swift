@@ -775,4 +775,182 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "real-login-remember-password-foreground")
     }
 
+
+    /// Traverse the actual Browse Home List, rather than an inactive tab's
+    /// retained SwiftUI ScrollView. A synthetic Owner has no Server bearer.
+    private func openFilesHomeChild(_ entryID: String, pageID: String, app: XCUIApplication) {
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        let browse = element("native-ios-files-section-browse", app: app)
+        if (browse.value as? String) != "已选择" {
+            tap("native-ios-files-section-browse", app: app)
+        }
+        XCTAssertEqual(browse.value as? String, "已选择",
+                       "Files Home is not the selected Owner-scoped section")
+        let home = element("native-ios-files-home-list", app: app)
+        XCTAssertTrue(home.waitForExistence(timeout: 15),
+                      "Real Browse Home List did not mount")
+        let entry = element(entryID, app: app)
+        for _ in 0..<10 {
+            if entry.exists && entry.isHittable { break }
+            home.swipeUp()
+        }
+        if !entry.exists || !entry.isHittable {
+            for _ in 0..<10 {
+                if entry.exists && entry.isHittable { break }
+                home.swipeDown()
+            }
+        }
+        if !entry.exists || !entry.isHittable {
+            capture(app, "files-home-child-unreachable")
+        }
+        XCTAssertTrue(entry.exists && entry.isHittable,
+                      "Real Files Home child is not tappable: \(entryID)")
+        print("IOS_NATIVE_NAV_TAP_START route=\(entryID)")
+        entry.tap()
+        ready(pageID, app: app)
+    }
+
+    func testFilesHomeSavedSearchesForegroundGalleryReturnDoesNotExit() {
+        let app = launch()
+        openFilesHomeChild("native-ios-files-open-saved-searches",
+                           pageID: "native-ios-files-saved-searches-page", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-files-saved-searches-page", app: app)
+        tap("native-ios-files-saved-searches-done", app: app)
+        waitRetired("native-ios-files-saved-searches-page", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-home-list", app: app)
+        XCTAssertFalse(element("native-ios-files-saved-searches-page", app: app).exists,
+                       "Old Smart Folders sheet survived after Gallery return")
+        capture(app, "files-saved-searches-foreground-gallery")
+    }
+
+    func testFilesHomeOperationHistoryRotationNotesReturnDoesNotExit() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        openFilesHomeChild("native-ios-files-open-operations",
+                           pageID: "native-ios-files-operation-history-page", app: app)
+        device.orientation = .landscapeLeft
+        ready("native-ios-files-operation-history-page", app: app)
+        device.orientation = .portrait
+        ready("native-ios-files-operation-history-done", app: app)
+        tap("native-ios-files-operation-history-done", app: app)
+        waitRetired("native-ios-files-operation-history-page", app: app)
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        XCTAssertFalse(element("native-ios-files-operation-history-page", app: app).exists,
+                       "Operation History sheet survived Notes/Files transition")
+        capture(app, "files-history-rotation-notes")
+    }
+
+    func testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit() {
+        let app = launch()
+        for cycle in 0..<2 {
+            for (entry, page, done) in [
+                ("native-ios-files-open-saved-searches",
+                 "native-ios-files-saved-searches-page",
+                 "native-ios-files-saved-searches-done"),
+                ("native-ios-files-open-operations",
+                 "native-ios-files-operation-history-page",
+                 "native-ios-files-operation-history-done")
+            ] {
+                openFilesHomeChild(entry, pageID: page, app: app)
+                tap(done, app: app)
+                waitRetired(page, app: app)
+            }
+            tap("native-ios-tab-gallery", app: app)
+            ready("native-ios-unified-photo-gallery", app: app)
+            tap("native-ios-tab-files", app: app)
+            ready("native-ios-files-home-list", app: app)
+            XCTAssertFalse(element("native-ios-files-saved-searches-page", app: app).exists)
+            XCTAssertFalse(element("native-ios-files-operation-history-page", app: app).exists,
+                           "Old native modal retained over Browse after cycle \(cycle)")
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        capture(app, "files-two-sheets-two-cycles")
+    }
+
+    func testDeniedCloudThenSavedSearchesDoesNotExposePrivateGrid() {
+        let app = launch()
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-files-open-root-location", app: app)
+        ready("native-ios-files-error-page", app: app)
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists,
+                       "No-session Cloud child must not mount a private grid")
+        tap("native-ios-files-error-return", app: app)
+        waitRetired("native-ios-files-error-page", app: app)
+        openFilesHomeChild("native-ios-files-open-saved-searches",
+                           pageID: "native-ios-files-saved-searches-page", app: app)
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists,
+                       "Smart Folders child must not disclose stale Cloud rows")
+        tap("native-ios-files-saved-searches-done", app: app)
+        waitRetired("native-ios-files-saved-searches-page", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        capture(app, "files-denied-cloud-saved-searches")
+    }
+
+    func testRecentFeaturePickerRotationFilesGalleryReturnDoesNotExit() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-page", app: app)
+        tapNamed("最近功能", route: "native-ios-recent-picker", app: app)
+        XCTAssertTrue(app.navigationBars["最近功能"].firstMatch.waitForExistence(timeout: 15))
+        device.orientation = .landscapeLeft
+        XCTAssertTrue(app.navigationBars["最近功能"].firstMatch.waitForExistence(timeout: 15))
+        device.orientation = .portrait
+        tapNamed("完成", route: "native-ios-recent-picker-done", app: app)
+        XCTAssertTrue(app.navigationBars["笔记"].firstMatch.waitForExistence(timeout: 15))
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-unified-photo-gallery", app: app)
+        tap("native-ios-tab-dynamic", app: app)
+        ready("native-ios-notes-page", app: app)
+        XCTAssertFalse(app.navigationBars["最近功能"].firstMatch.exists,
+                       "Dynamic Recent picker remained after a real Done")
+        capture(app, "recent-feature-picker-rotate-return")
+    }
+
+    func testRealSignedOutPasswordShowHideRotationForegroundDoesNotExit() {
+        let app = launchRealSignedOutWorkspace()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        let show = app.buttons["显示密码"].firstMatch
+        for _ in 0..<6 {
+            if show.exists && show.isHittable { break }
+            scroll.swipeUp()
+        }
+        XCTAssertTrue(show.exists && show.isHittable,
+                      "Real native password reveal is inaccessible")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-login-show-password")
+        show.tap()
+        let hide = app.buttons["隐藏密码"].firstMatch
+        XCTAssertTrue(hide.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-login-hide-password")
+        hide.tap()
+        XCTAssertTrue(show.waitForExistence(timeout: 15),
+                      "Password field did not return to SecureField")
+        device.orientation = .landscapeLeft
+        ready("native-ios-login-server", app: app)
+        device.orientation = .portrait
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-login-password", app: app)
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "real-password-reveal-hide-rotation")
+    }
+
 }

@@ -336,3 +336,40 @@ test('production startup recovery safe/retry and real remember-password controls
   assert.match(login, /Toggle\("安全保存当前账号密码", isOn: \$model\.rememberPassword\)/);
   assert.doesNotMatch(swift, /fakeOwner|fakeToken|mockServerLogin|XCTSkip/);
 });
+
+
+test('six additional native all-page crash journeys use real subpage taps and strict frame registration', () => {
+  const names = [
+    'testFilesHomeSavedSearchesForegroundGalleryReturnDoesNotExit',
+    'testFilesHomeOperationHistoryRotationNotesReturnDoesNotExit',
+    'testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit',
+    'testDeniedCloudThenSavedSearchesDoesNotExposePrivateGrid',
+    'testRecentFeaturePickerRotationFilesGalleryReturnDoesNotExit',
+    'testRealSignedOutPasswordShowHideRotationForegroundDoesNotExit'
+  ];
+  const allMethods = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(m => m[1]);
+  assert.ok(allMethods.length >= 47, 'All-page child routes were silently removed');
+  assert.equal(allMethods.length, new Set(allMethods).size,
+    'Duplicate XCTest methods mask missing real navigation journeys');
+  for (const name of names) {
+    assert.ok(allMethods.includes(name), 'Missing real XCTest route: ' + name);
+    assert.ok(watcher.includes('"' + name + '"'),
+      'Missing tap-adjacent Simulator frame capture: ' + name);
+  }
+  const helper = swift.slice(swift.indexOf('private func openFilesHomeChild('),
+                             swift.indexOf('func testFilesHomeSavedSearchesForegroundGalleryReturnDoesNotExit'));
+  for (const id of ['native-ios-files-section-browse', 'native-ios-files-home-list']) {
+    assert.ok(helper.includes(id), 'Browse must be the real mounted Files Home: ' + id);
+  }
+  assert.match(helper, /entry\.exists && entry\.isHittable/);
+  assert.match(helper, /home\.swipeUp\(\)/);
+  assert.match(helper, /home\.swipeDown\(\)/);
+  assert.match(helper, /IOS_NATIVE_NAV_TAP_START route=/);
+  assert.match(swift, /native-ios-files-saved-searches-done/);
+  assert.match(swift, /native-ios-files-operation-history-done/);
+  assert.match(swift, /XCTAssertFalse\(element\("native-ios-files-grid"/);
+  assert.match(swift, /launchRealSignedOutWorkspace\(\)/);
+  assert.doesNotMatch(swift, /mockServerLogin|fakeToken|forceLogin/);
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllPagesCrashUITests/);
+});
+
