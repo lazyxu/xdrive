@@ -1340,6 +1340,7 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     let density: XDriveIOSNativePhotoWallDensity
     let timeScale: XDriveIOSNativePhotoWallTimeScale
     let framing: XDriveIOSNativePhotoWallFraming
+    let precedingBoundary: XDriveIOSNativePhotoWallVerifiedPageDateBoundary?
     let viewerActive: Bool
     let returnFocusID: UInt64?
     let onSelect: (XDriveIOSNativeMediaItem, XDriveIOSNativeMediaWallModel) -> Void
@@ -1371,32 +1372,38 @@ private struct XDriveIOSNativeServerVirtualRange: View {
         VStack(spacing: 4) {
             if let verified = model.page,
                verified.offset == offset, verified.total_count == expectedTotal {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(visibleSections(verified)) { section in
-                        if timeScale != .all {
-                            XDriveIOSNativePhotoWallDayHeader(
-                                title: timeScale.label(for: section.key)
-                            )
-                        }
-                        XDriveIOSNativePhotoWallGrid(density: density) {
-                            ForEach(section.items) { item in
-                        Button { onSelect(item, model) } label: {
-                            XDriveIOSNativeMediaWallTile(
-                                item: item, viewerActive: viewerActive,
-                                framing: framing, model: model, login: login
-                            )
-                            .id(XDriveIOSNativeMediaWallTileIdentity(
-                                item: item, owner: login.owner
-                            ))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!item.supportsPreview)
-                        .accessibilityIdentifier("native-ios-server-media-tile")
-                        .id(item.id)
-                        .accessibilityFocused($focusedTileID, equals: item.id)
-                            }
-                        }
+                XDriveIOSNativePhotoWallSectionList(
+                    sections: visibleSections(verified), density: density,
+                    spacing: 8,
+                    title: { section in
+                        guard timeScale != .all else { return nil }
+                        // Only suppress the first repeated day/month/year
+                        // when BOTH neighboring signed 48-item ranges were
+                        // observed in this same Owner/filter scope.
+                        let continues = section.id == 0 && precedingBoundary?.continues(
+                            nextOffset: verified.offset,
+                            nextTotal: verified.total_count,
+                            firstCapturedAt: verified.items.first?.metadata.captured_at,
+                            scale: timeScale
+                        ) == true
+                        return continues ? nil : timeScale.label(for: section.key)
+                    },
+                    items: { $0.items }
+                ) { item in
+                    Button { onSelect(item, model) } label: {
+                        XDriveIOSNativeMediaWallTile(
+                            item: item, viewerActive: viewerActive,
+                            framing: framing, model: model, login: login
+                        )
+                        .id(XDriveIOSNativeMediaWallTileIdentity(
+                            item: item, owner: login.owner
+                        ))
                     }
+                    .buttonStyle(.plain)
+                    .disabled(!item.supportsPreview)
+                    .accessibilityIdentifier("native-ios-server-media-tile")
+                    .id(item.id)
+                    .accessibilityFocused($focusedTileID, equals: item.id)
                 }
             } else if model.error == nil {
                 // Reserve the expected 48 grid slots until this verified
@@ -1486,6 +1493,11 @@ struct XDriveIOSNativeServerMediaWall: View {
     // Only a few adjacent metadata ranges are compared to reject duplicates
     // when automatic Server indexing inserts media while the user scrolls.
     @State private var recentRangeIDs: [Int: [UInt64]] = [:]
+    // Bounded, display-only tails from accepted adjacent signed ranges.
+    // Never use the previous page's date as a membership grant.
+    @State private var datePageBoundaries:
+        [Int: XDriveIOSNativePhotoWallVerifiedPageDateBoundary] = [:]
+    @State private var dateBoundaryOwner: XDriveNativeOwnerRoot?
     @State private var selected: XDriveIOSNativeMediaItem?
     @State private var viewerLoadedItems: [XDriveIOSNativeMediaItem] = []
     @State private var viewerLoadedRange: XDriveIOSNativeMediaRange?
@@ -1539,19 +1551,16 @@ struct XDriveIOSNativeServerMediaWall: View {
                 }
                 if let page = model.page {
                     HStack(spacing: 8) {
-                        Text(page.total_count == 0 ?
-                            "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :
-                            "\(page.total_count) 张照片")
-                            .font(.caption).foregroundStyle(.secondary)
+                        XDriveIOSNativePhotoWallScopeSummary(
+                            message: page.total_count == 0 ?
+                                "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :
+                                "\(page.total_count) 张照片"
+                        )
                         Spacer(minLength: 4)
-                        Menu {
-                            Section("照片网格") { xdrivePhotoWallDensityButtons($wallDensity) }
-                            Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
-                        } label: {
-                            Image(systemName: "square.grid.3x3")
-                                .frame(width: 44, height: 44)
-                        }
-                        .accessibilityLabel("云端缩略图大小：\(wallDensity.title)")
+                        XDriveIOSNativePhotoWallDisplayMenu(
+                            density: $wallDensity, framing: $wallFraming,
+                            accessibilityID: "native-ios-cloud-wall-density"
+                        ) { EmptyView() }
                         .accessibilityIdentifier("native-ios-cloud-wall-density")
                     }
                     if page.total_count > 0 {
@@ -1564,7 +1573,12 @@ struct XDriveIOSNativeServerMediaWall: View {
                                 search: appliedSearch, captureRange: captureRange,
                                 offset: offset, expectedTotal: page.total_count,
                                 density: wallDensity, timeScale: wallTimeScale,
-                                framing: wallFraming, viewerActive: selected != nil,
+                                framing: wallFraming,
+                                precedingBoundary: dateBoundaryOwner.map {
+                                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+                                        ? datePageBoundaries[offset - 48] : nil
+                                } ?? nil,
+                                viewerActive: selected != nil,
                                 returnFocusID: pendingReturnID,
                                 onSelect: { item, source in
                                     openVerifiedMedia(item, from: source)
@@ -1586,6 +1600,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                     ) {
                         self.continuousFailure = nil
                         recentRangeIDs.removeAll()
+            datePageBoundaries.removeAll()
+            dateBoundaryOwner = nil
                         model.load(login: login, albumID: album?.id, placeID: placeID,
                                    offset: 0, search: appliedSearch, captureRange: captureRange)
                     }
@@ -1825,6 +1841,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         .onChange(of: captureRange) { _ in
             recentRangeIDs.removeAll()
+            datePageBoundaries.removeAll()
+            dateBoundaryOwner = nil
             viewerLoadedItems = []
             viewerLoadedRange = nil
             selected = nil
@@ -1842,6 +1860,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         .onChange(of: login.owner) { _ in
             continuousFailure = nil
             recentRangeIDs.removeAll()
+            datePageBoundaries.removeAll()
+            dateBoundaryOwner = nil
             pendingReturnID = nil
             pendingReturnRevision = nil
             returnRangeOffset = nil
@@ -1864,6 +1884,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             if state != .active {
                 continuousFailure = nil
                 recentRangeIDs.removeAll()
+            datePageBoundaries.removeAll()
+            dateBoundaryOwner = nil
                 pendingReturnID = nil
                 pendingReturnRevision = nil
                 returnRangeOffset = nil
@@ -1888,6 +1910,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             } else {
                 continuousFailure = nil
                 recentRangeIDs.removeAll()
+            datePageBoundaries.removeAll()
+            dateBoundaryOwner = nil
                 pendingReturnID = nil
                 pendingReturnRevision = nil
                 returnRangeOffset = nil
@@ -1933,6 +1957,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         guard phase == .active, selected == nil else { return }
         continuousFailure = reason
         recentRangeIDs.removeAll()
+            datePageBoundaries.removeAll()
+            dateBoundaryOwner = nil
         pendingReturnID = nil
         pendingReturnRevision = nil
         returnRangeOffset = nil
@@ -1955,11 +1981,29 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
         }
         recentRangeIDs[range.offset] = ids
+        // This callback originates only from a successfully admitted signed
+        // child Range. Refuse to mix the running window with a changed count.
+        if let current = model.page, current.total_count == range.total_count,
+           range.limit == XDriveIOSNativeMediaGalleryReader.pageSize,
+           range.items.count == min(48, max(0, range.total_count - range.offset)),
+           let currentOwner = login.owner {
+            if let held = dateBoundaryOwner,
+               !XDriveIOSNativePhotoOwnerScope.matches(currentOwner, held) {
+                datePageBoundaries.removeAll()
+            }
+            dateBoundaryOwner = currentOwner
+            datePageBoundaries[range.offset] = .init(
+                offset: range.offset, count: range.items.count,
+                total: range.total_count,
+                lastCapturedAt: range.items.last?.metadata.captured_at
+            )
+        }
         if recentRangeIDs.count > 4,
            let farthest = recentRangeIDs.keys.max(by: {
              abs($0 - range.offset) < abs($1 - range.offset)
            }) {
             recentRangeIDs.removeValue(forKey: farthest)
+            datePageBoundaries.removeValue(forKey: farthest)
         }
         guard let target = pendingReturnID,
               range.offset == returnRangeOffset,
@@ -1969,8 +2013,10 @@ struct XDriveIOSNativeServerMediaWall: View {
         DispatchQueue.main.async {
             guard phase == .active, selected == nil,
                   pendingReturnID == target else { return }
-            scroll.scrollTo(target, anchor: .center)
-            accessibilityFocusedMediaID = target
+            // Only the current exact Node+revision/Owner was admitted above.
+            xdrivePhotoWallFocusVerifiedTile(
+                target, scroll: scroll, focus: $accessibilityFocusedMediaID
+            )
             pendingReturnID = nil
             pendingReturnRevision = nil
             returnRangeOffset = nil
@@ -1984,6 +2030,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         appliedSearch = query
         continuousFailure = nil
         recentRangeIDs.removeAll()
+            datePageBoundaries.removeAll()
+            dateBoundaryOwner = nil
         pendingReturnID = nil
         pendingReturnRevision = nil
         returnRangeOffset = nil
