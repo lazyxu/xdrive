@@ -53,6 +53,75 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         ]
         self.assertIsNone(classify_bright_blank(frames, 0.1))
 
+    def test_immediate_post_tap_white_blink_is_not_skipped(self):
+        # The old +0.12s cutoff lost the 0.2s frame after a 0.1s tap.
+        frames = [
+            {"time": i / 10,
+             "ymin": 235 if i in (2, 3) else 14,
+             "ymax": 235 if i in (2, 3) else 244,
+             "yavg": 235 if i in (2, 3) else 165}
+            for i in range(20)
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.1),
+                         "suspected_solid_white_transition")
+
+    def test_two_solid_black_video_frames_are_rejected(self):
+        frames = [
+            {"time": i / 10,
+             "ymin": 16 if i in (4, 5) else 12,
+             "ymax": 16 if i in (4, 5) else 250,
+             "yavg": 16 if i in (4, 5) else 180}
+            for i in range(20)
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.2),
+                         "suspected_solid_black_transition")
+
+    def test_single_solid_black_frame_is_not_called_a_blackout(self):
+        frames = [
+            {"time": i / 10,
+             "ymin": 16 if i == 4 else 12,
+             "ymax": 16 if i == 4 else 250,
+             "yavg": 16 if i == 4 else 180}
+            for i in range(20)
+        ]
+        self.assertIsNone(classify_bright_blank(frames, 0.2))
+
+    def test_real_dark_textured_ui_is_not_mistaken_for_solid_black(self):
+        frames = [
+            {"time": i / 10, "ymin": 16, "ymax": 61, "yavg": 23}
+            for i in range(20)
+        ]
+        self.assertIsNone(classify_bright_blank(frames, 0.2))
+
+    def test_limited_range_black_synthetic_video_is_rejected(self):
+        frames = [
+            {"time": i / 10, "ymin": 17, "ymax": 19, "yavg": 18}
+            for i in range(20)
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.2),
+                         "suspected_solid_black_transition")
+
+    def test_out_of_range_decoded_signalstats_fails_closed(self):
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26)
+        ]
+        frames[10] = {"time": 1.0, "ymin": 12, "ymax": 300, "yavg": 175}
+        accepted, report = self._audit_sample(frames=frames)
+        self.assertFalse(accepted)
+        self.assertIn("invalid_frame_signalstats", report["clips"][0]["failures"])
+
+    def test_nonfinite_decoded_luminance_fails_closed(self):
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26)
+        ]
+        frames[10] = {"time": 1.0, "ymin": 12,
+                      "ymax": 246, "yavg": float("nan")}
+        accepted, report = self._audit_sample(frames=frames)
+        self.assertFalse(accepted)
+        self.assertIn("invalid_frame_signalstats", report["clips"][0]["failures"])
+
     def test_video_metadata_decode(self):
         sample = ("frame:0 pts:0 pts_time:0.1\n"
                   "lavfi.signalstats.YMIN=11\nlavfi.signalstats.YMAX=250\n"
@@ -65,7 +134,7 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         self.assertEqual(frames[1]["time"], 0.2)
         self.assertEqual(frames[0]["ymin"], 11)
 
-    def _audit_sample(self, **changes):
+    def _audit_sample(self, frames=None, **changes):
         with tempfile.TemporaryDirectory() as d:
             root = pathlib.Path(d)
             name = sorted(TARGETS)[0]
@@ -79,10 +148,11 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             entry.update(changes)
             (root / "clips.jsonl").write_text(json.dumps(entry) + "\n")
             report = root / "audit.json"
-            frames = [
-                {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
-                for i in range(26)
-            ]
+            if frames is None:
+                frames = [
+                    {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+                    for i in range(26)
+                ]
             with patch("files_ui_transition_video.read_frames", return_value=frames):
                 accepted = audit(root, report, 1)
             return accepted, json.loads(report.read_text())

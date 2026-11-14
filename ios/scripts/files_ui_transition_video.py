@@ -8,6 +8,7 @@ No Owner data, fake media, or invented accessibility/tap events are created.
 """
 import argparse
 import json
+import math
 import pathlib
 import re
 import signal
@@ -34,17 +35,28 @@ MIN_TAP_WINDOW_SECONDS = 0.55
 
 
 def classify_bright_blank(frames, tap_second):
-    """Only classify near-solid-white consecutive recorded frame samples."""
-    sample = [f for f in frames if tap_second + 0.12 <= f["time"] <= tap_second + 1.45]
+    """Reject consecutive all-white or all-black frames immediately after a tap.
+
+    A uniformly dark real screen must stay distinguishable from a textured
+    dark-mode page. Two decoded samples are required; one frame is diagnostic,
+    not proof of visible flicker. At 10 Hz this is still NOT a 60/120 Hz gate.
+    """
+    # +0.12 silently missed the first decoded post-tap sample at +0.1s.
+    sample = [f for f in frames if tap_second + 0.02 <= f["time"] <= tap_second + 1.45]
     if len(sample) < 3:
         return "missing_post_tap_frames"
-    run = 0
+    white_run = black_run = 0
     for f in sample:
-        # ffmpeg signalstats uses limited-range YUV: RGB white maps to Y=235.
-        white = (f["ymax"] - f["ymin"] <= 6 and f["yavg"] >= 230)
-        run = run + 1 if white else 0
-        if run >= 2:
+        spread = f["ymax"] - f["ymin"]
+        # ffmpeg signalstats uses limited-range YUV: white=235, black=16.
+        white = spread <= 6 and f["yavg"] >= 230
+        black = spread <= 6 and f["yavg"] <= 26 and f["ymax"] <= 32
+        white_run = white_run + 1 if white else 0
+        black_run = black_run + 1 if black else 0
+        if white_run >= 2:
             return "suspected_solid_white_transition"
+        if black_run >= 2:
+            return "suspected_solid_black_transition"
     return None
 
 
@@ -202,7 +214,19 @@ def audit(directory, report, minimum):
         if not frames and not failures:
             failures.append("missing_decoded_video_frames")
         if frames:
-            times = [f["time"] for f in frames]
+            # Corrupt frame metadata must not turn into an apparent no-flicker
+            # pass (NaN comparisons are false, and impossible YUV values can
+            # evade the uniform-white/black classifier).
+            if any(
+                not all(
+                    isinstance(f.get(k), (int, float)) and math.isfinite(f[k])
+                    for k in ("time", "ymin", "ymax", "yavg")
+                ) or f["time"] < 0 or
+                not (0 <= f["ymin"] <= f["yavg"] <= f["ymax"] <= 255)
+                for f in frames
+            ):
+                failures.append("invalid_frame_signalstats")
+            times = [f.get("time", -1) for f in frames]
             if len(times) < 12 or any(b <= a for a, b in zip(times, times[1:])):
                 failures.append("insufficient_ordered_video_frames")
             if not failures:
