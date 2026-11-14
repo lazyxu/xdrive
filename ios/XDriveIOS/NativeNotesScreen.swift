@@ -79,6 +79,9 @@ struct XDriveIOSNativeNotesScreen: View {
                 }
             }
             .pickerStyle(.segmented)
+            // The Picker's localized title is not reliably exposed as an
+            // iOS 18.5 SegmentedControl label. Give real segments a stable ID.
+            .accessibilityIdentifier("native-ios-notes-source-picker")
             .padding(.horizontal, 16)
             .padding(.top, 8)
             if let errorMessage {

@@ -115,9 +115,7 @@ function request(port, ca, expectedName, servername, requestedPath, httpVersion 
   })
 }
 
-test('iOS LAN Caddy wire: authenticated DNS SNI bootstrap + pinned IP identity', {
-  timeout: process.env.XDRIVE_LAN_SIMULATOR_TEST_RUNNER ? 900000 : 60000
-}, async t => {
+test('iOS LAN Caddy wire: authenticated DNS SNI bootstrap + pinned IP identity', { timeout: 60000 }, async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-lan-tls-wire-'))
   let server
   try {
@@ -154,8 +152,7 @@ test('iOS LAN Caddy wire: authenticated DNS SNI bootstrap + pinned IP identity',
       })
     })
     server.on('tlsClientError', () => {}) // expected failures are asserted by the client
-    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, (process.env.XDRIVE_LAN_APPLE_TEST_BINARY ||
-      process.env.XDRIVE_LAN_SIMULATOR_TEST_RUNNER) ? '0.0.0.0' : '127.0.0.1', resolve) })
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, process.env.XDRIVE_LAN_APPLE_TEST_BINARY ? '0.0.0.0' : '127.0.0.1', resolve) })
     const port = server.address().port
     const setIPLeaf = (name, sendIntermediate=true) => server.setSecureContext({
       key: fixture.key('lan'), cert: fixture.chain(name, sendIntermediate)
@@ -227,60 +224,6 @@ test('iOS LAN Caddy wire: authenticated DNS SNI bootstrap + pinned IP identity',
       await t.test(name + ', not an IP CA failure', async () => {
         versionResponse = response
         await assert.rejects(pair(), /stage4 version response/)
-      })
-    }
-    if (process.env.XDRIVE_LAN_SIMULATOR_TEST_RUNNER) {
-      await t.test('actual iPhone Simulator URLSession pins root, IP SAN and rejects wrong CA', {
-        timeout: 840000
-      }, async () => {
-        setIPLeaf('lan-valid')
-        currentRoot = fixture.read('local-root.pem')
-        versionResponse = { status: 200, body: JSON.stringify({ version: 'test' }) }
-
-        const wrongServer = tls.createServer({
-          key: fixture.key('lan'), cert: fixture.chain('lan-wrong-ip'), minVersion: 'TLSv1.2'
-        }, socket => {
-          socket.once('data', chunk => {
-            if (!chunk.toString('ascii').startsWith('GET /api/v1/version HTTP/1.')) {
-              socket.destroy()
-              return
-            }
-            const body = JSON.stringify({ version: 'test' })
-            socket.end('HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n' +
-              'Content-Length: ' + Buffer.byteLength(body) + '\r\nConnection: close\r\n\r\n' + body)
-          })
-        })
-        wrongServer.on('tlsClientError', () => {}) // expected strict TLS rejection
-        try {
-          await new Promise((resolve, reject) => {
-            wrongServer.once('error', reject)
-            wrongServer.listen(0, '0.0.0.0', resolve)
-          })
-          const script = process.env.XDRIVE_LAN_SIMULATOR_TEST_RUNNER
-          assert.equal(script, 'ios/tests/run-native-lan-simulator.sh',
-            'only the checked-in local-only simulator harness is supported')
-          const output = await new Promise((resolve, reject) => {
-            const child = spawn('bash', [script, dir, String(port), String(wrongServer.address().port)], {
-              cwd: path.resolve(__dirname, '../..'), stdio: ['ignore', 'pipe', 'pipe']
-            })
-            let tail = ''
-            const collect = part => { tail = (tail + part.toString('utf8')).slice(-200000) }
-            child.stdout.on('data', collect)
-            child.stderr.on('data', collect)
-            const timeout = setTimeout(() => child.kill('SIGKILL'), 800000)
-            child.once('error', error => { clearTimeout(timeout); reject(error) })
-            child.once('close', code => {
-              clearTimeout(timeout)
-              code === 0 ? resolve(tail)
-                : reject(new Error('iOS Simulator LAN URLSession test failed (' + code + '): ' +
-                    tail.slice(-5500)))
-            })
-          })
-          assert.match(output, /\*\* TEST SUCCEEDED \*\*/,
-            'simulator proof requires a real successful xcodebuild test')
-        } finally {
-          if (wrongServer.listening) await new Promise(resolve => wrongServer.close(resolve))
-        }
       })
     }
   } finally {

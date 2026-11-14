@@ -51,7 +51,19 @@ test('native Files decodes and displays Server modification timestamps in list a
   assert.match(page, /var updated_at: String\? = nil/)
   assert.match(page, /enum XDriveIOSNativeFilesDatePolicy/)
   assert.match(page, /fractionDigits\.utf8\.count <= 9/)
-  assert.equal((view.match(/XDriveIOSNativeFilesDatePolicy\.display\(modifiedDate\)/g) || []).length, 2)
+  // Both native list and grid rows now use one verified metadata formatter.
+  // Keep the Server timestamp/date decode assertion while forbidding drift
+  // between two independently formatted (and potentially flickering) labels.
+  const display = view.slice(view.indexOf('private func filesDisplayMetadata('),
+    view.indexOf('private func gridLabel(', view.indexOf('private func filesDisplayMetadata(')))
+  assert.match(display, /if let modifiedDate = entry\.node\.modifiedDate/)
+  assert.match(display, /dateLabel = "\\\(year\)\/\\\(month\)\/\\\(day\)"/)
+  assert.match(display, /case 0: dateLabel = "今天"/)
+  assert.match(display, /case 1: dateLabel = "昨天"/)
+  assert.match(display, /case 2: dateLabel = "前天"/)
+  assert.match(display, /if entry\.node\.isDirectory \{ return dateLabel \}/)
+  assert.match(display, /ByteCountFormatter\.string\(/)
+  assert.equal((view.match(/if let metadata = filesDisplayMetadata\(entry\)/g) || []).length, 2)
   assert.match(management, /file\.modifiedDate/)
   assert.match(management, /directory\.modifiedDate/)
 })
@@ -146,7 +158,12 @@ test('Browse home displays only verified favorite folders as native direct navig
   assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}[\s\S]*?if isHome, let current = login\.owner,[\s\S]*?favoriteShortcuts\.suspendForNavigation\(\)/)
   assert.match(view, /if !sameOwner \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = owner/)
   assert.match(view, /else \{\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil/)
-  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*homeReadAttempted = false\s*if isHome && phase == \.active \{\s*homeReadAttempted = true\s*reload\(\)/)
+  // A verified favorite navigation row may be invalidated for the new
+  // Owner, but the hidden tab MUST NOT immediately reload that Owner's data.
+  // The visible/active page now owns the refresh and saved-folder recovery.
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?searchOptions\.invalidate\(\)\s*let allowOwnerRead = XDriveIOSNativeFilesNavigationPolicy\.shouldStartOwnerRead\(\s*visible: filesViewVisible, active: phase == \.active,\s*hasOwner: login\.owner != nil\s*\)/)
+  assert.match(view, /if allowOwnerRead \{ searchOptions\.load\(login: login\) \}\s*if isHome && allowOwnerRead \{ restoreFilesSectionIfNeeded\(\) \}\s*favoriteShortcuts\.invalidate\(\)\s*favoriteShortcutsOwner = nil\s*homeReadAttempted = false\s*if isHome && allowOwnerRead \{\s*homeReadAttempted = true\s*reload\(\)/)
+  assert.doesNotMatch(view, /if isHome && phase == \.active \{\s*homeReadAttempted = true\s*reload\(\)/)
   assert.match(view, /if isHome \{\s*model\.invalidate\(\)\s*loadFavoriteShortcuts\(\)\s*quickAccess\.load\(login: login\)\s*return/)
   assert.doesNotMatch(home, /XDriveIOSNativeFilesCollectionsTransport\(|URLSession|\/api\/v1\/file-favorites/)
 })

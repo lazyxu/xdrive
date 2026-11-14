@@ -47,10 +47,20 @@ test('Gallery short landscape uses one safe-area row without remounting its acti
   assert.match(ui, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/);
   assert.match(ui, /GeometryReader \{ availableSpace in/);
   assert.match(ui, /availableSpace\.size\.width >= 680 &&[\s\S]*?availableSpace\.size\.height < 500 &&[\s\S]*?!dynamicTypeSize\.isAccessibilitySize/);
-  assert.match(ui, /if !galleryFocused \{[\s\S]*?HStack\(spacing: 0\) \{\s*gallerySourceRow\s*if gallerySource == \.local \|\| gallerySource == \.albums \{\s*gallerySearchAction\s*\}\s*galleryCompactBackupAction\s*\}/);
+  // Real Simulator showed the old in-row backup Menu with a 15.3pt AX hitbox.
+  // Keep the compact source/search row, but demand exactly one 44pt native
+  // toolbar Menu, so the Gallery wall never remounts at rotation.
+  const gallery = ui.slice(ui.indexOf('private var gallery: some View'),
+    ui.indexOf('switch gallerySource', ui.indexOf('private var gallery: some View')))
+  assert.match(gallery, /if !galleryFocused \{[\s\S]*?HStack\(spacing: 0\) \{\s*gallerySourceRow\s*if gallerySource == \.local \|\| gallerySource == \.albums \{\s*gallerySearchAction\s*\}\s*\}\s*\.frame\(minHeight: 48\)/)
+  assert.doesNotMatch(gallery, /galleryCompactBackupAction/)
+  assert.match(ui, /\.navigationTitle\("图库"\)[\s\S]*?ToolbarItem\(placement: \.navigationBarTrailing\) \{\s*if !galleryFocused \{\s*galleryCompactBackupAction/)
+  assert.match(ui, /private var galleryCompactBackupAction: some View \{[\s\S]*?\.frame\(minWidth: 64, minHeight: 44\)[\s\S]*?\.contentShape\(Rectangle\(\)\)/)
+  assert.equal((ui.match(/galleryCompactBackupAction/g) || []).length, 2,
+    'Gallery must have one declared and one rendered backup Menu');
   assert.match(ui, /else \{\s*galleryStatusRow\s*gallerySourceRow/);
   assert.match(ui, /private var gallerySourceRow: some View \{[\s\S]*?ScrollView\(\.horizontal, showsIndicators: false\)/);
   assert.match(ui, /\.accessibilityValue\([\s\S]*?"自动备份已暂停，需核对收据"/);
-  assert.match(ui, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings-compact"\)/);
+  assert.match(ui, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings"\)/);
   assert.equal((ui.match(/switch gallerySource/g) || []).length, 1);
 });

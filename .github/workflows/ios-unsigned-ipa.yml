@@ -67,6 +67,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-clipboard-sse"
           node --test desktop/tests/native-clipboard-sse-contract.cjs
 
+      - name: Verify Clipboard Cloud Files stale Back double-tap cannot trap
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeClipboardFolderBackPolicy.swift \
+            ios/tests/NativeClipboardFolderBackPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-clipboard-folder-back"
+          "$RUNNER_TEMP/xdrive-ios-clipboard-folder-back"
+          node --test desktop/tests/ios-native-clipboard-folder-back-crash.cjs
+
       - name: Verify iOS explicit Clipboard Share Extension input and privacy boundary
         run: |
           set -euo pipefail
@@ -126,6 +136,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-launch-check"
           "$RUNNER_TEMP/xdrive-ios-launch-check"
           node --test desktop/tests/ios-native-launch-recovery.cjs
+
+      - name: Verify native Files audio timecode bounded conversion
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeFileAudioTimecodePolicy.swift \
+            ios/tests/NativeFileAudioTimecodeChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-audio-timecode"
+          "$RUNNER_TEMP/xdrive-ios-files-audio-timecode"
 
       # Pure Foundation contract test is quick and independent of signing.
       - name: Verify native cloud OCR detail privacy and decoding

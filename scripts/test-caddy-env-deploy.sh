@@ -29,6 +29,11 @@ ALIYUN_ACCESS_KEY_SECRET=examplekeysecret
 POSTGRES_PASSWORD=unmodified-example
 XD_JWT_SECRET=also-unmodified-example
 ENV
+# This isolated source-only fixture models an authorized host runner. The
+# production observer's strict process-group guard stays enabled; selecting a
+# synthetic container GID absent from CI's groups would test a stale login,
+# not the intended read-only Caddy .env recovery.
+printf 'XD_SERVER_GID=%s\n' "$(id -g)" >> "$XD_CONFIG_DIR/config/.env"
 chmod 0600 "$XD_CONFIG_DIR/config/.env"
 printf 'services:\n  caddy:\n    image: fixture\n' > "$XD_CONFIG_DIR/config/docker-compose.yml"
 cat > "$TMP/fakebin/docker" <<'DOCKER'
@@ -80,6 +85,11 @@ export PATH="$TMP/fakebin:$PATH"
 
 python3 "$ROOT/scripts/test-caddy-admission.py"
 source "$ROOT/scripts/server-control.sh"
+# Independent real group admission: the source-only Host observer must remain
+# authorized through the actual process's current primary group, not by
+# disabling caddy_observer_group_ready.
+[[ "$(env_value XD_SERVER_GID)" == "$(id -g)" ]]
+[[ "$(stat -c '%g' -- "$(prepare_dir)")" == "$(id -g)" ]]
 # Only the transport is under test: existing independent tests verify the
 # REAL TLS/CA/SAN helper implementations. Never weaken production probes.
 caddy_local_tls_state() { printf 'verified\n'; }

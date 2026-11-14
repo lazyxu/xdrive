@@ -37,7 +37,6 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                     }
                 )
                 .onAppear { workspaceAppeared() }
-                .onDisappear { workspaceDisappeared() }
             } else {
                 NavigationStack {
                     ScrollView {
@@ -60,6 +59,20 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                 .font(.title3.weight(.semibold))
 
                             loginForm
+                                // The signed-out form itself is the definitive
+                                // visible workspace. SwiftUI may materialize
+                                // it after the ancestor's original onAppear,
+                                // so re-arm the existing guarded readiness
+                                // fence from the concrete mounted child too.
+                                .onAppear { workspaceAppeared() }
+                                .task(id: restoreFinished) {
+                                    guard restoreFinished else { return }
+                                    // This is not a shortcut to ready:
+                                    // restoreComplete, visible scene and
+                                    // foreground are still required by
+                                    // armReadinessAfterMount().
+                                    await MainActor.run { workspaceAppeared() }
+                                }
                             if let logoutWarning {
                                 Text(logoutWarning)
                                     .foregroundStyle(.orange)
@@ -91,6 +104,10 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                                 .accessibilityIdentifier("native-ios-prelogin-build")
+                                // Non-secret readiness state for the real
+                                // cold-restart UI test. No fake credentials or
+                                // test-only success transition is introduced.
+                                .accessibilityValue(startupReady ? "ready" : "mounting")
                             // Stop-only operation remains available even
                             // when login/Keychain or the Server is unavailable.
                             Button("紧急停止本机相册自动备份", role: .destructive) {
@@ -118,13 +135,14 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                     .navigationBarTitleDisplayMode(.inline)
                 }
                 .onAppear { workspaceAppeared() }
-                .onDisappear { workspaceDisappeared() }
             }
         }
+        // The login and Dashboard are sibling workspaces. Their SwiftUI
+        // onDisappear callbacks can arrive after the next one appears; only
+        // the common app root may revoke the startup-visible lease.
+        .onAppear { workspaceAppeared() }
         .onDisappear {
-            readinessTicket = UUID()
-            readinessTask?.cancel()
-            readinessTask = nil
+            workspaceDisappeared()
             backup.stopLibraryChangeMonitoring()
         }
         .task {
@@ -150,6 +168,13 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 foreground: phase == .active
             ) else { return }
             backup.tickIfDue(login: model)
+        }
+        // A restored signed-out form may appear before SwiftUI publishes
+        // restoreFinished. Its onAppear can then fail readiness admission,
+        // leaving the process checkpoint stuck at mountingWorkspace even
+        // after the login field is visible. Re-arm at the completion boundary.
+        .onChange(of: restoreFinished) { finished in
+            if finished { workspaceAppeared() }
         }
         .onChange(of: phase) { state in
             if state == .active {

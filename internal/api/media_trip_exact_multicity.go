@@ -51,27 +51,6 @@ func mediaExactTripHome(days []mediaMemoryTripDay) (int64, int64, bool) {
 	return home[0], home[1], true
 }
 
-// mediaExactTripCivilDayDelta compares canonical yyyy-mm-dd day keys in
-// UTC's proleptic Gregorian calendar, independently of the wall-clock elapsed
-// seconds or the IANA zone that originally formed the keys. Only adjacent days
-// are relevant to promotion. Invalid/missing day keys cannot promote a trip.
-func mediaExactTripCivilDayDelta(lhs, rhs string) int {
-	left, leftErr := time.Parse("2006-01-02", lhs)
-	right, rightErr := time.Parse("2006-01-02", rhs)
-	if leftErr != nil || rightErr != nil ||
-		left.Format("2006-01-02") != lhs ||
-		right.Format("2006-01-02") != rhs {
-		return 0
-	}
-	if right.AddDate(0, 0, 1).Equal(left) {
-		return 1
-	}
-	if right.AddDate(0, 0, -1).Equal(left) {
-		return -1
-	}
-	return 0
-}
-
 // A home-dominant travel transition day can still have genuine off-home
 // photos (e.g. return home after visiting another city). Promote it only
 // when a distinct neighboring day is already independently identified as
@@ -100,10 +79,7 @@ func mediaExactTripPromoteTransitDays(
 			if i == j || mediaMemoryTripNearHome(other, homeLat, homeLon) {
 				continue
 			}
-			// A "day" is a calendar date in the selected Owner IANA
-			// zone, not 24 elapsed hours. Midnight near a DST
-			// transition can be 23/25 hours apart.
-			delta := mediaExactTripCivilDayDelta(day.DateKey, other.DateKey)
+			delta := int(day.Date.Sub(other.Date).Hours() / 24)
 			if delta == 1 {
 				before = true
 			}

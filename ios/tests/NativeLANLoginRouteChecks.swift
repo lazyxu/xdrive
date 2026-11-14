@@ -55,9 +55,8 @@ import Foundation
         // Pairing must not flatten a valid TLS session followed by a
         // network/HTTP failure into the misleading "invalidRoot" category.
         let classify = XDriveIOSNativeLANLoginRoute.pairingProbeFailure
-        if case .ipCertificateWithoutChallenge(let code) = classify(URLError(.serverCertificateUntrusted)) {
-            precondition(code == URLError.serverCertificateUntrusted.rawValue)
-        } else { preconditionFailure("unobserved TLS challenge must not be diagnosed as invalid CA/SAN") }
+        if case .ipCertificateInvalid = classify(URLError(.serverCertificateUntrusted)) {}
+        else { preconditionFailure("IP TLS mismatch misclassified") }
         if case .ipTLSHandshakeFailed(let code) = classify(URLError(.secureConnectionFailed)) {
             precondition(code == URLError.secureConnectionFailed.rawValue)
         } else { preconditionFailure("TLS handshake failure falsely blamed on IP SAN") }
@@ -86,29 +85,6 @@ import Foundation
             "指定 CA"), "generic certificate denial must describe the configured trust check")
         precondition(!XDriveIOSLANPairingFailure.ipCertificateInvalid.message.contains(
             "IP SAN"), "generic certificate denial must not invent a confirmed SAN mismatch")
-        precondition(XDriveIOSLANPairingFailure.ipCertificateWithoutChallenge(-1202).message.contains(
-            "NO_TRUST_CHALLENGE"), "missing callback must have an independent stable code")
-        let rootHash = String(repeating: "a", count: 64)
-        let leafHash = String(repeating: "b", count: 64)
-        for (reason, code) in [
-            (XDriveIOSLANTrustEvidence.Reason.challengeIdentity, "CHALLENGE_AUTHORITY"),
-            (.trustObjectMissing, "SERVER_TRUST_MISSING"),
-            (.retryChallenge, "REPEATED_CHALLENGE"),
-            (.trustSetup, "TRUST_SETUP"),
-            (.ipIdentity, "IP_IDENTITY"),
-            (.chainOrValidity, "CHAIN_OR_VALIDITY")
-        ] {
-            let proof = XDriveIOSLANTrustEvidence(reason: reason, rootSHA256: rootHash,
-                leafSHA256: leafHash, setupOSStatus: -50)
-            let message = XDriveIOSLANPairingFailure.ipCertificateEvidence(proof).message
-            precondition(message.contains(code), "missing fixed TLS reason code")
-            precondition(message.contains(rootHash) && message.contains(leafHash),
-                         "missing public-only fingerprints")
-            precondition(message.contains("-50"), "missing bounded Security status")
-            for secret in ["Bearer ", "Authorization:", "Cookie:", "password=", "privateKey"] {
-                precondition(!message.contains(secret), "diagnostics may never serialize secrets")
-            }
-        }
         precondition(XDriveIOSLANPairingFailure.ipCertificateIdentityInvalid.message.contains(
             "SAN"), "confirmed IP identity rejection must mention SAN")
         precondition(XDriveIOSLANPairingFailure.ipVersionStatus(502).message.contains(

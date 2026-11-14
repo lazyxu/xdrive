@@ -842,7 +842,7 @@ const scenarios = [
     "checks": [
       {
         "file": "f",
-        "pattern": "if !isHome && !model\\.loading && !model\\.verifiedPage,[\\s\\S]*?let failure = model\\.errorMessage[\\s\\S]*?native-ios-files-error-page",
+        "pattern": "if !isHome && !isGlobalSearch && !model\\.loading && !model\\.verifiedPage,[\\s\\S]*?let failure = model\\.errorMessage[\\s\\S]*?native-ios-files-error-page",
         "flags": ""
       }
     ]

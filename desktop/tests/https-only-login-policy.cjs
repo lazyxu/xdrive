@@ -94,20 +94,13 @@ test('iOS simplifies route selection without TLS or Owner identity bypass', () =
   assert.match(pinnedTrust, /SecTrustSetAnchorCertificatesOnly\(trust, true\)/)
   assert.match(pinnedTrust, /SecTrustSetNetworkFetchAllowed\(trust, false\)/)
   assert.match(pinnedTrust, /SecPolicyCreateSSL\(true, target\.ip as CFString\)/)
-  assert.match(pinnedTrust, /if SecTrustEvaluateWithError\(trust, nil\) \{\s*return XDriveIOSLANTrustInspection\(verdict: \.trusted, setupOSStatus: nil\)/)
+  assert.match(pinnedTrust, /if SecTrustEvaluateWithError\(trust, nil\) \{ return \.trusted \}/)
   // A secondary Basic X.509 probe can only classify a rejected connection,
   // never replace the exact IP SAN + paired CA authentication gate.
   assert.match(pinnedTrust, /SecPolicyCreateSSL\(true, target\.ip as CFString\)/)
   assert.match(pinnedTrust, /SecPolicyCreateBasicX509\(\)/)
-  // The diagnostics helper also hashes the peer leaf via SecTrustCopyCertificateChain.
-  // Test the security gate within inspectDetailed only, not the first occurrence
-  // anywhere in the source file. The Basic X.509 fallback remains diagnostic-only.
-  const inspection = pinnedTrust.slice(pinnedTrust.indexOf('static func inspectDetailed('))
-  const strictAccept = inspection.indexOf(
-    'return XDriveIOSLANTrustInspection(verdict: .trusted, setupOSStatus: nil)')
-  const negativeCheck = inspection.indexOf('SecTrustCopyCertificateChain(trust)')
-  assert.ok(strictAccept >= 0 && negativeCheck > strictAccept,
-    'strict pinned TLS evaluation must precede diagnostic-only chain inspection')
+  assert.ok(pinnedTrust.indexOf('if SecTrustEvaluateWithError(trust, nil) { return .trusted }') <
+    pinnedTrust.indexOf('SecTrustCopyCertificateChain(trust)'))
   assert.doesNotMatch(route + pinnedTrust, /allowsInsecureHTTPLoads|trustAllCertificates|InsecureSkipVerify/)
   assert.match(login, /let origin = try await XDriveIOSNativeLANLoginRoute\.selectOrigin/)
   assert.match(login, /origin: origin,\s*accessToken: accessToken/)

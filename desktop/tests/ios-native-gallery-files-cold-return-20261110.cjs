@@ -66,7 +66,12 @@ test('08 frame watcher samples LATE taps on repeated 8+ Gallery/Files switches',
   assert.match(frame, /count = tap_counts\.get\(current_case, 0\) \+ 1\s*tap_counts\[current_case\] = count\s*minimal = current_case\[0\] in MINIMAL_TARGETS/)
   // The 21 short routes sample their first actual tap. Longer Gallery/Files
   // round trips still sample late taps 4/8/12/16, not just the opening tab.
-  assert.match(frame, /if \(minimal and count == 1\) or \(not minimal and count in TAP_CAPTURE_NUMBERS\):/)
+  // A Launcher first opens its scroll grid. Sample the real child button,
+  // never falsely credit the Launcher tab as the child-page transition.
+  assert.match(frame, /is_launcher = current_case\[0\]\.startswith\("testLauncher"\)/)
+  assert.match(frame, /minimal and count == 1 and not is_launcher/)
+  assert.match(frame, /minimal and is_launcher[\s\S]*?tapped\.group\(1\)\.startswith\("native-ios-launcher-"\)/)
+  assert.match(frame, /not minimal and count in TAP_CAPTURE_NUMBERS/)
   assert.match(frame, /delays = \(0\.55,\) if minimal else TAP_FRAME_OFFSETS_SECONDS/)
   assert.doesNotMatch(frame, /if count < 3:/)
 })

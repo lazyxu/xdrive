@@ -137,12 +137,30 @@ class AuditTests(unittest.TestCase):
         watcher = (repo / 'ios' / 'scripts' /
                    'capture-navigation-smoke-frames.py').read_text(encoding='utf-8')
         registered = set(re.findall(r'"(test\w+)"', watcher))
-        self.assertGreaterEqual(len(cases), 70)
+        self.assertGreaterEqual(len(cases), 77)
         self.assertFalse(cases - registered,
                          'untested native routes: ' + ', '.join(sorted(cases - registered)))
         self.assertIn('FRAME_OFFSETS_SECONDS[-1:] if name in MINIMAL_TARGETS', watcher)
         self.assertIn('minimal and count == 1', watcher)
         self.assertIn('delays = (0.55,) if minimal else TAP_FRAME_OFFSETS_SECONDS', watcher)
+
+    def test_every_all_pages_crash_journey_has_bounded_simulator_frame_evidence(self):
+        # The iOS app crash gate runs all these methods, but a missing frame
+        # registration would otherwise leave individual child transitions
+        # unobserved by the separate Simulator diagnostics.
+        import re
+        repo = pathlib.Path(__file__).resolve().parents[2]
+        source = (repo / 'ios/UITests/XDriveIOSAllPagesCrashUITests.swift').read_text(encoding='utf-8')
+        watcher = (repo / 'ios/scripts/capture-navigation-smoke-frames.py').read_text(encoding='utf-8')
+        workflow = (repo / '.github/workflows/ios-native-navigation-runtime.yml').read_text(encoding='utf-8')
+        cases = re.findall(r'\bfunc\s+(test\w+)\s*\(', source)
+        registered = set(re.findall(r'"(test\w+)"', watcher))
+        self.assertGreaterEqual(len(cases), 41)
+        self.assertEqual(len(cases), len(set(cases)))
+        self.assertFalse(set(cases) - registered,
+                         'all-pages native cases missing frame diagnostics: ' +
+                         ', '.join(sorted(set(cases) - registered)))
+        self.assertIn('-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllPagesCrashUITests', workflow)
 
     def test_missing_trace_is_explicit_even_without_any_frame(self):
         with tempfile.TemporaryDirectory() as tmp:
