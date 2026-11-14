@@ -336,6 +336,17 @@ TARGETS.update({
     "testRealSignedOutPasswordShowHideRotationForegroundDoesNotExit",
 })
 
+# Six more real Gallery/Files child transitions; diagnostic Simulator PNG only.
+# This must not be presented as physical iPhone 60/120 Hz smoothness proof.
+TARGETS.update({
+    "testPeopleFilesSavedSearchesOriginalsReturnRetiresSheet",
+    "testFilesOperationHistoryForegroundGalleryAlbumsNoGhostModal",
+    "testGalleryFilterCancelFilesTrashRecoveryRetainsWall",
+    "testUnifiedDensityAfterFilesHomeSheetsPreservesGeneration",
+    "testOriginalsHelpFilesQuickRailCloudDenialHasNoGhostOverlay",
+    "testLocalPhotosFilesOrganizerBackgroundReturnKeepsChild",
+})
+
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")

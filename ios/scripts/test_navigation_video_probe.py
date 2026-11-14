@@ -155,6 +155,41 @@ class VideoEvidenceTests(unittest.TestCase):
         self.assertEqual(report['frame_interval_p95_ms'], 833.0)
         self.assertIn('ffprobe', runner.call_args.args[0])
 
+    def test_post_tap_only_decoded_frames_cannot_count_as_two_sided_video(self):
+        row = self.clip(first_tap_offset_s=2.0)
+        video = {**self.probe(None), 'first_frame_s': 2.2}
+        result = assess_clip(row, self.root, probe=lambda _: video)
+        self.assertFalse(result['usable'])
+        self.assertEqual(result['reason'], 'no_pre_tap_video')
+
+    def test_insufficient_pre_tap_recorded_window_is_rejected(self):
+        row = self.clip(first_tap_offset_s=2.0)
+        video = {**self.probe(None), 'first_frame_s': 1.1}
+        self.assertEqual(
+            assess_clip(row, self.root, probe=lambda _: video)['reason'],
+            'no_pre_tap_video')
+
+    def test_recorded_one_second_pre_tap_boundary_remains_eligible(self):
+        row = self.clip(first_tap_offset_s=2.0)
+        video = {**self.probe(None), 'first_frame_s': 1.0}
+        self.assertTrue(assess_clip(row, self.root, probe=lambda _: video)['usable'])
+
+    def test_missing_first_decoded_frame_cannot_be_accepted(self):
+        row = self.clip(first_tap_offset_s=2.0)
+        video = {**self.probe(None), 'first_frame_s': None}
+        self.assertEqual(
+            assess_clip(row, self.root, probe=lambda _: video)['reason'],
+            'no_pre_tap_video')
+
+    def test_pre_tap_rejection_preserves_six_route_requirement(self):
+        bad = self.clip(first_tap_offset_s=2.0)
+        (self.root / 'trace.jsonl').write_text(json.dumps(bad) + '\n')
+        video = {**self.probe(None), 'first_frame_s': 2.5}
+        report = audit(self.root, required=6, probe=lambda _: video)
+        self.assertFalse(report['pass'])
+        self.assertEqual(report['usable_routes'], 0)
+        self.assertEqual(report['rejected_by_reason'], {'no_pre_tap_video': 1})
+
     def test_initial_white_launch_without_tap_is_not_false_pass(self):
         row = self.clip(first_tap_offset_s=None)
         self.assertEqual(

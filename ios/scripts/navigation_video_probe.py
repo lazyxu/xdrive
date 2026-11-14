@@ -142,6 +142,13 @@ def assess_clip(entry, directory, probe=frame_timeline):
     elif tap < 1.0:
         # Recorder startup latency makes this pre-tap window ambiguous.
         result['reason'] = 'pre_tap_coverage_not_established'
+    elif (not isinstance(info['first_frame_s'], (int, float)) or
+          not math.isfinite(info['first_frame_s']) or
+          info['first_frame_s'] > tap - 1.0):
+        # A timestamp after the tap (or <1s before it) cannot prove the
+        # recorded movie includes the pre-navigation screen. Mere file length
+        # or 20 later frames is not valid before/after video evidence.
+        result['reason'] = 'no_pre_tap_video'
     elif info['frame_count'] < 20:
         result['reason'] = 'too_few_recorded_frames'
     elif info['last_frame_s'] is None or info['last_frame_s'] < tap + 2.0:

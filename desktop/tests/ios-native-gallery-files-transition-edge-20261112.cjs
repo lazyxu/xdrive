@@ -188,3 +188,51 @@ test('native Files filter rail is exposed and reached by real vertical then hori
   assert.ok(ui.includes('FILES_FILTER_RAIL_MISSING AX tree:'), 'Keep real AX hierarchy on failure')
   assert.ok(ui.includes('files-search-filter-rail-missing'), 'Keep actual Simulator frame on failure')
 })
+
+
+test('six added independent real iOS Gallery/Files transitions require live AX, child retirement and visual screenshots', () => {
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  const watcher = read('ios/scripts/capture-navigation-smoke-frames.py')
+  const workflow = read('.github/workflows/ios-native-navigation-runtime.yml')
+  const cases = [
+    'testPeopleFilesSavedSearchesOriginalsReturnRetiresSheet',
+    'testFilesOperationHistoryForegroundGalleryAlbumsNoGhostModal',
+    'testGalleryFilterCancelFilesTrashRecoveryRetainsWall',
+    'testUnifiedDensityAfterFilesHomeSheetsPreservesGeneration',
+    'testOriginalsHelpFilesQuickRailCloudDenialHasNoGhostOverlay',
+    'testLocalPhotosFilesOrganizerBackgroundReturnKeepsChild',
+  ]
+  for (const name of cases) {
+    assert.match(ui, new RegExp('func ' + name + '\\(\\)'))
+    assert.ok(watcher.includes('"' + name + '"'), 'Missing real screenshot watcher registration: ' + name)
+  }
+  assert.match(ui, /private func openRealFilesHomeSheet\(/)
+  assert.match(ui, /native-ios-files-home-list/)
+  assert.match(ui, /native-ios-files-saved-searches-page/)
+  assert.match(ui, /native-ios-files-operation-history-page/)
+  assert.match(ui, /native-ios-files-organize-home-sheet/)
+  assert.match(ui, /XCTNSPredicateExpectation/)
+  assert.match(ui, /XCTAssertEqual\(wall\.value as\? String, generation/)
+  assert.match(ui, /native-ios-files-trash-error-page/)
+  assert.match(ui, /native-ios-local-timeline-open/)
+  assert.match(ui, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(ui, /assertPixels\(app,/)
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSGalleryFilesTransitionEdgeUITests/)
+  assert.doesNotMatch(ui, /XCTSkip|WKWebView|fakeToken|mockPhotoKit/)
+})
+
+test('video acceptance requires decoded frames from before and after the real tap', () => {
+  const probe = read('ios/scripts/navigation_video_probe.py')
+  const cases = read('ios/scripts/test_navigation_video_probe.py')
+  assert.match(probe, /info\['first_frame_s'\] > tap - 1\.0/)
+  assert.match(probe, /result\['reason'\] = 'no_pre_tap_video'/)
+  assert.match(probe, /info\['last_frame_s'\] < tap \+ 2\.0/)
+  assert.match(probe, /info\['frame_count'\] < 20/)
+  for (const testName of [
+    'test_post_tap_only_decoded_frames_cannot_count_as_two_sided_video',
+    'test_insufficient_pre_tap_recorded_window_is_rejected',
+    'test_recorded_one_second_pre_tap_boundary_remains_eligible',
+    'test_missing_first_decoded_frame_cannot_be_accepted',
+    'test_pre_tap_rejection_preserves_six_route_requirement',
+  ]) assert.ok(cases.includes('def ' + testName + '('))
+})
