@@ -45,7 +45,7 @@ test('dynamic tab checks real selected feature or Map shortcut, not a nonexisten
   // can show the selected feature or an explicit fallback Map button.
   for (const id of ['native-ios-map-source-selector', 'native-ios-backup-overview',
                     'ios-clipboard-status', 'native-ios-transfer-overview',
-                    '笔记来源', '打开地图']) {
+                    'native-ios-notes-source-picker', '打开地图']) {
     assert.ok(suite.includes(id), 'Missing actual dynamic destination ' + id)
   }
   assert.match(suite, /eligible\.contains\(where: \{ \$0\.exists \}\)/)
