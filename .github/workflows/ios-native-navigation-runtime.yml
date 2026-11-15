@@ -4,6 +4,9 @@ on:
     paths:
       - '.github/workflows/ios-native-navigation-runtime.yml'
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
+      - 'ios/UITests/XDriveIOSCompactLoginUITests.swift'
+      - 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'
+      - 'desktop/tests/ios-native-login-compact-16-items.cjs'
       - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift'
       - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
@@ -233,7 +236,10 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesFirstOpenAndSixGalleryReturnsDoNotExit") ;;
             candidate-navigation)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests")
-              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests") ;;
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests")
+              # Actual product login shell under CI-only safe-startup,
+              # not the synthetic Owner/FIles/Gallery navigation fixture.
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSCompactLoginUITests") ;;
             candidate-gallery-files)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests") ;;
