@@ -17,8 +17,10 @@ options.iterationCount = 3
 options.invocationOptions = [.manuallyStart, .manuallyStop]
 startMeasuring()
 stopMeasuring()
+IOS_NATIVE_SUBPAGE_STAGE_MS
 IOS_NATIVE_SUBPAGE_PERF_MS
 IOS_NATIVE_SUBPAGE_RETURN_MS
+IOS_NATIVE_SUBPAGE_POST_RETURN_SCREENSHOT
 """
 METHODS = {
     "files.organizer": "testSubpageFilesOrganizer",
@@ -39,6 +41,8 @@ def fake_log(routes=tuple(METHODS)):
         method = METHODS[route]
         rows += [f"IOS_NATIVE_SUBPAGE_ITERATION route={route} index={n}"
                  for n in range(1, 5)]
+        rows += [f"IOS_NATIVE_SUBPAGE_STAGE_MS route={route} trial={n} value={n*5}"
+                 for n in range(1, 4)]
         rows += [f"IOS_NATIVE_SUBPAGE_PERF_MS route={route} trial={n} value={n*10}"
                  for n in range(1, 4)]
         rows += [f"IOS_NATIVE_SUBPAGE_RETURN_MS route={route} trial={n} value={n*7}"
@@ -52,6 +56,7 @@ def fake_log(routes=tuple(METHODS)):
                 f"values: [{unit}], performanceMetricID:app"
             )
         rows.append(f"IOS_NATIVE_SUBPAGE_POST_AX_SCREENSHOT route={route} trial=1")
+        rows.append(f"IOS_NATIVE_SUBPAGE_POST_RETURN_SCREENSHOT route={route} trial=1")
         rows.append(f"IOS_NATIVE_SUBPAGE_COMPLETE route={route} iterations=4")
     return "\n".join(rows)
 
@@ -68,10 +73,14 @@ class NativeSubpageAuditTests(unittest.TestCase):
         report = module.audit(fake_source(), fake_log(), {"metrics": [1]})
         self.assertEqual(report["route_count"], 2)
         self.assertEqual(report["recorded_test_invocations"], 8)
+        self.assertEqual(report["total_parent_stage_samples"], 6)
         self.assertEqual(report["total_ax_samples"], 6)
         self.assertEqual(report["total_return_samples"], 6)
         self.assertEqual(report["post_ax_screenshot_routes"], 2)
+        self.assertEqual(report["post_return_screenshot_routes"], 2)
         self.assertFalse(report["true_composited_first_frame_measured"])
+        self.assertEqual(report["rows"][0]["parent_stage_p50_ms"], 10)
+        self.assertEqual(report["rows"][0]["parent_stage_p95_ms"], 15)
         self.assertEqual(report["rows"][0]["ax_ready_p50_ms"], 20)
         self.assertEqual(report["rows"][0]["return_ax_ready_p50_ms"], 14)
         self.assertEqual(report["rows"][0]["return_ax_ready_p95_ms"], 21)
@@ -235,6 +244,28 @@ class NativeSubpageAuditTests(unittest.TestCase):
         bad = "\n".join(x for x in fake_log().splitlines()
                         if "POST_AX_SCREENSHOT" not in x)
         with self.assertRaisesRegex(ValueError, "screenshot"):
+            module.audit(fake_source(), bad, {"metrics": [1]})
+
+    def test_missing_return_screenshot_fails(self):
+        bad = "\n".join(x for x in fake_log().splitlines()
+                        if "POST_RETURN_SCREENSHOT" not in x)
+        with self.assertRaisesRegex(ValueError, "post-return screenshot"):
+            module.audit(fake_source(), bad, {"metrics": [1]})
+
+    def test_duplicate_return_screenshot_fails(self):
+        bad = fake_log() + "\nIOS_NATIVE_SUBPAGE_POST_RETURN_SCREENSHOT route=backup.tasks trial=1"
+        with self.assertRaisesRegex(ValueError, "post-return screenshot"):
+            module.audit(fake_source(), bad, {"metrics": [1]})
+
+    def test_missing_parent_stage_sample_fails(self):
+        bad = "\n".join(x for x in fake_log().splitlines()
+                        if "STAGE_MS route=backup.tasks trial=2" not in x)
+        with self.assertRaisesRegex(ValueError, "parent-stage"):
+            module.audit(fake_source(), bad, {"metrics": [1]})
+
+    def test_duplicate_parent_stage_sample_fails(self):
+        bad = fake_log() + "\nIOS_NATIVE_SUBPAGE_STAGE_MS route=backup.tasks trial=1 value=5"
+        with self.assertRaisesRegex(ValueError, "parent-stage"):
             module.audit(fake_source(), bad, {"metrics": [1]})
 
     def test_missing_actual_metric_fails(self):
