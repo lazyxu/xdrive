@@ -83,3 +83,24 @@ test('Files retained list, return scroll and real Viewer still receive original 
   assert.match(files, /\.onChange\(of: login\.owner\)/)
   assert.doesNotMatch(files, /id\(UUID\(\)\)/)
 })
+
+test('signed-in Gallery never eagerly mounts the Files view graph; first Files visit keeps the same stateful tab after return', () => {
+  const dashboard = fs.readFileSync(
+    path.join(root, 'ios/XDriveIOS/NativePhotosDashboard.swift'), 'utf8'
+  )
+  assert.match(dashboard, /@State private var tab: XDriveIOSNativeBottomTab = \.gallery/)
+  assert.match(dashboard, /@State private var filesTabActivated = false/)
+  const filesTab = dashboard.slice(
+    dashboard.indexOf('if tab == .files || filesTabActivated {'),
+    dashboard.indexOf('.tag(XDriveIOSNativeBottomTab.files)')
+  )
+  assert.match(filesTab, /if tab == \.files \|\| filesTabActivated \{\s*[\s\S]*?files\s*\.navigationTitle\("文件"\)/)
+  assert.match(filesTab, /else \{\s*Color\.clear\s*\.accessibilityHidden\(true\)/)
+  assert.match(dashboard, /\.onChange\(of: tab\) \{ next in\s*if next == \.files \{ filesTabActivated = true \}/)
+  assert.match(dashboard, /\.onChange\(of: ownerScopeKey\) \{ _ in[\s\S]*?filesTabActivated = false/)
+  assert.match(dashboard, /private func resetNavigation\(\) \{\s*filesTabActivated = false/)
+  assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.files\)/)
+  assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.gallery\)/)
+  assert.equal((dashboard.match(/XDriveIOSNativeFilesBrowser\(login: login\)/g) || []).length, 1,
+    'do not substitute another unauthenticated Files root')
+})
