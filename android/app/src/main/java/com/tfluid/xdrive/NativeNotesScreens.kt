@@ -622,28 +622,85 @@ private fun NativeNotesImage(
 private fun NativeNotesHistory(
     controller: DriveController, noteID: String, nodeID: Long, onClose: () -> Unit,
 ) {
-    var versions by remember(noteID) { mutableStateOf(emptyList<OwnerNoteVersion>()) }
-    var oldMarkdown by remember(noteID) { mutableStateOf<String?>(null) }
-    var error by remember(noteID) { mutableStateOf<String?>(null) }
+    val owner by controller.state.collectAsStateWithLifecycle()
+    val ownerEpoch = owner.nativeUiSessionId
+    val context = LocalContext.current
+    var versions by remember(noteID, ownerEpoch) { mutableStateOf(emptyList<OwnerNoteVersion>()) }
+    var oldMarkdown by remember(noteID, ownerEpoch) { mutableStateOf<String?>(null) }
+    var selectedVersion by remember(noteID, ownerEpoch) { mutableStateOf<OwnerNoteVersion?>(null) }
+    var pendingExport by remember(noteID, ownerEpoch) { mutableStateOf<String?>(null) }
+    var activeRead by remember(noteID, ownerEpoch) { mutableStateOf<Long?>(null) }
+    var error by remember(noteID, ownerEpoch) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(noteID) {
-        try { versions = controller.notesVersions(noteID) }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { error = failure.message }
+    val exporter = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/markdown"),
+    ) { uri ->
+        val snapshot = pendingExport
+        pendingExport = null
+        if (uri != null && snapshot != null &&
+            controller.state.value.nativeUiSessionId == ownerEpoch) {
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use {
+                            it.write(snapshot.toByteArray(Charsets.UTF_8))
+                        } ?: throw IOException("无法写入所选的 Markdown 文件")
+                    }
+                    if (controller.state.value.nativeUiSessionId == ownerEpoch)
+                        error = "旧版 Markdown 已导出"
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) {
+                    if (controller.state.value.nativeUiSessionId == ownerEpoch)
+                        error = failure.message ?: "旧版 Markdown 导出失败"
+                }
+            }
+        }
+    }
+    LaunchedEffect(noteID, ownerEpoch) {
+        try {
+            val result = controller.notesVersions(noteID)
+            if (controller.state.value.nativeUiSessionId == ownerEpoch) versions = result
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            if (controller.state.value.nativeUiSessionId == ownerEpoch) error = failure.message
+        }
     }
     AlertDialog(onDismissRequest = onClose, title = { Text("历史版本 · 只读") },
         text = {
             Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
                 versions.forEach { version ->
                     TextButton(onClick = {
+                        activeRead = version.id
+                        oldMarkdown = null
+                        selectedVersion = null
                         scope.launch {
-                            try { oldMarkdown = controller.notesPreviousMarkdown(nodeID, version.id) }
-                            catch (cancelled: CancellationException) { throw cancelled }
-                            catch (failure: Exception) { error = failure.message }
+                            try {
+                                val content = controller.notesPreviousMarkdown(nodeID, version.id)
+                                if (controller.state.value.nativeUiSessionId == ownerEpoch &&
+                                    activeRead == version.id) {
+                                    oldMarkdown = content
+                                    selectedVersion = version
+                                }
+                            } catch (cancelled: CancellationException) { throw cancelled }
+                            catch (failure: Exception) {
+                                if (controller.state.value.nativeUiSessionId == ownerEpoch &&
+                                    activeRead == version.id) error = failure.message
+                            }
                         }
                     }) { Text("版本 " + version.revision + " · " + version.bytes + " B") }
                 }
-                oldMarkdown?.let { Text(it) }
+                oldMarkdown?.let { content ->
+                    val version = selectedVersion
+                    if (version != null) {
+                        TextButton(onClick = {
+                            pendingExport = content
+                            exporter.launch(noteID + "-r" + version.revision + ".md")
+                        }) { Text("导出此版本 Markdown") }
+                    }
+                    NativeNotesMarkdownPreview(
+                        controller, noteID, ownerEpoch, content, Modifier.height(240.dp),
+                    )
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         }, confirmButton = { TextButton(onClick = onClose) { Text("关闭") } })

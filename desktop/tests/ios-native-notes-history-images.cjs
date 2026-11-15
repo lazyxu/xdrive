@@ -41,4 +41,28 @@ assert.match(policy, /let id = \(externalID \?\? ""\)/)
 assert.match(policyTests, /noIdentifier\.externalID\.isEmpty/,
   'missing stable identity must remain an independent snapshot')
 
+// Keep history export in the existing verified Owner read transport on all
+// supported presentation surfaces; this is a source contract, not device proof.
+const sharedNotes = read('ui/shared/src/mui/NotesPage.tsx')
+const nativeAndroid = read('android/app/src/main/java/com/tfluid/xdrive/NativeNotesScreens.kt')
+assert.match(sharedNotes, /await port\.readVersion\(nodeID, item\.id\)/)
+assert.match(sharedNotes, /new Blob\(\[oldMarkdown\], \{ type: 'text\/markdown;charset=utf-8' \}\)/)
+assert.match(sharedNotes, /anchor\.download = selected\.id \+ '-r' \+ oldVersion\.revision \+ '\.md'/)
+assert.match(sharedNotes, /下载此版本 Markdown/)
+assert.match(screen, /selectedVersion = version/)
+assert.match(screen, /fileExporter\([\s\S]*?defaultFilename: noteID \+ "-r" \+ String\(selectedVersion\?\.revision \?\? 0\)/)
+assert.match(screen, /导出此版本 Markdown/)
+assert.match(nativeAndroid, /val content = controller\.notesPreviousMarkdown\(nodeID, version\.id\)/)
+assert.match(nativeAndroid, /ActivityResultContracts\.CreateDocument\("text\/markdown"\)/)
+assert.match(nativeAndroid, /controller\.state\.value\.nativeUiSessionId == ownerEpoch/)
+assert.match(nativeAndroid, /NativeNotesMarkdownPreview\(\s*controller, noteID, ownerEpoch, content/)
+assert.match(nativeAndroid, /导出此版本 Markdown/)
+
+assert.match(sharedNotes, /const historyReadSeq = useRef\(0\)/)
+assert.match(sharedNotes, /const historyGeneration = \+\+historyReadSeq\.current/)
+assert.match(sharedNotes, /historyReadSeq\.current === historyGeneration/)
+assert.match(sharedNotes, /onClose=\{closeHistory\}/)
+assert.match(screen, /@State private var versionReadGeneration = 0/)
+assert.match(screen, /guard generation == versionReadGeneration else \{ return \}/)
+
 console.log('iOS Notes history image readback and explicit Shortcut source identity: PASS')

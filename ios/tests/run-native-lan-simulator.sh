@@ -20,6 +20,9 @@ work="$(mktemp -d /tmp/xdrive-ios-lan-simulator.XXXXXXXX)"
 trap 'rm -rf -- "$work"' EXIT
 mkdir -p "$work/Host" "$work/Tests"
 cp "$repo/ios/XDriveIOS/NativeLANTrust.swift" "$work/Tests/"
+cp "$repo/ios/XDriveIOS/AuthService.swift" "$work/Tests/"
+cp "$repo/ios/XDriveIOS/NativeLANCertificateBootstrap.swift" "$work/Tests/"
+cp "$repo/ios/XDriveIOS/NativeLANLoginRoute.swift" "$work/Tests/"
 cp "$repo/ios/tests/NativeLANSimulatorTrustTests.swift" "$work/Tests/"
 
 python3 - "$fixture" "$valid_port" "$wrong_port" "$work/Tests/NativeLANSimulatorConfig.swift" <<'PY'
