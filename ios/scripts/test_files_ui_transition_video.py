@@ -1,5 +1,7 @@
 import json
 import pathlib
+import shutil
+import subprocess
 import sys
 from unittest.mock import patch
 import tempfile
@@ -8,6 +10,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from files_ui_transition_video import (
     TARGETS, MAX_CLIP_SECONDS, classify_bright_blank, parse_signalstats, audit,
+    read_frames,
 )
 
 
@@ -293,6 +296,85 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         )
         self.assertFalse(accepted)
         self.assertIn("invalid_tap_timeline", report["clips"][0]["failures"])
+
+
+class FilesUIContentVideoCodecRegressionTests(unittest.TestCase):
+    """Real encoded fixtures: visible app chrome must not hide child flicker.
+
+    Synthetic codec fixtures are not physical 60/120 Hz measurements.
+    Required Gallery/Files CI installs FFmpeg before running these tests.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if shutil.which("ffmpeg") is None:
+            raise unittest.SkipTest("FFmpeg unavailable outside required Gallery/Files shard")
+
+    def _decoded_chrome_page(self, *pulses):
+        # Dark top/bottom navigation chrome persists through a transient
+        # white/black Files or Gallery child. Full-screen signalstats misses it.
+        with tempfile.TemporaryDirectory() as tmp:
+            recording = pathlib.Path(tmp) / "native-with-stable-chrome.mp4"
+            layers = [
+                "drawbox=x=0:y=0:w=iw:h=100:color=0x1f1f33:t=fill",
+                "drawbox=x=0:y=555:w=iw:h=85:color=0x222244:t=fill",
+                "drawbox=x=28:y=172:w=304:h=280:color=0x6699bb:t=fill",
+            ]
+            for color, start, end in pulses:
+                layers.append(
+                    f"drawbox=x=0:y=95:w=iw:h=465:color={color}:t=fill:"
+                    f"enable=between(t\\,{start}\\,{end})"
+                )
+            subprocess.run(
+                ["ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+                 "-f", "lavfi", "-i", "color=c=0xd9deed:s=360x640:r=10:d=3",
+                 "-vf", ",".join(layers), "-c:v", "libx264",
+                 "-pix_fmt", "yuv420p", str(recording)],
+                check=True, capture_output=True, text=True, timeout=30,
+            )
+            return read_frames(recording)
+
+    def test_content_only_white_flash_with_stable_chrome_is_detected(self):
+        frames = self._decoded_chrome_page(("white", 1.05, 1.35))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_white_transition")
+
+    def test_content_only_black_flash_with_stable_chrome_is_detected(self):
+        frames = self._decoded_chrome_page(("black", 1.05, 1.35))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_black_transition")
+
+    def test_alternating_white_black_flash_does_not_escape_two_frame_gate(self):
+        # Neither same-color streak alone reaches two frames.
+        frames = self._decoded_chrome_page(
+            ("white", 1.05, 1.15), ("black", 1.15, 1.25)
+        )
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_alternating_blank_transition")
+
+    def test_one_white_frame_is_diagnostic_not_a_false_flicker_verdict(self):
+        frames = self._decoded_chrome_page(("white", 1.05, 1.15))
+        self.assertIsNone(classify_bright_blank(frames, 1.0))
+
+    def test_later_content_only_flash_in_transition_window_is_detected(self):
+        frames = self._decoded_chrome_page(("white", 1.85, 2.05))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_white_transition")
+
+    def test_stable_native_chrome_and_textured_content_are_not_blank(self):
+        frames = self._decoded_chrome_page()
+        self.assertGreaterEqual(len(frames), 20)
+        self.assertIsNone(classify_bright_blank(frames, 1.0))
+
+    def test_old_page_flash_before_tap_is_not_misattributed(self):
+        frames = self._decoded_chrome_page(("white", 0.25, 0.45))
+        self.assertIsNone(classify_bright_blank(frames, 1.0))
+
+    def test_two_disconnected_white_samples_are_not_called_continuous(self):
+        frames = self._decoded_chrome_page(
+            ("white", 1.05, 1.15), ("white", 1.45, 1.55)
+        )
+        self.assertIsNone(classify_bright_blank(frames, 1.0))
 
 
 if __name__ == "__main__":

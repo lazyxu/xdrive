@@ -208,6 +208,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/native-navigation-results/diagnostics"
+          # The actual codec regressions must run on the required Gallery/Files
+          # shard, not silently skip because the runner lacks FFmpeg.
+          if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]] && ! command -v ffmpeg >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
           python3 -m py_compile "$GITHUB_WORKSPACE/ios/scripts/capture-navigation-smoke-frames.py" \
             "$GITHUB_WORKSPACE/ios/scripts/audit_navigation_frames.py" \
             "$GITHUB_WORKSPACE/ios/scripts/test_audit_navigation_frames.py" \
