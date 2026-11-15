@@ -103,4 +103,11 @@ test('signed-in Gallery never eagerly mounts the Files view graph; first Files v
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.gallery\)/)
   assert.equal((dashboard.match(/XDriveIOSNativeFilesBrowser\(login: login\)/g) || []).length, 1,
     'do not substitute another unauthenticated Files root')
+  const restore = dashboard.slice(dashboard.indexOf('private func restoreNavigationIfNeeded()'),
+    dashboard.indexOf('private func saveNavigationIfReady()'))
+  assert.match(restore, /tab = XDriveIOSNativeBottomTab\(rawValue: snapshot\.selectedTab\) \?\? \.gallery/)
+  assert.match(restore, /if tab == \.files \{ tab = \.gallery \}/,
+    'cold login must not auto-reopen the known crashing Files view')
+  assert.match(restore, /navigationRouteStore\.restore\(scopeHash: scopeHash\)/)
+  assert.doesNotMatch(restore, /resumeStore\.clear\(|XDriveIOSNativeFilesResumeStore\(\)\.clear\(/)
 })
