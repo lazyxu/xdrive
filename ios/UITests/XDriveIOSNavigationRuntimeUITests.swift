@@ -176,6 +176,67 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
             "Native Files root did not mount for synthetic Owner")
         XCTAssertEqual(app.state, .runningForeground)
     }
+    /// Traverse real native tools that are not covered by the Files/Gallery
+    /// deep-stack test. An offline synthetic Owner has no bearer Session;
+    /// mounting a tool never authorizes a Server read or upload.
+    /// Repeated launcher -> tool -> Files -> Gallery transitions also rebuild
+    /// the root SwiftUI view graph after foreground/background changes.
+    func testLauncherNativeToolsAndTabReturnsDoNotCrash() {
+        let app = launch(syntheticOwner: true)
+        let tools: [(route: String, pageID: String)] = [
+            ("notes", "native-ios-notes-page"),
+            ("clipboard", "ios-clipboard-draft"),
+            ("transfers", "native-ios-transfer-overview"),
+            ("backup", "native-ios-backup-overview")
+        ]
+        for cycle in 0..<2 {
+            for tool in tools {
+                select("native-ios-tab-launcher", in: app)
+                let target = "native-ios-launcher-\(tool.route)"
+                let button = app.descendants(matching: .any)
+                    .matching(identifier: target).firstMatch
+                if !(button.exists && button.isHittable) {
+                    let scroll = app.scrollViews.firstMatch
+                    XCTAssertTrue(scroll.waitForExistence(timeout: 12),
+                                  "Native launcher scroll missing for \(target)")
+                    // Launcher may remember the last scroll position after
+                    // a tab round-trip. Find a real AX target, not a coordinate.
+                    for _ in 0..<6 {
+                        if button.exists && button.isHittable { break }
+                        scroll.swipeDown()
+                    }
+                    for _ in 0..<9 {
+                        if button.exists && button.isHittable { break }
+                        scroll.swipeUp()
+                    }
+                }
+                XCTAssertTrue(button.exists && button.isHittable,
+                              "Native launcher did not expose \(target)")
+                button.tap()
+                XCTAssertTrue(find(tool.pageID, in: app)
+                    .waitForExistence(timeout: 15),
+                    "Native tool \(tool.route) did not mount on cycle \(cycle)")
+                XCTAssertEqual(app.state, .runningForeground,
+                               "App exited after opening \(tool.route)")
+                select("native-ios-tab-files", in: app)
+                XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+                select("native-ios-tab-gallery", in: app)
+                XCTAssertTrue(find("native-ios-tab-gallery", in: app).exists)
+                XCTAssertEqual(app.state, .runningForeground)
+            }
+            select("native-ios-tab-mine", in: app)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertEqual(app.state, .runningForeground,
+                           "Native root exited after tool transitions on cycle \(cycle)")
+            XCTAssertTrue(find("native-ios-tab-mine", in: app).exists)
+        }
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = "native-tools-files-gallery-foreground-no-crash"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+    }
+
     func testFilesTopLevelNavigationRemainsResponsive() {
         let app = launch()
         for tab in ["files", "mine", "files", "launcher", "files", "gallery"] {
