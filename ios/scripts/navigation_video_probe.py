@@ -124,7 +124,10 @@ def assess_clip(entry, directory, probe=frame_timeline):
     )}
     result['usable'] = False
     name = entry.get('file')
-    expected = TEST_ROUTES.get(entry.get('test'))
+    # A malformed or hostile manifest may use an unhashable JSON value as
+    # the test key. Reject it rather than crashing the entire evidence audit.
+    test_name = entry.get('test')
+    expected = TEST_ROUTES.get(test_name) if isinstance(test_name, str) else None
     if (not expected or entry.get('route_group') != expected or
             name != expected + '.mp4' or not entry.get('recorded')):
         result['reason'] = 'not_recorded'
@@ -211,10 +214,15 @@ def audit(directory, required=6, probe=frame_timeline):
     rejected = {}
     observed_tests = set()
     for item in clips:
-        if item['test'] in observed_tests:
+        name = item.get('test')
+        if not isinstance(name, str) or name not in TEST_ROUTES:
+            item['usable'] = False
+            item['reason'] = 'invalid_test_identity'
+        elif name in observed_tests:
             item['usable'] = False
             item['reason'] = 'duplicate_test_clip'
-        observed_tests.add(item['test'])
+        else:
+            observed_tests.add(name)
         if not item['usable']:
             reason = item.get('reason', 'unknown')
             rejected[reason] = rejected.get(reason, 0) + 1

@@ -418,6 +418,66 @@ class VideoEvidenceTests(unittest.TestCase):
             assess_clip(recorded, self.root, probe=self.probe)['reason'],
             'xctest_not_passed')
 
+    def test_unhashable_list_test_name_fails_without_crashing_audit(self):
+        row = self.clip()
+        row['test'] = ['testRapidGalleryFilesTabOscillationPreservesBothShells']
+        (self.root / 'trace.jsonl').write_text(json.dumps(row) + '\n')
+        report = audit(self.root, required=1, probe=self.probe)
+        self.assertFalse(report['pass'])
+        self.assertEqual(report['rejected_by_reason'], {'invalid_test_identity': 1})
+
+    def test_unhashable_dictionary_test_name_fails_without_crashing_audit(self):
+        row = self.clip()
+        row['test'] = {'method': 'testRapidGalleryFilesTabOscillationPreservesBothShells'}
+        (self.root / 'trace.jsonl').write_text(json.dumps(row) + '\n')
+        report = audit(self.root, required=1, probe=self.probe)
+        self.assertFalse(report['pass'])
+        self.assertEqual(report['rejected_by_reason'], {'invalid_test_identity': 1})
+
+    def test_missing_test_name_does_not_validate_video(self):
+        row = self.clip()
+        del row['test']
+        (self.root / 'trace.jsonl').write_text(json.dumps(row) + '\n')
+        report = audit(self.root, required=1, probe=self.probe)
+        self.assertFalse(report['pass'])
+        self.assertEqual(report['rejected_by_reason'], {'invalid_test_identity': 1})
+
+    def test_unknown_test_name_does_not_validate_video(self):
+        row = self.clip()
+        row['test'] = 'testNotARegisteredNativeUIJourney'
+        (self.root / 'trace.jsonl').write_text(json.dumps(row) + '\n')
+        report = audit(self.root, required=1, probe=self.probe)
+        self.assertFalse(report['pass'])
+        self.assertEqual(report['rejected_by_reason'], {'invalid_test_identity': 1})
+
+    def test_six_real_successes_cannot_hide_unhashable_extra_trace(self):
+        rows = [self.clip(name) for name in list(TEST_ROUTES)[:6]]
+        bad = self.clip()
+        bad['test'] = ['unhashable']
+        rows.append(bad)
+        (self.root / 'trace.jsonl').write_text(
+            '\n'.join(json.dumps(row) for row in rows) + '\n')
+        report = audit(self.root, required=6, probe=self.probe)
+        self.assertFalse(report['pass'])
+        self.assertEqual(report['usable_routes'], 6)
+        self.assertEqual(report['rejected_by_reason'], {'invalid_test_identity': 1})
+
+    def test_invalid_movie_filename_is_not_accepted_as_real_video(self):
+        row = self.clip()
+        row['file'] = {'location': '../fake.mp4'}
+        (self.root / 'trace.jsonl').write_text(json.dumps(row) + '\n')
+        report = audit(self.root, required=1, probe=self.probe)
+        self.assertFalse(report['pass'])
+        self.assertEqual(report['rejected_by_reason'], {'not_recorded': 1})
+
+    def test_more_than_registered_or_negative_required_routes_fail(self):
+        rows = [self.clip(name) for name in TEST_ROUTES]
+        (self.root / 'trace.jsonl').write_text(
+            '\n'.join(json.dumps(row) for row in rows) + '\n')
+        self.assertFalse(audit(self.root, required=-1, probe=self.probe)['pass'])
+        self.assertFalse(audit(
+            self.root, required=len(TEST_ROUTES) + 1, probe=self.probe)['pass'])
+
 
 if __name__ == '__main__':
     unittest.main()
