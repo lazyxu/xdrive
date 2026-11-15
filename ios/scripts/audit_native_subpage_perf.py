@@ -57,6 +57,7 @@ SOURCE_METHOD = re.compile(
     r'func\s+(testSubpage[A-Za-z0-9]+)\(\)\s*\{\s*run\("([a-z0-9.-]+)"\)\s*\}'
 )
 ITER = re.compile(r'IOS_NATIVE_SUBPAGE_ITERATION route=([a-z0-9.-]+) index=(\d+)')
+STAGE = re.compile(r'IOS_NATIVE_SUBPAGE_STAGE_MS route=([a-z0-9.-]+) trial=(\d+) value=(\d+)')
 READY = re.compile(
     r'IOS_NATIVE_SUBPAGE_PERF_MS route=([a-z0-9.-]+) trial=(\d+) value=(\d+)'
 )
@@ -65,6 +66,7 @@ RETURN = re.compile(
 )
 COMPLETE = re.compile(r'IOS_NATIVE_SUBPAGE_COMPLETE route=([a-z0-9.-]+) iterations=(\d+)')
 POST_AX_SHOT = re.compile(r'IOS_NATIVE_SUBPAGE_POST_AX_SCREENSHOT route=([a-z0-9.-]+) trial=(\d+)')
+POST_RETURN_SHOT = re.compile(r'IOS_NATIVE_SUBPAGE_POST_RETURN_SCREENSHOT route=([a-z0-9.-]+) trial=(\d+)')
 METRIC = re.compile(
     r"Test Case '-\[xDriveIOSNavigationUITests\."
     r"XDriveIOSNativeSubpagePerformanceUITests (testSubpage[A-Za-z0-9]+)\]'"
@@ -91,8 +93,10 @@ def source_routes(content):
         "options.iterationCount = 3",
         "options.invocationOptions = [.manuallyStart, .manuallyStop]",
         "startMeasuring()", "stopMeasuring()",
+        "IOS_NATIVE_SUBPAGE_STAGE_MS",
         "IOS_NATIVE_SUBPAGE_PERF_MS",
         "IOS_NATIVE_SUBPAGE_RETURN_MS",
+        "IOS_NATIVE_SUBPAGE_POST_RETURN_SCREENSHOT",
     ):
         if token not in content:
             raise ValueError("Missing app-targeted performance measurement: " + token)
@@ -126,9 +130,23 @@ def audit(content, log, raw_metrics):
                                         for v in observed.values()):
         raise ValueError("Missing/duplicate real subpage iterations")
 
+    staged = {}
+    for route, trial, value in STAGE.findall(log):
+        staged.setdefault(route, []).append((int(trial), int(value)))
+    if set(staged) != required or any(
+        sorted(trial for trial, _ in values) != [1, 2, 3]
+        or any(ms < 0 or ms > 300_000 for _, ms in values)
+        for values in staged.values()
+    ):
+        raise ValueError("Missing/duplicate real parent-stage timing trials")
+
     shots = POST_AX_SHOT.findall(log)
     if len(shots) != len(required) or set(shots) != {(route, "1") for route in required}:
         raise ValueError("Missing or duplicate native post-AX screenshot evidence")
+    return_shots = POST_RETURN_SHOT.findall(log)
+    if (len(return_shots) != len(required)
+            or set(return_shots) != {(route, "1") for route in required}):
+        raise ValueError("Missing or duplicate native post-return screenshot evidence")
     elapsed = {}
     for route, trial, value in READY.findall(log):
         elapsed.setdefault(route, []).append((int(trial), int(value)))
@@ -167,6 +185,7 @@ def audit(content, log, raw_metrics):
 
     rows = []
     for route in ROUTES:
+        stage_values = [v for _, v in sorted(staged[route])]
         ms = sorted(elapsed[route])
         values = [v for _, v in ms]
         return_values = [v for _, v in sorted(returned[route])]
@@ -174,6 +193,9 @@ def audit(content, log, raw_metrics):
         cpu = raw[route]["cpu_s"]
         rows.append({
             "route": route,
+            "parent_stage_trial_ms": stage_values,
+            "parent_stage_p50_ms": statistics.median(stage_values),
+            "parent_stage_p95_ms": max(stage_values),
             "ax_ready_trial_ms": values,
             "ax_ready_p50_ms": statistics.median(values),
             "ax_ready_p95_ms": max(values),
@@ -191,9 +213,11 @@ def audit(content, log, raw_metrics):
         "route_count": len(ROUTES),
         "recorded_test_invocations": sum(map(len, observed.values())),
         "retained_trials_per_route": 3,
+        "total_parent_stage_samples": sum(map(len, staged.values())),
         "total_ax_samples": sum(map(len, elapsed.values())),
         "total_return_samples": sum(map(len, returned.values())),
         "post_ax_screenshot_routes": len(shots),
+        "post_return_screenshot_routes": len(return_shots),
         "true_composited_first_frame_measured": False,
         "raw_xcresult_metrics_present": True,
         "includes_xctest_and_ax_idling": True,
@@ -217,8 +241,10 @@ def main():
     destination.write_text(json.dumps(outcome, ensure_ascii=False, indent=2) + "\n",
                            encoding="utf-8")
     print(f"IOS_NATIVE_SUBPAGE_COMPLETE_ALL routes={outcome['route_count']} "
+          f"stage_samples={outcome['total_parent_stage_samples']} "
           f"samples={outcome['total_ax_samples']} "
-          f"return_samples={outcome['total_return_samples']}")
+          f"return_samples={outcome['total_return_samples']} "
+          f"return_screenshots={outcome['post_return_screenshot_routes']}")
 
 
 if __name__ == "__main__":
