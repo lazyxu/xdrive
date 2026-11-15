@@ -1410,16 +1410,16 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                 // range is ready; no scroll-height jumps during a download.
                 placeholders
             }
-            if let error = model.error {
-                XDriveIOSNativePhotoWallRetryMessage(
-                    message: error, buttonTitle: "重试当前照片范围",
-                    canRetry: !model.busy && !viewerActive,
-                    textFont: .caption
-                ) {
-                    model.load(login: login, albumID: albumID, placeID: placeID,
-                               offset: offset, search: search,
-                                captureRange: captureRange)
-                }
+            XDriveIOSNativePhotoWallFeedback(
+                isLoading: false, // 48 reserved placeholders already occupy the page.
+                loadingMessage: "正在读取当前照片范围…",
+                error: model.error,
+                canRetry: !model.busy && !viewerActive,
+                buttonTitle: "重试当前照片范围"
+            ) {
+                model.load(login: login, albumID: albumID, placeID: placeID,
+                           offset: offset, search: search,
+                            captureRange: captureRange)
             }
         }
         .id("cloud-range:\(offset)")

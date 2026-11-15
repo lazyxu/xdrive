@@ -865,15 +865,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     progress: busy ? "正在读取位置照片" :
                         (hasNext ? "可继续向下滚动浏览" : "已显示全部可访问照片")
                 )
-                if busy { XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取位置照片…") }
-                if let error {
-                    XDriveIOSNativePhotoWallRetryMessage(
-                        message: error, buttonTitle: "重试读取照片",
-                        canRetry: !busy && phase == .active,
-                        accessibilityID: "native-ios-map-cluster-inline-retry"
-                    ) {
-                        if worker != nil { loadNext() } else { loadInitial() }
-                    }
+                XDriveIOSNativePhotoWallFeedback(
+                    isLoading: busy, loadingMessage: "正在读取位置照片…",
+                    error: error, canRetry: !busy && phase == .active,
+                    buttonTitle: "重试读取照片",
+                    retryAccessibilityID: "native-ios-map-cluster-inline-retry"
+                ) {
+                    if worker != nil { loadNext() } else { loadInitial() }
                 }
                 if !busy && items.isEmpty && priorWindow.isEmpty && error == nil {
                     XDriveIOSNativePhotoWallStatusMessage(message: "此位置没有可访问的照片或视频。")
