@@ -8,8 +8,10 @@ import UIKit
 /// A scan retains at most 64 aggregate records and one bounded Gallery page;
 /// it never persists PhotoKit identifiers, coordinates or cloud credentials.
 private enum XDriveIOSUnifiedSourceMapPolicy {
-    static let maximumPages = 10_000
-    static let maximumWallSeekPages = 256
+    static let maximumPages = XDriveIOSNativeUnifiedMapSeekPolicy.maximumPages
+    // A sparse place may have more than 256 nonmatching source pages.
+    // Search exactly the same bounded verified cursor range as the map.
+    static let maximumWallSeekPages = maximumPages
 
     static func canonicalLongitude(_ longitude: Double) -> Double {
         // WGS84's +180 and -180 describe the SAME meridian. Unify before
@@ -338,21 +340,28 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            Text("当前来源 · 此区域 \(pin.count) 张照片")
-                .font(.footnote).foregroundStyle(.secondary)
-            XDriveIOSNativePhotoWallFeedback(
-                isLoading: busy, loadingMessage: "核对当前区域的照片…",
-                error: active ? error : nil, canRetry: active && !busy,
-                buttonTitle: "重试核对当前区域"
-            ) { load(from: next ?? pin.firstCursor) }
-            XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
-                .disabled(!active || busy || viewing != nil)
-            photoWall
-                .xdrivePhotoWallPinch(
-                    density: $density, enabled: active && !busy && viewing == nil
-                )
-            if ended && previous.isEmpty && current.isEmpty && error == nil {
-                Text("该位置的照片已发生变化，请重新打开地图。")
+            // The Owner and PhotoKit scope is checked before any old count,
+            // error, thumbnail, or authenticated Viewer UI can be painted.
+            if active {
+                Text("当前来源 · 此区域 \(pin.count) 张照片")
+                    .font(.footnote).foregroundStyle(.secondary)
+                XDriveIOSNativePhotoWallFeedback(
+                    isLoading: busy, loadingMessage: "核对当前区域的照片…",
+                    error: error, canRetry: !busy,
+                    buttonTitle: "重试核对当前区域"
+                ) { load(from: next ?? pin.firstCursor) }
+                XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                    .disabled(busy || viewing != nil)
+                photoWall
+                    .xdrivePhotoWallPinch(
+                        density: $density, enabled: !busy && viewing == nil
+                    )
+                if ended && previous.isEmpty && current.isEmpty && error == nil {
+                    Text("该位置的照片已发生变化，请重新打开地图。")
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("当前 Owner 或照片访问已失效，请返回地图重新核对。")
                     .foregroundStyle(.secondary)
             }
         }
@@ -497,7 +506,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             defer { if generation == ticket { busy = false; request = nil } }
             var cursor: XDriveIOSNativeGalleryCursor? = start
             do {
-                for _ in 0..<XDriveIOSUnifiedSourceMapPolicy.maximumWallSeekPages {
+                for inspected in 0..<XDriveIOSUnifiedSourceMapPolicy.maximumWallSeekPages {
+                    // Never mistake a sparse 256-page gap for end of this place.
+                    // Yield cooperatively without retaining extra media IDs.
+                    if XDriveIOSNativeUnifiedMapSeekPolicy.shouldYield(beforePage: inspected) {
+                        await Task.yield()
+                    }
                     try Task.checkCancellation()
                     guard generation == ticket, active, let from = cursor else { return }
                     let model = XDriveIOSNativeUnifiedPhotoTimeline()

@@ -34,7 +34,7 @@ test('one anonymous no-redirect HTTPS probe selects a fixed origin before creden
   assert.match(route, /config\.urlCache = nil/)
   assert.match(route, /completionHandler\(nil\)/)
   assert.match(route, /URLSession\(configuration: config, delegate: verifier, delegateQueue: nil\)/)
-  const anonymousProbe = route.slice(route.indexOf('private static func probeVersion('),
+  const anonymousProbe = route.slice(route.indexOf('static func probeVersion('),
     route.indexOf('private struct XDriveIOSLANVersion'))
   assert.ok(anonymousProbe.length > 100, 'real anonymous probe implementation found')
   assert.doesNotMatch(anonymousProbe,
@@ -43,11 +43,12 @@ test('one anonymous no-redirect HTTPS probe selects a fixed origin before creden
   assert.match(route, /throw XDriveIOSLANPairingFailure\.ipCertificateInvalid/)
   assert.match(route, /let timeout: TimeInterval = pairing \? 8 : 3/)
   assert.match(trust, /SecTrustSetAnchorCertificatesOnly\(trust, true\)/)
-  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{ return \.trusted \}/)
+  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{\s*return XDriveIOSLANTrustInspection\(verdict: \.trusted, setupOSStatus: nil\)/)
   assert.match(trust, /SecTrustCopyCertificateChain\(trust\)/)
   assert.match(trust, /SecPolicyCreateBasicX509\(\)/)
-  assert.ok(trust.indexOf('if SecTrustEvaluateWithError(trust, nil) { return .trusted }') <
-    trust.indexOf('SecTrustCopyCertificateChain(trust)'),
+  const strictInspect = trust.slice(trust.indexOf('static func inspectDetailed('))
+  assert.ok(strictInspect.indexOf('if SecTrustEvaluateWithError(trust, nil) {') <
+    strictInspect.indexOf('SecTrustCopyCertificateChain(trust)'),
   'secondary certificate-chain diagnosis must follow strict IP SAN + paired CA trust refusal')
   assert.doesNotMatch(route, /http:\/\//)
   assert.match(route, /\.cannotConnectToHost, \.timedOut, \.networkConnectionLost/)
@@ -153,7 +154,41 @@ test('LAN pairing distinguishes handshake errors from strict pinned trust eviden
   assert.match(trust, /SecPolicyCreateSSL\(true, target\.ip as CFString\)/)
   assert.match(trust, /SecPolicyCreateBasicX509\(\)/)
   assert.match(trust, /Negative-result diagnosis only/)
-  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{ return \.trusted \}/)
+  assert.match(trust, /if SecTrustEvaluateWithError\(trust, nil\) \{\s*return XDriveIOSLANTrustInspection\(verdict: \.trusted, setupOSStatus: nil\)/)
   assert.match(trust, /SecTrustGetVerifyTime\(trust\)/)
   assert.doesNotMatch(route + trust, /InsecureSkipVerify|trustAllHosts|allowUntrusted/)
+})
+
+test('iOS stage-3 uses bounded URLSessionDataDelegate and real session/task trust callbacks', () => {
+  assert.match(route, /URLSessionDataDelegate/)
+  assert.match(route, /session\.dataTask\(with: request\)/)
+  assert.match(route, /verifier\.boundedRead\(/)
+  assert.match(route, /maximumBytes - receivedBytes\.count/)
+  assert.match(route, /response\.expectedContentLength > Int64\(maximumBytes\)/)
+  assert.match(route, /task: URLSessionTask,[\s\S]*?didReceive challenge: URLAuthenticationChallenge/)
+  assert.match(route, /super\.urlSession\(session, didReceive: challenge\)/)
+  assert.match(route, /ipCertificatePostTrustFailure\(url\.errorCode\)/)
+  assert.doesNotMatch(route, /session\.bytes\(for: request\)/)
+  assert.match(trust, /POST_TRUST_SYSTEM_REJECTION/)
+  const sim = read('ios/tests/NativeLANSimulatorTrustTests.swift')
+  const harness = read('ios/tests/run-native-lan-simulator.sh')
+  assert.match(sim, /testProductStage3UsesBoundedDataTaskAndPinnedIPTrust/)
+  assert.match(sim, /XDriveIOSNativeLANLoginRoute\.probeVersion\(/)
+  assert.match(harness, /cp "\$repo\/ios\/XDriveIOS\/NativeLANLoginRoute\.swift"/)
+})
+
+test('only user-requested pairing emits bounded TLS evidence, never changes trust decision', () => {
+  assert.match(route, /if pairing, let evidence = verifier\.pairingEvidence/)
+  assert.match(route, /ipCertificateWithoutChallenge\(url\.errorCode\)/)
+  assert.match(route, /override func observedPairingEvidence\(/)
+  assert.match(trust, /if case \.verifyingPairing = mode/)
+  assert.match(trust, /reason: \.challengeIdentity/)
+  assert.match(trust, /reason: challenge\.previousFailureCount != 0 \? \.retryChallenge : \.trustObjectMissing/)
+  assert.match(trust, /peerLeafDigest\(trust\)/)
+  assert.match(trust, /SecCertificateCopyData\(leaf\)/)
+  assert.match(trust, /setupOSStatus/)
+  assert.match(trust, /SecTrustSetAnchorCertificatesOnly\(trust, true\)/)
+  assert.match(trust, /SecTrustSetNetworkFetchAllowed\(trust, false\)/)
+  assert.doesNotMatch(trust, /print\(|NSLog\(|debugPrint\(|os_log\(/)
+  assert.doesNotMatch(trust, /privateKey|SecKeyCopyExternalRepresentation|Authorization:|Cookie:|Bearer /)
 })

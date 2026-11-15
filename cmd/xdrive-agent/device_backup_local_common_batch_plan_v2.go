@@ -56,13 +56,17 @@ func decideLocalCommonRootFile(relativePath, sha string, size int64, sourceID,
 	for _, original := range originals {
 		p, r := original.Plan, original.Receipt
 		if p.Validate() != nil || p.SourceID != sourceID ||
-			p.SourceRevision != sourceRevision || p.RelativePath != relativePath ||
+			p.SourceRevision == 0 || p.SourceRevision > sourceRevision ||
+			p.RelativePath != relativePath ||
 			r.SourceID != p.SourceID || r.Revision != p.SourceRevision ||
 			r.OperationID != p.OperationID {
 			return empty, false, deny
 		}
 		switch r.State {
 		case "reserved", "bound":
+			if p.SourceRevision != sourceRevision {
+				return empty, false, deny
+			}
 			if pending != nil || r.Committed || r.NodeID != 0 ||
 				r.NodeRevision != 0 || r.ContentSHA256 != "" {
 				return empty, false, deny

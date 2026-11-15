@@ -16,6 +16,14 @@ type OriginalReceiptReader interface {
 		client.LocalBoundSourceProof, string, string) (client.LocalPushCommonUploadReceipt, error)
 }
 
+// Older immutable COMMITTED receipts may be queried under the current
+// Source/Root proof. This is read-only and cannot re-authorize stale writes.
+type HistoricalOriginalReceiptReader interface {
+	ReadLocalPushCommonUploadHistoricalReceipt(context.Context,
+		uint64, uint64, uint64, client.LocalBoundSourceProof,
+		string, string) (client.LocalPushCommonUploadReceipt, error)
+}
+
 // VerifiedOriginalReceipt stays in the owning Agent. Neither its Plan nor its
 // private SQL receipt may be serialized to Desktop IPC or Web.
 type VerifiedOriginalReceipt struct {
@@ -47,7 +55,8 @@ func ReadVerifiedOriginalFileReceipts(
 	original := plans[0]
 	for _, p := range plans {
 		if p.Validate() != nil || !validDurableScope(p, proof) ||
-			p.SourceID != sourceID || p.SourceRevision != revision ||
+			p.SourceID != sourceID || p.SourceRevision == 0 ||
+			p.SourceRevision > revision ||
 			p.Server != original.Server || p.Account != original.Account ||
 			p.OwnerSession != original.OwnerSession ||
 			p.RelativePath != original.RelativePath {
@@ -73,12 +82,23 @@ func ReadVerifiedOriginalFileReceipts(
 		}
 		receipt, err := ReadOriginalReceiptWithBackoff(ctx,
 			func() (client.LocalPushCommonUploadReceipt, error) {
-				return reader.ReadLocalPushCommonUploadReceipt(ctx, sourceID,
-					revision, proof, p.OperationID, key)
+				if p.SourceRevision == revision {
+					return reader.ReadLocalPushCommonUploadReceipt(ctx, sourceID,
+						revision, proof, p.OperationID, key)
+				}
+				historical, ok := reader.(HistoricalOriginalReceiptReader)
+				if !ok {
+					return client.LocalPushCommonUploadReceipt{}, ErrUncertain
+				}
+				return historical.ReadLocalPushCommonUploadHistoricalReceipt(ctx,
+					sourceID, revision, p.SourceRevision, proof, p.OperationID, key)
 			})
 		if err != nil || ctx.Err() != nil ||
-			receipt.SourceID != sourceID || receipt.Revision != revision ||
+			receipt.SourceID != sourceID || receipt.Revision != p.SourceRevision ||
 			receipt.OperationID != p.OperationID {
+			return nil, ErrUncertain
+		}
+		if p.SourceRevision != revision && receipt.State != "committed" {
 			return nil, ErrUncertain
 		}
 		switch receipt.State {

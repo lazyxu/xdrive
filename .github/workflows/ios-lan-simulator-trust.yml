@@ -1,0 +1,73 @@
+name: iOS LAN HTTPS Simulator Trust
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'ios/XDriveIOS/NativeLANTrust.swift'
+      - 'ios/XDriveIOS/NativeLANLoginRoute.swift'
+      - 'ios/tests/NativeLANTrustChecks.swift'
+      - 'ios/tests/NativeLANLoginRouteChecks.swift'
+      - 'ios/tests/NativeLANURLSessionWireChecks.swift'
+      - 'ios/tests/NativeLANSimulatorTrustTests.swift'
+      - 'ios/tests/NativeLANStage3NoChallengeRepro.swift'
+      - 'ios/tests/run-native-lan-simulator.sh'
+      - 'desktop/tests/ios-native-lan-caddy-wire.cjs'
+      - '.github/workflows/ios-lan-simulator-trust.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'ios/XDriveIOS/NativeLANTrust.swift'
+      - 'ios/XDriveIOS/NativeLANLoginRoute.swift'
+      - 'ios/tests/NativeLANTrustChecks.swift'
+      - 'ios/tests/NativeLANLoginRouteChecks.swift'
+      - 'ios/tests/NativeLANURLSessionWireChecks.swift'
+      - 'ios/tests/NativeLANSimulatorTrustTests.swift'
+      - 'ios/tests/NativeLANStage3NoChallengeRepro.swift'
+      - 'ios/tests/run-native-lan-simulator.sh'
+      - 'desktop/tests/ios-native-lan-caddy-wire.cjs'
+      - '.github/workflows/ios-lan-simulator-trust.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  stage3-red-green-classifier:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run identical RED baseline test on the fixed Swift implementation
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/NativeLANTrust.swift \
+            ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANCertificateBootstrap.swift \
+            ios/XDriveIOS/NativeLANLoginRoute.swift \
+            ios/tests/NativeLANStage3NoChallengeRepro.swift \
+            -o "$RUNNER_TEMP/ios-lan-stage3-no-challenge-repro"
+          "$RUNNER_TEMP/ios-lan-stage3-no-challenge-repro"
+
+  real-iphone-simulator-trust:
+    runs-on: macos-15
+    timeout-minutes: 27
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run Apple iPhone Simulator URLSession pinned-CA/IP-SAN handshake
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          # 192.168.2.4 is ONLY an alias on this ephemeral CI runner.
+          # The job never connects to the user's real NAS, logs in or uploads credentials.
+          sudo ifconfig lo0 alias 192.168.2.4 255.255.255.255
+          trap 'sudo ifconfig lo0 -alias 192.168.2.4 || true' EXIT
+          XDRIVE_LAN_SIMULATOR_TEST_RUNNER=ios/tests/run-native-lan-simulator.sh \
+            node --test desktop/tests/ios-native-lan-caddy-wire.cjs

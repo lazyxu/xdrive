@@ -98,7 +98,7 @@ func TestHeadlessInitRunNowUsesSameAgentOnlyAfterVerifiedBootstrap(t *testing.T)
 		return &fakeInitOnceAgent{
 			fakeBootstrapAgent: &fakeBootstrapAgent{},
 			result: localbackupipc.Summary{SourceID: 42, Revision: 2, State: "partial",
-				InspectedFiles: 1, ConfirmedFiles: 1},
+				InspectedFiles: 1, ConfirmedFiles: 1, ScanComplete: true},
 		}
 	}
 	t.Run("explicit_start", func(t *testing.T) {
@@ -199,7 +199,7 @@ func TestHeadlessInitAlreadySavedPlanDoesNotInvalidateCheckpoint(t *testing.T) {
 			},
 		},
 		result: localbackupipc.Summary{SourceID: 42, Revision: 5, State: "partial",
-			InspectedFiles: 1, ConfirmedFiles: 1},
+			InspectedFiles: 1, ConfirmedFiles: 1, ScanComplete: true},
 	}
 	id, err := runBackupInitAndMaybeOnce(context.Background(), agent,
 		"NAS Files", root, sourceschedule.Spec{Type: "interval", Expression: "6h"},
