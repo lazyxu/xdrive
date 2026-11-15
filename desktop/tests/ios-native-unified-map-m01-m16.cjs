@@ -71,7 +71,8 @@ test('M04: failed page retry resets ordinary place cursor history before restart
   const retry = map.match(/private func retryCurrentArea\(\) \{[\s\S]*?\n    \}\n\n    private func advance\(\)/)?.[0]
   assert.ok(retry, 'retryCurrentArea implementation must exist')
   assert.match(retry, /if isNearbyExpansion \{[\s\S]*?nearbyStarts = \[\]; nearbyWindowIndex = -1/)
-  assert.match(retry, /\} else \{\s*previous = \[\]; current = \[\]; next = nil\s*windowStarts = \[\]; windowIndex = -1\s*backfillAnchorID = nil\s*viewerReturnID = nil\s*ended = false\s*error = nil\s*load\(from: pin\.firstCursor\)/)
+  const ordinaryRetry = retry.slice(retry.lastIndexOf('\n        } else {'))
+  assert.match(ordinaryRetry, /previous = \[\]; current = \[\]; next = nil\s*windowStarts = \[\]; windowIndex = -1\s*backfillAnchorID = nil\s*viewerReturnID = nil\s*ended = false\s*error = nil\s*load\(from: pin\.firstCursor\)/)
   assert.doesNotMatch(retry, /load\(from: next \?\? pin\.firstCursor\)/)
 })
 
