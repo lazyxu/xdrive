@@ -112,7 +112,7 @@ test('signed-in Gallery never eagerly mounts the Files view graph; first Files v
   assert.doesNotMatch(restore, /resumeStore\.clear\(|XDriveIOSNativeFilesResumeStore\(\)\.clear\(/)
 })
 
-test('all 14 Launcher destinations and ten native all-page/child process crash journeys run in real Simulator', () => {
+test('all 14 Launcher destinations and seventeen native all-page/child process crash journeys run in real Simulator', () => {
   const sweep = fs.readFileSync(
     path.join(root, 'ios/UITests/XDriveIOSAllNativePagesCrashSweepUITests.swift'), 'utf8'
   )
@@ -123,7 +123,7 @@ test('all 14 Launcher destinations and ten native all-page/child process crash j
     path.join(root, '.github/workflows/ios-native-navigation-runtime.yml'), 'utf8'
   )
   const methods = [...sweep.matchAll(/\bfunc\s+(test\w+)\(\)/g)].map(match => match[1])
-  assert.equal(methods.length, 10, 'ten independent real native crash journeys are mandatory')
+  assert.equal(methods.length, 17, 'seventeen independent real native crash journeys are mandatory')
   assert.equal(new Set(methods).size, methods.length)
   for (const name of methods) {
     assert.ok(watcher.includes('"' + name + '"'), 'missing bounded Simulator frame watcher: ' + name)
@@ -142,6 +142,13 @@ test('all 14 Launcher destinations and ten native all-page/child process crash j
   }
   assert.match(sweep, /XCTAssertEqual\(app\.state, \.runningForeground/)
   assert.match(sweep, /-xdrive-ui-navigation-synthetic-owner/)
+  assert.match(sweep, /-xdrive.ios.native.launch-checkpoint.v1/)
+  assert.match(sweep, /native-ios-files-recent-error-page/)
+  assert.match(sweep, /native-ios-files-favorites-error-page/)
+  assert.match(sweep, /native-ios-gallery-thumbnail-cache/)
+  assert.match(sweep, /native-ios-backup-cache-sheet-close/)
+  assert.match(sweep, /native-ios-login-password/)
+  assert.match(sweep, /native-ios-login-lan-ip/)
   assert.match(sweep, /IOS_NATIVE_NAV_TAP_START/)
   assert.match(sweep, /app\.segmentedControls\.firstMatch/)
   assert.match(sweep, /waitRetired\("native-ios-files-saved-searches-page"/)
