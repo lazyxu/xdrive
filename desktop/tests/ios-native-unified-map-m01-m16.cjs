@@ -159,6 +159,10 @@ test('M15 M16: camera is restored only within verified Owner session; MapKit rev
   assert.match(map, /if currentProof \{ onSaveCamera\?\(camera\) \}/)
   assert.match(surface, /regionWillChangeAnimated/)
   assert.match(surface, /markersEnabled = false/)
+  assert.match(surface, /leaseRevokedUntilNewRevision = true/)
+  assert.match(surface, /coordinator\.markersEnabled = markersEnabled &&\s*!coordinator\.leaseRevokedUntilNewRevision/)
+  assert.match(surface, /if coordinator\.revision != revision \{\s*coordinator\.leaseRevokedUntilNewRevision = false/)
+  assert.match(surface, /coordinator\.leaseRevokedUntilNewRevision = true\s*coordinator\.markersEnabled = false\s*coordinator\.updateCovers\(map\)/)
   assert.match(surface, /accessibilityElementsHidden = !enabled/)
   // Invalidated locations must drop their AX identifiers before a gesture
   // can deliver a stale VoiceOver click; valid pins retain stable test IDs.
