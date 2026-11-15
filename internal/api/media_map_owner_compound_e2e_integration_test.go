@@ -84,7 +84,7 @@ func TestIOSMapP0OwnerABAndRevocationCompoundHTTP(t *testing.T) {
 	}
 	server := &Server{
 		DB: db, Store: store,
-		Auth: auth.New("ios-map-owner-compound-race-test", time.Hour),
+		Auth:          auth.New("ios-map-owner-compound-race-test", time.Hour),
 		AllowedOrigin: "http://localhost", RefreshTTL: time.Hour,
 		MaxUploadBytes: 10 << 20,
 	}
@@ -136,7 +136,7 @@ func TestIOSMapP0OwnerABAndRevocationCompoundHTTP(t *testing.T) {
 		}
 		asset := meta.PhotoAsset{
 			OwnerID: ownerID, PrimaryNodeID: node.ID,
-			Kind: meta.PhotoAssetKindImage,
+			Kind:        meta.PhotoAssetKindImage,
 			EvidenceKey: fmt.Sprintf("node:%d", node.ID),
 		}
 		if err := db.Create(&asset).Error; err != nil {
