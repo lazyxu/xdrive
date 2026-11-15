@@ -134,6 +134,12 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 let edit = view("native-ios-files-home-edit-toggle", app: app)
                 XCTAssertTrue(edit.waitForExistence(timeout: 15))
                 XCTAssertEqual(edit.label, "编辑")
+            case "files.quick.recent", "files.quick.favorites":
+                let identifier = route == "files.quick.recent"
+                    ? "native-ios-files-section-recent" : "native-ios-files-section-favorites"
+                let quick = view(identifier, app: app)
+                XCTAssertTrue(quick.waitForExistence(timeout: 15))
+                XCTAssertTrue(quick.isHittable, "Real Files quick rail is not tappable")
             default:
                 XCTFail("Unregistered Files subpage: \(route)")
             }
@@ -191,6 +197,22 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             let action = view("native-ios-mine-server-account", app: app)
             XCTAssertTrue(action.waitForExistence(timeout: 15))
             XCTAssertTrue(action.isEnabled, "Only a current native Owner may request sign-out")
+        } else if route.hasPrefix("gallery.source.") {
+            tap("native-ios-tab-gallery", app: app)
+            switch route {
+            case "gallery.source.albums":
+                XCTAssertTrue(view("native-ios-gallery-source-albums", app: app)
+                    .waitForExistence(timeout: 15))
+            case "gallery.source.originals":
+                XCTAssertTrue(view("native-ios-gallery-source-originals", app: app)
+                    .waitForExistence(timeout: 15))
+            case "gallery.source.cloud", "gallery.source.local":
+                tap("native-ios-gallery-source-menu", app: app)
+                let label = route == "gallery.source.cloud" ? "云端图库" : "本机照片"
+                XCTAssertTrue(app.buttons[label].firstMatch.waitForExistence(timeout: 15))
+            default:
+                XCTFail("Unregistered Gallery source: \(route)")
+            }
         } else if route == "gallery.originals.help" {
             tap("native-ios-tab-gallery", app: app)
             tap("native-ios-gallery-source-originals", app: app)
@@ -314,6 +336,24 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "files.home.edit-mode":
             tap("native-ios-files-home-edit-toggle", app: app)
             ready = view("native-ios-files-home-edit-toggle", app: app)
+        case "files.quick.recent":
+            tap("native-ios-files-section-recent", app: app)
+            ready = view("native-ios-files-section-recent", app: app)
+        case "files.quick.favorites":
+            tap("native-ios-files-section-favorites", app: app)
+            ready = view("native-ios-files-section-favorites", app: app)
+        case "gallery.source.albums":
+            tap("native-ios-gallery-source-albums", app: app)
+            ready = view("native-ios-album-create", app: app)
+        case "gallery.source.originals":
+            tap("native-ios-gallery-source-originals", app: app)
+            ready = view("native-ios-cloud-original-layout-help", app: app)
+        case "gallery.source.cloud":
+            app.buttons["云端图库"].firstMatch.tap()
+            ready = view("native-ios-server-gallery-search", app: app)
+        case "gallery.source.local":
+            app.buttons["本机照片"].firstMatch.tap()
+            ready = view("native-ios-local-timeline-open", app: app)
         case "notes.source.ios-backup":
             let backup = app.segmentedControls.buttons["iOS 备份"].firstMatch
             XCTAssertTrue(backup.isHittable)
@@ -429,6 +469,10 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         if route == "files.home.edit-mode" {
             XCTAssertEqual(ready.label, "完成", "Files Home edit state never changed")
         }
+        if route.hasPrefix("files.quick.") {
+            XCTAssertEqual(ready.value as? String, "已选择",
+                           "Real Files quick rail never selected requested section")
+        }
         if route == "clipboard.target-scope" {
             XCTAssertTrue(ready.isHittable, "Native Clipboard menu never opened")
         }
@@ -514,6 +558,16 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             tap("native-ios-files-home-edit-toggle", app: app)
             XCTAssertEqual(view("native-ios-files-home-edit-toggle", app: app).label,
                            "编辑", "Files Home edit mode did not exit")
+        case "files.quick.recent", "files.quick.favorites":
+            tap("native-ios-files-section-browse", app: app)
+            XCTAssertEqual(view("native-ios-files-section-browse", app: app).value as? String,
+                           "已选择", "Native Files quick section did not restore Browse")
+        case "gallery.source.albums", "gallery.source.originals",
+             "gallery.source.cloud", "gallery.source.local":
+            tap("native-ios-gallery-source-unified", app: app)
+            XCTAssertTrue(view("native-ios-unified-photo-gallery", app: app)
+                .waitForExistence(timeout: 15),
+                "Gallery source did not return to unified photo wall")
         case "notes.source.ios-backup":
             let mine = app.segmentedControls.buttons["我的备忘录"].firstMatch
             XCTAssertTrue(mine.waitForExistence(timeout: 15))
@@ -775,4 +829,10 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     func testSubpageFilesHomeMoreOrganizer() { run("files.home.more-organizer") }
     func testSubpageGallerySortMenuFilters() { run("gallery.sort-menu.filters") }
     func testSubpageGalleryWallMonthGroup() { run("gallery.wall.month-group") }
+    func testSubpageFilesQuickRecent() { run("files.quick.recent") }
+    func testSubpageFilesQuickFavorites() { run("files.quick.favorites") }
+    func testSubpageGallerySourceAlbums() { run("gallery.source.albums") }
+    func testSubpageGallerySourceOriginals() { run("gallery.source.originals") }
+    func testSubpageGallerySourceCloud() { run("gallery.source.cloud") }
+    func testSubpageGallerySourceLocal() { run("gallery.source.local") }
 }

@@ -90,11 +90,11 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertEqual(report["rows"][0]["app_peak_memory_p95_mib"], 3)
         self.assertFalse(report["real_signed_owner_data"])
 
-    def test_actual_repository_registration_has_all_thirty_nine_routes(self):
+    def test_actual_repository_registration_has_all_forty_five_routes(self):
         module.ROUTES = self.old
         registered = module.source_routes(module.SOURCE.read_text(encoding="utf-8"))
         self.assertEqual(set(registered.values()), set(module.ROUTES))
-        self.assertEqual(len(module.ROUTES), 39)
+        self.assertEqual(len(module.ROUTES), 45)
 
     def test_gallery_backup_routes_use_existing_product_navigation(self):
         gallery = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
@@ -258,6 +258,26 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertIn('accessibilityIdentifier("native-ios-files-toolbar-organize-home")', files)
         self.assertIn('accessibilityIdentifier("native-ios-gallery-sort-filter-open-filters")', gallery)
         self.assertIn('accessibilityIdentifier("native-ios-shared-photo-time-scale")', shared)
+
+    def test_files_quick_and_gallery_source_metrics_use_existing_native_controls(self):
+        suite = module.SOURCE.read_text(encoding="utf-8")
+        root_suite = (module.ROOT / "ios/UITests/XDriveIOSPagePerformanceUITests.swift").read_text(
+            encoding="utf-8"
+        )
+        for route, identifier in (
+            ("files.quick.recent", "native-ios-files-section-recent"),
+            ("files.quick.favorites", "native-ios-files-section-favorites"),
+            ("gallery.source.albums", "native-ios-gallery-source-albums"),
+            ("gallery.source.originals", "native-ios-gallery-source-originals"),
+            ("gallery.source.cloud", "native-ios-server-gallery-search"),
+            ("gallery.source.local", "native-ios-local-timeline-open"),
+        ):
+            self.assertIn(f'run("{route}")', suite)
+            self.assertIn(f'case "{route}":', suite)
+            self.assertIn(identifier, suite)
+            self.assertIn(identifier, root_suite)
+        self.assertIn("Gallery source did not return to unified photo wall", suite)
+        self.assertIn("Native Files quick section did not restore Browse", suite)
 
     def test_missing_actual_screenshot_fails(self):
         bad = "\n".join(x for x in fake_log().splitlines()

@@ -50,7 +50,7 @@ The machine-audited inventory lives in ios/performance/native-seven-workloads.js
 - A pending row remains pending with explicit missing evidence. Green workflow
   registration only asserts that nobody falsely marked the incomplete
   work as measured.
-- The existing 25-page root suite on master, and this PR's 36-child route
+- The existing 25-page root suite on master, and this PR's 45-child/interaction route
   candidate (new Clipboard/Mine interaction routes require a fresh real Simulator
   pass), establish the native measurement backbone, **not** complete Web
   parity. Each of the 36 child paths now separately records parent-stage, forward
@@ -58,8 +58,8 @@ The machine-audited inventory lives in ios/performance/native-seven-workloads.js
   during the forward interval, plus one original post-AX and post-return screenshot
   pair. Parent-stage includes UI preparation/XCTest idling, not only one screen
   frame; screenshots are not composited first-pixel or continuous FPS evidence.
-  This change requires a fresh exact-HEAD Simulator pass, 108 stage samples,
-  108 forward samples, 108 reverse samples and 72 screenshots. This PR remains
+  This change requires a fresh exact-HEAD Simulator pass, 135 stage samples,
+  135 forward samples, 135 reverse samples and 90 screenshots. This PR remains
   Draft until required current-HEAD CI and Final Gate
   pass and the promised workload metrics are actually gathered.
 - Exact authorized Owner, full media/100k and signed physical iPhone capture
@@ -80,7 +80,7 @@ performance, unrelated offline/security tests and native-only Notes/Settings
 are tracked outside this Web UI workflow selector; do not describe this set
 as the whole GitHub workflow directory.
 
-The 36-route candidate also conditionally requests Apple's real
+The 45-route candidate also conditionally requests Apple's real
 `XCTHitchMetric(application: app)` on **Xcode 26 and iOS 26**; the existing
 Xcode 16.4/iOS 18.5 runner uses navigation/scroll signpost **durations**
 instead. Neither route register nor signpost fallback establishes a physical
@@ -96,7 +96,7 @@ registered and checked as native-unverified: P071 mobile 390px and wide 1440px
 mixed 100k Gallery, P071 genuine H264 poster 100k Gallery, real Web 1 GiB
 PostgreSQL/CAS transfer, and full-byte Web OPFS readback (1/4 GiB).
 These are genuine Web tests, but none supplies iOS measurements. The native
-36-route AX/CPU/RSS work, media first-frame, source-verifiable 100k workload
+45-route AX/CPU/RSS work, media first-frame, source-verifiable 100k workload
 and 1/4 GiB URLSession test remain separate requirements. Missing/deleted or
 incorrectly classified Web workflow now fails the parity audit. This does not
 claim to include backend-only, agent-only or unrelated safety workflows.
