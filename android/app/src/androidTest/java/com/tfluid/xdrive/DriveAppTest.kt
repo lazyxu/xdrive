@@ -3608,6 +3608,31 @@ class DriveAppTest {
         }
     }
 
+    /** Keep failing UI assertions strict, but expose bounded real state and
+     * status text so an emulator timeout is not mistaken for a CAS receipt.
+     * No credentials, clipboard payload, or private Node contents are logged.
+     */
+    private fun awaitClipboardFixture(
+        stage: String, condition: () -> Boolean,
+    ) {
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) { condition() }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            val current = controller.state.value
+            val status = runCatching {
+                compose.onNodeWithTag("native-clipboard-status", useUnmergedTree = true)
+                    .printToString()
+            }.getOrElse { "status-not-mounted" }
+            throw AssertionError(
+                "Clipboard fixture timeout at $stage: " +
+                    "screen=${current.screen}, ownerSession=${current.nativeUiSessionId}, " +
+                    "deviceReads=$clipboardDeviceReads, imports=$clipboardImports, " +
+                    "writes=${clipboardWrites.size}, status=$status",
+                failure,
+            )
+        }
+    }
+
     private fun selectClipboardFixtureDevice() {
         compose.onNodeWithText("发送范围：当前账号广播").performClick()
         compose.onNodeWithText("Fixture Clip · android").assertExists().performClick()
@@ -3630,7 +3655,7 @@ class DriveAppTest {
         compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
         compose.onNodeWithTag("native-clipboard-directed-send").performClick()
         try {
-            compose.waitUntil(timeoutMillis = 10_000) { clipboardWrites.size == 1 }
+            awaitClipboardFixture("exact directed clipboard write") { clipboardWrites.size == 1 }
         } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
             throw AssertionError(
                 "Directed send not received: writes=${clipboardWrites.size}; " +
@@ -3762,7 +3787,7 @@ class DriveAppTest {
         selectClipboardFixtureDevice()
         compose.onNodeWithTag("native-clipboard-draft").performTextInput("hello fixture")
         compose.onNodeWithTag("native-clipboard-directed-send").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { clipboardWrites.size == 1 }
+        awaitClipboardFixture("exact directed clipboard write") { clipboardWrites.size == 1 }
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching {
                 compose.onNodeWithText("定向发送回执未知：", substring = true).assertExists()
@@ -3782,7 +3807,7 @@ class DriveAppTest {
         chooseClipboardImageKind()
         stageClipboardImageInOS()
         compose.onNodeWithText("读取本机剪贴板图片并上传").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { clipboardImports == 1 }
+        awaitClipboardFixture("real CAS upload dispatch") { clipboardImports == 1 }
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching { compose.onNodeWithText(
                 "剪贴板图片已上传并核验 CAS；请再次点击定向发送。"
@@ -3790,7 +3815,7 @@ class DriveAppTest {
         }
         compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
         compose.onNodeWithTag("native-clipboard-directed-send").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { clipboardWrites.size == 1 }
+        awaitClipboardFixture("exact directed clipboard write") { clipboardWrites.size == 1 }
         compose.runOnIdle {
             org.junit.Assert.assertEquals("image/x-xdrive-node-ref", clipboardWrites.single().kind)
             org.junit.Assert.assertEquals(60L, clipboardWrites.single().nodeID)
@@ -3803,7 +3828,7 @@ class DriveAppTest {
         chooseClipboardImageKind()
         stageClipboardImageInOS()
         compose.onNodeWithText("读取本机剪贴板图片并上传").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { clipboardImports == 1 }
+        awaitClipboardFixture("real CAS upload dispatch") { clipboardImports == 1 }
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching { compose.onNodeWithText(
                 "图片上传未确认；请检查 Files，勿自动重传。"
