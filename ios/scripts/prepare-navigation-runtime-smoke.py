@@ -19,7 +19,12 @@ key = "            XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage
 if s.count(key) != 1:
     raise SystemExit("Unexpected iOS App entry; test harness must be audited")
 s = s.replace(key, """#if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
+            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-login-compact-smoke") {
+                // Mount the *real* signed-out SwiftUI login under explicit
+                // safe startup: never restore a credential, create an Owner,
+                // call a Server, or start a PhotoKit upload in this UI test.
+                XDriveIOSNativeOwnerLoginScreen(safeStartup: true)
+            } else if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
                 XDriveIOSNativeNavigationSmokeRoot()
             } else {
                 XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)
