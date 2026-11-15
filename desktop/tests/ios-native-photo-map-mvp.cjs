@@ -309,7 +309,7 @@ test('both local MapKit album sheets browse a frozen authorized slice and restor
     assert.match(screen, /scroll\.scrollTo\(id, anchor: \.center\)/, name);
     assert.match(screen, /\.id\(item\.id\)/, name);
     assert.match(screen, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/, name);
-    assert.match(screen, /defer \{ viewerReturnID = nil \}/, name);
+    assert.match(screen, /defer \{ viewerReturnID = nil; viewerOpeningID = nil \}/, name);
   }
   assert.match(bounded, /items\.prefix\(XDriveIOSNativePhotoMapPolicy\.pageSize\)/);
   assert.match(spatialAlbum, /private func loadedWindow\(containing id: String\)/);
