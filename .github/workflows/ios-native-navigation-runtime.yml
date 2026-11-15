@@ -6,6 +6,7 @@ on:
       - 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift'
       - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
       - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
       - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
@@ -236,7 +237,8 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests") ;;
             candidate-gallery-files)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests")
-              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests") ;;
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesSixSubpageUITests") ;;
             candidate-no-session)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests") ;;
             candidate-mapkit)

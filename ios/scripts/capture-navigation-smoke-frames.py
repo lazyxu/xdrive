@@ -138,6 +138,14 @@ NAV_TARGETS = {
     "testCloudOriginalsFilesQuickSectionsReturnKeepsChild",
     "testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages",
     "testFilesOperationHistoryBackgroundThenFilesGalleryReturn",
+    # Six independently runnable native child-navigation journeys; capture
+    # real simctl screenshots near route taps, not just settled root chrome.
+    "testFilterPeopleDeniedCloudReturnKeepsVerifiedGalleryGeneration",
+    "testFilesHistorySavedSearchesAcrossOriginalsHaveNoGhostSheets",
+    "testOriginalsHelpTrashDeniedReturnDoesNotReopenAlert",
+    "testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild",
+    "testMapModalFilesCloudDenialDoesNotRemountUnifiedWall",
+    "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
     # Each new live Gallery generation test additionally captures nearby
     # Simulator frames; screenshots are diagnostic, not a measured FPS.
     "testUnifiedWallGenerationPersistsThroughSixFilesTabRoundTrips",
