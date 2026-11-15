@@ -117,9 +117,16 @@ struct XDriveIOSNativeUnifiedSourceMapSurface: UIViewRepresentable {
         coordinator.onCamera = onCamera
         coordinator.onBasemapStatus = onBasemapStatus
         coordinator.onOpen = onOpen
+        // A gesture revokes the current camera lease synchronously. An
+        // unrelated SwiftUI repaint (for instance a delayed poster) must
+        // never re-enable those old pins until a NEW verified revision.
         coordinator.images = markersEnabled ? images : [:]
         coordinator.unavailable = markersEnabled ? unavailable : []
-        coordinator.markersEnabled = markersEnabled
+        if coordinator.revision != revision {
+            coordinator.leaseRevokedUntilNewRevision = false
+        }
+        coordinator.markersEnabled = markersEnabled &&
+            !coordinator.leaseRevokedUntilNewRevision
         if map.mapType != mapType {
             // A base-layer switch is not a map gesture or an Owner lease.
             map.delegate = nil
@@ -134,7 +141,7 @@ struct XDriveIOSNativeUnifiedSourceMapSurface: UIViewRepresentable {
             map.removeAnnotations(map.annotations.filter {
                 $0 is XDriveIOSUnifiedSourceAnnotation
             })
-            if markersEnabled {
+            if coordinator.markersEnabled {
                 map.addAnnotations(pins.prefix(64).map(XDriveIOSUnifiedSourceAnnotation.init))
             }
         }
@@ -142,6 +149,11 @@ struct XDriveIOSNativeUnifiedSourceMapSurface: UIViewRepresentable {
         if let id = cameraRequestID, coordinator.cameraRequestID != id,
            let requestedCamera {
             coordinator.cameraRequestID = id
+            // Even a programmatic fit/locate moves the viewport: revoke
+            // old pin hit-testing and VoiceOver IDs before MapKit animates.
+            coordinator.leaseRevokedUntilNewRevision = true
+            coordinator.markersEnabled = false
+            coordinator.updateCovers(map)
             // A deliberate fit/locate change is followed by the same exact
             // viewport revalidation as a gesture, but never a spurious
             // recursive delegate callback while setting the region.
@@ -160,6 +172,7 @@ struct XDriveIOSNativeUnifiedSourceMapSurface: UIViewRepresentable {
             $0 is XDriveIOSUnifiedSourceAnnotation
         })
         coordinator.markersEnabled = false
+        coordinator.leaseRevokedUntilNewRevision = true
         coordinator.images = [:]
     }
 
@@ -167,6 +180,7 @@ struct XDriveIOSNativeUnifiedSourceMapSurface: UIViewRepresentable {
         var revision: UUID?
         var cameraRequestID: UUID?
         var markersEnabled = false
+        var leaseRevokedUntilNewRevision = false
         var images: [String: UIImage] = [:]
         var unavailable: Set<String> = []
         var onCameraWillChange: () -> Void
@@ -214,6 +228,7 @@ struct XDriveIOSNativeUnifiedSourceMapSurface: UIViewRepresentable {
 
         func mapView(_ map: MKMapView, regionWillChangeAnimated animated: Bool) {
             // Revoke old hit targets before SwiftUI can render the next frame.
+            leaseRevokedUntilNewRevision = true
             markersEnabled = false
             updateCovers(map)
             onCameraWillChange()
