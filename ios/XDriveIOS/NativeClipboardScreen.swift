@@ -801,9 +801,17 @@ private struct XDriveIOSNativeClipboardCloudPicker: View {
                     Label(folderName, systemImage: "folder")
                     if !folders.isEmpty {
                         Button("返回上一级") {
-                            folders.removeLast()
+                            // Recheck the live Owner and path for repeated stale taps.
+                            guard XDriveIOSNativePhotoOwnerScope.matches(
+                                login.owner, openedOwner
+                            ), XDriveIOSNativeClipboardFolderBackPolicy.retreat(path: &folders)
+                            else { return }
+                            requestID = UUID()
                             offset = 0
+                            totalCount = 0
                             rows = []
+                            failure = nil
+                            loading = true
                         }
                     }
                 }
@@ -816,10 +824,18 @@ private struct XDriveIOSNativeClipboardCloudPicker: View {
                         ForEach(rows) { node in
                             if node.isDirectory {
                                 Button {
-                                    guard node.parent_id == folderID, node.id > 0 else { return }
+                                    guard XDriveIOSNativePhotoOwnerScope.matches(
+                                        login.owner, openedOwner
+                                    ), node.parent_id == folderID, node.id > 0,
+                                       rows.contains(where: { $0.id == node.id })
+                                    else { return }
+                                    requestID = UUID()
                                     folders.append(.init(id: node.id, name: node.name))
                                     offset = 0
+                                    totalCount = 0
                                     rows = []
+                                    failure = nil
+                                    loading = true
                                 } label: {
                                     Label(node.name, systemImage: "folder.fill")
                                 }

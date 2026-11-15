@@ -127,6 +127,21 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-launch-check"
           node --test desktop/tests/ios-native-launch-recovery.cjs
 
+      - name: Verify native Files audio and Clipboard fatal-trap boundaries
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
+            ios/XDriveIOS/NativeFileAudioTimecodePolicy.swift \
+            ios/tests/NativeFileAudioTimecodeChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-file-audio-bounds"
+          "$RUNNER_TEMP/xdrive-ios-file-audio-bounds"
+          swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
+            ios/XDriveIOS/NativeClipboardFolderBackPolicy.swift \
+            ios/tests/NativeClipboardFolderBackPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-clipboard-back-bounds"
+          "$RUNNER_TEMP/xdrive-ios-clipboard-back-bounds"
+          node --test desktop/tests/ios-native-all-page-crash-traps.cjs
+
       # An actual iOS 26.6 iPhone SIGSEGV entered the deeply nested Files
       # SwiftUI lifecycle. Keep the separate stack-depth/source safety test
       # mandatory before spending time on the full unsigned IPA build.
