@@ -1254,11 +1254,23 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         let matches = model.rows.filter { $0.id == row.id && $0.presence == presence }
         guard matches.count == 1 else { return false }
         let refreshed = matches[0]
-        return refreshed.local?.id == row.local?.id &&
-            refreshed.cloud?.id == row.cloud?.id &&
-            refreshed.cloud?.node.revision == row.cloud?.node.revision &&
-            refreshed.cloud?.contentIdentity == row.cloud?.contentIdentity &&
-            refreshed.match == row.match
+        guard refreshed.local?.id == row.local?.id,
+              refreshed.match == row.match else { return false }
+        if let earlier = row.cloud, let latest = refreshed.cloud {
+            return earlier.id == latest.id &&
+                earlier.node.revision == latest.node.revision &&
+                earlier.contentIdentity == latest.contentIdentity
+        }
+        if row.presence == .cloudOnly {
+            // Every cloud-only item must retain an actual present cloud Node.
+            return row.cloud != nil && refreshed.cloud != nil
+        }
+        // A "both" Gallery row legitimately contains only the PhotoKit half
+        // when its matching cloud Node is outside the current 48-item window.
+        // The matched Media Reader below fetches and verifies it by exact
+        // Owner, asset ID and revision instead of treating nil as "missing".
+        if let newer = refreshed.cloud { return row.match?.matches(newer) == true }
+        return row.cloud == nil || row.presence == .both
     }
 
     private func revalidateCurrentMember(
@@ -1286,15 +1298,26 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             // revision and content identity, not just the local half.
             var currentCloud = row.cloud
             if row.presence == .both {
-                guard let expectedCloud = row.cloud, let match = row.match,
-                      match.matches(expectedCloud),
+                guard let match = row.match, match.isValid,
                       let auth = try? await login.verifiedAuthorization(),
                       XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
                 else { return nil }
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: owner, accessToken: auth.accessToken)
-                guard let liveCloud = try? await reader.currentMapItem(expectedCloud),
-                      match.matches(liveCloud) else { return nil }
+                let liveCloud: XDriveIOSNativeMediaItem
+                if let expectedCloud = row.cloud {
+                    guard match.matches(expectedCloud),
+                          let current = try? await reader.currentMapItem(expectedCloud)
+                    else { return nil }
+                    liveCloud = current
+                } else {
+                    // Exact matching may refer to an authorized Node outside
+                    // this Gallery page; do not block a valid "both" photo.
+                    guard let current = try? await reader.matchedMedia(match)
+                    else { return nil }
+                    liveCloud = current
+                }
+                guard match.matches(liveCloud) else { return nil }
                 currentCloud = liveCloud
             }
             let names = PHAssetResource.assetResources(for: asset)
