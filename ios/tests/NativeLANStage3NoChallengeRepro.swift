@@ -24,6 +24,13 @@ struct NativeLANStage3NoChallengeRepro {
                 exit(1)
             }
         }
+        let afterTrust = XDriveIOSLANPairingFailure
+            .ipCertificatePostTrustFailure(-1202).message
+        guard afterTrust.contains("POST_TRUST_SYSTEM_REJECTION"),
+              !afterTrust.contains("NO_TRUST_CHALLENGE") else {
+            print("RED: strict trust acceptance and later CFNetwork failure are conflated")
+            exit(1)
+        }
         print("GREEN: URLSession certificate errors without a challenge are " +
               "distinguished from confirmed pinned CA/IP SAN rejection")
     }
