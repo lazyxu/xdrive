@@ -54,7 +54,10 @@ permissions:
   contents: read
 concurrency:
   group: native-ios-runtime-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: false
+  # A newer commit to the SAME PR supersedes old six-shard iOS Simulator
+  # results; do not consume macOS minutes on stale source. Manual runs use
+  # their own run_id, and independent PR numbers never cancel each other.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   simulator-navigation:
     runs-on: macos-15

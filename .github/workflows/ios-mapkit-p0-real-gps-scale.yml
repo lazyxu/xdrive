@@ -34,7 +34,11 @@ concurrency:
   # but let cheap 65-photo PR acceptance run separately rather than queue
   # behind a 100,000-file simulator import for hours.
   group: ${{ ((github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'real-photokit-100k-once') || (github.event_name == 'workflow_dispatch' && inputs.count == '100000')) && format('ios-mapkit-p0-scale-{0}', github.event.pull_request.number || github.run_id) || format('ios-mapkit-p0-scale-{0}-small', github.event.pull_request.number || github.run_id) }}
-  cancel-in-progress: false
+  # Only the ordinary 65-photo PR audit is superseded by new commits.
+  # The explicit real-photokit-100k-once label and manual 100k dispatch
+  # have separate heavyweight concurrency groups and are never cancelled.
+  # Other PRs/manual runs are isolated by PR number/run_id.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' }}
 jobs:
   actual-photokit-delta:
     # Only the explicit, one-shot performance label may start a heavyweight
