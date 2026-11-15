@@ -921,7 +921,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     XDriveIOSNativePhotoWallRetryMessage(
                         message: error, buttonTitle: "重新核对当前区域",
                         canRetry: !busy && !opening
-                    ) { load(from: next ?? (isNearbyExpansion ? .init() : pin.firstCursor)) }
+                    ) { retryCurrentArea() }
                 }
                 if busy {
                     XDriveIOSNativePhotoWallLoadingMessage(
@@ -1401,6 +1401,24 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         busy = false
         opening = false
         error = nil
+    }
+
+    /// Nearby pages are ordered by GPS distance, never by the Gallery's
+    /// chronological cursor. A retry must rebuild the same ranked window,
+    /// not silently switch to ordinary place timeline navigation.
+    private func retryCurrentArea() {
+        guard active, !busy, !opening, viewing == nil else { return }
+        if isNearbyExpansion {
+            previous = []; current = []
+            nearbyNext = nil; nearbyStarts = []; nearbyWindowIndex = -1
+            backfillAnchorID = nil
+            ended = false
+            error = nil
+            if nearbyRanked.isEmpty { prepareNearbyRanking() }
+            else { loadNearby(from: 0) }
+        } else {
+            load(from: next ?? pin.firstCursor)
+        }
     }
 
     private func advance() {
