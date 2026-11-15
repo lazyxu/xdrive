@@ -152,7 +152,7 @@ test('M13 M14: locality is display only; nearby uses whole verified GPS distance
   assert.match(map, /private func retryCurrentArea\(\)/)
   assert.match(map, /if isNearbyExpansion \{[\s\S]*?nearbyStarts = \[\]; nearbyWindowIndex = -1[\s\S]*?loadNearby\(from: 0\)/)
   // The time grouping renderer must not reorder the verified GPS distances.
-  assert.match(map, /isNearbyExpansion \? \.all : timeScale/)
+  assert.match(map, /isNearbyExpansion \? \.all : wallTimeScale/)
   assert.match(map, /previous \+ current, scale: displayTimeScale/)
   assert.match(map, /if !isNearbyExpansion \{\s*Section\("时间分组"\)/)
 })
