@@ -1170,6 +1170,13 @@ struct XDriveIOSNativePhotosDashboard: View {
             XDriveIOSNativeDynamicFeature(rawValue: $0)
         }
         tab = XDriveIOSNativeBottomTab(rawValue: snapshot.selectedTab) ?? .gallery
+        // A signed iPhone 26.6 once became trapped reopening the previously
+        // saved Files tab while its giant SwiftUI view graph overran the
+        // main-thread stack. Preserve the saved *folder* resume separately,
+        // but make a fresh post-login workspace start in Gallery. The user
+        // can still explicitly open Files without clearing its Owner-scoped
+        // folder/scroll anchor.
+        if tab == .files { tab = .gallery }
     }
 
     private func saveNavigationIfReady() {
