@@ -434,9 +434,10 @@ struct XDriveIOSNativePhotosDashboard: View {
             backup.refresh(owner: login.owner)
         }
         .onChange(of: ownerScopeKey) { _ in
-            // A new Owner must not retain the old Owner's mounted Files tree.
-            filesTabActivated = false
             transfers.selectOwner(login.owner)
+            // The original Owner transfer cleanup stays first; the hidden
+            // Files child never retains a previous Owner's navigation state.
+            filesTabActivated = false
             // TabView .id does not reset this parent's @State. Revoke the old
             // Owner's saved UI route even if switching A -> B -> A in one scene.
             routeRestoreScopeKey = nil
@@ -1196,9 +1197,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func resetNavigation() {
-        filesTabActivated = false
         galleryFocusGeneration = UUID()
         galleryFocused = false
+        filesTabActivated = false
         mapReturnGallerySource = nil
         mapReturnOwnerScopeKey = nil
         gallerySource = .unified

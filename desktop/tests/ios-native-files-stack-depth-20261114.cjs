@@ -98,7 +98,7 @@ test('signed-in Gallery never eagerly mounts the Files view graph; first Files v
   assert.match(filesTab, /else \{\s*Color\.clear\s*\.accessibilityHidden\(true\)/)
   assert.match(dashboard, /\.onChange\(of: tab\) \{ next in\s*if next == \.files \{ filesTabActivated = true \}/)
   assert.match(dashboard, /\.onChange\(of: ownerScopeKey\) \{ _ in[\s\S]*?filesTabActivated = false/)
-  assert.match(dashboard, /private func resetNavigation\(\) \{\s*filesTabActivated = false/)
+  assert.match(dashboard, /private func resetNavigation\(\) \{\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false\s*filesTabActivated = false/)
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.files\)/)
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.gallery\)/)
   assert.equal((dashboard.match(/XDriveIOSNativeFilesBrowser\(login: login\)/g) || []).length, 1,
