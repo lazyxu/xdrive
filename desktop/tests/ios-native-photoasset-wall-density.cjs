@@ -36,7 +36,8 @@ test('native cloud tile has truly square aspect fill without extra filename labe
 })
 
 test('cloud grid shares bounded three-step native PhotoKit density menu and pinch', () => {
-  assert.match(wall, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
+  assert.match(wall, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+  assert.match(wall, /private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
   assert.match(wall, /XDriveIOSNativePhotoWallDisplayMenu\(/)
   assert.match(shared, /xdrivePhotoWallDensityButtons\(\$density\)/)
   assert.match(wall, /native-ios-cloud-wall-density/)
@@ -69,5 +70,5 @@ test('presentation-only density preserves exact Owner and Viewer/thumbnail gener
   // Persist only the public presentation enum, never Owner, Node, session,
   // credentials or Viewer anchors; cropping does not change thumbnail task ID.
   assert.match(wall, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
-  assert.doesNotMatch(wall, /UserDefaults|Keychain|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/)
+  assert.doesNotMatch(wall, /UserDefaults|Keychain|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-(?:framing|density)\.v1")/)
 })

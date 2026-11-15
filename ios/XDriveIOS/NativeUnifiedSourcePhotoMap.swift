@@ -842,8 +842,11 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var ended = false
     @State private var viewing: XDriveIOSUnifiedMapViewerChoice?
     @State private var viewerReturnID: String?
+    @State private var viewerOpeningID: String?
+    @State private var viewerOpeningWindow: Int = -1
     @State private var nearbyPresented = false
-    @State private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var density: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var timeScale: XDriveIOSNativePhotoWallTimeScale = .all
@@ -1098,15 +1101,28 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             .onChange(of: shouldRestoreViewerTile) { restore in
                 guard restore else { return }
                 shouldRestoreViewerTile = false
-                defer { viewerReturnID = nil }
+                defer {
+                    viewerReturnID = nil
+                    viewerOpeningID = nil
+                    viewerOpeningWindow = -1
+                }
                 guard active, viewing == nil, let id = viewerReturnID,
                       (previous + current).filter({ $0.id == id }).count == 1,
                       XDriveIOSNativePhotoWallWindowPolicy.canRestore(
                         id, in: (previous + current).map(\.id),
                         scopeActive: active) else { return }
-                xdrivePhotoWallFocusVerifiedTile(
-                    id, scroll: scroll, focus: $focusedTileID
-                )
+                // Do not jump/recenter on a same-photo return when the signed
+                // Owner/PhotoKit window has not rotated under the Viewer.
+                let sameWindow = isNearbyExpansion
+                    ? viewerOpeningWindow == nearbyWindowIndex
+                    : viewerOpeningWindow == windowIndex
+                if viewerOpeningID == id && sameWindow {
+                    focusedTileID = id
+                } else {
+                    xdrivePhotoWallFocusVerifiedTile(
+                        id, scroll: scroll, focus: $focusedTileID
+                    )
+                }
             }
         }
     }
@@ -1146,6 +1162,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 return
             }
             viewerReturnID = row.id
+            viewerOpeningID = row.id
+            viewerOpeningWindow = isNearbyExpansion
+                ? nearbyWindowIndex : windowIndex
             focusedTileID = nil
             viewing = .init(row: currentRow)
         }
@@ -1407,6 +1426,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         ended = false
         viewing = nil
         viewerReturnID = nil
+        viewerOpeningID = nil
+        viewerOpeningWindow = -1
         shouldRestoreViewerTile = false
         focusedTileID = nil
         placeNameTask?.cancel(); placeNameTask = nil

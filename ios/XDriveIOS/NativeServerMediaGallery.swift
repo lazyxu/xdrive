@@ -1434,16 +1434,16 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                 // range is ready; no scroll-height jumps during a download.
                 placeholders
             }
-            if let error = model.error {
-                XDriveIOSNativePhotoWallRetryMessage(
-                    message: error, buttonTitle: "重试当前照片范围",
-                    canRetry: !model.busy && !viewerActive,
-                    textFont: .caption
-                ) {
-                    model.load(login: login, albumID: albumID, placeID: placeID,
-                               offset: offset, search: search,
-                                captureRange: captureRange)
-                }
+            XDriveIOSNativePhotoWallFeedback(
+                isLoading: false, // Placeholder grid already reserves 48 slots.
+                loadingMessage: "正在读取当前照片范围…",
+                error: model.error,
+                canRetry: !model.busy && !viewerActive,
+                buttonTitle: "重试当前照片范围"
+            ) {
+                model.load(login: login, albumID: albumID, placeID: placeID,
+                           offset: offset, search: search,
+                            captureRange: captureRange)
             }
         }
         .id("cloud-range:\(offset)")
@@ -1506,7 +1506,8 @@ struct XDriveIOSNativeServerMediaWall: View {
     @State private var showingGalleryHelp = false
     // Presentation-only, shared with the already-native local PhotoKit wall.
     // Does not participate in Owner, Range, thumbnail request or Viewer keys.
-    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all

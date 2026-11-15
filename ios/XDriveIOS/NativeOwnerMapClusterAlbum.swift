@@ -85,7 +85,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // A Viewer may only promote an exact adjacent Range after verifying its
     // prior signed place page. No guessed place or cached media identities.
     @State private var pendingViewerCross: XDriveIOSOwnerClusterCursor?
-    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
@@ -158,17 +159,17 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 XDriveIOSNativePhotoWallStatusMessage(
                     message: "正在核对当前账户的地点照片…")
             }
-            if activeOwner, let error {
-                XDriveIOSNativePhotoWallRetryMessage(
-                    message: error, buttonTitle: "重试读取照片",
+            if activeOwner {
+                XDriveIOSNativePhotoWallFeedback(
+                    isLoading: busy,
+                    loadingMessage: "核对当前 Owner 的地点照片…",
+                    error: error,
                     canRetry: !busy && activeOwner && viewing == nil,
-                    accessibilityID: "native-ios-owner-map-cluster-inline-retry"
+                    buttonTitle: "重试读取照片",
+                    retryAccessibilityID: "native-ios-owner-map-cluster-inline-retry"
                 ) {
                     load(cursor, history: earlier)
                 }
-            }
-            if busy {
-                XDriveIOSNativePhotoWallLoadingMessage(message: "核对当前 Owner 的地点照片…")
             }
             XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
                 .padding(.horizontal, 12)

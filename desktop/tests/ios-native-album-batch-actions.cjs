@@ -33,7 +33,8 @@ test('album selection only accepts currently authorized, immutable 64-slot page 
   assert.match(source, /batch\.count <= 64/)
   // Comments may forbid persistence; test executable Swift, not that prohibition text.
   const executable = source.replace(/^\s*\/\/[^\n]*/gm, '')
-  const withoutApprovedAppearance = executable.replace(/@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/g, '')
+  const withoutApprovedAppearance = executable.replace(
+    /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-(?:framing|density)\.v1"\)/g, '')
   assert.doesNotMatch(withoutApprovedAppearance, /UserDefaults|@AppStorage|persist.*PhotoKit|UploadSession/)
 })
 
