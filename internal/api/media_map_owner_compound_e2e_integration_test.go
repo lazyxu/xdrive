@@ -74,6 +74,7 @@ func TestIOSMapP0OwnerABAndRevocationCompoundHTTP(t *testing.T) {
 		&meta.PhotoAsset{}, &meta.PhotoAssetOccurrence{},
 		&meta.PhotoAssetIdentityAlias{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoMetadata{}, &meta.PhotoResource{},
+		&meta.PhotoAnalysisState{}, &meta.PhotoPlaceLabel{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {
 		t.Fatal(err)
