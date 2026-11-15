@@ -38,7 +38,7 @@ test('P1-02 shared year/month/day, crop/contain and density menus, separate sour
     assert.match(content, /XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
   // The unified-source place wall owns its own timeScale state. Nearby
   // intentionally renders GPS-distance order without false calendar dates.
-  assert.match(sourceMap, /if \(!isNearbyExpansion\) \{\s*XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$timeScale\)/)
+  assert.match(sourceMap, /if !isNearbyExpansion \{\s*XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$timeScale\)/)
   assert.match(sourceMap, /isNearbyExpansion \? \.all : timeScale/)
   assert.match(shared, /Section\("显示比例"\) \{ xdrivePhotoWallFramingButtons\(\$framing\) \}/)
   assert.match(sourceMap, /wallFraming: XDriveIOSNativePhotoWallFraming = \.square/)
