@@ -30,6 +30,11 @@ test('M02: negative source evidence is reclassified on the exact current Owner p
   assert.match(map, /refreshed\.cloud\?\.contentIdentity == row\.cloud\?\.contentIdentity/)
   assert.match(map, /if row\.presence == \.both/)
   assert.match(map, /reader\.currentMapItem\(expectedCloud\)/)
+  // The exact match can reference a cloud Node outside the current
+  // 48-row unified Gallery page; the Viewer must fetch it by identity.
+  assert.match(map, /reader\.matchedMedia\(match\)/)
+  assert.match(map, /match\.matches\(liveCloud\)/)
+  assert.match(map, /row\.cloud == nil \|\| row\.presence == \.both/)
   assert.match(map, /row\.presence == \.cloudOnly/)
   assert.match(map, /XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(library\)/)
   assert.match(transport, /item\.contentIdentity == expected\.contentIdentity/)
