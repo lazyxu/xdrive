@@ -3653,7 +3653,8 @@ class DriveAppTest {
             }.isSuccess
         }
         compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
-        compose.onNodeWithTag("native-clipboard-directed-send").performClick()
+        compose.onNodeWithTag("native-clipboard-directed-send")
+            .performScrollTo().assertIsDisplayed().performClick()
         try {
             awaitClipboardFixture("exact directed clipboard write") { clipboardWrites.size == 1 }
         } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
@@ -3693,14 +3694,16 @@ class DriveAppTest {
     @Test fun clipboardRecipientRevokeRequiresConfirmAndRemovesTarget() {
         openClipboardFixture()
         selectClipboardFixtureDevice()
-        compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权").performClick()
+        compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权")
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("撤销设备的 Clipboard 接收授权？").assertExists()
         compose.onNodeWithText("取消").performClick()
         compose.runOnIdle {
             org.junit.Assert.assertEquals(0, clipboardRevokes)
             org.junit.Assert.assertFalse(clipboardRevoked)
         }
-        compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权").performClick()
+        compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权")
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("确认撤销").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { clipboardRevokes == 1 }
         compose.onNodeWithText("发送范围：当前账号广播").assertExists()
@@ -3766,7 +3769,8 @@ class DriveAppTest {
         selectClipboardFixtureDevice()
         for (code in listOf(403, 404)) {
             compose.runOnIdle { clipboardRevokeErrorCode = code }
-            compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权").performClick()
+            compose.onNodeWithText("撤销所选设备的 Clipboard 接收授权")
+            .performScrollTo().assertIsDisplayed().performClick()
             compose.onNodeWithText("确认撤销").performClick()
             compose.waitUntil(timeoutMillis = 10_000) {
                 runCatching { compose.onNodeWithText(
@@ -3785,8 +3789,9 @@ class DriveAppTest {
         clipboardUnknownAck = true
         openClipboardFixture()
         selectClipboardFixtureDevice()
-        compose.onNodeWithTag("native-clipboard-draft").performTextInput("hello fixture")
-        compose.onNodeWithTag("native-clipboard-directed-send").performClick()
+        compose.onNodeWithTag("native-clipboard-draft").performScrollTo().performTextInput("hello fixture")
+        compose.onNodeWithTag("native-clipboard-directed-send")
+            .performScrollTo().assertIsDisplayed().performClick()
         awaitClipboardFixture("exact directed clipboard write") { clipboardWrites.size == 1 }
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching {
@@ -3806,7 +3811,8 @@ class DriveAppTest {
         openClipboardFixture()
         chooseClipboardImageKind()
         stageClipboardImageInOS()
-        compose.onNodeWithText("读取本机剪贴板图片并上传").performClick()
+        compose.onNodeWithText("读取本机剪贴板图片并上传")
+            .performScrollTo().assertIsDisplayed().performClick()
         awaitClipboardFixture("real CAS upload dispatch") { clipboardImports == 1 }
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching { compose.onNodeWithText(
@@ -3814,7 +3820,8 @@ class DriveAppTest {
             ).assertExists() }.isSuccess
         }
         compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
-        compose.onNodeWithTag("native-clipboard-directed-send").performClick()
+        compose.onNodeWithTag("native-clipboard-directed-send")
+            .performScrollTo().assertIsDisplayed().performClick()
         awaitClipboardFixture("exact directed clipboard write") { clipboardWrites.size == 1 }
         compose.runOnIdle {
             org.junit.Assert.assertEquals("image/x-xdrive-node-ref", clipboardWrites.single().kind)
@@ -3827,7 +3834,8 @@ class DriveAppTest {
         openClipboardFixture()
         chooseClipboardImageKind()
         stageClipboardImageInOS()
-        compose.onNodeWithText("读取本机剪贴板图片并上传").performClick()
+        compose.onNodeWithText("读取本机剪贴板图片并上传")
+            .performScrollTo().assertIsDisplayed().performClick()
         awaitClipboardFixture("real CAS upload dispatch") { clipboardImports == 1 }
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching { compose.onNodeWithText(
@@ -3835,14 +3843,15 @@ class DriveAppTest {
             ).assertExists() }.isSuccess
         }
         compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
-        compose.onNodeWithTag("native-clipboard-directed-send").performClick()
+        compose.onNodeWithTag("native-clipboard-directed-send")
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
     }
 
     @Test fun clipboardFilesGalleryReturnsDiscardSelectedTargetAndOldDraft() {
         openClipboardFixture()
         selectClipboardFixtureDevice()
-        compose.onNodeWithTag("native-clipboard-draft").performTextInput("stale-draft")
+        compose.onNodeWithTag("native-clipboard-draft").performScrollTo().performTextInput("stale-draft")
         repeat(2) {
             compose.onNodeWithTag("native-tab-files").performClick()
             compose.onNodeWithTag("native-tab-gallery").performClick()

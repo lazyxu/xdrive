@@ -6,6 +6,8 @@ import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -234,7 +236,12 @@ internal fun NativeClipboardScreen(
             }
         }
     }
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // Keep all action controls reachable above the five-slot bottom bar on narrow screens.
+    // The former unscrollable Column collapsed directed-send/CAS controls to 0px.
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Text("剪贴板", style = MaterialTheme.typography.headlineSmall)
         Text("剪贴板不加密，Server 明文保存最多 24 小时；请勿发送密码或验证码。系统剪贴板只在点击后读取或写入。",
             style = MaterialTheme.typography.bodySmall)
@@ -538,7 +545,11 @@ internal fun NativeClipboardScreen(
                     Text("清空")
                 }
             }
-            LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            // A nested lazy history must remain bounded inside the scrollable form.
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 items(list,key={it.first.id}) { (item,plain) ->
                     ElevatedCard(modifier=Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
