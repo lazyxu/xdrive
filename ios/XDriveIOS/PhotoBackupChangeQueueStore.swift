@@ -105,6 +105,9 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
             try execute("CREATE TABLE IF NOT EXISTS sequence (id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER NOT NULL)")
             try execute("INSERT OR IGNORE INTO sequence (id,value) VALUES (1,0)")
             try execute("CREATE TABLE IF NOT EXISTS entries (asset_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), priority INTEGER NOT NULL, queue_order INTEGER NOT NULL, state TEXT NOT NULL)")
+            // Selection-only, crash-durable cursor. Unlike the PhotoKit
+            // change token, it grants no permission to mark originals saved.
+            try execute("CREATE TABLE IF NOT EXISTS pending_inspection (id INTEGER PRIMARY KEY CHECK(id=1), priority INTEGER NOT NULL, queue_order INTEGER NOT NULL)")
             // A separate table preserves the existing Owner-scoped queue
             // schema. Reasons are valid only for an exact failed revision.
             try execute("CREATE TABLE IF NOT EXISTS failure_reasons (asset_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), reason TEXT NOT NULL)")
@@ -175,6 +178,7 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         }
         try stepDone(statement)
         try execute("DELETE FROM entries")
+        try execute("DELETE FROM pending_inspection")
         try execute("DELETE FROM failure_reasons")
         try execute("DELETE FROM automatic_retries")
         try execute("DELETE FROM reconciliation")
@@ -204,6 +208,7 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         }
         try stepDone(statement)
         try execute("DELETE FROM entries")
+        try execute("DELETE FROM pending_inspection")
         // Old asset IDs and normalized failure diagnostics no longer belong
         // to any generation after an explicitly consented full recovery.
         // Clear them atomically with the new token and queue reset, not at
@@ -394,6 +399,114 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
                                    revision: sqlite3_column_int64(statement, 1),
                                    priority: Int(sqlite3_column_int(statement, 2))))
         }
+    }
+
+
+    /// When all of the newest <=64 queued PhotoKit IDs are currently outside
+    /// authorization, they must stay pending (not fabricated as deleted or
+    /// backed up), but must not permanently hide older visible originals.
+    ///
+    /// Return one bounded page *after* the invisible head. The page cursor is
+    /// durable and rotates across launches. This is inspection-only state:
+    /// neither the PhotoKit token nor any queue row/receipt is advanced.
+    func pendingBeyondInvisibleHead(limit: Int = 64) throws -> [Pending] {
+        guard (1...64).contains(limit) else { throw Failure.invalidInput }
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { try? execute("ROLLBACK") } }
+
+        // Only a full inaccessible head can starve later rows. An incomplete
+        // head has no older page and must never trigger an unbounded scan.
+        let head = try prepare(
+            "SELECT priority,queue_order FROM entries WHERE state='pending' " +
+            "ORDER BY priority DESC,queue_order DESC LIMIT 1 OFFSET ?"
+        )
+        defer { sqlite3_finalize(head) }
+        guard sqlite3_bind_int(head, 1, Int32(limit - 1)) == SQLITE_OK else {
+            throw Failure.database(sqlite3_errcode(database))
+        }
+        let headStatus = sqlite3_step(head)
+        if headStatus == SQLITE_DONE {
+            try execute("COMMIT")
+            committed = true
+            return []
+        }
+        guard headStatus == SQLITE_ROW else { throw Failure.database(headStatus) }
+        let headPriority = Int(sqlite3_column_int(head, 0))
+        let headOrder = sqlite3_column_int64(head, 1)
+
+        let cursor = try prepare(
+            "SELECT priority,queue_order FROM pending_inspection WHERE id=1"
+        )
+        defer { sqlite3_finalize(cursor) }
+        let cursorStatus = sqlite3_step(cursor)
+        guard cursorStatus == SQLITE_ROW || cursorStatus == SQLITE_DONE else {
+            throw Failure.database(cursorStatus)
+        }
+        let hasCursor = cursorStatus == SQLITE_ROW
+        let currentPriority = hasCursor ? Int(sqlite3_column_int(cursor, 0)) : headPriority
+        let currentOrder = hasCursor ? sqlite3_column_int64(cursor, 1) : headOrder
+
+        func readPage(afterPriority: Int, afterOrder: Int64)
+            throws -> [(pending: Pending, order: Int64)] {
+            let query = try prepare(
+                "SELECT asset_id,revision,priority,queue_order FROM entries " +
+                "WHERE state='pending' AND (priority<? OR " +
+                "(priority=? AND queue_order<?)) " +
+                "ORDER BY priority DESC,queue_order DESC LIMIT ?"
+            )
+            defer { sqlite3_finalize(query) }
+            guard sqlite3_bind_int(query, 1, Int32(afterPriority)) == SQLITE_OK,
+                  sqlite3_bind_int(query, 2, Int32(afterPriority)) == SQLITE_OK,
+                  sqlite3_bind_int64(query, 3, afterOrder) == SQLITE_OK,
+                  sqlite3_bind_int(query, 4, Int32(limit)) == SQLITE_OK else {
+                throw Failure.database(sqlite3_errcode(database))
+            }
+            var rows: [(pending: Pending, order: Int64)] = []
+            rows.reserveCapacity(limit)
+            while true {
+                let status = sqlite3_step(query)
+                if status == SQLITE_DONE { return rows }
+                guard status == SQLITE_ROW,
+                      let raw = sqlite3_column_text(query, 0) else {
+                    throw Failure.database(status)
+                }
+                rows.append((
+                    pending: Pending(
+                        localIdentifier: String(cString: raw),
+                        revision: sqlite3_column_int64(query, 1),
+                        priority: Int(sqlite3_column_int(query, 2))
+                    ),
+                    order: sqlite3_column_int64(query, 3)
+                ))
+            }
+        }
+
+        var page = try readPage(
+            afterPriority: currentPriority, afterOrder: currentOrder
+        )
+        if page.isEmpty && hasCursor {
+            // End of the older queue: wrap to the oldest part *after* the
+            // invisible head, so a later permission change can safely make
+            // head entries eligible again via the normal priority path.
+            page = try readPage(afterPriority: headPriority, afterOrder: headOrder)
+        }
+        if let last = page.last {
+            let write = try prepare(
+                "INSERT INTO pending_inspection(id,priority,queue_order) " +
+                "VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET " +
+                "priority=excluded.priority,queue_order=excluded.queue_order"
+            )
+            defer { sqlite3_finalize(write) }
+            guard sqlite3_bind_int(write, 1, Int32(last.pending.priority)) == SQLITE_OK,
+                  sqlite3_bind_int64(write, 2, last.order) == SQLITE_OK else {
+                throw Failure.database(sqlite3_errcode(database))
+            }
+            try stepDone(write)
+        }
+        try execute("COMMIT")
+        committed = true
+        return page.map { $0.pending }
     }
 
     /// Compare-and-set after the shared original writer returns a verified
