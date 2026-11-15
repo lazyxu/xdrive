@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from files_ui_transition_video import (
-    TARGETS, classify_bright_blank, parse_signalstats, audit,
+    TARGETS, MAX_CLIP_SECONDS, classify_bright_blank, parse_signalstats, audit,
 )
 
 
@@ -143,7 +143,7 @@ class FilesUITransitionVideoTests(unittest.TestCase):
                 "test": name, "file": name + ".mp4", "recorded": True,
                 "tap_markers": [{"route": "native-ios-tab-files", "at": 0.6}],
                 "record_exit": 0, "stop_reason": "test_finished",
-                "test_outcome": "passed",
+                "test_outcome": "passed", "elapsed": 2.8,
             }
             entry.update(changes)
             (root / "clips.jsonl").write_text(json.dumps(entry) + "\n")
@@ -232,6 +232,67 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             report = root / "audit.json"
             self.assertFalse(audit(root, report, 1))
             self.assertIn("missing_real_recording", report.read_text())
+
+
+    def test_long_running_sixty_second_xctest_is_not_cut_at_26_seconds(self):
+        self.assertGreaterEqual(MAX_CLIP_SECONDS, 70)
+        self.assertLessEqual(MAX_CLIP_SECONDS, 120)
+
+    def test_real_recorder_startup_is_aligned_before_white_frame_audit(self):
+        # The MP4 PTS clock begins after recordVideo startup; using wall-clock
+        # tap seconds without alignment silently misses the recorded white flash.
+        frames = [
+            {"time": i / 10, "ymin": 235 if i in (15, 16) else 12,
+             "ymax": 235 if i in (15, 16) else 246,
+             "yavg": 235 if i in (15, 16) else 175}
+            for i in range(60)
+        ]
+        accepted, report = self._audit_sample(
+            frames=frames, elapsed=9.3,
+            tap_markers=[{"route": "native-ios-tab-files", "at": 4.8}],
+        )
+        self.assertFalse(accepted)
+        self.assertIn("suspected_solid_white_transition",
+                      report["clips"][0]["failures"])
+
+    def test_real_recorder_startup_alignment_can_preserve_good_frames(self):
+        accepted, report = self._audit_sample(
+            elapsed=5.3,
+            tap_markers=[{"route": "native-ios-tab-files", "at": 3.4}],
+        )
+        self.assertTrue(accepted, report)
+        self.assertGreater(report["clips"][0]["estimated_recording_startup_seconds"], 2)
+
+    def test_negative_recorder_clock_offset_fails_closed(self):
+        accepted, report = self._audit_sample(elapsed=1.0)
+        self.assertFalse(accepted)
+        self.assertIn("unreliable_recording_clock_alignment",
+                      report["clips"][0]["failures"])
+
+    def test_excessive_recorder_clock_offset_fails_closed(self):
+        accepted, report = self._audit_sample(elapsed=40.0)
+        self.assertFalse(accepted)
+        self.assertIn("unreliable_recording_clock_alignment",
+                      report["clips"][0]["failures"])
+
+    def test_missing_or_non_numeric_wall_clock_fails_closed(self):
+        accepted, report = self._audit_sample(elapsed="unknown")
+        self.assertFalse(accepted)
+        self.assertIn("invalid_recording_elapsed", report["clips"][0]["failures"])
+
+    def test_tap_before_recorded_old_page_fails_closed(self):
+        accepted, report = self._audit_sample(
+            tap_markers=[{"route": "native-ios-tab-files", "at": 0.15}],
+        )
+        self.assertFalse(accepted)
+        self.assertIn("missing_pre_tap_frames", report["clips"][0]["failures"])
+
+    def test_tap_beyond_last_decoded_frame_fails_closed(self):
+        accepted, report = self._audit_sample(
+            tap_markers=[{"route": "native-ios-tab-files", "at": 5.0}],
+        )
+        self.assertFalse(accepted)
+        self.assertIn("invalid_tap_timeline", report["clips"][0]["failures"])
 
 
 if __name__ == "__main__":

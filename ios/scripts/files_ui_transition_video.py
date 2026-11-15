@@ -30,7 +30,8 @@ CASE_END = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
 TAP = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 FRAME = re.compile(r"frame:\s*\d+.*pts_time:([0-9.]+)")
 STAT = re.compile(r"lavfi\.signalstats\.(YMIN|YMAX|YAVG)=([0-9.]+)")
-MAX_CLIP_SECONDS = 26
+MAX_CLIP_SECONDS = 90
+MAX_TIMELINE_STARTUP_SECONDS = 20
 MIN_TAP_WINDOW_SECONDS = 0.55
 
 
@@ -145,6 +146,7 @@ def watch(simulator, log_path, directory):
 
 def stop_record(current, manifest, reason, outcome=None):
     proc = current["process"]
+    stopped_at = time.monotonic()
     if proc.poll() is None:
         proc.send_signal(signal.SIGINT)
     try:
@@ -152,7 +154,7 @@ def stop_record(current, manifest, reason, outcome=None):
     except subprocess.TimeoutExpired:
         proc.kill()
         code = proc.wait(timeout=5)
-    elapsed = max(0.0, time.monotonic() - current["started"])
+    elapsed = max(0.0, stopped_at - current["started"])
     entry = {
         "test": current["test"], "file": current["path"].name,
         "recorded": current["path"].is_file() and current["path"].stat().st_size > 4096,
@@ -213,6 +215,7 @@ def audit(directory, report, minimum):
         # A playable header is not evidence of any actually decoded frames.
         if not frames and not failures:
             failures.append("missing_decoded_video_frames")
+        capture_offset = None
         if frames:
             # Corrupt frame metadata must not turn into an apparent no-flicker
             # pass (NaN comparisons are false, and impossible YUV values can
@@ -229,18 +232,37 @@ def audit(directory, report, minimum):
             times = [f.get("time", -1) for f in frames]
             if len(times) < 12 or any(b <= a for a, b in zip(times, times[1:])):
                 failures.append("insufficient_ordered_video_frames")
+            # recordVideo starts encoding asynchronously, so monotonic tap
+            # times include startup latency that MP4 presentation times omit.
+            # Align to the recorder stop instant; reject implausible drift.
+            elapsed = entry.get("elapsed")
+            if not isinstance(elapsed, (int, float)) or not math.isfinite(elapsed) or elapsed <= 0:
+                failures.append("invalid_recording_elapsed")
+            elif not failures:
+                estimated_startup = elapsed - times[-1]
+                if estimated_startup < -0.5 or estimated_startup > MAX_TIMELINE_STARTUP_SECONDS:
+                    failures.append("unreliable_recording_clock_alignment")
+                else:
+                    capture_offset = max(0.0, estimated_startup)
             if not failures:
                 for tap in taps:
                     at = tap.get("at", -1) if isinstance(tap, dict) else -1
-                    if not isinstance(at, (int, float)) or at < 0 or at + MIN_TAP_WINDOW_SECONDS > times[-1]:
+                    if not isinstance(at, (int, float)) or not math.isfinite(at) or at < 0:
                         failures.append("invalid_tap_timeline")
                         break
-                    # Two decoded samples before each tap are necessary
-                    # to establish that the old page was still visible.
-                    if sum(at - 0.25 <= f["time"] < at for f in frames) < 2:
+                    tap_pts = at - capture_offset
+                    if tap_pts < 0.25:
                         failures.append("missing_pre_tap_frames")
                         break
-                    reason = classify_bright_blank(frames, at)
+                    if tap_pts + MIN_TAP_WINDOW_SECONDS > times[-1]:
+                        failures.append("invalid_tap_timeline")
+                        break
+                    # Require two real decoded old-page frames before the
+                    # aligned tap; a plausible clip header is not evidence.
+                    if sum(tap_pts - 0.25 <= f["time"] < tap_pts for f in frames) < 2:
+                        failures.append("missing_pre_tap_frames")
+                        break
+                    reason = classify_bright_blank(frames, tap_pts)
                     if reason:
                         failures.append(reason)
                         break
@@ -248,6 +270,9 @@ def audit(directory, report, minimum):
             "test": name, "recording": entry.get("file"),
             "taps": len(taps) if isinstance(taps, list) else 0,
             "decoded_10hz_samples": len(frames), "failures": failures,
+            "estimated_recording_startup_seconds": (
+                round(capture_offset, 3) if capture_offset is not None else None
+            ),
         })
     good = [x for x in audited if not x["failures"]]
     status = "pass" if (
@@ -258,6 +283,7 @@ def audit(directory, report, minimum):
         "status": status, "required_distinct_real_test_clips": minimum,
         "observed_clips": len(audited), "validated_clips": len(good),
         "frame_sampling": "ffmpeg 10 Hz decoded Simulator H264, not iPhone FPS",
+        "timeline_alignment": "estimated monotonic stop minus last decoded MP4 PTS; reject uncertain clocks",
         "physical_60_120_hz_verified": False,
         "authorized_owner_media_verified": False,
         "clips": audited,

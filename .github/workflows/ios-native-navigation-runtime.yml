@@ -352,6 +352,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # macos-15 runners do not guarantee ffmpeg; fail closed if installation fails.
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          ffmpeg -version | sed -n '1p'
           python3 "$GITHUB_WORKSPACE/ios/scripts/files_ui_transition_video.py" audit \
             "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video" \
             "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video-audit.json" \
