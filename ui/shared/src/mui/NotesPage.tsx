@@ -110,12 +110,14 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
   const [versions, setVersions] = useState<XDriveNoteVersion[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [oldMarkdown, setOldMarkdown] = useState<string | null>(null)
+  const [oldVersion, setOldVersion] = useState<XDriveNoteVersion | null>(null)
   const [historyBusy, setHistoryBusy] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const [showPreview, setShowPreview] = useState(true)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imageURLs, setImageURLs] = useState<Record<string, string>>({})
   const readSeq = useRef(0)
+  const historyReadSeq = useRef(0)
   const listSeq = useRef(0)
   const savingRef = useRef(false)
   const latestDraft = useRef({ title: '', markdown: '' })
@@ -208,6 +210,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
     setHistoryOpen(false)
     setVersions([])
     setOldMarkdown(null)
+    setOldVersion(null)
     setConflict(false)
     setMessage('')
     setDetailLoading(true)
@@ -237,6 +240,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
     setVersions([])
     setHistoryOpen(false)
     setOldMarkdown(null)
+    setOldVersion(null)
     setMessage('')
     setConflict(false)
     setQuery('')
@@ -405,32 +409,74 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
   const loadHistory = async () => {
     if (!selected) return
     const id = selected.id
+    const noteGeneration = readSeq.current
+    const historyGeneration = ++historyReadSeq.current
     setHistoryBusy(true)
     setHistoryError('')
+    setVersions([])
     setOldMarkdown(null)
+    setOldVersion(null)
     setHistoryOpen(true)
     try {
       const items = await port.listVersions(id)
-      if (mounted.current && selected?.id === id) setVersions(items)
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setVersions(items)
     } catch (error) {
-      if (mounted.current) setHistoryError(errorMessage(error))
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setHistoryError(errorMessage(error))
     } finally {
-      if (mounted.current) setHistoryBusy(false)
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setHistoryBusy(false)
     }
   }
 
   const openVersion = async (item: XDriveNoteVersion) => {
     if (!selected || !port.readVersion) return
+    const nodeID = selected.node_id
+    const noteGeneration = readSeq.current
+    const historyGeneration = ++historyReadSeq.current
+    setOldMarkdown(null)
+    setOldVersion(null)
     setHistoryBusy(true)
     setHistoryError('')
     try {
-      const content = await port.readVersion(selected.node_id, item.id)
-      if (mounted.current) setOldMarkdown(content)
+      const content = await port.readVersion(nodeID, item.id)
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) {
+        setOldMarkdown(content)
+        setOldVersion(item)
+      }
     } catch (error) {
-      if (mounted.current) setHistoryError(errorMessage(error))
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setHistoryError(errorMessage(error))
     } finally {
-      if (mounted.current) setHistoryBusy(false)
+      if (mounted.current && readSeq.current === noteGeneration &&
+          historyReadSeq.current === historyGeneration) setHistoryBusy(false)
     }
+  }
+
+  const closeHistory = () => {
+    historyReadSeq.current++
+    setHistoryOpen(false)
+    setHistoryBusy(false)
+    setOldMarkdown(null)
+    setOldVersion(null)
+    setHistoryError('')
+  }
+
+  const exportOldVersion = () => {
+    if (!selected || !oldVersion || oldMarkdown === null) return
+    // The historical content was already fetched through the same verified
+    // Owner-bound Notes transport. Never construct a public Node/CAS URL.
+    const blob = new Blob([oldMarkdown], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = selected.id + '-r' + oldVersion.revision + '.md'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
   }
 
   const remove = async () => {
@@ -611,7 +657,7 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
         <Button color="error" onClick={() => void remove()} disabled={busy}>删除</Button>
       </DialogActions>
     </Dialog>
-    <Dialog open={historyOpen} fullWidth maxWidth="sm" onClose={() => setHistoryOpen(false)}>
+    <Dialog open={historyOpen} fullWidth maxWidth="sm" onClose={closeHistory}>
       <DialogTitle>笔记版本历史</DialogTitle>
       <DialogContent>
         {historyError && <Alert severity="error">{historyError}</Alert>}
@@ -629,11 +675,16 @@ function XDriveNotesOwnerPage({ port }: { port: XDriveNotesDataPort }) {
         </Typography>}
         {oldMarkdown !== null && <>
           <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2" sx={{ mb: 2 }}>旧版内容（只读）</Typography>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+            <Typography variant="subtitle2">旧版内容（只读）</Typography>
+            {oldVersion && <Button size="small" onClick={exportOldVersion}>
+              下载此版本 Markdown
+            </Button>}
+          </Stack>
           <XDriveNotesMarkdownPreview markdown={oldMarkdown} resolveImage={resolveImage} />
         </>}
       </DialogContent>
-      <DialogActions><Button onClick={() => setHistoryOpen(false)}>关闭</Button></DialogActions>
+      <DialogActions><Button onClick={closeHistory}>关闭</Button></DialogActions>
     </Dialog>
   </Box>
 }

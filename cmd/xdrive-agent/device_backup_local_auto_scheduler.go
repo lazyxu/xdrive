@@ -18,12 +18,15 @@ import (
 )
 
 const (
-	localPushAutoInterval         = time.Minute
-	localPushAutoTickTimeout      = 50 * time.Second
-	localPushAutoAttemptCooldown  = 15 * time.Minute
-	localPushAutoMaxPages         = 64
-	localPushAutoPageSize         = 100
-	localPushAutoMaxAttemptMemory = 2048
+	// Bounded lookback supports multiple saved plan revisions while preventing
+	// an unbounded search through old account/source history.
+	localPushAutoMaxRevisionRearm uint64 = 16
+	localPushAutoInterval                = time.Minute
+	localPushAutoTickTimeout             = 50 * time.Second
+	localPushAutoAttemptCooldown         = 15 * time.Minute
+	localPushAutoMaxPages                = 64
+	localPushAutoPageSize                = 100
+	localPushAutoMaxAttemptMemory        = 2048
 )
 
 var errLocalPushAutoUnavailable = errors.New("local Push automatic scheduling unavailable")
@@ -67,11 +70,11 @@ func localPushAutoOwnedFolderIDs(ctx context.Context, api *client.Client, device
 	return nil, errLocalPushAutoUnavailable // incomplete enumeration cannot trigger work
 }
 
-// Only an explicitly configured schedule and a VERIFIED previous own-Agent
-// partial run arm automation. "partial" describes per-file receipts, not a
-// trusted complete Source or present-day physical CAS verification.
-// Unknown/crashed/paused/cancelled runs require deliberate owning-Desktop
-// reconciliation first; do not automatically retry uncertain SQL operations.
+// Only an explicitly configured schedule and a verified owning-Agent
+// checkpoint arm automatic work. Failed/crashed runs enter the SAME original
+// per-file SQL operation reconciliation under the source-scoped OS lease.
+// Nothing retries with a new ID or implies present-day physical CAS proof.
+// Explicit pause/cancel remains manual-only.
 func localPushAutomaticDue(
 	saved client.LocalBoundBackupSchedule,
 	checkpoint localpush.CommonBatchCheckpoint,
@@ -79,13 +82,21 @@ func localPushAutomaticDue(
 ) (bool, error) {
 	if now.IsZero() || saved.SourceID == 0 || saved.Revision == 0 ||
 		checkpoint.SourceID != saved.SourceID ||
-		checkpoint.SourceRevision != saved.Revision ||
+		checkpoint.SourceRevision > saved.Revision ||
+		saved.Revision-checkpoint.SourceRevision > localPushAutoMaxRevisionRearm ||
 		checkpoint.UpdatedAt.IsZero() ||
 		checkpoint.BackupComplete || checkpoint.RetirementSafe ||
 		checkpoint.CurrentCASVerified {
 		return false, errLocalPushAutoUnavailable
 	}
-	if checkpoint.State != "partial" || checkpoint.UncertainFiles != 0 {
+	if !localpush.CommonCheckpointAutoAdmissible(checkpoint) {
+		return false, nil
+	}
+	// A newer Source revision has no CURRENT checkpoint yet. Only the same
+	// owning private Root's clean last run may permit a new baseline; the
+	// worker checks all old original SQL receipts against the CURRENT target.
+	if checkpoint.SourceRevision != saved.Revision &&
+		(checkpoint.State != "partial" || checkpoint.UncertainFiles != 0) {
 		return false, nil
 	}
 	spec, err := sourceschedule.Normalize(saved.ScheduleType,
@@ -95,6 +106,16 @@ func localPushAutomaticDue(
 	}
 	if spec.Type == "" || spec.Type == sourceschedule.TypeManual {
 		return false, nil
+	}
+	if checkpoint.SourceRevision != saved.Revision {
+		return true, nil // rebaseline under current revision, never reuse old proof
+	}
+	// An interrupted or uncertain original Operation is reconciled promptly;
+	// durable auto-admission backoff limits repeat attempts on persistent failure.
+	// The worker itself is responsible for immutable operation readback and
+	// same-ID resume, never this scheduler's clock.
+	if checkpoint.State == "running" || checkpoint.State == "uncertain" {
+		return !now.UTC().Before(checkpoint.UpdatedAt.UTC().Add(time.Minute)), nil
 	}
 	last := checkpoint.UpdatedAt.UTC()
 	source := meta.Source{
@@ -156,6 +177,32 @@ func localPushAutoFairOrder(
 		return out[i] < out[j]
 	})
 	return out
+}
+
+// The private single-slot journal is only read after current Owner/Device/
+// Source/Root verification. An older clean terminal record may request a
+// fresh *attempt* after a configuration revision change, not confirm data.
+func localPushAutoReadCheckpoint(ctx context.Context, configDir string,
+	grant localpush.RootGrant, session string, revision uint64,
+) (localpush.CommonBatchCheckpoint, error) {
+	checkpoint, err := localpush.ReadVerifiedCommonBatchCheckpoint(
+		ctx, configDir, grant, session, revision)
+	if err == nil {
+		return checkpoint, nil
+	}
+	for lookback := uint64(1); lookback <= localPushAutoMaxRevisionRearm &&
+		lookback < revision; lookback++ {
+		older, olderErr := localpush.ReadVerifiedCommonBatchCheckpoint(
+			ctx, configDir, grant, session, revision-lookback)
+		if olderErr != nil {
+			continue
+		}
+		if older.State == "partial" && older.UncertainFiles == 0 {
+			return older, nil
+		}
+		return localpush.CommonBatchCheckpoint{}, errLocalPushAutoUnavailable
+	}
+	return localpush.CommonBatchCheckpoint{}, errLocalPushAutoUnavailable
 }
 
 func (c *agentController) runLocalPushAutoScheduler() {
@@ -321,14 +368,13 @@ func (c *agentController) localPushAutoTick(
 			}
 			continue
 		}
-		checkpoint, err := localpush.ReadVerifiedCommonBatchCheckpoint(
+		checkpoint, err := localPushAutoReadCheckpoint(
 			ctx, configDir, grant, account.SessionID, source.Revision)
-		if err != nil || checkpoint.State != "partial" ||
-			checkpoint.UncertainFiles != 0 {
+		if err != nil || !localpush.CommonCheckpointAutoAdmissible(checkpoint) {
 			if watch != nil {
 				watch.forget(sourceID)
 			}
-			continue // no owning manual run, stopped, uncertain or corrupt journal
+			continue // no owning run, stopped, or corrupt private checkpoint
 		}
 		due, err := localPushAutomaticDue(saved, checkpoint, now)
 		if err != nil {

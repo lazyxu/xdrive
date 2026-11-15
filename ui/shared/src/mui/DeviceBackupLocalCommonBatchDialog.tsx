@@ -20,7 +20,8 @@ function safeBatchStatus(value: XDriveLocalBackupCommonBatch, sourceID: number):
   if (!value || value.source_id !== sourceID || value.backup_complete !== false ||
     value.retirement_safe !== false || value.current_cas_verified !== false ||
     !['running', 'partial', 'uncertain', 'paused', 'cancelled'].includes(value.state) ||
-    value.running !== (value.state === 'running')) return false
+    value.running !== (value.state === 'running') ||
+    (value.scan_complete === true && (value.state !== 'partial' || value.uncertain_files !== 0))) return false
   if (value.stop_requested !== undefined &&
     (value.state !== 'running' || !['pause', 'cancel'].includes(value.stop_requested))) return false
   if (value.state !== 'running' &&
@@ -289,10 +290,11 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
           ) : null}
           {status?.state === 'partial' && !pending ? (
             <Alert severity="info">
-              {status.uncertain_files === 0 && status.unsupported_files === 0 &&
-              status.confirmed_files + status.skipped_files === status.inspected_files
-                ? '本轮扫描及已支持文件的处理已结束。'
-                : '本轮扫描已结束，仍有未支持或未确认的文件。'}
+              {status.scan_complete === true
+                ? (status.unsupported_files === 0
+                  ? '本轮清单已完整遍历；所有支持文件已确认上传或未变化。'
+                  : '本轮清单已完整遍历，但仍有未支持文件未备份。')
+                : '历史 Agent 未提供完整清单遍历证明；不得仅凭计数推断整轮完成。'}
               已上传 {status.confirmed_files} 个（{formatBytes(status.confirmed_bytes)}），
               跳过 {status.skipped_files} 个未变化文件。
               {status.unsupported_files > 0 ? `另有 ${status.unsupported_files} 个未支持的文件未上传。` : ''}
@@ -383,7 +385,7 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
               <Stack key={item.run_id} spacing={0.25} sx={{ py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
                 <Typography variant="body2">
                   {new Date(item.finished_at).toLocaleString('zh-CN')} ·
-                  {item.state === 'partial' ? (item.unsupported_files > 0 ? '本轮已结束（有未支持文件）' : '本轮已结束') : item.state === 'uncertain' ? '结果待核对' :
+                  {item.state === 'partial' ? (item.scan_complete === true ? (item.unsupported_files > 0 ? '本轮清单已遍历（有未支持文件）' : '本轮清单已完整遍历') : '本轮完成状态未核实') : item.state === 'uncertain' ? '结果待核对' :
                     item.state === 'paused' ? '已暂停' : '已结束本轮'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">

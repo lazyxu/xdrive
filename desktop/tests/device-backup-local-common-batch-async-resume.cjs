@@ -87,9 +87,14 @@ test('pause and cancel are owning-Desktop-only scheduling requests, never physic
 
 test('manual backup shows truthful per-file run outcome without claiming whole-Source success', () => {
   const dialog = read('ui', 'shared', 'src', 'mui', 'DeviceBackupLocalCommonBatchDialog.tsx')
-  assert.ok(dialog.includes('本轮扫描及已支持文件的处理已结束'))
-  assert.ok(dialog.includes('status.confirmed_files + status.skipped_files === status.inspected_files'))
-  assert.ok(dialog.includes('本轮扫描已结束，仍有未支持或未确认的文件'))
+  // Require an explicit durable scan-complete witness; matching counts
+  // alone cannot claim that a crashed/incomplete Source run finished.
+  assert.ok(dialog.includes("status.scan_complete === true"))
+  assert.ok(dialog.includes('status.unsupported_files === 0'))
+  assert.ok(dialog.includes('本轮清单已完整遍历；所有支持文件已确认上传或未变化。'))
+  assert.ok(dialog.includes('本轮清单已完整遍历，但仍有未支持文件未备份。'))
+  assert.ok(dialog.includes('历史 Agent 未提供完整清单遍历证明；不得仅凭计数推断整轮完成。'))
+  assert.ok(dialog.includes('item.scan_complete === true'))
   assert.ok(dialog.includes('整库现时 CAS 完整性证明'))
   assert.ok(dialog.includes("item.unsupported_files > 0"))
   assert.ok(dialog.includes('待核对 {item.uncertain_files}'))

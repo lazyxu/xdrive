@@ -68,8 +68,13 @@ test('CLI and DSM keep distinct but HTTPS-only user login boundaries', () => {
 test('iOS simplifies route selection without TLS or Owner identity bypass', () => {
   const route = read('ios/XDriveIOS/NativeLANLoginRoute.swift')
   const login = read('ios/XDriveIOS/NativeOwnerLoginModel.swift')
-  assert.match(route, /let \(bytes, response\) = try await session\.bytes\(for: request\)/)
-  assert.match(route, /guard data\.count < maxBytes/)
+  // The installed iPhone's async-bytes route failed with -1202. The
+  // replacement retains the same strict HTTPS and bounded response contract.
+  assert.match(route, /let \(data, response\) = try await verifier\.boundedRead\(/)
+  assert.match(route, /session\.dataTask\(with: request\)/)
+  assert.match(route, /response\.expectedContentLength > Int64\(maximumBytes\)/)
+  assert.match(route, /data\.count > maximumBytes - receivedBytes\.count/)
+  assert.match(route, /guard data\.count <= maxBytes/)
   assert.match(route, /throw AuthFailure\.invalidLANProbe/)
   assert.match(route, /return origin/)
   // Only the anonymous endpoint-choice path must remain free of custom

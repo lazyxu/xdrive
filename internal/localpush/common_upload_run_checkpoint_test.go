@@ -51,6 +51,32 @@ func TestCommonBatchCheckpointSurvivesRestartWithoutInventingCompletion(t *testi
 	}
 }
 
+func TestCommonBatchScanCompleteNeverForgesSourceOrCASCompletion(t *testing.T) {
+	f := makeCommonPlanFixture(t)
+	ctx := context.Background()
+	cp := CommonBatchCheckpoint{
+		Version: commonBatchCheckpointVersion, RunID: uuid.NewString(),
+		SourceID: f.grant.SourceID, SourceRevision: 7,
+		RootFingerprint: f.grant.Fingerprint,
+		SessionDigest:   commonUploadSessionDigest(f.secret),
+		State:           "partial", ScanComplete: true, UpdatedAt: time.Now().UTC(),
+	}
+	if err := StoreVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7, cp); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7)
+	if err != nil || !read.ScanComplete || read.BackupComplete || read.CurrentCASVerified || read.RetirementSafe {
+		t.Fatalf("local scan completion invented Source proof: %+v %v", read, err)
+	}
+	for _, state := range []string{"running", "uncertain", "paused", "cancelled"} {
+		invalid := cp
+		invalid.State = state
+		if err := StoreVerifiedCommonBatchCheckpoint(ctx, f.config, f.grant, f.secret, 7, invalid); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+			t.Fatalf("%s wrongly persisted as completed scan: %v", state, err)
+		}
+	}
+}
+
 func TestCommonBatchCheckpointRejectsCorruptionAndSymlinks(t *testing.T) {
 	f := makeCommonPlanFixture(t)
 	ctx := context.Background()
