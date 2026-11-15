@@ -954,14 +954,17 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     density: $density, framing: $framing,
                     accessibilityID: "native-ios-unified-source-map-display"
                 ) {
-                    Section("时间分组") {
-                        ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
-                            Button {
-                                timeScale = option
-                            } label: {
-                                Label(option.title,
-                                    systemImage: option == timeScale
-                                        ? "checkmark.circle.fill" : "calendar")
+                    // Nearby is ranked by GPS distance, not capture time.
+                    if !isNearbyExpansion {
+                        Section("时间分组") {
+                            ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
+                                Button {
+                                    timeScale = option
+                                } label: {
+                                    Label(option.title,
+                                        systemImage: option == timeScale
+                                            ? "checkmark.circle.fill" : "calendar")
+                                }
                             }
                         }
                     }
@@ -1044,12 +1047,17 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                         }
                         .accessibilityHidden(true)
                 }
+                // Do not date-reorder the globally distance-ranked Nearby
+                // page; only an ordinary place album uses calendar groups.
+                let displayTimeScale: XDriveIOSNativePhotoWallTimeScale =
+                    isNearbyExpansion ? .all : timeScale
                 let sections = xdriveIOSNativePhotoWallVisibleSections(
-                    previous + current, scale: timeScale
-                ) { timeScale.key(for: $0.capturedAt) }
+                    previous + current, scale: displayTimeScale
+                ) { displayTimeScale.key(for: $0.capturedAt) }
                 XDriveIOSNativePhotoWallSectionList(
                     sections: sections, density: density,
-                    title: { timeScale == .all ? nil : timeScale.label(for: $0.key) },
+                    title: { displayTimeScale == .all ? nil :
+                        displayTimeScale.label(for: $0.key) },
                     items: { $0.items }
                 ) { row in
                     photoButton(for: row).id(row.id)
