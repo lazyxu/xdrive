@@ -9,7 +9,7 @@ The original 25-route AX-ready baseline passed 75/75 on \`a32cac1\`.
 This follow-up is now directly targeted at master, not stacked onto an
 unmerged development parent.
 
-This additive PR currently registers **45 native interaction/entry paths**
+This additive PR currently registers **49 native interaction/entry paths**
 (the previous 39 plus six native Gallery source and Files quick-section paths),
 without inventing Owner authentication or media fixtures. It retains separate
 route IDs and test cases even where multiple navigation paths render the same
@@ -41,8 +41,12 @@ resource lifetimes differ.
 | files.home.edit-mode | 文件 → 浏览首页 → 编辑 → 完成模式 | Native Files edit toolbar changes to 完成 | No authenticated files; UI mode only |
 | files.quick.recent | 文件 → 最近使用快捷页 → 浏览 | native-ios-files-section-recent selected | Real native quick rail; no authenticated content |
 | files.quick.favorites | 文件 → 收藏夹快捷页 → 浏览 | native-ios-files-section-favorites selected | Real native quick rail; no authenticated content |
+| files.search.date | 文件 → 修改时间筛选（最近7天）→ 恢复不限时间 | native-ios-files-search-date-filter label | Real native menu choice/reset; no authenticated search results |
+| files.search.size | 文件 → 文件大小筛选（小于1MiB）→ 恢复不限大小 | native-ios-files-search-size-filter label | Real native menu choice/reset; no authenticated search results |
 | gallery.sort-menu.filters | 统一图库→排序和筛选菜单→筛选编辑页 | native-ios-unified-gallery-map-scope | Genuine native Menu→Sheet, no Owner fixture |
 | gallery.wall.month-group | 统一图库→照片时间分组→月→全部 | native-ios-shared-photo-time-scale selected state | Native presentation change, no real large-data scroll |
+| gallery.wall.density | 统一图库 → 缩略图大小 → 紧凑 → 标准 | native-ios-unified-wall-density AX value | Real SwiftUI density binding; no full 100k wall redraw |
+| gallery.wall.framing | 统一图库 → 显示比例 → 完整图片 → 方形裁切 | native-ios-unified-wall-density AX value | Real photo framing binding; no media decode |
 | gallery.source.albums | 统一图库 → 相册 → 统一 | native-ios-album-create | Actual native album shell, not a populated photo benchmark |
 | gallery.source.originals | 统一图库 → 云端原件 → 统一 | native-ios-cloud-original-layout-help | Owner without Server session, no media |
 | gallery.source.cloud | 图库来源菜单 → 云端图库 → 统一 | native-ios-server-gallery-search | No authenticated cloud search latency |
@@ -64,7 +68,7 @@ resource lifetimes differ.
 | transfers.open-files | 传输 → 打开文件 | native-ios-files-section-browse | Native 5-slot navigation |
 | transfers.open-backup | 传输 → 相册备份 | native-ios-backup-overview | Native route; no upload |
 
-All forty-five routes use real product-owned SwiftUI views or native UI modes, but some are
+All forty-nine routes use real product-owned SwiftUI views or native UI modes, but some are
 **distinct entry paths into the same underlying screen**, not 15 unique
 screens. The original nine-path Simulator run [#43249473366](https://github.com/lazyxu/xdrive/actions/runs/43249473366)
 passed on `a39441a`. An actual 20-route Simulator run

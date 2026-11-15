@@ -12,6 +12,7 @@ on:
       - 'ios/XDriveIOS/NativePhotoBackupScreen.swift'
       - 'ios/XDriveIOS/NativeNotesScreen.swift'
       - 'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift'
+      - 'ios/XDriveIOS/NativePhotoWallComponents.swift'
       - 'ios/XDriveIOS/NativePhotoThumbnailCacheScreen.swift'
       - 'ios/XDriveIOS/NativeTransfers.swift'
       - 'ios/performance/native-seven-workloads.json'
@@ -95,7 +96,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests \
             2>&1 | tee "$RUNNER_TEMP/native-subpage-perf/xcodebuild.log"
-      - name: Require 45 stage/forward/return AX paths, app resources and before/after-return screenshots
+      - name: Require 49 stage/forward/return AX paths, app resources and before/after-return screenshots
         shell: bash
         run: |
           set -euo pipefail

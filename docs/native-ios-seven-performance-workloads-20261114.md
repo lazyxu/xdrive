@@ -80,7 +80,7 @@ performance, unrelated offline/security tests and native-only Notes/Settings
 are tracked outside this Web UI workflow selector; do not describe this set
 as the whole GitHub workflow directory.
 
-The 45-route candidate also conditionally requests Apple's real
+The 49-route candidate also conditionally requests Apple's real
 `XCTHitchMetric(application: app)` on **Xcode 26 and iOS 26**; the existing
 Xcode 16.4/iOS 18.5 runner uses navigation/scroll signpost **durations**
 instead. Neither route register nor signpost fallback establishes a physical

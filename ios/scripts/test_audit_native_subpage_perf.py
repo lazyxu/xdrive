@@ -122,11 +122,11 @@ class NativeSubpageAuditTests(unittest.TestCase):
                 module.write_route_csv(wrong_samples, target)
             self.assertFalse(target.exists())
 
-    def test_actual_repository_registration_has_all_forty_five_routes(self):
+    def test_actual_repository_registration_has_all_forty_nine_routes(self):
         module.ROUTES = self.old
         registered = module.source_routes(module.SOURCE.read_text(encoding="utf-8"))
         self.assertEqual(set(registered.values()), set(module.ROUTES))
-        self.assertEqual(len(module.ROUTES), 45)
+        self.assertEqual(len(module.ROUTES), 49)
 
     def test_gallery_backup_routes_use_existing_product_navigation(self):
         gallery = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
@@ -290,6 +290,25 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertIn('accessibilityIdentifier("native-ios-files-toolbar-organize-home")', files)
         self.assertIn('accessibilityIdentifier("native-ios-gallery-sort-filter-open-filters")', gallery)
         self.assertIn('accessibilityIdentifier("native-ios-shared-photo-time-scale")', shared)
+
+    def test_files_search_and_photo_wall_presentation_are_measured(self):
+        files = (module.ROOT / "ios/XDriveIOS/NativeCloudFilesBrowser.swift").read_text(encoding="utf-8")
+        gallery = (module.ROOT / "ios/XDriveIOS/NativeUnifiedPhotoGallery.swift").read_text(encoding="utf-8")
+        components = (module.ROOT / "ios/XDriveIOS/NativePhotoWallComponents.swift").read_text(encoding="utf-8")
+        suite = module.SOURCE.read_text(encoding="utf-8")
+        for route, token, content in (
+            ("files.search.date", "native-ios-files-search-date-filter", files),
+            ("files.search.size", "native-ios-files-search-size-filter", files),
+            ("gallery.wall.density", "native-ios-shared-density-", components),
+            ("gallery.wall.framing", "native-ios-shared-framing-", components),
+        ):
+            self.assertIn(f'run("{route}")', suite)
+            self.assertTrue(any(f'case "{route}"' in line or
+                                f', "{route}"' in line for line in suite.splitlines()))
+            self.assertIn(token, content)
+        self.assertIn('accessibilityValue(wallDensity.title + " · " + wallFraming.title)', gallery)
+        self.assertIn("Files filter must be reset before next measured trial", suite)
+        self.assertIn("Gallery photo wall presentation must restore both defaults", suite)
 
     def test_files_quick_and_gallery_source_metrics_use_existing_native_controls(self):
         suite = module.SOURCE.read_text(encoding="utf-8")

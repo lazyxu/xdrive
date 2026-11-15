@@ -122,6 +122,12 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 _ = reveal(app.buttons[label].firstMatch, app: app)
             case "files.tags":
                 _ = filesHomeAction("native-ios-files-home-manage-tags", app: app)
+            case "files.search.date", "files.search.size":
+                let id = route == "files.search.date"
+                    ? "native-ios-files-search-date-filter"
+                    : "native-ios-files-search-size-filter"
+                let filter = filesHomeAction(id, app: app)
+                XCTAssertTrue(filter.isHittable, "Real Files search filter must be visible")
             case "files.home.more-organizer":
                 let menu = view("native-ios-files-more-options", app: app)
                 XCTAssertTrue(menu.waitForExistence(timeout: 15) && menu.isHittable,
@@ -241,6 +247,12 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             XCTAssertTrue(view("native-ios-gallery-sort-filter-open-filters", app: app)
                 .waitForExistence(timeout: 15),
                 "Real Gallery sorting menu did not expose its filter editor")
+        } else if route == "gallery.wall.density" ||
+                    route == "gallery.wall.framing" {
+            tap("native-ios-tab-gallery", app: app)
+            let menu = view("native-ios-unified-wall-density", app: app)
+            XCTAssertTrue(menu.waitForExistence(timeout: 15) && menu.isHittable,
+                          "Actual Gallery photo wall presentation menu is missing")
         } else if route == "gallery.wall.month-group" {
             tap("native-ios-tab-gallery", app: app)
             XCTAssertTrue(view("native-ios-shared-photo-time-scale", app: app)
@@ -330,6 +342,16 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "files.tags":
             tap("native-ios-files-home-manage-tags", app: app)
             ready = view("native-ios-files-tag-management", app: app)
+        case "files.search.date", "files.search.size":
+            let isDate = route == "files.search.date"
+            let id = isDate ? "native-ios-files-search-date-filter" :
+                              "native-ios-files-search-size-filter"
+            tap(id, app: app)
+            let option = app.buttons[isDate ? "最近 7 天" : "小于 1 MiB"].firstMatch
+            XCTAssertTrue(option.waitForExistence(timeout: 15) && option.isHittable,
+                          "Real Files filtering option was not opened")
+            option.tap()
+            ready = view(id, app: app)
         case "files.home.more-organizer":
             tap("native-ios-files-toolbar-organize-home", app: app)
             ready = app.navigationBars["整理浏览首页"].firstMatch
@@ -418,6 +440,13 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "gallery.sort-menu.filters":
             tap("native-ios-gallery-sort-filter-open-filters", app: app)
             ready = view("native-ios-unified-gallery-map-scope", app: app)
+        case "gallery.wall.density", "gallery.wall.framing":
+            tap("native-ios-unified-wall-density", app: app)
+            let id = route == "gallery.wall.density"
+                ? "native-ios-shared-density-compact"
+                : "native-ios-shared-framing-complete"
+            tap(id, app: app)
+            ready = view("native-ios-unified-wall-density", app: app)
         case "gallery.wall.month-group":
             let month = app.segmentedControls.buttons["月"].firstMatch
             XCTAssertTrue(month.isHittable)
@@ -466,6 +495,22 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         let timeout: TimeInterval = route.hasPrefix("gallery.map.") ? 25 : 15
         XCTAssertTrue(ready.waitForExistence(timeout: timeout),
                       "Native child did not mount: \(route)")
+        if route == "files.search.date" {
+            XCTAssertTrue(ready.label.contains("修改时间已筛选"),
+                          "Files modified-date filter did not apply")
+        }
+        if route == "files.search.size" {
+            XCTAssertTrue(ready.label.contains("文件大小已筛选"),
+                          "Files size filter did not apply")
+        }
+        if route == "gallery.wall.density" {
+            XCTAssertTrue((ready.value as? String ?? "").contains("紧凑"),
+                          "Actual Gallery density did not change")
+        }
+        if route == "gallery.wall.framing" {
+            XCTAssertTrue((ready.value as? String ?? "").contains("完整图片"),
+                          "Actual Gallery framing did not change")
+        }
         if route == "files.home.edit-mode" {
             XCTAssertEqual(ready.label, "完成", "Files Home edit state never changed")
         }
@@ -552,6 +597,19 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             let closed = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "exists == false"), object: tag)
             XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 12), .completed)
+        case "files.search.date", "files.search.size":
+            let isDate = route == "files.search.date"
+            let id = isDate ? "native-ios-files-search-date-filter" :
+                              "native-ios-files-search-size-filter"
+            tap(id, app: app)
+            let clear = app.buttons[isDate ? "不限时间" : "不限大小"].firstMatch
+            XCTAssertTrue(clear.waitForExistence(timeout: 15) && clear.isHittable)
+            clear.tap()
+            let menu = view(id, app: app)
+            XCTAssertTrue(menu.waitForExistence(timeout: 15))
+            XCTAssertTrue(menu.label.contains(isDate ? "修改时间" : "文件大小"))
+            XCTAssertFalse(menu.label.contains("已筛选"),
+                           "Files filter must be reset before next measured trial")
         case "files.home.more-organizer":
             finishOrganizer(app)
         case "files.home.edit-mode":
@@ -645,6 +703,17 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             cancel.tap()
             XCTAssertTrue(view("native-ios-unified-photo-gallery", app: app)
                 .waitForExistence(timeout: 15))
+        case "gallery.wall.density", "gallery.wall.framing":
+            tap("native-ios-unified-wall-density", app: app)
+            let restore = route == "gallery.wall.density"
+                ? "native-ios-shared-density-standard"
+                : "native-ios-shared-framing-square"
+            tap(restore, app: app)
+            let menu = view("native-ios-unified-wall-density", app: app)
+            XCTAssertTrue(menu.waitForExistence(timeout: 15))
+            let value = menu.value as? String ?? ""
+            XCTAssertTrue(value.contains("标准") && value.contains("方形裁切"),
+                          "Gallery photo wall presentation must restore both defaults")
         case "gallery.wall.month-group":
             let all = app.segmentedControls.buttons["全部"].firstMatch
             XCTAssertTrue(all.waitForExistence(timeout: 15))
@@ -827,6 +896,10 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     func testSubpageClipboardTargetScope() { run("clipboard.target-scope") }
     func testSubpageClipboardHistoryScroll() { run("clipboard.history-scroll") }
     func testSubpageFilesHomeMoreOrganizer() { run("files.home.more-organizer") }
+    func testSubpageFilesSearchDate() { run("files.search.date") }
+    func testSubpageFilesSearchSize() { run("files.search.size") }
+    func testSubpageGalleryWallDensity() { run("gallery.wall.density") }
+    func testSubpageGalleryWallFraming() { run("gallery.wall.framing") }
     func testSubpageGallerySortMenuFilters() { run("gallery.sort-menu.filters") }
     func testSubpageGalleryWallMonthGroup() { run("gallery.wall.month-group") }
     func testSubpageFilesQuickRecent() { run("files.quick.recent") }
