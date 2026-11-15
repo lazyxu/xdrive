@@ -1157,7 +1157,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         guard (direction == -1 || direction == 1),
               active, !opening, !busy, let opened = viewing else { return }
         let rows = previous + current
-        guard let position = rows.firstIndex(where: { $0.id == opened.id }) else { return }
+        guard let position = rows.firstIndex(where: { $0.id == opened.row.id }) else { return }
         let target = position + direction
         if rows.indices.contains(target) {
             admitViewerNeighbor(rows[target])
@@ -1504,7 +1504,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             } catch {
                 guard generation == ticket else { return }
                 previous = []; current = []; nearbyNext = nil
-                error = "附近位置或来源索引已变化，请关闭后重新核验。"
+                self.error = "附近位置或来源索引已变化，请关闭后重新核验。"
             }
         }
     }
