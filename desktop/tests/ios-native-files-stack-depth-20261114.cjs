@@ -136,13 +136,15 @@ test('all 14 Launcher destinations and ten native all-page/child process crash j
   for (const child of ['native-ios-files-error-page', 'native-ios-files-trash-error-page',
                        'native-ios-files-saved-searches-page', 'native-ios-files-operation-history-page',
                        'native-ios-files-tag-management', 'native-ios-gallery-people-page',
-                       'native-ios-map-source-selector', 'native-ios-notes-source-picker',
+                       'native-ios-map-source-selector', 'native-ios-notes-page',
                        'ios-clipboard-status', 'native-ios-backup-portrait-form']) {
     assert.ok(sweep.includes('"' + child + '"'), 'missing real native child assertion: ' + child)
   }
   assert.match(sweep, /XCTAssertEqual\(app\.state, \.runningForeground/)
   assert.match(sweep, /-xdrive-ui-navigation-synthetic-owner/)
   assert.match(sweep, /IOS_NATIVE_NAV_TAP_START/)
+  assert.match(sweep, /app\.segmentedControls\.firstMatch/)
+  assert.match(sweep, /waitRetired\("native-ios-files-saved-searches-page"/)
   assert.doesNotMatch(sweep, /fakeToken|mockServerLogin|XCTSkip|bypassAuthorization/)
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllNativePagesCrashSweepUITests/)
   assert.match(workflow, /candidate-navigation/)

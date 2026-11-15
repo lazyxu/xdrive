@@ -80,6 +80,14 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    private func waitRetired(_ id: String, _ app: XCUIApplication) {
+        let target = element(id, app)
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: target)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 12), .completed,
+                       "Old native child remained after Done: " + id)
+    }
+
     private func filesHomeChild(_ id: String, page: String, _ app: XCUIApplication) {
         tap("native-ios-tab-files", app)
         ready("native-ios-files-section-browse", app)
@@ -186,12 +194,15 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         filesHomeChild("native-ios-files-open-saved-searches",
                        page: "native-ios-files-saved-searches-page", app)
         tap("native-ios-files-saved-searches-done", app)
+        waitRetired("native-ios-files-saved-searches-page", app)
         filesHomeChild("native-ios-files-open-operations",
                        page: "native-ios-files-operation-history-page", app)
         tap("native-ios-files-operation-history-done", app)
+        waitRetired("native-ios-files-operation-history-page", app)
         filesHomeChild("native-ios-files-home-manage-tags",
                        page: "native-ios-files-tag-management", app)
         tapNamed("完成", app)
+        waitRetired("native-ios-files-tag-management", app)
         tap("native-ios-tab-gallery", app)
         tap("native-ios-tab-files", app)
         ready("native-ios-files-section-browse", app)
@@ -224,8 +235,11 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
     func testNotesSourceSwitchAndClipboardFileTabsDoNotExit() {
         let app = launch()
         openLauncher("notes", app)
-        ready("native-ios-notes-source-picker", app)
-        let picker = element("native-ios-notes-source-picker", app)
+        // Master Notes uses a real segmented Picker("笔记来源"),
+        // not the AX identifier added only on the unmerged #4298 branch.
+        let picker = app.segmentedControls.firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 15),
+                      "Native Notes source segmented control missing")
         for title in ["iOS 备份", "我的备忘录"] {
             let option = picker.buttons[title].firstMatch
             XCTAssertTrue(option.waitForExistence(timeout: 15))
