@@ -8,6 +8,15 @@ import UIKit
 final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    /// CI starts a real simctl recorder after the XCTest "started" log line.
+    /// Measured first decoded video frames appeared up to ~17 seconds late.
+    /// Let recording begin BEFORE the first real navigation tap; the H.264
+    /// gate still rejects clips lacking two genuine pre-tap decoded frames.
+    /// This is a test-only bounded prelude, not a no-flicker assertion.
+    private func waitForRealH264RecordingPrelude() {
+        Thread.sleep(forTimeInterval: 24)
+    }
+
     private func launch(syntheticOwner: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
@@ -268,6 +277,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         tap("native-ios-tab-files", app: app)
         assertFiles(app)
         openFilesOperationHistoryFromBrowse(app)
@@ -326,6 +336,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testGalleryFilterDismissThenFilesReturnDoesNotBlankTheWall() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         tap("native-ios-gallery-open-filters", app: app)
         let cancel = app.buttons["取消"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 15), "Filter sheet was not presented")
@@ -341,6 +352,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         tap("native-ios-tab-files", app: app)
         for section in ["recent", "favorites", "browse",
                         "favorites", "recent", "browse"] {

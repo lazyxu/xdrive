@@ -241,6 +241,12 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         self.assertGreaterEqual(MAX_CLIP_SECONDS, 70)
         self.assertLessEqual(MAX_CLIP_SECONDS, 120)
 
+    def test_recorder_prelude_plus_longest_xctest_fits_real_recording_cap(self):
+        # Prior real recordings first emitted frames as much as ~17s after
+        # recordVideo was spawned; six XCTest targets now allow a 24s prelude.
+        # A 60s navigation case must not be cut off by the recording cap.
+        self.assertGreaterEqual(MAX_CLIP_SECONDS, 24 + 60 + 20)
+
     def test_real_recorder_startup_is_aligned_before_white_frame_audit(self):
         # The MP4 PTS clock begins after recordVideo startup; using wall-clock
         # tap seconds without alignment silently misses the recorded white flash.

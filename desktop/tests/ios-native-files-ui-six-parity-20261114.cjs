@@ -10,6 +10,7 @@ const collection = source('ios/XDriveIOS/NativeFilesCollections.swift')
 const viewer = source('ios/XDriveIOS/NativeFilesViewer.swift')
 const thumbnail = source('ios/XDriveIOS/NativeFilesThumbnail.swift')
 const transitions = source('ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift')
+const stability = source('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
 const tokens = source('ios/XDriveIOS/NativeFilesUIStyle.swift')
 const policy = source('ios/XDriveIOS/NativeFilesViewModePolicy.swift')
 const workflow = source('.github/workflows/ios-native-navigation-runtime.yml')
@@ -145,4 +146,28 @@ test('F10 Viewer first displayed frame and all-file subroute gate remain explici
   assert.match(transitions, /testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail/)
   assert.match(transitions, /testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage/)
   assert.match(workflow, /candidate-gallery-files/)
+})
+
+test('F11 real H264 recorder has pre-tap video for all six native cases', () => {
+  // Do not suppress missing_pre_tap_frames: instead start the recorder before
+  // the six real test methods issue their first route transition.
+  assert.match(video, /MAX_CLIP_SECONDS = 120/)
+  assert.match(video, /missing_pre_tap_frames/)
+  for (const src of [stability, transitions]) {
+    assert.match(src, /Thread\.sleep\(forTimeInterval: 24\)/)
+    assert.match(src, /private func waitForRealH264RecordingPrelude\(\)/)
+  }
+  const targets = [
+    [stability, 'testRapidGalleryFilesTabOscillationPreservesBothShells'],
+    [stability, 'testFilesQuickRailAlternatingSectionsReturnsToBrowse'],
+    [stability, 'testGalleryFilesAlternationRetainsNonBlankSettledFrames'],
+    [transitions, 'testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages'],
+    [transitions, 'testGalleryFilterDismissThenFilesReturnDoesNotBlankTheWall'],
+    [transitions, 'testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail'],
+  ]
+  for (const [src, name] of targets) {
+    const method = new RegExp('func ' + name +
+      '\\(\\) \\{\\s*let app = launch\\([^\\n]*\\)\\s*waitForRealH264RecordingPrelude\\(\\)')
+    assert.match(src, method, name + ' must wait before its FIRST tap')
+  }
 })

@@ -8,6 +8,15 @@ import UIKit
 final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    /// CI starts a real simctl recorder after the XCTest "started" log line.
+    /// Measured first decoded video frames appeared up to ~17 seconds late.
+    /// Let recording begin BEFORE the first real navigation tap; the H.264
+    /// gate still rejects clips lacking two genuine pre-tap decoded frames.
+    /// This is a test-only bounded prelude, not a no-flicker assertion.
+    private func waitForRealH264RecordingPrelude() {
+        Thread.sleep(forTimeInterval: 24)
+    }
+
     // XCTest has its own AX/idling overhead. These timings are comparative
     // navigation diagnostics, not device FPS or an animation-duration claim.
     private var navigationStarted: Date?
@@ -88,6 +97,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testRapidGalleryFilesTabOscillationPreservesBothShells() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for _ in 0..<8 {
             select("native-ios-tab-files", in: app)
             checkFilesHome(app)
@@ -98,6 +108,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesQuickRailAlternatingSectionsReturnsToBrowse() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         for _ in 0..<3 {
             for section in ["recent", "favorites", "browse"] {
@@ -244,6 +255,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testGalleryFilesAlternationRetainsNonBlankSettledFrames() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         let started = Date()
         for _ in 0..<3 {
             select("native-ios-tab-files", in: app)
