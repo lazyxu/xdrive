@@ -13,6 +13,8 @@ SPEC.loader.exec_module(module)
 PREFIX = """
 XCTCPUMetric(application: app)
 XCTMemoryMetric(application: app)
+XCTHitchMetric(application: app)
+XCTOSSignpostMetric.navigationTransitionMetric
 options.iterationCount = 3
 options.invocationOptions = [.manuallyStart, .manuallyStop]
 startMeasuring()

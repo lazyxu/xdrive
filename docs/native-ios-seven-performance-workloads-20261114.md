@@ -65,3 +65,25 @@ The machine-audited inventory lives in ios/performance/native-seven-workloads.js
 - Exact authorized Owner, full media/100k and signed physical iPhone capture
   unavailable in the current shared CI must stay **跳过（未验收）**. No fabricated
   acceptance or fake session is permitted.
+
+## Explicit Web workflow → iOS Native coverage ledger (2026-11-15)
+
+The companion `ios/performance/native-web-workflow-parity.json` indexes selected
+**page, media, transfer and interaction-oriented** existing Web/PWA benchmark
+workflows (including Files, Gallery, Places, Viewer, 100k and 1/4 GiB).
+`audit_native_web_workflow_parity.py` compares this registry with the
+current repository `.github/workflows` tree and fails on an omitted, duplicate,
+mislabeled or deleted in-scope Web workflow. This is a **crosswalk**, not
+completion evidence: every workflow is `not_verified` until the matching
+native workload runs with actual source-bound measurements. Backend-only
+performance, unrelated offline/security tests and native-only Notes/Settings
+are tracked outside this Web UI workflow selector; do not describe this set
+as the whole GitHub workflow directory.
+
+The 36-route candidate also conditionally requests Apple's real
+`XCTHitchMetric(application: app)` on **Xcode 26 and iOS 26**; the existing
+Xcode 16.4/iOS 18.5 runner uses navigation/scroll signpost **durations**
+instead. Neither route register nor signpost fallback establishes a physical
+60/120 Hz FPS or a composited first displayed pixel. A real current-HEAD
+XCTest log/`.xcresult` remains required, and the seven workload families
+remain unverified.

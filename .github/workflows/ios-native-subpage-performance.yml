@@ -15,6 +15,9 @@ on:
       - 'ios/XDriveIOS/NativePhotoThumbnailCacheScreen.swift'
       - 'ios/XDriveIOS/NativeTransfers.swift'
       - 'ios/performance/native-seven-workloads.json'
+      - 'ios/performance/native-web-workflow-parity.json'
+      - 'ios/scripts/audit_native_web_workflow_parity.py'
+      - 'ios/scripts/test_audit_native_web_workflow_parity.py'
       - 'ios/scripts/audit_native_seven_workloads.py'
       - 'ios/scripts/test_audit_native_seven_workloads.py'
       - 'ios/XDriveIOS/NativePhotosDashboard.swift'
@@ -43,6 +46,8 @@ jobs:
           python3 -m unittest discover -s ios/scripts -p 'test_audit_native_subpage_perf.py' -v
           python3 -m unittest discover -s ios/scripts -p 'test_audit_native_seven_workloads.py' -v
           python3 ios/scripts/audit_native_seven_workloads.py ios/performance/native-seven-workloads.json
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_web_workflow_parity.py' -v
+          python3 ios/scripts/audit_native_web_workflow_parity.py ios/performance/native-web-workflow-parity.json
       - name: Prepare production-native app with test-only no-Session route harness
         shell: bash
         run: |

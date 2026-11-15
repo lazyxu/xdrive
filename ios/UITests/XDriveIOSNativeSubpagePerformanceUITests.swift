@@ -619,10 +619,25 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         options.iterationCount = 3
         options.invocationOptions = [.manuallyStart, .manuallyStop]
         var iterations = 0
-        measure(metrics: [
+        // Match the existing 25-root-page XCTest resource policy without
+        // pretending that signpost durations are display FPS. Real Hitch
+        // Time Ratio requires Xcode 26/iOS 26 and a genuine instrumented run.
+        var nativeMetrics: [any XCTMetric] = [
             XCTCPUMetric(application: app),
             XCTMemoryMetric(application: app)
-        ], options: options) {
+        ]
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            nativeMetrics.append(XCTHitchMetric(application: app))
+        } else {
+            nativeMetrics.append(XCTOSSignpostMetric.scrollingAndDecelerationMetric)
+            nativeMetrics.append(XCTOSSignpostMetric.navigationTransitionMetric)
+        }
+        #else
+        nativeMetrics.append(XCTOSSignpostMetric.scrollingAndDecelerationMetric)
+        nativeMetrics.append(XCTOSSignpostMetric.navigationTransitionMetric)
+        #endif
+        measure(metrics: nativeMetrics, options: options) {
             iterations += 1
             let stageStarted = ProcessInfo.processInfo.systemUptime
             stage(route, app: app)

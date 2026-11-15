@@ -90,6 +90,8 @@ def source_routes(content):
     for token in (
         "XCTCPUMetric(application: app)",
         "XCTMemoryMetric(application: app)",
+        "XCTHitchMetric(application: app)",
+        "XCTOSSignpostMetric.navigationTransitionMetric",
         "options.iterationCount = 3",
         "options.invocationOptions = [.manuallyStart, .manuallyStop]",
         "startMeasuring()", "stopMeasuring()",
