@@ -38,7 +38,8 @@ test('native Photos wall offers three square thumbnail densities, no change to o
 })
 
 test('pinch and explicit density menu are bounded presentation-only controls', () => {
-  assert.match(screen, /@State private var density: XDriveIOSNativePhotoWallDensity = \.standard/)
+  assert.match(screen, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+  assert.match(screen, /private var density: XDriveIOSNativePhotoWallDensity = \.standard/)
   assert.match(screen, /xdrivePhotoWallDensityButtons\(\$density\)/)
   assert.match(screen, /native-ios-local-wall-density/)
   assert.match(screen, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)

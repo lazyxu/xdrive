@@ -61,7 +61,7 @@ for (const [name, view, tile] of [['PhotoKit full wall', local, 'candidate'], ['
       assert.match(view, /else if phase == \.active &&[\s\S]*?\[\.authorized, \.limited\]\.contains\([\s\S]*?suspendForViewer\(\)/)
     }
     assert.match(view, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
-    assert.doesNotMatch(view, /UserDefaults|WKWebView|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/);
+    assert.doesNotMatch(view, /UserDefaults|WKWebView|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-(?:density|framing)\.v1")/);
   });
 }
 test('active continuous PhotoKit wall revalidates the Viewer return tile and VoiceOver target', () => {
@@ -117,7 +117,7 @@ test('Owner PhotoAsset Viewer restores bounded cloud VoiceOver focus only to its
   // Only the established cross-Gallery appearance setting may persist.
   // Owner identity, Node/revision, Range cursors and Viewer anchors are not stored.
   assert.match(cloud, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/);
-  assert.doesNotMatch(cloud, /UserDefaults|Keychain|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/);
+  assert.doesNotMatch(cloud, /UserDefaults|Keychain|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-(?:density|framing)\.v1")/);
 });
 
 
@@ -169,5 +169,5 @@ test('PhotoKit album L3 Viewer navigates only a verified 64-item page at a time 
   assert.match(contents, /onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?clearViewerTileAnchor\(\)[\s\S]*?else if selected != nil \|\| showingAlbumMap \{[\s\S]*?viewerPageInvalidated = true[\s\S]*?suspendForViewer\(\)[\s\S]*?else \{\s*invalidate\(\)/)
   assert.match(contents, /if selected != nil \|\| showingAlbumMap \|\|\s*\(phase == \.active && albumAuthorized\) \{\s*suspendForViewer\(\)/)
   assert.match(contents, /else \{\s*libraryMonitor\.stop\(\)\s*invalidate\(\)\s*\}/)
-  assert.doesNotMatch(contents, /UserDefaults|CloudKit|UploadSession|isNetworkAccessAllowed = true|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/);
+  assert.doesNotMatch(contents, /UserDefaults|CloudKit|UploadSession|isNetworkAccessAllowed = true|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-(?:density|framing)\.v1")/);
 });

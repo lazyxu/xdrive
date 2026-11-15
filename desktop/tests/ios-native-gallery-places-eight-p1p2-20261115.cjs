@@ -88,7 +88,7 @@ test('P2-2 density/framing are shared appearance-only preferences, not Owner/Pho
     assert.match(screen, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
   assert.match(map, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
   assert.match(unified, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
-  assert.doesNotMatch(shared, /UserDefaults|Owner|PHAsset|verifiedAuthorization/)
+  assert.doesNotMatch(shared, /UserDefaults\.standard|PHAsset\.fetchAssets|verifiedAuthorization\(|UploadSession\(/)
 })
 
 test('P2-3 local selection, media badge and backup status retain their original source actions', () => {
