@@ -465,17 +465,22 @@ test('six more independent Gallery, Files, Notes, Login and Backup crash sweeps 
 });
 
 
-test('69 all-page crash XCTest journeys include post-login diagnostic and cross-route recovery', () => {
+test('74 all-page crash XCTest journeys cover Files stack, Owner-denied children and cross-route recovery', () => {
   const names = [
     'testPostLoginCrashCopyAndDiagnosticForegroundDoesNotExit',
     'testPostLoginCrashFullRetrySignedOutReturnDoesNotExit',
     'testPostLoginCrashSafeEntryRotationDoesNotExit',
     'testMapFilesRecentDenialBackupQueueMapReturnDoesNotExit',
     'testNotesClipboardTransfersFilesForegroundCycleDoesNotExit',
-    'testFilesManagementSheetsRotationAndGalleryReturnDoesNotExit'
+    'testFilesManagementSheetsRotationAndGalleryReturnDoesNotExit',
+    'testFilesRootDenialRepeatedLifecycleCyclesDoesNotExit',
+    'testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit',
+    'testFilesTagModalMapAndRotationOwnerScopeDoesNotExit',
+    'testClipboardDeniedReceiverNotesAndFilesForegroundDoesNotExit',
+    'testBackupAuditQueueAndFilesDeniedRootAfterForegroundDoesNotExit'
   ];
   const methods = [...swift.matchAll(/\bfunc\s+(test\w+)\s*\(/g)].map(m => m[1]);
-  assert.ok(methods.length >= 69, 'All 69 real native page paths must run');
+  assert.ok(methods.length >= 74, 'All 74 real native page paths must run');
   assert.equal(new Set(methods).size, methods.length, 'Duplicate XCTest path hides a crash');
   for (const name of names) {
     assert.ok(methods.includes(name), 'Missing native XCTest: ' + name);

@@ -1565,4 +1565,135 @@ final class XDriveIOSAllPagesCrashUITests: XCTestCase {
         capture(app, "files-management-sheets-rotation")
     }
 
+
+    // Real app-side Files owner/browser mounting has previously overflowed
+    // the iOS 26.6 main-thread stack. Re-enter the same production view tree
+    // repeatedly; a synthetic Owner never supplies authenticated media.
+    func testFilesRootDenialRepeatedLifecycleCyclesDoesNotExit() {
+        let app = launch()
+        for cycle in 0..<3 {
+            tap("native-ios-tab-files", app: app)
+            ready("native-ios-files-section-browse", app: app)
+            tap("native-ios-files-open-root-location", app: app)
+            ready("native-ios-files-error-page", app: app)
+            XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+            if cycle == 1 {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                ready("native-ios-files-error-page", app: app)
+            }
+            tap("native-ios-files-error-return", app: app)
+            waitRetired("native-ios-files-error-page", app: app)
+            tap("native-ios-tab-gallery", app: app)
+            ready("native-ios-unified-photo-gallery", app: app)
+            tap("native-ios-tab-files", app: app)
+            ready("native-ios-files-home-list", app: app)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        capture(app, "files-root-denial-repeated-lifecycle")
+    }
+
+    func testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit() {
+        let app = launch()
+        for cycle in 0..<2 {
+            openFilesHomeChild("native-ios-files-open-recent",
+                               pageID: "native-ios-files-recent-error-page", app: app)
+            XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+            tap("native-ios-files-recent-error-return", app: app)
+            waitRetired("native-ios-files-recent-error-page", app: app)
+            openFilesHomeChild("native-ios-files-open-saved-searches",
+                               pageID: "native-ios-files-saved-searches-page", app: app)
+            if cycle == 0 {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                ready("native-ios-files-saved-searches-page", app: app)
+            }
+            XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+            tap("native-ios-files-saved-searches-done", app: app)
+            waitRetired("native-ios-files-saved-searches-page", app: app)
+            tap("native-ios-tab-gallery", app: app)
+            ready("native-ios-unified-photo-gallery", app: app)
+        }
+        capture(app, "files-recent-saved-foreground")
+    }
+
+    func testFilesTagModalMapAndRotationOwnerScopeDoesNotExit() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        openLauncher("map", app: app)
+        ready("native-ios-map-source-selector", app: app)
+        openFilesHomeChild("native-ios-files-home-manage-tags",
+                           pageID: "native-ios-files-tag-management", app: app)
+        device.orientation = .landscapeLeft
+        ready("native-ios-files-tag-management", app: app)
+        device.orientation = .portrait
+        tapNamed("完成", route: "native-ios-tags-close-after-map", app: app)
+        waitRetired("native-ios-files-tag-management", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        ready("native-ios-map-source-selector", app: app)
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-home-list", app: app)
+        capture(app, "files-tag-map-rotation-owner-scope")
+    }
+
+    func testClipboardDeniedReceiverNotesAndFilesForegroundDoesNotExit() {
+        let app = launch()
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        tapNamed("启用本机设备定向接收",
+                 route: "native-ios-clipboard-denied-enrollment", app: app)
+        ready("ios-clipboard-status", app: app)
+        XCTAssertFalse(app.staticTexts["设备定向接收已启用"].firstMatch.exists)
+        openLauncher("notes", app: app)
+        ready("native-ios-notes-source-picker", app: app)
+        let backup = element("native-ios-notes-source-picker", app: app)
+            .buttons["iOS 备份"].firstMatch
+        XCTAssertTrue(backup.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-notes-backup-after-clipboard")
+        backup.tap()
+        ready("native-ios-notes-page", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-files-section-browse", app: app)
+        openLauncher("clipboard", app: app)
+        ready("ios-clipboard-draft", app: app)
+        XCTAssertFalse(app.staticTexts["设备定向接收已启用"].firstMatch.exists)
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        capture(app, "clipboard-denial-notes-files-foreground")
+    }
+
+    func testBackupAuditQueueAndFilesDeniedRootAfterForegroundDoesNotExit() {
+        let app = launch()
+        openLauncher("backup", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tapNamed("逐项核验当前云端原件", route: "native-ios-backup-audit", app: app)
+        ready("native-ios-backup-portrait-form", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-backup-portrait-form", app: app)
+        tapNamed("返回相册备份", route: "native-ios-backup-audit-return", app: app)
+        ready("native-ios-backup-overview", app: app)
+        tap("native-ios-photos-task-list", app: app)
+        ready("native-ios-photo-task-list-done", app: app)
+        tap("native-ios-photo-task-list-done", app: app)
+        waitRetired("native-ios-photo-task-list-done", app: app)
+        tap("native-ios-tab-files", app: app)
+        ready("native-ios-files-section-browse", app: app)
+        tap("native-ios-files-open-root-location", app: app)
+        ready("native-ios-files-error-page", app: app)
+        XCTAssertFalse(element("native-ios-files-grid", app: app).exists)
+        tap("native-ios-files-error-return", app: app)
+        waitRetired("native-ios-files-error-page", app: app)
+        openLauncher("backup", app: app)
+        ready("native-ios-backup-overview", app: app)
+        capture(app, "backup-audit-queue-files-denial")
+    }
+
 }

@@ -218,6 +218,11 @@ MINIMAL_TARGETS.update({
     "testMapFilesRecentDenialBackupQueueMapReturnDoesNotExit",
     "testNotesClipboardTransfersFilesForegroundCycleDoesNotExit",
     "testFilesManagementSheetsRotationAndGalleryReturnDoesNotExit",
+    "testFilesRootDenialRepeatedLifecycleCyclesDoesNotExit",
+    "testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit",
+    "testFilesTagModalMapAndRotationOwnerScopeDoesNotExit",
+    "testClipboardDeniedReceiverNotesAndFilesForegroundDoesNotExit",
+    "testBackupAuditQueueAndFilesDeniedRootAfterForegroundDoesNotExit",
 })
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
