@@ -26,6 +26,22 @@ class NativeWebPerformanceParityTests(unittest.TestCase):
         self.assertEqual(result["native_unverified"], result["web_workflows"])
         self.assertEqual(result["families_with_web_benchmarks"], 6)
 
+    def test_p071_and_full_byte_web_baselines_are_not_silently_omitted(self):
+        expected = {
+            ".github/workflows/p071-gallery-mobile-mixed-100k.yml": module.GALLERY,
+            ".github/workflows/p071-gallery-wide-mixed-100k.yml": module.GALLERY,
+            ".github/workflows/p071-gallery-web-h264-posters-100k.yml": module.MEDIA,
+            ".github/workflows/real-web-cas-1gib-performance.yml": module.TRANSFER,
+            ".github/workflows/pwa-full-opfs-readback.yml": module.TRANSFER,
+        }
+        actual = {row["web_workflow"]: row for row in self.data["entries"]}
+        for name, family in expected.items():
+            self.assertIn(name, actual)
+            self.assertEqual(actual[name]["native_family"], family)
+            self.assertEqual(actual[name]["native_status"], "not_verified")
+            self.assertEqual(module.target_family(Path(name).name), family)
+        self.assertGreaterEqual(module.audit(self.data)["web_workflows"], 68)
+
     def test_missing_web_workflow_fails(self):
         self.data["entries"].pop()
         with self.assertRaisesRegex(ValueError, "Missing or obsolete"):

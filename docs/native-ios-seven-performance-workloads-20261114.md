@@ -87,3 +87,16 @@ instead. Neither route register nor signpost fallback establishes a physical
 60/120 Hz FPS or a composited first displayed pixel. A real current-HEAD
 XCTest log/`.xcresult` remains required, and the seven workload families
 remain unverified.
+
+## 2026-11-15 Web performance baseline audit
+
+The explicit Web→native workflow ledger now tracks **68 selected UI/media/transfer
+performance workflows**. Five previously omitted real-browser baselines are
+registered and checked as native-unverified: P071 mobile 390px and wide 1440px
+mixed 100k Gallery, P071 genuine H264 poster 100k Gallery, real Web 1 GiB
+PostgreSQL/CAS transfer, and full-byte Web OPFS readback (1/4 GiB).
+These are genuine Web tests, but none supplies iOS measurements. The native
+36-route AX/CPU/RSS work, media first-frame, source-verifiable 100k workload
+and 1/4 GiB URLSession test remain separate requirements. Missing/deleted or
+incorrectly classified Web workflow now fails the parity audit. This does not
+claim to include backend-only, agent-only or unrelated safety workflows.

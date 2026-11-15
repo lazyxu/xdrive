@@ -22,12 +22,18 @@ TRANSFER = "p1-1gib-4gib-transfers"
 
 
 def target_family(name):
-    if name == "real-web-desktop-cas-4gib-performance.yml" or name.startswith("pwa-s4"):
+    if name in ("real-web-desktop-cas-4gib-performance.yml",
+                "real-web-cas-1gib-performance.yml",
+                "pwa-full-opfs-readback.yml") or name.startswith("pwa-s4"):
         return TRANSFER
     if name == "viewer-first-frame-paired-h264.yml":
         return MEDIA
     if name.startswith("file-explorer-"):
         return MEDIA if ("h264" in name or "jpeg" in name) else FILES
+    # The P071 physical mobile/wide and genuine H264 browser benchmarks
+    # are Web UI performance baselines, even though they lack gallery- prefix.
+    if name.startswith("p071-gallery-"):
+        return MEDIA if "h264" in name else GALLERY
     if name.startswith("gallery-"):
         if "h264" in name:
             return MEDIA

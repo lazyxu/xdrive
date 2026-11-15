@@ -104,6 +104,21 @@
       "native_status": "not_verified"
     },
     {
+      "web_workflow": ".github/workflows/p071-gallery-mobile-mixed-100k.yml",
+      "native_family": "p0-gallery-scroll-map-place-wall",
+      "native_status": "not_verified"
+    },
+    {
+      "web_workflow": ".github/workflows/p071-gallery-web-h264-posters-100k.yml",
+      "native_family": "p1-image-video-live-pdf-viewer",
+      "native_status": "not_verified"
+    },
+    {
+      "web_workflow": ".github/workflows/p071-gallery-wide-mixed-100k.yml",
+      "native_family": "p0-gallery-scroll-map-place-wall",
+      "native_status": "not_verified"
+    },
+    {
       "web_workflow": ".github/workflows/places-cell-album-paging.yml",
       "native_family": "p0-gallery-scroll-map-place-wall",
       "native_status": "not_verified"
@@ -111,6 +126,11 @@
     {
       "web_workflow": ".github/workflows/places-p0-17-real-chromium.yml",
       "native_family": "p0-gallery-scroll-map-place-wall",
+      "native_status": "not_verified"
+    },
+    {
+      "web_workflow": ".github/workflows/pwa-full-opfs-readback.yml",
+      "native_family": "p1-1gib-4gib-transfers",
       "native_status": "not_verified"
     },
     {
@@ -305,6 +325,11 @@
     },
     {
       "web_workflow": ".github/workflows/pwa-s4d3b2-real-binary-restart.yml",
+      "native_family": "p1-1gib-4gib-transfers",
+      "native_status": "not_verified"
+    },
+    {
+      "web_workflow": ".github/workflows/real-web-cas-1gib-performance.yml",
       "native_family": "p1-1gib-4gib-transfers",
       "native_status": "not_verified"
     },
