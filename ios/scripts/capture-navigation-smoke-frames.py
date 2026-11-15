@@ -97,6 +97,9 @@ TARGETS = {
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
+    # Real PhotoKit MapKit P0 route: the video gate supplies consecutive
+    # decoded frames; these named tap screenshots remain supplemental.
+    "testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted",
     "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",
     "testGalleryDismissedFilterThenForegroundDoesNotRebuildWall",
     "testGalleryPeopleBackThenForegroundKeepsVerifiedWall",

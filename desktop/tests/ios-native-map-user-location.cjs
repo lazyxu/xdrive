@@ -41,7 +41,7 @@ test('local map locates only on explicit tap and preserves PhotoKit Cell authori
   assert.match(local, /native-ios-local-map-locate/)
   assert.match(local, /focusRequestID: currentLocation\.requestID,[\s\S]*?focusCamera: currentLocation\.camera,[\s\S]*?showsUserDot: currentLocation\.showsUserDot/)
   assert.match(local, /if let focusID = focusRequestID,[\s\S]*?context\.coordinator\.focusRequestID = focusID[\s\S]*?map\.setRegion\(focusCamera, animated: true\)/)
-  assert.match(local, /\.onChange\(of: currentLocation\.requestID\)[\s\S]*?if globalViewport != nil \{ globalCameraMoving = true \}/)
+  assert.match(local, /\.onChange\(of: currentLocation\.requestID\)[\s\S]*?globalCameraMoving = true[\s\S]*?globalCamera = target/)
   assert.match(local, /canSelectCells: refinedViewportIsCurrent/)
   assert.match(local, /\.onDisappear \{\s*currentLocation\.cancel\(\)/)
 })

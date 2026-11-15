@@ -49,7 +49,7 @@ test('Owner cloud albums use verified 48-item-only time groups and common framin
     cloud.indexOf('/// Fullscreen media View.'))
   assert.match(range, /verified\.items, scale: timeScale/)
   assert.match(range, /timeScale\.key\(forISO8601: \$0\.metadata\.captured_at\)/)
-  assert.match(range, /if let verified = model\.page,[\s\S]*?verified\.offset == offset, verified\.total_count == expectedTotal/)
+  assert.match(range, /if let verified = model\.visiblePage\(for: login\.owner\),[\s\S]*?verified\.offset == offset, verified\.total_count == expectedTotal/)
   assert.match(range, /XDriveIOSNativeMediaWallTile\([\s\S]*?framing: framing/)
   assert.match(range, /\.id\(XDriveIOSNativeMediaWallTileIdentity\(/)
   assert.match(wall, /XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)

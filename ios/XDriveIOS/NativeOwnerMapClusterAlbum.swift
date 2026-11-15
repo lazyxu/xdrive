@@ -76,6 +76,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // Restore the last successfully viewed Node+revision in the bounded
     // Owner page after L3 closes, without persisting any photo identities.
     @State private var viewerReturn: XDriveIOSNativeMediaItem?
+    @State private var viewerOpeningItem: XDriveIOSNativeMediaItem?
     @AccessibilityFocusState private var focusedTileID: UInt64?
     // During a verified automatic append, preserve the last visible tile
     // while the former two-window head rotates out of the LazyVGrid.
@@ -265,10 +266,19 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     viewerReturn = nil
                     return
                 }
-                xdrivePhotoWallFocusVerifiedTile(
-                    anchor.id, scroll: returnScroll, focus: $focusedTileID
-                )
+                // Same-revision Viewer return must not re-center.
+                if viewerOpeningItem.map({
+                    !$0.sameVisibleRevision(as: anchor)
+                }) ?? true {
+                    xdrivePhotoWallFocusVerifiedTile(
+                        anchor.id, scroll: returnScroll, focus: $focusedTileID
+                    )
+                } else {
+                    focusedTileID = anchor.id
+                }
                 viewerReturn = nil
+                viewerOpeningItem = nil
+                viewerOpeningItem = nil
             }
             .onChange(of: busy) { isBusy in
                 if !isBusy { advanceIfVisible() }
@@ -567,6 +577,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 priorWindow = nil
                 priorWindowCursor = nil
             }
+            viewerOpeningItem = item
             viewerReturn = item
             viewing = item
         } label: {
@@ -594,6 +605,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         }
         .buttonStyle(.plain)
         .id(item.id)
+        .accessibilityIdentifier("native-ios-owner-map-cluster-tile-\(item.id)-\(item.node.revision)")
         .accessibilityFocused($focusedTileID, equals: item.id)
         .accessibilityLabel(item.isLive ? "实况照片" :
                              item.isVideo ? "视频" : "照片")
@@ -691,6 +703,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         coverLoading = false
         page = nil
         viewerReturn = nil
+        viewerOpeningItem = nil
         focusedTileID = nil
         autoScrollReturn = nil
         priorWindow = nil
@@ -743,7 +756,16 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         if !autoAdvance {
             priorWindow = nil
             priorWindowCursor = nil
-            coverImages = [:]
+            if target == departingCursor, let departingPage, activeOwner {
+                // Keep the already painted SAME Owner's bounded 48 covers
+                // while the Viewer-return Range is being reverified.
+                // Busy disables tile admission; a changed/revoked snapshot
+                // will clear these pixels before it becomes interactive.
+                let retainedIDs = Set(departingPage.items.map(\.id))
+                coverImages = coverImages.filter { retainedIDs.contains($0.key) }
+            } else {
+                coverImages = [:]
+            }
         }
         pendingViewerCross = nil
         error = nil
@@ -874,7 +896,18 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     priorWindow = nil
                     priorWindowCursor = nil
                     autoScrollReturn = nil
-                    coverImages = [:]
+                    if target == departingCursor, let departingPage,
+                       departingPage.sameVisibleSnapshot(as: fetched), activeOwner {
+                        // Preserve only byte-identical visible revisions.
+                        // Same numeric Node ID with edited media/thumbnail
+                        // version is never permitted to display an old UIImage.
+                        let verifiedIDs = Set(fetched.items.map(\.id))
+                        coverImages = coverImages.filter {
+                            verifiedIDs.contains($0.key)
+                        }
+                    } else {
+                        coverImages = [:]
+                    }
                 }
                 if fetched.offset == 0 {
                     let index = fetched.timeline_group_sets ??
@@ -962,6 +995,25 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             } catch is CancellationError {
             } catch {
                 guard generation == ticket else { return }
+                if let failure = error as? XDriveIOSNativeMediaReadFailure {
+                    switch failure {
+                    case .response(let status) where status == 401 || status == 403:
+                        // A known Owner/ACL revoke is NOT a transient network
+                        // failure; retire the old pixels, Range and focus now.
+                        invalidate()
+                        self.error = "Owner 权限已失效，旧地点照片已清除。"
+                        return
+                    case .invalidScope, .invalidPage, .malformed,
+                         .unsupported, .tooLarge:
+                        // Reject a changed signed count, Node revision or
+                        // malformed Range without reusing the former wall.
+                        invalidate()
+                        self.error = "地点照片索引已变化，请返回地图重新核对。"
+                        return
+                    default:
+                        break
+                    }
+                }
                 if dateJump != nil {
                     // A failed fresh-index check invalidates any previously
                     // cached jump hint, even when the Owner is unchanged.
