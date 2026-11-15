@@ -72,7 +72,9 @@ enum XDriveIOSLiveOriginalArchive {
         for resource in [still, motion] {
             guard resource.byteCount > 0,
                   !resource.originalFilename.isEmpty,
-                  resource.originalFilename.utf8.count <= 255 else {
+                  // Manifest metadata, never a filesystem path or ZIP entry.
+                  // Long Unicode import names must not drop valid originals.
+                  resource.originalFilename.utf8.count <= 8_192 else {
                 throw XDriveIOSLiveArchiveFailure.tooLarge
             }
         }
