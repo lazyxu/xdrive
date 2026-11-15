@@ -988,13 +988,20 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         }
         .fullScreenCover(item: $viewing, onDismiss: {
             if !active { invalidate() }
-        }) { choice in
+        }) { session in
+            // The sheet's item identity stays stable across adjacent photos,
+            // but the presented media must read the CURRENT selected row.
+            // Capturing the opening item here would leave the first picture
+            // mounted even after the filmstrip changes @State viewing.
             Group {
-                if active, let local = choice.row.local {
+                if active, let choice = viewing, choice.session == session.session,
+                   let local = choice.row.local {
                     XDriveIOSNativeLocalPhotoDetail(
                         candidate: local, onUnifiedNavigate: navigateViewer)
-                    .id(choice.row.id)
-                } else if active, let cloud = choice.row.cloud {
+                        .id(choice.row.id)
+                } else if active, let choice = viewing,
+                          choice.session == session.session,
+                          let cloud = choice.row.cloud {
                     XDriveIOSNativeServerMediaPreview(
                         item: cloud, login: login, loadedItems: [cloud],
                         openedOwner: owner, onUnifiedNavigate: navigateViewer)
