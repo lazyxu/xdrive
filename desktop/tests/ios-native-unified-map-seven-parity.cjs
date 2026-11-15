@@ -78,7 +78,8 @@ test('G04: a first completed GPS scope auto-fits antimeridian-safe representativ
 
 test('G05: location walls use one verified-section renderer and a bounded return anchor', () => {
   assert.match(walls, /struct XDriveIOSNativePhotoWallSectionList/)
-  assert.match(map, /xdriveIOSNativePhotoWallVisibleSections\(\s*previous \+ current, scale: timeScale/)
+  assert.match(map, /xdriveIOSNativePhotoWallVisibleSections\(\s*previous \+ current, scale: displayTimeScale/)
+  assert.match(map, /isNearbyExpansion \? \.all : timeScale/)
   assert.match(map, /XDriveIOSNativePhotoWallSectionList\(/)
   assert.match(map, /XDriveIOSNativePhotoWallDisplayMenu\(/)
   assert.match(map, /XDriveIOSNativePhotoWallWindowPolicy\.canRestore/)
