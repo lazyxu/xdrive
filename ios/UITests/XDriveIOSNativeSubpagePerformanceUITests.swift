@@ -624,8 +624,15 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             XCTMemoryMetric(application: app)
         ], options: options) {
             iterations += 1
+            let stageStarted = ProcessInfo.processInfo.systemUptime
             stage(route, app: app)
+            let stageMilliseconds = Int(max(0,
+                (ProcessInfo.processInfo.systemUptime - stageStarted) * 1000))
             print("IOS_NATIVE_SUBPAGE_ITERATION route=\(route) index=\(iterations)")
+            if iterations > 1 {
+                // Parent-route preparation is distinct from the measured child tap.
+                print("IOS_NATIVE_SUBPAGE_STAGE_MS route=\(route) trial=\(iterations - 1) value=\(stageMilliseconds)")
+            }
             startMeasuring()
             let started = ProcessInfo.processInfo.systemUptime
             visit(route, app: app)
@@ -651,6 +658,14 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 (ProcessInfo.processInfo.systemUptime - returnStarted) * 1000))
             if iterations > 1 {
                 print("IOS_NATIVE_SUBPAGE_RETURN_MS route=\(route) trial=\(iterations - 1) value=\(returnMilliseconds)")
+            }
+            if iterations == 2 {
+                // Preserve the actual returned view, never label it a pixel/FPS trace.
+                let restored = XCTAttachment(screenshot: app.screenshot())
+                restored.name = "post-return-" + route
+                restored.lifetime = .keepAlways
+                add(restored)
+                print("IOS_NATIVE_SUBPAGE_POST_RETURN_SCREENSHOT route=\(route) trial=1")
             }
         }
         print("IOS_NATIVE_SUBPAGE_COMPLETE route=\(route) iterations=\(iterations)")
