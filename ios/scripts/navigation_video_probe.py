@@ -126,12 +126,25 @@ def assess_clip(entry, directory, probe=frame_timeline):
     name = entry.get('file')
     expected = TEST_ROUTES.get(entry.get('test'))
     if (not expected or entry.get('route_group') != expected or
-            name != expected + '.mp4' or not entry.get('recorded') or
-            entry.get('stop_reason') in (
-                'recorder_force_killed', 'recorder_exited_early',
-                'overlapping_test_start',
-            )):
+            name != expected + '.mp4' or not entry.get('recorded')):
         result['reason'] = 'not_recorded'
+        return result
+    # An MP4 can be genuine even when the XCTest crashed, failed or its
+    # recorder was stopped before the route finished. None proves a pass.
+    if entry.get('test_outcome') != 'passed':
+        result['reason'] = 'xctest_not_passed'
+        return result
+    if entry.get('stop_reason') not in (
+            'test_finished', 'bounded_post_tap_window'):
+        result['reason'] = 'incomplete_recording'
+        return result
+    if entry.get('recorder_exit_code') != 0:
+        result['reason'] = 'recording_process_failed'
+        return result
+    route = entry.get('first_tap_route')
+    if not isinstance(route, str) or not re.fullmatch(
+            r'native-ios-[a-z0-9-]+', route):
+        result['reason'] = 'invalid_tap_marker'
         return result
     video = pathlib.Path(directory) / name
     if not video.is_file() or video.stat().st_size < 1024:
@@ -146,6 +159,10 @@ def assess_clip(entry, directory, probe=frame_timeline):
     tap = entry.get('first_tap_offset_s')
     if not isinstance(tap, (int, float)) or not math.isfinite(tap):
         result['reason'] = 'missing_tap_marker'
+    elif (not isinstance(entry.get('duration_s'), (int, float)) or
+          not math.isfinite(entry['duration_s']) or
+          entry['duration_s'] < tap + 2.0):
+        result['reason'] = 'invalid_recording_timeline'
     elif tap < 1.0:
         # Recorder startup latency makes this pre-tap window ambiguous.
         result['reason'] = 'pre_tap_coverage_not_established'
@@ -179,21 +196,33 @@ def audit(directory, required=6, probe=frame_timeline):
     for raw in trace.read_text(encoding='utf-8').splitlines():
         if raw.strip():
             try:
-                rows.append(json.loads(raw))
-            except ValueError:
+                decoded = json.loads(raw)
+            except (ValueError, TypeError):
                 return {'pass': False, 'reason': 'malformed_video_trace',
                         'usable_routes': 0, 'required_routes': required, 'clips': []}
+            if not isinstance(decoded, dict):
+                return {'pass': False, 'reason': 'malformed_video_trace',
+                        'usable_routes': 0, 'required_routes': required, 'clips': []}
+            rows.append(decoded)
     clips = [assess_clip(item, directory, probe=probe) for item in rows]
     # Deterministic bounded reason counts: a real VFR movie with no post-tap
     # encoded frame is NOT a successful transition video, even if XCTest passed.
     # Report precise failure classes rather than weakening --required 6.
     rejected = {}
+    observed_tests = set()
     for item in clips:
+        if item['test'] in observed_tests:
+            item['usable'] = False
+            item['reason'] = 'duplicate_test_clip'
+        observed_tests.add(item['test'])
         if not item['usable']:
             reason = item.get('reason', 'unknown')
             rejected[reason] = rejected.get(reason, 0) + 1
     routes = {item['route_group'] for item in clips if item['usable']}
-    accepted = len(routes) >= required
+    # Invalid requested coverage and extra failed/duplicate clips fail closed.
+    # Never cherry-pick six successes out of a compromised run.
+    accepted = (1 <= required <= len(TEST_ROUTES) and
+                len(routes) >= required and not rejected)
     return {
         'pass': accepted, 'usable_routes': len(routes),
         'required_routes': required,
@@ -223,6 +252,7 @@ class VideoRecorder:
         self.current = None
         self.completed = set()
         self.records = []
+        self.outcomes = {}
         self.terminating = False
 
     def process(self, line):
@@ -242,9 +272,24 @@ class VideoRecorder:
                 self.clock() - self.current['start_monotonic'], 4)
             self.current['first_tap_route'] = value
             self.current['tap_at_monotonic'] = self.clock()
-        elif (action == 'finish' and self.current
-              and value == self.current['test']):
-            self.stop('test_finished')
+        elif action == 'finish' and value in TEST_ROUTES:
+            match = FINISH.search(line)
+            if not match:
+                return
+            outcome = match.group(2)
+            self.outcomes[value] = outcome
+            if self.current and value == self.current['test']:
+                self.stop('test_finished')
+            else:
+                # The bounded post-tap watcher can stop before XCTest ends.
+                # Correct its earlier trace only after a genuine finish line.
+                updated = False
+                for record in self.records:
+                    if record['test'] == value:
+                        record['test_outcome'] = outcome
+                        updated = True
+                if updated:
+                    self._write_trace()
 
     def start(self, name):
         path = self.output / (TEST_ROUTES[name] + '.mp4')
@@ -282,13 +327,14 @@ class VideoRecorder:
         if not clip:
             return
         process = clip['process']
-        if process.poll() is None:
+        exit_code = process.poll()
+        if exit_code is None:
             process.send_signal(signal.SIGINT)
             try:
-                process.wait(timeout=20)
+                exit_code = process.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 process.kill()
-                process.wait(timeout=5)
+                exit_code = process.wait(timeout=5)
                 reason = 'recorder_force_killed'
         clip['stderr'].close()
         path = self.output / clip['file']
@@ -297,6 +343,7 @@ class VideoRecorder:
             'first_tap_route', 'file',
         )}
         recorded = (path.is_file() and path.stat().st_size >= 1024 and
+                    exit_code == 0 and
                     reason not in ('recorder_force_killed',
                                    'recorder_exited_early',
                                    'overlapping_test_start'))
@@ -305,12 +352,20 @@ class VideoRecorder:
             'duration_s': round(self.clock() - clip['start_monotonic'], 3),
             'recorded': recorded,
             'file_bytes': path.stat().st_size if path.is_file() else 0,
+            'recorder_exit_code': exit_code,
+            'test_outcome': self.outcomes.get(clip['test']),
         })
-        with (self.output / 'trace.jsonl').open('a', encoding='utf-8') as out:
-            out.write(json.dumps(row, ensure_ascii=False) + '\n')
         self.records.append(row)
+        self._write_trace()
         self.completed.add(clip['test'])
         self.current = None
+
+    def _write_trace(self):
+        # One authoritative manifest for this invocation, including any
+        # actual XCTest result arriving after the bounded video capture.
+        with (self.output / 'trace.jsonl').open('w', encoding='utf-8') as out:
+            for record in self.records:
+                out.write(json.dumps(record, ensure_ascii=False) + '\n')
 
     def close(self):
         self.terminating = True

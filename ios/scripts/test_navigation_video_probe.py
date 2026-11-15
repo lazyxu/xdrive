@@ -47,6 +47,8 @@ class VideoEvidenceTests(unittest.TestCase):
             'duration_s': 12.0,
             'file': TEST_ROUTES[name] + '.mp4',
             'recorded': True,
+            'test_outcome': 'passed',
+            'recorder_exit_code': 0,
         }
         row.update(overrides)
         (self.root / row['file']).write_bytes(b'mp4' * 512)
@@ -311,6 +313,110 @@ class VideoEvidenceTests(unittest.TestCase):
         row = self.clip()
         row['file'] = '../private.mp4'
         self.assertFalse(assess_clip(row, self.root, probe=self.probe)['usable'])
+
+    def test_failed_xctest_cannot_be_counted_by_genuine_video(self):
+        row = self.clip(test_outcome='failed')
+        self.assertEqual(assess_clip(row, self.root, probe=self.probe)['reason'],
+                         'xctest_not_passed')
+
+    def test_unfinished_xctest_cannot_be_counted_by_genuine_video(self):
+        row = self.clip(test_outcome=None)
+        self.assertEqual(assess_clip(row, self.root, probe=self.probe)['reason'],
+                         'xctest_not_passed')
+
+    def test_recording_process_exit_failure_is_not_valid_evidence(self):
+        row = self.clip(recorder_exit_code=1)
+        self.assertEqual(assess_clip(row, self.root, probe=self.probe)['reason'],
+                         'recording_process_failed')
+
+    def test_shutdown_timeout_and_overlapping_capture_are_not_completed(self):
+        for reason in ('observer_shutdown', 'max_clip_duration',
+                       'overlapping_test_start', 'recorder_exited_early'):
+            with self.subTest(reason=reason):
+                row = self.clip(stop_reason=reason)
+                self.assertEqual(
+                    assess_clip(row, self.root, probe=self.probe)['reason'],
+                    'incomplete_recording')
+
+    def test_malformed_and_missing_real_tap_routes_are_rejected(self):
+        for route in ('fake-gallery', None, '', 'native-ios-tab-files;fake'):
+            with self.subTest(route=route):
+                row = self.clip(first_tap_route=route)
+                self.assertEqual(
+                    assess_clip(row, self.root, probe=self.probe)['reason'],
+                    'invalid_tap_marker')
+
+    def test_bad_or_short_recorder_timeline_cannot_validate_navigation(self):
+        for duration in (None, float('nan'), -1, 3.5):
+            with self.subTest(duration=duration):
+                row = self.clip(duration_s=duration)
+                self.assertEqual(
+                    assess_clip(row, self.root, probe=self.probe)['reason'],
+                    'invalid_recording_timeline')
+
+    def test_zero_required_does_not_pass_without_real_clips(self):
+        (self.root / 'trace.jsonl').write_text('')
+        result = audit(self.root, required=0, probe=self.probe)
+        self.assertFalse(result['pass'])
+        self.assertEqual(result['usable_routes'], 0)
+
+    def test_invalid_non_object_trace_fails_closed_without_crashing(self):
+        (self.root / 'trace.jsonl').write_text('["not a clip"]\\n')
+        result = audit(self.root, required=1, probe=self.probe)
+        self.assertFalse(result['pass'])
+        self.assertEqual(result['reason'], 'malformed_video_trace')
+
+    def test_duplicate_clip_is_not_hidden_by_other_six_successes(self):
+        rows = [self.clip(name) for name in list(TEST_ROUTES)[:6]]
+        rows.append(dict(rows[0]))
+        (self.root / 'trace.jsonl').write_text(
+            '\\n'.join(json.dumps(x) for x in rows) + '\\n')
+        result = audit(self.root, required=6, probe=self.probe)
+        self.assertFalse(result['pass'])
+        self.assertEqual(result['rejected_by_reason'], {'duplicate_test_clip': 1})
+
+    def test_one_failed_clip_cannot_hide_behind_six_successes(self):
+        rows = [self.clip(name) for name in list(TEST_ROUTES)[:7]]
+        rows[-1]['test_outcome'] = 'failed'
+        (self.root / 'trace.jsonl').write_text(
+            '\\n'.join(json.dumps(x) for x in rows) + '\\n')
+        result = audit(self.root, required=6, probe=self.probe)
+        self.assertFalse(result['pass'])
+        self.assertEqual(result['rejected_by_reason'], {'xctest_not_passed': 1})
+
+    def test_late_real_finish_reconciles_bounded_video_outcome(self):
+        name = 'testRapidGalleryFilesTabOscillationPreservesBothShells'
+        process = MockProcess()
+        clock = iter([0, 2.0, 2.1, 22.0, 22.1])
+        recorder = VideoRecorder(
+            '00000000-0000-0000-0000-000000000001', self.root,
+            popen=lambda *a, **kw: process, clock=lambda: next(clock))
+        recorder.process(f"Test Case '-[Suite.Case {name}]' started.")
+        (self.root / (TEST_ROUTES[name] + '.mp4')).write_bytes(b'mp4' * 512)
+        recorder.process('IOS_NATIVE_NAV_TAP_START route=native-ios-tab-files')
+        recorder.tick()
+        self.assertIsNone(recorder.records[0]['test_outcome'])
+        recorder.process(f"Test Case '-[Suite.Case {name}]' passed (21s).")
+        saved = json.loads((self.root / 'trace.jsonl').read_text().splitlines()[0])
+        self.assertEqual(saved['test_outcome'], 'passed')
+        self.assertEqual(saved['recorder_exit_code'], 0)
+        self.assertEqual(saved['stop_reason'], 'bounded_post_tap_window')
+
+    def test_real_failed_finish_is_preserved_in_trace(self):
+        clock = iter([0, 2, 2.1, 10])
+        recorder = VideoRecorder(
+            '00000000-0000-0000-0000-000000000001', self.root,
+            popen=lambda *a, **kw: MockProcess(), clock=lambda: next(clock))
+        name = 'testRapidGalleryFilesTabOscillationPreservesBothShells'
+        recorder.process(f"Test Case '-[Suite.Case {name}]' started.")
+        (self.root / (TEST_ROUTES[name] + '.mp4')).write_bytes(b'mp4' * 512)
+        recorder.process('IOS_NATIVE_NAV_TAP_START route=native-ios-tab-files')
+        recorder.process(f"Test Case '-[Suite.Case {name}]' failed (12s).")
+        recorded = json.loads((self.root / 'trace.jsonl').read_text().splitlines()[0])
+        self.assertEqual(recorded['test_outcome'], 'failed')
+        self.assertEqual(
+            assess_clip(recorded, self.root, probe=self.probe)['reason'],
+            'xctest_not_passed')
 
 
 if __name__ == '__main__':
