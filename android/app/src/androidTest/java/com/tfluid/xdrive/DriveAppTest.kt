@@ -3828,7 +3828,9 @@ class DriveAppTest {
                     compose.onNodeWithText("发送范围：当前账号广播").assertExists()
                 }.isSuccess
             }
-            compose.onNodeWithTag("native-clipboard-draft").assertTextEquals("")
+            compose.onNodeWithTag("native-clipboard-draft")
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
+            compose.onNodeWithTag("native-clipboard-directed-send").assertDoesNotExist()
             compose.runOnIdle { org.junit.Assert.assertTrue(clipboardWrites.isEmpty()) }
         }
     }
