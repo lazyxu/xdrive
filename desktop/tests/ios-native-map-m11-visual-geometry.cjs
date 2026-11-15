@@ -25,6 +25,7 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
   assert.match(local, /PHImageManager\.default\(\)\.cancelImageRequest\(request\)/)
   assert.match(local, /PHImageResultIsDegradedKey/)
   assert.match(local, /self\.epoch == snapshot/)
+  assert.match(local, /if !degraded \|\| failed \{/)
   assert.match(local, /isAccessibilityElement = !provisional/)
   assert.match(cloud, /isAccessibilityElement = enabled/)
   assert.doesNotMatch(layout, /PHAsset|Owner|URLSession|upload|requestAuthorization/)

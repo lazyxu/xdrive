@@ -9,7 +9,7 @@ import UIKit
 /// A scan retains at most 64 aggregate records and one bounded Gallery page;
 /// it never persists PhotoKit identifiers, coordinates or cloud credentials.
 private enum XDriveIOSUnifiedSourceMapPolicy {
-    static let maximumPages = 10_000
+    static let maximumPages = XDriveIOSNativeUnifiedMapSeekPolicy.maximumPages
     // A sparse 48-row Gallery window may have >256 nonmatching pages
     // between two GPS members. Do not stop before the proved map's bound.
     static let maximumWallSeekPages = maximumPages
@@ -1590,7 +1590,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             var cursor: XDriveIOSNativeGalleryCursor? = start
             do {
                 for inspected in 0..<XDriveIOSUnifiedSourceMapPolicy.maximumWallSeekPages {
-                    if inspected > 0 && inspected % 256 == 0 { await Task.yield() }
+                    if XDriveIOSNativeUnifiedMapSeekPolicy.shouldYield(beforePage: inspected) {
+                        await Task.yield()
+                    }
                     try Task.checkCancellation()
                     guard generation == ticket, active, let from = cursor else { return }
                     let model = XDriveIOSNativeUnifiedPhotoTimeline()
