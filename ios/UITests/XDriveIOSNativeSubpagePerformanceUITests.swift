@@ -122,6 +122,14 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 _ = reveal(app.buttons[label].firstMatch, app: app)
             case "files.tags":
                 _ = filesHomeAction("native-ios-files-home-manage-tags", app: app)
+            case "files.home.more-organizer":
+                let menu = view("native-ios-files-more-options", app: app)
+                XCTAssertTrue(menu.waitForExistence(timeout: 15) && menu.isHittable,
+                              "Real Files toolbar More menu unavailable")
+                menu.tap()
+                XCTAssertTrue(view("native-ios-files-toolbar-organize-home", app: app)
+                    .waitForExistence(timeout: 15),
+                    "Native Files toolbar organizer unavailable")
             case "files.home.edit-mode":
                 let edit = view("native-ios-files-home-edit-toggle", app: app)
                 XCTAssertTrue(edit.waitForExistence(timeout: 15))
@@ -205,6 +213,19 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         } else if route == "gallery.map.from-launcher" {
             tap("native-ios-tab-launcher", app: app)
             _ = reveal(view("native-ios-launcher-map", app: app), app: app)
+        } else if route == "gallery.sort-menu.filters" {
+            tap("native-ios-tab-gallery", app: app)
+            tap("native-ios-gallery-sort-filter-menu", app: app)
+            XCTAssertTrue(view("native-ios-gallery-sort-filter-open-filters", app: app)
+                .waitForExistence(timeout: 15),
+                "Real Gallery sorting menu did not expose its filter editor")
+        } else if route == "gallery.wall.month-group" {
+            tap("native-ios-tab-gallery", app: app)
+            XCTAssertTrue(view("native-ios-shared-photo-time-scale", app: app)
+                .waitForExistence(timeout: 15),
+                "Actual photo wall time-scale picker not mounted")
+            XCTAssertTrue(app.segmentedControls.buttons["月"].firstMatch
+                .waitForExistence(timeout: 15))
         } else if route == "gallery.filters.sheet" {
             tap("native-ios-tab-gallery", app: app)
             let entry = view("native-ios-gallery-open-filters", app: app)
@@ -287,6 +308,9 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "files.tags":
             tap("native-ios-files-home-manage-tags", app: app)
             ready = view("native-ios-files-tag-management", app: app)
+        case "files.home.more-organizer":
+            tap("native-ios-files-toolbar-organize-home", app: app)
+            ready = app.navigationBars["整理浏览首页"].firstMatch
         case "files.home.edit-mode":
             tap("native-ios-files-home-edit-toggle", app: app)
             ready = view("native-ios-files-home-edit-toggle", app: app)
@@ -351,6 +375,14 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "gallery.cache.sheet":
             app.buttons["释放本机缓存空间（不删除照片原件）"].firstMatch.tap()
             ready = view("native-ios-backup-cache-sheet-close", app: app)
+        case "gallery.sort-menu.filters":
+            tap("native-ios-gallery-sort-filter-open-filters", app: app)
+            ready = view("native-ios-unified-gallery-map-scope", app: app)
+        case "gallery.wall.month-group":
+            let month = app.segmentedControls.buttons["月"].firstMatch
+            XCTAssertTrue(month.isHittable)
+            month.tap()
+            ready = view("native-ios-shared-photo-time-scale", app: app)
         case "gallery.filters.sheet":
             tap("native-ios-gallery-open-filters", app: app)
             ready = view("native-ios-unified-gallery-map-scope", app: app)
@@ -399,6 +431,10 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         }
         if route == "clipboard.target-scope" {
             XCTAssertTrue(ready.isHittable, "Native Clipboard menu never opened")
+        }
+        if route == "gallery.wall.month-group" {
+            XCTAssertTrue(app.segmentedControls.buttons["月"].firstMatch.isSelected,
+                          "Native Gallery did not actually select monthly grouping")
         }
         if route == "notes.source.ios-backup" {
             XCTAssertEqual(ready.value as? String, "iOS 备份")
@@ -472,6 +508,8 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             let closed = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "exists == false"), object: tag)
             XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 12), .completed)
+        case "files.home.more-organizer":
+            finishOrganizer(app)
         case "files.home.edit-mode":
             tap("native-ios-files-home-edit-toggle", app: app)
             XCTAssertEqual(view("native-ios-files-home-edit-toggle", app: app).label,
@@ -547,6 +585,17 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             tap("native-ios-backup-cache-sheet-close", app: app)
             XCTAssertTrue(view("native-ios-unified-photo-gallery", app: app)
                 .waitForExistence(timeout: 15))
+        case "gallery.sort-menu.filters":
+            let cancel = app.buttons["取消"].firstMatch
+            XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+            cancel.tap()
+            XCTAssertTrue(view("native-ios-unified-photo-gallery", app: app)
+                .waitForExistence(timeout: 15))
+        case "gallery.wall.month-group":
+            let all = app.segmentedControls.buttons["全部"].firstMatch
+            XCTAssertTrue(all.waitForExistence(timeout: 15))
+            all.tap()
+            XCTAssertTrue(all.isSelected, "Gallery month-group cleanup did not reset grouping")
         case "gallery.filters.sheet":
             let cancel = app.buttons["取消"].firstMatch
             XCTAssertTrue(cancel.waitForExistence(timeout: 15))
@@ -723,4 +772,7 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     func testSubpageMineGalleryShortcut() { run("mine.gallery-shortcut") }
     func testSubpageClipboardTargetScope() { run("clipboard.target-scope") }
     func testSubpageClipboardHistoryScroll() { run("clipboard.history-scroll") }
+    func testSubpageFilesHomeMoreOrganizer() { run("files.home.more-organizer") }
+    func testSubpageGallerySortMenuFilters() { run("gallery.sort-menu.filters") }
+    func testSubpageGalleryWallMonthGroup() { run("gallery.wall.month-group") }
 }

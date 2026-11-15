@@ -90,11 +90,11 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertEqual(report["rows"][0]["app_peak_memory_p95_mib"], 3)
         self.assertFalse(report["real_signed_owner_data"])
 
-    def test_actual_repository_registration_has_all_thirty_six_routes(self):
+    def test_actual_repository_registration_has_all_thirty_nine_routes(self):
         module.ROUTES = self.old
         registered = module.source_routes(module.SOURCE.read_text(encoding="utf-8"))
         self.assertEqual(set(registered.values()), set(module.ROUTES))
-        self.assertEqual(len(module.ROUTES), 36)
+        self.assertEqual(len(module.ROUTES), 39)
 
     def test_gallery_backup_routes_use_existing_product_navigation(self):
         gallery = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
@@ -241,6 +241,23 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertIn('NavigationLink("缩略图缓存")', dashboard)
         self.assertIn('native-ios-gallery-thumbnail-cache', suite)
         self.assertIn('app.navigationBars["缩略图缓存"]', suite)
+
+    def test_more_files_and_gallery_presentation_paths_are_real(self):
+        suite = module.SOURCE.read_text(encoding="utf-8")
+        for route in ("files.home.more-organizer",
+                      "gallery.sort-menu.filters", "gallery.wall.month-group"):
+            self.assertIn(f'run("{route}")', suite)
+            self.assertEqual(suite.count(f'case "{route}":') +
+                             suite.count(f'else if route == "{route}"'), 3)
+        files = (module.ROOT / "ios/XDriveIOS/NativeCloudFilesBrowser.swift").read_text(
+            encoding="utf-8")
+        gallery = (module.ROOT / "ios/XDriveIOS/NativeUnifiedPhotoGallery.swift").read_text(
+            encoding="utf-8")
+        shared = (module.ROOT / "ios/XDriveIOS/NativePhotoWallComponents.swift").read_text(
+            encoding="utf-8")
+        self.assertIn('accessibilityIdentifier("native-ios-files-toolbar-organize-home")', files)
+        self.assertIn('accessibilityIdentifier("native-ios-gallery-sort-filter-open-filters")', gallery)
+        self.assertIn('accessibilityIdentifier("native-ios-shared-photo-time-scale")', shared)
 
     def test_missing_actual_screenshot_fails(self):
         bad = "\n".join(x for x in fake_log().splitlines()

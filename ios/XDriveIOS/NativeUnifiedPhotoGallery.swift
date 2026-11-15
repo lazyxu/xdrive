@@ -208,6 +208,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             draft = query
                             showFilters = true
                         }
+                        .accessibilityIdentifier("native-ios-gallery-sort-filter-open-filters")
                         Button {
                             showMapForAppliedQuery()
                         } label: {

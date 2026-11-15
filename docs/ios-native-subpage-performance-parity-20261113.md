@@ -9,8 +9,9 @@ The original 25-route AX-ready baseline passed 75/75 on \`a32cac1\`.
 This follow-up is now directly targeted at master, not stacked onto an
 unmerged development parent.
 
-This additive PR registers **33 native interaction/entry paths** (the previous
-28 plus 5 existing Files/Gallery/Mine subpage journeys),
+This additive PR currently registers **39 native interaction/entry paths**
+(the original 33, three Clipboard/Mine additions, and three newer menu/grouping
+interactions),
 without inventing Owner authentication or media fixtures. It retains separate
 route IDs and test cases even where multiple navigation paths render the same
 SwiftUI component. Repetition is deliberate: user-perceived entry costs and
@@ -37,9 +38,15 @@ resource lifetimes differ.
 | gallery.backup.settings | 图库备份菜单 → 备份设置详情 | native-ios-backup-portrait-form | Navigation only; no settings write |
 | gallery.backup.audit | 图库备份菜单 → 云端原件核验详情 | native-ios-backup-portrait-form | Navigation only; no receipt mutation |
 | gallery.cache.sheet | 图库备份菜单 → 缩略图缓存 Sheet | native-ios-backup-cache-sheet-close | Real cache-management sheet; no deletion |
+| files.home.more-organizer | 文件→更多→整理浏览首页 | Organizer navigation bar | Actual toolbar Menu, no authenticated files |
 | files.home.edit-mode | 文件 → 浏览首页 → 编辑 → 完成模式 | Native Files edit toolbar changes to 完成 | No authenticated files; UI mode only |
+| gallery.sort-menu.filters | 统一图库→排序和筛选菜单→筛选编辑页 | native-ios-unified-gallery-map-scope | Genuine native Menu→Sheet, no Owner fixture |
+| gallery.wall.month-group | 统一图库→照片时间分组→月→全部 | native-ios-shared-photo-time-scale selected state | Native presentation change, no real large-data scroll |
 | gallery.filters.sheet | 统一图库 → 搜索与筛选 Sheet | native-ios-unified-gallery-map-scope | Genuine filter sheet, no authorized search results |
 | gallery.people.page | 统一图库 → 人物页 | native-ios-gallery-people-page | Genuine screen, not face-content benchmark |
+| clipboard.target-scope | 剪贴板→接收范围选择 | native-ios-clipboard-target-picker | No-Session native menu |
+| clipboard.history-scroll | 剪贴板编辑器→历史说明→恢复编辑器 | Actual ScrollView footer/editor | No populated real Owner history |
+| mine.gallery-shortcut | 我的→相册与照片墙→我的 | native-ios-unified-photo-gallery | Genuine shortcut and return |
 | mine.thumbnail-cache | 我的 → 缩略图缓存 | native-ios-gallery-thumbnail-cache | Genuine cache screen, no deletion |
 | gallery.originals.help | 云端原件 → 说明弹窗 | 云端备份原件说明 alert | Genuine alert; no cloud media access |
 | gallery.local.date-sheet | 本机照片 → 按日期定位 Sheet | 按日期定位 navigation bar | Real PhotoKit UI; not 100k populated library |
@@ -52,7 +59,7 @@ resource lifetimes differ.
 | transfers.open-files | 传输 → 打开文件 | native-ios-files-section-browse | Native 5-slot navigation |
 | transfers.open-backup | 传输 → 相册备份 | native-ios-backup-overview | Native route; no upload |
 
-All thirty-three routes use real product-owned SwiftUI views or native UI modes, but some are
+All thirty-nine routes use real product-owned SwiftUI views or native UI modes, but some are
 **distinct entry paths into the same underlying screen**, not 15 unique
 screens. The original nine-path Simulator run [#43249473366](https://github.com/lazyxu/xdrive/actions/runs/43249473366)
 passed on `a39441a`. An actual 20-route Simulator run
@@ -197,3 +204,18 @@ means 132 invocations, 99 retained values for each metric, and 33 screenshots.
 This code registration is not evidence of a passed 33-route Simulator or CI.
 Authenticated 10k/100k, first composed media frame, MapKit #4344's #4305
 dependency, 60/120Hz and 1/4 GiB native transfers remain unverified.
+
+
+### 2026-11-15 — additive 39-route native child coverage (candidate, not verified)
+
+Added three previously unmeasured genuine interaction paths in existing #4328:
+Files Home toolbar More → Organizer; unified Gallery sorting Menu → filter editor;
+and unified Gallery time grouping All → Month → All. Each path uses the
+original native views, tap-to-AX timing, app-targeted CPU and peak physical
+memory, separate return timing and original post-AX and post-return screenshots.
+Source-only registration is not test success: current exact-HEAD Simulator must
+prove **39 routes × (warmup + n=3) = 156 invocations**, **117 retained stage,
+forward, return, CPU and memory samples each**, and **39 pairs of screenshots**.
+These no-Session presentation flows do not establish authenticated Files, actual
+thumbnails, frame pacing, media decoding, 10k/100k or native 1/4GiB transfers.
+Keep Draft until all required latest-head gates pass.
