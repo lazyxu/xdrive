@@ -61,7 +61,7 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         tap("native-ios-tab-launcher", app)
         ready("native-ios-launcher-search", app)
         let button = element("native-ios-launcher-" + route, app)
-        let scroll = app.scrollViews.firstMatch
+        let scroll = element("native-ios-launcher-scroll", app)
         XCTAssertTrue(scroll.waitForExistence(timeout: 15), "Launcher scroll missing")
         for _ in 0..<10 {
             if button.exists && button.isHittable { break }
@@ -91,7 +91,15 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
     private func filesHomeChild(_ id: String, page: String, _ app: XCUIApplication) {
         tap("native-ios-tab-files", app)
         ready("native-ios-files-section-browse", app)
-        let home = app.collectionViews.firstMatch
+        // An Owner can restore Recent/Favorites. Existence of Browse alone
+        // does not mean the actual Home list is mounted.
+        tap("native-ios-files-section-browse", app)
+        let selected = element("native-ios-files-section-browse", app)
+        let selectedExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已选择"), object: selected)
+        XCTAssertEqual(XCTWaiter.wait(for: [selectedExpectation], timeout: 8),
+                       .completed, "Files Browse must be selected before opening Home child")
+        let home = element("native-ios-files-home-list", app)
         XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
         let target = element(id, app)
         for _ in 0..<10 {

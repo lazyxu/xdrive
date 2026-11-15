@@ -2554,6 +2554,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                 filesBatchOperations
             }
         }
+        // Pin real Files List rather than the first retained collection view.
+        .accessibilityIdentifier(isHome ? "native-ios-files-home-list" : "native-ios-files-folder-list")
     }
 
     /// Non-reflowing feedback shares one native location for progress,

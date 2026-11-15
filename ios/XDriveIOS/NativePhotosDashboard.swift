@@ -955,6 +955,8 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
             .padding(14)
         }
+        // Explicit host prevents UI tests from scrolling an offscreen retained Gallery.
+        .accessibilityIdentifier("native-ios-launcher-scroll")
     }
 
     @ViewBuilder
