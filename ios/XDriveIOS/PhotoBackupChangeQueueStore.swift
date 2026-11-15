@@ -509,6 +509,14 @@ final class XDriveIOSPhotoBackupChangeQueueStore {
         return page.map { $0.pending }
     }
 
+    /// An eligible page may contain more uploads than this run's 20-file
+    /// cap. Keep inspecting that same page until its visible originals are
+    /// settled; only move on once no visible row remains. Never reset a
+    /// PhotoKit token or a receipt, only this optional selection cursor.
+    func repeatPendingPageAfterVisibleProgress() throws {
+        try execute("DELETE FROM pending_inspection WHERE id=1")
+    }
+
     /// Compare-and-set after the shared original writer returns a verified
     /// Node receipt, or a proven item-local failure. A concurrent PhotoKit edit
     /// increments the row revision, so an old callback cannot clear new work.

@@ -148,7 +148,14 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         // every newer/older eligible original for every subsequent tick.
         // This read-only cursor never settles an item or advances history.
         let next = try store.pendingBeyondInvisibleHead(limit: limit)
-        return try currentVisibleCandidates(next, epoch: epoch)
+        let eligible = try currentVisibleCandidates(next, epoch: epoch)
+        if !eligible.isEmpty {
+            // The writer caps each automatic pass at 20 new originals.
+            // Returning a 64-item page does not prove all were uploaded.
+            // Revisit this page until every visible member settles.
+            try store.repeatPendingPageAfterVisibleProgress()
+        }
+        return eligible
     }
 
     private func currentVisibleCandidates(

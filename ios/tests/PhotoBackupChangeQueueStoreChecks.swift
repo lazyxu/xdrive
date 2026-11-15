@@ -633,6 +633,11 @@ import SQLite3
             let second = try store.pendingBeyondInvisibleHead(limit: 64)
             afterHead = Set(second.map(\.localIdentifier))
             precondition(second.count == 64 && first64.isDisjoint(with: afterHead))
+            // If only 20/64 eligible originals upload in one run, the next
+            // run must revisit the same fallback page before older pages.
+            try store.repeatPendingPageAfterVisibleProgress()
+            let repeated = try store.pendingBeyondInvisibleHead(limit: 64)
+            precondition(Set(repeated.map(\.localIdentifier)) == afterHead)
             try expect(try store.counts().pending == 193)
             try expect(try store.baseline()?.token == Data([161]))
             precondition(first64 == Set(try store.pending(limit: 64).map(\.localIdentifier)))

@@ -289,6 +289,9 @@ test('invisible PhotoKit head rotates to bounded older candidates without losing
   assert.match(source, /let visible = try currentVisibleCandidates\(pending, epoch: epoch\)/)
   assert.match(source, /if !visible\.isEmpty \|\| pending\.count < limit \{ return visible \}/)
   assert.match(source, /store\.pendingBeyondInvisibleHead\(limit: limit\)/)
-  assert.match(source, /return try currentVisibleCandidates\(next, epoch: epoch\)/)
+  assert.match(source, /let eligible = try currentVisibleCandidates\(next, epoch: epoch\)/)
+  assert.match(source, /store\.repeatPendingPageAfterVisibleProgress\(\)/)
+  assert.match(store, /func repeatPendingPageAfterVisibleProgress\(\) throws/)
+  assert.match(store, /DELETE FROM pending_inspection WHERE id=1/)
   assert.doesNotMatch(source, /markMissing\(.*invisible|settle\(.*invisible/)
 });
