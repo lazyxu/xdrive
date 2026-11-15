@@ -152,6 +152,7 @@ test('all 14 Launcher destinations and ten native all-page/child process crash j
 })
 
 
+
 test('crash sweep targets the actual mounted Launcher and selected Files Home, never an arbitrary retained ScrollView', () => {
   const sweep = fs.readFileSync(
     path.join(root, 'ios/UITests/XDriveIOSAllNativePagesCrashSweepUITests.swift'), 'utf8'
@@ -159,11 +160,11 @@ test('crash sweep targets the actual mounted Launcher and selected Files Home, n
   const dashboard = fs.readFileSync(
     path.join(root, 'ios/XDriveIOS/NativePhotosDashboard.swift'), 'utf8'
   )
-  assert.match(sweep, /element\\("native-ios-launcher-scroll", app\\)/)
-  assert.match(sweep, /element\\("native-ios-files-home-list", app\\)/)
-  assert.match(sweep, /tap\\("native-ios-files-section-browse", app\\)/)
-  assert.match(sweep, /XCTNSPredicateExpectation\\(/)
-  assert.doesNotMatch(sweep, /app\\.(scrollViews|collectionViews)\\.firstMatch/)
-  assert.match(dashboard, /\\.accessibilityIdentifier\\("native-ios-launcher-scroll"\\)/)
-  assert.match(files, /\\.accessibilityIdentifier\\(isHome \\? "native-ios-files-home-list" : "native-ios-files-folder-list"\\)/)
+  assert.match(sweep, /element\("native-ios-launcher-scroll", app\)/)
+  assert.match(sweep, /element\("native-ios-files-home-list", app\)/)
+  assert.match(sweep, /tap\("native-ios-files-section-browse", app\)/)
+  assert.match(sweep, /XCTNSPredicateExpectation\(/)
+  assert.doesNotMatch(sweep, /app\.(scrollViews|collectionViews)\.firstMatch/)
+  assert.match(dashboard, /\.accessibilityIdentifier\("native-ios-launcher-scroll"\)/)
+  assert.match(files, /\.accessibilityIdentifier\(isHome \? "native-ios-files-home-list" : "native-ios-files-folder-list"\)/)
 })
