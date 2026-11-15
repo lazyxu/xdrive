@@ -35,6 +35,7 @@ def audit(marker, roots):
         'process': TARGET_PROCESS,
         'status': 'not_run',
         'reports_scanned_after_marker': 0,
+        'available_report_roots': 0,
         'app_crash_report_count': 0,
         'app_crash_report_names': [],
         'scan_errors': [],
@@ -48,6 +49,7 @@ def audit(marker, roots):
         root = pathlib.Path(root)
         if not root.is_dir():
             continue
+        summary['available_report_roots'] += 1
 
         def onerror(exc):
             summary['scan_errors'].append(type(exc).__name__)
@@ -67,6 +69,10 @@ def audit(marker, roots):
                         found.add(path.name)
                 except OSError as exc:
                     summary['scan_errors'].append(type(exc).__name__)
+    # A fresh Runner or invalid simulator ID can make every diagnostics path
+    # unavailable. Missing evidence is not proof that the app stayed alive.
+    if summary['available_report_roots'] == 0:
+        summary['scan_errors'].append('no_crash_report_roots_available')
     summary['app_crash_report_names'] = sorted(found)
     summary['app_crash_report_count'] = len(found)
     summary['status'] = ('fail' if found else 'error' if summary['scan_errors'] else 'pass')

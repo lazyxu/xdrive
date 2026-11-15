@@ -93,5 +93,28 @@ class NativeCrashAuditTests(unittest.TestCase):
         self.assertEqual(report['status'], 'fail')
 
 
+    def test_missing_all_crash_report_roots_cannot_pass(self):
+        result = audit(self.marker, [self.root / 'missing'])
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['available_report_roots'], 0)
+        self.assertIn('no_crash_report_roots_available', result['scan_errors'])
+
+    def test_optional_missing_directory_does_not_hide_real_app_crash(self):
+        self.make_report('xDriveIOS-incident.ips', '{}', root=self.host)
+        result = audit(self.marker, [self.root / 'missing', self.host])
+        self.assertEqual(result['status'], 'fail')
+        self.assertEqual(result['available_report_roots'], 1)
+        self.assertEqual(result['app_crash_report_count'], 1)
+
+    def test_cli_fails_closed_when_all_report_directories_are_missing(self):
+        destination = self.root / 'audit.json'
+        rc = main(['--marker', str(self.marker), '--output', str(destination),
+                   str(self.root / 'missing')])
+        self.assertEqual(rc, 1)
+        report = json.loads(destination.read_text())
+        self.assertEqual(report['status'], 'error')
+        self.assertIn('no_crash_report_roots_available', report['scan_errors'])
+
+
 if __name__ == '__main__':
     unittest.main()
