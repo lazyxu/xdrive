@@ -47,8 +47,9 @@ test('P1-03 cross-range date headers use verified chronology rather than guessed
   assert.match(ownerMap, /xdriveIOSNativePhotoWallVisibleSections\(/)
 })
 test('P1-04 Viewer focus only returns to one exact live and authorized tile', () => {
-  assert.match(sourceMap, /guard active, viewing == nil, let id = viewerReturnID/)
-  assert.match(sourceMap, /filter\(\{ \$0\.id == id \}\)\.count == 1/)
+  assert.match(sourceMap, /guard activeID == nil, active, let anchor = viewerReturnID/)
+  assert.match(sourceMap, /filter\(\{ \$0\.id == anchor \}\)\.count == 1/)
+  assert.match(sourceMap, /viewerOpeningID != anchor \|\| !sameWindow/)
   assert.match(sourceMap, /xdrivePhotoWallFocusVerifiedTile\(/)
   assert.match(localMap, /XDriveIOSMapCurrentPhotoKitAdmission\.allows\(/)
   assert.match(ownerMap, /sameVisibleRevision\(as:/)

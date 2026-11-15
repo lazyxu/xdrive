@@ -127,7 +127,8 @@ test('P0-06: Viewer return restores exact visible tile, never stale PhotoKit or 
   assert.match(album, /restoreAfterViewer\(\)/)
   assert.match(cluster, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
   // Cosmetic framing is allowed; Owner identity, signed ranges and Viewer anchors are not stored.
-  assert.doesNotMatch(cluster, /UserDefaults\.set|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")[^"]+"/)
+  assert.match(cluster, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+  assert.doesNotMatch(cluster, /UserDefaults\.set|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-(?:framing|density)\.v1")[^"]+"/)
 })
 
 test('P1-07: continuous scroll, reserved placeholders and request cancellation stay bounded', () => {
