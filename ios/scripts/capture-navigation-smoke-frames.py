@@ -410,6 +410,34 @@ TARGETS.update({
     "testOriginalsHelpTwiceWithDeniedFilesKeepsPanelsRetired",
 })
 
+# Complete the low-overhead diagnostic observer for every independent
+# native navigation and MapKit XCTest. These remain real Simulator frames,
+# not process-crash reports, signed-device footage, or proof of 60/120Hz FPS.
+MINIMAL_TARGETS.update({
+    "testInterruptedPostLoginOpensRecoveryAndIsolatedSignInWithoutDashboard",
+    "testFilesFirstOpenAndSixGalleryReturnsDoNotExit",
+    "testFilesRecentBrowseFavoritesRepeatedWithoutCrash",
+    "testSyntheticOwnerFilesRootDoesNotCrashOnAuthFailure",
+    "testSyntheticOwnerFilesRailAndGalleryStayAlive",
+    "testDirectFilesShellCanMountWithoutLoggedInServer",
+    "testDirectFilesShellWithOfflineOwnerDoesNotExit",
+    "testFilesTopLevelNavigationRemainsResponsive",
+    "testNativeFiveTabsHaveDistinctAccessibilityTargets",
+    "testFilesRailHasThreeIndependentNavigationTargets",
+    "testGallerySourceSwitchAndReturnKeepsToolbarMounted",
+    "testGalleryFilterCancelRestoresSameTab",
+    "testGalleryPeopleChildOpensWithoutDestroyingParentTab",
+    "testFilesSearchEntryKeepsNativeBrowserAlive",
+    "testSyntheticOwnerSavedSearchesRepeatedSheetReturn",
+    "testSyntheticOwnerOperationsHistoryRepeatedSheetReturn",
+    "testSyntheticOwnerGalleryCacheReturnKeepsMineMounted",
+    "testFilesHomeInlineEditKeepsBrowseShellAndRestoresDone",
+    "testMapCameraLayoutAndUnverifiedGestureNeverClosesTheApp",
+    "testAFirstTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap",
+})
+TARGETS.update(MINIMAL_TARGETS)
+
+
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")
