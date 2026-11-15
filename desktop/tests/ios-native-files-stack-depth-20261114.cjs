@@ -111,3 +111,40 @@ test('signed-in Gallery never eagerly mounts the Files view graph; first Files v
   assert.match(restore, /navigationRouteStore\.restore\(scopeHash: scopeHash\)/)
   assert.doesNotMatch(restore, /resumeStore\.clear\(|XDriveIOSNativeFilesResumeStore\(\)\.clear\(/)
 })
+
+test('all 14 Launcher destinations and ten native all-page/child process crash journeys run in real Simulator', () => {
+  const sweep = fs.readFileSync(
+    path.join(root, 'ios/UITests/XDriveIOSAllNativePagesCrashSweepUITests.swift'), 'utf8'
+  )
+  const watcher = fs.readFileSync(
+    path.join(root, 'ios/scripts/capture-navigation-smoke-frames.py'), 'utf8'
+  )
+  const workflow = fs.readFileSync(
+    path.join(root, '.github/workflows/ios-native-navigation-runtime.yml'), 'utf8'
+  )
+  const methods = [...sweep.matchAll(/\bfunc\s+(test\w+)\(\)/g)].map(match => match[1])
+  assert.equal(methods.length, 10, 'ten independent real native crash journeys are mandatory')
+  assert.equal(new Set(methods).size, methods.length)
+  for (const name of methods) {
+    assert.ok(watcher.includes('"' + name + '"'), 'missing bounded Simulator frame watcher: ' + name)
+  }
+  for (const route of ['local', 'albums', 'cloud', 'originals', 'map', 'files',
+                       'notes', 'clipboard', 'backup', 'transfers', 'sync',
+                       'storage', 'devices', 'diagnostics']) {
+    assert.ok(sweep.includes('"' + route + '"'), 'Launcher path missing: ' + route)
+  }
+  for (const child of ['native-ios-files-error-page', 'native-ios-files-trash-error-page',
+                       'native-ios-files-saved-searches-page', 'native-ios-files-operation-history-page',
+                       'native-ios-files-tag-management', 'native-ios-gallery-people-page',
+                       'native-ios-map-source-selector', 'native-ios-notes-source-picker',
+                       'ios-clipboard-status', 'native-ios-backup-portrait-form']) {
+    assert.ok(sweep.includes('"' + child + '"'), 'missing real native child assertion: ' + child)
+  }
+  assert.match(sweep, /XCTAssertEqual\(app\.state, \.runningForeground/)
+  assert.match(sweep, /-xdrive-ui-navigation-synthetic-owner/)
+  assert.match(sweep, /IOS_NATIVE_NAV_TAP_START/)
+  assert.doesNotMatch(sweep, /fakeToken|mockServerLogin|XCTSkip|bypassAuthorization/)
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllNativePagesCrashSweepUITests/)
+  assert.match(workflow, /candidate-navigation/)
+  assert.match(workflow, /ios\/UITests\/XDriveIOSAllNativePagesCrashSweepUITests\.swift/)
+})

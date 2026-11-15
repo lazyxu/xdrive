@@ -178,6 +178,20 @@ MINIMAL_TARGETS = {
     "testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank",
     "testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership",
 }
+# One frame per all-native-page crash journey; original taps remain logged.
+# These are real native XCTest routes, not fabricated Owner/Viewer data.
+MINIMAL_TARGETS.update({
+    "testLauncherPhotoDestinationsAndMapAcrossFilesDoNotExit",
+    "testLauncherToolDestinationsReturnWithoutExit",
+    "testLauncherUnavailablePagesRemainExplicitAndSafe",
+    "testFilesDeniedCloudTrashAndBackgroundReturnDoNotExit",
+    "testFilesSavedHistoryAndTagSheetsRetireAcrossTabs",
+    "testGalleryPeopleFilterAndMapChildrenReturnDoNotExit",
+    "testNotesSourceSwitchAndClipboardFileTabsDoNotExit",
+    "testClipboardDeniedReceiverAndTransfersReturnDoNotExit",
+    "testBackupAuditQueueAndFilesReturnDoNotExit",
+    "testMineSignedOutControlsAndGalleryReturnDoNotExit",
+})
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
 TARGETS.update({
