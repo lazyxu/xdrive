@@ -155,8 +155,10 @@ test('shared retry feedback preserves the current scope and exact caller action'
   assert.match(shared, /\.disabled\(!canRetry\)/)
   assert.doesNotMatch(shared, /PHPhotoLibrary|URLSession|login\.owner|accessToken|loadNext\(\)|model\.load\(/)
   for (const surface of [map, cluster, cloud]) {
-    assert.match(surface, /XDriveIOSNativePhotoWallRetryMessage\(/)
+    assert.match(surface, /XDriveIOSNativePhotoWallFeedback\(/)
   }
+  assert.match(shared, /struct XDriveIOSNativePhotoWallFeedback: View/)
+  assert.match(shared, /XDriveIOSNativePhotoWallRetryMessage\(/)
   assert.match(map, /canRetry: !busy && phase == \.active/)
   assert.match(map, /if worker != nil \{ loadNext\(\) \} else \{ loadInitial\(\) \}/)
   assert.match(cluster, /canRetry: !busy && activeOwner && viewing == nil/)
@@ -172,9 +174,13 @@ test('busy and empty feedback are one inert SwiftUI presentation, with source-ow
   assert.match(shared, /ProgressView\(message\)/)
   assert.match(shared, /\.accessibilityIdentifier\(accessibilityID\)/)
   assert.match(shared, /\.frame\(maxWidth: \.infinity, minHeight: minHeight, alignment: \.leading\)/)
-  for (const surface of [local, album, map, cluster, cloud, unified]) {
+  for (const surface of [local, album, cloud, unified]) {
     assert.match(surface, /XDriveIOSNativePhotoWallLoadingMessage\(/)
   }
+  for (const surface of [map, cluster]) {
+    assert.match(surface, /XDriveIOSNativePhotoWallFeedback\(/)
+  }
+  assert.match(shared, /XDriveIOSNativePhotoWallLoadingMessage\(/)
   for (const surface of [local, map, unified]) {
     assert.match(surface, /XDriveIOSNativePhotoWallStatusMessage\(/)
   }

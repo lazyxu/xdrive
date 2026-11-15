@@ -155,13 +155,14 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
   assert.match(density, /case compact, standard, large/)
   assert.match(density, /func applyingPinch\(/)
   for (const [name, source, expected] of [
-    ['local gallery', gallery, 2], ['local album', album, 1],
+    ['local gallery', gallery, 1], ['local album', album, 1],
     ['local location', map, 0], ['cloud gallery', cloud, 1],
     ['cloud cluster', cluster, 0]
   ]) {
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
       expected, name)
   }
+  assert.match(gallery, /XDriveIOSNativePhotoWallSectionList\(/)
   assert.equal((map.match(/\.xdrivePhotoWallPinch\(/g) || []).length, 2)
   assert.equal((map.match(/XDriveIOSNativePhotoWallSectionList\(/g) || []).length, 2)
   assert.match(album, /XDriveIOSNativePhotoWallSectionList\(/)

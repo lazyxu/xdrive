@@ -74,7 +74,7 @@ test('one shared native PhotoKit/Owner map, not a duplicate map or a second writ
 })
 
 test('unified Gallery wall density, query and return anchor survive modal map browsing', () => {
-  assert.match(gallery, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity/)
+  assert.match(gallery, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)\s*private var wallDensity: XDriveIOSNativePhotoWallDensity/)
   assert.match(gallery, /@State private var query = XDriveIOSNativeUnifiedGalleryQuery\(\)/)
   assert.match(gallery, /@State private var viewerReturnAnchor: String\?/)
   assert.match(gallery, /\.onDisappear \{\s*photoObserver\.stop\(\)/)

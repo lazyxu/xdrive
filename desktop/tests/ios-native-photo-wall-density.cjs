@@ -24,7 +24,8 @@ test('native Photos wall offers three square thumbnail densities, no change to o
   }
   assert.match(page, /let density: XDriveIOSNativePhotoWallDensity/)
   assert.match(page, /XDriveIOSNativeSquarePhotoTile\(\s*candidate: candidate, framing: framing/)
-  assert.equal((page.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 2)
+  assert.equal((page.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 1)
+  assert.match(page, /XDriveIOSNativePhotoWallSectionList\(\s*sections: daySections, density: density/)
   assert.match(shared, /minimum: density\.minimumCellWidth/)
   assert.match(shared, /maximum: density\.maximumCellWidth/)
   assert.match(shared, /LazyVGrid\(columns:/)

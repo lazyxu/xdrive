@@ -93,7 +93,7 @@ test('P2-2 density/framing are shared appearance-only preferences, not Owner/Pho
 
 test('P2-3 local selection, media badge and backup status retain their original source actions', () => {
   assert.match(local, /XDriveIOSNativePhotoWallSelectionIndicator\(/)
-  assert.match(local, /XDriveIOSNativeVisiblePhotoQueueBadgePolicy\.badge\(/)
+  assert.match(local, /XDriveIOSNativeVisiblePhotoQueueBadgePolicy\s*\.badge\(/)
   assert.match(local, /XDriveIOSNativeSquarePhotoTile\(/)
   assert.match(local, /if selectionMode \{\s*GeometryReader/)
   assert.match(local, /Button\("分享本机原件"\)/)
