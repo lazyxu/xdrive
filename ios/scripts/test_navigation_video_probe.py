@@ -361,7 +361,7 @@ class VideoEvidenceTests(unittest.TestCase):
         self.assertEqual(result['usable_routes'], 0)
 
     def test_invalid_non_object_trace_fails_closed_without_crashing(self):
-        (self.root / 'trace.jsonl').write_text('["not a clip"]\\n')
+        (self.root / 'trace.jsonl').write_text('["not a clip"]\n')
         result = audit(self.root, required=1, probe=self.probe)
         self.assertFalse(result['pass'])
         self.assertEqual(result['reason'], 'malformed_video_trace')
@@ -370,7 +370,7 @@ class VideoEvidenceTests(unittest.TestCase):
         rows = [self.clip(name) for name in list(TEST_ROUTES)[:6]]
         rows.append(dict(rows[0]))
         (self.root / 'trace.jsonl').write_text(
-            '\\n'.join(json.dumps(x) for x in rows) + '\\n')
+            '\n'.join(json.dumps(x) for x in rows) + '\n')
         result = audit(self.root, required=6, probe=self.probe)
         self.assertFalse(result['pass'])
         self.assertEqual(result['rejected_by_reason'], {'duplicate_test_clip': 1})
@@ -379,7 +379,7 @@ class VideoEvidenceTests(unittest.TestCase):
         rows = [self.clip(name) for name in list(TEST_ROUTES)[:7]]
         rows[-1]['test_outcome'] = 'failed'
         (self.root / 'trace.jsonl').write_text(
-            '\\n'.join(json.dumps(x) for x in rows) + '\\n')
+            '\n'.join(json.dumps(x) for x in rows) + '\n')
         result = audit(self.root, required=6, probe=self.probe)
         self.assertFalse(result['pass'])
         self.assertEqual(result['rejected_by_reason'], {'xctest_not_passed': 1})
