@@ -278,7 +278,6 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 }
                 viewerReturn = nil
                 viewerOpeningItem = nil
-                viewerOpeningItem = nil
             }
             .onChange(of: busy) { isBusy in
                 if !isBusy { advanceIfVisible() }
