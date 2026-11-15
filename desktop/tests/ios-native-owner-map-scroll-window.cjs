@@ -141,7 +141,11 @@ test('verified cloud map auto-paging restores the retained last tile when the tw
   assert.match(album, /private func invalidate\(\) \{[\s\S]*?viewerReturn = nil\s*viewerOpeningItem = nil\s*focusedTileID = nil\s*autoScrollReturn = nil/)
   assert.match(album, /if autoAdvance \|\| target != cursor \{ viewerReturn = nil \}\s*autoScrollReturn = nil/)
   assert.match(album, /if !autoAdvance \{[\s\S]*?priorWindow = nil\s*priorWindowCursor = nil/)
-  assert.match(album, /\} else \{\s*priorWindow = nil\s*priorWindowCursor = nil\s*autoScrollReturn = nil\s*coverImages = \[:\]/)
+  // Reverified SAME Owner+exact Node/revision may keep already painted covers
+  // during a manual reload; changed page/Owner must still clear old pixels.
+  assert.match(album, /\} else \{\s*priorWindow = nil\s*priorWindowCursor = nil\s*autoScrollReturn = nil\s*if target == departingCursor, let departingPage,\s*departingPage\.sameVisibleSnapshot\(as: fetched\), activeOwner/)
+  assert.match(album, /let verifiedIDs = Set\(fetched\.items\.map\(\\\.id\)\)\s*coverImages = coverImages\.filter \{\s*verifiedIDs\.contains\(\$0\.key\)/)
+  assert.match(album, /\} else \{\s*coverImages = \[:\]\s*\}/)
   assert.match(album, /xdrivePhotoWallFocusVerifiedTile\(\s*anchor\.id, scroll: returnScroll, focus: \$focusedTileID\s*\)\s*viewerReturn = nil/)
   assert.match(album, /currentOldPage\.sameVisibleSnapshot\(as: departingPage\)/)
   assert.match(album, /fetched\.total_count == facet\.item_count/)

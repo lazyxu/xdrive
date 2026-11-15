@@ -76,7 +76,10 @@ test('P0 late pagination: only same signed Node+revision set may keep cover pixe
 })
 
 test('P0 rapid Viewer return does not re-center an unchanged authorized item', () => {
-  assert.match(local, /if viewerOpeningID != id \{\s*scroll\.scrollTo\(id, anchor: \.center\)/)
+  // Shared presentation helper now performs the scroll + AX focus together.
+  // Same-photo Viewer return must update focus without another scroll jump.
+  assert.match(local, /if viewerOpeningID != id \{\s*xdrivePhotoWallFocusVerifiedTile\(\s*id, scroll: scroll, focus: \$focusedTileID\s*\)\s*\} else \{\s*focusedTileID = id/)
+  assert.match(local, /if viewerOpeningID != checkedID \{\s*xdrivePhotoWallFocusVerifiedTile\(\s*checkedID, scroll: scroll, focus: \$focusedTileID\s*\)\s*\} else \{\s*focusedTileID = checkedID/)
   assert.match(local, /viewerOpeningID = item\.id[\s\S]*?viewerReturnID = item\.id/)
   assert.match(cluster, /viewerOpeningItem = item[\s\S]*?viewerReturn = item/)
   assert.match(cluster, /viewerOpeningItem\.map\(\{[\s\S]*?!\$0\.sameVisibleRevision\(as: anchor\)[\s\S]*?\}\) \?\? true \{\s*returnScroll\.scrollTo/)
