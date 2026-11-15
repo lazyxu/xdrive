@@ -430,7 +430,7 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
 
     func testRealSignedOutPasswordShowHideOrientationAndForegroundDoNotExit() {
         let app = launchRealSignedOut()
-        let scroll = app.scrollViews.firstMatch
+        let scroll = app.scrollViews.containing(.any, identifier: "native-ios-login-password").firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 15))
         let show = app.buttons["显示密码"].firstMatch
         for _ in 0..<6 {
