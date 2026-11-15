@@ -1482,7 +1482,8 @@ struct XDriveIOSNativeServerMediaWall: View {
     @State private var showingGalleryHelp = false
     // Presentation-only, shared with the already-native local PhotoKit wall.
     // Does not participate in Owner, Range, thumbnail request or Viewer keys.
-    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all

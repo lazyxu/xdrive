@@ -84,7 +84,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // A Viewer may only promote an exact adjacent Range after verifying its
     // prior signed place page. No guessed place or cached media identities.
     @State private var pendingViewerCross: XDriveIOSOwnerClusterCursor?
-    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all

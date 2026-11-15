@@ -843,9 +843,14 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var viewing: XDriveIOSUnifiedMapViewerChoice?
     @State private var viewerReturnID: String?
     @State private var nearbyPresented = false
-    @State private var density: XDriveIOSNativePhotoWallDensity = .standard
-    @State private var framing: XDriveIOSNativePhotoWallFraming = .square
-    @State private var timeScale: XDriveIOSNativePhotoWallTimeScale = .day
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
+    @State private var viewerOpeningID: String?
+    @State private var viewerOpeningWindow: Int = -1
+    @AccessibilityFocusState private var focusedTileID: String?
     @State private var placeName: String?
     @State private var placeGeocoder = CLGeocoder()
     @State private var placeNameTask: Task<Void, Never>?
@@ -917,15 +922,16 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("native-ios-unified-map-place-name")
                 }
-                if let error {
-                    XDriveIOSNativePhotoWallRetryMessage(
-                        message: error, buttonTitle: "重新核对当前区域",
-                        canRetry: !busy && !opening
-                    ) { retryCurrentArea() }
-                }
-                if busy {
-                    XDriveIOSNativePhotoWallLoadingMessage(
-                        message: "核对当前区域的照片…")
+                XDriveIOSNativePhotoWallFeedback(
+                    isLoading: busy,
+                    loadingMessage: "核对当前区域的照片…",
+                    error: error,
+                    canRetry: !busy && !opening,
+                    buttonTitle: "重新核对当前区域"
+                ) { retryCurrentArea() }
+                if !isNearbyExpansion {
+                    XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                        .disabled(busy || opening || viewing != nil)
                 }
                 photoWall
                 if ended && previous.isEmpty && current.isEmpty && error == nil {
@@ -951,7 +957,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 XDriveIOSNativePhotoWallDisplayMenu(
-                    density: $density, framing: $framing,
+                    density: $density, framing: $wallFraming,
                     accessibilityID: "native-ios-unified-source-map-display"
                 ) {
                     // Nearby is ranked by GPS distance, not capture time.
@@ -959,10 +965,10 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                         Section("时间分组") {
                             ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
                                 Button {
-                                    timeScale = option
+                                    wallTimeScale = option
                                 } label: {
                                     Label(option.title,
-                                        systemImage: option == timeScale
+                                        systemImage: option == wallTimeScale
                                             ? "checkmark.circle.fill" : "calendar")
                                 }
                             }
@@ -1044,7 +1050,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
 
     private var photoWall: some View {
         ScrollViewReader { scroll in
-            ScrollView {
+            XDriveIOSNativePhotoWallScrollContainer {
                 if (isNearbyExpansion ? nearbyWindowIndex > 1 : windowIndex > 1)
                     && !busy && active && viewing == nil && !opening {
                     Color.clear.frame(height: 32)
@@ -1057,7 +1063,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 // Do not date-reorder the globally distance-ranked Nearby
                 // page; only an ordinary place album uses calendar groups.
                 let displayTimeScale: XDriveIOSNativePhotoWallTimeScale =
-                    isNearbyExpansion ? .all : timeScale
+                    isNearbyExpansion ? .all : wallTimeScale
                 let sections = xdriveIOSNativePhotoWallVisibleSections(
                     previous + current, scale: displayTimeScale
                 ) { displayTimeScale.key(for: $0.capturedAt) }
@@ -1092,11 +1098,25 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             }
             .onChange(of: viewing?.id) { activeID in
                 guard activeID == nil, active, let anchor = viewerReturnID,
+                      (previous + current).filter({ $0.id == anchor }).count == 1,
                       XDriveIOSNativePhotoWallWindowPolicy.canRestore(
                         anchor, in: (previous + current).map(\.id),
                         scopeActive: active) else { return }
-                scroll.scrollTo(anchor, anchor: .center)
+                // The ScrollView stayed mounted underneath the Viewer.
+                // Keep the native pixel offset untouched when opening and
+                // closing the same exact tile in an unchanged signed window.
+                let sameWindow = isNearbyExpansion
+                    ? viewerOpeningWindow == nearbyWindowIndex
+                    : viewerOpeningWindow == windowIndex
+                if viewerOpeningID != anchor || !sameWindow {
+                    xdrivePhotoWallFocusVerifiedTile(
+                        anchor, scroll: scroll, focus: $focusedTileID)
+                } else {
+                    focusedTileID = anchor
+                }
                 viewerReturnID = nil
+                viewerOpeningID = nil
+                viewerOpeningWindow = -1
             }
         }
     }
@@ -1106,11 +1126,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             XDriveIOSUnifiedPhotoTile(
                 row: row, login: login, presentingOwner: owner,
                 displayActive: active && viewing == nil,
-                retainWhileCovered: viewing != nil, framing: framing)
+                retainWhileCovered: viewing != nil, framing: wallFraming)
         }
         .disabled(!active || busy || opening)
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-unified-source-map-photo")
+        .accessibilityFocused($focusedTileID, equals: row.id)
     }
 
     private func openAfterLiveAdmission(_ row: XDriveIOSNativeUnifiedPhoto) {
@@ -1135,6 +1156,10 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 return
             }
             viewerReturnID = row.id
+            viewerOpeningID = row.id
+            viewerOpeningWindow = isNearbyExpansion
+                ? nearbyWindowIndex : windowIndex
+            focusedTileID = nil
             viewing = .init(row: currentRow)
         }
     }
@@ -1214,7 +1239,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                             XDriveIOSUnifiedPhotoTile(
                                 row: row, login: login, presentingOwner: owner,
                                 displayActive: active, retainWhileCovered: true,
-                                framing: framing
+                                framing: wallFraming
                             )
                             .frame(width: 48, height: 48)
                             .overlay(RoundedRectangle(cornerRadius: 4)
@@ -1394,6 +1419,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         ended = false
         viewing = nil
         viewerReturnID = nil
+        viewerOpeningID = nil
+        viewerOpeningWindow = -1
+        focusedTileID = nil
         placeNameTask?.cancel(); placeNameTask = nil
         placeGeocoder.cancelGeocode()
         placeName = nil
