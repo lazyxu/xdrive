@@ -75,7 +75,9 @@ test('Web Gallery and trusted Places share cosmetic observer and UI-only return/
   assert.match(state, /useState<T \| null>\(null\)/)
   assert.match(state, /setReturnAnchor\(null\)/)
   assert.match(state, /Math\.min\(XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX/)
-  assert.match(places, /useEffect\(\(\) => resetTimelineJump\(\), \[timelineGroups, resetTimelineJump\]\)/)
+  // A changed signed date index now resets the shared viewport intent too.
+  assert.match(places, /useEffect\(\(\) => \{\s*resetTimelineJump\(\)\s*clearVisibleAnchor\(\)\s*\}, \[timelineGroups, resetTimelineJump, clearVisibleAnchor\]\)/)
+  assert.match(places, /useXDriveMediaGalleryViewportAnchor\(\)/)
   assert.match(gallery, /\[collectionKey, sortBy, sortDir, timeZone, logicalItemCount, resetTimelineJump\]/)
   assert.match(places, /onRangeChange: notifyRange/)
   assert.match(places, /onVisibleAnchorChange=\{captureVisibleAnchor\}/)

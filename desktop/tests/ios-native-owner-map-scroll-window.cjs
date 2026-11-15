@@ -4,6 +4,10 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const album = fs.readFileSync(path.resolve(__dirname, '../../ios/XDriveIOS/NativeOwnerMapClusterAlbum.swift'), 'utf8')
+const shared = fs.readFileSync(path.resolve(__dirname, '../../ios/XDriveIOS/NativePhotoWallComponents.swift'), 'utf8')
+test('common photo-wall scroll shell remains a vertical SwiftUI ScrollView', () => {
+  assert.match(shared, /struct XDriveIOSNativePhotoWallScrollContainer<Content: View>: View \{[\s\S]*?var body: some View \{\s*ScrollView \{\s*content/)
+})
 
 test('native Owner map cluster advances from a visible LazyVGrid sentinel without an extra drag', () => {
   assert.match(album, /XDriveIOSNativePhotoWallSectionList\([\s\S]*?if activeOwner, let next \{\s*Color\.clear/)
@@ -69,7 +73,7 @@ test('automatic paging uses the exact Owner and per-place validation of the manu
 })
 
 test('cloud map album returns to last verified Viewer Node and never restores a stale revision', () => {
-  assert.match(album, /ScrollViewReader \{ returnScroll in\s*ScrollView \{/)
+  assert.match(album, /ScrollViewReader \{ returnScroll in\s*XDriveIOSNativePhotoWallScrollContainer \{/)
   assert.match(album, /@State private var viewerReturn: XDriveIOSNativeMediaItem\?/)
   assert.match(album, /@State private var visiblePageRevision = UUID\(\)/)
   assert.match(album, /viewerReturn = item\s*viewing = item/)
@@ -116,7 +120,7 @@ test('cluster photo wall hides transport pagination and retains verified sentine
   const body = album.slice(album.indexOf('var body: some View {'),
                            album.indexOf('.fullScreenCover(item: $viewing'))
   assert.doesNotMatch(body, /Button\("上一批"\)|Button\("下一批"\)|Button\("查看上一批照片"\)|Button\("继续浏览下一批照片"\)/)
-  assert.match(body, /ScrollViewReader \{ returnScroll in\s*ScrollView \{[\s\S]*?XDriveIOSNativePhotoWallSectionList/)
+  assert.match(body, /ScrollViewReader \{ returnScroll in\s*XDriveIOSNativePhotoWallScrollContainer \{[\s\S]*?XDriveIOSNativePhotoWallSectionList/)
   assert.match(body, /if activeOwner, let next \{[\s\S]*?\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)
   assert.match(body, /\.accessibilityValue\([\s\S]*?page\.map \{/)
   assert.match(body, /if activeOwner, let error \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)

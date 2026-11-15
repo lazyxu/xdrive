@@ -231,7 +231,7 @@ test('cloud PhotoAsset Gallery short landscape recovers wall height without losi
   assert.match(wall, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/)
   assert.match(wall, /GeometryReader \{ viewport in/)
   assert.match(wall, /viewport\.size\.width >= 680 &&\s*viewport\.size\.height < 500 && !dynamicTypeSize\.isAccessibilitySize/)
-  assert.match(wall, /ScrollViewReader \{ returnScroll in\s*ScrollView \{/)
+  assert.match(wall, /ScrollViewReader \{ returnScroll in\s*XDriveIOSNativePhotoWallScrollContainer \{/)
   assert.match(wall, /if !compactGallery && placeID == nil \{\s*Text\(album == nil \?/)
   assert.match(wall, /if !compactGallery && placeID == nil \{\s*Text\("连续滚动只读取附近的 48 项验证范围/)
   assert.match(wall, /native-ios-cloud-gallery-layout-help/)

@@ -258,13 +258,15 @@ test('native local and album photo walls free short landscape grid space while r
   const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
   const album = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
   const localWall = local.slice(local.indexOf('struct XDriveIOSNativeLocalGalleryScreen: View {'))
+  const sharedWall = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
+  assert.match(sharedWall, /struct XDriveIOSNativePhotoWallScrollContainer<Content: View>: View \{[\s\S]*?var body: some View \{\s*ScrollView \{\s*content/)
   const albumWall = album.slice(album.indexOf('struct XDriveIOSNativeAlbumContentsScreen: View {'),
     album.indexOf('/// Photos-first list of local smart/user albums.'))
   for (const [name, screen] of [['local', localWall], ['album', albumWall]]) {
     assert.match(screen, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/, name)
     assert.match(screen, /GeometryReader \{ viewport in/, name)
     assert.match(screen, /viewport\.size\.width >= 680 &&\s*viewport\.size\.height < 500 && !dynamicTypeSize\.isAccessibilitySize/, name)
-    assert.match(screen, /ScrollViewReader \{ returnScroll in\s*ScrollView \{/, name)
+    assert.match(screen, /ScrollViewReader \{ returnScroll in\s*XDriveIOSNativePhotoWallScrollContainer \{/, name)
     assert.match(screen, /if !compactGallery \{[\s\S]*?Text\(/, name)
     assert.match(screen, /@AccessibilityFocusState private var accessibilityFocusedTileID: String\?/, name)
     assert.match(screen, /\.onChange\(of: pageRenderRevision\)/, name)

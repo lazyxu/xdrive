@@ -67,7 +67,7 @@ const scenarios = [
     "checks": [
       {
         "file": "w",
-        "pattern": "acceptedGeneration == ticket, model\\.completed,[\\s\\S]*?loaded\\(\\)\\s*await readVisibleQueueBadges\\(\\)\\s*return",
+        "pattern": "acceptedGeneration == ticket, model\\.completed,\\s*model\\.belongs\\(to: login\\.owner\\) \\{\\s*loaded\\(model\\.rows\\.map\\(\\\\\\.id\\)\\)\\s*await readVisibleQueueBadges\\(\\)\\s*return",
         "flags": ""
       }
     ]
