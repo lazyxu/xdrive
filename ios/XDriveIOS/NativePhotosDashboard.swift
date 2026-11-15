@@ -125,6 +125,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     @Environment(\.scenePhase) private var phase
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
+    // iOS 26.6 crash isolation: do not construct the very large Files
+    // SwiftUI graph while the authenticated landing tab is Gallery.
+    // Latch after first selection so tab returns keep Files scroll/viewer state.
+    @State private var filesTabActivated = false
     @State private var gallerySource: XDriveIOSNativeGallerySource = .unified
     // Opening a Photos map should include every currently authorized GPS photo,
     // not just the current 64-slot Timeline page; the user can still select
@@ -245,8 +249,15 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tag(XDriveIOSNativeBottomTab.gallery)
 
             NavigationStack {
-                files
-                    .navigationTitle("文件")
+                if tab == .files || filesTabActivated {
+                    // Do not eagerly evaluate the 5-layer Files lifecycle
+                    // when login publishes a verified Owner to TabView.
+                    files
+                        .navigationTitle("文件")
+                } else {
+                    Color.clear
+                        .accessibilityHidden(true)
+                }
             }
             .tabItem { Label("文件", systemImage: "folder") }
             .tag(XDriveIOSNativeBottomTab.files)
@@ -423,6 +434,8 @@ struct XDriveIOSNativePhotosDashboard: View {
             backup.refresh(owner: login.owner)
         }
         .onChange(of: ownerScopeKey) { _ in
+            // A new Owner must not retain the old Owner's mounted Files tree.
+            filesTabActivated = false
             transfers.selectOwner(login.owner)
             // TabView .id does not reset this parent's @State. Revoke the old
             // Owner's saved UI route even if switching A -> B -> A in one scene.
@@ -453,6 +466,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .onChange(of: tab) { _ in saveNavigationIfReady() }
+        .onChange(of: tab) { next in
+            if next == .files { filesTabActivated = true }
+        }
         .onChange(of: tab) { next in
             if next == .dynamic && emptyDynamicMapFallback {
                 openGallery(.map)
@@ -1173,6 +1189,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func resetNavigation() {
+        filesTabActivated = false
         galleryFocusGeneration = UUID()
         galleryFocused = false
         mapReturnGallerySource = nil
