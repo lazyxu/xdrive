@@ -27,7 +27,8 @@ test('M02: negative source evidence is reclassified on the exact current Owner p
   assert.match(map, /await reproveCurrentSourcePresence\(row\)/)
   assert.match(map, /model\.load\(from: cursor, filter: presence, login: login,/)
   assert.match(map, /matches\.count == 1/)
-  assert.match(map, /refreshed\.cloud\?\.contentIdentity == row\.cloud\?\.contentIdentity/)
+  assert.match(map, /earlier\.contentIdentity == latest\.contentIdentity/)
+  assert.match(map, /match\.matches\(liveCloud\)/)
   assert.match(map, /if row\.presence == \.both/)
   assert.match(map, /reader\.currentMapItem\(expectedCloud\)/)
   // The exact match can reference a cloud Node outside the current
