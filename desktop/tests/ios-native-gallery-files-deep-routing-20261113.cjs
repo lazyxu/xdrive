@@ -117,3 +117,30 @@ test('six more distinct real child navigation probes remain executable and frame
   assert.match(ui, /XCTAssertGreaterThan\(unique\.count, 8/)
   assert.doesNotMatch(ui, /XCTSkip|fakeToken|mockPhotoKit/)
 })
+
+
+const childReturn20261115 = [
+  'testFilesInlineEditPeopleForegroundReturnDoesNotLockBrowse',
+  'testGalleryMapDismissFilesCloudDenialKeepsVerifiedWall',
+  'testFilesHistorySavedSearchesAcrossAlbumsReturnRetireBothSheets',
+  'testOriginalsHelpForegroundFilesSearchReturnsWithoutGhostAlert',
+  'testGalleryCancelFilterFilesQuickRailTwoForegroundsKeepsWall',
+  'testLocalPhotoKitFilesTrashAndSavedSearchReturnKeepsLocalChild',
+]
+test('six native 2026-11-15 Files/Gallery nested-page regressions have real XCTest and frame capture', () => {
+  const ui = read('ios/UITests/XDriveIOSGalleryFilesTransitionEdgeUITests.swift')
+  const watcher = read('ios/scripts/capture-navigation-smoke-frames.py')
+  const workflow = read('.github/workflows/ios-native-navigation-runtime.yml')
+  for (const name of childReturn20261115) {
+    assert.equal(ui.split('func ' + name + '()').length - 1, 1,
+      'Real XCUITest declaration absent/duplicated: ' + name)
+    assert.equal(watcher.split('"' + name + '"').length - 1, 1,
+      'Exactly one real Simulator frame registration: ' + name)
+  }
+  assert.match(workflow,
+    /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSGalleryFilesTransitionEdgeUITests/)
+  assert.match(ui, /let width = 96, height = 64/)
+  assert.match(ui, /XCTAssertGreaterThan\(contentColors\.count, 8/)
+  assert.match(ui, /XCTAssertFalse\(target\("native-ios-files-grid", app\)\.exists/)
+  assert.doesNotMatch(ui, /XCTSkip|mockPhotoKit|fakeToken|WKWebView/)
+})

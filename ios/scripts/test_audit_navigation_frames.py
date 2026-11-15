@@ -131,13 +131,14 @@ class AuditTests(unittest.TestCase):
         repo = pathlib.Path(__file__).resolve().parents[2]
         cases = set()
         for path in ('XDriveIOSGalleryFilesStabilityUITests.swift',
-                     'XDriveIOSGalleryFilesFrameContinuityUITests.swift'):
+                     'XDriveIOSGalleryFilesFrameContinuityUITests.swift',
+                     'XDriveIOSGalleryFilesTransitionEdgeUITests.swift'):
             source = (repo / 'ios' / 'UITests' / path).read_text(encoding='utf-8')
             cases.update(re.findall(r'\bfunc (test\w+)\(\)', source))
         watcher = (repo / 'ios' / 'scripts' /
                    'capture-navigation-smoke-frames.py').read_text(encoding='utf-8')
         registered = set(re.findall(r'"(test\w+)"', watcher))
-        self.assertGreaterEqual(len(cases), 77)
+        self.assertGreaterEqual(len(cases), 122)
         self.assertFalse(cases - registered,
                          'untested native routes: ' + ', '.join(sorted(cases - registered)))
         self.assertIn('FRAME_OFFSETS_SECONDS[-1:] if name in MINIMAL_TARGETS', watcher)

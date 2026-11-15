@@ -97,6 +97,13 @@ TARGETS = {
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
+    # Six genuine nested-route foreground/sheet/Owner-denied continuity journeys.
+    "testFilesInlineEditPeopleForegroundReturnDoesNotLockBrowse",
+    "testGalleryMapDismissFilesCloudDenialKeepsVerifiedWall",
+    "testFilesHistorySavedSearchesAcrossAlbumsReturnRetireBothSheets",
+    "testOriginalsHelpForegroundFilesSearchReturnsWithoutGhostAlert",
+    "testGalleryCancelFilterFilesQuickRailTwoForegroundsKeepsWall",
+    "testLocalPhotoKitFilesTrashAndSavedSearchReturnKeepsLocalChild",
     # New native compositional Viewer/Files/Gallery continuity journeys.
     "testLocalPhotoDateSheetThenCloudDeniedFilesReturnsLocalChild",
     "testCloudOriginalsHelpThenFilesSearchKeyboardReturnsOriginalsChild",

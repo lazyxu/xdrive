@@ -103,7 +103,7 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
             XCTFail("Missing real native screenshot at \(route)")
             return
         }
-        let width = 24, height = 32
+        let width = 96, height = 64
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let rendered = pixels.withUnsafeMutableBytes { bytes -> Bool in
             guard let base = bytes.baseAddress,
@@ -123,6 +123,18 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
             (Int(pixels[i]) << 16) | (Int(pixels[i + 1]) << 8) | Int(pixels[i + 2])
         })
         XCTAssertGreaterThan(unique.count, 8, "Blank or solid native frame at \(route)")
+        // Whole-screen color diversity can be supplied by app chrome while
+        // the child content is blank; inspect the center independently.
+        var contentColors = Set<Int>()
+        for y in (height / 5)..<(height * 4 / 5) {
+            for x in (width / 8)..<(width * 7 / 8) {
+                let index = (y * width + x) * 4
+                contentColors.insert((Int(pixels[index]) << 16) |
+                    (Int(pixels[index + 1]) << 8) | Int(pixels[index + 2]))
+            }
+        }
+        XCTAssertGreaterThan(contentColors.count, 8,
+                             "Blank native content viewport at this settled route")
     }
 
     private func closePeople(_ app: XCUIApplication) {
@@ -1244,6 +1256,188 @@ final class XDriveIOSGalleryFilesTransitionEdgeUITests: XCTestCase {
                 "Originals help alert survived denied Files cycle \(cycle)")
             assertPixels(app, "Originals help denied Files cycle \(cycle)")
         }
+    }
+
+
+    // Native touch-driven child-page continuity: the CI Owner has no Server
+    // credential. These prove no app exit/ghost shell at the settled point,
+    // NOT authenticated data, 60/120Hz pacing, or a physical iPhone pass.
+
+    func testFilesInlineEditPeopleForegroundReturnDoesNotLockBrowse() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        let edit = target("native-ios-files-home-edit-toggle", app)
+        XCTAssertTrue(edit.waitForExistence(timeout: 15))
+        tap("native-ios-files-home-edit-toggle", app)
+        XCTAssertEqual(edit.label, "完成")
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-people", app)
+        closePeople(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        let restored = target("native-ios-files-home-edit-toggle", app)
+        XCTAssertTrue(restored.waitForExistence(timeout: 15))
+        if restored.label == "完成" {
+            tap("native-ios-files-home-edit-toggle", app)
+        }
+        XCTAssertEqual(restored.label, "编辑",
+                       "Files home edit state is stuck after Gallery People/foreground")
+        XCTAssertTrue(target("native-ios-files-home-list", app).exists)
+        assertPixels(app, "Files edit People foreground return")
+    }
+
+    func testGalleryMapDismissFilesCloudDenialKeepsVerifiedWall() {
+        let app = launch(syntheticOwner: true)
+        let wall = target("native-ios-unified-photo-gallery", app)
+        XCTAssertTrue(wall.waitForExistence(timeout: 15))
+        let generation = wall.value as? String
+        XCTAssertNotNil(generation.flatMap(UUID.init(uuidString:)))
+        tap("native-ios-gallery-open-filters", app)
+        let open = target("native-ios-unified-gallery-show-map", app)
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        XCTAssertTrue(open.isEnabled)
+        tap("native-ios-unified-gallery-show-map", app)
+        XCTAssertTrue(target("native-ios-map-source-selector", app)
+            .waitForExistence(timeout: 25))
+        tap("native-ios-map-dismiss", app)
+        XCTAssertTrue(wall.waitForExistence(timeout: 15))
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        tap("native-ios-files-open-root-location", app)
+        XCTAssertTrue(target("native-ios-files-error-page", app)
+            .waitForExistence(timeout: 15))
+        XCTAssertFalse(target("native-ios-files-grid", app).exists,
+                       "Unauthorized cloud error displayed private rows")
+        tap("native-ios-files-error-return", app)
+        tap("native-ios-tab-gallery", app)
+        XCTAssertFalse(target("native-ios-map-source-selector", app).exists,
+                       "Dismissed MapKit child overlaid returned Gallery")
+        XCTAssertEqual(wall.value as? String, generation,
+                       "Unchanged Gallery wall rebuilt after modal Map and denied Files")
+        assertPixels(app, "Map modal denied Files return")
+    }
+
+    func testFilesHistorySavedSearchesAcrossAlbumsReturnRetireBothSheets() {
+        let app = launch(syntheticOwner: true)
+        openRealFilesHomeSheet(
+            entryID: "native-ios-files-open-operations",
+            pageID: "native-ios-files-operation-history-page", app: app)
+        dismissRealFilesHomeSheet(
+            pageID: "native-ios-files-operation-history-page",
+            doneID: "native-ios-files-operation-history-done", app: app)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-albums", app)
+        assertGallery(app)
+        openRealFilesHomeSheet(
+            entryID: "native-ios-files-open-saved-searches",
+            pageID: "native-ios-files-saved-searches-page", app: app)
+        dismissRealFilesHomeSheet(
+            pageID: "native-ios-files-saved-searches-page",
+            doneID: "native-ios-files-saved-searches-done", app: app)
+        tap("native-ios-tab-gallery", app)
+        tap("native-ios-gallery-source-unified", app)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        XCTAssertFalse(target("native-ios-files-saved-searches-page", app).exists)
+        XCTAssertFalse(target("native-ios-files-operation-history-page", app).exists,
+                       "Earlier History sheet returned after newer sheet dismissal")
+        assertPixels(app, "Files two independent sheets and Gallery Albums")
+    }
+
+    func testOriginalsHelpForegroundFilesSearchReturnsWithoutGhostAlert() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-gallery-source-originals", app)
+        tap("native-ios-cloud-original-layout-help", app)
+        let help = app.alerts["云端备份原件说明"].firstMatch
+        XCTAssertTrue(help.waitForExistence(timeout: 15))
+        help.buttons["完成"].tap()
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        let search = app.searchFields["搜索全部文件"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        search.tap()
+        search.typeText("no-private-originals")
+        XCTAssertTrue((search.value as? String ?? "").contains("no-private-originals"))
+        tap("native-ios-tab-gallery", app)
+        XCTAssertTrue(target("native-ios-cloud-original-layout-help", app)
+            .waitForExistence(timeout: 15))
+        XCTAssertFalse(help.exists, "Old Originals help dialog came back after Files search")
+        XCTAssertFalse(app.keyboards.firstMatch.exists,
+                       "Files keyboard leaked into Gallery Originals")
+        XCTAssertFalse(target("native-ios-cloud-original-tile", app).exists)
+        assertPixels(app, "Originals help foreground Files keyboard return")
+    }
+
+    func testGalleryCancelFilterFilesQuickRailTwoForegroundsKeepsWall() {
+        let app = launch(syntheticOwner: true)
+        let wall = target("native-ios-unified-photo-gallery", app)
+        XCTAssertTrue(wall.waitForExistence(timeout: 15))
+        let generation = wall.value as? String
+        XCTAssertNotNil(generation.flatMap(UUID.init(uuidString:)))
+        tap("native-ios-gallery-open-filters", app)
+        XCTAssertTrue(app.switches["限定日期范围"].firstMatch.waitForExistence(timeout: 15))
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        for section in ["recent", "favorites", "browse"] {
+            tap("native-ios-files-section-" + section, app)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertEqual(app.state, .runningForeground)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app)
+        XCTAssertEqual(wall.value as? String, generation,
+                       "Canceled filter and unmodified Files rail rebuilt the wall")
+        XCTAssertFalse(target("native-ios-gallery-filter-form", app).exists)
+        assertPixels(app, "Canceled filter multiple Files foreground return")
+    }
+
+    func testLocalPhotoKitFilesTrashAndSavedSearchReturnKeepsLocalChild() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-gallery-source-menu", app)
+        let local = app.buttons["本机照片"].firstMatch
+        XCTAssertTrue(local.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-source-local")
+        local.tap()
+        XCTAssertTrue(target("native-ios-local-timeline-open", app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-tab-files", app)
+        enterBrowseHome(app)
+        tap("native-ios-files-open-trash", app)
+        XCTAssertTrue(target("native-ios-files-trash-error-page", app)
+            .waitForExistence(timeout: 15))
+        XCTAssertFalse(target("native-ios-files-trash-retry", app).exists)
+        tap("native-ios-files-trash-error-return", app)
+        openRealFilesHomeSheet(
+            entryID: "native-ios-files-open-saved-searches",
+            pageID: "native-ios-files-saved-searches-page", app: app)
+        dismissRealFilesHomeSheet(
+            pageID: "native-ios-files-saved-searches-page",
+            doneID: "native-ios-files-saved-searches-done", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        tap("native-ios-tab-gallery", app)
+        XCTAssertTrue(target("native-ios-local-timeline-open", app)
+            .waitForExistence(timeout: 15),
+            "Real PhotoKit route lost on return from Files children")
+        XCTAssertFalse(target("native-ios-files-trash-error-page", app).exists)
+        let media = target("native-ios-local-gallery-media-filter", app).exists
+        let request = app.buttons["允许查看本机相册"].firstMatch.exists
+        let denied = app.staticTexts["相册权限不可用，请在 iOS 设置中允许访问。"].firstMatch.exists
+        XCTAssertTrue(media || request || denied,
+                      "Local PhotoKit must expose its genuine permission state")
+        assertPixels(app, "Local PhotoKit Files Trash Saved Searches return")
     }
 
 }
