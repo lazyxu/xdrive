@@ -73,7 +73,7 @@ test('F5 real video and decoded-frame audit, not screenshot-only', () => {
   assert.match(workflow, /files_ui_transition_video\.py" audit/)
   assert.match(workflow, /--minimum 4/)
   assert.match(video, /"xcrun", "simctl", "io", simulator, "recordVideo"/)
-  assert.match(video, /fps=10,scale=64:64,signalstats/)
+  // The production ffmpeg decode checks the native PAGE CONTENT, excluding persistent\n  // navigation/tab chrome; a whole-frame luminance check can miss blank child frames.\n  assert.match(video, /fps=10,scale=64:64,crop=64:40:0:12,signalstats,metadata=print:file=-/)\n  assert.match(video, /central 62\\.5% of native page; top\\/bottom chrome excluded/)
   assert.match(video, /missing_real_tap_marker/)
   assert.match(video, /test_not_passed/)
   assert.match(video, /incomplete_test_recording/)
