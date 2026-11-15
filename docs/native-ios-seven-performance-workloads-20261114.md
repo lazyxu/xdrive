@@ -53,7 +53,14 @@ The machine-audited inventory lives in ios/performance/native-seven-workloads.js
 - The existing 25-page root suite on master, and this PR's 36-child route
   candidate (new Clipboard/Mine interaction routes require a fresh real Simulator
   pass), establish the native measurement backbone, **not** complete Web
-  parity. This PR remains Draft until required current-HEAD CI and Final Gate
+  parity. Each of the 36 child paths now separately records parent-stage, forward
+  AX-ready and return AX-ready (n=3 each), app CPU time and peak physical memory
+  during the forward interval, plus one original post-AX and post-return screenshot
+  pair. Parent-stage includes UI preparation/XCTest idling, not only one screen
+  frame; screenshots are not composited first-pixel or continuous FPS evidence.
+  This change requires a fresh exact-HEAD Simulator pass, 108 stage samples,
+  108 forward samples, 108 reverse samples and 72 screenshots. This PR remains
+  Draft until required current-HEAD CI and Final Gate
   pass and the promised workload metrics are actually gathered.
 - Exact authorized Owner, full media/100k and signed physical iPhone capture
   unavailable in the current shared CI must stay **跳过（未验收）**. No fabricated
