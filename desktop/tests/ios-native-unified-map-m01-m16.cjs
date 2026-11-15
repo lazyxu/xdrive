@@ -67,6 +67,14 @@ test('M04: both directions use retained source cursor indexes and two bounded wi
   assert.match(map, /previous = current\s*current = Array\(selected\.prefix\(48\)\)/)
 })
 
+test('M04: failed page retry resets ordinary place cursor history before restarting', () => {
+  const retry = map.match(/private func retryCurrentArea\(\) \{[\s\S]*?\n    \}\n\n    private func advance\(\)/)?.[0]
+  assert.ok(retry, 'retryCurrentArea implementation must exist')
+  assert.match(retry, /if isNearbyExpansion \{[\s\S]*?nearbyStarts = \[\]; nearbyWindowIndex = -1/)
+  assert.match(retry, /\} else \{\s*previous = \[\]; current = \[\]; next = nil\s*windowStarts = \[\]; windowIndex = -1\s*backfillAnchorID = nil\s*viewerReturnID = nil\s*ended = false\s*error = nil\s*load\(from: pin\.firstCursor\)/)
+  assert.doesNotMatch(retry, /load\(from: next \?\? pin\.firstCursor\)/)
+})
+
 test('M05: same-place Viewer uses live admission for filmstrip and cross-window directions', () => {
   assert.match(map, /onUnifiedNavigate: navigateViewer/)
   assert.match(map, /private func navigateViewer\(_ direction: Int\)/)

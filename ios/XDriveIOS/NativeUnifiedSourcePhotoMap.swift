@@ -1417,7 +1417,16 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             if nearbyRanked.isEmpty { prepareNearbyRanking() }
             else { loadNearby(from: 0) }
         } else {
-            load(from: next ?? pin.firstCursor)
+            // A failed later page may leave historical windowStarts while
+            // clearing its visible rows. Restart the entire proof-bound
+            // place pagination; never append page zero to an old history.
+            previous = []; current = []; next = nil
+            windowStarts = []; windowIndex = -1
+            backfillAnchorID = nil
+            viewerReturnID = nil
+            ended = false
+            error = nil
+            load(from: pin.firstCursor)
         }
     }
 
