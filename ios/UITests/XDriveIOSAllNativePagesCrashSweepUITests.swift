@@ -298,6 +298,33 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         capture(app, "backup-audit-queue-files")
     }
 
+
+    /// Open the actual Gallery backup menu. Never start a backup or invent
+    /// an authenticated Owner in the synthetic-Owner test environment.
+    private func openGalleryBackup(_ child: String, _ app: XCUIApplication) {
+        tap("native-ios-tab-gallery", app)
+        let backup = element("native-ios-gallery-backup-settings", app)
+        XCTAssertTrue(backup.waitForExistence(timeout: 15),
+                      "Gallery backup toolbar is absent")
+        XCTAssertTrue(backup.isHittable, "Gallery backup toolbar is obstructed")
+        tap("native-ios-gallery-backup-settings", app)
+        tapNamed(child, app)
+    }
+
+    /// Real unmodified sign-in screen, not the smoke Dashboard with a
+    /// fabricated Owner. A recovery marker is cleared without supplying
+    /// credentials or performing any network authentication.
+    private func launchRealSignedOut() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive.ios.native.launch-checkpoint.v1", "ready"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        ready("native-ios-login-server", app)
+        ready("native-ios-login-username", app)
+        ready("native-ios-login-password", app)
+        return app
+    }
+
     func testMineSignedOutControlsAndGalleryReturnDoNotExit() {
         let app = launch(owner: false)
         tap("native-ios-tab-mine", app)
@@ -310,4 +337,156 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         ready("native-ios-files-section-browse", app)
         capture(app, "mine-signed-out-gallery-files")
     }
+
+    func testFilesFourDeniedChildrenWithOrientationAndOwnerFenceDoNotExit() {
+        let app = launch()
+        let routes: [(String, String, String)] = [
+            ("native-ios-files-open-root-location", "native-ios-files-error-page",
+             "native-ios-files-error-return"),
+            ("native-ios-files-open-recent", "native-ios-files-recent-error-page",
+             "native-ios-files-recent-error-return"),
+            ("native-ios-files-open-favorites", "native-ios-files-favorites-error-page",
+             "native-ios-files-favorites-error-return"),
+            ("native-ios-files-open-trash", "native-ios-files-trash-error-page",
+             "native-ios-files-trash-error-return")
+        ]
+        defer { XCUIDevice.shared.orientation = .portrait }
+        for (index, route) in routes.enumerated() {
+            filesHomeChild(route.0, page: route.1, app)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists,
+                           "A synthetic Owner has no authenticated protected rows")
+            if index == 1 {
+                XCUIDevice.shared.orientation = .landscapeLeft
+                ready(route.1, app)
+                XCUIDevice.shared.orientation = .portrait
+            } else if index == 2 {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                ready(route.1, app)
+            }
+            tap(route.2, app)
+            waitRetired(route.1, app)
+            ready("native-ios-files-home-list", app)
+            tap("native-ios-tab-gallery", app)
+            ready("native-ios-unified-photo-gallery", app)
+        }
+        capture(app, "files-four-denied-children")
+    }
+
+    func testGalleryBackupSettingsQueueAndFilesReturnDoNotExit() {
+        let app = launch()
+        openGalleryBackup("备份设置", app)
+        ready("native-ios-backup-portrait-form", app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-backup-portrait-form", app)
+        tapNamed("返回相册备份", app)
+        ready("native-ios-backup-overview", app)
+        tap("native-ios-photos-task-list", app)
+        ready("native-ios-photo-task-list-done", app)
+        tap("native-ios-photo-task-list-done", app)
+        waitRetired("native-ios-photo-task-list-done", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        XCTAssertFalse(element("native-ios-backup-portrait-form", app).exists)
+        capture(app, "gallery-backup-settings-queue-files")
+    }
+
+    func testGalleryThumbnailCacheSheetForegroundDismissDoesNotExit() {
+        let app = launch()
+        openGalleryBackup("释放本机缓存空间（不删除照片原件）", app)
+        ready("native-ios-gallery-thumbnail-cache", app)
+        ready("native-ios-backup-cache-sheet-close", app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-gallery-thumbnail-cache", app)
+        tap("native-ios-backup-cache-sheet-close", app)
+        waitRetired("native-ios-gallery-thumbnail-cache", app)
+        ready("native-ios-unified-photo-gallery", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        capture(app, "gallery-cache-sheet-dismissed")
+    }
+
+    func testNotesRecentFeaturePickerRotationAndTransfersDoNotExit() {
+        let app = launch()
+        openLauncher("notes", app)
+        ready("native-ios-notes-page", app)
+        tapNamed("最近功能", app)
+        XCTAssertTrue(app.navigationBars["最近功能"].firstMatch
+            .waitForExistence(timeout: 15), "Real recent-features child missing")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertEqual(app.state, .runningForeground)
+        XCUIDevice.shared.orientation = .portrait
+        tapNamed("完成", app)
+        ready("native-ios-notes-page", app)
+        openLauncher("transfers", app)
+        ready("native-ios-transfer-overview", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        XCTAssertFalse(app.navigationBars["最近功能"].firstMatch.exists)
+        capture(app, "notes-recent-transfers-retired")
+    }
+
+    func testRealSignedOutPasswordShowHideOrientationAndForegroundDoNotExit() {
+        let app = launchRealSignedOut()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        let show = app.buttons["显示密码"].firstMatch
+        for _ in 0..<6 {
+            if show.exists && show.isHittable { break }
+            scroll.swipeUp()
+        }
+        XCTAssertTrue(show.exists && show.isHittable,
+                      "Native login password control is inaccessible")
+        tapNamed("显示密码", app)
+        XCTAssertTrue(app.buttons["隐藏密码"].firstMatch
+            .waitForExistence(timeout: 15))
+        tapNamed("隐藏密码", app)
+        XCTAssertTrue(show.waitForExistence(timeout: 15))
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        ready("native-ios-login-server", app)
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-login-password", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "real-signed-out-password-rotation")
+    }
+
+    func testRealSignedOutLANHelpWithoutCertificatePairingDoesNotExit() {
+        let app = launchRealSignedOut()
+        let ip = element("native-ios-login-lan-ip", app)
+        XCTAssertTrue(ip.waitForExistence(timeout: 15))
+        ip.tap()
+        // Documentation-only TEST-NET address. Do not sign in, pair a
+        // certificate, install a trust root or submit this value to Server.
+        ip.typeText("192.0.2.4")
+        ready("native-ios-lan-certificate-help", app)
+        ready("native-ios-lan-https-pairing", app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-lan-certificate-help", app)
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "real-signed-out-lan-help")
+    }
+
+    func testMinePhotoWallChildGalleryAndFilesKeepSignedOutFence() {
+        let app = launch(owner: false)
+        tap("native-ios-tab-mine", app)
+        ready("native-ios-mine-server-account", app)
+        tapNamed("相册与照片墙", app)
+        ready("native-ios-unified-photo-gallery", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        tap("native-ios-tab-mine", app)
+        ready("native-ios-mine-server-account", app)
+        XCTAssertFalse(element("native-ios-mine-server-account", app).isEnabled,
+                       "No-session Mine child must not create a verified Owner")
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "mine-photo-wall-files-signed-out")
+    }
+
+
 }
