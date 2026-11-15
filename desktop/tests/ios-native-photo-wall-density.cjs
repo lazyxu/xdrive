@@ -24,7 +24,8 @@ test('native Photos wall offers three square thumbnail densities, no change to o
   }
   assert.match(page, /let density: XDriveIOSNativePhotoWallDensity/)
   assert.match(page, /XDriveIOSNativeSquarePhotoTile\(\s*candidate: candidate, framing: framing/)
-  assert.equal((page.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 2)
+  assert.equal((page.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 1)
+  assert.match(page, /XDriveIOSNativePhotoWallSectionList\(\s*sections: daySections, density: density/)
   assert.match(shared, /minimum: density\.minimumCellWidth/)
   assert.match(shared, /maximum: density\.maximumCellWidth/)
   assert.match(shared, /LazyVGrid\(columns:/)
@@ -38,7 +39,8 @@ test('native Photos wall offers three square thumbnail densities, no change to o
 })
 
 test('pinch and explicit density menu are bounded presentation-only controls', () => {
-  assert.match(screen, /@State private var density: XDriveIOSNativePhotoWallDensity = \.standard/)
+  assert.match(screen, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+  assert.match(screen, /private var density: XDriveIOSNativePhotoWallDensity = \.standard/)
   assert.match(screen, /xdrivePhotoWallDensityButtons\(\$density\)/)
   assert.match(screen, /native-ios-local-wall-density/)
   assert.match(screen, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)

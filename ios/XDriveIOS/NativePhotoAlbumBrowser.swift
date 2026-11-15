@@ -499,7 +499,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @State private var page: XDrivePhotoKitScanPage?
     @State private var pageRevision = 0
     @State private var total: Int?
-    @State private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var density: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .day

@@ -357,13 +357,15 @@ struct XDriveIOSNativePhotoWallFeedback: View {
     let error: String?
     let canRetry: Bool
     let buttonTitle: String
+    var retryAccessibilityID: String? = nil
     let onRetry: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let error {
                 XDriveIOSNativePhotoWallRetryMessage(
-                    message: error, buttonTitle: buttonTitle, canRetry: canRetry
+                    message: error, buttonTitle: buttonTitle, canRetry: canRetry,
+                    accessibilityID: retryAccessibilityID
                 ) { onRetry() }
             }
             if isLoading {

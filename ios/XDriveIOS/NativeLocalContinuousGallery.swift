@@ -258,14 +258,13 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     previousCapturedAt: precedingCapturedAt,
                     hasPreviousPage: offset > 0, calendar: .current
                 )
-                ForEach(daySections) { section in
-                    if !section.continuesPreviousPage {
-                        XDriveIOSNativePhotoWallDayHeader(
-                            title: section.title, topPadding: 4
-                        )
-                    }
-                    XDriveIOSNativePhotoWallGrid(density: density) {
-                        ForEach(page.items[section.startIndex..<section.endIndex]) { candidate in
+                // Reuse the one Gallery/Places renderer without changing the
+                // existing authorized 64-item PhotoKit reader, badge or actions.
+                XDriveIOSNativePhotoWallSectionList(
+                    sections: daySections, density: density,
+                    title: { $0.continuesPreviousPage ? nil : $0.title },
+                    items: { Array(page.items[$0.startIndex..<$0.endIndex]) }
+                ) { candidate in
                         if candidate.kind != "unsupported" {
                             Button { onSelect(candidate, page) } label: {
                                 ZStack(alignment: .topTrailing) {
@@ -348,8 +347,6 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                         } else {
                             placeholderTile.accessibilityHidden(true)
                         }
-                    }
-                    }
                 }
             } else {
                 ProgressView()
@@ -548,7 +545,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     // A successfully read empty library is still a completed first read.
     // Do not restart its PhotoKit scan after every foreground tab change.
     @State private var hasCompletedInitialRead = false
-    @State private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var density: XDriveIOSNativePhotoWallDensity = .standard
     @State private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false

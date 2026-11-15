@@ -127,7 +127,8 @@ test('P0-06: Viewer return restores exact visible tile, never stale PhotoKit or 
   assert.match(album, /restoreAfterViewer\(\)/)
   assert.match(cluster, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
   // Cosmetic framing is allowed; Owner identity, signed ranges and Viewer anchors are not stored.
-  assert.doesNotMatch(cluster, /UserDefaults\.set|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")[^"]+"/)
+  assert.match(cluster, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+  assert.doesNotMatch(cluster, /UserDefaults\.set|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-(?:framing|density)\.v1")[^"]+"/)
 })
 
 test('P1-07: continuous scroll, reserved placeholders and request cancellation stay bounded', () => {
@@ -154,13 +155,14 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
   assert.match(density, /case compact, standard, large/)
   assert.match(density, /func applyingPinch\(/)
   for (const [name, source, expected] of [
-    ['local gallery', gallery, 2], ['local album', album, 1],
+    ['local gallery', gallery, 1], ['local album', album, 1],
     ['local location', map, 0], ['cloud gallery', cloud, 1],
     ['cloud cluster', cluster, 0]
   ]) {
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
       expected, name)
   }
+  assert.match(gallery, /XDriveIOSNativePhotoWallSectionList\(/)
   assert.equal((map.match(/\.xdrivePhotoWallPinch\(/g) || []).length, 2)
   assert.equal((map.match(/XDriveIOSNativePhotoWallSectionList\(/g) || []).length, 2)
   assert.match(album, /XDriveIOSNativePhotoWallSectionList\(/)
