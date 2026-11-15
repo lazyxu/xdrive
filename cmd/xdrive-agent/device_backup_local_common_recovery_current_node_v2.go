@@ -31,9 +31,12 @@ func localCommonHistoricalMatchesCurrentNode(
 			return false
 		}
 		if sourceID == 0 {
-			sourceID, sourceRevision = p.SourceID, p.SourceRevision
-		} else if sourceID != p.SourceID || sourceRevision != p.SourceRevision {
+			sourceID = p.SourceID
+		} else if sourceID != p.SourceID {
 			return false
+		}
+		if p.SourceRevision > sourceRevision {
+			sourceRevision = p.SourceRevision
 		}
 		if r.NodeRevision > newest.NodeRevision {
 			newest = r

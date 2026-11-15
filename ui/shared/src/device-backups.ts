@@ -115,7 +115,7 @@ export interface XDriveLocalBoundBackupSchedule {
   // Only the owning Agent can project these optional private checkpoint
   // observations. A saved plan alone does not prove automatic execution.
   auto_readiness?: 'not_enabled' | 'manual' | 'ineligible_source' |
-    'checkpoint_unverified' | 'review_required' | 'checkpoint_ready' | 'unavailable'
+    'checkpoint_unverified' | 'review_required' | 'reconciliation_pending' | 'revision_rebaseline_pending' | 'checkpoint_ready' | 'unavailable'
   /** Agent-computed schedule-rule due time, never a promised upload ETA. */
   next_scheduled_at?: string
 }
@@ -173,6 +173,8 @@ export interface XDriveLocalBackupCommonBatch {
   unsupported_files: number
   uncertain_files: number
   confirmed_bytes: number
+  /** True only after every verified inventory page and folder was traversed. */
+  scan_complete?: boolean
   backup_complete: false
   retirement_safe: false
   current_cas_verified: false
@@ -189,6 +191,7 @@ export interface XDriveLocalBackupCommonBatchHistoryItem {
   unsupported_files: number
   uncertain_files: number
   confirmed_bytes: number
+  scan_complete?: boolean
   started_at: string
   finished_at: string
 }

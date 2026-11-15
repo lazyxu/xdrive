@@ -213,15 +213,35 @@ func (c *Client) BindLocalPushCommonUpload(ctx context.Context, sourceID, revisi
 func (c *Client) ReadLocalPushCommonUploadReceipt(ctx context.Context, sourceID, revision uint64,
 	proof LocalBoundSourceProof, operationID, resumeKey string,
 ) (LocalPushCommonUploadReceipt, error) {
+	return c.ReadLocalPushCommonUploadHistoricalReceipt(ctx, sourceID, revision,
+		revision, proof, operationID, resumeKey)
+}
+
+// ReadLocalPushCommonUploadHistoricalReceipt keeps all transport authentication
+// on the current Source revision; the selector only changes the read-only
+// original SQL row. Old pending operations are rejected by the Server.
+func (c *Client) ReadLocalPushCommonUploadHistoricalReceipt(ctx context.Context,
+	sourceID, currentRevision, originalRevision uint64,
+	proof LocalBoundSourceProof, operationID, resumeKey string,
+) (LocalPushCommonUploadReceipt, error) {
 	var empty LocalPushCommonUploadReceipt
+	if currentRevision == 0 || originalRevision == 0 ||
+		originalRevision > currentRevision {
+		return empty, errors.New("invalid original revision")
+	}
 	if !validLocalPushCommonUUID(operationID) || !validLocalPushCommonResumeKey(resumeKey) {
 		return empty, errors.New("invalid original common Push receipt selector")
 	}
-	raw, err := c.postLocalPushCommonOperation(ctx, sourceID, revision, proof, "receipt",
+	selectorRevision := uint64(0)
+	if originalRevision != currentRevision {
+		selectorRevision = originalRevision
+	}
+	raw, err := c.postLocalPushCommonOperation(ctx, sourceID, currentRevision, proof, "receipt",
 		struct {
-			OperationID string `json:"operation_id"`
-			ResumeKey   string `json:"resume_key"`
-		}{operationID, resumeKey})
+			OperationID      string `json:"operation_id"`
+			ResumeKey        string `json:"resume_key"`
+			OriginalRevision uint64 `json:"original_revision,omitempty"`
+		}{operationID, resumeKey, selectorRevision})
 	if err != nil {
 		return empty, err
 	}
@@ -242,12 +262,15 @@ func (c *Client) ReadLocalPushCommonUploadReceipt(ctx context.Context, sourceID,
 	if err := decodeLocalPushCommonReply(raw, &got); err != nil {
 		return empty, err
 	}
-	if got.SourceID != sourceID || got.Revision != revision ||
+	if got.SourceID != sourceID || got.Revision != originalRevision ||
 		got.OperationID != operationID || got.Committed == nil ||
 		got.BackupComplete == nil || *got.BackupComplete ||
 		got.RetirementSafe == nil || *got.RetirementSafe ||
 		got.CurrentCASVerified == nil || *got.CurrentCASVerified {
 		return empty, errors.New("unsafe original common Push receipt")
+	}
+	if originalRevision != currentRevision && got.State != "committed" {
+		return empty, errors.New("previous Source revision has pending SQL operation")
 	}
 	switch got.State {
 	case "reserved", "bound":
@@ -264,7 +287,7 @@ func (c *Client) ReadLocalPushCommonUploadReceipt(ctx context.Context, sourceID,
 		return empty, errors.New("unknown original common Push operation state")
 	}
 	return LocalPushCommonUploadReceipt{
-		SourceID: sourceID, Revision: revision, OperationID: operationID,
+		SourceID: sourceID, Revision: originalRevision, OperationID: operationID,
 		State: got.State, Committed: *got.Committed,
 		NodeID: got.NodeID, NodeRevision: got.NodeRevision,
 		ContentSHA256: got.ContentSHA256, Size: got.Size,

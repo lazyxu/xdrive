@@ -59,7 +59,7 @@ func TestAgentScheduleReadinessWireIsOptionalBoundedAndNeverAuthorizesWrites(t *
 	}
 	for _, code := range []string{
 		"not_enabled", "manual", "ineligible_source", "checkpoint_unverified",
-		"review_required", "unavailable",
+		"review_required", "reconciliation_pending", "revision_rebaseline_pending", "unavailable",
 	} {
 		status := base
 		status.AutoReadiness = code

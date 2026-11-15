@@ -231,6 +231,7 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 			RootFingerprint: grant.Fingerprint,
 			SessionDigest:   localpush.CommonUploadOwnerSessionDigest(account.SessionID),
 			State:           state, InspectedFiles: out.InspectedFiles,
+			ScanComplete:   out.ScanComplete,
 			ConfirmedFiles: out.ConfirmedFiles, SkippedFiles: out.SkippedFiles,
 			UnsupportedFiles: out.UnsupportedFiles, UncertainFiles: out.UncertainFiles,
 			ConfirmedBytes: out.ConfirmedBytes, StartedAt: runStartedAt,
@@ -275,6 +276,9 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 			if out.UncertainFiles == 0 {
 				out.UncertainFiles = 1
 			}
+		}
+		if out.State != "partial" || runErr != nil {
+			out.ScanComplete = false
 		}
 		syncCtx, syncCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer syncCancel()
@@ -555,8 +559,9 @@ func (c *agentController) runLocalCommonBackupBatchPrivate(
 		out.State = state
 		return out, nil
 	}
-	// Per-file immutable COMMIT and current descendant checks do not yet
-	// grant a whole-SourceRun or current physical CAS completion proof.
+	// A fully traversed verified inventory is a terminal *scan/attempt* fact.
+	// It is NOT whole-SourceRun or current physical CAS completion proof.
+	out.ScanComplete = true
 	out.State = "partial"
 	return out, nil
 }
@@ -570,6 +575,7 @@ func localCommonBatchObservedResult(job *localPushCommonBatchJob) localBackupCom
 	}
 	out := job.result
 	if job.err != nil {
+		out.ScanComplete = false
 		out.State = "uncertain"
 		out.Running = false
 		if out.UncertainFiles == 0 {
@@ -772,7 +778,7 @@ func (c *agentController) CloudLocalBoundBackupCommonBatchStatus(
 			State: cp.State, InspectedFiles: cp.InspectedFiles,
 			ConfirmedFiles: cp.ConfirmedFiles, SkippedFiles: cp.SkippedFiles,
 			UnsupportedFiles: cp.UnsupportedFiles, UncertainFiles: cp.UncertainFiles,
-			ConfirmedBytes: cp.ConfirmedBytes,
+			ConfirmedBytes: cp.ConfirmedBytes, ScanComplete: cp.ScanComplete,
 		}
 		if result.State == "running" {
 			result.State = "uncertain"
