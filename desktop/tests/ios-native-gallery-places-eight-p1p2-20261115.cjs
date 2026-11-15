@@ -66,7 +66,7 @@ test('P1-5 same-window Viewer return preserves pixel scroll and cross-window use
   assert.match(map, /viewerOpeningWindow = isNearbyExpansion/)
   assert.match(map, /viewerOpeningID == id && sameWindow/)
   assert.match(map, /xdrivePhotoWallFocusVerifiedTile\(/)
-  assert.match(map, /focusedTileID = anchor/)
+  assert.match(map, /focusedTileID = id/)
   assert.match(map, /filter\(\{ \$0\.id == id \}\)\.count == 1/)
   assert.match(map, /XDriveIOSNativePhotoWallWindowPolicy\.canRestore/)
   assert.match(shared, /func xdrivePhotoWallFocusVerifiedTile/)
