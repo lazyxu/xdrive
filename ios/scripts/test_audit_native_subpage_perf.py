@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Pure tests for the strict real iOS child-page CPU/RSS/AX audit."""
+import csv
 import importlib.util
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -89,6 +91,36 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertEqual(report["rows"][0]["app_cpu_time_p50_s"], 0.2)
         self.assertEqual(report["rows"][0]["app_peak_memory_p95_mib"], 3)
         self.assertFalse(report["real_signed_owner_data"])
+
+    def test_csv_has_real_per_route_metrics_without_fake_fps_or_owner(self):
+        report = module.audit(fake_source(), fake_log(), {"metrics": [1]})
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "subpage-summary.csv"
+            module.write_route_csv(report, target)
+            with target.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["route"] for row in rows}, set(METHODS))
+        self.assertEqual({row["retained_trials"] for row in rows}, {"3"})
+        self.assertEqual({row["ax_ready_p50_ms"] for row in rows}, {"20"})
+        self.assertEqual({row["app_peak_memory_p95_mib"] for row in rows}, {"3.0"})
+        self.assertEqual({row["first_composited_frame"] for row in rows}, {"not_measured"})
+        self.assertEqual({row["physical_fps"] for row in rows}, {"not_measured"})
+        self.assertEqual({row["authorized_owner_data"] for row in rows}, {"not_measured"})
+        self.assertEqual({row["web_native_parity"] for row in rows}, {"not_verified"})
+
+    def test_csv_rejects_incomplete_or_fabricated_resource_samples(self):
+        report = module.audit(fake_source(), fake_log(), {"metrics": [1]})
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "subpage-summary.csv"
+            incomplete = dict(report, raw_xcresult_metrics_present=False)
+            with self.assertRaisesRegex(ValueError, "incomplete"):
+                module.write_route_csv(incomplete, target)
+            wrong_samples = dict(report, rows=[dict(row) for row in report["rows"]])
+            wrong_samples["rows"][0]["app_cpu_time_trial_s"] = [0.1]
+            with self.assertRaisesRegex(ValueError, "missing"):
+                module.write_route_csv(wrong_samples, target)
+            self.assertFalse(target.exists())
 
     def test_actual_repository_registration_has_all_forty_five_routes(self):
         module.ROUTES = self.old

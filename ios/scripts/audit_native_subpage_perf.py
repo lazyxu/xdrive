@@ -5,6 +5,7 @@ Unlike a source-only checkbox, this requires actual XCTest runner metric lines
 for each registered route. Unsupported physical FPS/Owner content is never
 inferred from Simulator measurements.
 """
+import csv
 import json
 import math
 import os
@@ -239,6 +240,61 @@ def audit(content, log, raw_metrics):
     }
 
 
+
+ROUTE_CSV_FIELDS = (
+    "source_commit", "route", "runtime", "retained_trials",
+    "parent_stage_p50_ms", "parent_stage_p95_ms",
+    "ax_ready_p50_ms", "ax_ready_p95_ms",
+    "return_ax_ready_p50_ms", "return_ax_ready_p95_ms",
+    "app_cpu_time_p50_s", "app_peak_memory_p95_mib",
+    "first_composited_frame", "physical_fps", "authorized_owner_data",
+    "web_native_parity",
+)
+
+
+def write_route_csv(outcome, destination):
+    """Export only already-audited XCTest data; never fabricate missing frames."""
+    rows = outcome.get("rows")
+    if (not outcome.get("raw_xcresult_metrics_present")
+            or outcome.get("retained_trials_per_route") != 3
+            or not isinstance(rows, list)
+            or len(rows) != outcome.get("route_count")
+            or len({row["route"] for row in rows}) != len(rows)):
+        raise ValueError("Cannot export incomplete native per-route metrics")
+    numeric_fields = (
+        "parent_stage_p50_ms", "parent_stage_p95_ms",
+        "ax_ready_p50_ms", "ax_ready_p95_ms",
+        "return_ax_ready_p50_ms", "return_ax_ready_p95_ms",
+        "app_cpu_time_p50_s", "app_peak_memory_p95_mib",
+    )
+    for row in rows:
+        if (any(key not in row or not isinstance(row[key], (int, float))
+                or not math.isfinite(row[key]) or row[key] < 0
+                for key in numeric_fields)
+                or len(row.get("ax_ready_trial_ms", [])) != 3
+                or len(row.get("return_ax_ready_trial_ms", [])) != 3
+                or len(row.get("app_cpu_time_trial_s", [])) != 3
+                or len(row.get("app_peak_memory_trial_kb", [])) != 3):
+            raise ValueError("Cannot export missing or invalid per-route evidence")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=ROUTE_CSV_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            values = {
+                "source_commit": outcome.get("source_commit", "unknown"),
+                "route": row["route"],
+                "runtime": "ios_simulator_no_session",
+                "retained_trials": 3,
+                "first_composited_frame": "not_measured",
+                "physical_fps": "not_measured",
+                "authorized_owner_data": "not_measured",
+                "web_native_parity": "not_verified",
+            }
+            values.update({key: row[key] for key in numeric_fields})
+            writer.writerow(values)
+
+
 def main():
     if len(sys.argv) != 4:
         raise SystemExit("usage: audit_native_subpage_perf.py XCODEBUILD_LOG RAW_METRICS_JSON SUMMARY_JSON")
@@ -251,6 +307,7 @@ def main():
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(outcome, ensure_ascii=False, indent=2) + "\n",
                            encoding="utf-8")
+    write_route_csv(outcome, destination.with_suffix(".csv"))
     print(f"IOS_NATIVE_SUBPAGE_COMPLETE_ALL routes={outcome['route_count']} "
           f"stage_samples={outcome['total_parent_stage_samples']} "
           f"samples={outcome['total_ax_samples']} "

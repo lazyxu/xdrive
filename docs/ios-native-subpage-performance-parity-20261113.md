@@ -224,3 +224,21 @@ forward, return, CPU and memory samples each**, and **39 pairs of screenshots**.
 These no-Session presentation flows do not establish authenticated Files, actual
 thumbnails, frame pacing, media decoding, 10k/100k or native 1/4GiB transfers.
 Keep Draft until all required latest-head gates pass.
+
+## Per-route metrics export (2026-11-15)
+
+The native #4328 Simulator workflow now emits `subpage-summary.csv` alongside
+`subpage-summary.json` and the original `.xcresult`. The CSV contains
+the exact HEAD SHA, each of the 45 measured route IDs, n=3 retained samples,
+parent preparation P50/P95, child AX-ready P50/P95, reverse AX-ready
+P50/P95, app CPU Time P50 and app physical-memory P95. It is created **only
+after the strict original XCTest log and `.xcresult` audit succeeds**;
+missing/invalid per-route samples stop export and fail CI.
+
+Every row explicitly labels `first_composited_frame`, `physical_fps`
+and `authorized_owner_data` as `not_measured`, and
+`web_native_parity` as `not_verified`. This is a reviewable native
+per-page report, **not** evidence that the 68 selected Web performance
+workflows are completed on iOS. Only results from the new exact HEAD
+Actions run can be treated as actual measurements; no invented speedup,
+signed iPhone, 100k PhotoKit or server-backed Owner results.

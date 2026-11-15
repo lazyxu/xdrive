@@ -106,6 +106,7 @@ jobs:
           xcrun xcresulttool export metrics --path "$out/Subpage.xcresult" --output-path "$out/metrics-csv"
           python3 ios/scripts/audit_native_subpage_perf.py \
             "$out/xcodebuild.log" "$out/metrics.json" "$out/subpage-summary.json"
+          test -s "$out/subpage-summary.csv"
           printf '%s\n' "SOURCE_HEAD=$(git rev-parse HEAD)"
       - name: Preserve original logs, app metrics and failed route evidence
         if: always()
@@ -118,6 +119,7 @@ jobs:
             ${{ runner.temp }}/native-subpage-perf/metrics.json
             ${{ runner.temp }}/native-subpage-perf/metrics-csv/
             ${{ runner.temp }}/native-subpage-perf/subpage-summary.json
+            ${{ runner.temp }}/native-subpage-perf/subpage-summary.csv
             ${{ runner.temp }}/native-subpage-perf/Subpage.xcresult/
             ${{ runner.temp }}/ios-native-subpage-source-sha
           if-no-files-found: warn
