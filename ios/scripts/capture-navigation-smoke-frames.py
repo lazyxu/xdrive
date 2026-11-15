@@ -40,6 +40,13 @@ MAX_CAPTURE_DURATION_SECONDS = 2.5
 # Bounded per test to avoid exhausting storage on rapid 16-cycle suites.
 TAP_CAPTURE_NUMBERS = frozenset((1, 2, 4, 8, 12, 16))
 TARGETS = {
+    # Repeated real native subpage, keyboard, source and foreground crash paths.
+    "testLauncherSearchKeyboardForegroundFilesReturnDoesNotExit",
+    "testDynamicRecentPickerTwiceFilesGalleryForegroundDoesNotExit",
+    "testFilesQuickRailNineSwitchesForegroundAndNoSessionDoesNotExit",
+    "testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit",
+    "testMineSignedOutCacheDisabledThroughRotationForegroundDoesNotExit",
+    "testRealSignedOutPasswordPreferenceToggleRestoresOriginalDoesNotExit",
     "testFilesFourDeniedChildrenWithOrientationAndOwnerFenceDoNotExit",
     "testFilesFavoriteDisclosureCollapseExpandAndReturnKeepsProcessAlive",
     "testGalleryBackupSettingsQueueAndFilesReturnDoNotExit",

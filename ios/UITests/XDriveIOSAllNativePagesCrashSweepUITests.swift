@@ -554,4 +554,157 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
     }
 
 
+
+
+    func testLauncherSearchKeyboardForegroundFilesReturnDoesNotExit() {
+        let app = launch(owner: false)
+        tap("native-ios-tab-launcher", app)
+        let search = element("native-ios-launcher-search", app)
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-launcher-search")
+        search.tap()
+        search.typeText("no-route-123")
+        XCTAssertEqual(search.value as? String, "no-route-123")
+        XCTAssertFalse(element("native-ios-launcher-files", app).exists)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-launcher-search", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        tap("native-ios-tab-gallery", app)
+        ready("native-ios-unified-photo-gallery", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "launcher-search-keyboard-files-gallery")
+    }
+
+    func testDynamicRecentPickerTwiceFilesGalleryForegroundDoesNotExit() {
+        let app = launch()
+        for round in 0..<2 {
+            openLauncher("notes", app)
+            ready("native-ios-notes-page", app)
+            tapNamed("最近功能", app)
+            XCTAssertTrue(app.navigationBars["最近功能"].firstMatch.waitForExistence(timeout: 15))
+            if round == 0 {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                XCTAssertTrue(app.navigationBars["最近功能"].firstMatch.waitForExistence(timeout: 15))
+            }
+            tapNamed("完成", app)
+            ready("native-ios-notes-page", app)
+            tap("native-ios-tab-files", app)
+            ready("native-ios-files-section-browse", app)
+            tap("native-ios-tab-gallery", app)
+            ready("native-ios-unified-photo-gallery", app)
+            XCTAssertFalse(app.navigationBars["最近功能"].firstMatch.exists)
+        }
+        capture(app, "recent-picker-repeated-retirement")
+    }
+
+    func testFilesQuickRailNineSwitchesForegroundAndNoSessionDoesNotExit() {
+        let app = launch()
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        for cycle in 0..<3 {
+            for name in ["recent", "favorites", "browse"] {
+                let id = "native-ios-files-section-" + name
+                tap(id, app)
+                let selected = element(id, app)
+                let expectation = XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "value == %@", "已选择"), object: selected)
+                XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 8), .completed)
+                XCTAssertEqual(app.state, .runningForeground)
+                if name != "browse" {
+                    XCTAssertFalse(element("native-ios-files-grid", app).exists)
+                }
+            }
+            if cycle == 1 {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                ready("native-ios-files-section-browse", app)
+            }
+            tap("native-ios-tab-gallery", app)
+            ready("native-ios-unified-photo-gallery", app)
+            tap("native-ios-tab-files", app)
+            ready("native-ios-files-section-browse", app)
+        }
+        capture(app, "files-quick-rail-nine-switches")
+    }
+
+    func testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit() {
+        let app = launch()
+        filesHomeChild("native-ios-files-home-edit-inline",
+                       page: "native-ios-files-home-list", app)
+        let edit = element("native-ios-files-home-edit-inline", app)
+        let started = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS %@", "完成首页整理"), object: edit)
+        XCTAssertEqual(XCTWaiter.wait(for: [started], timeout: 8), .completed)
+        filesHomeChild("native-ios-files-home-edit-inline",
+                       page: "native-ios-files-home-list", app)
+        let finished = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS %@", "直接编辑浏览首页"), object: edit)
+        XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 8), .completed)
+        filesHomeChild("native-ios-files-open-saved-searches",
+                       page: "native-ios-files-saved-searches-page", app)
+        tap("native-ios-files-saved-searches-done", app)
+        waitRetired("native-ios-files-saved-searches-page", app)
+        filesHomeChild("native-ios-files-open-operations",
+                       page: "native-ios-files-operation-history-page", app)
+        tap("native-ios-files-operation-history-done", app)
+        waitRetired("native-ios-files-operation-history-page", app)
+        tap("native-ios-tab-gallery", app)
+        ready("native-ios-unified-photo-gallery", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-home-list", app)
+        capture(app, "files-edit-and-management-sheets")
+    }
+
+    func testMineSignedOutCacheDisabledThroughRotationForegroundDoesNotExit() {
+        let app = launch(owner: false)
+        tap("native-ios-tab-mine", app)
+        let cache = app.buttons["缩略图缓存"].firstMatch
+        XCTAssertTrue(cache.waitForExistence(timeout: 15))
+        XCTAssertFalse(cache.isEnabled, "Signed-out Owner may not open thumbnail cache")
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        ready("native-ios-mine-server-account", app)
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-mine-server-account", app)
+        XCTAssertFalse(cache.isEnabled)
+        tap("native-ios-tab-gallery", app)
+        ready("native-ios-unified-photo-gallery", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "mine-cache-signed-out-denial")
+    }
+
+    func testRealSignedOutPasswordPreferenceToggleRestoresOriginalDoesNotExit() {
+        let app = launchRealSignedOut()
+        let toggle = element("native-ios-remember-password", app)
+        let scroll = app.scrollViews.containing(
+            .any, identifier: "native-ios-login-password").firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        for _ in 0..<8 {
+            if toggle.exists && toggle.isHittable { break }
+            scroll.swipeUp()
+        }
+        XCTAssertTrue(toggle.exists && toggle.isHittable)
+        guard let original = toggle.value as? String else {
+            XCTFail("Native preference must expose an original value")
+            return
+        }
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-remember-password")
+        toggle.tap()
+        XCTAssertNotEqual(toggle.value as? String, original)
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, original)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-login-password", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "real-signed-out-reversible-preference")
+    }
+
 }
