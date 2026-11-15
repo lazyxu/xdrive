@@ -41,6 +41,7 @@ MAX_CAPTURE_DURATION_SECONDS = 2.5
 TAP_CAPTURE_NUMBERS = frozenset((1, 2, 4, 8, 12, 16))
 TARGETS = {
     "testFilesFourDeniedChildrenWithOrientationAndOwnerFenceDoNotExit",
+    "testFilesFavoriteDisclosureCollapseExpandAndReturnKeepsProcessAlive",
     "testGalleryBackupSettingsQueueAndFilesReturnDoNotExit",
     "testGalleryThumbnailCacheSheetForegroundDismissDoesNotExit",
     "testNotesRecentFeaturePickerRotationAndTransfersDoNotExit",

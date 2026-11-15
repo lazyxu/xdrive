@@ -1509,6 +1509,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                 }
             }
+            .accessibilityIdentifier("native-ios-files-favorites-disclosure")
+            .accessibilityValue(favoriteFoldersExpanded ? "已展开" : "已折叠")
             // Keep Favorites and pinned shortcuts in the same home grouping
             // as Web/PWA. Both nested disclosures retain their own load/status
             // and permission guards, but do not consume separate long Sections.

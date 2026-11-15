@@ -112,7 +112,7 @@ test('signed-in Gallery never eagerly mounts the Files view graph; first Files v
   assert.doesNotMatch(restore, /resumeStore\.clear\(|XDriveIOSNativeFilesResumeStore\(\)\.clear\(/)
 })
 
-test('all 14 Launcher destinations and seventeen native all-page/child process crash journeys run in real Simulator', () => {
+test('all 14 Launcher destinations and eighteen native all-page/child process crash journeys run in real Simulator', () => {
   const sweep = fs.readFileSync(
     path.join(root, 'ios/UITests/XDriveIOSAllNativePagesCrashSweepUITests.swift'), 'utf8'
   )
@@ -123,7 +123,7 @@ test('all 14 Launcher destinations and seventeen native all-page/child process c
     path.join(root, '.github/workflows/ios-native-navigation-runtime.yml'), 'utf8'
   )
   const methods = [...sweep.matchAll(/\bfunc\s+(test\w+)\(\)/g)].map(match => match[1])
-  assert.equal(methods.length, 17, 'seventeen independent real native crash journeys are mandatory')
+  assert.equal(methods.length, 18, 'eighteen independent real native crash journeys are mandatory')
   assert.equal(new Set(methods).size, methods.length)
   for (const name of methods) {
     assert.ok(watcher.includes('"' + name + '"'), 'missing bounded Simulator frame watcher: ' + name)
@@ -145,6 +145,12 @@ test('all 14 Launcher destinations and seventeen native all-page/child process c
   assert.match(sweep, /-xdrive.ios.native.launch-checkpoint.v1/)
   assert.match(sweep, /native-ios-files-recent-error-page/)
   assert.match(sweep, /native-ios-files-favorites-error-page/)
+  assert.ok(sweep.includes('func testFilesFavoriteDisclosureCollapseExpandAndReturnKeepsProcessAlive()'))
+  assert.ok(sweep.includes('ensureFavoritesExpanded(app)'))
+  assert.ok(sweep.includes('favoritesDisclosure(app)'))
+  assert.ok(files.includes('@AppStorage("xdrive.ios.files.home.favorites-expanded.v1")'))
+  assert.ok(files.includes('.accessibilityIdentifier("native-ios-files-favorites-disclosure")'))
+  assert.ok(files.includes('.accessibilityValue(favoriteFoldersExpanded ? "已展开" : "已折叠")'))
   assert.match(sweep, /native-ios-gallery-thumbnail-cache/)
   assert.match(sweep, /native-ios-backup-cache-sheet-close/)
   assert.match(sweep, /native-ios-login-password/)

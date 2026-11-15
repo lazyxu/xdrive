@@ -88,6 +88,34 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
                        "Old native child remained after Done: " + id)
     }
 
+
+    /// Favorites is behind a persistent DisclosureGroup; a collapsed route
+    /// cannot be mislabeled as an App crash or missing native destination.
+    private func favoritesDisclosure(_ app: XCUIApplication) -> XCUIElement {
+        let home = element("native-ios-files-home-list", app)
+        XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
+        let disclosure = element("native-ios-files-favorites-disclosure", app)
+        for _ in 0..<10 {
+            if disclosure.exists && disclosure.isHittable { break }
+            home.swipeUp()
+        }
+        XCTAssertTrue(disclosure.exists && disclosure.isHittable,
+                      "Favorites DisclosureGroup is inaccessible")
+        return disclosure
+    }
+
+    private func ensureFavoritesExpanded(_ app: XCUIApplication) {
+        let disclosure = favoritesDisclosure(app)
+        if (disclosure.value as? String) == "已折叠" {
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-favorites-disclosure")
+            disclosure.tap()
+        }
+        let expanded = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已展开"), object: disclosure)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 8), .completed,
+                       "Favorites group did not expand before child navigation")
+    }
+
     private func filesHomeChild(_ id: String, page: String, _ app: XCUIApplication) {
         tap("native-ios-tab-files", app)
         ready("native-ios-files-section-browse", app)
@@ -101,6 +129,7 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
                        .completed, "Files Browse must be selected before opening Home child")
         let home = element("native-ios-files-home-list", app)
         XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
+        if id == "native-ios-files-open-favorites" { ensureFavoritesExpanded(app) }
         let target = element(id, app)
         for _ in 0..<10 {
             if target.exists && target.isHittable { break }
@@ -371,6 +400,42 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
             ready("native-ios-unified-photo-gallery", app)
         }
         capture(app, "files-four-denied-children")
+    }
+
+
+    /// Reproduces the persisted-collapsed route, without fabricating a bearer
+    /// session or presenting protected rows in the CI synthetic Owner.
+    func testFilesFavoriteDisclosureCollapseExpandAndReturnKeepsProcessAlive() {
+        let app = launch()
+        tap("native-ios-tab-files", app)
+        tap("native-ios-files-section-browse", app)
+        ready("native-ios-files-home-list", app)
+        let disclosure = favoritesDisclosure(app)
+        if (disclosure.value as? String) == "已展开" {
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-favorites-disclosure")
+            disclosure.tap()
+        }
+        let collapsed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已折叠"), object: disclosure)
+        XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 8), .completed,
+                       "Native favorites group did not collapse")
+        XCTAssertFalse(element("native-ios-files-open-favorites", app).exists,
+                       "Favorites child must not remain mounted in a collapsed group")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-files-home-list", app)
+        filesHomeChild("native-ios-files-open-favorites",
+                       page: "native-ios-files-favorites-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists,
+                       "Synthetic Owner must not access protected Favorites")
+        tap("native-ios-files-favorites-error-return", app)
+        waitRetired("native-ios-files-favorites-error-page", app)
+        tap("native-ios-tab-gallery", app)
+        ready("native-ios-unified-photo-gallery", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-home-list", app)
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "files-favorites-collapse-expand-return")
     }
 
     func testGalleryBackupSettingsQueueAndFilesReturnDoNotExit() {
