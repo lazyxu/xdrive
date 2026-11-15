@@ -555,9 +555,17 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
 
         attach("place-portrait")
         for option in ["年", "月", "日", "全部"] {
-            let segment = app.buttons[option].firstMatch
-            XCTAssertTrue(segment.waitForExistence(timeout: 10),
+            // The Dashboard tab also has a button named "全部". Query only
+            // children of the real shared segmented time-scale Picker.
+            let segment = scale.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == %@", option)).firstMatch
+            if !segment.waitForExistence(timeout: 10) {
+                diagnose("Shared time-scale control missing segment: " + option, in: app)
+            }
+            XCTAssertTrue(segment.exists,
                           "Shared date-scale segment absent: " + option)
+            XCTAssertTrue(segment.isHittable,
+                          "Shared date-scale segment is not visible: " + option)
             segment.tap()
             XCTAssertTrue(tile.waitForExistence(timeout: 15))
             attach("place-" + option)
@@ -567,6 +575,10 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(tile.waitForExistence(timeout: 15))
         XCTAssertGreaterThan(tile.frame.width, 0)
         attach("place-landscape")
+        // Return to portrait before accessing the Dashboard bottom tabs.
+        // The wall has already been captured in real landscape orientation.
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(tile.waitForExistence(timeout: 15))
 
         let done = element("native-ios-map-place-dismiss", in: app)
         XCTAssertTrue(done.waitForExistence(timeout: 15))
@@ -591,6 +603,8 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             XCTAssertLessThan(abs(galleryScale.frame.height - placeScaleHeight), 3,
                               "Shared segmented date control height diverged")
         }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertEqual(app.state, .runningForeground)
         attach("gallery-landscape")
         XCUIDevice.shared.orientation = .portrait
         attach("gallery-portrait")
