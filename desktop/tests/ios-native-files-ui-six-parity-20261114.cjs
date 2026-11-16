@@ -19,7 +19,8 @@ const video = source('ios/scripts/files_ui_transition_video.py')
 test('F1 Home starts with real destinations and search, not redundant overview', () => {
   assert.doesNotMatch(browse, /native-ios-files-home-overview|Text\("我的文件"\)/)
   assert.match(browse, /native-ios-files-home-search/)
-  assert.match(browse, /DisclosureGroup\("标签与分类", isExpanded: \$homeTagsExpanded\)/)
+  assert.match(browse, /DisclosureGroup\(isExpanded: \$homeTagsExpanded\)/)
+  assert.match(browse, /Text\("标签与分类"\)[\s\S]*?accessibilityIdentifier\("native-ios-files-home-tags-disclosure"\)/)
   assert.match(browse, /private var homeTagsExpanded = false/)
   for (const id of ['native-ios-files-open-root-location',
     'native-ios-files-open-trash', 'native-ios-files-open-recent',
@@ -119,9 +120,11 @@ test('F7 lightweight attributes do not replace verified mutation entry points', 
 })
 
 test('F8 compact Browse exposes smart folders, tags, search and verified path jump', () => {
-  assert.match(browse, /DisclosureGroup\("更多管理", isExpanded: \$homeMoreExpanded\)/)
+  assert.match(browse, /DisclosureGroup\(isExpanded: \$homeMoreExpanded\)/)
+  assert.match(browse, /Text\("更多管理"\)[\s\S]*?accessibilityIdentifier\("native-ios-files-home-more-disclosure"\)/)
   assert.match(browse, /native-ios-files-open-saved-searches/)
-  assert.match(browse, /DisclosureGroup\("标签与分类", isExpanded: \$homeTagsExpanded\)/)
+  assert.match(browse, /DisclosureGroup\(isExpanded: \$homeTagsExpanded\)/)
+  assert.match(browse, /Text\("标签与分类"\)[\s\S]*?accessibilityIdentifier\("native-ios-files-home-tags-disclosure"\)/)
   assert.match(browse, /native-ios-files-search-shortcut/)
   assert.match(browse, /Button \{ searchPresented = true \}/)
   assert.match(browse, /native-ios-files-path-shortcut/)
