@@ -29,11 +29,12 @@ struct XDriveIOSAutoRouteSafetyChecks {
                     "unknown write/finalize ACK must never be replayed")
             }
         }
-        for failure: URLError.Code in [
+        let nonNetworkFailures: [URLError.Code] = [
             .cancelled, .secureConnectionFailed, .serverCertificateUntrusted,
             .serverCertificateHasUnknownRoot, .serverCertificateHasBadDate,
             .badServerResponse, .userAuthenticationRequired, .appTransportSecurityRequiresSecureConnection
-        ] {
+        ]
+        for failure in nonNetworkFailures {
             precondition(!XDriveIOSAutoRouteSafety.isNetworkFailure(URLError(failure)))
             precondition(!XDriveIOSAutoRouteSafety.mayReplay(
                 request("GET"), after: URLError(failure), responseStarted: false))
