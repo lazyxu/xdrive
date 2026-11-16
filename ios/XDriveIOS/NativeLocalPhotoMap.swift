@@ -666,7 +666,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
                 }
                 .padding(8)
             }
-            .navigationTitle("此处照片 · 当前页")
+            .navigationTitle("此地点的照片")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -889,13 +889,14 @@ private struct XDriveIOSMapSpatialAlbum: View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             VStack(spacing: 8) {
-                XDriveIOSNativePhotoWallScopeSummary(
-                    message: isNearbyExpansion ?
-                        "附近照片 · 已加载 \(visibleItems.count) 张" :
-                        "此处照片 · \(selectedPhotoCount) 张",
-                    progress: busy ? "正在读取位置照片" :
-                        (hasNext ? "可继续向下滚动浏览" : "已显示全部可访问照片")
+                XDriveIOSNativePhotoMapPlaceHeader(
+                    title: isNearbyExpansion ? "附近照片" :
+                        (album?.name ?? "此地点的照片"),
+                    count: isNearbyExpansion ? nil : selectedPhotoCount,
+                    detail: isNearbyExpansion ? "按位置浏览" : nil
                 )
+                .accessibilityValue(busy ? "正在读取位置照片" :
+                    (hasNext ? "可继续滚动浏览" : "已显示全部可访问照片"))
                 XDriveIOSNativePhotoWallFeedback(
                     isLoading: busy, loadingMessage: "正在读取位置照片…",
                     error: error, canRetry: !busy && phase == .active,
@@ -910,6 +911,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 XDriveIOSNativePhotoWallScrollContainer {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
+                            .controlSize(.small)
+                            .padding(.horizontal, 6)
                         XDriveIOSNativePhotoWallSectionList(
                             sections: visibleSections, density: wallDensity,
                             title: { wallTimeScale == .all ? nil :
@@ -967,7 +970,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 }
             }
             .navigationTitle(isNearbyExpansion ? "附近照片" :
-                (album.map { "\($0.name) · 此处照片" } ?? "此处照片"))
+                (album?.name ?? "此地点的照片"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
