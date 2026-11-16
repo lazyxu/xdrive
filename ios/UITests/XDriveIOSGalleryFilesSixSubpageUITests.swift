@@ -84,14 +84,26 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 12), .completed,
                            "Actual Files Browse section did not become selected")
         }
-        XCTAssertTrue(control("native-ios-files-home-list", app)
-            .waitForExistence(timeout: 15), "Real native Files Home did not mount")
+        // Native Files Home is a SwiftUI List without a dedicated container
+        // AX identifier. Verify the real Owner-scoped cloud entry, so an
+        // unmounted child fails without falsely rejecting healthy navigation.
+        XCTAssertTrue(control("native-ios-files-open-root-location", app)
+            .waitForExistence(timeout: 15),
+            "Real native Files Home cloud entry did not mount")
     }
 
     private func openFilesSheet(_ entryID: String, pageID: String,
                                 _ app: XCUIApplication) {
         enterFilesBrowse(app)
-        let list = control("native-ios-files-home-list", app)
+        // SwiftUI List may surface as UITableView or UICollectionView;
+        // bounded swipes materialize lazy Organize rows on the iPhone viewport.
+        let table = app.tables.firstMatch
+        let collection = app.collectionViews.firstMatch
+        let scroll = app.scrollViews.firstMatch
+        var list: XCUIElement = app
+        if table.exists { list = table }
+        else if collection.exists { list = collection }
+        else if scroll.exists { list = scroll }
         let entry = control(entryID, app)
         for _ in 0..<10 {
             if entry.exists && entry.isHittable { break }
@@ -293,7 +305,9 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         enterFilesBrowse(app)
         XCTAssertFalse(control("native-ios-gallery-people-page", app).exists)
         XCTAssertFalse(control("native-ios-files-operation-history-page", app).exists)
-        XCTAssertTrue(control("native-ios-files-home-list", app).exists)
+        XCTAssertTrue(control("native-ios-files-open-root-location", app)
+            .waitForExistence(timeout: 15),
+            "Files Home did not recover after search keyboard and People return")
         assertVisibleContent(app, label: "Browse after Files search and People return")
     }
 }

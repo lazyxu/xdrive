@@ -32,8 +32,11 @@ test('all six real native cross-subpage journeys are registered exactly once', (
   }
   assert.match(native, /let app = XCUIApplication\(\)/);
   assert.match(native, /app\.launch\(\)/);
-  assert.match(native, /XCAssertEqual\(app\.state, \.runningForeground/);
+  assert.match(native, /XCTAssertEqual\(app\.state, \.runningForeground/);
   assert.match(native, /IOS_NATIVE_NAV_TAP_START route=/);
+  // Never reintroduce a fake AX container ID on the native SwiftUI List.
+  assert.doesNotMatch(native, /native-ios-files-home-list/);
+  assert.match(native, /native-ios-files-open-root-location/);
   assert.match(native, /XCTAttachment|app\.screenshot\(\)/);
 });
 
