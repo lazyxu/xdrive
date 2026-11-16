@@ -982,7 +982,10 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
     /// login screen; keyboard and scene changes must never authenticate Owner.
     func testSignedOutLoginThreeFieldsKeyboardForegroundNoCrash() {
         let app = launchRealSignedOut()
-        let scroll = app.scrollViews.firstMatch
+        // Scope the container to the actual password control: a retained
+        // offscreen ScrollView or a different child cannot be used to swipe.
+        let scroll = app.scrollViews.containing(
+            .any, identifier: "native-ios-login-password").firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 15))
         for id in ["native-ios-login-server", "native-ios-login-username",
                    "native-ios-login-password"] {
