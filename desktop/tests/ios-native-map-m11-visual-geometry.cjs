@@ -44,16 +44,16 @@ test('M11 exact layout assertions explicitly prohibit inconsistent photo pin num
 
 test('M11 system Photos count inset keeps actual counts and revokes stale source badges', () => {
   // Above 999 the visual label must represent the full trusted count.
-  assert.match(layout, /NumberFormatter\\.localizedString\\(/)
-  assert.doesNotMatch(layout, /999\\+/)
-  assert.match(layout, /badgeBackgroundColor = UIColor\\.black\\.withAlphaComponent\\(0\\.66\\)/)
-  assert.match(layout, /badge\\.adjustsFontSizeToFitWidth = true/)
-  assert.match(layout, /badge\\.isAccessibilityElement = false/)
+  assert.match(layout, /NumberFormatter\.localizedString\(/)
+  assert.doesNotMatch(layout, /999\+/)
+  assert.match(layout, /badgeBackgroundColor = UIColor\.black\.withAlphaComponent\(0\.66\)/)
+  assert.match(layout, /badge\.adjustsFontSizeToFitWidth = true/)
+  assert.match(layout, /badge\.isAccessibilityElement = false/)
   for (const cover of [local, cloud, unified]) {
-    assert.match(cover, /badge\\.backgroundColor = XDriveIOSNativeMapMarkerVisualPolicy\\.badgeBackgroundColor/)
-    assert.match(cover, /XDriveIOSNativeMapMarkerVisualPolicy\\.badgeText\\(count: count\\)/)
-    assert.match(cover, /XDriveIOSNativeMapMarkerVisualPolicy\\.resizeBadge\\(badge\\)/)
-    assert.doesNotMatch(cover, /badge\\.backgroundColor = \\.systemBlue/)
+    assert.match(cover, /badge\.backgroundColor = XDriveIOSNativeMapMarkerVisualPolicy\.badgeBackgroundColor/)
+    assert.match(cover, /XDriveIOSNativeMapMarkerVisualPolicy\.badgeText\(count: count\)/)
+    assert.match(cover, /XDriveIOSNativeMapMarkerVisualPolicy\.resizeBadge\(badge\)/)
+    assert.doesNotMatch(cover, /badge\.backgroundColor = \.systemBlue/)
   }
-  assert.match(unified, /badge\\.isHidden = !enabled \\|\\| count <= 1/)
+  assert.match(unified, /badge\.isHidden = !enabled \|\| count <= 1/)
 })
