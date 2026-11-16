@@ -3801,8 +3801,18 @@ class DriveAppTest {
         // The long Clipboard editor is now correctly scrollable. Move the
         // real recipient menu into view before tapping: a hit dispatched at
         // its old off-screen coordinates must not count as a valid user tap.
+        // A new unknown-ACK banner changes the scrollable editor's height.
+        // On the real API-35 emulator the initial scroll may complete before
+        // the target button has a visible hit region. Keep the strict real
+        // visibility gate: retry the actual scroll, never click off-screen.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                compose.onNodeWithText("定向发送：Fixture Clip")
+                    .performScrollTo().assertIsDisplayed().assertIsEnabled()
+            }.isSuccess
+        }
         compose.onNodeWithText("定向发送：Fixture Clip")
-            .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
+            .assertIsDisplayed().assertIsEnabled().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching {
                 compose.onNodeWithText("当前 Owner 广播").assertIsDisplayed()
