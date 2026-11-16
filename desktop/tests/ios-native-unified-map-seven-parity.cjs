@@ -95,7 +95,9 @@ test('G05: location walls use one verified-section renderer and a bounded return
 })
 
 test('G06: nearby keeps exact same Owner/presence/query and independently checks expanded GPS membership', () => {
-  assert.match(map, /Button\("附近照片"\)/)
+  assert.match(map, /Label\("显示附近照片", systemImage: "mappin\.and\.ellipse"\)/)
+  assert.match(map, /\.navigationDestination\(isPresented: \$nearbyPresented\)/)
+  assert.doesNotMatch(map, /\.sheet\(isPresented: \$nearbyPresented\)/)
   assert.match(map, /isNearbyExpansion: true/)
   assert.match(map, /guard let nearbyViewport else \{ return false \}/)
   assert.match(map, /XDriveIOSNativeLocalMapSpatialPolicy\.includes\(\s*nearbyViewport/)
