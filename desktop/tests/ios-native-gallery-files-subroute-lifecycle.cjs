@@ -40,9 +40,12 @@ test('Foreground resume never refreshes behind the collection Viewer', () => {
   const s = between(collection, '.onChange(of: phase) { state in', '.onChange(of: kind)');
   assert.match(s, /selectedFile == nil && !viewerRefreshPending/);
 });
-test('Owner and collection kind changes revoke pending refresh hints', () => {
-  assert.match(collection, /\.onChange\(of: kind\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
-  assert.match(collection, /\.onChange\(of: login\.owner\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
+test('Owner and collection kind changes revoke pending refresh and stale List/Grid geometry', () => {
+  // Reset must keep every previously verified refresh fence AND retire the
+  // new visual offset/visible row state; relaxing the old test to a generic
+  // dot-all match could accidentally admit cross-Owner scroll restoration.
+  assert.match(collection, /\.onChange\(of: kind\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*pendingModeSwitchAlignment = nil\s*visibleModeAnchorID = nil\s*visibleModeAlignment = 0\s*visibleModeViewportHeight = 0\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
+  assert.match(collection, /\.onChange\(of: login\.owner\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*pendingModeSwitchAlignment = nil\s*visibleModeAnchorID = nil\s*visibleModeAlignment = 0\s*visibleModeViewportHeight = 0\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
 });
 test('PhotoKit revision keeps authorized album Viewer or Map mounted', () => {
   const s = between(album, '.onChange(of: libraryMonitor.revision) { _ in', '.onChange(of: phase) { state in');
