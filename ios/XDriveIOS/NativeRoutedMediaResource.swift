@@ -122,7 +122,8 @@ final class XDriveIOSRoutedMediaLoader: NSObject, AVAssetResourceLoaderDelegate,
 
     private func fulfill(_ loading: AVAssetResourceLoadingRequest) async throws {
         let dataRequest = loading.dataRequest
-        var offset = max(0, dataRequest?.currentOffset ?? dataRequest?.requestedOffset ?? 0)
+        var offset = max(0, dataRequest.map { $0.currentOffset > 0
+            ? $0.currentOffset : $0.requestedOffset } ?? 0)
         let allRemaining = dataRequest?.requestsAllDataToEndOfResource == true
         var remaining = Int64(max(0, dataRequest?.requestedLength ?? 1))
         if allRemaining { remaining = Int64.max }
@@ -175,9 +176,8 @@ final class XDriveIOSRoutedMediaLoader: NSObject, AVAssetResourceLoaderDelegate,
                       span.first == expectedOffset, span.last <= maximumEnd,
                       let size = Int(exactly: span.last - span.first + 1),
                       size > 0, size <= 256 * 1_024,
-                      let encoding = http.value(forHTTPHeaderField: "Content-Encoding"),
-                      encoding.lowercased() == "identity"
-                        || http.value(forHTTPHeaderField: "Content-Encoding") == nil
+                      (http.value(forHTTPHeaderField: "Content-Encoding")
+                        .map { $0.lowercased() == "identity" } ?? true)
                 else { throw Failure.unsupportedRange }
                 var output = Data()
                 output.reserveCapacity(size)
