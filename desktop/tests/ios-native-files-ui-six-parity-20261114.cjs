@@ -73,7 +73,9 @@ test('F4 Viewer adds explicit checked export and retains native media', () => {
 test('F5 real video and decoded-frame audit, not screenshot-only', () => {
   assert.match(workflow, /files_ui_transition_video\.py" watch/)
   assert.match(workflow, /files_ui_transition_video\.py" audit/)
-  assert.match(workflow, /--minimum 4/)
+  // The current real H.264 gate requires twelve distinct journeys (stronger than the original four).
+  assert.match(workflow, /--minimum 12/)
+  assert.match(video, /1 <= minimum <= len\(TARGETS\)/)
   assert.match(video, /"xcrun", "simctl", "io", simulator, "recordVideo"/)
   // Decode the native page center rather than persistent tab/navigation chrome.
   // Keep real H.264 frame, tap-marker and blank-transition evidence mandatory.
@@ -134,7 +136,10 @@ test('F9 extension icons and metadata reuse existing bounded thumbnails', () => 
   for (const format of ['pdf', 'docx', 'xlsx', 'pptx', 'heic', 'mp4', 'swift']) {
     assert.ok(tokens.includes('"' + format + '"'), format)
   }
-  assert.match(thumbnail, /XDriveIOSNativeFilesUIStyle\.fileAppearance\(node\)\.symbol/)
+  // The original symbol fallback is intentionally replaced by the PWA-aligned shared icon;
+  // real media thumbnails still pass the same Owner/revision and MIME gates.
+  assert.match(thumbnail, /XDriveIOSNativeFilesFallbackIcon/)
+  assert.match(tokens, /XDriveIOSNativeFilesUIStyle\.fileAppearance\(node\)\.label/)
   assert.match(browse, /XDriveIOSNativeFilesUIStyle\.typeBadge\(entry\.node\)/)
   assert.match(collection, /XDriveIOSNativeFilesUIStyle\.typeBadge\(item\.node\)/)
   assert.match(thumbnail, /XDriveIOSNativeFilesThumbnailPolicy\.canRequest\(node\)/)
