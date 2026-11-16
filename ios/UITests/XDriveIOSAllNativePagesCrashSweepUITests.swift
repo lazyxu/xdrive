@@ -390,17 +390,23 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
     /// an authenticated Owner in the synthetic-Owner test environment.
     private func openGalleryBackup(_ child: String, _ app: XCUIApplication) {
         tap("native-ios-tab-gallery", app)
-        // Menu is exposed as a Button; querying .any can resolve its
-        // non-hittable wrapper while the actual control settles after tab switch.
-        let backup = app.buttons.matching(
-            identifier: "native-ios-gallery-backup-settings").firstMatch
-        XCTAssertTrue(backup.waitForExistence(timeout: 15),
-                      "Gallery backup toolbar Button is absent")
-        let hittable = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "hittable == YES"), object: backup)
-        if XCTWaiter.wait(for: [hittable], timeout: 12) != .completed {
+        // Live Simulator screenshots show the Gallery backup Menu visible,
+        // but SwiftUI can expose its identifier on an AX wrapper which is
+        // not hittable. Require a *real* hittable Button or Menu label.
+        let candidates = [
+            app.buttons.matching(identifier: "native-ios-gallery-backup-settings").firstMatch,
+            app.buttons["备份"].firstMatch,
+            app.buttons.matching(identifier: "native-ios-gallery-backup-settings-compact").firstMatch
+        ]
+        var target: XCUIElement?
+        for _ in 0..<48 {
+            target = candidates.first(where: { $0.exists && $0.isHittable })
+            if target != nil { break }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        guard let backup = target else {
             capture(app, "gallery-backup-menu-not-hittable")
-            XCTFail("Gallery backup Button remained obstructed after settling")
+            XCTFail("No real Gallery backup Menu became hittable")
             return
         }
         print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-backup-settings")
@@ -641,7 +647,13 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         print("IOS_NATIVE_NAV_TAP_START route=native-ios-launcher-search")
         search.tap()
         search.typeText("no-route-123")
-        XCTAssertEqual(search.value as? String, "no-route-123")
+        // Assert the full asynchronous SwiftUI value rather than an
+        // intermediate keyboard update. Truncation still fails the test.
+        let expected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "no-route-123"),
+            object: search)
+        XCTAssertEqual(XCTWaiter.wait(for: [expected], timeout: 8), .completed,
+                       "Launcher search dropped typed characters")
         XCTAssertFalse(element("native-ios-launcher-files", app).exists)
         XCUIDevice.shared.press(.home)
         app.activate()
@@ -1236,6 +1248,9 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
                            "No-session cloud failure displayed protected rows")
             app.terminate()
             app.launch()
+            // Cold restart intentionally restores Gallery before Files.
+            ready("native-ios-unified-photo-gallery", app)
+            tap("native-ios-tab-files", app)
             ready("native-ios-files-section-browse", app)
             tap("native-ios-files-section-browse", app)
             ready("native-ios-files-home-list", app)
@@ -1261,6 +1276,9 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
             XCTAssertFalse(element("native-ios-files-grid", app).exists)
             app.terminate()
             app.launch()
+            // Cold restart intentionally restores Gallery before Files.
+            ready("native-ios-unified-photo-gallery", app)
+            tap("native-ios-tab-files", app)
             ready("native-ios-files-section-browse", app)
             tap("native-ios-files-section-browse", app)
             ready("native-ios-files-home-list", app)
