@@ -1256,6 +1256,10 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     // Never persist PhotoKit local identifiers in a route snapshot.
     @AccessibilityFocusState private var accessibilityFocusedTileID: String?
     @State private var pageRenderRevision: UInt64 = 0
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     var body: some View {
@@ -1287,19 +1291,26 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 } else if let page {
                     Text("当前显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets)")
                         .font(.footnote).monospacedDigit()
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
-                        ForEach(page.items.filter { $0.kind != "unsupported" }) { candidate in
+                    // Reuse Gallery/Places layout without widening the authorized PhotoKit page.
+                    let visibleItems = page.items.filter { $0.kind != "unsupported" }
+                    let sections = xdriveIOSNativePhotoWallVisibleSections(
+                        visibleItems, scale: .day
+                    ) { XDriveIOSNativePhotoWallTimeScale.day.key(for: $0.capturedAt) }
+                    XDriveIOSNativePhotoWallSectionList(
+                        sections: sections, density: density,
+                        title: { XDriveIOSNativePhotoWallTimeScale.day.label(for: $0.key) },
+                        items: { $0.items }
+                    ) { candidate in
                             Button {
                                 viewerReturnID = candidate.id
                                 accessibilityFocusedTileID = nil
                                 selected = candidate
                             } label: {
-                                XDriveIOSLocalPhotoTile(candidate: candidate)
+                                XDriveIOSNativeSquarePhotoTile(candidate: candidate, framing: framing)
                             }
                             .buttonStyle(.plain)
                             .id(candidate.id)
                             .accessibilityFocused($accessibilityFocusedTileID, equals: candidate.id)
-                        }
                     }
                     HStack {
                         Button("上一页") { load(offset: max(0, page.startOffset - 64)) }
@@ -1313,8 +1324,11 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                     Button("重新读取本机相册") { refresh() }
                         .buttonStyle(.bordered)
                 }
-                if busy { ProgressView("读取本机相册…") }
-                if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
+                XDriveIOSNativePhotoWallFeedback(
+                    isLoading: busy, loadingMessage: "读取本机相册…",
+                    error: errorMessage, canRetry: !busy && phase == .active,
+                    buttonTitle: "重新读取本机相册"
+                ) { refresh() }
                 if !compactGallery {
                     Text("只读取当前授权子集；缩略图可按需从 iCloud 获取，不会自动下载完整原件。权限、相册或 App 状态变化时旧页立即废弃。")
                         .font(.footnote).foregroundStyle(.secondary)

@@ -547,7 +547,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var hasCompletedInitialRead = false
     @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
     private var density: XDriveIOSNativePhotoWallDensity = .standard
-    @State private var framing: XDriveIOSNativePhotoWallFraming = .square
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var failure: String?
@@ -821,21 +822,19 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 )
                                 .onAppear { savedOffset = offset }
                             }
-                        } else if loading {
-                            XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取已授权图库…")
-                                .frame(maxWidth: .infinity).padding()
-                        } else if failure == nil {
+                        } else if !loading && failure == nil {
                             XDriveIOSNativePhotoWallStatusMessage(message: mediaFilter.emptyMessage)
                                 .padding(12)
                         }
-                        if let failure {
-                            XDriveIOSNativePhotoWallRetryMessage(
-                                message: failure, buttonTitle: "重新读取",
-                                canRetry: authorized && phase == .active && selected == nil &&
-                                    !actionBusy && !shareBusy
-                            ) { reload() }
-                                .padding(12)
-                        }
+                        XDriveIOSNativePhotoWallFeedback(
+                            isLoading: loading && total == 0,
+                            loadingMessage: "正在读取已授权图库…",
+                            error: failure,
+                            canRetry: authorized && phase == .active && selected == nil &&
+                                !actionBusy && !shareBusy,
+                            buttonTitle: "重新读取"
+                        ) { reload() }
+                        .padding(12)
                     }
                 }
                 .padding(.vertical, 8)
