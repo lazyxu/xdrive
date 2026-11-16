@@ -80,13 +80,13 @@ test('11 native foreground return under operation-history sheet is exercised wit
   assert.match(ui, /XCUIDevice.shared.press\(\.home\)[\s\S]*?app.activate\(\)/)
   assert.match(ui, /assertVisiblePixels\(app, route: "Gallery after operations foreground"\)/)
 })
-test('12 all 82 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
+test('12 all 88 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
   const a = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
   const names = [...a.matchAll(/func (test\w+)\(\)/g), ...ui.matchAll(/func (test\w+)\(\)/g)]
     .map(x => x[1])
   const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(x => x[1]))
-  assert.equal(names.length, 82)
-  assert.equal(new Set(names).size, 82)
+  assert.equal(names.length, 88)
+  assert.equal(new Set(names).size, 88)
   const sixRealChildRoutes = [
     "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
     "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",

@@ -6,7 +6,10 @@ import UIKit
 /// reads may show an error, but must not kill or replace a navigation shell.
 /// These are mount/return/crash checks, not proof of zero dropped frames.
 final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+    }
 
     /// CI starts a real simctl recorder after the XCTest "started" log line.
     /// Measured first decoded video frames appeared up to ~17 seconds late.
@@ -228,7 +231,16 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             XCTFail("No screenshot CGImage after " + reason)
             return
         }
-        let width = 24, height = 32
+        // Inspect child content instead of colorful, always-present TabBar chrome.
+        // A 96x64 middle crop also avoids the previous 24x32 landscape alias.
+        let contentRect = CGRect(x: 0, y: CGFloat(image.height) * 0.1875,
+                                 width: CGFloat(image.width),
+                                 height: CGFloat(image.height) * 0.625)
+        guard let content = image.cropping(to: contentRect) else {
+            XCTFail("Cannot crop native page content after " + reason)
+            return
+        }
+        let width = 96, height = 64
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let rendered = pixels.withUnsafeMutableBytes { buffer -> Bool in
             guard let base = buffer.baseAddress,
@@ -239,7 +251,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
                   ) else { return false }
             context.interpolationQuality = .low
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            context.draw(content, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
         XCTAssertTrue(rendered, "Screenshot could not be sampled after " + reason)

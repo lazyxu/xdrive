@@ -100,3 +100,34 @@ test("six additional executable Gallery and Files child lifecycle journeys", () 
   assert.match(frame, /context\.draw\(content,/)
   assert.match(navigation, /XCUIDevice\.shared\.orientation = \.portrait/)
 })
+
+
+test("six additional Gallery Files error and lifecycle stress cases are executed", () => {
+  const names = [
+    "testCloudTrashDenialsAlbumsOriginalsUnifiedAreReadable",
+    "testSavedSearchHistoryForegroundAfterReverseSheetSequence",
+    "testPeopleLocalPhotoKitFilesQuickSectionsPreserveLocalWall",
+    "testGalleryFilterCancelThenCloudDenialKeepsNoGhostSheet",
+    "testFilesHistoryRotationOriginalsForegroundPreservesChild",
+    "testLocalPhotoDateThenTrashDenialRestoresPhotoKit",
+  ]
+  const watcher = fs.readFileSync(
+    path.join(root, "ios/scripts/capture-navigation-smoke-frames.py"), "utf8")
+  for (const name of names) {
+    const pos = navigation.indexOf("func " + name + "()")
+    assert.ok(pos >= 0, name + " real XCTest missing")
+    const end = navigation.indexOf("\n    func test", pos + 5)
+    const body = navigation.slice(pos, end >= 0 ? end : undefined)
+    assert.match(body, /waitForExistence\(timeout: 15\)/)
+    assert.match(body, /assertVisiblePixels\(app,/)
+    assert.ok(watcher.includes('"' + name + '"'), name + " live recording registration missing")
+  }
+  const stability = fs.readFileSync(
+    path.join(root, "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift"), "utf8")
+  const check = stability.slice(stability.indexOf("private func assertNotSolidScreen("),
+    stability.indexOf("func testGalleryFilesAlternationRetainsNonBlankSettledFrames"))
+  assert.match(check, /let width = 96, height = 64/)
+  assert.match(check, /image\.cropping\(to: contentRect\)/)
+  assert.match(check, /context\.draw\(content,/)
+  assert.match(stability, /XCUIDevice\.shared\.orientation = \.portrait/)
+})

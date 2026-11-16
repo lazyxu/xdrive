@@ -195,6 +195,13 @@ MINIMAL_TARGETS = {
     "testGalleryPeopleRotationFilesGalleryKeepsPage",
     "testOriginalsHelpFilesHistoryThenOriginals",
     "testLocalPhotoDateSheetForegroundFilesThenLocal",
+    # Six independent Gallery/Files cross-route stress cases.
+    "testCloudTrashDenialsAlbumsOriginalsUnifiedAreReadable",
+    "testSavedSearchHistoryForegroundAfterReverseSheetSequence",
+    "testPeopleLocalPhotoKitFilesQuickSectionsPreserveLocalWall",
+    "testGalleryFilterCancelThenCloudDenialKeepsNoGhostSheet",
+    "testFilesHistoryRotationOriginalsForegroundPreservesChild",
+    "testLocalPhotoDateThenTrashDenialRestoresPhotoKit",
 }
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
