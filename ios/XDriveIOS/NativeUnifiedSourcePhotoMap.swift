@@ -250,32 +250,32 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 }
             )
             .accessibilityIdentifier("native-ios-unified-source-map")
+            .overlay(alignment: .bottomLeading) {
+                if currentProof {
+                    XDriveIOSNativePhotoMapStatusPill(
+                        message: "\(pins.reduce(0) { $0 + $1.count }) 张照片",
+                        accessibilityID: "native-ios-unified-source-map-total")
+                } else if busy {
+                    ProgressView("正在加载照片位置…")
+                        .font(.caption).padding(10)
+                        .background(.regularMaterial, in: Capsule()).padding(10)
+                        .accessibilityIdentifier("native-ios-unified-source-map-scanning")
+                }
+            }
             if basemapUnavailable {
-                Text("地图底图暂不可用。联网后可切换底图重试；照片位置仍受当前权限保护。")
+                Text("地图暂时无法加载，请检查网络后重试。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-unified-source-map-basemap-error")
             }
-            if busy {
-                ProgressView("核对整个当前来源的照片位置…")
-                    .accessibilityIdentifier("native-ios-unified-source-map-scanning")
-            } else if let error {
+            if let error {
                 XDriveIOSNativePhotoWallRetryMessage(
-                    message: error, buttonTitle: "重新核对照片地图",
+                    message: error, buttonTitle: "重试加载照片",
                     canRetry: phase == .active,
                     accessibilityID: "native-ios-unified-source-map-retry"
                 ) { reload() }
-            } else if currentProof {
-                let total = pins.reduce(0) { $0 + $1.count }
-                Text("\(presence.title) · 当前视窗已核对 \(total) 张有定位的照片")
-                    .font(.footnote).monospacedDigit()
-                    .accessibilityIdentifier("native-ios-unified-source-map-total")
-                if pins.isEmpty {
-                    Text("当前已核验的筛选结果在这个地图视窗没有拍摄位置。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            } else {
-                Text("当前地图视窗或来源权限待核验，旧地点不可打开。")
-                    .foregroundStyle(.secondary)
+            } else if currentProof && pins.isEmpty {
+                Text("这里还没有带位置的照片")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle(presence.title + " · 地图")
