@@ -13,22 +13,22 @@ const still = source('ios/scripts/capture-navigation-smoke-frames.py')
 const workflow = source('.github/workflows/ios-native-navigation-runtime.yml')
 const paths = ["testFilesSizeFilterHorizontalGalleryReturn","testFilesDateThenSizeFiltersKeepNoSessionGuard","testFilesSizeFilterAfterQuickRailReentry","testFilesSizeFilterAfterSavedSearchesDismiss","testFilesSizeFilterAfterCloudDenialReturn","testFilesSizeFilterAfterForegroundResume"]
 test('actual native filter strip scrolls horizontally and is used by the 49-route suite', () => {
-  assert.match(browse, /ScrollView\\(\\.horizontal, showsIndicators: false\\)/)
+  assert.match(browse, /ScrollView\(\.horizontal, showsIndicators: false\)/)
   assert.match(browse, /native-ios-files-filter-strip/)
   const stage = perf.slice(perf.indexOf('case "files.search.date", "files.search.size":'), perf.indexOf('case "files.home.more-organizer":'))
-  assert.match(stage, /strip\\.swipeLeft\\(\\)/)
+  assert.match(stage, /strip\.swipeLeft\(\)/)
   assert.match(stage, /native-ios-files-search-size-filter/)
 })
 test('six independent native Gallery/Files filter journeys are captured by strict H264 and screenshot registries', () => {
   for (const name of paths) {
     const pos = swift.indexOf('func ' + name + '()')
     assert.ok(pos > 0, 'Missing actual XCTest: ' + name)
-    const end = swift.indexOf('\\n    func test', pos + 5)
+    const end = swift.indexOf('\n    func test', pos + 5)
     const body = swift.slice(pos, end > 0 ? end : undefined)
-    assert.match(body, /waitForRealH264RecordingPrelude\\(\\)/)
+    assert.match(body, /waitForRealH264RecordingPrelude\(\)/)
     assert.match(body, /native-ios-tab-files/)
     assert.match(body, /native-ios-tab-gallery/)
-    assert.match(body, /assertVisiblePixels\\(app,/)
+    assert.match(body, /assertVisiblePixels\(app,/)
     assert.ok(video.includes('"' + name + '"'), 'Missing H264 target: ' + name)
     assert.ok(still.includes('"' + name + '"'), 'Missing frame target: ' + name)
   }
