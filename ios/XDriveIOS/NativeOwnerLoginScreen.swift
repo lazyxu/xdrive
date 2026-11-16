@@ -367,7 +367,13 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .disabled(model.busy)
             .accessibilityIdentifier("native-ios-login-submit")
 
-            DisclosureGroup(isExpanded: $showAdvancedConnection) {
+            // Explicit native buttons give each collapsed section one
+            // reliable 44-pt tap target and a visible, testable open state.
+            compactSectionHeader(
+                "高级连接设置", systemImage: "network", expanded: showAdvancedConnection
+            ) { showAdvancedConnection.toggle() }
+            .accessibilityIdentifier("native-ios-login-advanced-connection")
+            if showAdvancedConnection {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("内网 IP（可选）").font(.subheadline.weight(.medium))
                     TextField("192.168.2.4", text: $model.lanIPText)
@@ -390,26 +396,33 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                 in: .whitespacesAndNewlines).isEmpty)
                         .accessibilityIdentifier("native-ios-lan-https-pairing")
                     }
-                    DisclosureGroup(isExpanded: $showLANHelp) {
-                        Text("登录前检测一次内网 HTTPS；仅网络不可达或超时才使用上方域名。登录后固定已选入口，证书必须匹配内网 IP。")
-                        Text("首次使用或 Caddy 根证书更换后，请在服务器所在的内网进行配对；App 会先验证域名证书，再验证内网 IP。")
-                    } label: {
-                        Text("内网 HTTPS 使用说明")
-                    }
+                    compactSectionHeader(
+                        "内网 HTTPS 使用说明", systemImage: "info.circle",
+                        expanded: showLANHelp
+                    ) { showLANHelp.toggle() }
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-lan-certificate-help")
+                    if showLANHelp {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("登录前检测一次内网 HTTPS；仅网络不可达或超时才使用上方域名。登录后固定已选入口，证书必须匹配内网 IP。")
+                            Text("首次使用或 Caddy 根证书更换后，请在服务器所在的内网进行配对；App 会先验证域名证书，再验证内网 IP。")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.top, 8)
-            } label: {
-                Label("高级连接设置", systemImage: "network")
             }
-            .accessibilityIdentifier("native-ios-login-advanced-connection")
 
-            DisclosureGroup(isExpanded: $showLoginPreferences) {
+            compactSectionHeader(
+                "登录偏好", systemImage: "slider.horizontal.3", expanded: showLoginPreferences
+            ) { showLoginPreferences.toggle() }
+            .accessibilityIdentifier("native-ios-login-preferences")
+            if showLoginPreferences {
                 VStack(alignment: .leading, spacing: 8) {
-                    // A user switch OFF must revoke only the selected profile's
-                    // Keychain password; never bind directly to rememberPassword.
+                    // Only a direct user toggle may revoke the selected
+                    // Keychain password: automatic prefill must never do so.
                     Toggle("安全保存当前账号密码", isOn: Binding(
                         get: { model.rememberPassword },
                         set: { model.setRememberPasswordFromUser($0) }
@@ -419,10 +432,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                         .accessibilityIdentifier("native-ios-keep-signed-in")
                 }
                 .padding(.top, 8)
-            } label: {
-                Label("登录偏好", systemImage: "slider.horizontal.3")
             }
-            .accessibilityIdentifier("native-ios-login-preferences")
         }
         .disabled(model.busy)
         // The destructive action remains guarded by the exact selected
@@ -444,47 +454,75 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     // This is an emergency OFF operation even while signed out or offline.
     // Hiding the dangerous button must not make it unreachable without login.
     private var helpAndEmergency: some View {
-        DisclosureGroup(isExpanded: $showHelpAndEmergency) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("无法登录时，也可以停止本机自动备份与待执行后台任务。")
-                    .font(.footnote).foregroundStyle(.secondary)
-                Button("紧急停止本机相册自动备份", role: .destructive) {
-                    Task { await emergencyStopWithoutAccount() }
+        VStack(alignment: .leading, spacing: 8) {
+            compactSectionHeader(
+                "帮助与紧急操作", systemImage: "questionmark.circle",
+                expanded: showHelpAndEmergency
+            ) { showHelpAndEmergency.toggle() }
+            .accessibilityIdentifier("native-ios-login-help-emergency")
+            if showHelpAndEmergency {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("无法登录时，也可以停止本机自动备份与待执行后台任务。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("紧急停止本机相册自动备份", role: .destructive) {
+                        Task { await emergencyStopWithoutAccount() }
+                    }
+                    .disabled(emergencyStopBusy)
+                    .accessibilityIdentifier("native-ios-offline-emergency-stop")
+                    if let emergencyStopNotice {
+                        Text(emergencyStopNotice)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-offline-emergency-stop-result")
+                    }
                 }
-                .disabled(emergencyStopBusy)
-                .accessibilityIdentifier("native-ios-offline-emergency-stop")
-                if let emergencyStopNotice {
-                    Text(emergencyStopNotice)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-offline-emergency-stop-result")
-                }
+                .padding(.top, 8)
             }
-            .padding(.top, 8)
-        } label: {
-            Label("帮助与紧急操作", systemImage: "questionmark.circle")
         }
-        .accessibilityIdentifier("native-ios-login-help-emergency")
     }
 
     private var aboutSection: some View {
-        DisclosureGroup(isExpanded: $showAbout) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(XDriveIOSNativeBuildIdentity.label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .accessibilityIdentifier("native-ios-prelogin-build")
-                Button("复制版本信息") {
-                    UIPasteboard.general.string = XDriveIOSNativeBuildIdentity.label
-                }
-                .accessibilityIdentifier("native-ios-copy-version")
+        VStack(alignment: .leading, spacing: 8) {
+            compactSectionHeader("关于", systemImage: "info.circle", expanded: showAbout) {
+                showAbout.toggle()
             }
-            .padding(.top, 8)
-        } label: {
-            Label("关于", systemImage: "info.circle")
+            .accessibilityIdentifier("native-ios-login-about")
+            if showAbout {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(XDriveIOSNativeBuildIdentity.label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("native-ios-prelogin-build")
+                    Button("复制版本信息") {
+                        UIPasteboard.general.string = XDriveIOSNativeBuildIdentity.label
+                    }
+                    .accessibilityIdentifier("native-ios-copy-version")
+                }
+                .padding(.top, 8)
+            }
         }
-        .accessibilityIdentifier("native-ios-login-about")
+    }
+
+    /// A fully tappable native row. A conditional body disappears completely
+    /// when collapsed rather than remaining in a nested accessibility group.
+    private func compactSectionHeader(
+        _ title: String, systemImage: String, expanded: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Label(title, systemImage: systemImage)
+                Spacer(minLength: 8)
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(expanded ? "已展开" : "已收起")
     }
 
     private func compactFeedback(_ message: String, isError: Bool) -> String {

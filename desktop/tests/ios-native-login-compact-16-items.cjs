@@ -13,9 +13,9 @@ const workflow = read('.github/workflows/ios-native-navigation-runtime.yml')
 const uiTest = read('ios/UITests/XDriveIOSCompactLoginUITests.swift')
 const form = ui.slice(ui.indexOf('    private var loginForm: some View {'),
   ui.indexOf('    // This is an emergency OFF operation'))
-const advanced = form.slice(form.indexOf('DisclosureGroup(isExpanded: $showAdvancedConnection)'),
-  form.indexOf('DisclosureGroup(isExpanded: $showLoginPreferences)'))
-const preferences = form.slice(form.indexOf('DisclosureGroup(isExpanded: $showLoginPreferences)'))
+const advanced = form.slice(form.indexOf('"高级连接设置", systemImage: "network"'),
+  form.indexOf('"登录偏好", systemImage: "slider.horizontal.3"'))
+const preferences = form.slice(form.indexOf('"登录偏好", systemImage: "slider.horizontal.3"'))
 const errors = ui.slice(ui.indexOf('if let warning = model.errorMessage {'),
   ui.indexOf('                            helpAndEmergency'))
 const help = ui.slice(ui.indexOf('    private var helpAndEmergency: some View {'),
@@ -36,14 +36,14 @@ test('03 removes the extra personal-cloud tagline', () => {
 })
 test('04 private-IP editor is gated behind a default-closed Advanced disclosure', () => {
   assert.match(ui, /@State private var showAdvancedConnection = false/)
-  assert.match(advanced, /DisclosureGroup\(isExpanded: \$showAdvancedConnection\)/)
+  assert.match(advanced, /if showAdvancedConnection \\{/)
   assert.match(advanced, /TextField\("192\.168\.2\.4", text: \$model\.lanIPText\)/)
   assert.match(advanced, /native-ios-login-lan-ip/)
-  assert.match(advanced, /Label\("高级连接设置"/)
+  assert.match(advanced, /"高级连接设置", systemImage: "network"/)
   assert.match(uiTest, /testAdvancedConnectionAndLANHelpRemainAvailable/)
 })
 test('05 full route policy is help-only, not permanently on login screen', () => {
-  assert.match(advanced, /DisclosureGroup\(isExpanded: \$showLANHelp\)/)
+  assert.match(advanced, /if showLANHelp \\{/)
   assert.match(advanced, /登录前检测一次内网 HTTPS/)
   assert.match(ui, /@State private var showLANHelp = false/)
 })
@@ -177,4 +177,20 @@ test('legacy c83 and modern compact-login simulator harness compile against thei
       fs.rmSync(dir, {force: true, recursive: true})
     }
   }
+})
+
+test('visible compact settings headers must be explicit tappable stateful buttons', () => {
+  assert.doesNotMatch(ui, /DisclosureGroup\(isExpanded:/)
+  assert.match(ui, /private func compactSectionHeader\(/)
+  assert.match(ui, /Button\(action: action\)/)
+  assert.match(ui, /\.contentShape\(Rectangle\(\)\)/)
+  assert.match(ui, /\.accessibilityValue\(expanded \? "已展开" : "已收起"\)/)
+  for (const name of [
+    'showAdvancedConnection', 'showLANHelp', 'showLoginPreferences',
+    'showHelpAndEmergency', 'showAbout'
+  ]) {
+    assert.match(ui, new RegExp('if ' + name + ' \\{'))
+    assert.match(ui, new RegExp(name + '\\.toggle\\(\\)'))
+  }
+  assert.match(uiTest, /testAdvancedCanCloseAndReopenWithoutLeakingLANFields/)
 })

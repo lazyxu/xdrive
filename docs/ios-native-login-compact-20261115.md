@@ -68,3 +68,14 @@ Seven optional disclosure/diagnostic states start **closed** on each view mount.
   full CI/Final Gate must pass before merging.
 - Physical signed iPhone and actual Owner/LAN credentials: **跳过（未验收）**
   until real user installation; Simulator green is not on-device acceptance.
+
+## 2026-11-16 — actual Simulator failures and accessible disclosure fix
+
+The previous candidate iPhone 16 / iOS 18.5 Simulator executed the 4
+compact-login interaction tests. Default signed-out view passed; the three
+advanced/preferences/help checks failed after their DisclosureGroup buttons
+were tapped but their child controls did not appear. The native SwiftUI UI
+now uses explicit 44-pt Button headers with visible chevrons and conditional
+section bodies, retaining the exact same TLS, Keychain, Owner and backup
+operations. A fifth XCTest covers Advanced open, close and reopen without
+leaking a hidden LAN editor. Historic c83 and login safety checks remain.

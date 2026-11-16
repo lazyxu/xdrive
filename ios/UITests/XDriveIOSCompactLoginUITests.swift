@@ -80,6 +80,22 @@ final class XDriveIOSCompactLoginUITests: XCTestCase {
         frame("default", client: client)
     }
 
+    func testAdvancedCanCloseAndReopenWithoutLeakingLANFields() {
+        let client = app()
+        let lan = view("native-ios-login-lan-ip", in: client)
+        XCTAssertFalse(lan.exists, "Advanced must be collapsed by default")
+        expand("高级连接设置", in: client)
+        XCTAssertTrue(lan.waitForExistence(timeout: 10),
+                      "Opening Advanced must create the real LAN editor")
+        expand("高级连接设置", in: client)
+        XCTAssertFalse(lan.exists,
+                       "Closing Advanced must remove its editor from the UI")
+        expand("高级连接设置", in: client)
+        XCTAssertTrue(lan.waitForExistence(timeout: 10),
+                      "Advanced must reopen without reloading the login view")
+        frame("advanced-close-reopen", client: client)
+    }
+
     func testAdvancedConnectionAndLANHelpRemainAvailable() {
         let client = app()
         expand("高级连接设置", in: client)
