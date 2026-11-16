@@ -2049,6 +2049,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             )
         }
         .onAppear {
+            if onFocusChange != nil {
+                focused = true
+                onFocusChange?(true)
+            }
             authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             changes.start()
             guard authorization == .authorized else {
@@ -2203,7 +2207,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 changes.stop()
                 clearReturnCamera()
                 focused = false
-                onFocusChange?(false)
+                // Parent Gallery route owns chrome reset. A local -> Owner
+                // MapKit swap must not reveal stale Dashboard bars mid-frame.
                 invalidate()
             } else { suspendForSheet() }
         }
