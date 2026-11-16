@@ -447,6 +447,27 @@ class NativeSubpageAuditTests(unittest.TestCase):
                 "XCTMemoryMetric(application: app)", "XCTMemoryMetric()"
             ))
 
+    def test_one_real_simulator_run_requires_both_root_and_subpage_metrics(self):
+        workflow = (module.ROOT / ".github/workflows/ios-native-subpage-performance.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "-only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeResourcePerformanceUITests",
+            workflow
+        )
+        self.assertIn(
+            "-only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests",
+            workflow
+        )
+        self.assertEqual(workflow.count("xcodebuild test"), 1)
+        self.assertIn("test_audit_native_resource_perf.py", workflow)
+        self.assertIn("GITHUB_SHA=\"$XD_PERF_SOURCE_SHA\" python3 ios/scripts/audit_native_resource_perf.py",
+                      workflow)
+        self.assertIn("root-summary.json", workflow)
+        self.assertIn("IOS_NATIVE_PAGE_AND_SUBPAGE_COMPLETE roots=25 children=49", workflow)
+        self.assertIn("child[\"total_ax_samples\"] == 147", workflow)
+        self.assertIn("root[\"observed_invocations\"] == 100", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

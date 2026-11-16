@@ -31,7 +31,7 @@ concurrency:
 jobs:
   actual-native-subpage-metrics:
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,8 +43,9 @@ jobs:
           set -euo pipefail
           git rev-parse HEAD > "$RUNNER_TEMP/ios-native-subpage-source-sha"
           echo "XD_PERF_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-          python3 -m py_compile ios/scripts/audit_native_subpage_perf.py ios/scripts/test_audit_native_subpage_perf.py
+          python3 -m py_compile ios/scripts/audit_native_subpage_perf.py ios/scripts/test_audit_native_subpage_perf.py ios/scripts/audit_native_resource_perf.py ios/scripts/test_audit_native_resource_perf.py
           python3 -m unittest discover -s ios/scripts -p 'test_audit_native_subpage_perf.py' -v
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_resource_perf.py' -v
           python3 -m unittest discover -s ios/scripts -p 'test_audit_native_seven_workloads.py' -v
           python3 ios/scripts/audit_native_seven_workloads.py ios/performance/native-seven-workloads.json
           python3 -m unittest discover -s ios/scripts -p 'test_audit_native_web_workflow_parity.py' -v
@@ -81,7 +82,7 @@ jobs:
           subprocess.run(["xcrun","simctl","bootstatus",d["udid"],"-b"],
                          timeout=240,check=True)
           PY
-      - name: Real child navigation and app CPU / peak memory n3
+      - name: Real 25-root and 49-child AX CPU peak memory n3 on one Simulator
         shell: bash
         run: |
           set -euo pipefail
@@ -94,9 +95,10 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/native-subpage-perf/Subpage.xcresult" \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeResourcePerformanceUITests \
             -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests \
             2>&1 | tee "$RUNNER_TEMP/native-subpage-perf/xcodebuild.log"
-      - name: Require 49 stage/forward/return AX paths, app resources and before/after-return screenshots
+      - name: Require 25 root plus 49 child real app resource and return metrics
         shell: bash
         run: |
           set -euo pipefail
@@ -107,7 +109,34 @@ jobs:
           xcrun xcresulttool export metrics --path "$out/Subpage.xcresult" --output-path "$out/metrics-csv"
           python3 ios/scripts/audit_native_subpage_perf.py \
             "$out/xcodebuild.log" "$out/metrics.json" "$out/subpage-summary.json"
+          # GitHub PR GITHUB_SHA may be a merge ref; record the exact checked-out
+          # source HEAD, not that synthetic merge SHA, for both audit reports.
+          GITHUB_SHA="$XD_PERF_SOURCE_SHA" python3 ios/scripts/audit_native_resource_perf.py \
+            "$out/xcodebuild.log" "$out/metrics.json" "$out/root-summary.json"
           test -s "$out/subpage-summary.csv"
+          test -s "$out/root-summary.json"
+          python3 - "$out" <<'PY'
+          import json, os, pathlib, sys
+          out = pathlib.Path(sys.argv[1])
+          child = json.loads((out / "subpage-summary.json").read_text())
+          root = json.loads((out / "root-summary.json").read_text())
+          sha = os.environ["XD_PERF_SOURCE_SHA"]
+          if (len(sha) != 40 or root["exact_commit"] != sha
+                  or child["source_commit"] != sha):
+              raise SystemExit("Root and subpage xcresult must match checked-out source SHA")
+          if not (root["route_count"] == 25
+                  and root["observed_invocations"] == 100
+                  and root["retained_trials_per_route"] == 3
+                  and child["route_count"] == 49
+                  and child["recorded_test_invocations"] == 196
+                  and child["total_ax_samples"] == 147
+                  and child["total_return_samples"] == 147
+                  and child["retained_trials_per_route"] == 3):
+              raise SystemExit("Actual 25-root/49-child n3 performance suite incomplete")
+          print("IOS_NATIVE_PAGE_AND_SUBPAGE_COMPLETE roots=25 children=49"
+                " root_invocations=100 child_invocations=196"
+                " child_forward=147 child_return=147 source_sha=" + sha)
+          PY
           printf '%s\n' "SOURCE_HEAD=$(git rev-parse HEAD)"
       - name: Preserve original logs, app metrics and failed route evidence
         if: always()
@@ -121,6 +150,7 @@ jobs:
             ${{ runner.temp }}/native-subpage-perf/metrics-csv/
             ${{ runner.temp }}/native-subpage-perf/subpage-summary.json
             ${{ runner.temp }}/native-subpage-perf/subpage-summary.csv
+            ${{ runner.temp }}/native-subpage-perf/root-summary.json
             ${{ runner.temp }}/native-subpage-perf/Subpage.xcresult/
             ${{ runner.temp }}/ios-native-subpage-source-sha
           if-no-files-found: warn

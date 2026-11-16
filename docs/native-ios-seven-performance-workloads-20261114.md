@@ -50,18 +50,19 @@ The machine-audited inventory lives in ios/performance/native-seven-workloads.js
 - A pending row remains pending with explicit missing evidence. Green workflow
   registration only asserts that nobody falsely marked the incomplete
   work as measured.
-- The existing 25-page root suite on master, and this PR's 45-child/interaction route
-  candidate (new Clipboard/Mine interaction routes require a fresh real Simulator
-  pass), establish the native measurement backbone, **not** complete Web
-  parity. Each of the 36 child paths now separately records parent-stage, forward
-  AX-ready and return AX-ready (n=3 each), app CPU time and peak physical memory
-  during the forward interval, plus one original post-AX and post-return screenshot
-  pair. Parent-stage includes UI preparation/XCTest idling, not only one screen
-  frame; screenshots are not composited first-pixel or continuous FPS evidence.
-  This change requires a fresh exact-HEAD Simulator pass, 135 stage samples,
-  135 forward samples, 135 reverse samples and 90 screenshots. This PR remains
-  Draft until required current-HEAD CI and Final Gate
-  pass and the promised workload metrics are actually gathered.
+- The current candidate binds **25 native root-page resource routes** and **49
+  genuinely native child / interaction paths** into one exact-HEAD iOS Simulator
+  `xcodebuild test` invocation. Each route has one warmup and 3 retained trials:
+  100 root and 196 child invocations, including 147 forward and 147 return
+  AX-ready child timings. App-targeted CPU time and peak physical memory are
+  audited independently for both suites, and child screenshots are retained
+  after AX-ready and after return. The job fails unless **both** original
+  `.xcresult` audits agree on the checked-out 40-character source SHA.
+  Reusing a prior successful run or counting source registration as completion
+  is forbidden. Parent-stage timing includes XCTest preparation/idling, not a
+  first composited frame; neither screenshots nor iOS 18 signpost duration
+  establish actual 60/120-Hz frame cadence. This PR remains Draft until the
+  exact-HEAD macOS Simulator run passes alongside CI/IPA/navigation gates.
 - Exact authorized Owner, full media/100k and signed physical iPhone capture
   unavailable in the current shared CI must stay **跳过（未验收）**. No fabricated
   acceptance or fake session is permitted.
