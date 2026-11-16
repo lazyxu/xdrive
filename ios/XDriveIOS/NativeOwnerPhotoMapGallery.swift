@@ -629,7 +629,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             // Source details live in map help during ordinary photo browsing.
             // Large accessibility text retains the full inline explanation.
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
-                Text("当前 Server Owner 已索引的 WGS84 云端位置，不是本机 PhotoKit 相册。")
+                Text("当前账户的照片位置")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             XDriveIOSOwnerMapSurface(
@@ -730,25 +730,19 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("native-ios-owner-cloud-photo-map")
-            if let overview, displayedOverviewMatchesLogin {
-                if verifiedBounds != nil {
-                    Text("当前视窗已有 \(overview.total_photo_count) 张已索引照片；地图显示 \(overview.items.count) 个位置代表项。")
-                        .font(.caption).monospacedDigit()
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("native-ios-owner-map-verified-count")
-                } else {
-                    // Retain old annotations VISUALLY during pan/zoom but do
-                    // not mislabel them as the newly authorized camera count.
-                    Text("上次验证视窗有 \(overview.total_photo_count) 张已索引照片；地图移动后旧标记暂不可打开。")
-                        .font(.caption).monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("native-ios-owner-map-stale-count")
-                }
-                if overview.aggregated {
-                    Text("区域仍为聚合结果；放大后刷新才能进入精确地点照片。")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            .overlay(alignment: .bottomLeading) {
+                if let overview, displayedOverviewMatchesLogin {
+                    XDriveIOSNativePhotoMapStatusPill(
+                        message: verifiedBounds != nil
+                            ? "\(overview.total_photo_count) 张照片"
+                            : "正在更新当前位置…",
+                        accessibilityID: verifiedBounds != nil
+                            ? "native-ios-owner-map-verified-count"
+                            : "native-ios-owner-map-stale-count")
+                } else if busy {
+                    ProgressView("正在加载照片位置…")
+                        .font(.caption).padding(10)
+                        .background(.regularMaterial, in: Capsule()).padding(10)
                 }
             }
             if let activeCaptureRange {
@@ -756,15 +750,14 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-owner-map-capture-range")
             }
-            if busy { ProgressView("核对当前 Owner 地图位置…") }
             if basemapUnavailable {
-                Text("地图底图暂不可用。云端位置仍需保持当前 Owner 授权；联网后平移地图或切换底图样式重试。")
+                Text("地图暂时无法加载，请检查网络后重试。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-owner-map-basemap-unavailable")
             }
             if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
-                Text("选择真实地点后仅打开当前 Owner 重新验证的 48 项 PhotoAsset 分页与原生 Viewer；聚合区域不能当成照片访问凭证。")
+                Text("轻点地图上的照片，浏览此地点的内容。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
