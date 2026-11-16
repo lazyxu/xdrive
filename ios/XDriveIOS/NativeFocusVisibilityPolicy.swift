@@ -1,14 +1,16 @@
 import Foundation
 
 /// L2 is a feature-owned intent, not an orientation change. The custom native
-/// five-slot bar disappears only for the verified Owner's Gallery PhotoAsset
-/// focus, never while Files/backup or a different Gallery source is active.
+/// five-slot bar disappears for a focused native PhotoKit map even while signed
+/// out (local Photos authority does NOT depend on Server Owner login). A cloud
+/// Gallery focus still requires a verified Owner; Files/backup are unaffected.
 enum XDriveIOSNativeFocusVisibilityPolicy {
     static func showsBar(
         tab: String, gallerySource: String, focused: Bool, ownerVerified: Bool
     ) -> Bool {
-        !(ownerVerified && tab == "gallery" &&
-          (gallerySource == "cloud" || gallerySource == "map") && focused)
+        !(tab == "gallery" && focused &&
+          (gallerySource == "map" ||
+           (gallerySource == "cloud" && ownerVerified)))
     }
 
     /// A departed Gallery child cannot set the current source's L2 focus.
@@ -18,7 +20,8 @@ enum XDriveIOSNativeFocusVisibilityPolicy {
         tab: String, gallerySource: String, callbackSource: String,
         ownerVerified: Bool
     ) -> Bool {
-        ownerVerified && tab == "gallery" && gallerySource == callbackSource &&
-            (callbackSource == "cloud" || callbackSource == "map")
+        tab == "gallery" && gallerySource == callbackSource &&
+            (callbackSource == "map" ||
+             (callbackSource == "cloud" && ownerVerified))
     }
 }
