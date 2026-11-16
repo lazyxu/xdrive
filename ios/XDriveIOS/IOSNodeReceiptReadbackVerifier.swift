@@ -75,7 +75,7 @@ struct XDriveIOSNodeReceiptReadbackVerifier {
         guard let url = components?.url else {
             throw XDriveIOSNodeReceiptReadbackError.invalidOwner
         }
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = XDriveIOSAutoRoute.ephemeralConfiguration()
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
