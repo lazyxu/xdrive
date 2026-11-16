@@ -360,6 +360,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             // change after a backup and must not cancel an active foreground
             // run via the SwiftUI account-change observer.
         }
+        XDriveIOSAutoRoute.shared.updateToken(owner: fresh, token: token)
         return (fresh, token)
     }
 
@@ -383,6 +384,24 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             errorMessage = nil
             savedForRetry = saved
             let origin = try ServerAddress.parse(saved.origin)
+            // Preserve the Keychain's logical Owner scope, even when its
+            // previously selected LAN address is now unreachable.
+            let draft = XDriveIOSNativeLoginDraftStore.load()
+            let candidateDomain = try? ServerAddress.parse(draft.server)
+            let knownDomain = candidateDomain.flatMap { domain -> URL? in
+                if domain == origin { return domain }
+                if (try? XDriveIOSNativeLANLoginRoute.candidate(
+                    origin: domain, ip: draft.lanIP)) == origin { return domain }
+                return nil
+            }
+            let domain = knownDomain ?? origin
+            let lanHint = knownDomain == nil ? "" : draft.lanIP
+            let physical = knownDomain == nil ? origin :
+                try await XDriveIOSNativeLANLoginRoute.selectOrigin(
+                    origin: domain, lanIP: lanHint)
+            XDriveIOSAutoRoute.shared.prepareRestore(
+                logical: origin, domain: domain, lanIP: lanHint, selected: physical)
+            // POST refresh is attempted once only. Unknown ACK is not replayed.
             let refreshed = try await AuthService(origin: origin).refresh(
                 token: saved.refreshToken
             )
@@ -414,11 +433,13 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 verifiedOwner: verified
             )
             owner = verified
+            XDriveIOSAutoRoute.shared.activate(
+                owner: verified, token: accessToken,
+                domain: domain, lanIP: lanHint, selected: physical)
             password = ""
             // A restored refresh credential may be pinned to the selected LAN IP.
             // Preserve the user's original HTTPS domain and LAN hint only when
             // they resolve to exactly this already-verified Owner endpoint.
-            let draft = XDriveIOSNativeLoginDraftStore.load()
             let configured = try? ServerAddress.parse(draft.server)
             let matchesRestoredEndpoint = configured.map { candidate in
                 candidate == origin ||
@@ -446,7 +467,9 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             errorMessage = nil
         } catch is CancellationError {
             // A cancelled restore cannot resurrect credentials or Owner UI.
+            XDriveIOSAutoRoute.shared.clear()
         } catch {
+            XDriveIOSAutoRoute.shared.clear()
             guard generation == ticket else { return }
             if isTransientRestoreError(error),
                let saved = savedForRetry,
@@ -631,6 +654,9 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 verifiedOwner: verified
             )
             owner = verified
+            XDriveIOSAutoRoute.shared.activate(
+                owner: verified, token: accessToken,
+                domain: configuredOrigin, lanIP: lanInput, selected: origin)
             password = ""
             // Only an authenticated, verified Server+Owner may gain a saved
             // password record. Saving a password is distinct from keeping a session.
@@ -659,11 +685,11 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             XDriveIOSNativeLoginDraftStore.save(
                 server: serverText, lanIP: lanIPText, username: username
             )
-            let fixedRoute = "当前会话固定使用 \(origin.host ?? "服务器")，不在登录后切换入口。"
             noticeMessage = (noticeMessage.map { $0 + " " } ?? "") +
                 (keepSignedIn
                 ? "已在本机安全保存当前 Owner 的保持登录凭据。"
-                : "本次仅内存登录，不保留刷新凭据。") + fixedRoute
+                : "本次仅内存登录，不保留刷新凭据。") +
+                " 内外网将按当前网络和 Owner 验证结果自动选择。"
         } catch is CancellationError {
             // A cancelled sign-in never authorizes a Session; the editable
             // form remains intact until the user deliberately changes it.
@@ -694,6 +720,12 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             errorMessage = humanMessage(error)
             return false
         }
+        // Capture the proven physical route for the final revoke before
+        // retiring the router; never leave the old Owner active after logout.
+        let logoutOrigin = previous.flatMap {
+            XDriveIOSAutoRoute.shared.selectedURL(for: $0.origin)
+        }
+        XDriveIOSAutoRoute.shared.clear()
         active = nil
         owner = nil
         prefillSavedPasswordForCurrentProfile()
@@ -702,7 +734,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             return true
         }
         do {
-            try await AuthService(origin: previous.origin).logout(
+            try await AuthService(origin: logoutOrigin ?? previous.origin).logout(
                 token: previous.refreshToken
             )
             noticeMessage = "已退出本机原生会话，并得到服务器退出确认。"
