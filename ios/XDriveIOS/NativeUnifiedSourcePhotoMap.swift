@@ -851,6 +851,10 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var timeScale: XDriveIOSNativePhotoWallTimeScale = .all
     @State private var shouldRestoreViewerTile = false
+    // At most two verified 48-row windows; presentation-only measurements.
+    @State private var visibleTileFrames: [String: CGRect] = [:]
+    @State private var photoWallViewportHeight: CGFloat = 0
+    @State private var viewerReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
     @AccessibilityFocusState private var focusedTileID: String?
     @State private var placeName: String?
     @State private var placeGeocoder = CLGeocoder()
@@ -1090,6 +1094,19 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 }
             }
             .padding(4)
+            .coordinateSpace(name: "xdrive-ios-source-place-wall")
+            .background {
+                GeometryReader { viewport in
+                    Color.clear
+                        .onAppear { photoWallViewportHeight = viewport.size.height }
+                        .onChange(of: viewport.size.height) {
+                            photoWallViewportHeight = $0
+                        }
+                }
+            }
+            .onPreferenceChange(XDriveIOSNativePhotoWallTileFramesKey.self) { frames in
+                if visibleTileFrames != frames { visibleTileFrames = frames }
+            }
             .xdrivePhotoWallPinch(density: $density, enabled: viewing == nil)
             .onChange(of: backfillAnchorID) { anchor in
                 guard active, let anchor,
@@ -1117,10 +1134,20 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     ? viewerOpeningWindow == nearbyWindowIndex
                     : viewerOpeningWindow == windowIndex
                 if viewerOpeningID == id && sameWindow {
+                    // Unchanged tile and window: retain exact ScrollView pixels.
                     focusedTileID = id
                 } else {
+                    // A different tile may retain its measured pixel placement
+                    // ONLY in the currently verified same virtual window.
+                    let currentWindow = isNearbyExpansion
+                        ? nearbyWindowIndex : windowIndex
+                    let alignment = viewerReturnViewport?.alignment(
+                        for: id, window: currentWindow,
+                        viewportHeight: photoWallViewportHeight
+                    )
                     xdrivePhotoWallFocusVerifiedTile(
-                        id, scroll: scroll, focus: $focusedTileID
+                        id, scroll: scroll, focus: $focusedTileID,
+                        anchor: alignment ?? .center
                     )
                 }
             }
@@ -1138,6 +1165,14 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-unified-source-map-photo")
         .accessibilityFocused($focusedTileID, equals: row.id)
+        .background {
+            GeometryReader { tile in
+                Color.clear.preference(
+                    key: XDriveIOSNativePhotoWallTileFramesKey.self,
+                    value: [row.id: tile.frame(in: .named("xdrive-ios-source-place-wall"))]
+                )
+            }
+        }
     }
 
     private func openAfterLiveAdmission(_ row: XDriveIOSNativeUnifiedPhoto) {
@@ -1145,6 +1180,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
               row.presence == presence,
               (previous + current).filter({ $0.id == row.id }).count == 1 else { return }
         let ticket = generation
+        let openedWindow = isNearbyExpansion ? nearbyWindowIndex : windowIndex
+        let openedFrame = visibleTileFrames[row.id]
         opening = true
         admissionTask?.cancel()
         admissionTask = Task { @MainActor in
@@ -1163,8 +1200,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             }
             viewerReturnID = row.id
             viewerOpeningID = row.id
-            viewerOpeningWindow = isNearbyExpansion
-                ? nearbyWindowIndex : windowIndex
+            viewerOpeningWindow = openedWindow
+            viewerReturnViewport = openedFrame.map {
+                XDriveIOSNativePhotoWallViewportAnchor(
+                    itemID: row.id, windowIndex: openedWindow,
+                    viewportOffset: $0.minY, tileHeight: $0.height)
+            }
             focusedTileID = nil
             viewing = .init(row: currentRow)
         }
@@ -1194,6 +1235,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 return
             }
             viewerReturnID = fresh.id
+            let currentWindow = isNearbyExpansion ? nearbyWindowIndex : windowIndex
+            viewerReturnViewport = visibleTileFrames[fresh.id].map {
+                XDriveIOSNativePhotoWallViewportAnchor(
+                    itemID: fresh.id, windowIndex: currentWindow,
+                    viewportOffset: $0.minY, tileHeight: $0.height)
+            }
             focusedTileID = nil
             viewing = XDriveIOSUnifiedMapViewerChoice(
                 row: fresh, session: viewing?.session ?? UUID())
@@ -1429,6 +1476,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         viewerOpeningID = nil
         viewerOpeningWindow = -1
         shouldRestoreViewerTile = false
+        viewerReturnViewport = nil
+        visibleTileFrames = [:]
+        photoWallViewportHeight = 0
         focusedTileID = nil
         placeNameTask?.cancel(); placeNameTask = nil
         placeGeocoder.cancelGeocode()

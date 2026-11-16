@@ -443,3 +443,34 @@ func xdrivePhotoWallFocusVerifiedTile<ID: Hashable>(
     scroll.scrollTo(id, anchor: anchor)
     focus.wrappedValue = id
 }
+
+
+/// Pure presentation geometry. No PhotoKit IDs are persisted; the source
+/// reader remains the only authority to expose a tile or Viewer.
+struct XDriveIOSNativePhotoWallTileFramesKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect],
+                       nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, newer in newer })
+    }
+}
+
+/// A transient same-window tile placement. Caller must already have verified
+/// the current Owner/PhotoKit grant, page membership and exact unique tile.
+struct XDriveIOSNativePhotoWallViewportAnchor: Equatable {
+    let itemID: String
+    let windowIndex: Int
+    let viewportOffset: CGFloat
+    let tileHeight: CGFloat
+
+    func alignment(for verifiedID: String, window: Int,
+                   viewportHeight: CGFloat) -> UnitPoint? {
+        guard verifiedID == itemID, window == windowIndex,
+              viewportOffset.isFinite, tileHeight.isFinite,
+              viewportHeight.isFinite, tileHeight > 0,
+              viewportHeight > tileHeight,
+              viewportOffset >= 0,
+              viewportOffset <= viewportHeight - tileHeight else { return nil }
+        return UnitPoint(x: 0.5, y: viewportOffset / (viewportHeight - tileHeight))
+    }
+}
