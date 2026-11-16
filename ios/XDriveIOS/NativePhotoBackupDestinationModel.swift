@@ -290,7 +290,7 @@ final class XDriveIOSNativePhotoBackupDestinationModel: ObservableObject {
         guard let url = parts.url else {
             throw XDriveIOSPhotoManagedDestinationFailure.invalidResponse
         }
-        let cfg = URLSessionConfiguration.ephemeral
+        let cfg = XDriveIOSAutoRoute.ephemeralConfiguration()
         cfg.httpShouldSetCookies = false
         cfg.httpCookieAcceptPolicy = .never
         cfg.urlCache = nil
