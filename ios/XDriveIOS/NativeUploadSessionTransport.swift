@@ -139,7 +139,7 @@ final class XDriveNativeUploadSessionTransport {
         self.origin = verifiedOrigin
         self.authorization = authorization
         self.allowsCellularAccess = allowsCellularAccess
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.allowsCellularAccess = allowsCellularAccess
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
