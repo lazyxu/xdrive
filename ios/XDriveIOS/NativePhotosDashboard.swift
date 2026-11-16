@@ -585,6 +585,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     // outside the branch so rotation does not remount Gallery/Viewer state.
     private var galleryStatusRow: some View {
                 HStack(spacing: 10) {
+                    // Keep the status in a compressible slot: long permission/receipt
+                    // text must not push the real backup Menu outside the hit area.
+                    VStack(alignment: .leading, spacing: 0) {
                     if backup.busy {
                         Label("正在检查相册备份", systemImage: "arrow.triangle.2.circlepath")
                     } else if let state = backup.schedule, state.enabled {
@@ -610,14 +613,20 @@ struct XDriveIOSNativePhotosDashboard: View {
                     } else {
                         Label("前台自动备份未开启", systemImage: "icloud.slash")
                     }
-                    Spacer(minLength: 4)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     if gallerySource == .local || gallerySource == .albums {
                         gallerySearchAction
                     }
                     Menu { backupMenuItems } label: {
                         Label("备份", systemImage: "icloud.and.arrow.up")
                     }
-                        .accessibilityIdentifier("native-ios-gallery-backup-settings")
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 60, minHeight: 44)
+                    .layoutPriority(2)
+                    .accessibilityIdentifier("native-ios-gallery-backup-settings")
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)

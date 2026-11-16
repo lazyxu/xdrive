@@ -116,6 +116,34 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
                        "Favorites group did not expand before child navigation")
     }
 
+    /// Expand the genuine collapsed Tags disclosure before opening its child.
+    /// A hidden management Button is not evidence of an application crash.
+    private func ensureTagsExpanded(_ app: XCUIApplication) {
+        let home = element("native-ios-files-home-list", app)
+        XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
+        let disclosure = element("native-ios-files-home-tags-disclosure", app)
+        for _ in 0..<12 {
+            if disclosure.exists && disclosure.isHittable { break }
+            home.swipeUp()
+        }
+        if !(disclosure.exists && disclosure.isHittable) {
+            for _ in 0..<12 {
+                if disclosure.exists && disclosure.isHittable { break }
+                home.swipeDown()
+            }
+        }
+        XCTAssertTrue(disclosure.exists && disclosure.isHittable,
+                      "Actual Files Tags disclosure inaccessible")
+        if (disclosure.value as? String) == "已折叠" {
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-home-tags-disclosure")
+            disclosure.tap()
+        }
+        let expanded = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已展开"), object: disclosure)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 8), .completed,
+                       "Files Tags group did not expand before opening management")
+    }
+
     private func filesHomeChild(_ id: String, page: String, _ app: XCUIApplication) {
         tap("native-ios-tab-files", app)
         ready("native-ios-files-section-browse", app)
@@ -130,6 +158,7 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         let home = element("native-ios-files-home-list", app)
         XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
         if id == "native-ios-files-open-favorites" { ensureFavoritesExpanded(app) }
+        if id == "native-ios-files-home-manage-tags" { ensureTagsExpanded(app) }
         let target = element(id, app)
         for _ in 0..<10 {
             if target.exists && target.isHittable { break }

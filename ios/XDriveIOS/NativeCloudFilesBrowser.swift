@@ -1677,7 +1677,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 )
                 .id("\(owner.instanceID):\(owner.ownerID):\(owner.rootNodeID):\(owner.origin.absoluteString)")
             }
-            DisclosureGroup("标签与分类", isExpanded: $homeTagsExpanded) {
+            DisclosureGroup(isExpanded: $homeTagsExpanded) {
                 Button { openTagManager() } label: {
                     Label("管理标签", systemImage: "tag.circle")
                 }
@@ -1711,6 +1711,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                         Button("重试") { searchOptions.load(login: login) }
                     }
                 }
+            } label: {
+                // Expose the *actual* collapsed native navigation affordance.
+                // Child tag actions remain inaccessible until expanded.
+                Text("标签与分类")
+                    .accessibilityIdentifier("native-ios-files-home-tags-disclosure")
+                    .accessibilityValue(homeTagsExpanded ? "已展开" : "已折叠")
             }
             DisclosureGroup("更多管理", isExpanded: $homeMoreExpanded) {
                 if isHomeEditing {
