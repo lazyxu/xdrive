@@ -186,7 +186,9 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                 .accessibilityIdentifier("native-ios-map-source-selector")
             }
         }
-        .onChange(of: source) { _ in onFocusChange?(false) }
+        // Swapping between local and Owner MapKit must keep the same immersive
+        // map presentation. Do not briefly reveal the Gallery strips.
+        .onChange(of: source) { _ in onFocusChange?(true) }
     }
 }
 
@@ -935,6 +937,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             )
         }
         .onAppear {
+            if onFocusChange != nil {
+                focused = true
+                onFocusChange?(true)
+            }
             if let cameraReturn { camera = cameraReturn }
             if overview == nil && !busy && phase == .active { reload() }
         }
@@ -982,7 +988,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             currentLocation.cancel()
             if selected == nil && selectedCluster == nil && singleViewer == nil {
                 focused = false
-                onFocusChange?(false)
+                // The Dashboard clears focus only on a real map-route exit.
+                // Avoid a transient bottom-bar flash on Owner -> local map.
                 invalidate()
             } else {
                 cameraSettleTask?.cancel()
