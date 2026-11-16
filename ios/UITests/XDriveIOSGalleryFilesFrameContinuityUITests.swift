@@ -249,37 +249,39 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
     /// The Files Home '整理' section is below the initial iPhone 16 fold.
     /// The real Simulator failure was a direct accessibility lookup of an
     /// unmounted Lazy List row, not a native Files process crash.
+    /// Retain the actual Browse List and its scroll position across sheets.
+    /// The Cloud Root *row* can be offscreen in SwiftUI's lazy List after a
+    /// history/saved-search return, so it cannot prove whether Home mounted.
     private func openFilesOperationHistoryFromBrowse(_ app: XCUIApplication) {
         assertFiles(app)
-        // Files may retain Recent/Favorites after a prior tab visit.
-        // Reach the actual Browse Home before looking for its lazy rows.
         tap("native-ios-files-section-browse", app: app)
-        XCTAssertTrue(target("native-ios-files-open-root-location", app: app)
-            .waitForExistence(timeout: 15),
-            "Files Browse Home did not mount before opening Operation History")
+        let browse = target("native-ios-files-section-browse", app: app)
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已选择"), object: browse)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 8), .completed)
+        let home = target("native-ios-files-home-list", app: app)
+        XCTAssertTrue(home.waitForExistence(timeout: 15),
+                      "Actual Files Browse List must stay mounted")
         let action = target("native-ios-files-open-operations", app: app)
-        // SwiftUI List can surface as UITableView or UICollectionView
-        // depending on iOS runtime. Keep a bounded native swipe fallback.
-        let table = app.tables.firstMatch
-        let collection = app.collectionViews.firstMatch
-        let scroll = app.scrollViews.firstMatch
-        var list: XCUIElement = app
-        if table.exists { list = table }
-        else if collection.exists { list = collection }
-        else if scroll.exists { list = scroll }
         for _ in 0..<8 {
-            if action.isHittable { break }
-            list.swipeUp()
+            if action.exists && action.isHittable { break }
+            home.swipeUp()
+        }
+        if !(action.exists && action.isHittable) {
+            for _ in 0..<8 {
+                if action.exists && action.isHittable { break }
+                home.swipeDown()
+            }
         }
         XCTAssertTrue(action.waitForExistence(timeout: 10),
-                      "Files Home operation history entry was not loaded after bounded scrolling")
-        XCTAssertTrue(action.isHittable,
-                      "Files operation history entry must be visible before tapping")
+                      "Files History row was not loaded in real Browse List")
+        XCTAssertTrue(action.isHittable, "Files History row not tappable")
         print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-open-operations")
         action.tap()
         XCTAssertEqual(app.state, .runningForeground,
                        "Native app exited opening Files operations")
     }
+
 
     func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages() {
         let app = launch(syntheticOwner: true)
@@ -401,30 +403,37 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     /// The Files Home uses a lazily mounted List. Reach the *real* row,
     /// rather than treating an off-screen accessibility lookup as a crash.
+    /// Saved Searches can be above the current retained History scroll
+    /// offset. Check the mounted Home List and search in both directions.
     private func openFilesSavedSearchesFromBrowse(_ app: XCUIApplication) {
         assertFiles(app)
         tap("native-ios-files-section-browse", app: app)
-        XCTAssertTrue(target("native-ios-files-open-root-location", app: app)
-            .waitForExistence(timeout: 15),
-            "Files Browse Home did not mount before opening Saved Searches")
+        let browse = target("native-ios-files-section-browse", app: app)
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已选择"), object: browse)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 8), .completed)
+        let home = target("native-ios-files-home-list", app: app)
+        XCTAssertTrue(home.waitForExistence(timeout: 15),
+                      "Actual Files Browse List must stay mounted")
         let action = target("native-ios-files-open-saved-searches", app: app)
-        let table = app.tables.firstMatch
-        let collection = app.collectionViews.firstMatch
-        let scroll = app.scrollViews.firstMatch
-        let host: XCUIElement = table.exists ? table :
-            (collection.exists ? collection : (scroll.exists ? scroll : app))
         for _ in 0..<10 {
             if action.exists && action.isHittable { break }
-            host.swipeUp()
+            home.swipeUp()
+        }
+        if !(action.exists && action.isHittable) {
+            for _ in 0..<10 {
+                if action.exists && action.isHittable { break }
+                home.swipeDown()
+            }
         }
         XCTAssertTrue(action.waitForExistence(timeout: 10),
-                      "Files Saved Searches entry was never mounted")
-        XCTAssertTrue(action.isHittable,
-                      "Files Saved Searches entry must be visible for a real tap")
+                      "Saved Searches row was not loaded in real Browse List")
+        XCTAssertTrue(action.isHittable, "Saved Searches row not tappable")
         print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-open-saved-searches")
         action.tap()
         XCTAssertEqual(app.state, .runningForeground)
     }
+
 
     func testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips() {
         let app = launch(syntheticOwner: true)

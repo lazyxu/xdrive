@@ -54,7 +54,7 @@ test("six new native Gallery/Files child paths are executed and video-audited", 
   }
 })
 
-test("Both Files Home sheet helpers select real Browse before scrolling", () => {
+test("Both Files Home sheet helpers use the retained Home List and bidirectional scroll", () => {
   const helpers = [
     ["openFilesOperationHistoryFromBrowse",
      "testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages"],
@@ -64,17 +64,25 @@ test("Both Files Home sheet helpers select real Browse before scrolling", () => 
   for (const [method, nextTest] of helpers) {
     const start = navigation.indexOf("private func " + method + "(")
     const end = navigation.indexOf("func " + nextTest + "()", start)
-    assert.ok(start >= 0 && end > start, method + " must exist")
+    assert.ok(start >= 0 && end > start)
     const body = navigation.slice(start, end)
     const browse = body.indexOf('tap("native-ios-files-section-browse", app: app)')
-    const root = body.indexOf('target("native-ios-files-open-root-location", app: app)')
-    const row = body.indexOf('let action = target("native-ios-files-open-')
-    assert.ok(browse >= 0 && root > browse && row > root,
-              method + " must activate native Browse and verify Home before lazy scrolling")
-    assert.match(body, /waitForExistence\(timeout: 15\)/)
+    const home = body.indexOf('target("native-ios-files-home-list", app: app)')
+    const action = body.indexOf('let action = target("native-ios-files-open-')
+    assert.ok(browse >= 0 && home > browse && action > home)
+    assert.match(body, /value == %@/)
+    assert.match(body, /home\.waitForExistence\(timeout: 15\)/)
+    assert.match(body, /home\.swipeUp\(\)/)
+    assert.match(body, /home\.swipeDown\(\)/)
+    assert.match(body, /action\.isHittable/)
+    assert.doesNotMatch(body, /target\("native-ios-files-open-root-location"/,
+      "the first Lazy List row is allowed to remain offscreen")
+    assert.doesNotMatch(body, /app\.(?:tables|collectionViews|scrollViews)\.firstMatch/,
+      "only the actual mounted Files Home List may be scrolled")
   }
-  assert.match(browser, /accessibilityIdentifier\("native-ios-files-open-root-location"\)/)
+  assert.match(browser, /accessibilityIdentifier\(isHome \? "native-ios-files-home-list" : "native-ios-files-folder-list"\)/)
 })
+
 
 test("six extra child-to-child native H264 journeys verify visible content", () => {
   const names = ["testOriginalsHelpHistoryReturnWithoutGhostAlert","testHistoryForegroundAlbumsReturnWithoutGhostSheet","testLocalPhotoFavoritesRecentDateAfterFilesReturn","testPeopleCloudDenialPeopleReentryKeepsContent","testSavedSearchFilterHistorySheetsStayIndependent","testAlbumsOriginalsFilesSectionRoundTripKeepsSource"]
