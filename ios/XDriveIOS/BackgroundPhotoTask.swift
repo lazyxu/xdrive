@@ -90,10 +90,21 @@ enum XDriveIOSBackgroundPhotoTask {
             do {
                 try Task.checkCancellation()
                 let network = XDriveIOSPhotoBackupNetworkPolicy.shared
-                // The grant proves current Owner, independent Device secret,
-                // Root, Server instance, expiry and revocation. No Web token.
-                let approved = try await XDriveIOSApprovedPhotoBGVault.shared
-                    .proveInBackground()
+                // Establish a credential-free candidate route first. The
+                // independently approved Grant then proves the exact Server,
+                // Owner, Device, Root and Source on that physical route.
+                // No generic bearer is ever used by this BGProcessing task.
+                defer { XDriveIOSAutoRoute.shared.clearBackgroundIfNeeded() }
+                let vault = XDriveIOSApprovedPhotoBGVault.shared
+                guard let savedGrant = try await vault.current() else {
+                    throw XDriveIOSPhotoBGVaultFailure.corrupt
+                }
+                let route = try await XDriveIOSAutoRoute.shared
+                    .prepareBackground(savedGrant)
+                let approved = try await vault.proveInBackground()
+                try XDriveIOSAutoRoute.shared.activateBackground(
+                    grant: approved, domain: route.domain, lanIP: route.lanIP,
+                    selected: route.selected)
                 // Legacy Owner-root grants are read-only for historical
                 // receipts/revocation, never a fresh system BG upload.
                 guard approved.hasManagedDestination else {
