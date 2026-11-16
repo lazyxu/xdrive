@@ -1,5 +1,57 @@
 import SwiftUI
 
+/// Compact status remains INSIDE MapKit instead of shrinking the photo map.
+/// Authorization, source counts, retries and media access remain caller-owned.
+struct XDriveIOSNativePhotoMapStatusPill: View {
+    let message: String
+    let accessibilityID: String
+    var systemImage = "mappin.and.ellipse"
+
+    var body: some View {
+        Label(message, systemImage: systemImage)
+            .font(.caption)
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.regularMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.14), radius: 5, y: 2)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(accessibilityID)
+            .padding(10)
+    }
+}
+
+/// Photo-first, accessible location header shared by local/Owner/source
+/// Sheets; a count supplied by a caller must already be scope-verified.
+struct XDriveIOSNativePhotoMapPlaceHeader: View {
+    let title: String
+    let count: Int?
+    var detail: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .lineLimit(2)
+                .accessibilityAddTraits(.isHeader)
+            if let count {
+                Text("\(count) 张照片")
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            if let detail {
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+    }
+}
+
 /// Shared presentation-only photo wall for PhotoKit albums, GPS place sheets,
 /// and authorized Owner PhotoAsset ranges. The caller keeps its own bounded
 /// cursor, membership proof, thumbnail request and Viewer admission.
