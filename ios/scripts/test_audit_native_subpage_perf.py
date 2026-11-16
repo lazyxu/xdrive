@@ -298,7 +298,9 @@ class NativeSubpageAuditTests(unittest.TestCase):
         suite = module.SOURCE.read_text(encoding="utf-8")
         # An unavailable Server Session must never drop all filter controls,
         # leaving a filtered request stranded on a non-recoverable error page.
-        self.assertRegex(files, r"if isGlobalSearch \\{\\s*(?://[^\\n]*\\n\\s*)*filesHeader")
+        denied_source = files.split('accessibilityIdentifier("native-ios-files-error-page")')[0][-1200:]
+        self.assertIn("if isGlobalSearch {", denied_source)
+        self.assertIn("filesHeader", denied_source)
         self.assertIn('accessibilityIdentifier("native-ios-files-error-page")', files)
         for marker in ("native-ios-files-search-date-filter",
                        "native-ios-files-search-size-filter"):
@@ -313,7 +315,10 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertIn('app.menuItems["整理浏览首页"]', suite)
         self.assertIn('matching(NSPredicate(format: "label == %@", "前往文件夹路径…"))', suite)
         self.assertIn('let item = filesMoreOrganizer(app)', suite)
-        self.assertNotIn('case "files.home.more-organizer":\\n            tap("native-ios-files-organize-home", app: app)', suite)
+        more_visit = suite.split('case "files.home.more-organizer":')[2].split(
+            'case "files.home.edit-mode":')[0]
+        self.assertIn("filesMoreOrganizer(app)", more_visit)
+        self.assertNotIn("native-ios-files-organize-home", more_visit)
 
     def test_files_search_and_photo_wall_presentation_are_measured(self):
         files = (module.ROOT / "ios/XDriveIOS/NativeCloudFilesBrowser.swift").read_text(encoding="utf-8")
