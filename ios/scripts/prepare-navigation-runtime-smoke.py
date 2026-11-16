@@ -18,13 +18,27 @@ login.write_text(login_source.replace(owner_needle, "@Published var owner: XDriv
 key = "            XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)"
 if s.count(key) != 1:
     raise SystemExit("Unexpected iOS App entry; test harness must be audited")
-s = s.replace(key, """#if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-login-compact-smoke") {
-                // Mount the *real* signed-out SwiftUI login under explicit
-                // safe startup: never restore a credential, create an Owner,
-                // call a Server, or start a PhotoKit upload in this UI test.
+# Historical c83 source has XDriveIOSNativeOwnerLoginScreen() only; the
+# modern signed-out view explicitly supports safeStartup. The historical
+# navigation baseline must compile against its REAL initializer, not the
+# candidate's newer API. Do not insert the compact-login launch route into
+# historical sources: only current candidates execute that new XCTest.
+screen = root / "ios/XDriveIOS/NativeOwnerLoginScreen.swift"
+login_view = screen.read_text()
+supports_compact_login = "    var safeStartup = false" in login_view
+if supports_compact_login:
+    compact_entry = """            if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-login-compact-smoke") {
+                // Test the real native signed-out form without restoring
+                // credentials, injecting an Owner, or starting auto backup.
                 XDriveIOSNativeOwnerLoginScreen(safeStartup: true)
-            } else if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
+            } else """
+else:
+    # Historical c83 is an informational Gallery/Files navigation baseline.
+    # The compact login XCTest is never selected on that historical source.
+    # Do not weaken this guard into a catch-all initializer fallback.
+    compact_entry = "            "
+s = s.replace(key, """#if DEBUG
+""" + compact_entry + """if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke") {
                 XDriveIOSNativeNavigationSmokeRoot()
             } else {
                 XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)
