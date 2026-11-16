@@ -301,7 +301,7 @@ test('single exact Owner map place opens L3 after fresh Owner-scoped Range, not 
   assert.match(map, /if selected == nil && selectedCluster == nil && singleViewer == nil/)
   assert.match(map, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
   assert.match(map, /if case \.response\(let status\) = failure,[\s\S]*?status == 401 \|\| status == 403/)
-  assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(id: facet\.id, owner: expected\)/)
+  assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(\s*id: facet\.id, name: facet\.name, owner: expected\)/)
   assert.doesNotMatch(map, /UploadSession|isNetworkAccessAllowed = true|UserDefaults\.set\(single/)
 })
 

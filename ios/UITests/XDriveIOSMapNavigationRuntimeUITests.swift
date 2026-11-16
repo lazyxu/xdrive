@@ -187,8 +187,13 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         _ app: XCUIApplication, stage: String
     ) {
         // The app, not the separate XCTest Runner, must report its effective
-        // .readWrite status. Only present in an actual denied/limited MapKit
-        // screen of the CI-only Debug smoke target.
+        // .readWrite status. Only query target AX after it is foreground:
+        // a real iOS TCC grant can terminate the old process while Settings
+        // returns, invalidating a cached PID/AX snapshot.
+        guard app.state == .runningForeground else {
+            print("MAP_PHOTOS_TARGET_AUTH_STAGE \(stage) app-not-foreground")
+            return
+        }
         let readback = element("native-ios-map-photo-auth-readback", in: app)
         if readback.exists {
             print("MAP_PHOTOS_TARGET_AUTH_STAGE \(stage) \(readback.label)")
@@ -347,7 +352,10 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
         XCTAssertEqual(app.state, .runningForeground)
         print("MAP_PHOTOS_FULL_ACCESS_REENTRY os_relaunch=\(systemRelaunched)")
-        recordActualPhotoKitReadback(app, stage: "after-settings")
+        // Defer the optional AX diagnostic until a freshly verified real
+        // MapKit is mounted. An immediate read here may address the old PID
+        // while the OS is terminating it after the permission change.
+        // An absent fresh map still FAILS this test; nothing is bypassed.
         // An actual Photos TCC change can terminate the target *after* the
         // Settings UI has been dismissed and the Full Access prompt was
         // accepted. A single 35-second AX wait can retain a dead app PID
@@ -402,6 +410,9 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             XCTFail(systemRelaunched
                 ? "After OS-terminated TCC process relaunch, Full Access must mount genuine MapKit"
                 : "A still-running app must mount real MapKit immediately on Settings return")
+        }
+        if mapRestored {
+            recordActualPhotoKitReadback(app, stage: "after-settings-verified-map")
         }
     }
 

@@ -112,7 +112,7 @@ const scenarios = [
       },
       {
         "file": "u",
-        "pattern": "private func resetWall\\(\\) \\{\\s*selected = nil\\s*viewerReturnAnchor = nil\\s*viewerOpeningPage = nil\\s*wall\\.reset\\(\\)\\s*\\}",
+        "pattern": "private func resetWall\\(\\) \\{\\s*selected = nil\\s*viewerReturnAnchor = nil\\s*viewerOpeningPage = nil\\s*viewerOpeningItemID = nil\\s*wall\\.reset\\(\\)\\s*\\}",
         "flags": ""
       },
       {

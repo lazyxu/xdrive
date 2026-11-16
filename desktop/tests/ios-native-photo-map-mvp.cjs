@@ -416,7 +416,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   assert.match(library, /guard phase == \.active, !busy, globalComplete,\s*refinedViewportIsCurrent/)
   assert.doesNotMatch(library, /native-ios-map-stale-viewport|上次细化的视窗/)
   assert.match(library, /else if busy \{\s*ProgressView\(album == nil \? "正在加载照片位置…" : "正在加载相册位置…"\)/)
-  assert.match(library, /accessibilityIdentifier\(album == nil \? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress"\)/)
+  assert.match(library, /accessibilityIdentifier\(\s*album == nil \? "native-ios-map-full-library-scan-progress"\s*:\s*"native-ios-map-album-scan-progress"\s*\)/)
   assert.doesNotMatch(library, /扫描完整授权范围中的位置元数据|已检查 .*个槽位/)
   assert.match(library, /if !globalComplete && !busy \{\s*Button\(album == nil \? "扫描已授权图库位置" : "扫描此相册位置"\)/)
   assert.match(localMap, /globalCells = index\.cells[\s\S]*?globalComplete = true[\s\S]*?mapRevision = UUID\(\)/)

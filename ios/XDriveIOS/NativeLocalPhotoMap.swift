@@ -1393,6 +1393,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     // 100k media IDs/coordinates or use this Debug value as Viewer authority.
     @State private var p0WholeLibraryGPSCount: Int?
     @State private var p0IndependentGPSAuditRunning = false
+    @State private var p0IndependentGPSAuditTask: Task<Int?, Never>?
     @State private var p0IndependentGPSAuditResult: String?
     #endif
     @State private var autoRefineTask: Task<Void, Never>?
@@ -2338,18 +2339,17 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         let ticket = generation
         p0IndependentGPSAuditRunning = true
         p0IndependentGPSAuditResult = nil
-        Task { @MainActor in
+        // The independent PHFetchResult must be enumerated off MainActor:
+        // PhotoKit can temporarily block as simctl imports 65/100k EXIF assets.
+        // The task transports only a count (never IDs or coordinates) to UI.
+        print("IOS_MAP_P0_REAL_AUDIT_START expected=\(expected)")
+        let audit = Task.detached(priority: .userInitiated) { () -> Int? in
             let assets = PHAsset.fetchAssets(with: PHFetchOptions())
-            var independentlyLocated = 0
+            var located = 0
             for index in 0..<assets.count {
                 if index % 256 == 0 {
+                    if Task.isCancelled { return nil }
                     await Task.yield()
-                    guard generation == ticket, phase == .active,
-                          PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
-                    else {
-                        if generation == ticket { p0IndependentGPSAuditRunning = false }
-                        return
-                    }
                 }
                 let asset = assets.object(at: index)
                 guard asset.mediaType == .image || asset.mediaType == .video,
@@ -2358,14 +2358,21 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                           latitude: coordinate.latitude, longitude: coordinate.longitude
                       )
                 else { continue }
-                independentlyLocated += 1
+                located += 1
             }
-            guard generation == ticket, phase == .active,
+            return Task.isCancelled ? nil : located
+        }
+        p0IndependentGPSAuditTask = audit
+        Task { @MainActor in
+            let observed = await audit.value
+            guard generation == ticket else { return }
+            p0IndependentGPSAuditTask = nil
+            p0IndependentGPSAuditRunning = false
+            guard let independentlyLocated = observed, phase == .active,
                   PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
             else { return }
-            p0IndependentGPSAuditRunning = false
-            // Numbers only; never place GPS values, filenames, local IDs,
-            // screenshots or photo bytes into log output.
+            // This remains a genuine second PhotoKit enumeration, independent
+            // of the MapKit scanner. A mismatch is always reported as such.
             p0IndependentGPSAuditResult = "独立 GPS \(independentlyLocated) 地图 GPS \(expected) \(independentlyLocated == expected ? "一致" : "不一致")"
             print("IOS_MAP_P0_REAL_PHOTOKIT_COUNT independent=\(independentlyLocated) map=\(expected) match=\(independentlyLocated == expected)")
         }
@@ -2716,6 +2723,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         refinementFailureRequiresRefresh = false
         #if DEBUG
         p0WholeLibraryGPSCount = nil
+        p0IndependentGPSAuditTask?.cancel()
+        p0IndependentGPSAuditTask = nil
         p0IndependentGPSAuditRunning = false
         p0IndependentGPSAuditResult = nil
         #endif
