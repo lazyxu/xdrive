@@ -265,17 +265,27 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         guard let (initial, local) = snapshot(), initial.owner != nil else { return }
         let candidates: [URL?] = local ? [initial.lan, initial.domain] : [initial.domain]
         for target in candidates.compactMap({ $0 }) {
-            guard target != initial.active || !initial.proven.contains(target.absoluteString)
-            else { continue }
-            if await verify(target, against: initial) {
-                lock.lock()
-                if var current = binding, current.id == initial.id {
-                    current.proven.insert(target.absoluteString)
-                    current.active = target
-                    binding = current
-                }
-                lock.unlock()
+            // Prefer the FIRST reachable route. Do not verify LAN and then
+            // accidentally overwrite it with WAN in the same Wi-Fi pass.
+            if target == initial.active, initial.proven.contains(target.absoluteString) {
+                return
             }
+            let accepted = initial.proven.contains(target.absoluteString)
+                || (await verify(target, against: initial))
+            guard accepted else { continue }
+            lock.lock()
+            // An older Wi-Fi's asynchronous LAN proof must not win after a
+            // cellular switch, logout, token rotation or Owner replacement.
+            guard var current = binding, current.id == initial.id,
+                  onLocalNetwork == local else {
+                lock.unlock()
+                return
+            }
+            current.proven.insert(target.absoluteString)
+            current.active = target
+            binding = current
+            lock.unlock()
+            return
         }
     }
 
