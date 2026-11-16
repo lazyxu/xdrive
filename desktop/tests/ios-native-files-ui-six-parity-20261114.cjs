@@ -72,7 +72,7 @@ test('F4 Viewer adds explicit checked export and retains native media', () => {
 test('F5 real video and decoded-frame audit, not screenshot-only', () => {
   assert.match(workflow, /files_ui_transition_video\.py" watch/)
   assert.match(workflow, /files_ui_transition_video\.py" audit/)
-  assert.match(workflow, /--minimum 12/)
+  assert.match(workflow, /--minimum 18/)
   assert.match(video, /"xcrun", "simctl", "io", simulator, "recordVideo"/)
   // Decode the native page center rather than persistent tab/navigation chrome.
   // Keep real H.264 frame, tap-marker and blank-transition evidence mandatory.

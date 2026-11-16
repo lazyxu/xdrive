@@ -92,6 +92,40 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         XCTAssertGreaterThan(unique.count, 8, "Uniform/blank screen at \(route)")
     }
 
+
+    /// Native size/date menus live in a horizontal filter strip, not the
+    /// vertically scrolling Files list. Preserve real hit-test assertions.
+    private func visibleFilesFilter(_ id: String, app: XCUIApplication) -> XCUIElement {
+        let strip = target("native-ios-files-filter-strip", app: app)
+        XCTAssertTrue(strip.waitForExistence(timeout: 15), "Files filter strip not mounted")
+        let control = target(id, app: app)
+        for _ in 0..<8 {
+            if control.exists && control.isHittable { return control }
+            strip.swipeLeft()
+        }
+        for _ in 0..<8 {
+            if control.exists && control.isHittable { return control }
+            strip.swipeRight()
+        }
+        XCTAssertTrue(control.exists && control.isHittable,
+                      "Actual horizontal Files filter is inaccessible: \(id)")
+        return control
+    }
+
+    private func applyFilesFilter(_ id: String, choice: String, app: XCUIApplication) {
+        let filter = visibleFilesFilter(id, app: app)
+        print("IOS_NATIVE_NAV_TAP_START route=\(id)")
+        filter.tap()
+        XCTAssertEqual(app.state, .runningForeground)
+        let option = app.buttons[choice].firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 15) && option.isHittable,
+                      "Actual Files filter option is inaccessible: \(choice)")
+        option.tap()
+        XCTAssertTrue(target("native-ios-files-error-page", app: app)
+            .waitForExistence(timeout: 15),
+            "No-Session Owner must fail closed instead of showing private Nodes")
+    }
+
     private func openLocalPhotoSource(_ app: XCUIApplication) {
         tap("native-ios-gallery-source-menu", app: app)
         let local = app.buttons["本机照片"].firstMatch
@@ -825,6 +859,112 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         assertGallery(app)
         assertLocalPhotoContent(app)
         assertVisiblePixels(app, route: "Local PhotoKit after denied Trash")
+    }
+
+
+    func testFilesSizeFilterHorizontalGalleryReturn() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        applyFilesFilter("native-ios-files-search-size-filter", choice: "小于 1 MiB", app: app)
+        assertVisiblePixels(app, route: "Files filtered by size")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        tap("native-ios-tab-files", app: app)
+        XCTAssertTrue(visibleFilesFilter("native-ios-files-search-size-filter", app: app)
+            .label.contains("文件大小已筛选"), "Size selection was lost on Gallery return")
+        assertVisiblePixels(app, route: "testFilesSizeFilterHorizontalGalleryReturn Files return")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "testFilesSizeFilterHorizontalGalleryReturn Gallery return")
+    }
+
+
+    func testFilesDateThenSizeFiltersKeepNoSessionGuard() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        applyFilesFilter("native-ios-files-search-date-filter", choice: "最近 7 天", app: app)
+        applyFilesFilter("native-ios-files-search-size-filter", choice: "1–100 MiB", app: app)
+        assertVisiblePixels(app, route: "Files both filters denied")
+        assertVisiblePixels(app, route: "testFilesDateThenSizeFiltersKeepNoSessionGuard Files return")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "testFilesDateThenSizeFiltersKeepNoSessionGuard Gallery return")
+    }
+
+
+    func testFilesSizeFilterAfterQuickRailReentry() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        for section in ["recent", "favorites", "browse"] {
+            tap("native-ios-files-section-\(section)", app: app)
+            assertFiles(app)
+        }
+        applyFilesFilter("native-ios-files-search-size-filter", choice: "小于 1 MiB", app: app)
+        assertVisiblePixels(app, route: "testFilesSizeFilterAfterQuickRailReentry Files return")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "testFilesSizeFilterAfterQuickRailReentry Gallery return")
+    }
+
+
+    func testFilesSizeFilterAfterSavedSearchesDismiss() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        openFilesSavedSearchesFromBrowse(app)
+        XCTAssertTrue(target("native-ios-files-saved-searches-page", app: app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-files-saved-searches-done", app: app)
+        assertFiles(app)
+        applyFilesFilter("native-ios-files-search-size-filter", choice: "小于 1 MiB", app: app)
+        assertVisiblePixels(app, route: "testFilesSizeFilterAfterSavedSearchesDismiss Files return")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "testFilesSizeFilterAfterSavedSearchesDismiss Gallery return")
+    }
+
+
+    func testFilesSizeFilterAfterCloudDenialReturn() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-files-open-root-location", app: app)
+        XCTAssertTrue(target("native-ios-files-error-page", app: app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-files-error-return", app: app)
+        assertFiles(app)
+        applyFilesFilter("native-ios-files-search-size-filter", choice: "小于 1 MiB", app: app)
+        assertVisiblePixels(app, route: "testFilesSizeFilterAfterCloudDenialReturn Files return")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "testFilesSizeFilterAfterCloudDenialReturn Gallery return")
+    }
+
+
+    func testFilesSizeFilterAfterForegroundResume() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        applyFilesFilter("native-ios-files-search-size-filter", choice: "小于 1 MiB", app: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        assertFiles(app)
+        XCTAssertTrue(visibleFilesFilter("native-ios-files-search-size-filter", app: app)
+            .label.contains("文件大小已筛选"), "Filter reset after foreground")
+        assertVisiblePixels(app, route: "testFilesSizeFilterAfterForegroundResume Files return")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "testFilesSizeFilterAfterForegroundResume Gallery return")
     }
 
 }

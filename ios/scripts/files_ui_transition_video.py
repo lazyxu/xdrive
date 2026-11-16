@@ -30,6 +30,12 @@ TARGETS = frozenset({
     "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
     "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
     "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+    "testFilesSizeFilterHorizontalGalleryReturn",
+    "testFilesDateThenSizeFiltersKeepNoSessionGuard",
+    "testFilesSizeFilterAfterQuickRailReentry",
+    "testFilesSizeFilterAfterSavedSearchesDismiss",
+    "testFilesSizeFilterAfterCloudDenialReturn",
+    "testFilesSizeFilterAfterForegroundResume",
 })
 CASE_START = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 CASE_END = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")

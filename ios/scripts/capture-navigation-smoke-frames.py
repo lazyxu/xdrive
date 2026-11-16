@@ -102,6 +102,12 @@ TARGETS = {
     "testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail",
     "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
+    "testFilesSizeFilterHorizontalGalleryReturn",
+    "testFilesDateThenSizeFiltersKeepNoSessionGuard",
+    "testFilesSizeFilterAfterQuickRailReentry",
+    "testFilesSizeFilterAfterSavedSearchesDismiss",
+    "testFilesSizeFilterAfterCloudDenialReturn",
+    "testFilesSizeFilterAfterForegroundResume",
 }
 NAV_TARGETS = {
     "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",

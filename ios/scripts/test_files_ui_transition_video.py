@@ -16,7 +16,7 @@ from files_ui_transition_video import (
 
 class FilesUITransitionVideoTests(unittest.TestCase):
     def test_real_targets_are_distinct(self):
-        self.assertEqual(len(TARGETS), 12)
+        self.assertEqual(len(TARGETS), 18)
         self.assertTrue({
             "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
             "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
@@ -24,6 +24,12 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
             "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
             "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+            "testFilesSizeFilterHorizontalGalleryReturn",
+            "testFilesDateThenSizeFiltersKeepNoSessionGuard",
+            "testFilesSizeFilterAfterQuickRailReentry",
+            "testFilesSizeFilterAfterSavedSearchesDismiss",
+            "testFilesSizeFilterAfterCloudDenialReturn",
+            "testFilesSizeFilterAfterForegroundResume",
         }.issubset(TARGETS))
 
     def test_empty_frame_samples_cannot_pass(self):
