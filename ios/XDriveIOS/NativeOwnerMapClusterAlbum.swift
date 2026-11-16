@@ -145,8 +145,13 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     var body: some View {
         VStack(spacing: 8) {
             if activeOwner {
-            Text("\(selection.places.count) 个位置 · \(selectedPhotoCount) 张已索引照片")
-                .font(.footnote).foregroundStyle(.secondary)
+            XDriveIOSNativePhotoMapPlaceHeader(
+                title: selection.places.count == 1
+                    ? (selection.places.first?.name ?? "此地点的照片")
+                    : "多个地点的照片",
+                count: selectedPhotoCount,
+                detail: selection.places.count > 1
+                    ? "\(selection.places.count) 个地点" : nil)
                 .accessibilityIdentifier("native-ios-owner-cluster-count")
                 // The signed 48-item transport is not a user-facing page:
                 // expose its progress to VoiceOver without a visible counter.
@@ -172,7 +177,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 }
             }
             XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
-                .padding(.horizontal, 12)
+                .controlSize(.small)
+                .padding(.horizontal, 8)
                 .disabled(!activeOwner || busy || viewing != nil)
             if canJumpInCurrentPlace {
                 Button {
@@ -185,11 +191,6 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 .padding(.horizontal, 12)
                 .accessibilityIdentifier("native-ios-owner-place-full-date-jump")
                 .accessibilityHint("按当前 Owner 的完整日期索引定位，仍须重新验证照片访问权限")
-            }
-            if wallTimeScale != .all {
-                Text("仅对当前已授权、已加载的照片分组；更远照片仍按需加载。")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
             }
             ScrollViewReader { returnScroll in
             XDriveIOSNativePhotoWallScrollContainer {
@@ -285,7 +286,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             }
             }
         }
-        .navigationTitle("位置照片")
+        .navigationTitle(selection.places.count == 1
+            ? (selection.places.first?.name ?? "此地点的照片")
+            : "多个地点的照片")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
