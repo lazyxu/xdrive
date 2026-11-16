@@ -251,6 +251,12 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
     /// unmounted Lazy List row, not a native Files process crash.
     private func openFilesOperationHistoryFromBrowse(_ app: XCUIApplication) {
         assertFiles(app)
+        // Files may retain Recent/Favorites after a prior tab visit.
+        // Reach the actual Browse Home before looking for its lazy rows.
+        tap("native-ios-files-section-browse", app: app)
+        XCTAssertTrue(target("native-ios-files-open-root-location", app: app)
+            .waitForExistence(timeout: 15),
+            "Files Browse Home did not mount before opening Operation History")
         let action = target("native-ios-files-open-operations", app: app)
         // SwiftUI List can surface as UITableView or UICollectionView
         // depending on iOS runtime. Keep a bounded native swipe fallback.
@@ -397,6 +403,10 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
     /// rather than treating an off-screen accessibility lookup as a crash.
     private func openFilesSavedSearchesFromBrowse(_ app: XCUIApplication) {
         assertFiles(app)
+        tap("native-ios-files-section-browse", app: app)
+        XCTAssertTrue(target("native-ios-files-open-root-location", app: app)
+            .waitForExistence(timeout: 15),
+            "Files Browse Home did not mount before opening Saved Searches")
         let action = target("native-ios-files-open-saved-searches", app: app)
         let table = app.tables.firstMatch
         let collection = app.collectionViews.firstMatch
