@@ -969,8 +969,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     if !isBusy { advanceIfVisible() }
                 }
             }
-            .navigationTitle(isNearbyExpansion ? "附近照片" :
-                (album?.name ?? "此地点的照片"))
+            // The photo-first location header already names the place.
+            // Avoid a duplicate inline title in the medium/large Sheet.
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {

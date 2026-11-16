@@ -955,8 +955,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     message: "Owner 或本机照片权限已变化，旧照片已隐藏。")
             }
         }
-        .navigationTitle(placeName ?? (isNearbyExpansion
-            ? "附近照片" : "此地点的照片"))
+        // The geocoded place name is in the visible, accessible header.
+        // A second centered navigation title duplicates the same information.
+        .navigationTitle("")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 XDriveIOSNativePhotoWallDisplayMenu(

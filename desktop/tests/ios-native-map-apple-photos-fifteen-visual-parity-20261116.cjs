@@ -44,6 +44,11 @@ check('P0-04 place sheet uses a photo-first header from the same presentation co
   assert.match(ownerPlace, /XDriveIOSNativePhotoMapPlaceHeader\(/)
   assert.match(unified, /XDriveIOSNativePhotoMapPlaceHeader\(/)
   assert.match(components, /if let count \{[\s\S]*?Text\(/)
+  // Location's prominent accessible header is the only visible Sheet title.
+  // Keep a single title; avoid repeating it in a centered navigation bar.
+  for (const file of [local, ownerPlace, unified]) {
+    assert.match(file, /\.navigationTitle\(""\)/)
+  }
 })
 check('P0-05 map stays beneath the bounded Sheet and H264 audit is navigation-scoped', () => {
   assert.match(local, /\.sheet\(item: \$globalSelection, onDismiss:/)

@@ -818,6 +818,11 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let map = element("native-ios-full-library-gps-map", in: app)
         XCTAssertTrue(element("native-ios-map-verified-count", in: app)
             .waitForExistence(timeout: 90))
+        // The default photo map is immersive even if a delayed L2 callback
+        // fires as the previous Gallery or Sheet disappears.
+        let dashboardBar = element("native-ios-five-slot-bar", in: app)
+        XCTAssertFalse(dashboardBar.exists,
+                       "Native MapKit must open without the Gallery five-slot bar")
         for pass in 0..<3 {
             let marker = app.descendants(matching: .any)
                 .matching(NSPredicate(
@@ -867,6 +872,8 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             closeSheet.tap()
             XCTAssertTrue(map.waitForExistence(timeout: 25),
                           "Iteration \(pass) detached the native map canvas")
+            XCTAssertFalse(dashboardBar.exists,
+                           "MapKit return showed the five-slot bar in iteration \(pass)")
             XCTAssertFalse(element("native-ios-local-viewer-back", in: app).exists,
                            "Stale Viewer must not remain after returning to MapKit")
             let returnShot = XCTAttachment(screenshot: app.screenshot())

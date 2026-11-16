@@ -169,6 +169,12 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var showRecentPicker = false
     @State private var showingLocalPhotoSearch = false
     @State private var galleryFocused = false
+    // Default photo maps are immersive even during L2/Sheet lifecycle races.
+    // Only the current map's explicit action can reveal the five-slot bar.
+    @State private var mapNavigationExplicitlyShown = false
+    private var galleryPresentationFocused: Bool {
+        gallerySource == .map ? !mapNavigationExplicitlyShown : galleryFocused
+    }
     @State private var backupLaunchAction = XDriveIOSNativePhotoBackupLaunch.overview
     @State private var backupLaunchNonce = UUID()
     @State private var showThumbnailCacheFromBackup = false
@@ -267,7 +273,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
                 tab: tab.rawValue,
                 gallerySource: gallerySource.rawValue,
-                focused: galleryFocused,
+                focused: galleryPresentationFocused,
                 ownerVerified: login.owner != nil
             ) {
                 nativeBottomBar
@@ -413,6 +419,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             guard state == .active else {
                 galleryFocusGeneration = UUID()
                 galleryFocused = false
+                mapNavigationExplicitlyShown = false
                 localMapJump = nil
                 localMapCamera = nil
                 return
@@ -425,6 +432,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             // The map's explicit "显示底部导航" action can still reveal chrome.
             if tab == .gallery && gallerySource == .map {
                 galleryFocused = true
+                mapNavigationExplicitlyShown = false
             }
         }
         .onChange(of: ownerScopeKey) { _ in
@@ -478,7 +486,10 @@ struct XDriveIOSNativePhotosDashboard: View {
         // Rotation does not change focus; changing the owning route does.
         .onChange(of: tab) { next in
             galleryFocusGeneration = UUID()
-            if next != .gallery { galleryFocused = false }
+            if next != .gallery {
+                galleryFocused = false
+                mapNavigationExplicitlyShown = false
+            }
         }
         .onChange(of: gallerySource) { _ in
             galleryFocusGeneration = UUID()
@@ -486,6 +497,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             // opening the native photo map must not sandwich the MapKit canvas
             // between backup/source strips and the five-slot tab bar.
             galleryFocused = gallerySource == .map
+            mapNavigationExplicitlyShown = false
         }
     }
 
@@ -730,7 +742,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         let focusGeneration = galleryFocusGeneration
         return GeometryReader { availableSpace in
             VStack(spacing: 0) {
-                if !galleryFocused {
+                if !galleryPresentationFocused {
                     if availableSpace.size.width >= 680 &&
                         availableSpace.size.height < 500 &&
                         !dynamicTypeSize.isAccessibilitySize {
@@ -878,6 +890,11 @@ struct XDriveIOSNativePhotosDashboard: View {
                 callbackSource: source.rawValue, ownerVerified: login.owner != nil
               )
         else { return }
+        if source == .map {
+            // The current admitted map controls this override; a dismissed
+            // Gallery child or stale Owner cannot reveal hidden navigation.
+            mapNavigationExplicitlyShown = !focused
+        }
         galleryFocused = focused
     }
 
@@ -1114,6 +1131,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         // Preserve the same map instance/camera. Only the surrounding
         // Dashboard chrome changes; no PhotoKit/Owner Reader restarts.
         galleryFocused = source == .map
+        mapNavigationExplicitlyShown = false
         if source == .map || source == .local { localMapJump = nil }
         gallerySource = source
         tab = .gallery
@@ -1185,6 +1203,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     private func resetNavigation() {
         galleryFocusGeneration = UUID()
         galleryFocused = false
+        mapNavigationExplicitlyShown = false
         mapReturnGallerySource = nil
         mapReturnOwnerScopeKey = nil
         gallerySource = .unified

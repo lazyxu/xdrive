@@ -286,9 +286,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             }
             }
         }
-        .navigationTitle(selection.places.count == 1
-            ? (selection.places.first?.name ?? "此地点的照片")
-            : "多个地点的照片")
+        // The shared visible place header contains the verified title.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

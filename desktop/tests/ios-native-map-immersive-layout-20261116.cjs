@@ -12,11 +12,13 @@ const local = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
 const focusPolicy = read('ios/XDriveIOS/NativeFocusVisibilityPolicy.swift')
 
 test('entering the native PhotoKit map hides Gallery-only backup/source strips by default', () => {
-  assert.match(dashboard, /if !galleryFocused \{/)
+  assert.match(dashboard, /if !galleryPresentationFocused \{/)
   assert.match(dashboard, /galleryStatusRow\s*\n\s*gallerySourceRow/)
   assert.match(dashboard, /galleryFocused = source == \.map/)
+  assert.match(dashboard, /gallerySource == \.map \? !mapNavigationExplicitlyShown : galleryFocused/)
+  assert.match(dashboard, /mapNavigationExplicitlyShown = !focused/)
   assert.match(dashboard, /galleryFocused = gallerySource == \.map/)
-  assert.match(dashboard, /XDriveIOSNativeFocusVisibilityPolicy\.showsBar\([\s\S]*?focused: galleryFocused/)
+  assert.match(dashboard, /XDriveIOSNativeFocusVisibilityPolicy\.showsBar\([\s\S]*?focused: galleryPresentationFocused/)
   assert.match(dashboard, /if tab == \.gallery && gallerySource == \.map \{\s*galleryFocused = true/)
 })
 
@@ -38,6 +40,6 @@ test('signed-out local PhotoKit map is immersive without granting any cloud Owne
 test('explicit map focus toggle still restores five-tab navigation when requested', () => {
   assert.match(local, /Button\(focused \? "显示底部导航" : "专注地图"\) \{\s*focused\.toggle\(\)\s*onFocusChange\?\(focused\)/)
   assert.match(wrapper, /Button\(focused \? "显示底部导航" : "专注地图"\) \{\s*focused\.toggle\(\)\s*onFocusChange\?\(focused\)/)
-  assert.match(dashboard, /if next != \.gallery \{ galleryFocused = false \}/)
+  assert.match(dashboard, /if next != \.gallery \{[\s\S]*?mapNavigationExplicitlyShown = false[\s\S]*?\}/)
   assert.match(dashboard, /galleryFocused = gallerySource == \.map/)
 })
