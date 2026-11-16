@@ -15,7 +15,7 @@ const from = (marker, length = 1000) => {
 };
 
 test('opening Viewer stores the exact authorized page', () => {
-  const section = from('open: { payload, position in', 425);
+  const section = from('open: { payload, position in', 900);
   assert.match(section, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/);
   assert.match(section, /payload\.rows\.indices\.contains\(position\)[\s\S]*?payload\.rows\.filter\([\s\S]*?\.count == 1/);
   assert.match(section, /viewerOpeningPage = payload\.number\s+viewerOpeningItemID = payload\.rows\[position\]\.id\s+selected = \.init/);
@@ -32,7 +32,7 @@ test('cross-page filmstrip navigation materializes target page, then checks memb
   assert.match(section, /viewerOpeningPage != viewerReturnPage/);
   assert.match(section, /"unified-page-/);
   assert.match(section, /anchor: \.top/);
-  const loaded = from('loaded: { verifiedIDs in', 950);
+  const loaded = from('loaded: { verifiedIDs in', 2100);
   assert.match(loaded, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/);
   assert.match(loaded, /target, scroll: scroll/);
   assert.match(loaded, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/);
@@ -42,7 +42,7 @@ test('background and hidden tab never start return scroll', () => {
     /guard selection == nil, phase == \.active, isTabActive,\s+let anchor = viewerReturnAnchor else \{ return \}/);
 });
 test('verified page load finishes exact-row restore and retires pending anchor', () => {
-  const section = from('loaded: { verifiedIDs in', 1400);
+  const section = from('loaded: { verifiedIDs in', 2200);
   assert.match(section, /viewerReturnPage == page\.id/);
   assert.match(section, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/);
   assert.match(section, /if viewerOpeningPage != viewerReturnPage \|\|\s+viewerOpeningItemID != target \{[\s\S]*?xdrivePhotoWallScrollVerifiedTile\(/);
