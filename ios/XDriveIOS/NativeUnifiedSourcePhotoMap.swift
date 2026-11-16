@@ -283,45 +283,53 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("完成") {
-                        if currentProof { onSaveCamera?(camera) }
-                        onClose()
-                    }
-                    .accessibilityIdentifier("native-ios-unified-source-map-close")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button("刷新照片位置") { reload() }
-                        .disabled(busy || phase != .active)
-                    Picker("底图样式", selection: $mapType) {
-                        Text("标准地图").tag(MKMapType.standard)
-                        Text("卫星地图").tag(MKMapType.satellite)
-                    }
-                } label: { Label("地图操作", systemImage: "ellipsis.circle") }
-                .accessibilityIdentifier("native-ios-unified-source-map-actions")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button("恢复图库日期范围") {
-                        scopedQuery = query
-                        reload()
-                    }
-                    Button("全部日期") { setDateRange(nil) }
-                    Button("最近 7 天") {
-                        setDateRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
-                    }
-                    Button("最近 30 天") {
-                        setDateRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
-                    }
-                    Button("选择日期、月份或年份") { datePickerOpen = true }
-                } label: { Label("地图日期", systemImage: "calendar") }
-                .accessibilityIdentifier("native-ios-unified-source-map-dates")
+                    if currentProof { onSaveCamera?(camera) }
+                    onClose()
+                }
+                .accessibilityIdentifier("native-ios-unified-source-map-close")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { currentLocation.locate() } label: {
                     Label("我的位置", systemImage: "location")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .disabled(currentLocation.isLocating || phase != .active || !currentProof)
                 .accessibilityIdentifier("native-ios-unified-source-map-locate")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Menu {
+                        Button("恢复图库日期范围") {
+                            scopedQuery = query
+                            reload()
+                        }
+                        Button("全部日期") { setDateRange(nil) }
+                        Button("最近 7 天") {
+                            setDateRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
+                        }
+                        Button("最近 30 天") {
+                            setDateRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
+                        }
+                        Button("选择日期、月份或年份") { datePickerOpen = true }
+                    } label: {
+                        Label("地图日期", systemImage: "calendar")
+                    }
+                    .accessibilityIdentifier("native-ios-unified-source-map-dates")
+                    Menu {
+                        Picker("底图样式", selection: $mapType) {
+                            Text("标准地图").tag(MKMapType.standard)
+                            Text("卫星地图").tag(MKMapType.satellite)
+                        }
+                    } label: {
+                        Label("底图样式", systemImage: "square.3.layers.3d")
+                    }
+                    Button("刷新照片位置") { reload() }
+                        .disabled(busy || phase != .active)
+                } label: {
+                    Label("地图操作", systemImage: "ellipsis.circle")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityIdentifier("native-ios-unified-source-map-actions")
             }
         }
         .sheet(isPresented: $datePickerOpen) {
