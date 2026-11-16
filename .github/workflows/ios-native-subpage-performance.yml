@@ -115,6 +115,7 @@ jobs:
             "$out/xcodebuild.log" "$out/metrics.json" "$out/root-summary.json"
           test -s "$out/subpage-summary.csv"
           test -s "$out/root-summary.json"
+          test -s "$out/root-summary.csv"
           python3 - "$out" <<'PY'
           import json, os, pathlib, sys
           out = pathlib.Path(sys.argv[1])
@@ -126,6 +127,8 @@ jobs:
               raise SystemExit("Root and subpage xcresult must match checked-out source SHA")
           if not (root["route_count"] == 25
                   and root["observed_invocations"] == 100
+                  and root["resource_routes_with_3_cpu_and_rss_samples"] == 24
+                  and root["cold_launch_routes_with_3_duration_samples"] == 1
                   and root["retained_trials_per_route"] == 3
                   and child["route_count"] == 49
                   and child["recorded_test_invocations"] == 196
@@ -151,6 +154,7 @@ jobs:
             ${{ runner.temp }}/native-subpage-perf/subpage-summary.json
             ${{ runner.temp }}/native-subpage-perf/subpage-summary.csv
             ${{ runner.temp }}/native-subpage-perf/root-summary.json
+            ${{ runner.temp }}/native-subpage-perf/root-summary.csv
             ${{ runner.temp }}/native-subpage-perf/Subpage.xcresult/
             ${{ runner.temp }}/ios-native-subpage-source-sha
           if-no-files-found: warn
