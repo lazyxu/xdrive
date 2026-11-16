@@ -901,7 +901,11 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     private var launcher: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+            // Launcher has only a small bounded set of destinations. Keep its
+            // focused TextField eagerly mounted while each keystroke filters
+            // the buttons; a lazy stack can recycle the editor during keyboard
+            // inset/scroll changes and truncate the input mid-typing.
+            VStack(alignment: .leading, spacing: 18) {
                 TextField("搜索功能", text: $launcherQuery)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("native-ios-launcher-search")
