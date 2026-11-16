@@ -270,8 +270,12 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
             if target == initial.active, initial.proven.contains(target.absoluteString) {
                 return
             }
-            let accepted = initial.proven.contains(target.absoluteString)
-                || (await verify(target, against: initial))
+            let accepted: Bool
+            if initial.proven.contains(target.absoluteString) {
+                accepted = true
+            } else {
+                accepted = await verify(target, against: initial)
+            }
             guard accepted else { continue }
             lock.lock()
             // An older Wi-Fi's asynchronous LAN proof must not win after a
