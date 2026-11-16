@@ -26,6 +26,8 @@ struct XDriveNativeOwnerRootVerifier {
     let origin: URL
     let accessToken: String
     let expectedUsername: String
+    // Direct probes must bypass the router or could validate the old route.
+    var bypassAutoRoute: Bool = false
 
     func verify() async throws -> XDriveNativeOwnerRoot {
         let cleanOrigin = try ServerAddress.parse(origin.absoluteString)
@@ -33,7 +35,9 @@ struct XDriveNativeOwnerRootVerifier {
             throw XDriveNativeOwnerRootFailure.invalidSession
         }
 
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = bypassAutoRoute ? URLSessionConfiguration.ephemeral
+            : XDriveIOSAutoRoute.ephemeralConfiguration()
+        if bypassAutoRoute { configuration.protocolClasses = [] }
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
         configuration.urlCache = nil
