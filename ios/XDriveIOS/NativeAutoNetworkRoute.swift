@@ -43,6 +43,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         var proven: Set<String>
         let owner: XDriveNativeOwnerRoot?
         let token: String?
+        let backgroundGrant: XDriveIOSApprovedPhotoBGCredential?
     }
 
     private let lock = NSLock()
@@ -78,7 +79,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         lock.lock()
         binding = Binding(id: UUID(), logical: logical, domain: domain, lan: local,
                           active: selected, proven: [selected.absoluteString],
-                          owner: nil, token: nil)
+                          owner: nil, token: nil, backgroundGrant: nil)
         lock.unlock()
     }
 
@@ -90,7 +91,52 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         lock.lock()
         binding = Binding(id: UUID(), logical: owner.origin, domain: domain,
                           lan: local, active: selected,
-                          proven: [selected.absoluteString], owner: owner, token: token)
+                          proven: [selected.absoluteString], owner: owner,
+                          token: token, backgroundGrant: nil)
+        lock.unlock()
+        Task { await self.revalidateRoutes() }
+    }
+
+    /// Background-only route admission. No foreground bearer is present:
+    /// the server must independently prove this same Device, Grant, Owner,
+    /// Server instance, Root and writable Source on the selected HTTPS route.
+    func prepareBackground(_ grant: XDriveIOSApprovedPhotoBGCredential) async throws
+        -> (domain: URL, lanIP: String, selected: URL) {
+        let logical = try ServerAddress.parse(grant.origin)
+        let draft = XDriveIOSNativeLoginDraftStore.load()
+        let candidate = try? ServerAddress.parse(draft.server)
+        let knownDomain = candidate.flatMap { domain -> URL? in
+            if domain == logical { return domain }
+            if (try? XDriveIOSNativeLANLoginRoute.candidate(
+                origin: domain, ip: draft.lanIP)) == logical { return domain }
+            return nil
+        }
+        let domain = knownDomain ?? logical
+        let lanIP = knownDomain == nil ? "" : draft.lanIP
+        let selected: URL
+        if knownDomain != nil {
+            selected = try await XDriveIOSNativeLANLoginRoute.selectOrigin(
+                origin: domain, lanIP: lanIP)
+        } else {
+            selected = logical
+        }
+        prepareRestore(logical: logical, domain: domain, lanIP: lanIP,
+                       selected: selected)
+        return (domain, lanIP, selected)
+    }
+
+    func activateBackground(grant: XDriveIOSApprovedPhotoBGCredential,
+                            domain: URL, lanIP: String, selected: URL) throws {
+        let owner = try grant.ownerScope()
+        guard grant.matches(owner) else { throw XDriveIOSPhotoBGVaultFailure.corrupt }
+        let lan = pairedLAN(domain: domain, lanIP: lanIP)
+        guard selected == owner.origin || selected == domain || selected == lan
+        else { throw XDriveIOSPhotoBGVaultFailure.corrupt }
+        lock.lock()
+        binding = Binding(id: UUID(), logical: owner.origin, domain: domain,
+                          lan: lan, active: selected,
+                          proven: [selected.absoluteString], owner: owner,
+                          token: nil, backgroundGrant: grant)
         lock.unlock()
         Task { await self.revalidateRoutes() }
     }
@@ -104,7 +150,8 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
            verified.origin == owner.origin {
             binding = Binding(id: UUID(), logical: old.logical, domain: old.domain,
                               lan: old.lan, active: old.active, proven: old.proven,
-                              owner: owner, token: token)
+                              owner: owner, token: token,
+                              backgroundGrant: old.backgroundGrant)
         }
         lock.unlock()
     }
@@ -173,21 +220,29 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
     /// Bypass the routing protocol on these probes; otherwise it could merely
     /// verify the previous route and falsely approve a different address.
     private func verify(_ target: URL, against binding: Binding) async -> Bool {
-        guard let owner = binding.owner, let token = binding.token else { return false }
+        guard let owner = binding.owner else { return false }
         // LAN is allowed only when pinned to the configured public domain.
         if target == binding.lan, pairedLAN(
             domain: binding.domain, lanIP: binding.lan?.host ?? "") != target {
             return false
         }
         do {
-            let proof = try await XDriveNativeOwnerRootVerifier(
-                origin: target, accessToken: token,
-                expectedUsername: owner.username, bypassAutoRoute: true
-            ).verify()
-            return XDriveIOSAutoRouteSafety.sameOwner(owner, proof)
+            if let token = binding.token {
+                let proof = try await XDriveNativeOwnerRootVerifier(
+                    origin: target, accessToken: token,
+                    expectedUsername: owner.username, bypassAutoRoute: true
+                ).verify()
+                return XDriveIOSAutoRouteSafety.sameOwner(owner, proof)
+            }
+            if let grant = binding.backgroundGrant {
+                let exact = try await XDriveIOSApprovedPhotoBGVault.prove(
+                    grant, at: target, direct: true)
+                return exact.matches(owner)
+            }
         } catch {
             return false
         }
+        return false
     }
 
     func revalidateRoutes() async {
