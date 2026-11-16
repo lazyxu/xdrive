@@ -37,8 +37,8 @@ test('native selection starts in More menu, ends with Done, keeps guards and sor
   assert.match(chrome, /if selecting \{\s*Button\("完成"\)/)
   // The actual Home organizer is intentionally first in the More menu;
   // selection must remain a real, guarded native action immediately after it.
-  assert.match(chrome, /if !selecting \\{\\s*Menu \\{/)
-  assert.match(chrome, /if !selecting \\{\\s*Menu \\{[\\s\\S]*?Button \\{\\s*guard canSelectPage,/)
+  assert.match(chrome, /if !selecting \{\s*Menu \{/)
+  assert.match(chrome, /if !selecting \{\s*Menu \{[\s\S]*?Button \{\s*guard canSelectPage,/)
   assert.match(chrome, /Label\("选择", systemImage: "checkmark\.circle"\)/)
   assert.match(chrome, /native-ios-files-multi-select|native-ios-files-selection-done/)
   assert.match(chrome, /Picker\("显示方式", selection: Binding\(/)
