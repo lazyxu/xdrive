@@ -640,7 +640,7 @@ import SQLite3
             precondition(Set(repeated.map(\.localIdentifier)) == afterHead)
             try expect(try store.counts().pending == 193)
             try expect(try store.baseline()?.token == Data([161]))
-            precondition(first64 == Set(try store.pending(limit: 64).map(\.localIdentifier)))
+            try expect(first64 == Set(try store.pending(limit: 64).map(\.localIdentifier)))
         }
         do {
             // Reopened DB must use the exact prior inspection cursor.
