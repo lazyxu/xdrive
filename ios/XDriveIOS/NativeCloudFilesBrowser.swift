@@ -1718,7 +1718,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .accessibilityIdentifier("native-ios-files-home-tags-disclosure")
                     .accessibilityValue(homeTagsExpanded ? "已展开" : "已折叠")
             }
-            DisclosureGroup("更多管理", isExpanded: $homeMoreExpanded) {
+            DisclosureGroup(isExpanded: $homeMoreExpanded) {
                 if isHomeEditing {
                     Label("可直接调整固定文件夹顺序并取消固定",
                           systemImage: "hand.draw")
@@ -1734,6 +1734,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .disabled(login.owner == nil)
                 .accessibilityIdentifier("native-ios-files-organize-home")
+            } label: {
+                Text("更多管理")
+                    .accessibilityIdentifier("native-ios-files-home-more-disclosure")
+                    .accessibilityValue(homeMoreExpanded ? "已展开" : "已折叠")
             }
             // Keep the existing direct operation-history route for UI-test
             // continuity and high-value Undo/Redo recovery.

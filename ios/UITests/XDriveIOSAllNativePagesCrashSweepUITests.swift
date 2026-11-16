@@ -144,6 +144,34 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
                        "Files Tags group did not expand before opening management")
     }
 
+    /// The home editor is behind the real collapsed More management group.
+    /// Expand the native control rather than treating hidden children as crashes.
+    private func ensureMoreExpanded(_ app: XCUIApplication) {
+        let home = element("native-ios-files-home-list", app)
+        XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
+        let disclosure = element("native-ios-files-home-more-disclosure", app)
+        for _ in 0..<12 {
+            if disclosure.exists && disclosure.isHittable { break }
+            home.swipeUp()
+        }
+        if !(disclosure.exists && disclosure.isHittable) {
+            for _ in 0..<12 {
+                if disclosure.exists && disclosure.isHittable { break }
+                home.swipeDown()
+            }
+        }
+        XCTAssertTrue(disclosure.exists && disclosure.isHittable,
+                      "Actual Files More management disclosure inaccessible")
+        if (disclosure.value as? String) == "已折叠" {
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-home-more-disclosure")
+            disclosure.tap()
+        }
+        let expanded = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已展开"), object: disclosure)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 8), .completed,
+                       "Files More management group did not expand")
+    }
+
     private func filesHomeChild(_ id: String, page: String, _ app: XCUIApplication) {
         tap("native-ios-tab-files", app)
         ready("native-ios-files-section-browse", app)
@@ -159,6 +187,7 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
         if id == "native-ios-files-open-favorites" { ensureFavoritesExpanded(app) }
         if id == "native-ios-files-home-manage-tags" { ensureTagsExpanded(app) }
+        if id == "native-ios-files-home-edit-inline" { ensureMoreExpanded(app) }
         let target = element(id, app)
         for _ in 0..<10 {
             if target.exists && target.isHittable { break }
