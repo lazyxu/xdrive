@@ -136,6 +136,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
 
     private func setup() {
         frame = XDriveIOSNativeMapMarkerVisualPolicy.frame
+        XDriveIOSNativeMapMarkerVisualPolicy.decorate(self)
         centerOffset = XDriveIOSNativeMapMarkerVisualPolicy.centerOffset
         clipsToBounds = false
         collisionMode = .circle
@@ -246,8 +247,15 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         placeholder.isHidden = false
     }
 
+    override func setSelected(_ selected: Bool, animated: Bool) {
+        super.setSelected(selected, animated: animated)
+        XDriveIOSNativeMapMarkerVisualPolicy.updateSelection(
+            selected, view: self, animated: animated)
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
+        transform = .identity
         cancel()
         badge.text = nil
         accessibilityLabel = nil
