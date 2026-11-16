@@ -148,3 +148,29 @@ test('16 real Simulator failure: offscreen Files Home operation entry is brought
   assert.equal((history.match(/openFilesOperationHistoryFromBrowse\(app\)/g) || []).length, 2)
   assert.doesNotMatch(history, /tap\("native-ios-files-open-operations", app: app\)/)
 })
+
+
+test('17 all 88 Gallery/Files routes actually have a running observer, with H264 cases isolated', () => {
+  const wf = read('.github/workflows/ios-native-navigation-runtime.yml')
+  const video = read('ios/scripts/files_ui_transition_video.py')
+  const stability = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
+  const methods = [...stability.matchAll(/func (test\w+)\(\)/g),
+                   ...ui.matchAll(/func (test\w+)\(\)/g)].map(m => m[1])
+  const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(m => m[1]))
+  const targetBlock = video.slice(video.indexOf('TARGETS = frozenset({'),
+                                  video.indexOf('})', video.indexOf('TARGETS = frozenset({')))
+  const h264 = new Set([...targetBlock.matchAll(/"(test\w+)"/g)].map(m => m[1]))
+  assert.equal(methods.length, 88)
+  assert.equal(h264.size, 12)
+  assert.equal(methods.filter(n => registered.has(n) && !h264.has(n)).length, 76)
+  assert.match(watcher, /exclude_h264_targets = len\(sys\.argv\) == 5/)
+  assert.match(watcher, /from files_ui_transition_video import TARGETS as H264_TARGETS/)
+  assert.match(watcher, /TARGETS\.difference_update\(H264_TARGETS\)/)
+  assert.match(wf, /still_args\+=\(--exclude-h264-targets\)/)
+  assert.match(wf, /if \[\[ "\$\{\{ matrix\.source \}\}" != "release-c83" \]\]/)
+  assert.match(wf, /frame_watcher=\$!/)
+  assert.match(wf, /video_watcher=\$!/)
+  assert.match(wf, /trap cleanup_native_watchers EXIT/)
+  assert.doesNotMatch(wf, /!= "candidate-gallery-files" \]\]; then/)
+  assert.match(wf, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 12/)
+})
