@@ -535,14 +535,20 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let app = openLocalMap()
         let map = element("native-ios-full-library-gps-map", in: app)
         XCTAssertTrue(map.exists)
-        // Photo-first iOS map keeps only one visible action menu;
-        // the date and basemap actions remain real nested UIKit menu items.
-        // Open the actual menu before asserting them (no fake AX success).
+        // Map style and locate moved to genuine 44pt controls on the map
+        // canvas; the advanced menu only holds the date/refresh workflow.
+        let style = element("native-ios-local-map-basemap", in: app)
+        let locate = element("native-ios-local-map-locate", in: app)
+        XCTAssertTrue(style.waitForExistence(timeout: 10))
+        XCTAssertTrue(style.isHittable)
+        XCTAssertTrue(locate.exists)
+        style.tap()
+        XCTAssertTrue(map.exists, "Changing basemap must retain the same MKMapView")
+        XCTAssertTrue(element("native-ios-local-map-current-grid", in: app).exists)
         let actions = element("native-ios-local-map-actions", in: app)
         XCTAssertTrue(actions.waitForExistence(timeout: 10))
         XCTAssertTrue(actions.isHittable)
         actions.tap()
-        XCTAssertTrue(element("native-ios-local-map-basemap", in: app).exists)
         let dateMenu = element("native-ios-local-map-capture-menu", in: app)
         XCTAssertTrue(dateMenu.waitForExistence(timeout: 6))
         // UI date → month selection must preserve verified PhotoKit scope.
@@ -823,6 +829,18 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let dashboardBar = element("native-ios-five-slot-bar", in: app)
         XCTAssertFalse(dashboardBar.exists,
                        "Native MapKit must open without the Gallery five-slot bar")
+        let currentGrid = element("native-ios-local-map-current-grid", in: app)
+        XCTAssertTrue(currentGrid.waitForExistence(timeout: 20))
+        XCTAssertTrue(currentGrid.isEnabled,
+                      "Verified map members must open their existing native photo wall")
+        currentGrid.tap()
+        XCTAssertTrue(element("native-ios-map-photo-wall-tile", in: app)
+            .waitForExistence(timeout: 35),
+            "Current viewport grid must use the same PhotoKit wall as map place selection")
+        let gridDismiss = element("native-ios-map-place-dismiss", in: app)
+        XCTAssertTrue(gridDismiss.exists)
+        gridDismiss.tap()
+        XCTAssertTrue(map.waitForExistence(timeout: 20))
         for pass in 0..<3 {
             let marker = app.descendants(matching: .any)
                 .matching(NSPredicate(

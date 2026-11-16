@@ -25,10 +25,13 @@ check('P0-01 map takes available canvas rather than a multi-row count footer', (
   }
   assert.doesNotMatch(owner, /Text\("当前视窗已有 /)
 })
-check('P0-02 map controls use one actions menu plus locate instead of six top icons', () => {
+check('P0-02 floating map type and location are 44pt controls, dates remain in one overflow menu', () => {
+  assert.match(components, /struct XDriveIOSNativePhotoMapFloatingTools: View/)
+  assert.match(components, /frame\(width: 44, height: 44\)/)
   for (const file of [local, owner, unified]) {
+    assert.match(file, /XDriveIOSNativePhotoMapFloatingTools\(/)
+    assert.match(file, /XDriveIOSNativePhotoMapGridAction\(/)
     assert.match(file, /Label\("地图操作", systemImage: "ellipsis.circle"\)/)
-    assert.match(file, /Label\("底图样式", systemImage: "square\.3\.layers\.3d"\)/)
     assert.match(file, /Label\("地图日期", systemImage: "calendar"\)/)
   }
   assert.match(ui, /let actions = element\("native-ios-local-map-actions", in: app\)/)
@@ -122,4 +125,17 @@ check('P1-15 large Dynamic Type, dark appearance and camera stability retain tes
   assert.match(local, /XDriveIOSNativePhotoMapPolicy\.compactViewport\(/)
   assert.match(ui, /testPhotoKitPlaceWallDarkAppearanceSnapshotEvidence/)
   assert.match(ui, /testMapCameraLayoutAndUnverifiedGestureNeverClosesTheApp/)
+})
+
+check('13-map P0 overlays never access credentials or broaden grid membership', () => {
+  const pureControls = components.slice(
+      components.indexOf('struct XDriveIOSNativePhotoMapFloatingTools: View'),
+      components.indexOf('/// Photo-first, accessible location header'))
+  assert.doesNotMatch(pureControls, /PHPhotoLibrary|OwnerScope|URLSession|PHAsset|upload/)
+  assert.match(local, /private func openCurrentMapGrid\(\)[\s\S]*?acceptsCellSelection\(/)
+  assert.match(owner, /private func openCurrentMapGrid\(\)[\s\S]*?acceptsSelectedCluster\(/)
+  assert.match(unified, /enabled: currentProof && pins\.count == 1/)
+  assert.match(local, /\.navigationTitle\("地图"\)/)
+  assert.match(owner, /\.navigationTitle\("地图"\)/)
+  assert.match(unified, /\.navigationTitle\("地图"\)/)
 })

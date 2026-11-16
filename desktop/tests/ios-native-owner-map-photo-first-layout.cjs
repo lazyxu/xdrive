@@ -24,7 +24,7 @@ test('Owner native map uses a compact in-map verified count and retains truthful
   assert.match(screen, /native-ios-owner-map-verified-count/)
   assert.match(screen, /native-ios-owner-map-stale-count/)
   assert.match(screen, /if let overview, displayedOverviewMatchesLogin/)
-  assert.match(screen, /if let error \{ Text\(error\)/)
+  assert.match(screen, /if let error \{[\s\S]*?XDriveIOSNativePhotoMapStatusPill\(/)
   assert.match(screen, /Button\(focused \? "显示底部导航" : "专注地图"\)/)
   assert.match(screen, /Label\("地图说明", systemImage: "info.circle"\)/)
   assert.doesNotMatch(screen, /Text\("当前 Server Owner 已索引/)

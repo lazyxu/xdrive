@@ -49,7 +49,7 @@ test('native photo maps do not retain the 8pt outer MapKit gutter', () => {
   // PhotoKit and signed Owner map canvases reach the horizontal safe area.
   assert.match(local, /\.padding\(\.horizontal, authorization == \.authorized \? 0 : 12\)/)
   const ownerMap = wrapper.slice(wrapper.indexOf('struct XDriveIOSNativeOwnerPhotoMapScreen: View'),
-                                  wrapper.indexOf('.navigationTitle("云端照片地图")'))
+                                  wrapper.indexOf('.navigationTitle("地图")'))
   assert.doesNotMatch(ownerMap.slice(-180), /\.padding\(\.horizontal, 8\)/)
   assert.match(ownerMap, /XDriveIOSOwnerMapSurface\(/)
 })
