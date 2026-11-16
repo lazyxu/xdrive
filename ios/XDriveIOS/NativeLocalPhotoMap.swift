@@ -1813,16 +1813,56 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         else { dismiss() }
                     }
                     .accessibilityIdentifier(
-                        album != nil ? "native-ios-album-map-dismiss" : "native-ios-map-dismiss"
-                    )
+                        album != nil ? "native-ios-album-map-dismiss" : "native-ios-map-dismiss")
                 }
             }
-            if mapScope == .library && globalComplete {
+            if mapScope == .library && authorization == .authorized {
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { currentLocation.locate() } label: {
+                        Label("我的位置", systemImage: "location")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .disabled(currentLocation.isLocating || phase != .active)
+                    .accessibilityIdentifier("native-ios-local-map-locate")
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
                     Menu {
-                        // Refresh a failed iCloud/HEIC/Live poster on exactly
-                        // the currently authorized GPS Cells. No second 100k
-                        // metadata scan and no change to membership authority.
+                        Button("全部日期") { setCaptureRange(nil) }
+                        Button("最近的日子与旅行") {
+                            showingRecentDaysAndTrips = true
+                        }
+                        .accessibilityIdentifier("native-ios-local-map-recent-trips")
+                        Button("最近 7 天") {
+                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
+                        }
+                        Button("最近 30 天") {
+                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
+                        }
+                        Button("按指定日期") { datePickerOpen = true }
+                            .accessibilityIdentifier("native-ios-local-map-select-date")
+                        Section("按年份") {
+                            ForEach(recentMapYears, id: \.self) { year in
+                                Button("\(year) 年") {
+                                    setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(year))
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("地图日期", systemImage: "calendar")
+                    }
+                    .accessibilityIdentifier("native-ios-local-map-capture-menu")
+                    Menu {
+                        Picker("底图样式", selection: $mapType) {
+                            Text("标准地图").tag(MKMapType.standard)
+                            Text("卫星地图").tag(MKMapType.satellite)
+                        }
+                    } label: {
+                        Label("底图样式", systemImage: "square.3.layers.3d")
+                    }
+                    .accessibilityIdentifier("native-ios-local-map-basemap")
+                    if mapScope == .library && globalComplete {
                         Button("重新加载位置封面") {
                             guard phase == .active, !busy, globalComplete,
                                   PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
@@ -1834,75 +1874,22 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         Button(album == nil ? "重新扫描已授权图库位置" : "重新扫描此相册位置") {
                             scanFullLibrary()
                         }
-                            .disabled(busy)
-                            .accessibilityIdentifier(album == nil ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
-                    } label: {
-                        Label("地图操作", systemImage: "ellipsis.circle")
+                        .disabled(busy)
+                        .accessibilityIdentifier(album == nil
+                            ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
                     }
-                    .accessibilityIdentifier("native-ios-local-map-actions")
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button("全部日期") { setCaptureRange(nil) }
-                    Button("最近的日子与旅行") {
-                        showingRecentDaysAndTrips = true
-                    }
-                    .accessibilityIdentifier("native-ios-local-map-recent-trips")
-                    Button("最近 7 天") {
-                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
-                    }
-                    Button("最近 30 天") {
-                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
-                    }
-                    // Keep the explicit date picker above a potentially long
-                    // PhotoKit year list. iOS 18.5 renders Menu children in
-                    // scroll order; a trailing item can become unreachable
-                    // by accessibility after decades of photo timestamps.
-                    Button("按指定日期") { datePickerOpen = true }
-                        .accessibilityIdentifier("native-ios-local-map-select-date")
-                    Section("按年份") {
-                        ForEach(recentMapYears, id: \.self) { year in
-                            Button("\(year) 年") {
-                                setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(year))
-                            }
+                    if album == nil && onFocusChange != nil {
+                        Button(focused ? "显示底部导航" : "专注地图") {
+                            focused.toggle()
+                            onFocusChange?(focused)
                         }
+                        .accessibilityIdentifier("native-ios-map-focus-toggle")
                     }
                 } label: {
-                    Label("地图日期", systemImage: "calendar")
+                    Label("地图操作", systemImage: "ellipsis.circle")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
-                .accessibilityIdentifier("native-ios-local-map-capture-menu")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Picker("底图样式", selection: $mapType) {
-                        Text("标准地图").tag(MKMapType.standard)
-                        Text("卫星地图").tag(MKMapType.satellite)
-                    }
-                } label: {
-                    Label("底图样式", systemImage: "square.3.layers.3d")
-                }
-                .accessibilityIdentifier("native-ios-local-map-basemap")
-            }
-            if mapScope == .library && authorization == .authorized {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        currentLocation.locate()
-                    } label: {
-                        Label("我的位置", systemImage: "location")
-                    }
-                    .disabled(currentLocation.isLocating || phase != .active)
-                    .accessibilityIdentifier("native-ios-local-map-locate")
-                }
-            }
-            if album == nil && onFocusChange != nil {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(focused ? "显示底部导航" : "专注地图") {
-                        focused.toggle()
-                        onFocusChange?(focused)
-                    }
-                    .accessibilityIdentifier("native-ios-map-focus-toggle")
-                }
+                .accessibilityIdentifier("native-ios-local-map-actions")
             }
         }
         .sheet(isPresented: $datePickerOpen) {
