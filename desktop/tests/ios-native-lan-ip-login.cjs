@@ -103,7 +103,7 @@ test('native login reuses chosen HTTPS origin for real login, Owner, refresh and
   assert.match(model, /AuthService\(origin: snapshot\.origin\)/)
   assert.match(model, /let origin = try ServerAddress\.parse\(saved\.origin\)/)
   assert.match(model, /AuthService\(origin: origin\)\.refresh\(/)
-  assert.match(model, /AuthService\(origin: previous\.origin\)\.logout\(/)
+  assert.match(model, /AuthService\(origin: logoutOrigin \?\? previous\.origin\)\.logout\(/)
   assert.doesNotMatch(signIn, /AuthService\(origin: configuredOrigin\)\.login\(/)
   assert.doesNotMatch(signIn, /login\(.+catch.+login\(/s)
 })
