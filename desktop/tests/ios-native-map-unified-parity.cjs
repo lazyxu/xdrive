@@ -116,7 +116,7 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(local, /\.presentationDetents\(\[\.medium, \.large\]\)/)
   assert.match(cloud, /badge\.isHidden = !enabled \|\| count <= 1/)
   assert.match(cloud, /native-ios-owner-map-stale-count/)
-  assert.match(cloud, /fixedSize\(horizontal: false, vertical: true\)/)
+  assert.match(cloud, /XDriveIOSNativePhotoMapStatusPill\([\s\S]*?native-ios-owner-map-stale-count/)
   assert.match(simulator, /func testMapCameraLayoutAndUnverifiedGestureNeverClosesTheApp\(/)
   assert.match(simulator, /func testAFirstTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap\(/)
   assert.match(simulator, /map\.swipeLeft\(\)/)

@@ -124,7 +124,8 @@ test('local, album and cloud ranges share skeleton cells; only chronological pag
   // Owner MapKit now uses headings only for verified visible windows; it never
   // claims that the sparse 48-item prefix is the entire location date index.
   assert.match(cluster, /XDriveIOSNativePhotoWallSectionList\(/)
-  assert.match(cluster, /仅对当前已授权、已加载的照片分组/)
+  assert.match(cluster, /private var visibleSections:[\s\S]*?priorWindow\.map[\s\S]*?page\.map/)
+  assert.match(cluster, /wallTimeScale\.key\(forISO8601: \$0\.item\.metadata\.captured_at\)/)
   assert.match(cluster, /if activeOwner \{\s*XDriveIOSNativePhotoWallSectionList\(/)
 })
 

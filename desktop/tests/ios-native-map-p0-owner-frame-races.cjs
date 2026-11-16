@@ -16,8 +16,8 @@ const ownerRoot = /origin == expected\.origin[\s\S]*?instanceID == expected\.ins
 test('P0 A/B: same canonical GPS place cannot be opened after Owner changed', () => {
   assert.match(scope, ownerRoot)
   assert.match(map, /private struct XDriveIOSOwnerMapChosenPlace: Identifiable \{[\s\S]*?let id: String[\s\S]*?let owner: XDriveNativeOwnerRoot/)
-  assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(id: item\.id, owner: expected\)/)
-  assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(id: facet\.id, owner: expected\)/)
+  assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(\s*id: item\.id, name: item\.name, owner: expected\)/)
+  assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(\s*id: facet\.id, name: facet\.name, owner: expected\)/)
   const sheet = map.slice(map.indexOf('.sheet(item: $selected, onDismiss:'), map.indexOf('.sheet(item: $selectedCluster, onDismiss:'))
   assert.match(sheet, /if XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, place\.owner\)[\s\S]*?phase == \.active/)
   assert.match(sheet, /XDriveIOSNativeServerMediaWall\([\s\S]*?placeID: place\.id/)

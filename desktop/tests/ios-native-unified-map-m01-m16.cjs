@@ -154,7 +154,7 @@ test('M13 M14: locality is display only; nearby uses whole verified GPS distance
   // The time grouping renderer must not reorder the verified GPS distances.
   assert.match(map, /isNearbyExpansion \? \.all : timeScale/)
   assert.match(map, /previous \+ current, scale: displayTimeScale/)
-  assert.match(map, /if !isNearbyExpansion \{\s*Section\("时间分组"\)/)
+  assert.match(map, /if !isNearbyExpansion \{[\s\S]*?nearbyPresented = true[\s\S]*?Section\("时间分组"\)/)
 })
 
 test('M15 M16: camera is restored only within verified Owner session; MapKit revokes gestures synchronously', () => {

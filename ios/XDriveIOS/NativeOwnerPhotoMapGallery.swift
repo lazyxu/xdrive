@@ -1040,7 +1040,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                             captureRange: activeCaptureRange,
                             mapSelection: mapSelection)
                     } else {
-                        selected = XDriveIOSOwnerMapChosenPlace(id: facet.id, owner: expected)
+                        selected = XDriveIOSOwnerMapChosenPlace(
+                            id: facet.id, name: facet.name, owner: expected)
                     }
                 }
             } catch is CancellationError {

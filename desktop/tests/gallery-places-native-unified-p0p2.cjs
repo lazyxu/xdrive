@@ -34,7 +34,7 @@ test('iOS MapKit and Gallery use the same SwiftUI framing, density and date-scal
 })
 
 test('Owner MapKit shows no previous Owner count, image or tiles during synchronous render transition',()=>{
-  assert.match(ownerMap,/if activeOwner \{\s+Text\(/)
+  assert.match(ownerMap,/if activeOwner \{\s+XDriveIOSNativePhotoMapPlaceHeader\(/)
   assert.match(ownerMap,/if activeOwner \{\s+XDriveIOSNativePhotoWallSectionList\(/)
   assert.match(ownerMap,/if activeOwner, let next/)
   assert.match(ownerMap,/if activeOwner \{\s+XDriveIOSNativePhotoWallFeedback\(/)
@@ -51,7 +51,7 @@ test('native dates are presentation-only on at most two signed pages, never inve
   assert.match(ownerMap,/private var visibleSections/)
   assert.match(ownerMap,/priorWindow\.map/)
   assert.match(ownerMap,/page\.map/)
-  assert.match(ownerMap,/仅对当前已授权、已加载的照片分组/)
+  assert.match(ownerMap,/private var visibleSections:[\s\S]*?priorWindow\.map[\s\S]*?page\.map/)
   assert.match(sharedPolicy,/key\(forISO8601 value: String\?\)/)
   assert.match(sharedPolicy, /Date\(value, strategy: \.iso8601\)/)
   assert.match(sharedPolicy, /return key\(for: instant\)/)
