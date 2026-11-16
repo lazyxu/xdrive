@@ -110,6 +110,7 @@ test('native GPS find-next skips only a bounded PhotoKit snapshot, not 100k asse
   assert.match(policy, /static let maxSeekGPSPages = 16/)
   assert.match(policy, /pagesRead >= 1 && pagesRead < maxSeekGPSPages/)
   assert.match(map, /if gpsFindPagesScanned > 0 \{\s*Text\("已检查 /)
+  assert.match(map, /accessibilityIdentifier\("native-ios-map-find-next-gps-page"\)[\s\S]*?accessibilityHint\("最多读取 16 页；不代表全库已完成扫描。"\)/)
   assert.match(scanner, /func nextLocatedPage\(\) throws -> XDrivePhotoKitLocatedPage/)
   // Existing PhotoKit thumbnail fetch by localIdentifier remains necessary;
   // find-next itself cannot introduce iCloud original download or upload.

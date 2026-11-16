@@ -795,6 +795,20 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 }
                 .navigationTitle("选择云端地图日期")
                 .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("显示当天") {
+                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.day(
+                                requestedCaptureDay))
+                            datePickerOpen = false
+                        }
+                    }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { datePickerOpen = false }
+                    }
+                }
+            }
+        }
+        .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     currentLocation.locate()

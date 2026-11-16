@@ -1775,6 +1775,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 .frame(minHeight: 44)
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("native-ios-map-find-next-gps-page")
+                .accessibilityHint("最多读取 16 页；不代表全库已完成扫描。")
                 if !compactMap {
                     Text("继续查找更多照片")
                         .font(.footnote).foregroundStyle(.secondary)

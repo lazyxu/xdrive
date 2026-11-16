@@ -44,6 +44,20 @@ test('P0-01: map sheets retain the camera and use the native medium/large photo 
   assert.match(owner, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id,\s*captureRange: activeCaptureRange,\s*placeDisplayName: place\.name\)/)
 })
 
+
+test('P0: date-picker action toolbar must close before the native Owner map toolbar', () => {
+  const { owner } = sources
+  const start = owner.indexOf('.sheet(isPresented: $datePickerOpen)')
+  const end = owner.indexOf('.sheet(item: $selected, onDismiss:')
+  assert.ok(start > 0 && end > start)
+  const region = owner.slice(start, end)
+  assert.match(region, /\.navigationTitle\("选择云端地图日期"\)\s*\.toolbar \{\s*ToolbarItem\(placement: \.confirmationAction\)/)
+  assert.match(region, /Button\("显示当天"\)[\s\S]*?XDriveIOSNativePhotoMapCaptureRange\.day\([\s\S]*?datePickerOpen = false/)
+  assert.match(region, /ToolbarItem\(placement: \.cancellationAction\)[\s\S]*?Button\("取消"\) \{ datePickerOpen = false \}/)
+  assert.match(region, /\n        \}\n        \.toolbar \{\s*ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-owner-map-actions/)
+  assert.match(owner, /if XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, place\.owner\)[\s\S]*?placeDisplayName: place\.name/)
+})
+
 test('P0-02: revoked, deleted, edited and wrong-kind local assets never inherit Viewer authority', () => {
   const admission = fragment(sources.map,
     'private enum XDriveIOSNativeMapViewerAdmission',
