@@ -54,7 +54,7 @@ struct XDriveIOSNativeFilesViewModeChecks {
         require(P.matchedAlignment(visibleAnchor: 1, selectedAnchor: nil,
                                    measured: 0.75) == nil, "no selected row")
         require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
-                                   measured: -.25) == -.25, "partially clipped row")
+                                   measured: -0.25) == -0.25, "partially clipped row")
         require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
                                    measured: .nan) == nil, "NaN rejected")
         require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
