@@ -9,6 +9,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 const wrapper = read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
 const local = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
+const focusPolicy = read('ios/XDriveIOS/NativeFocusVisibilityPolicy.swift')
 
 test('entering the native PhotoKit map hides Gallery-only backup/source strips by default', () => {
   assert.match(dashboard, /if !galleryFocused \{/)
@@ -25,6 +26,13 @@ test('switching local and Owner sources stays immersive without touching PhotoKi
   assert.match(local, /\.onAppear \{\s*if onFocusChange != nil \{\s*focused = true\s*onFocusChange\?\(true\)/)
   assert.match(local, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
   assert.match(wrapper, /XDriveIOSNativePhotoOwnerScope\.matches/)
+})
+
+test('signed-out local PhotoKit map is immersive without granting any cloud Owner focus', () => {
+  assert.match(focusPolicy, /gallerySource == "map" \|\|/)
+  assert.match(focusPolicy, /gallerySource == "cloud" && ownerVerified/)
+  assert.match(focusPolicy, /callbackSource == "map" \|\|/)
+  assert.match(focusPolicy, /callbackSource == "cloud" && ownerVerified/)
 })
 
 test('explicit map focus toggle still restores five-tab navigation when requested', () => {
