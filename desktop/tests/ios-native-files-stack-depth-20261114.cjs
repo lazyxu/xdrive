@@ -260,6 +260,8 @@ test('real Files Home and Launcher UI tests scroll only their owned AX list', ()
   assert.doesNotMatch(launch, /app\.scrollViews\.firstMatch/)
   const shortcut = scope(recovery, 'private func openHomeShortcut(', 'func testRecentShortcutNoSessionShowsReadOnlyNativeRecovery()')
   assert.match(shortcut, /element\("native-ios-files-home-list", app\)/)
+  assert.match(shortcut, /if !item\.exists \|\| !item\.isHittable \{/,
+    'a retained but offscreen Lazy Home row must still trigger bounded scroll')
   assert.doesNotMatch(shortcut, /app\.(?:collectionViews|tables|scrollViews)\.firstMatch/)
   const sheet = scope(subpages, 'private func openFilesSheet(', 'private func dismissFilesSheet(')
   assert.match(sheet, /control\("native-ios-files-home-list", app\)/)

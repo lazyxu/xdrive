@@ -316,7 +316,7 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     /// Search this Home List only; never force an unreadable child AX tree.
     private func openHomeShortcut(_ id: String, _ app: XCUIApplication) {
         let item = element(id, app)
-        if !item.exists {
+        if !item.exists || !item.isHittable {
             // A retained Gallery grid or another scrollable child must
             // never be mistaken for the Files Browse Home. This stable AX
             // ID survives SwiftUI's UITableView/UICollectionView differences.
