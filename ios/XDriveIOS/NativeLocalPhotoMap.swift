@@ -1664,25 +1664,23 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier(album == nil ? "native-ios-full-library-gps-map" : "native-ios-album-gps-map")
-                if globalComplete && !globalCells.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "mappin.and.ellipse")
-                            .accessibilityHidden(true)
-                        Text(refinedViewportIsCurrent ?
-                             "\(globalLocated) 张有位置照片 · \(globalCells.count) 个地图位置" :
-                             "地图已移动，位置照片数量正在重新核对")
-                            .monospacedDigit()
+                    .overlay(alignment: .bottomLeading) {
+                        if globalComplete && !globalCells.isEmpty {
+                            XDriveIOSNativePhotoMapStatusPill(
+                                message: refinedViewportIsCurrent
+                                    ? "\(globalLocated) 张照片 · \(globalCells.count) 个位置"
+                                    : "正在更新当前位置…",
+                                accessibilityID: "native-ios-map-verified-count")
+                        } else if busy {
+                            ProgressView(album == nil ? "正在加载照片位置…" : "正在加载相册位置…")
+                                .font(.caption).padding(10)
+                                .background(.regularMaterial, in: Capsule())
+                                .padding(10)
+                                .accessibilityIdentifier(
+                                    album == nil ? "native-ios-map-full-library-scan-progress"
+                                                 : "native-ios-map-album-scan-progress")
+                        }
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("native-ios-map-verified-count")
-                }
-                if busy {
-                    ProgressView(album == nil ? "正在读取照片位置…" : "正在读取相册位置…")
-                        .accessibilityIdentifier(album == nil ? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress")
-                }
 #if DEBUG
                 if XDriveIOSMapRealPerformanceProbe.enabled {
                     // Real target PhotoKit snapshot inventory, never fixture-supplied.
@@ -1712,8 +1710,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         .accessibilityIdentifier(album == nil ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
                 }
             } else if let page {
-                Text("已检查 \(page.page.startOffset)–\(page.page.nextOffset) / \(page.page.totalAccessibleAssets)，当前页有 \(page.items.count) 张带位置照片")
-                    .font(.footnote).monospacedDigit()
+                Text("当前页 · \(page.items.count) 张照片")
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 XDriveIOSMapKitPhotoPage(
                     items: page.items, revision: mapRevision, mapType: mapType, cameraReturn: cameraReturn
                 ) { selected, region in
@@ -1756,7 +1754,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if gpsFindPagesScanned > 0 {
-                    Text("本次连续检查了 \(gpsFindPagesScanned) 个分页（每页最多 64 张），仅显示最后一页的定位照片；不代表全库已完成扫描。")
+                    Text("已检查 \(gpsFindPagesScanned) 页")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("native-ios-map-gps-find-progress")
                 }
@@ -1775,7 +1773,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("native-ios-map-find-next-gps-page")
                 if !compactMap {
-                    Text("每次最多连续检查 16 页（1,024 张照片元数据），可重复查找；不自动读取 iCloud 原件。")
+                    Text("继续查找更多照片")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             } else if busy {
@@ -1787,7 +1785,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     .accessibilityIdentifier("native-ios-local-map-capture-range")
             }
             if basemapUnavailable {
-                Text("地图底图暂时无法加载。已核对的本机位置照片仍受 Full Access 保护；联网后平移地图或切换底图样式重试。")
+                Text("地图暂时无法加载，请检查网络后重试。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-local-map-basemap-unavailable")
             }
@@ -1798,7 +1796,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     .disabled(busy || authorization == .denied || authorization == .restricted)
             }
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
-                Text("地图只使用本机授权照片，缩略图不下载 iCloud 原件，照片 ID 和位置不会上传。")
+                Text("仅显示已授权的照片位置。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
