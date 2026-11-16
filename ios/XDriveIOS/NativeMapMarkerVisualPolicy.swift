@@ -45,7 +45,7 @@ enum XDriveIOSNativeMapMarkerVisualPolicy {
     }
 
     /// Retain the actual verified photo count, even above 1,000.
-    /// This presentation helper does not change PhotoKit/Owner admission.
+    /// This presentation helper does not change source admission.
     static func badgeText(count: Int) -> String {
         NumberFormatter.localizedString(
             from: NSNumber(value: max(0, count)), number: .decimal)
