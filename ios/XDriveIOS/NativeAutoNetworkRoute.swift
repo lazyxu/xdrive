@@ -263,16 +263,19 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
             ? initial.domain : initial.lan
         guard let alternative, await verify(alternative, against: initial) else { return nil }
         lock.lock()
-        if var current = binding, current.id == initial.id {
-            current.active = alternative
-            current.proven.remove(failedPhysical.absoluteString)
-            // Proven routes are origin URLs, not full request endpoints.
-            if let failedOrigin = Self.origin(of: failedPhysical) {
-                current.proven.remove(failedOrigin.absoluteString)
-            }
-            current.proven.insert(alternative.absoluteString)
-            binding = current
+        // A logout or Owner/token replacement during the proof must not
+        // continue an old credential-bearing request at the new physical host.
+        guard var current = binding, current.id == initial.id else {
+            lock.unlock()
+            return nil
         }
+        current.active = alternative
+        // Proven routes are origin URLs, not full request endpoints.
+        if let failedOrigin = Self.origin(of: failedPhysical) {
+            current.proven.remove(failedOrigin.absoluteString)
+        }
+        current.proven.insert(alternative.absoluteString)
+        binding = current
         lock.unlock()
         guard var components = URLComponents(url: original, resolvingAgainstBaseURL: false)
         else { return nil }
@@ -423,8 +426,21 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
         lock.unlock()
         oldSession?.finishTasksAndInvalidate()
         guard active else { return }
-        if let failure { fail(failure) }
-        else { client?.urlProtocolDidFinishLoading(self) }
+        if let failure {
+            // A write or a partial SSE must receive its original failure:
+            // schedule a new, independently-proved route for future requests,
+            // but never replay its unknown Server ACK or already-seen frames.
+            if XDriveIOSAutoRouteSafety.isNetworkFailure(failure),
+               let original = request.url, let currentURL {
+                Task {
+                    _ = await XDriveIOSAutoRoute.shared.recover(
+                        failedPhysical: currentURL, original: original)
+                }
+            }
+            fail(failure)
+        } else {
+            client?.urlProtocolDidFinishLoading(self)
+        }
     }
 
     private func fail(_ error: Error) {
