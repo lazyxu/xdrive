@@ -2898,12 +2898,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                         // Keep Home Organizer visible in the first native
                         // menu viewport; long Menus do not expose every
                         // off-screen entry to XCTest or VoiceOver.
-                    if isHome {
-                        Button { presentOrganizeHome() } label: {
-                            Label("整理浏览首页", systemImage: "square.grid.2x2")
+                        if isHome {
+                            Button { presentOrganizeHome() } label: {
+                                Label("整理浏览首页", systemImage: "square.grid.2x2")
+                            }
+                            .accessibilityIdentifier("native-ios-files-toolbar-organize-home")
                         }
-                        .accessibilityIdentifier("native-ios-files-toolbar-organize-home")
-                    }
                         if isHome { Divider() }
                         Button {
                             guard canSelectPage, !batchTrash.busy, !batchTarget.busy,
