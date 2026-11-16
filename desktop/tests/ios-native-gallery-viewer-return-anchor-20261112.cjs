@@ -17,7 +17,8 @@ const from = (marker, length = 1000) => {
 test('opening Viewer stores the exact authorized page', () => {
   const section = from('open: { payload, position in', 425);
   assert.match(section, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/);
-  assert.match(section, /viewerOpeningPage = payload\.number\s+selected = \.init/);
+  assert.match(section, /payload\.rows\.indices\.contains\(position\)[\s\S]*?payload\.rows\.filter\([\s\S]*?\.count == 1/);
+  assert.match(section, /viewerOpeningPage = payload\.number\s+viewerOpeningItemID = payload\.rows\[position\]\.id\s+selected = \.init/);
 });
 test('same-page Viewer stays mounted until its retained page re-verifies the target', () => {
   const section = from('.onChange(of: selected?.id) { selection in', 850);
@@ -44,14 +45,15 @@ test('verified page load finishes exact-row restore and retires pending anchor',
   const section = from('loaded: { verifiedIDs in', 1400);
   assert.match(section, /viewerReturnPage == page\.id/);
   assert.match(section, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/);
-  assert.match(section, /xdrivePhotoWallScrollVerifiedTile\(target, scroll: scroll\)/);
+  assert.match(section, /if viewerOpeningPage != viewerReturnPage \|\|\s+viewerOpeningItemID != target \{[\s\S]*?xdrivePhotoWallScrollVerifiedTile\(/);
+  assert.match(section, /viewerReturnAnchor = nil\s+viewerOpeningPage = nil\s+viewerOpeningItemID = nil/);
   assert.match(section, /viewerReturnAnchor = nil\s+viewerOpeningPage = nil/);
   assert.match(page, /loaded\(model\.rows\.map\(\\\.id\)\)/);
   assert.match(page, /acceptedGeneration == ticket, model\.completed/);
 });
 test('Owner change and page reset invalidate both return identities', () => {
-  assert.match(from('private func resetWall()', 210),
-    /viewerReturnAnchor = nil\s+viewerOpeningPage = nil\s+wall\.reset\(\)/);
+  assert.match(from('private func resetWall()', 320),
+    /viewerReturnAnchor = nil\s+viewerOpeningPage = nil\s+viewerOpeningItemID = nil\s+wall\.reset\(\)/);
   assert.match(gallery, /\.onChange\(of: login\.owner\)[\s\S]*?reset\(\)/);
 });
 test('Viewer onViewed reports actual visible photo and page', () => {

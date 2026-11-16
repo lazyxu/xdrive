@@ -72,6 +72,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var viewerReturnPage = 0
     // Exact Owner-authorized page that opened Viewer; its first frame is retained.
     @State private var viewerOpeningPage: Int?
+    // Session-only identity; cross-item and cross-page returns must target
+    // an independently verified tile, while an unchanged one keeps pixels.
+    @State private var viewerOpeningItemID: String?
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var started = false
     @Environment(\.scenePhase) private var phase
@@ -305,8 +308,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                          showingPeople || showingThumbnailCache ||
                                          phase != .active || !isTabActive,
                                     open: { payload, position in
-                                        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+                                        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                                              payload.rows.indices.contains(position),
+                                              payload.rows.filter({
+                                                  $0.id == payload.rows[position].id
+                                              }).count == 1
+                                        else { return }
                                         viewerOpeningPage = payload.number
+                                        viewerOpeningItemID = payload.rows[position].id
                                         selected = .init(owner: owner, page: payload, position: position)
                                     }, loaded: { verifiedIDs in
                                         guard selected == nil, viewerReturnPage == page.id,
@@ -319,10 +328,20 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                         if let target = XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
                                             anchor, in: verifiedIDs, authorized: true
                                         ) {
-                                            xdrivePhotoWallScrollVerifiedTile(target, scroll: scroll)
+                                            // An unchanged verified tile in the original page
+                                            // keeps its exact scroll pixels, rather than being
+                                            // unnecessarily moved to the viewport center.
+                                            // Filmstrip moves within a page and cross-page
+                                            // returns still scroll to the freshly admitted ID.
+                                            if viewerOpeningPage != viewerReturnPage ||
+                                                viewerOpeningItemID != target {
+                                                xdrivePhotoWallScrollVerifiedTile(
+                                                    target, scroll: scroll)
+                                            }
                                         }
                                         viewerReturnAnchor = nil
                                         viewerOpeningPage = nil
+                                        viewerOpeningItemID = nil
                                     }, pairing: { pairing = $0 })
                                     .id("unified-page-\(page.id)")
                             }
@@ -604,6 +623,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         selected = nil
         viewerReturnAnchor = nil
         viewerOpeningPage = nil
+        viewerOpeningItemID = nil
         wall.reset()
     }
     private func requestOriginalAudit(retryUnavailable: Bool) {
