@@ -191,7 +191,13 @@ test('published-b9 cold startup keeps the real compact About readiness without f
   assert.ok(testStart >= 0 && testEnd > testStart)
   const body = b9.slice(testStart, testEnd)
   assert.match(body, /matching\(identifier: "native-ios-login-about"\)/)
-  assert.match(body, /if compactAbout\.exists \{[\s\S]*?compactAbout\.isHittable[\s\S]*?compactAbout\.tap\(\)/)
+  // A published b9 build shows its label. The current compact sign-in
+  // displays the same readiness proof inside About, after a real tap.
+  assert.match(body, /if !readiness\.waitForExistence\(timeout: 2\) \{/)
+  assert.match(body, /loginScroll\.swipeUp\(\)/)
+  assert.match(body, /about\.isHittable/)
+  assert.match(body, /about\.tap\(\)/)
+  assert.doesNotMatch(body, /compactAbout\.tap\(\)/)
   assert.match(body, /matching\(identifier: "native-ios-prelogin-build"\)/)
   assert.match(body, /XCTNSPredicateExpectation\(/)
   assert.match(body, /value == %@/)
