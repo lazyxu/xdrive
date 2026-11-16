@@ -156,3 +156,69 @@ test("eight established Gallery/Files child journeys now have genuine H264 conti
     assert.ok(video.includes('"' + name + '"'), "missing H264 target " + name)
   }
 })
+
+const dashboard = fs.readFileSync(
+  path.join(root, "ios/XDriveIOS/NativePhotosDashboard.swift"), "utf8")
+
+// Real Simulator failures on 2026-11-16:
+// - PhotoKit sheet was explicitly auto-dismissed by scenePhase on Home.
+// - A retained Files searchable overlay masked the Home AX List after
+//   returning from Gallery People. Source contracts complement, not replace,
+//   the six actual XCTest journeys and 30-Hz H.264 frame audit.
+test("retains PhotoKit date sheet on nonactive scene without retaining index", () => {
+  const phase = timeline.slice(timeline.indexOf(".onChange(of: phase) { state in"))
+  const background = phase.slice(0, phase.indexOf("guard showingDates else"))
+  assert.match(background, /if state != \.active \{/)
+  assert.match(background, /model\.invalidate\(\)/)
+  assert.match(background, /exactDateTarget = nil/)
+  assert.doesNotMatch(background, /showingDates = false/,
+    "going Home must not explicitly close a current PhotoKit date sheet")
+})
+
+test("date sheet is revoked if Full, Limited or Denied permission changed", () => {
+  assert.match(timeline, /@State private var datesPermissionAtPresentation: PHAuthorizationStatus\?/)
+  assert.match(timeline,
+    /datesPermissionAtPresentation = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(timeline,
+    /guard permission == datesPermissionAtPresentation else \{[\s\S]*?showingDates = false/)
+  assert.match(timeline, /datesPermissionAtPresentation = nil/)
+})
+
+test("retained date sheet re-reads only authorized PhotoKit after foreground", () => {
+  const phase = timeline.slice(timeline.indexOf(".onChange(of: phase) { state in"))
+  assert.match(phase,
+    /if permission == \.authorized \|\| permission == \.limited \{\s*model\.load\(mediaFilter: mediaFilter\)/)
+  assert.match(timeline, /\.onChange\(of: mediaFilter\)[\s\S]*?showingDates = false/)
+  assert.match(timeline,
+    /Button\("完成"\) \{ showingDates = false \}/)
+})
+
+test("fixed Files tab forwards live selection without remounting its view", () => {
+  assert.match(dashboard,
+    /XDriveIOSNativeFilesBrowser\(login: login, isRootTabActive: tab == \.files\)/)
+  assert.match(dashboard, /if tab == \.files \|\| filesTabActivated \{/)
+  assert.doesNotMatch(dashboard, /\.id\(tab\)/,
+    "switching tabs must not rebuild the Files NavigationStack")
+})
+
+test("child Files folder navigation remains separate from root tab lifecycle", () => {
+  assert.match(browser, /private let isRootTabActive: Bool/)
+  assert.match(browser, /isRootTabActive: Bool = true/)
+  assert.ok((browser.match(/self\.isRootTabActive = true/g) || []).length >= 2,
+    "folder and folderID child constructors must retain independent lifecycle")
+})
+
+test("leaving Files dismisses native search without clearing verified results", () => {
+  const start = browser.indexOf(".onChange(of: isRootTabActive) { active in")
+  assert.ok(start > 0, "root tab visibility boundary absent")
+  const end = browser.indexOf(".onChange(of: login.owner)", start)
+  assert.ok(end > start)
+  const exit = browser.slice(start, end)
+  assert.match(exit, /guard !active else \{ return \}/)
+  assert.match(exit, /searchPresented = false/)
+  assert.match(exit, /dismissSearch\(\)/)
+  assert.doesNotMatch(exit, /activeQuery =|queryDraft =|model\.invalidate|quickSection =|offset =/,
+    "dismiss search presentation only; preserve Owner and current result window")
+  assert.match(sixSubpage, /func testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay\(\)/)
+  assert.match(sixSubpage, /native-ios-files-home-list/)
+})
