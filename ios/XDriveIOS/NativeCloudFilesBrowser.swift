@@ -1767,6 +1767,22 @@ struct XDriveIOSNativeFilesBrowser: View {
 
         @ViewBuilder private var filesHeader: some View {
         Section("全库筛选") {
+            if searchFilters.hasActiveFilters {
+                HStack(spacing: 8) {
+                    Label("已启用 \(searchFilters.activeFilterCount) 项筛选",
+                          systemImage: "line.3.horizontal.decrease.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-files-active-filter-count")
+                    Spacer(minLength: 4)
+                    Button("清除筛选") {
+                        searchFilters = XDriveIOSNativeFilesSearchFilterState()
+                    }
+                    .font(.caption)
+                    .accessibilityIdentifier("native-ios-files-clear-active-filters")
+                }
+                .frame(minHeight: XDriveIOSNativeFilesUIStyle.tapHeight)
+                .accessibilityElement(children: .contain)
+            }
             if isGlobalSearch {
                 HStack {
                     Text(activeQuery.isEmpty ? "全库筛选结果" : "全库搜索：\(activeQuery)")
@@ -4854,7 +4870,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func gridLabel(_ entry: XDriveIOSNativeFilesEntry) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             ZStack(alignment: .topTrailing) {
                 XDriveIOSNativeFilesThumbnailTile(
                     node: entry.node, login: login,
@@ -4868,29 +4884,19 @@ struct XDriveIOSNativeFilesBrowser: View {
                         .accessibilityHidden(true)
                 }
             }
-            Text(entry.node.name)
-                .font(.footnote)
-                .lineLimit(2)
+            XDriveIOSNativeFilesUIStyle.tileName(entry.node.name)
                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
             HStack(spacing: 5) {
                 if !entry.node.isDirectory {
                     XDriveIOSNativeFilesUIStyle.typeBadge(entry.node)
                 }
-                Text(entry.path ?? (entry.node.isDirectory ? "文件夹" :
-                    ByteCountFormatter.string(fromByteCount: entry.node.size,
-                                              countStyle: .file)))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                XDriveIOSNativeFilesUIStyle.metadata(
+                    XDriveIOSNativeFilesUIStyle.gridMetadata(entry.node, path: entry.path)
+                )
             }
-            if let modifiedDate = entry.node.modifiedDate {
-                Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityValue(selecting

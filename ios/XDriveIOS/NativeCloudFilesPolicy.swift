@@ -120,6 +120,11 @@ struct XDriveIOSNativeFilesSearchFilterState: Equatable {
         kind != "all" || hasDateFilter || hasSizeFilter ||
             hasSourceFilter || hasTagFilter
     }
+    var activeFilterCount: Int {
+        (kind == "all" ? 0 : 1) + (hasDateFilter ? 1 : 0) +
+            (hasSizeFilter ? 1 : 0) + (hasSourceFilter ? 1 : 0) +
+            (hasTagFilter ? 1 : 0)
+    }
 }
 
 /// Validate an actual Owner Range before it can replace the currently visible

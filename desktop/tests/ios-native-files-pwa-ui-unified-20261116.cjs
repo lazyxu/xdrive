@@ -79,6 +79,18 @@ test('P2: the native Viewer offers authenticated file and technical properties i
   assert.match(viewer, /XDriveIOSNativePhotoVideoSurface/)
   assert.match(viewer, /XDriveIOSNativePDFDocumentSurface/)
 })
+test('P1: both Files grids have one metadata line; readable Dynamic Type and active filters', () => {
+  assert.match(browser, /XDriveIOSNativeFilesUIStyle\.gridMetadata\(entry\.node, path: entry\.path\)/)
+  assert.match(collection, /XDriveIOSNativeFilesUIStyle\.gridMetadata\(item\.node, path: item\.path\)/)
+  assert.match(style, /static func gridMetadata\(/)
+  assert.match(style, /@Environment\(\\\.dynamicTypeSize\)/)
+  assert.match(style, /dynamicTypeSize\.isAccessibilitySize \? 2 : 1/)
+  assert.match(browser, /native-ios-files-active-filter-count/)
+  assert.match(browser, /native-ios-files-clear-active-filters/)
+  assert.match(source('ios/XDriveIOS/NativeCloudFilesPolicy.swift'), /var activeFilterCount: Int/)
+  assert.match(viewer, /onChange\(of: viewed\.revision\)/)
+})
+
 test('P0: the prior stack-overflow safety fix and native Viewer remain intact', () => {
   assert.match(browser, /private var filesModalsPrimary: some View/)
   assert.match(browser, /AnyView\(filesModalsSecondary\)/)

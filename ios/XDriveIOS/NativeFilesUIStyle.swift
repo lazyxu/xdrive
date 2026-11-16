@@ -11,7 +11,7 @@ enum XDriveIOSNativeFilesUIStyle {
     static let dockLabelFont: Font = .caption2.weight(.semibold)
 
     static func rowName(_ value: String) -> some View {
-        Text(value).font(.subheadline.weight(.medium)).lineLimit(1)
+        XDriveIOSNativeFilesAdaptiveText(value: value, isTitle: true)
     }
 
     static func tileName(_ value: String) -> some View {
@@ -19,7 +19,23 @@ enum XDriveIOSNativeFilesUIStyle {
     }
 
     static func metadata(_ value: String) -> some View {
-        Text(value).font(metadataFont).foregroundStyle(.secondary).lineLimit(1)
+        XDriveIOSNativeFilesAdaptiveText(value: value, isTitle: false)
+    }
+}
+
+/// Two-line normal list layout with accessible expansion at large text sizes.
+/// No fixed font-scale reduction or hardcoded foreground colors.
+private struct XDriveIOSNativeFilesAdaptiveText: View {
+    let value: String
+    let isTitle: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Text(value)
+            .font(isTitle ? .subheadline.weight(.medium) : .caption)
+            .foregroundStyle(isTitle ? Color.primary : Color.secondary)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            .accessibilityLabel(value)
     }
 }
 
@@ -58,6 +74,14 @@ extension XDriveIOSNativeFilesUIStyle {
             parts.append(XDriveIOSNativeFilesDatePolicy.display(date))
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// Shared single-line grid subtitle for Browse/Recent/Favorites. The full
+    /// timestamp remains in the List metadata and verified Properties.
+    static func gridMetadata(_ node: XDriveIOSNativeFilesNode, path: String? = nil) -> String {
+        if let path, !path.isEmpty { return path }
+        return node.isDirectory ? "文件夹" :
+            ByteCountFormatter.string(fromByteCount: node.size, countStyle: .file)
     }
 
     /// Choose only the nearest visible verified row, carrying its viewport

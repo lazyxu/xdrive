@@ -1203,7 +1203,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     }
 
     private func gridEntryLabel(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             XDriveIOSNativeFilesThumbnailTile(
                 node: item.node, login: login,
                 height: 72, viewerActive: selectedFile != nil
@@ -1214,10 +1214,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if !item.node.isDirectory {
                     XDriveIOSNativeFilesUIStyle.typeBadge(item.node)
                 }
-                XDriveIOSNativeFilesUIStyle.metadata(item.path)
+                XDriveIOSNativeFilesUIStyle.metadata(
+                    XDriveIOSNativeFilesUIStyle.gridMetadata(item.node, path: item.path)
+                )
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }

@@ -472,6 +472,7 @@ struct XDriveIOSNativeFilesViewer: View {
             viewerDetails
         }
         .onChange(of: viewed.id) { _ in showingFileDetails = false }
+        .onChange(of: viewed.revision) { _ in showingFileDetails = false }
         .task(id: attempt) {
             guard !isClosing else { return }
             await openCurrent()
@@ -490,9 +491,13 @@ struct XDriveIOSNativeFilesViewer: View {
             exportFallbackEligible = true
             loading = false
         }
-        .onChange(of: login.owner) { _ in close() }
+        .onChange(of: login.owner) { _ in
+            showingFileDetails = false
+            close()
+        }
         .onChange(of: phase) { next in
             if next != .active {
+                showingFileDetails = false
                 allowAudioAutoplay = false
                 retire()
             } else if !isClosing &&

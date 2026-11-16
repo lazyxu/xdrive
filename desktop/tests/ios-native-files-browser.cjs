@@ -52,9 +52,10 @@ test('native Files decodes and displays Server modification timestamps in list a
   assert.match(page, /var updated_at: String\? = nil/)
   assert.match(page, /enum XDriveIOSNativeFilesDatePolicy/)
   assert.match(page, /fractionDigits\.utf8\.count <= 9/)
-  // The grid still renders its visible modification timestamp directly.
-  // The compact two-line List now uses the shared display helper instead.
-  assert.match(view, /XDriveIOSNativeFilesDatePolicy\.display\(modifiedDate\)/)
+  // Grid now uses one compact metadata line; List and Owner-bound Properties
+  // retain the full modification date and version.
+  assert.match(view, /XDriveIOSNativeFilesUIStyle\.gridMetadata\(entry\.node, path: entry\.path\)/)
+  assert.match(filesStyle, /if let date = node\.modifiedDate/)
   assert.match(view, /XDriveIOSNativeFilesUIStyle\.compactMetadata\(entry\.node, path: entry\.path\)/)
   assert.match(filesStyle, /static func compactMetadata\(/)
   assert.match(filesStyle, /if let date = node\.modifiedDate/)
