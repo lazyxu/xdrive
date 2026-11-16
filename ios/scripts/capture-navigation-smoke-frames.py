@@ -193,6 +193,16 @@ MINIMAL_TARGETS = {
     "testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank",
     "testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership",
 }
+# Register all six real Gallery/Files child journeys with the bounded native
+# Simulator screenshot watcher; no synthetic screenshots or mock screens.
+MINIMAL_TARGETS.update({
+    "testFilterPeopleDeniedCloudReturnKeepsVerifiedGalleryGeneration",
+    "testFilesHistorySavedSearchesAcrossOriginalsHaveNoGhostSheets",
+    "testOriginalsHelpTrashDeniedReturnDoesNotReopenAlert",
+    "testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild",
+    "testMapModalFilesCloudDenialDoesNotRemountUnifiedWall",
+    "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
+})
 # One frame per all-native-page crash journey; original taps remain logged.
 # These are real native XCTest routes, not fabricated Owner/Viewer data.
 MINIMAL_TARGETS.update({
