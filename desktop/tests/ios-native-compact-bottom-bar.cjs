@@ -47,7 +47,11 @@ test('Gallery short landscape uses one safe-area row without remounting its acti
   assert.match(ui, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/);
   assert.match(ui, /GeometryReader \{ availableSpace in/);
   assert.match(ui, /availableSpace\.size\.width >= 680 &&[\s\S]*?availableSpace\.size\.height < 500 &&[\s\S]*?!dynamicTypeSize\.isAccessibilitySize/);
-  assert.match(ui, /if !galleryFocused \{[\s\S]*?HStack\(spacing: 0\) \{\s*gallerySourceRow\s*if gallerySource == \.local \|\| gallerySource == \.albums \{\s*gallerySearchAction\s*\}\s*galleryCompactBackupAction\s*\}/);
+  assert.match(ui, /if !galleryPresentationFocused \{[\s\S]*?HStack\(spacing: 0\) \{\s*gallerySourceRow\s*if gallerySource == \.local \|\| gallerySource == \.albums \{\s*gallerySearchAction\s*\}\s*galleryCompactBackupAction\s*\}/);
+  // The same compact Gallery row must stay hidden for default immersive MapKit.
+  // Only an explicit map menu action can reveal the five-slot global chrome.
+  assert.match(ui, /gallerySource == \.map \? !mapNavigationExplicitlyShown : galleryFocused/);
+  assert.match(ui, /mapNavigationExplicitlyShown = !focused/);
   assert.match(ui, /else \{\s*galleryStatusRow\s*gallerySourceRow/);
   assert.match(ui, /private var gallerySourceRow: some View \{[\s\S]*?ScrollView\(\.horizontal, showsIndicators: false\)/);
   assert.match(ui, /\.accessibilityValue\([\s\S]*?"自动备份已暂停，需核对收据"/);
