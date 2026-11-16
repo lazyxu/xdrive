@@ -181,6 +181,25 @@ test('all 14 Launcher destinations and at least 40 native all-page/child process
 
 
 
+test('published-b9 cold startup keeps the real compact About readiness without faking baseline', () => {
+  const b9 = fs.readFileSync(
+    path.join(root, 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'), 'utf8')
+  const login = fs.readFileSync(
+    path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8')
+  const testStart = b9.indexOf('func testPublishedB9RealColdStartAndRestart()')
+  const testEnd = b9.indexOf('\n    func test', testStart + 8)
+  assert.ok(testStart >= 0 && testEnd > testStart)
+  const body = b9.slice(testStart, testEnd)
+  assert.match(body, /matching\(identifier: "native-ios-login-about"\)/)
+  assert.match(body, /if compactAbout\.exists \{[\s\S]*?compactAbout\.isHittable[\s\S]*?compactAbout\.tap\(\)/)
+  assert.match(body, /matching\(identifier: "native-ios-prelogin-build"\)/)
+  assert.match(body, /XCTNSPredicateExpectation\(/)
+  assert.match(body, /value == %@/)
+  assert.match(body, /readiness\.label\.contains\("b9d5f9695826"\)/)
+  assert.match(login, /accessibilityIdentifier\("native-ios-login-about"\)/)
+  assert.match(login, /accessibilityIdentifier\("native-ios-prelogin-build"\)[\s\S]*?accessibilityValue\(startupReady \? "启动完成" : "正在启动"\)/)
+})
+
 test('crash sweep targets the actual mounted Launcher and selected Files Home, never an arbitrary retained ScrollView', () => {
   const sweep = fs.readFileSync(
     path.join(root, 'ios/UITests/XDriveIOSAllNativePagesCrashSweepUITests.swift'), 'utf8'

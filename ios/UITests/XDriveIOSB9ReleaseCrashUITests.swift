@@ -164,6 +164,22 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         XCTAssertTrue(field.exists)
         // Wait for the real three-second durable startup gate before
         // normal termination. A fixed sleep can race the SwiftUI mount.
+        // The compact native login hides diagnostics until the *real*
+        // About disclosure is opened. The published b9 binary does not
+        // have that disclosure and keeps its original visible build label.
+        let compactAbout = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-login-about").firstMatch
+        if compactAbout.exists {
+            for _ in 0..<8 {
+                if compactAbout.isHittable { break }
+                app.swipeUp()
+            }
+            XCTAssertTrue(compactAbout.isHittable,
+                          "Actual compact login About disclosure is unreachable")
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-login-about")
+            compactAbout.tap()
+            XCTAssertEqual(app.state, .runningForeground)
+        }
         let readiness = app.descendants(matching: .any)
             .matching(identifier: "native-ios-prelogin-build").firstMatch
         // Published b9 shows the build label directly. The current compact
