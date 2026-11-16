@@ -53,3 +53,25 @@ test("six new native Gallery/Files child paths are executed and video-audited", 
     assert.match(body, /assertVisiblePixels\(app,/)
   }
 })
+
+test("Both Files Home sheet helpers select real Browse before scrolling", () => {
+  const helpers = [
+    ["openFilesOperationHistoryFromBrowse",
+     "testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages"],
+    ["openFilesSavedSearchesFromBrowse",
+     "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips"],
+  ]
+  for (const [method, nextTest] of helpers) {
+    const start = navigation.indexOf("private func " + method + "(")
+    const end = navigation.indexOf("func " + nextTest + "()", start)
+    assert.ok(start >= 0 && end > start, method + " must exist")
+    const body = navigation.slice(start, end)
+    const browse = body.indexOf('tap("native-ios-files-section-browse", app: app)')
+    const root = body.indexOf('target("native-ios-files-open-root-location", app: app)')
+    const row = body.indexOf('let action = target("native-ios-files-open-')
+    assert.ok(browse >= 0 && root > browse && row > root,
+              method + " must activate native Browse and verify Home before lazy scrolling")
+    assert.match(body, /waitForExistence\(timeout: 15\)/)
+  }
+  assert.match(browser, /accessibilityIdentifier\("native-ios-files-open-root-location"\)/)
+})
