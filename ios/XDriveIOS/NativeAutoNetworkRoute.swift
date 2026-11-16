@@ -35,6 +35,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
     private let monitor = NWPathMonitor()
     private var binding: Binding?
     private var onLocalNetwork = false
+    private var networkEpoch: UInt64 = 0
 
     private init() {
         monitor.pathUpdateHandler = { [weak self] path in
@@ -173,6 +174,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
 
     private func networkChanged(_ local: Bool) {
         lock.lock()
+        networkEpoch &+= 1
         // A proof of reachability on Wi-Fi A is not a proof for Wi-Fi B.
         // Keep WAN's validated HTTPS identity, but remove LAN's prior network
         // evidence; fresh pinned TLS and exact Owner/Grant proof re-admit it.
@@ -190,6 +192,13 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         defer { lock.unlock() }
         guard let binding else { return nil }
         return (binding, onLocalNetwork)
+    }
+
+    private func snapshotEpoch() -> (Binding, Bool, UInt64)? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let binding else { return nil }
+        return (binding, onLocalNetwork, networkEpoch)
     }
 
     private static func origin(of url: URL) -> URL? {
@@ -262,7 +271,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
     }
 
     func revalidateRoutes() async {
-        guard let (initial, local) = snapshot(), initial.owner != nil else { return }
+        guard let (initial, local, epoch) = snapshotEpoch(), initial.owner != nil else { return }
         let candidates: [URL?] = local ? [initial.lan, initial.domain] : [initial.domain]
         for target in candidates.compactMap({ $0 }) {
             // Prefer the FIRST reachable route. Do not verify LAN and then
@@ -281,7 +290,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
             // An older Wi-Fi's asynchronous LAN proof must not win after a
             // cellular switch, logout, token rotation or Owner replacement.
             guard var current = binding, current.id == initial.id,
-                  onLocalNetwork == local else {
+                  onLocalNetwork == local, networkEpoch == epoch else {
                 lock.unlock()
                 return
             }
@@ -296,7 +305,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
     /// On a network-only failure, verify the alternative before forwarding a
     /// GET/HEAD. Uploads and other writes never retry an uncertain ACK here.
     func recover(failedPhysical: URL, original: URL) async -> URL? {
-        guard let (initial, local) = snapshot(), initial.owner != nil,
+        guard let (initial, local, epoch) = snapshotEpoch(), initial.owner != nil,
               matching(original, binding: initial) else { return nil }
         let alternative = failedPhysical.host == initial.lan?.host
             ? initial.domain : initial.lan
@@ -306,7 +315,8 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         lock.lock()
         // A logout or Owner/token replacement during the proof must not
         // continue an old credential-bearing request at the new physical host.
-        guard var current = binding, current.id == initial.id else {
+        guard var current = binding, current.id == initial.id,
+              networkEpoch == epoch else {
             lock.unlock()
             return nil
         }
