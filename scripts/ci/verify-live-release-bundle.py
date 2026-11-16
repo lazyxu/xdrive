@@ -317,8 +317,8 @@ def check_authenticated_range_download(origin, token, artifact):
     if not artifact.get("cached"):
         return False
     size = artifact["size"]
-    if not isinstance(size, int) or size <= 0:
-        raise GateError("invalid cached package size")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 2:
+        raise GateError("two independent Range probes require a package of at least two bytes")
     name = artifact["filename"]
     url = origin.rstrip("/") + "/api/v1/release-bundles/current/artifacts/" + quote(name)
     midpoint = max(1, size // 2)

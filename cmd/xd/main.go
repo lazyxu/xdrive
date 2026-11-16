@@ -83,7 +83,7 @@ Usage:
   xd mount [PATH]    (configure the owning Agent; CLI exits without stopping mount)
   xd version [--json]
   xd update [--source github|gitlab] [--channel stable|master] [--install] (Desktop only)
-  xd update --cli-only [--download] [--source github|gitlab] [--channel stable|master]
+  xd update --cli-only [--standalone] [--download] [--source github|gitlab] [--channel stable|master]
   xd update --status
   xd doctor [--strict]
   xd backup init|bind|drafts|list|once|auto|schedule|status|history|pause|cancel|agent [options]
@@ -337,7 +337,8 @@ func cleanupCmd() error {
 func updateCmd(args []string) error {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	install := fs.Bool("install", false, "install the Desktop update (only for an existing Desktop installation)")
-	cliOnly := fs.Bool("cli-only", false, "target the standalone xd + xdrive-agent portable archive, never the Desktop installer")
+	cliOnly := fs.Bool("cli-only", false, "target the portable xd + xdrive-agent CLI archive, never Desktop")
+	standalone := fs.Bool("standalone", false, "CLI-only: select independent xdrive-cli-* archive, not legacy Backup-only")
 	download := fs.Bool("download", false, "CLI-only: download and verify the portable archive without installing")
 	showStatus := fs.Bool("status", false, "show the most recent Desktop platform update transaction")
 	sourceFlag := fs.String("source", "", "update source: github or gitlab")
@@ -350,6 +351,9 @@ func updateCmd(args []string) error {
 		return fmt.Errorf("cannot establish xd installation identity: %w", selfErr)
 	}
 	useCLIOnly := *cliOnly || portableCLIOnlyDistribution(self, runtime.GOOS)
+	if *standalone && !useCLIOnly {
+		return fmt.Errorf("--standalone requires CLI-only mode; never changes the Desktop installer")
+	}
 	if *download && (*install || !useCLIOnly) {
 		return fmt.Errorf("--download is supported only for CLI-only archive staging, without --install")
 	}
@@ -362,7 +366,7 @@ func updateCmd(args []string) error {
 		}
 	}
 	if *showStatus {
-		if useCLIOnly || *download || *install || strings.TrimSpace(*sourceFlag) != "" || strings.TrimSpace(*channelFlag) != "" {
+		if useCLIOnly || *standalone || *download || *install || strings.TrimSpace(*sourceFlag) != "" || strings.TrimSpace(*channelFlag) != "" {
 			return fmt.Errorf("--status is only for an installed Desktop update transaction and cannot be combined with CLI-only, download or install options")
 		}
 		status, err := xupdate.LastInstallStatus()
@@ -430,7 +434,7 @@ func updateCmd(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	if useCLIOnly {
-		return runCLIOnlyUpdate(ctx, current, normalized, source, *download)
+		return runCLIOnlyUpdate(ctx, current, normalized, source, *download, *standalone)
 	}
 
 	if *install {
