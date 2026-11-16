@@ -37,6 +37,9 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Verify all iOS URLSession call sites adopt the runtime router
+        run: bash ios/tests/check-native-auto-route-coverage.sh
+
       - name: Verify iOS auto LAN/WAN replay and Owner safety matrix
         run: |
           set -euo pipefail
