@@ -64,7 +64,10 @@ concurrency:
 jobs:
   simulator-navigation:
     runs-on: macos-15
-    timeout-minutes: 60
+    # Old 76-case gallery suite consumed ~44m of XCTest alone. This shard now
+    # runs 88 real native routes, 12 bounded H.264 pre-rolls plus build/audit.
+    # Keep other matrix shards at 60m, but never truncate gallery coverage.
+    timeout-minutes: ${{ matrix.source == 'candidate-gallery-files' && 100 || 60 }}
     strategy:
       fail-fast: false
       matrix:

@@ -173,4 +173,6 @@ test('17 all 88 Gallery/Files routes actually have a running observer, with H264
   assert.match(wf, /trap cleanup_native_watchers EXIT/)
   assert.doesNotMatch(wf, /!= "candidate-gallery-files" \]\]; then/)
   assert.match(wf, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 12/)
+  assert.ok(wf.includes("timeout-minutes: ${{ matrix.source == 'candidate-gallery-files' && 100 || 60 }}"),
+    "Gallery/Files 88-suite must not use the former whole-job 60-minute timeout")
 })
