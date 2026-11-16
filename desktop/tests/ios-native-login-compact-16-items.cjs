@@ -130,3 +130,51 @@ test('real simulator validates compact/Advanced/preferences/help/about, no fake 
   }
   assert.doesNotMatch(uiTest, /xdrive-ui-navigation-synthetic-owner|signIn\(\)|pairLANHTTPS\(\)/)
 })
+
+
+test('legacy c83 and modern compact-login simulator harness compile against their own initializer APIs', () => {
+  const fs = require('node:fs')
+  const os = require('node:os')
+  const path = require('node:path')
+  const {spawnSync} = require('node:child_process')
+  const script = path.join(root, 'ios/scripts/prepare-navigation-runtime-smoke.py')
+  for (const modern of [false, true]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-login-harness-'))
+    try {
+      const dest = path.join(dir, 'ios')
+      const source = path.join(dest, 'XDriveIOS')
+      fs.mkdirSync(source, {recursive: true})
+      fs.writeFileSync(path.join(source, 'XDriveIOSApp.swift'),
+        'struct Fixture { let app = XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage) }\n'
+          .replace('let app = ', 'let app = ')) // Exact root needle is tested separately below.
+      fs.writeFileSync(path.join(source, 'XDriveIOSApp.swift'),
+        'WindowGroup {\n            XDriveIOSNativeStartupRoot(interruptedStage: interruptedStage)\n}\n')
+      fs.writeFileSync(path.join(source, 'NativeOwnerLoginModel.swift'),
+        '@Published private(set) var owner: XDriveNativeOwnerRoot?\n')
+      fs.writeFileSync(path.join(source, 'NativeOwnerLoginScreen.swift'),
+        modern
+          ? 'struct XDriveIOSNativeOwnerLoginScreen {\n    var safeStartup = false\n}\n'
+          : 'struct XDriveIOSNativeOwnerLoginScreen {\n}\n')
+      fs.writeFileSync(path.join(source, 'NativePhotoBackupScreen.swift'),
+        modern ? 'struct Backup { var launchNonce: UUID? }\n' : 'struct Backup {}\n')
+      fs.writeFileSync(path.join(dest, 'project.yml'), 'name: Fixture\ntargets:\n')
+      const proc = spawnSync('python3', [script, dir],
+        {encoding: 'utf8', timeout: 15000})
+      assert.equal(proc.status, 0, proc.stderr || proc.stdout)
+      const generated = fs.readFileSync(path.join(source, 'XDriveIOSApp.swift'), 'utf8')
+      assert.match(generated, /-xdrive-ui-navigation-smoke/)
+      assert.match(generated, /XDriveIOSNativeNavigationSmokeRoot\(\)/)
+      assert.equal(generated.includes('XDriveIOSNativeOwnerLoginScreen(safeStartup: true)'), modern,
+        'The old c83 native Login has no safeStartup initializer')
+      assert.equal(generated.includes('-xdrive-ui-login-compact-smoke'), modern)
+      if (!modern) {
+        assert.doesNotMatch(generated, /launchNonce: backupLaunchNonce/)
+      } else {
+        assert.match(generated, /launchNonce: backupLaunchNonce/)
+      }
+      assert.match(generated, /#else\s+XDriveIOSNativeStartupRoot/)
+    } finally {
+      fs.rmSync(dir, {force: true, recursive: true})
+    }
+  }
+})
