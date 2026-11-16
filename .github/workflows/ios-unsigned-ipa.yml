@@ -37,6 +37,9 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Parse all iOS native Swift sources before expensive IPA build
+        run: swiftc -frontend -parse ios/XDriveIOS/*.swift
+
       - name: Verify all iOS URLSession call sites adopt the runtime router
         run: bash ios/tests/check-native-auto-route-coverage.sh
 
