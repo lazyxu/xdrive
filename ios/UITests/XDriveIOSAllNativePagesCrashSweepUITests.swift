@@ -718,4 +718,134 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         capture(app, "real-signed-out-reversible-preference")
     }
 
+
+    /// Test a real interrupted startup stage via Foundation UserDefaults'
+    /// process argument domain. This does not fake a valid Owner session.
+    private func launchInterruptedCheckpoint(_ phase: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive.ios.native.launch-checkpoint.v1", phase]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Process exited while rendering interrupted-startup recovery")
+        ready("native-ios-startup-recovery", app)
+        ready("native-ios-startup-phase", app)
+        let previous = element("native-ios-startup-phase", app)
+        XCTAssertTrue(previous.label.contains(phase),
+                      "Actual recovery UI must identify the interrupted phase")
+        return app
+    }
+
+    func testInterruptedWorkspaceSafeEntryForegroundNoCrash() {
+        let app = launchInterruptedCheckpoint("mountingWorkspace")
+        tap("native-ios-startup-safe-entry", app)
+        ready("native-ios-startup-safe-mode", app)
+        ready("native-ios-login-server", app)
+        ready("native-ios-login-username", app)
+        waitRetired("native-ios-startup-recovery", app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-startup-safe-mode", app)
+        XCTAssertFalse(element("native-ios-five-slot-bar", app).exists,
+                       "Safe startup without a Server session cannot mount private workspace")
+        capture(app, "interrupted-workspace-safe-entry-foreground")
+    }
+
+    func testInterruptedSessionFullRetryRendersLoginNoCrash() {
+        let app = launchInterruptedCheckpoint("restoringSession")
+        tap("native-ios-startup-retry", app)
+        ready("native-ios-login-server", app)
+        ready("native-ios-login-password", app)
+        waitRetired("native-ios-startup-recovery", app)
+        XCTAssertFalse(element("native-ios-startup-safe-mode", app).exists,
+                       "Full retry must not silently take the safe-startup route")
+        XCTAssertFalse(element("native-ios-five-slot-bar", app).exists,
+                       "A retry without authorization cannot expose a cloud workspace")
+        capture(app, "interrupted-session-full-retry-login")
+    }
+
+    func testTransfersFilesBackupRoundTripAndForegroundNoCrash() {
+        let app = launch()
+        openLauncher("transfers", app)
+        ready("native-ios-transfer-overview", app)
+        tapNamed("打开文件", app)
+        ready("native-ios-files-section-browse", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists,
+                       "Unauthenticated Owner cannot expose protected cloud file rows")
+        openLauncher("transfers", app)
+        ready("native-ios-transfer-overview", app)
+        tapNamed("打开相册备份", app)
+        ready("native-ios-backup-overview", app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-backup-overview", app)
+        openLauncher("transfers", app)
+        ready("native-ios-transfer-overview", app)
+        capture(app, "transfers-files-backup-foreground")
+    }
+
+    func testBackupDetailsChildFilesReturnNoCrash() {
+        let app = launch()
+        openLauncher("backup", app)
+        ready("native-ios-backup-overview", app)
+        tapNamed("备份详情", app)
+        ready("native-ios-backup-portrait-form", app)
+        tapNamed("返回相册备份", app)
+        ready("native-ios-backup-overview", app)
+        XCTAssertFalse(element("native-ios-backup-portrait-form", app).exists,
+                       "Backup details child remained mounted after returning")
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        openLauncher("backup", app)
+        ready("native-ios-backup-overview", app)
+        capture(app, "backup-details-files-return")
+    }
+
+    func testGalleryFocusedBackupConsentDoesNotAutoUploadNoCrash() {
+        let app = launch()
+        openGalleryBackup("集中备份（需确认）", app)
+        ready("native-ios-backup-portrait-form", app)
+        XCTAssertFalse(element("native-ios-photos-focused-progress", app).exists,
+                       "Opening focused backup must not automatically start an upload")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-backup-portrait-form", app)
+        tapNamed("返回相册备份", app)
+        ready("native-ios-backup-overview", app)
+        tap("native-ios-tab-gallery", app)
+        ready("native-ios-unified-photo-gallery", app)
+        capture(app, "gallery-focused-backup-no-consent")
+    }
+
+    func testNotesSourcesThreeRoundsClipboardFilesNoCrash() {
+        let app = launch()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        openLauncher("notes", app)
+        ready("native-ios-notes-page", app)
+        let picker = app.segmentedControls.firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 15),
+                      "Real Notes source Picker absent")
+        for round in 0..<3 {
+            for source in ["iOS 备份", "我的备忘录"] {
+                let option = picker.buttons[source].firstMatch
+                XCTAssertTrue(option.waitForExistence(timeout: 15),
+                              "Real Notes source child missing: " + source)
+                XCTAssertTrue(option.isHittable, "Notes source selector obstructed")
+                print("IOS_NATIVE_NAV_TAP_START route=native-ios-notes-source")
+                option.tap()
+                ready("native-ios-notes-page", app)
+            }
+            if round == 1 {
+                XCUIDevice.shared.orientation = .landscapeLeft
+                ready("native-ios-notes-page", app)
+                XCUIDevice.shared.orientation = .portrait
+            }
+        }
+        openLauncher("clipboard", app)
+        ready("ios-clipboard-draft", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "notes-sources-clipboard-files")
+    }
+
 }

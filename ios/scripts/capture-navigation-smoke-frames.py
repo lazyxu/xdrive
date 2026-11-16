@@ -203,6 +203,15 @@ MINIMAL_TARGETS.update({
     "testMapModalFilesCloudDenialDoesNotRemountUnifiedWall",
     "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
 })
+# Additional native all-pages/subpage crash journeys: real controls only.
+MINIMAL_TARGETS.update({
+    "testInterruptedWorkspaceSafeEntryForegroundNoCrash",
+    "testInterruptedSessionFullRetryRendersLoginNoCrash",
+    "testTransfersFilesBackupRoundTripAndForegroundNoCrash",
+    "testBackupDetailsChildFilesReturnNoCrash",
+    "testGalleryFocusedBackupConsentDoesNotAutoUploadNoCrash",
+    "testNotesSourcesThreeRoundsClipboardFilesNoCrash",
+})
 # One frame per all-native-page crash journey; original taps remain logged.
 # These are real native XCTest routes, not fabricated Owner/Viewer data.
 MINIMAL_TARGETS.update({
