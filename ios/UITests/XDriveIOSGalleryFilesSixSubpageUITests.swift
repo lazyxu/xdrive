@@ -84,26 +84,22 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 12), .completed,
                            "Actual Files Browse section did not become selected")
         }
-        // Native Files Home is a SwiftUI List without a dedicated container
-        // AX identifier. Verify the real Owner-scoped cloud entry, so an
-        // unmounted child fails without falsely rejecting healthy navigation.
-        XCTAssertTrue(control("native-ios-files-open-root-location", app)
+        // The Files Home List has a stable AX identifier. Its first Cloud
+        // Root row may legitimately remain offscreen when a previous child
+        // is dismissed with the same scroll offset.
+        XCTAssertTrue(control("native-ios-files-home-list", app)
             .waitForExistence(timeout: 15),
-            "Real native Files Home cloud entry did not mount")
+            "Real native Files Home List did not mount")
     }
 
     private func openFilesSheet(_ entryID: String, pageID: String,
                                 _ app: XCUIApplication) {
         enterFilesBrowse(app)
-        // SwiftUI List may surface as UITableView or UICollectionView;
-        // bounded swipes materialize lazy Organize rows on the iPhone viewport.
-        let table = app.tables.firstMatch
-        let collection = app.collectionViews.firstMatch
-        let scroll = app.scrollViews.firstMatch
-        var list: XCUIElement = app
-        if table.exists { list = table }
-        else if collection.exists { list = collection }
-        else if scroll.exists { list = scroll }
+        // Scroll only this Files Home List, not an unrelated retained
+        // Gallery List, search overlay, or offscreen modal.
+        let list = control("native-ios-files-home-list", app)
+        XCTAssertTrue(list.waitForExistence(timeout: 15),
+                      "Actual Files Home List is missing before child navigation")
         let entry = control(entryID, app)
         for _ in 0..<10 {
             if entry.exists && entry.isHittable { break }

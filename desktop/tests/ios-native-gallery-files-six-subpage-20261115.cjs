@@ -34,9 +34,11 @@ test('all six real native cross-subpage journeys are registered exactly once', (
   assert.match(native, /app\.launch\(\)/);
   assert.match(native, /XCTAssertEqual\(app\.state, \.runningForeground/);
   assert.match(native, /IOS_NATIVE_NAV_TAP_START route=/);
-  // Never reintroduce a fake AX container ID on the native SwiftUI List.
-  assert.doesNotMatch(native, /native-ios-files-home-list/);
-  assert.match(native, /native-ios-files-open-root-location/);
+  // Actual production Files List has an explicit stable AX identifier.
+  // Never assert the first Lazy Cloud Root row stays mounted after sheet return.
+  assert.match(native, /control\("native-ios-files-home-list", app\)/);
+  assert.doesNotMatch(native, /app\.(?:tables|collectionViews|scrollViews)\.firstMatch/);
+  assert.match(files, /accessibilityIdentifier\(isHome \? "native-ios-files-home-list" : "native-ios-files-folder-list"\)/);
   assert.match(native, /XCTAttachment|app\.screenshot\(\)/);
 });
 

@@ -317,19 +317,21 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     private func openHomeShortcut(_ id: String, _ app: XCUIApplication) {
         let item = element(id, app)
         if !item.exists {
-            // SwiftUI List is exposed as a table or collection depending
-            // on Simulator/iOS version; do not assume the AX container type.
-            let collection = app.collectionViews.firstMatch
-            let list = collection.exists ? collection : app.tables.firstMatch
-            if list.exists {
-                // A prior child can leave the Home list below Recent.
-                // Search in both directions with a bounded swipe budget.
-                for _ in 0..<5 {
-                    if item.exists { break }
-                    list.swipeUp()
-                }
+            // A retained Gallery grid or another scrollable child must
+            // never be mistaken for the Files Browse Home. This stable AX
+            // ID survives SwiftUI's UITableView/UICollectionView differences.
+            let list = element("native-ios-files-home-list", app)
+            XCTAssertTrue(list.waitForExistence(timeout: 15),
+                          "Real native Files Home List did not mount")
+            // A prior sheet may retain an offset below this Lazy row.
+            // Search in both directions; existence alone is not hit-testable.
+            for _ in 0..<5 {
+                if item.exists && item.isHittable { break }
+                list.swipeUp()
+            }
+            if !(item.exists && item.isHittable) {
                 for _ in 0..<10 {
-                    if item.exists { break }
+                    if item.exists && item.isHittable { break }
                     list.swipeDown()
                 }
             }

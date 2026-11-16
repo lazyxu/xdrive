@@ -196,9 +196,9 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
                 let button = app.descendants(matching: .any)
                     .matching(identifier: target).firstMatch
                 if !(button.exists && button.isHittable) {
-                    let scroll = app.scrollViews.firstMatch
+                    let scroll = find("native-ios-launcher-scroll", in: app)
                     XCTAssertTrue(scroll.waitForExistence(timeout: 12),
-                                  "Native launcher scroll missing for \(target)")
+                                  "Native Launcher scroll missing for \(target)")
                     // Launcher may remember the last scroll position after
                     // a tab round-trip. Find a real AX target, not a coordinate.
                     for _ in 0..<6 {
@@ -325,20 +325,27 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
-    // The Files Home is a genuine two-page, lazily rendered CollectionView.
-    // Deep '整理' rows do not exist in AX until the collection is scrolled.
-    // Never guess a tap coordinate or silently treat absence as a pass.
+    // This is the actual Files Browse List, regardless of whether SwiftUI
+    // exposes it as UITableView or UICollectionView on a given iOS release.
+    // Never swipe a retained Gallery List or assume an offscreen Lazy row
+    // proves Home disappeared after a child-view return.
     private func filesHomeEntry(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
-        let list = app.collectionViews.firstMatch
+        let list = find("native-ios-files-home-list", in: app)
         XCTAssertTrue(list.waitForExistence(timeout: 12),
-                      "Native Files Home collection is not mounted")
+                      "Native Files Home List is not mounted")
         let button = app.buttons.matching(identifier: identifier).firstMatch
-        for _ in 0..<5 {
-            if button.exists && button.isHittable { return button }
+        for _ in 0..<8 {
+            if button.exists && button.isHittable { break }
             list.swipeUp()
         }
+        if !(button.exists && button.isHittable) {
+            for _ in 0..<8 {
+                if button.exists && button.isHittable { break }
+                list.swipeDown()
+            }
+        }
         XCTAssertTrue(button.waitForExistence(timeout: 8),
-                      "Scrolled Files Home but no matching entry: \(identifier)")
+                      "Scrolled genuine Files Home but no matching entry: \(identifier)")
         XCTAssertTrue(button.isHittable, "Files Home entry exists but is not visible")
         return button
     }

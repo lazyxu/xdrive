@@ -486,9 +486,10 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     func testFilesHomeDeepScrollTabReturnKeepsQuickNavigation() {
         let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
-        let list = app.collectionViews.firstMatch
+        let list = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-home-list").firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 12),
-                      "Files Home native collection missing")
+                      "Actual Files Home List is missing")
         list.swipeUp()
         list.swipeUp()
         select("native-ios-tab-gallery", in: app)
