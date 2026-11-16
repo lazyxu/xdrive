@@ -32,6 +32,10 @@ test('six independent native Gallery/Files filter journeys are captured by stric
     assert.ok(video.includes('"' + name + '"'), 'Missing H264 target: ' + name)
     assert.ok(still.includes('"' + name + '"'), 'Missing frame target: ' + name)
   }
+  // The real Files header is lazy; a sheet return may retain a deep List offset.
+  assert.match(swift, /let host: XCUIElement = table\.exists/)
+  assert.match(swift, /host\.swipeDown\(\)/)
+  assert.match(swift, /strip\.exists && strip\.isHittable/)
   assert.match(workflow, /--minimum 18/)
   assert.match(video, /physical_60_120_hz_verified": False/)
 })

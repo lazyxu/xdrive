@@ -97,7 +97,19 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
     /// vertically scrolling Files list. Preserve real hit-test assertions.
     private func visibleFilesFilter(_ id: String, app: XCUIApplication) -> XCUIElement {
         let strip = target("native-ios-files-filter-strip", app: app)
-        XCTAssertTrue(strip.waitForExistence(timeout: 15), "Files filter strip not mounted")
+        // Files Home is a lazy List. After dismissing a child sheet, the
+        // retained list offset can leave this horizontal filter offscreen.
+        let table = app.tables.firstMatch
+        let collection = app.collectionViews.firstMatch
+        let scroll = app.scrollViews.firstMatch
+        let host: XCUIElement = table.exists ? table :
+            (collection.exists ? collection : (scroll.exists ? scroll : app))
+        for _ in 0..<10 {
+            if strip.exists && strip.isHittable { break }
+            host.swipeDown()
+        }
+        XCTAssertTrue(strip.waitForExistence(timeout: 15) && strip.isHittable,
+                      "Files filter strip still not visible after vertical Home recovery")
         let control = target(id, app: app)
         for _ in 0..<8 {
             if control.exists && control.isHittable { return control }
