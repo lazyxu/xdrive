@@ -52,6 +52,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-auto-route-safety"
           "$RUNNER_TEMP/xdrive-ios-auto-route-safety"
 
+      - name: Verify bounded streaming HTTP 206 Range, seek, EOF and malformed proof
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
+            ios/XDriveIOS/NativeRoutedHTTPRange.swift \
+            ios/tests/NativeRoutedHTTPRangeChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-streaming-range"
+          "$RUNNER_TEMP/xdrive-ios-streaming-range"
+
       - name: Test direct IPA publisher, SHA validation, and immutable release safety
         run: bash scripts/ci/test-ios-unsigned-release.sh
       - name: Verify independent NAS original readback checker rejects false physical proof

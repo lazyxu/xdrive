@@ -14,22 +14,7 @@ final class XDriveIOSRoutedMediaLoader: NSObject, AVAssetResourceLoaderDelegate,
         case truncated
     }
 
-    private struct ByteRange {
-        let first: Int64
-        let last: Int64
-        let total: Int64
-
-        static func parse(_ raw: String?) -> Self? {
-            guard let raw, raw.hasPrefix("bytes ") else { return nil }
-            let parts = raw.dropFirst(6).split(separator: "/", omittingEmptySubsequences: false)
-            guard parts.count == 2, let total = Int64(parts[1]), total > 0 else { return nil }
-            let ends = parts[0].split(separator: "-", omittingEmptySubsequences: false)
-            guard ends.count == 2,
-                  let first = Int64(ends[0]), let last = Int64(ends[1]),
-                  first >= 0, last >= first, last < total else { return nil }
-            return ByteRange(first: first, last: last, total: total)
-        }
-    }
+    private typealias ByteRange = XDriveIOSRoutedHTTPRange
 
     private let logicalURL: URL
     private let resourceURL: URL
@@ -172,10 +157,11 @@ final class XDriveIOSRoutedMediaLoader: NSObject, AVAssetResourceLoaderDelegate,
                 let (stream, response) = try await session.bytes(for: request)
                 guard let http = response as? HTTPURLResponse,
                       http.statusCode == 206,
-                      let span = ByteRange.parse(http.value(forHTTPHeaderField: "Content-Range")),
-                      span.first == expectedOffset, span.last <= maximumEnd,
+                      let span = ByteRange.bounded(
+                        http.value(forHTTPHeaderField: "Content-Range"),
+                        first: expectedOffset, maximumEnd: maximumEnd),
                       let size = Int(exactly: span.last - span.first + 1),
-                      size > 0, size <= 256 * 1_024,
+                      size > 0,
                       (http.value(forHTTPHeaderField: "Content-Encoding")
                         .map { $0.lowercased() == "identity" } ?? true)
                 else { throw Failure.unsupportedRange }
