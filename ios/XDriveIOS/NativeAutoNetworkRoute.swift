@@ -156,6 +156,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
                               backgroundGrant: old.backgroundGrant)
         }
         lock.unlock()
+        Task { await self.revalidateRoutes() }
     }
 
     func clear() {
@@ -172,6 +173,13 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
 
     private func networkChanged(_ local: Bool) {
         lock.lock()
+        // A proof of reachability on Wi-Fi A is not a proof for Wi-Fi B.
+        // Keep WAN's validated HTTPS identity, but remove LAN's prior network
+        // evidence; fresh pinned TLS and exact Owner/Grant proof re-admit it.
+        if var current = binding, let lan = current.lan {
+            current.proven.remove(lan.absoluteString)
+            binding = current
+        }
         onLocalNetwork = local
         lock.unlock()
         Task { await self.revalidateRoutes() }
@@ -255,7 +263,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
 
     func revalidateRoutes() async {
         guard let (initial, local) = snapshot(), initial.owner != nil else { return }
-        let candidates = local ? [initial.lan, initial.domain] : [initial.domain, initial.lan]
+        let candidates: [URL?] = local ? [initial.lan, initial.domain] : [initial.domain]
         for target in candidates.compactMap({ $0 }) {
             guard target != initial.active || !initial.proven.contains(target.absoluteString)
             else { continue }
@@ -274,11 +282,13 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
     /// On a network-only failure, verify the alternative before forwarding a
     /// GET/HEAD. Uploads and other writes never retry an uncertain ACK here.
     func recover(failedPhysical: URL, original: URL) async -> URL? {
-        guard let (initial, _) = snapshot(), initial.owner != nil,
+        guard let (initial, local) = snapshot(), initial.owner != nil,
               matching(original, binding: initial) else { return nil }
         let alternative = failedPhysical.host == initial.lan?.host
             ? initial.domain : initial.lan
-        guard let alternative, await verify(alternative, against: initial) else { return nil }
+        // A private-IP destination is not an alternative on cellular data.
+        guard let alternative, alternative != initial.lan || local,
+              await verify(alternative, against: initial) else { return nil }
         lock.lock()
         // A logout or Owner/token replacement during the proof must not
         // continue an old credential-bearing request at the new physical host.
