@@ -15,12 +15,32 @@ function segment(start, end) {
   return files.slice(a, b)
 }
 
-test('iOS 26.6 Files main-thread stack-overflow regression: split every oversized modal and lifecycle generic chain', () => {
-  const modal = segment('private var filesModalsPrimary: some View {',
+test('iOS 26.6 Files stack-guard regression: split 23 real modals over six AnyView boundaries', () => {
+  const modal = segment('private var filesModalsPrimaryBase: some View {',
     '/// Save the exact loaded page')
-  assert.match(modal, /private var filesModalsPrimary: some View \{\s*AnyView\(filesMain\)/)
-  assert.match(modal, /private var filesModalsSecondary: some View \{\s*AnyView\(filesModalsPrimary\)/)
-  assert.match(modal, /private var filesModals: some View \{\s*AnyView\(filesModalsSecondary\)/)
+  const bounded = [
+    ['filesModalsPrimaryBase', 'filesMain'],
+    ['filesModalsPrimary', 'filesModalsPrimaryBase'],
+    ['filesModalsSecondaryBase', 'filesModalsPrimary'],
+    ['filesModalsSecondary', 'filesModalsSecondaryBase'],
+    ['filesModalsTertiaryBase', 'filesModalsSecondary'],
+    ['filesModals', 'filesModalsTertiaryBase'],
+  ]
+  let totalBatched = 0
+  for (let i = 0; i < bounded.length; i++) {
+    const [name, inner] = bounded[i]
+    const begin = modal.indexOf('private var ' + name + ': some View {')
+    const end = i + 1 < bounded.length
+      ? modal.indexOf('private var ' + bounded[i + 1][0] + ': some View {', begin + 5)
+      : modal.length
+    assert.ok(begin >= 0 && end > begin, 'missing Files AnyView segment: ' + name)
+    const block = modal.slice(begin, end)
+    assert.ok(block.includes('AnyView(' + inner + ')'), 'missing type-erasure boundary: ' + name)
+    const count = (block.match(/\.(?:sheet|alert|confirmationDialog|fullScreenCover)\(/g) || []).length
+    assert.ok(count <= 7, 'Files single generic presentation block grew above seven: ' + name)
+    totalBatched += count
+  }
+  assert.equal(totalBatched, 23, 'preserve all 23 real Files modals and Viewer')
   const modifiers = modal.match(/\.(?:sheet|alert|confirmationDialog|fullScreenCover)\(/g) || []
   assert.equal(modifiers.length, 23, 'the original 22 plus the verified quick-info sheet must remain')
   assert.match(modal, /\.sheet\(item: \$quickInfoIntent\) \{ intent in/,

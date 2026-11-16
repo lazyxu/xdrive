@@ -3173,7 +3173,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     // the main-thread stack in SwiftUI/AttributeGraph on a signed iPhone.
     // Keep every modal and Owner fence, but introduce stable AnyView boundaries
     // after bounded batches so SwiftUI does not walk one enormous type tree.
-    private var filesModalsPrimary: some View {
+    private var filesModalsPrimaryBase: some View {
         AnyView(filesMain)
         .sheet(isPresented: $showingOrganizeHome, onDismiss: {
             organizeHomeOwner = nil
@@ -3270,6 +3270,10 @@ struct XDriveIOSNativeFilesBrowser: View {
         } message: {
             Text("从当前账号云端根目录查找，逐级使用服务器精确名称查询。")
         }
+    }
+
+    private var filesModalsPrimary: some View {
+        AnyView(filesModalsPrimaryBase)
         .confirmationDialog(
             "粘贴剪贴板中的项目到当前文件夹？",
             isPresented: $showingClipboardPasteConfirmation,
@@ -3362,7 +3366,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
-    private var filesModalsSecondary: some View {
+    private var filesModalsSecondaryBase: some View {
         AnyView(filesModalsPrimary)
         .sheet(isPresented: $showingFileOperations, onDismiss: {
             fileOperationsOwner = nil
@@ -3433,6 +3437,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Text("账户已变化，请重新选择标签管理范围。")
             }
         }
+    }
+
+    private var filesModalsSecondary: some View {
+        AnyView(filesModalsSecondaryBase)
         .sheet(item: $batchDestinationIntent) { intent in
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
                 XDriveIOSNativeFilesDestinationPicker(
@@ -3551,7 +3559,7 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     // Last batch includes version history, location, properties and Viewer.
     // The outermost property name remains unchanged for existing callers.
-    private var filesModals: some View {
+    private var filesModalsTertiaryBase: some View {
         AnyView(filesModalsSecondary)
         .sheet(item: $versionHistoryIntent, onDismiss: {
             if versionRestoreConfirmed {
@@ -3631,6 +3639,10 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             .accessibilityIdentifier("native-ios-files-batch-properties-sheet")
         }
+    }
+
+    private var filesModals: some View {
+        AnyView(filesModalsTertiaryBase)
         .confirmationDialog(
             pendingQuickOperation.map { $0.action.label + "最近文件操作？" } ?? "文件操作",
             isPresented: Binding(
