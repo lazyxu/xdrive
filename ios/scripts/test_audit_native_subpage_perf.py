@@ -313,12 +313,18 @@ class NativeSubpageAuditTests(unittest.TestCase):
         # The toolbar More route must exercise the opened menu, not silently
         # fall back to a different Home-list action sharing the same title.
         self.assertIn('app.menuItems["整理浏览首页"]', suite)
-        self.assertIn('matching(NSPredicate(format: "label == %@", "前往文件夹路径…"))', suite)
+        self.assertIn('matching(NSPredicate(format: "label == %@", "选择"))', suite)
         self.assertIn('let item = filesMoreOrganizer(app)', suite)
         more_visit = suite.split('case "files.home.more-organizer":')[2].split(
             'case "files.home.edit-mode":')[0]
         self.assertIn("filesMoreOrganizer(app)", more_visit)
         self.assertNotIn("native-ios-files-organize-home", more_visit)
+        # Distinguish the first real Menu entry from the collapsed Home row.
+        first_menu = files.split("                    Menu {")[1]
+        self.assertLess(first_menu.index("native-ios-files-toolbar-organize-home"),
+                        first_menu.index('Picker("显示方式"'))
+        self.assertIn('openFilesHomeDisclosure("更多管理"', suite)
+        self.assertIn('openFilesHomeDisclosure("标签与分类"', suite)
 
     def test_files_search_and_photo_wall_presentation_are_measured(self):
         files = (module.ROOT / "ios/XDriveIOS/NativeCloudFilesBrowser.swift").read_text(encoding="utf-8")

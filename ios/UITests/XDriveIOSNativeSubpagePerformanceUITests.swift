@@ -82,6 +82,23 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         reveal(view(id, app: app), app: app)
     }
 
+    /// Current Files Home has collapsed secondary-management sections.
+    /// Expand only the genuine visible disclosure; never bypass the native UI
+    /// using a synthetic shortcut or a direct state mutation.
+    private func openFilesHomeDisclosure(
+        _ title: String, action id: String, app: XCUIApplication
+    ) {
+        let entry = view(id, app: app)
+        if entry.exists { return }
+        let button = app.buttons[title].firstMatch
+        let trigger = button.exists ? button : app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", title)).firstMatch
+        _ = reveal(trigger, app: app)
+        trigger.tap()
+        XCTAssertTrue(entry.waitForExistence(timeout: 15),
+                      "Real Files Home disclosure did not expose \(id)")
+    }
+
     /// A native SwiftUI toolbar Menu may expose a menu-item label but not
     /// its child Button accessibilityIdentifier on iOS 18. Require evidence
     /// of the opened More menu before the label fallback; never substitute
@@ -91,11 +108,19 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         if item.exists && item.isHittable { return item }
         let nativeItem = app.menuItems["整理浏览首页"].firstMatch
         if nativeItem.exists && nativeItem.isHittable { return nativeItem }
+        // This near-top-only item is rendered only after opening the
+        // real toolbar Menu. A long menu may omit lower entries entirely.
         let menuOnly = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@", "前往文件夹路径…"))
+            .matching(NSPredicate(format: "label == %@", "选择"))
             .firstMatch
-        XCTAssertTrue(menuOnly.waitForExistence(timeout: 8),
-                      "Real Files toolbar More menu is not open")
+        if !menuOnly.waitForExistence(timeout: 8) {
+            let evidence = XCTAttachment(screenshot: app.screenshot())
+            evidence.name = "files-more-menu-missing"
+            evidence.lifetime = .keepAlways
+            add(evidence)
+            print("IOS_FILES_MORE_AX_NOT_OPEN \(app.debugDescription)")
+        }
+        XCTAssertTrue(menuOnly.exists, "Real Files toolbar More menu is not open")
         let choices = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == %@", "整理浏览首页"))
             .allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
@@ -119,6 +144,8 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     }
 
     private func organizer(_ app: XCUIApplication) {
+        openFilesHomeDisclosure("更多管理",
+                                action: "native-ios-files-organize-home", app: app)
         let open = filesHomeAction("native-ios-files-organize-home", app: app)
         open.tap()
         XCTAssertTrue(app.navigationBars["整理浏览首页"].firstMatch
@@ -142,6 +169,8 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             case "files.home.operation-history":
                 _ = filesHomeAction("native-ios-files-open-operations", app: app)
             case "files.organizer":
+                openFilesHomeDisclosure("更多管理",
+                                        action: "native-ios-files-organize-home", app: app)
                 _ = filesHomeAction("native-ios-files-organize-home", app: app)
             case "files.organizer.saved-searches", "files.organizer.tags":
                 organizer(app)
@@ -149,6 +178,8 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                     ? "整理及管理智能文件夹" : "创建、重命名、颜色与删除"
                 _ = reveal(app.buttons[label].firstMatch, app: app)
             case "files.tags":
+                openFilesHomeDisclosure("标签与分类",
+                                        action: "native-ios-files-home-manage-tags", app: app)
                 _ = filesHomeAction("native-ios-files-home-manage-tags", app: app)
             case "files.search.date", "files.search.size":
                 let id = route == "files.search.date"
