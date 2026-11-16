@@ -132,3 +132,27 @@ test("real Local PhotoKit date sheet closes by its own AX id and survives foregr
   assert.match(sixSubpage, /control\("native-ios-local-timeline-done", app\)/)
   assert.match(sixSubpage, /testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild/)
 })
+
+test("eight established Gallery/Files child journeys now have genuine H264 continuity gates", () => {
+  const names = [
+  "testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels",
+  "testCloudOriginalsFilesRapidReturnKeepsNativeChild",
+  "testCloudOriginalsHelpDismissFilesReturnKeepsChild",
+  "testFilesOperationHistoryBackgroundThenFilesGalleryReturn",
+  "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
+  "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
+  "testGalleryAlbumsOriginalsAndUnifiedRoundTripsKeepPixels",
+  "testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent"
+]
+  for (const name of names) {
+    const start = navigation.indexOf("func " + name + "()")
+    assert.ok(start >= 0, "missing genuine native child journey " + name)
+    const next = navigation.indexOf("\n    func test", start + 4)
+    const body = navigation.slice(start, next < 0 ? undefined : next)
+    assert.match(body, /waitForRealH264RecordingPrelude\(\)/,
+      name + " must begin after real simctl recorder startup")
+    assert.match(body, /assertVisiblePixels\(app,/,
+      name + " must inspect actual child content rather than tab bar")
+    assert.ok(video.includes('"' + name + '"'), "missing H264 target " + name)
+  }
+})

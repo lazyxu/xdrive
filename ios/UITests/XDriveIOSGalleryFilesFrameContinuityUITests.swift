@@ -105,6 +105,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         openLocalPhotoSource(app)
         assertLocalPhotoContent(app)
         tap("native-ios-local-timeline-open", app: app)
@@ -140,6 +141,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         openLocalPhotoSource(app)
         assertGallery(app)
         assertLocalPhotoContent(app)
@@ -188,6 +190,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testCloudOriginalsFilesRapidReturnKeepsNativeChild() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         tap("native-ios-gallery-source-originals", app: app)
         assertCloudOriginalsChild(app)
         assertVisiblePixels(app, route: "Originals initial child")
@@ -218,6 +221,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testCloudOriginalsHelpDismissFilesReturnKeepsChild() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         tap("native-ios-gallery-source-originals", app: app)
         assertCloudOriginalsChild(app)
         tap("native-ios-cloud-original-layout-help", app: app)
@@ -304,6 +308,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testFilesOperationHistoryBackgroundThenFilesGalleryReturn() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         tap("native-ios-tab-files", app: app)
         openFilesOperationHistoryFromBrowse(app)
         XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
@@ -335,6 +340,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testGalleryAlbumsOriginalsAndUnifiedRoundTripsKeepPixels() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for source in ["albums", "unified", "originals", "unified"] {
             tap("native-ios-gallery-source-\(source)", app: app)
             assertVisiblePixels(app, route: "Gallery \(source)")
@@ -372,6 +378,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         tap("native-ios-tab-files", app: app)
         tap("native-ios-files-open-root-location", app: app)
         XCTAssertTrue(target("native-ios-files-error-page", app: app)
@@ -386,6 +393,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         tap("native-ios-gallery-people", app: app)
         XCTAssertTrue(target("native-ios-gallery-people-page", app: app)
             .waitForExistence(timeout: 15), "Gallery People child disappeared")
