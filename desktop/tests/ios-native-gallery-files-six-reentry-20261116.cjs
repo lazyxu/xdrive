@@ -10,6 +10,10 @@ const navigation = fs.readFileSync(
   path.join(root, "ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift"), "utf8")
 const video = fs.readFileSync(
   path.join(root, "ios/scripts/files_ui_transition_video.py"), "utf8")
+const timeline = fs.readFileSync(
+  path.join(root, "ios/XDriveIOS/NativePhotoTimelineBrowser.swift"), "utf8")
+const sixSubpage = fs.readFileSync(
+  path.join(root, "ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift"), "utf8")
 
 test("Files More shows the real organizer action before large picker menus", () => {
   const menuStart = browser.indexOf(
@@ -99,4 +103,32 @@ test("six extra child-to-child native H264 journeys verify visible content", () 
   }
   assert.ok(video.includes("fps=30,scale=64:64,crop=64:40"), "30 Hz source capture missing")
   assert.ok(video.includes('"decoded_30hz_samples": len(frames)'), "30 Hz evidence count missing")
+})
+
+
+test("real Local PhotoKit date sheet closes by its own AX id and survives foreground", () => {
+  assert.match(timeline,
+    /Button\("完成"\) \{ showingDates = false \}\s*\.accessibilityIdentifier\("native-ios-local-timeline-done"\)/)
+  const methods = [
+    "testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent",
+    "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
+    "testLocalPhotoFavoritesRecentDateAfterFilesReturn",
+  ]
+  for (const name of methods) {
+    const start = navigation.indexOf("func " + name + "()")
+    const next = navigation.indexOf("\n    func test", start + 5)
+    assert.ok(start >= 0, "native Local PhotoKit test missing: " + name)
+    const body = navigation.slice(start, next < 0 ? undefined : next)
+    assert.match(body, /target\("native-ios-local-timeline-done", app: app\)/)
+    assert.doesNotMatch(body, /app\.navigationBars\.buttons\["完成"\]/)
+    assert.match(body, /done\.tap\(\)/)
+  }
+  const foregroundStart = navigation.indexOf(
+    "func testLocalPhotoTimelineSheetRepeatedAfterFilesReturns()")
+  const foregroundEnd = navigation.indexOf("\n    func test", foregroundStart + 5)
+  const foreground = navigation.slice(foregroundStart, foregroundEnd < 0 ? undefined : foregroundEnd)
+  assert.match(foreground,
+    /XCUIDevice\.shared\.press\(\.home\)[\s\S]*?app\.activate\(\)[\s\S]*?done\.waitForExistence\(timeout: 15\)/)
+  assert.match(sixSubpage, /control\("native-ios-local-timeline-done", app\)/)
+  assert.match(sixSubpage, /testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild/)
 })

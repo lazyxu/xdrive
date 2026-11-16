@@ -239,7 +239,7 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         XCTAssertTrue(control("native-ios-local-timeline-open", app)
             .waitForExistence(timeout: 15))
         tap("native-ios-local-timeline-open", app)
-        let done = app.navigationBars.buttons["完成"].firstMatch
+        let done = control("native-ios-local-timeline-done", app)
         XCTAssertTrue(done.waitForExistence(timeout: 15))
         done.tap()
         openFilesSheet("native-ios-files-open-saved-searches",

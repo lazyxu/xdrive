@@ -108,7 +108,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         openLocalPhotoSource(app)
         assertLocalPhotoContent(app)
         tap("native-ios-local-timeline-open", app: app)
-        let done = app.navigationBars.buttons["完成"].firstMatch
+        let done = target("native-ios-local-timeline-done", app: app)
         XCTAssertTrue(done.waitForExistence(timeout: 15),
                       "Local PhotoKit timeline date Sheet was not presented")
         done.tap()
@@ -499,9 +499,19 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         for cycle in 0..<2 {
             assertLocalPhotoContent(app)
             tap("native-ios-local-timeline-open", app: app)
-            let done = app.navigationBars.buttons["完成"].firstMatch
+            let done = target("native-ios-local-timeline-done", app: app)
             XCTAssertTrue(done.waitForExistence(timeout: 15),
-                          "Local date sheet is missing a close control")
+                          "Real PhotoKit date sheet is missing its own close control")
+            if cycle == 0 {
+                // The original real Simulator regression happened on
+                // Home -> foreground while this exact date sheet was open.
+                // Do not count an auto-dismissed sheet as a pass.
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                XCTAssertEqual(app.state, .runningForeground)
+                XCTAssertTrue(done.waitForExistence(timeout: 15),
+                              "Local PhotoKit date sheet disappeared after foreground")
+            }
             done.tap()
             assertLocalPhotoContent(app)
             tap("native-ios-tab-files", app: app)
@@ -616,7 +626,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         assertGallery(app)
         assertLocalPhotoContent(app)
         tap("native-ios-local-timeline-open", app: app)
-        let done = app.navigationBars.buttons["完成"].firstMatch
+        let done = target("native-ios-local-timeline-done", app: app)
         XCTAssertTrue(done.waitForExistence(timeout: 15))
         done.tap()
         assertLocalPhotoContent(app)
