@@ -88,6 +88,16 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
     func prepareBackground(_ grant: XDriveIOSApprovedPhotoBGCredential) async throws
         -> (domain: URL, lanIP: String, selected: URL) {
         let logical = try ServerAddress.parse(grant.origin)
+        let grantOwner = try grant.ownerScope()
+        // An OS BGTask can overlap the foreground app. Never replace the
+        // foreground route or invalidate its current Owner/Viewer state.
+        if let (current, _) = snapshot(), let liveOwner = current.owner {
+            guard XDriveIOSAutoRouteSafety.sameOwner(grantOwner, liveOwner),
+                  current.logical == logical else {
+                throw XDriveIOSPhotoBGVaultFailure.differentOwnerStillApproved
+            }
+            return (current.domain, current.lan?.host ?? "", current.active)
+        }
         let draft = XDriveIOSNativeLoginDraftStore.load()
         let candidate = try? ServerAddress.parse(draft.server)
         let knownDomain = candidate.flatMap { domain -> URL? in
@@ -118,6 +128,13 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         guard selected == owner.origin || selected == domain || selected == lan
         else { throw XDriveIOSPhotoBGVaultFailure.corrupt }
         lock.lock()
+        if let live = binding, let liveOwner = live.owner, live.token != nil {
+            let matches = live.logical == owner.origin &&
+                XDriveIOSAutoRouteSafety.sameOwner(liveOwner, owner)
+            lock.unlock()
+            if matches { return }
+            throw XDriveIOSPhotoBGVaultFailure.differentOwnerStillApproved
+        }
         binding = Binding(id: UUID(), logical: owner.origin, domain: domain,
                           lan: lan, active: selected,
                           proven: [selected.absoluteString], owner: owner,
