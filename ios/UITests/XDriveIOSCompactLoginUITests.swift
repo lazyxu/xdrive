@@ -26,16 +26,30 @@ final class XDriveIOSCompactLoginUITests: XCTestCase {
     }
 
     private func expand(_ title: String, in client: XCUIApplication) {
-        let button = client.buttons[title].firstMatch
-        XCTAssertTrue(button.waitForExistence(timeout: 15),
-                      "Missing real DisclosureGroup label: \(title)")
+        // SwiftUI DisclosureGroup exposes a real container identifier; a
+        // global Button title can resolve to unrelated descendants and report
+        // a successful tap without expanding the requested settings section.
+        let ids: [String: String] = [
+            "高级连接设置": "native-ios-login-advanced-connection",
+            "内网 HTTPS 使用说明": "native-ios-lan-certificate-help",
+            "登录偏好": "native-ios-login-preferences",
+            "关于": "native-ios-login-about",
+            "帮助与紧急操作": "native-ios-login-help-emergency"
+        ]
+        guard let id = ids[title] else {
+            XCTFail("Unknown compact login disclosure: \(title)")
+            return
+        }
+        let group = view(id, in: client)
+        XCTAssertTrue(group.waitForExistence(timeout: 15),
+                      "Missing actual DisclosureGroup: \(id)")
         // The login form scrolls on iPhones with compact Dynamic Type/keyboard.
         for _ in 0..<6 {
-            if button.isHittable { break }
+            if group.isHittable { break }
             client.swipeUp()
         }
-        XCTAssertTrue(button.isHittable, "DisclosureGroup not tappable: \(title)")
-        button.tap()
+        XCTAssertTrue(group.isHittable, "DisclosureGroup not tappable: \(id)")
+        group.tap()
         XCTAssertEqual(client.state, .runningForeground)
     }
 
