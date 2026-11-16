@@ -17,7 +17,7 @@ import sys
 import time
 
 # The Gallery/Files shard runs this watcher for 76 non-video XCUITests.
-# Twelve other journeys are captured by the dedicated strict H.264 recorder.
+# Eighteen other journeys are captured by the dedicated strict H.264 recorder.
 # Never sample those H.264 cases with blocking simctl PNGs: concurrent screen
 # reads could disturb the very timing/flicker signal being audited.
 exclude_h264_targets = len(sys.argv) == 5 and sys.argv[4] == "--exclude-h264-targets"
