@@ -532,6 +532,7 @@ struct XDriveIOSOwnerMapSurface: UIViewRepresentable {
 
 private struct XDriveIOSOwnerMapChosenPlace: Identifiable {
     let id: String
+    let name: String?
     // A map pin is not an Owner authorization. Capture the exact Owner
     // that selected this place, even when the canonical placeID is reused
     // in a different account before SwiftUI's onChange runs.
@@ -696,7 +697,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                                 captureRange: activeCaptureRange,
                                 mapSelection: mapSelection)
                         } else {
-                            selected = XDriveIOSOwnerMapChosenPlace(id: item.id, owner: expected)
+                            selected = XDriveIOSOwnerMapChosenPlace(
+                                id: item.id, name: item.name, owner: expected)
                         }
                     }
                 },
@@ -877,7 +879,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                    phase == .active {
                     XDriveIOSNativeServerMediaWall(
                         login: login, album: nil, placeID: place.id,
-                        captureRange: activeCaptureRange)
+                        captureRange: activeCaptureRange,
+                        placeDisplayName: place.name)
                 } else {
                     // Never reinterpret an Owner A place pin under Owner B,
                     // even when B happens to have the same canonical placeID.
