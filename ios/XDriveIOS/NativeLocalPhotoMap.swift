@@ -1454,6 +1454,28 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         )
     }
 
+
+    private var canOpenCurrentMapGrid: Bool {
+        mapScope == .library && authorization == .authorized &&
+        phase == .active && !busy && refinedViewportIsCurrent &&
+        !globalCells.isEmpty &&
+        PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+    }
+
+    private func openCurrentMapGrid() {
+        guard canOpenCurrentMapGrid else { return }
+        // This is the SAME verified Cell membership used by a MapKit tap:
+        // no new PhotoKit reader, all-library substitution, or unproved ID.
+        guard XDriveIOSNativeLocalMapSpatialPolicy.acceptsCellSelection(
+            selectedIDs: globalCells.map(\.id),
+            currentCellIDs: globalCells.map(\.id)
+        ) else { return }
+        globalSelection = XDriveIOSMapSpatialSelection(
+            cells: globalCells, viewport: globalViewport,
+            mediaFilter: mediaFilter, captureRange: activeCaptureRange,
+            filenameTerm: filenameTerm, tripScope: chosenLocalTrip)
+    }
+
     var body: some View {
         GeometryReader { viewport in
         let compactMap = XDriveIOSNativePhotoMapPolicy.compactViewport(
@@ -1670,6 +1692,66 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier(album == nil ? "native-ios-full-library-gps-map" : "native-ios-album-gps-map")
+                    .overlay(alignment: .topTrailing) {
+                        XDriveIOSNativePhotoMapFloatingTools(
+                            satellite: mapType == .satellite,
+                            locateEnabled: !currentLocation.isLocating && phase == .active &&
+                                authorization == .authorized,
+                            locateID: "native-ios-local-map-locate",
+                            styleID: "native-ios-local-map-basemap",
+                            onLocate: { currentLocation.locate() },
+                            onToggleStyle: {
+                                mapType = mapType == .satellite ? .standard : .satellite
+                            }
+                        )
+                        .padding(12)
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        XDriveIOSNativePhotoMapGridAction(
+                            enabled: canOpenCurrentMapGrid,
+                            accessibilityID: "native-ios-local-map-current-grid"
+                        ) { openCurrentMapGrid() }
+                        .padding(12)
+                    }
+                    .overlay(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            if let activeCaptureRange {
+                                XDriveIOSNativePhotoMapStatusPill(
+                                    message: activeCaptureRange.label,
+                                    accessibilityID: "native-ios-local-map-capture-range")
+                            }
+                            if basemapUnavailable {
+                                XDriveIOSNativePhotoMapStatusPill(
+                                    message: "地图暂时无法加载，请检查网络后重试。",
+                                    accessibilityID: "native-ios-local-map-basemap-unavailable",
+                                    systemImage: "wifi.exclamationmark")
+                            }
+                            if let error {
+                                XDriveIOSNativePhotoMapStatusPill(
+                                    message: error,
+                                    accessibilityID: "native-ios-local-map-error",
+                                    systemImage: "exclamationmark.triangle")
+                            }
+                            if !globalComplete && !provisionalCells.isEmpty && !compactMap {
+                                Text("位置封面正在核对，完整数量确认前暂不可打开。")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .padding(8)
+                                    .background(.regularMaterial, in: Capsule())
+                                    .accessibilityIdentifier("native-ios-map-provisional-covers")
+                            }
+                            if !globalComplete && !busy {
+                                Button(album == nil ? "扫描已授权图库位置" : "扫描此相册位置") {
+                                    scanFullLibrary()
+                                }
+                                .frame(minHeight: 44)
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifier(album == nil
+                                    ? "native-ios-map-scan-full-library"
+                                    : "native-ios-map-scan-album")
+                            }
+                        }
+                        .frame(maxWidth: 240, alignment: .leading)
+                    }
                     .overlay(alignment: .bottomLeading) {
                         if globalComplete && !globalCells.isEmpty {
                             XDriveIOSNativePhotoMapStatusPill(
@@ -1699,22 +1781,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 }
 #endif
 
-                if !globalComplete && !provisionalCells.isEmpty && !compactMap {
-                    Text("位置封面正在核对，完整数量确认前暂不可打开。")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-map-provisional-covers")
-                }
-                // The authorized full-library scan starts on entry. Retain
-                // an explicit retry before any map exists, then give its
-                // verified photo covers the space occupied by these controls.
-                if !globalComplete && !busy {
-                    Button(album == nil ? "扫描已授权图库位置" : "扫描此相册位置") {
-                        scanFullLibrary()
-                    }
-                        .frame(minHeight: 44)
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier(album == nil ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
-                }
+                // Status and explicit recovery remain visible in map overlays.
             } else if let page {
                 Text("当前页 · \(page.items.count) 张照片")
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
@@ -1786,17 +1853,21 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             } else if busy {
                 ProgressView("读取授权照片位置…")
             }
-            if let activeCaptureRange {
-                Text("位置时间范围：\(activeCaptureRange.label)")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("native-ios-local-map-capture-range")
+            // The optional legacy 64-item page retains its own status;
+            // whole-library status is overlaid on the full-height MapKit.
+            if mapScope == .page {
+                if let activeCaptureRange {
+                    Text("位置时间范围：\(activeCaptureRange.label)")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if basemapUnavailable {
+                    Text("地图暂时无法加载，请检查网络后重试。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if let error {
+                    Text(error).foregroundStyle(.secondary).font(.footnote)
+                }
             }
-            if basemapUnavailable {
-                Text("地图暂时无法加载，请检查网络后重试。")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("native-ios-local-map-basemap-unavailable")
-            }
-            if let error { Text(error).foregroundStyle(.secondary).font(.footnote) }
             if mapScope == .page {
                 Button("刷新当前页") { refresh(at: offset) }
                     .frame(minHeight: CGFloat(XDriveIOSNativePhotoMapPolicy.minimumInteractiveTarget))
@@ -1811,30 +1882,24 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         // Keep the MapKit canvas edge-to-edge in the permitted state. Only
         // permission/recovery content needs a readable horizontal inset.
         .padding(.horizontal, authorization == .authorized ? 0 : 12)
-        .navigationTitle(album.map { "\($0.name) · 地图" } ??
-            (mediaFilter.isAll ? "地图" : "地图 · \(mediaFilter.title)"))
+        .navigationTitle("地图")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if album != nil || onClose != nil {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("完成") {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
                         if onClose != nil { onClose?() }
                         else { dismiss() }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .frame(minWidth: 44, minHeight: 44)
                     }
+                    .accessibilityLabel("关闭地图")
                     .accessibilityIdentifier(
                         album != nil ? "native-ios-album-map-dismiss" : "native-ios-map-dismiss")
                 }
             }
-            if mapScope == .library && authorization == .authorized {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { currentLocation.locate() } label: {
-                        Label("我的位置", systemImage: "location")
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .disabled(currentLocation.isLocating || phase != .active)
-                    .accessibilityIdentifier("native-ios-local-map-locate")
-                }
-            }
+            // Locate and basemap controls are in the map's floating group.
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Menu {

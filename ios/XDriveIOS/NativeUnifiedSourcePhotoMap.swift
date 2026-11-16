@@ -250,6 +250,54 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 }
             )
             .accessibilityIdentifier("native-ios-unified-source-map")
+            .overlay(alignment: .topTrailing) {
+                XDriveIOSNativePhotoMapFloatingTools(
+                    satellite: mapType == .satellite,
+                    locateEnabled: !currentLocation.isLocating && phase == .active &&
+                        currentProof,
+                    locateID: "native-ios-unified-source-map-locate",
+                    styleID: "native-ios-unified-source-map-basemap",
+                    onLocate: { currentLocation.locate() },
+                    onToggleStyle: {
+                        mapType = mapType == .satellite ? .standard : .satellite
+                    }
+                )
+                .padding(12)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                // The current single verified cell is already a precise
+                // bounded Source+Owner+PhotoKit member set. Multiple cells
+                // must never be silently broadened to the entire Gallery.
+                XDriveIOSNativePhotoMapGridAction(
+                    enabled: currentProof && pins.count == 1,
+                    accessibilityID: "native-ios-unified-source-map-current-grid"
+                ) {
+                    guard currentProof, pins.count == 1, let only = pins.first,
+                          only.count > 0 else { return }
+                    selected = only
+                }
+                .padding(12)
+            }
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 3) {
+                    if basemapUnavailable {
+                        XDriveIOSNativePhotoMapStatusPill(
+                            message: "地图暂时无法加载，请检查网络后重试。",
+                            accessibilityID: "native-ios-unified-source-map-basemap-error",
+                            systemImage: "wifi.exclamationmark")
+                    }
+                    if let error {
+                        XDriveIOSNativePhotoWallRetryMessage(
+                            message: error, buttonTitle: "重试加载照片",
+                            canRetry: phase == .active,
+                            accessibilityID: "native-ios-unified-source-map-retry"
+                        ) { reload() }
+                        .padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+                .frame(maxWidth: 240, alignment: .leading)
+            }
             .overlay(alignment: .bottomLeading) {
                 if currentProof {
                     XDriveIOSNativePhotoMapStatusPill(
@@ -262,39 +310,20 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                         .accessibilityIdentifier("native-ios-unified-source-map-scanning")
                 }
             }
-            if basemapUnavailable {
-                Text("地图暂时无法加载，请检查网络后重试。")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("native-ios-unified-source-map-basemap-error")
-            }
-            if let error {
-                XDriveIOSNativePhotoWallRetryMessage(
-                    message: error, buttonTitle: "重试加载照片",
-                    canRetry: phase == .active,
-                    accessibilityID: "native-ios-unified-source-map-retry"
-                ) { reload() }
-            } else if currentProof && pins.isEmpty {
-                Text("这里还没有带位置的照片")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
+            // Progress, map errors and retries are presented above the map canvas.
         }
-        .navigationTitle(presence.title + " · 地图")
+        .navigationTitle("地图")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("完成") {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
                     if currentProof { onSaveCamera?(camera) }
                     onClose()
+                } label: {
+                    Image(systemName: "xmark").frame(minWidth: 44, minHeight: 44)
                 }
+                .accessibilityLabel("关闭地图")
                 .accessibilityIdentifier("native-ios-unified-source-map-close")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { currentLocation.locate() } label: {
-                    Label("我的位置", systemImage: "location")
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .disabled(currentLocation.isLocating || phase != .active || !currentProof)
-                .accessibilityIdentifier("native-ios-unified-source-map-locate")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {

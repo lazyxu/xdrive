@@ -165,9 +165,13 @@ struct XDriveIOSNativePhotoMapsScreen: View {
             // Local MapKit supplies its own Done item. The cloud Owner map
             // shares this route and receives the same native dismissal action.
             if source == .cloud {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("完成") { onClose?() }
-                        .accessibilityIdentifier("native-ios-map-close")
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { onClose?() }) {
+                        Image(systemName: "xmark")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("关闭地图")
+                    .accessibilityIdentifier("native-ios-map-close")
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -180,7 +184,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                         }
                     }
                 } label: {
-                    Label(source.label, systemImage: "square.stack.3d.up")
+                    Label("照片来源", systemImage: "square.stack.3d.up")
                 }
                 .accessibilityLabel("地图照片来源：\(source.label)")
                 .accessibilityIdentifier("native-ios-map-source-selector")
@@ -620,6 +624,38 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             verifiedBounds, current: currentBounds())
     }
 
+
+    private var canOpenCurrentMapGrid: Bool {
+        guard mapMarkersEnabled, let overview,
+              displayedOverviewMatchesLogin,
+              !overview.items.isEmpty else { return false }
+        if overview.items.count == 1, let only = overview.items.first {
+            return XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedFacet(
+                only, currentlyVisible: overview.items)
+        }
+        return XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedCluster(
+            overview.items, currentlyVisible: overview.items)
+    }
+
+    private func openCurrentMapGrid() {
+        guard canOpenCurrentMapGrid, let overview, let expected = login.owner,
+              let verifiedOverviewOwner,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, verifiedOverviewOwner)
+        else { return }
+        if overview.items.count == 1, let only = overview.items.first {
+            guard XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedFacet(
+                only, currentlyVisible: overview.items) else { return }
+            selected = XDriveIOSOwnerMapChosenPlace(
+                id: only.id, name: only.name, owner: expected)
+        } else {
+            guard XDriveIOSNativeOwnerMapSelectionPolicy.acceptsSelectedCluster(
+                overview.items, currentlyVisible: overview.items) else { return }
+            selectedCluster = XDriveIOSOwnerMapChosenCluster(
+                places: overview.items, owner: expected,
+                captureRange: activeCaptureRange, mapSelection: mapSelection)
+        }
+    }
+
     var body: some View {
         GeometryReader { viewport in
         let compactMap = XDriveIOSNativePhotoMapPolicy.compactViewport(
@@ -733,6 +769,54 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("native-ios-owner-cloud-photo-map")
+            .overlay(alignment: .topTrailing) {
+                XDriveIOSNativePhotoMapFloatingTools(
+                    satellite: mapType == .satellite,
+                    locateEnabled: !currentLocation.isLocating && login.owner != nil &&
+                        phase == .active,
+                    locateID: "native-ios-owner-map-locate",
+                    styleID: "native-ios-owner-map-basemap",
+                    onLocate: { currentLocation.locate() },
+                    onToggleStyle: {
+                        mapType = mapType == .satellite ? .standard : .satellite
+                    }
+                )
+                .padding(12)
+                .alert(item: $currentLocation.alert) { issue in
+                    Alert(title: Text("无法获取当前位置"),
+                          message: Text(issue.message),
+                          dismissButton: .default(Text("完成")))
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                XDriveIOSNativePhotoMapGridAction(
+                    enabled: canOpenCurrentMapGrid,
+                    accessibilityID: "native-ios-owner-map-current-grid"
+                ) { openCurrentMapGrid() }
+                .padding(12)
+            }
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 3) {
+                    if let activeCaptureRange {
+                        XDriveIOSNativePhotoMapStatusPill(
+                            message: activeCaptureRange.label,
+                            accessibilityID: "native-ios-owner-map-capture-range")
+                    }
+                    if basemapUnavailable {
+                        XDriveIOSNativePhotoMapStatusPill(
+                            message: "地图暂时无法加载，请检查网络后重试。",
+                            accessibilityID: "native-ios-owner-map-basemap-unavailable",
+                            systemImage: "wifi.exclamationmark")
+                    }
+                    if let error {
+                        XDriveIOSNativePhotoMapStatusPill(
+                            message: error,
+                            accessibilityID: "native-ios-owner-map-error",
+                            systemImage: "exclamationmark.triangle")
+                    }
+                }
+                .frame(maxWidth: 240, alignment: .leading)
+            }
             .overlay(alignment: .bottomLeading) {
                 if let overview, displayedOverviewMatchesLogin {
                     XDriveIOSNativePhotoMapStatusPill(
@@ -748,17 +832,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                         .background(.regularMaterial, in: Capsule()).padding(10)
                 }
             }
-            if let activeCaptureRange {
-                Text("当前照片日期：\(activeCaptureRange.label)")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("native-ios-owner-map-capture-range")
-            }
-            if basemapUnavailable {
-                Text("地图暂时无法加载，请检查网络后重试。")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("native-ios-owner-map-basemap-unavailable")
-            }
-            if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
+            // Date, tile and loading notices now occupy the map overlay.
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
                 Text("轻点地图上的照片，浏览此地点的内容。")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -767,7 +841,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
         }
         // MapKit fills the full safe-area width; source controls and
         // verified markers retain their own internal touch margins.
-        .navigationTitle("云端照片地图")
+        .navigationTitle("地图")
         .navigationBarTitleDisplayMode(.inline)
         .alert("云端照片地图说明", isPresented: $showingMapHelp) {
             Button("完成", role: .cancel) {}
@@ -811,22 +885,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    currentLocation.locate()
-                } label: {
-                    Label("我的位置", systemImage: "location")
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .disabled(currentLocation.isLocating ||
-                          login.owner == nil || phase != .active)
-                .accessibilityIdentifier("native-ios-owner-map-locate")
-                .alert(item: $currentLocation.alert) { issue in
-                    Alert(title: Text("无法获取当前位置"),
-                          message: Text(issue.message),
-                          dismissButton: .default(Text("完成")))
-                }
-            }
+            // The location control lives beside map style in the canvas.
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Menu {

@@ -22,6 +22,66 @@ struct XDriveIOSNativePhotoMapStatusPill: View {
     }
 }
 
+
+/// One system-style right-side control group, shared by PhotoKit, Owner and
+/// reconciled-source maps. UIKit MapKit retains all gestures and camera state;
+/// these controls never authorize a marker or read photos.
+struct XDriveIOSNativePhotoMapFloatingTools: View {
+    let satellite: Bool
+    let locateEnabled: Bool
+    let locateID: String
+    let styleID: String
+    let onLocate: () -> Void
+    let onToggleStyle: () -> Void
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Button(action: onToggleStyle) {
+                Image(systemName: satellite ? "map" : "square.3.layers.3d")
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(satellite ? "标准地图" : "卫星地图")
+            .accessibilityIdentifier(styleID)
+            Divider().padding(.horizontal, 8)
+            Button(action: onLocate) {
+                Image(systemName: "location")
+                    .frame(width: 44, height: 44)
+            }
+            .disabled(!locateEnabled)
+            .accessibilityLabel("我的位置")
+            .accessibilityIdentifier(locateID)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
+    }
+}
+
+/// Opens the CURRENT reader's verified map membership in its already existing
+/// photo wall. The caller must validate current permissions and viewport.
+/// In particular, this control cannot broaden to an unfiltered Gallery.
+struct XDriveIOSNativePhotoMapGridAction: View {
+    let enabled: Bool
+    let accessibilityID: String
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            Image(systemName: "square.grid.3x3")
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .disabled(!enabled)
+        .background(.regularMaterial, in: Circle())
+        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
+        .accessibilityLabel("显示当前地图照片网格")
+        .accessibilityHint("仅打开当前已核验地图范围内的照片")
+        .accessibilityIdentifier(accessibilityID)
+    }
+}
+
 /// Photo-first, accessible location header shared by local/Owner/source
 /// Sheets; a count supplied by a caller must already be scope-verified.
 struct XDriveIOSNativePhotoMapPlaceHeader: View {
