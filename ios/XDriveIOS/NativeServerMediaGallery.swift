@@ -1498,6 +1498,7 @@ struct XDriveIOSNativeServerMediaWall: View {
     let album: XDriveIOSNativeMediaAlbum?
     var placeID: String? = nil
     var captureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
+    var placeDisplayName: String? = nil
     // Focus visibility belongs to the owning native five-tab shell.
     var onFocusChange: ((Bool) -> Void)? = nil
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
@@ -1706,7 +1707,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                 }
             }
         }
-        .navigationTitle(placeID == nil ? (album?.name ?? "云端图库") : "地点照片")
+        .navigationTitle(placeID == nil ? (album?.name ?? "云端图库")
+                                        : (placeDisplayName ?? "此地点的照片"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if album == nil && placeID == nil {
