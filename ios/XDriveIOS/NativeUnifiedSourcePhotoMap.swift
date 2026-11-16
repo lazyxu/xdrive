@@ -926,15 +926,12 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     var body: some View {
         VStack(spacing: 8) {
             if active {
-                XDriveIOSNativePhotoWallScopeSummary(
-                    message: isNearbyExpansion
-                        ? "附近照片 · 按当前来源和拍摄位置核验"
-                        : "当前来源 · 此区域 \(pin.count) 张照片")
-                if let placeName {
-                    Text(placeName).font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-unified-map-place-name")
-                }
+                XDriveIOSNativePhotoMapPlaceHeader(
+                    title: placeName ?? (isNearbyExpansion
+                        ? "附近照片" : "此地点的照片"),
+                    count: isNearbyExpansion ? nil : pin.count,
+                    detail: isNearbyExpansion ? "按距离浏览" : nil,
+                    titleAccessibilityID: "native-ios-unified-map-place-name")
                 // Share presentation only; source-owned retry retains
                 // Owner/PhotoKit authorization and cursor verification.
                 XDriveIOSNativePhotoWallFeedback(
@@ -944,6 +941,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 ) { retryCurrentArea() }
                 if !isNearbyExpansion {
                     XDriveIOSNativePhotoWallTimeScaleControls(scale: $timeScale)
+                        .controlSize(.small)
+                        .padding(.horizontal, 8)
                         .disabled(busy || opening || viewing != nil)
                 }
                 photoWall
@@ -956,25 +955,26 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     message: "Owner 或本机照片权限已变化，旧照片已隐藏。")
             }
         }
-        .navigationTitle(isNearbyExpansion ? "附近照片" : "此地点的照片")
+        .navigationTitle(placeName ?? (isNearbyExpansion
+            ? "附近照片" : "此地点的照片"))
         .toolbar {
-            if !isNearbyExpansion {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("附近照片") {
-                        guard active, !busy, !opening else { return }
-                        nearbyPresented = true
-                    }
-                    .disabled(!active || busy || opening)
-                    .accessibilityIdentifier("native-ios-unified-source-map-nearby")
-                }
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 XDriveIOSNativePhotoWallDisplayMenu(
                     density: $density, framing: $wallFraming,
                     accessibilityID: "native-ios-unified-source-map-display"
                 ) {
-                    // Nearby is ranked by GPS distance, not capture time.
+                    // Navigate within the existing place-sheet NavigationStack,
+                    // not a second nested modal sheet hiding the map.
                     if !isNearbyExpansion {
+                        Button {
+                            guard active, !busy, !opening else { return }
+                            nearbyPresented = true
+                        } label: {
+                            Label("显示附近照片", systemImage: "mappin.and.ellipse")
+                        }
+                        .disabled(!active || busy || opening)
+                        .accessibilityIdentifier("native-ios-unified-source-map-nearby")
+
                         Section("时间分组") {
                             ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
                                 Button {
@@ -990,19 +990,15 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 }
             }
         }
-        .sheet(isPresented: $nearbyPresented) {
+        .navigationDestination(isPresented: $nearbyPresented) {
             if active {
-                AnyView(NavigationStack {
-                    XDriveIOSNativeUnifiedSourceMapCellWall(
-                        login: login, owner: owner, library: library,
-                        presence: presence, query: query, pin: pin,
-                        sourceCoordinates: sourceCoordinates,
-                        sourceCursors: sourceCursors, isNearbyExpansion: true)
-                })
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+                XDriveIOSNativeUnifiedSourceMapCellWall(
+                    login: login, owner: owner, library: library,
+                    presence: presence, query: query, pin: pin,
+                    sourceCoordinates: sourceCoordinates,
+                    sourceCursors: sourceCursors, isNearbyExpansion: true)
             } else {
-                AnyView(Text("该地点来源核验已失效。"))
+                Text("该地点的照片已不可访问。")
             }
         }
         .fullScreenCover(item: $viewing, onDismiss: {
@@ -1286,7 +1282,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 .accessibilityLabel("上一张")
                 .disabled(!active || busy || opening || viewing == nil)
                 Spacer()
-                Text("此地点的照片").font(.caption)
+                Text(placeName ?? (isNearbyExpansion
+                    ? "附近照片" : "此地点的照片"))
+                    .font(.caption).lineLimit(1)
                 Spacer()
                 Button { navigateViewer(1) } label: {
                     Image(systemName: "chevron.right").frame(width: 44, height: 44)
