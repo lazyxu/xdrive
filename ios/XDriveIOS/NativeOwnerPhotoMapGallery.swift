@@ -793,70 +793,12 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 }
                 .navigationTitle("选择云端地图日期")
                 .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("显示当天") {
-                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.day(
-                                requestedCaptureDay))
-                            datePickerOpen = false
-                        }
-                    }
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") { datePickerOpen = false }
-                    }
-                }
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button("全部日期") { setCaptureRange(nil) }
-                    Button("最近 7 天") {
-                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
-                    }
-                    Button("最近 30 天") {
-                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
-                    }
-                    Section("按年份") {
-                        ForEach(recentMapYears, id: \.self) { year in
-                            Button("\(year) 年") {
-                                setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(year))
-                            }
-                        }
-                    }
-                    Button("按指定日期") { datePickerOpen = true }
-                } label: {
-                    Label("地图日期", systemImage: "calendar")
-                }
-                .accessibilityIdentifier("native-ios-owner-map-capture-menu")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    // Keep explicit retry/refresh accessible without occupying
-                    // another fixed-height row under the photo map.
-                    Button("刷新当前视窗") { reload() }
-                        .disabled(busy || login.owner == nil || phase != .active)
-                        .accessibilityIdentifier("native-ios-owner-map-refresh")
-                } label: {
-                    Label("地图操作", systemImage: "ellipsis.circle")
-                }
-                .accessibilityIdentifier("native-ios-owner-map-actions")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Picker("底图样式", selection: $mapType) {
-                        Text("标准地图").tag(MKMapType.standard)
-                        Text("卫星地图").tag(MKMapType.satellite)
-                    }
-                } label: {
-                    Label("底图样式", systemImage: "square.3.layers.3d")
-                }
-                .accessibilityIdentifier("native-ios-owner-map-basemap")
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     currentLocation.locate()
                 } label: {
                     Label("我的位置", systemImage: "location")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .disabled(currentLocation.isLocating ||
                           login.owner == nil || phase != .active)
@@ -868,29 +810,63 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(focused ? "显示底部导航" : "专注地图") {
-                    focused.toggle()
-                    onFocusChange?(focused)
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                // Same verified Owner: these are Server GPS members, not
-                // PhotoKit assets or heuristic date-only Memories.
-                NavigationLink {
-                    XDriveIOSNativeExactTripsScreen(login: login)
+                Menu {
+                    Menu {
+                        Button("全部日期") { setCaptureRange(nil) }
+                        Button("最近 7 天") {
+                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
+                        }
+                        Button("最近 30 天") {
+                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
+                        }
+                        Button("按指定日期") { datePickerOpen = true }
+                        Section("按年份") {
+                            ForEach(recentMapYears, id: \.self) { year in
+                                Button("\(year) 年") {
+                                    setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(year))
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("地图日期", systemImage: "calendar")
+                    }
+                    .accessibilityIdentifier("native-ios-owner-map-capture-menu")
+                    Menu {
+                        Picker("底图样式", selection: $mapType) {
+                            Text("标准地图").tag(MKMapType.standard)
+                            Text("卫星地图").tag(MKMapType.satellite)
+                        }
+                    } label: {
+                        Label("底图样式", systemImage: "square.3.layers.3d")
+                    }
+                    .accessibilityIdentifier("native-ios-owner-map-basemap")
+                    Button("刷新当前视窗") { reload() }
+                        .disabled(busy || login.owner == nil || phase != .active)
+                        .accessibilityIdentifier("native-ios-owner-map-refresh")
+                    if onFocusChange != nil {
+                        Button(focused ? "显示底部导航" : "专注地图") {
+                            focused.toggle()
+                            onFocusChange?(focused)
+                        }
+                    }
+                    NavigationLink {
+                        XDriveIOSNativeExactTripsScreen(login: login)
+                    } label: {
+                        Label("旅行地点", systemImage: "map")
+                    }
+                    .disabled(login.owner == nil || phase != .active)
+                    .accessibilityIdentifier("native-ios-owner-map-exact-trips")
+                    Button {
+                        showingMapHelp = true
+                    } label: {
+                        Label("地图说明", systemImage: "info.circle")
+                    }
+                    .accessibilityIdentifier("native-ios-owner-map-layout-help")
                 } label: {
-                    Label("旅行地点", systemImage: "map")
+                    Label("地图操作", systemImage: "ellipsis.circle")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
-                .disabled(login.owner == nil || phase != .active)
-                .accessibilityIdentifier("native-ios-owner-map-exact-trips")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingMapHelp = true
-                } label: {
-                    Label("地图说明", systemImage: "info.circle")
-                }
-                .accessibilityIdentifier("native-ios-owner-map-layout-help")
+                .accessibilityIdentifier("native-ios-owner-map-actions")
             }
         }
         .sheet(item: $selected, onDismiss: {
