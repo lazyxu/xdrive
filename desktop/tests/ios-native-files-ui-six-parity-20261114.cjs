@@ -73,14 +73,14 @@ test('F4 Viewer adds explicit checked export and retains native media', () => {
 test('F5 real video and decoded-frame audit, not screenshot-only', () => {
   assert.match(workflow, /files_ui_transition_video\.py" watch/)
   assert.match(workflow, /files_ui_transition_video\.py" audit/)
-  // The current real H.264 gate requires twelve distinct journeys (stronger than the original four).
-  assert.match(workflow, /--minimum 12/)
+  // The real H.264 gate now requires eighteen distinct journeys, all video-audited.
+  assert.match(workflow, /--minimum 18/)
   assert.match(video, /1 <= minimum <= len\(TARGETS\)/)
   assert.match(video, /"xcrun", "simctl", "io", simulator, "recordVideo"/)
   // Decode the native page center rather than persistent tab/navigation chrome.
   // Keep real H.264 frame, tap-marker and blank-transition evidence mandatory.
-  assert.ok(video.includes('fps=10,scale=64:64,crop=64:40:0:12,signalstats,metadata=print:file=-'),
-    'the actual 10 Hz center-content ffmpeg signalstats filter must remain')
+  assert.ok(video.includes('fps=30,scale=64:64,crop=64:40:0:12,signalstats,metadata=print:file=-'),
+    'the actual 30 Hz center-content ffmpeg signalstats filter must remain')
   assert.ok(video.includes('central 62.5% of native page; top/bottom chrome excluded'))
   assert.match(video, /missing_real_tap_marker/)
   assert.match(video, /test_not_passed/)

@@ -199,9 +199,15 @@ MINIMAL_TARGETS = {
     "testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank",
     "testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership",
 }
-# Register all six real Gallery/Files child journeys with the bounded native
-# Simulator screenshot watcher; no synthetic screenshots or mock screens.
+# Register all eighteen H264 Gallery/Files journeys with the bounded native
+# screenshot observer as well. Video and screenshots remain separate evidence.
 MINIMAL_TARGETS.update({
+    "testOriginalsHelpHistoryReturnWithoutGhostAlert",
+    "testHistoryForegroundAlbumsReturnWithoutGhostSheet",
+    "testLocalPhotoFavoritesRecentDateAfterFilesReturn",
+    "testPeopleCloudDenialPeopleReentryKeepsContent",
+    "testSavedSearchFilterHistorySheetsStayIndependent",
+    "testAlbumsOriginalsFilesSectionRoundTripKeepsSource",
     "testFilterPeopleDeniedCloudReturnKeepsVerifiedGalleryGeneration",
     "testFilesHistorySavedSearchesAcrossOriginalsHaveNoGhostSheets",
     "testOriginalsHelpTrashDeniedReturnDoesNotReopenAlert",
