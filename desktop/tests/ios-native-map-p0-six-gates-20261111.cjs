@@ -214,3 +214,27 @@ test('MapKit XCTest has one ordinary launcher and exactly one performance/stage 
   assert.match(ui, /if performance \{[\s\S]*?"-xdrive-map-100k-perf"/)
   assert.match(ui, /if let appearance \{\s*app\.launchArguments \+= \["-uiuserinterfacestyle", appearance\]/)
 })
+
+
+test('P0 real MapKit audit CTA is top-visible and native transition-video regression suite actually exists', () => {
+  const video = read('ios/scripts/files_ui_transition_video.py')
+  const videoTests = read('ios/scripts/test_files_ui_transition_video.py')
+  // The previous bottom-right 214x58pt control existed in AX but iOS 18.5
+  // reported isHittable=false. Move the DEBUG-only control away from the
+  // bottom app chrome instead of weakening XCTest or tapping fake coordinates.
+  assert.match(local, /\.overlay\(alignment: \.topTrailing\) \{\s*#if DEBUG[\s\S]*?native-ios-map-p0-audit-trigger/)
+  assert.match(local, /\.disabled\(p0IndependentGPSAuditRunning\)[\s\S]*?native-ios-map-p0-audit-trigger/)
+  assert.match(ui, /Native MapKit audit button must have a genuine visible hit target/)
+  assert.match(ui, /trigger\.isHittable && touchFrame\.width >= 44/)
+  assert.match(video, /def watch\(/)
+  assert.match(video, /def audit\(/)
+  assert.match(videoTests, /class FilesUITransitionVideoTests\(unittest\.TestCase\):/)
+  assert.match(videoTests, /from files_ui_transition_video import \(/)
+  // A missing Python test file produced "NO TESTS RAN" and stopped all
+  // six native Simulator shards before the real xcodebuild execution.
+  for (const name of [
+    'testRapidGalleryFilesTabOscillationPreservesBothShells',
+    'testGalleryFilesAlternationRetainsNonBlankSettledFrames',
+    'testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail'
+  ]) assert.ok(video.includes('"' + name + '"'), name)
+})

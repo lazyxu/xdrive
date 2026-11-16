@@ -1618,7 +1618,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     // CGRect(infinity, infinity, 0, 0), making XCTest unable
                     // to tap it. Anchor this 44pt target inside the VISIBLE
                     // native map canvas; never bypass Full-Access authority.
-                    .overlay(alignment: .bottomTrailing) {
+                    // Actual iOS 18.5 XCTest found the bottom-right button
+                    // geometrically valid (214 x 58pt) but not hit-testable.
+                    // Put this CI-only control at the map's TOP, away from
+                    // the bottom tab/navigation chrome. Keep real AX hit tests.
+                    .overlay(alignment: .topTrailing) {
 #if DEBUG
                         if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke"),
                            album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
