@@ -91,3 +91,16 @@ test('blank detection samples the child, not only persistent colorful tab chrome
   assert.match(native, /XCTAssertFalse\(app\.keyboards\.firstMatch\.exists/);
   assert.doesNotMatch(native, /provesZeroFlicker|measured120FPS|mockFrame|fakeScreenshot/);
 });
+
+test('failed search has explicit recovery without exposing an unverified Owner Node', () => {
+  const start = files.indexOf('private var filesChrome: some View {');
+  const end = files.indexOf('.modifier(XDriveIOSNativeFilesSearchPresentation(', start);
+  assert.ok(start >= 0 && end > start, 'missing real native Files chrome');
+  const error = files.slice(start, end);
+  assert.match(error, /if !isHome && !model\.loading && !model\.verifiedPage,/);
+  assert.match(error, /let failure = model\.errorMessage/);
+  assert.match(error, /if isGlobalSearch \{[\s\S]*?Button\("清除搜索并返回浏览"\) \{ clearSearch\(\) \}/);
+  assert.match(error, /native-ios-files-error-clear-search/);
+  assert.match(error, /native-ios-files-error-page/);
+  assert.match(files, /private func clearSearch\(\) \{[\s\S]*?activeQuery = ""/);
+});

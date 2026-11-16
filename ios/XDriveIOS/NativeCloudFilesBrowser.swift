@@ -2760,6 +2760,13 @@ struct XDriveIOSNativeFilesBrowser: View {
                         .accessibilityIdentifier("native-ios-files-error-return")
                     }
                     .buttonStyle(.bordered)
+                    if isGlobalSearch {
+                        // A rejected Owner search must not strand Browse behind
+                        // the error-only view: return without trusting any Node.
+                        Button("清除搜索并返回浏览") { clearSearch() }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("native-ios-files-error-clear-search")
+                    }
                     Spacer(minLength: 0)
                 }
                 .padding(20)
