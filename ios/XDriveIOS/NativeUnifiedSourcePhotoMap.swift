@@ -992,13 +992,15 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         }
         .navigationDestination(isPresented: $nearbyPresented) {
             if active {
-                XDriveIOSNativeUnifiedSourceMapCellWall(
+                // Type-erase the recursive, verified same-screen destination;
+                // this is navigation-only and never caches any Owner/media ID.
+                AnyView(XDriveIOSNativeUnifiedSourceMapCellWall(
                     login: login, owner: owner, library: library,
                     presence: presence, query: query, pin: pin,
                     sourceCoordinates: sourceCoordinates,
-                    sourceCursors: sourceCursors, isNearbyExpansion: true)
+                    sourceCursors: sourceCursors, isNearbyExpansion: true))
             } else {
-                Text("该地点的照片已不可访问。")
+                AnyView(Text("该地点的照片已不可访问。"))
             }
         }
         .fullScreenCover(item: $viewing, onDismiss: {
