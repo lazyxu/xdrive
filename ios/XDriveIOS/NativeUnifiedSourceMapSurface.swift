@@ -21,6 +21,7 @@ private final class XDriveIOSUnifiedSourceCover: MKAnnotationView {
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
         frame = XDriveIOSNativeMapMarkerVisualPolicy.frame
+        XDriveIOSNativeMapMarkerVisualPolicy.decorate(self)
         centerOffset = XDriveIOSNativeMapMarkerVisualPolicy.centerOffset
         collisionMode = .circle
         displayPriority = .defaultHigh
@@ -65,8 +66,15 @@ private final class XDriveIOSUnifiedSourceCover: MKAnnotationView {
             ? "照片封面暂不可用。双击打开当前区域。" : "双击打开当前区域照片") : nil
     }
 
+    override func setSelected(_ selected: Bool, animated: Bool) {
+        super.setSelected(selected, animated: animated)
+        XDriveIOSNativeMapMarkerVisualPolicy.updateSelection(
+            selected, view: self, animated: animated)
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
+        transform = .identity
         imageView.image = nil
         badge.text = nil
         placeholder.isHidden = false
