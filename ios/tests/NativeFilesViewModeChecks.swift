@@ -43,6 +43,24 @@ struct XDriveIOSNativeFilesViewModeChecks {
         require(P.relativeAlignment(rowTop: 20, rowHeight: 600,
                                     viewportHeight: 600) == 0,
                 "invalid viewport size")
+        // Repro: evicted visible Node 111 falls back to Node 1. Its 75%
+        // viewport offset cannot be applied to the new fallback row.
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 1,
+                                   measured: 0.75) == nil, "evicted anchor loses geometry")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: 0.75) == 0.75, "same row keeps geometry")
+        require(P.matchedAlignment(visibleAnchor: nil, selectedAnchor: 1,
+                                   measured: 0.75) == nil, "no visible row")
+        require(P.matchedAlignment(visibleAnchor: 1, selectedAnchor: nil,
+                                   measured: 0.75) == nil, "no selected row")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: -.25) == -.25, "partially clipped row")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: .nan) == nil, "NaN rejected")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: .infinity) == nil, "infinite offset rejected")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: 1.4) == nil, "out-of-range offset rejected")
         print("Files List/Grid anchor checks PASS")
     }
 }

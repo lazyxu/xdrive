@@ -1116,11 +1116,16 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// A second user switch supersedes every previous pending scroll.
     private func chooseFilesViewMode(_ next: String) {
         guard (next == "list" || next == "grid"), viewMode != next else { return }
-        pendingModeSwitchAnchor = XDriveIOSNativeFilesViewModePolicy.anchor(
+        let selectedAnchor = XDriveIOSNativeFilesViewModePolicy.anchor(
             preferred: visibleModeAnchorID ?? lastAppearedNodeID,
             loaded: model.entries.map(\.id)
         )
-        pendingModeSwitchAlignment = visibleModeAnchorID == nil ? nil : visibleModeAlignment
+        pendingModeSwitchAnchor = selectedAnchor
+        pendingModeSwitchAlignment = XDriveIOSNativeFilesViewModePolicy.matchedAlignment(
+            visibleAnchor: visibleModeAnchorID,
+            selectedAnchor: selectedAnchor,
+            measured: visibleModeAlignment
+        )
         modeSwitchTicket = UUID()
         var transaction = Transaction()
         transaction.disablesAnimations = true
@@ -3815,6 +3820,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             filesViewVisible = false
             modeSwitchTicket = UUID()
             pendingModeSwitchAnchor = nil
+            pendingModeSwitchAlignment = nil
             // Undo/redo operation metadata is optional. A cancelled first
             // read must not permanently latch the shortcuts as "attempted".
             // Busy mutations are never cancelled by this navigation path.
@@ -3905,6 +3911,10 @@ struct XDriveIOSNativeFilesBrowser: View {
             ancestorStatus = nil
             browseReturnAnchor = nil
             pendingModeSwitchAnchor = nil
+            pendingModeSwitchAlignment = nil
+            visibleModeAnchorID = nil
+            visibleModeAlignment = 0
+            visibleModeViewportHeight = 0
             modeSwitchTicket = UUID()
             // Files-local section belongs to a verified Owner; a new Owner
             // must not inherit the previous account's Recent/Favorites route.
@@ -4002,6 +4012,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             if next != .browse {
                 modeSwitchTicket = UUID()
                 pendingModeSwitchAnchor = nil
+                pendingModeSwitchAlignment = nil
                 return
             }
             guard next == .browse, !isHome, !isGlobalSearch,
@@ -4061,12 +4072,14 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: viewMode) { next in
             if next == "grid" { inlineFolders.invalidate() }
             let ticket = modeSwitchTicket
-            let alignment = pendingModeSwitchAlignment
             let anchor = pendingModeSwitchAnchor ??
                 XDriveIOSNativeFilesViewModePolicy.anchor(
                     preferred: visibleModeAnchorID ?? lastAppearedNodeID,
                     loaded: model.entries.map(\.id)
                 )
+            // Never apply a displaced row's offset to a fallback anchor.
+            let alignment = pendingModeSwitchAnchor == anchor ?
+                pendingModeSwitchAlignment : nil
             guard filesViewVisible, !isHome, !isGlobalSearch, !selecting,
                   let folderID = parentID, let owner = login.owner,
                   model.canReanchor(owner: owner, folderID: folderID,
@@ -4074,6 +4087,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                   let anchor, model.entries.contains(where: { $0.id == anchor })
             else {
                 pendingModeSwitchAnchor = nil
+                pendingModeSwitchAlignment = nil
                 return
             }
             Task { @MainActor in
@@ -4090,7 +4104,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                     expectedMode: next, currentMode: viewMode,
                     active: phase == .active && quickSection == .browse
                 ) else {
-                    if ticket == modeSwitchTicket { pendingModeSwitchAnchor = nil }
+                    if ticket == modeSwitchTicket {
+                        pendingModeSwitchAnchor = nil
+                        pendingModeSwitchAlignment = nil
+                    }
                     return
                 }
                 var transaction = Transaction()
