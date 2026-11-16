@@ -22,6 +22,15 @@ on:
       - 'ios/scripts/audit_native_seven_workloads.py'
       - 'ios/scripts/test_audit_native_seven_workloads.py'
       - 'ios/XDriveIOS/NativePhotosDashboard.swift'
+      - 'ios/XDriveIOS/NativePhotoTimelineBrowser.swift'
+      - 'ios/XDriveIOS/NativeLocalContinuousGallery.swift'
+      - 'ios/XDriveIOS/NativeLocalPhotoMap.swift'
+      - 'ios/XDriveIOS/NativeClipboardScreen.swift'
+      - 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'
+      - 'ios/XDriveIOS/NativeFilesSavedSearches.swift'
+      - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
+      - 'ios/XDriveIOS/NativeFilesSearchLocation.swift'
+      - 'ios/XDriveIOS/NativeUnifiedPhotoWall.swift'
   workflow_dispatch:
 permissions:
   contents: read
