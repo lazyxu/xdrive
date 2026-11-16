@@ -1033,6 +1033,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var sort = "name"
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
     @State private var pendingModeSwitchAnchor: UInt64?
+    @State private var pendingModeSwitchAlignment: Double?
+    @State private var visibleModeAnchorID: UInt64?
+    @State private var visibleModeAlignment = 0.0
+    @State private var visibleModeViewportHeight: CGFloat = 0
     @State private var modeSwitchTicket = UUID()
     @State private var order = "asc"
     @State private var grouping = "none"
@@ -1113,8 +1117,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     private func chooseFilesViewMode(_ next: String) {
         guard (next == "list" || next == "grid"), viewMode != next else { return }
         pendingModeSwitchAnchor = XDriveIOSNativeFilesViewModePolicy.anchor(
-            preferred: lastAppearedNodeID, loaded: model.entries.map(\.id)
+            preferred: visibleModeAnchorID ?? lastAppearedNodeID,
+            loaded: model.entries.map(\.id)
         )
+        pendingModeSwitchAlignment = visibleModeAnchorID == nil ? nil : visibleModeAlignment
         modeSwitchTicket = UUID()
         var transaction = Transaction()
         transaction.disablesAnimations = true
@@ -2562,6 +2568,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
             }
             .onAppear { requestContinuousNeighbor(for: entry.id) }
+            .modifier(XDriveIOSNativeFilesRowFrameReporter(
+                nodeID: entry.id, spaceName: "native-ios-files-browse-viewport"
+            ))
     }
 
     /// A grouped grid uses the very same entry surface as a flat grid.
@@ -2575,6 +2584,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                 gridTile(entry)
                     .id(entry.id)
                     .onAppear { requestContinuousNeighbor(for: entry.id) }
+                    .modifier(XDriveIOSNativeFilesRowFrameReporter(
+                        nodeID: entry.id, spaceName: "native-ios-files-browse-viewport"
+                    ))
             }
         }
         .padding(.horizontal, 10)
@@ -2654,6 +2666,29 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 filesContinuousStatus
                 filesBatchOperations
+            }
+        }
+        .coordinateSpace(name: "native-ios-files-browse-viewport")
+        .background(GeometryReader { geometry in
+            Color.clear.preference(
+                key: XDriveIOSNativeFilesViewportHeightKey.self,
+                value: geometry.size.height
+            )
+        })
+        .onPreferenceChange(XDriveIOSNativeFilesViewportHeightKey.self) { height in
+            if height > 0 && height.isFinite { visibleModeViewportHeight = height }
+        }
+        .onPreferenceChange(XDriveIOSNativeFilesRowFramesKey.self) { frames in
+            guard filesViewVisible, phase == .active, quickSection == .browse,
+                  !isHome, !isGlobalSearch, !selecting, model.verifiedPage,
+                  let visible = XDriveIOSNativeFilesUIStyle.topVisibleAnchor(
+                    frames: frames, accepted: model.entries.map(\.id),
+                    viewportHeight: visibleModeViewportHeight
+                  ) else { return }
+            if visibleModeAnchorID != visible.nodeID ||
+               abs(visibleModeAlignment - visible.alignment) > 0.01 {
+                visibleModeAnchorID = visible.nodeID
+                visibleModeAlignment = visible.alignment
             }
         }
         // Pin real Files List rather than the first retained collection view.
@@ -4026,9 +4061,11 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onChange(of: viewMode) { next in
             if next == "grid" { inlineFolders.invalidate() }
             let ticket = modeSwitchTicket
+            let alignment = pendingModeSwitchAlignment
             let anchor = pendingModeSwitchAnchor ??
                 XDriveIOSNativeFilesViewModePolicy.anchor(
-                    preferred: lastAppearedNodeID, loaded: model.entries.map(\.id)
+                    preferred: visibleModeAnchorID ?? lastAppearedNodeID,
+                    loaded: model.entries.map(\.id)
                 )
             guard filesViewVisible, !isHome, !isGlobalSearch, !selecting,
                   let folderID = parentID, let owner = login.owner,
@@ -4059,10 +4096,15 @@ struct XDriveIOSNativeFilesBrowser: View {
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    returnScroll.scrollTo(anchor, anchor: .center)
+                    if let alignment {
+                        returnScroll.scrollTo(anchor, anchor: UnitPoint(x: 0.5, y: alignment))
+                    } else {
+                        returnScroll.scrollTo(anchor, anchor: .center)
+                    }
                 }
                 lastAppearedNodeID = anchor
                 pendingModeSwitchAnchor = nil
+                pendingModeSwitchAlignment = nil
                 persistVisibleAnchorSoon()
             }
         }

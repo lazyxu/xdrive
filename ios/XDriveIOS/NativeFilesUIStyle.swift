@@ -60,6 +60,25 @@ extension XDriveIOSNativeFilesUIStyle {
         return parts.joined(separator: " · ")
     }
 
+    /// Choose only the nearest visible verified row, carrying its viewport
+    /// fraction. Group headers and stale/evicted IDs are never scroll targets.
+    static func topVisibleAnchor(
+        frames: [UInt64: CGRect], accepted: [UInt64], viewportHeight: CGFloat
+    ) -> (nodeID: UInt64, alignment: Double)? {
+        guard viewportHeight > 0, viewportHeight.isFinite else { return nil }
+        let allowed = Set(accepted)
+        guard let nearest = frames.filter({
+            allowed.contains($0.key) && $0.value.maxY > 0 &&
+                $0.value.minY < viewportHeight
+        }).min(by: { abs($0.value.minY) < abs($1.value.minY) })
+        else { return nil }
+        return (nearest.key, XDriveIOSNativeFilesViewModePolicy.relativeAlignment(
+            rowTop: Double(nearest.value.minY),
+            rowHeight: Double(nearest.value.height),
+            viewportHeight: Double(viewportHeight)
+        ))
+    }
+
     static func typeBadge(_ node: XDriveIOSNativeFilesNode) -> some View {
         let appearance = fileAppearance(node)
         return Text(appearance.label)
