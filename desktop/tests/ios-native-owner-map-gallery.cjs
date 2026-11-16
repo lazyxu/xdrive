@@ -28,7 +28,7 @@ test('only real canonical GPS places in the currently trusted map page open a fr
   assert.match(map, /XDriveIOSNativeOwnerMapSelectionPolicy\.canOpenPhotoRange\(point\.facet\)/)
   assert.match(map, /XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsSelectedPlace\(/)
   assert.match(map, /overview\.items\.contains\(where: \{/)
-  assert.match(map, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id,\s*captureRange: activeCaptureRange\)/)
+  assert.match(map, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id,\s*captureRange: activeCaptureRange,\s*placeDisplayName: place\.name\)/)
   assert.match(wall, /XDriveIOSNativeServerMediaPreview\(\s*item: initial, login: login,\s*loadedItems: viewerLoadedItems,\s*loadedRange: viewerLoadedRange,\s*openedOwner: viewerOpenedOwner,\s*onNavigate: \{ next in/)
   assert.match(wall, /pagePlaceID == placeID/)
   assert.match(wall, /self\?\.pagePlaceID = placeID/)
@@ -52,7 +52,7 @@ test('MapKit gesture revokes previous Owner camera before repaint but keeps iner
   assert.match(map, /let overview, let verifiedBounds,[\s\S]*?isSameViewport\([\s\S]*?currentlyVisibleIDs/)
   assert.match(map, /isSameViewport\(\s*bounds, current: currentBounds\(\)\)/)
   assert.match(map, /verifiedBounds = bounds/)
-  assert.match(map, /上次验证视窗有/)
+  assert.match(map, /verifiedBounds != nil[\s\S]*?native-ios-owner-map-stale-count/)
   assert.match(policy, /return authorized == current/)
 })
 
@@ -124,7 +124,7 @@ test('cloud photo cover verifies exact Range before thumbnail and publishes only
 
 test('current exact Owner map place opens one draggable native Gallery album sheet, not a fixed photo strip', () => {
   assert.match(map, /\.sheet\(item: \$selected, onDismiss:/)
-  assert.match(map, /XDriveIOSNativeServerMediaWall\([\s\S]*?placeID: place\.id,\s*captureRange: activeCaptureRange\)[\s\S]*?\.presentationDetents\(\[\.medium, \.large\]\)/)
+  assert.match(map, /XDriveIOSNativeServerMediaWall\([\s\S]*?placeID: place\.id,\s*captureRange: activeCaptureRange,\s*placeDisplayName: place\.name\)[\s\S]*?\.presentationDetents\(\[\.medium, \.large\]\)/)
   assert.match(map, /\.presentationDragIndicator\(\.visible\)/)
   assert.doesNotMatch(map, /fixedBottomPhotoStrip|WKWebView/)
 })
