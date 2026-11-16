@@ -320,7 +320,7 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertIn("filesMoreOrganizer(app)", more_visit)
         self.assertNotIn("native-ios-files-organize-home", more_visit)
         # Distinguish the first real Menu entry from the collapsed Home row.
-        first_menu = files.split("                    Menu {\\n                        // Keep Home Organizer")[1]
+        first_menu = files.split("// Keep Home Organizer visible in the first native", 1)[1]
         self.assertLess(first_menu.index("native-ios-files-toolbar-organize-home"),
                         first_menu.index('Picker("显示方式"'))
         self.assertIn('openFilesHomeDisclosure("更多管理"', suite)
