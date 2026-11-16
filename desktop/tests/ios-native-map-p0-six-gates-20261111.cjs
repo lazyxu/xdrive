@@ -202,3 +202,15 @@ test('native map CI supersedes only obsolete PR Simulator/65-photo audits; never
   assert.match(scale, /options: \['1', '10', '65', '1000', '10000', '100000'\]/)
   assert.match(scale, /MAP_P0_GENUINE_PHOTOKIT_DELTA/)
 })
+
+
+test('MapKit XCTest has one ordinary launcher and exactly one performance/stage overload', () => {
+  // Xcode builds the entire navigation UITest target even for one GPS test.
+  // Duplicate overloads block all six Simulator shards and genuine GPS audits.
+  assert.match(ui, /private func openLocalMap\(\) -> XCUIApplication \{\s*openLocalMap\(appearance: nil\)/)
+  assert.equal((ui.match(/private func openLocalMap\(performance: Bool, stage: String = "scan"\)/g) || []).length, 1)
+  assert.doesNotMatch(ui, /private func openLocalMap\(\s*performance: Bool = false/)
+  assert.match(ui, /appearance: String\?, performance: Bool = false, stage: String = "scan"/)
+  assert.match(ui, /if performance \{[\s\S]*?"-xdrive-map-100k-perf"/)
+  assert.match(ui, /if let appearance \{\s*app\.launchArguments \+= \["-uiuserinterfacestyle", appearance\]/)
+})

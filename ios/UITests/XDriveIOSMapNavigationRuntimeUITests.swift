@@ -405,9 +405,9 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
     }
 
-    private func openLocalMap(
-        performance: Bool = false, stage: String = "scan"
-    ) -> XCUIApplication {
+    // The ordinary route shares its launcher with appearance and real 100k
+    // performance paths. Keep exactly one performance:stage: overload.
+    private func openLocalMap() -> XCUIApplication {
         openLocalMap(appearance: nil)
     }
 
