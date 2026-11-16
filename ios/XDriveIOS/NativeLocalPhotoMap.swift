@@ -160,7 +160,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         badge.textAlignment = .center
         badge.font = XDriveIOSNativeMapMarkerVisualPolicy.badgeFont
         badge.textColor = .white
-        badge.backgroundColor = .systemBlue
+        badge.backgroundColor = XDriveIOSNativeMapMarkerVisualPolicy.badgeBackgroundColor
         badge.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius
         badge.layer.borderColor = UIColor.white.cgColor
         badge.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.badgeBorderWidth
@@ -175,6 +175,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         // nor permission to open a PhotoKit location album.
         badge.isHidden = provisional || count <= 1
         badge.text = provisional ? nil : XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: count)
+        XDriveIOSNativeMapMarkerVisualPolicy.resizeBadge(badge)
         isAccessibilityElement = !provisional
         accessibilityTraits = provisional ? [] : .button
         accessibilityLabel = provisional ?

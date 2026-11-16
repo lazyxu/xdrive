@@ -241,7 +241,7 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
         badge.font = XDriveIOSNativeMapMarkerVisualPolicy.badgeFont
         badge.textAlignment = .center
         badge.textColor = .white
-        badge.backgroundColor = .systemBlue
+        badge.backgroundColor = XDriveIOSNativeMapMarkerVisualPolicy.badgeBackgroundColor
         badge.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius
         badge.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.badgeBorderWidth
         badge.layer.borderColor = UIColor.white.cgColor
@@ -254,6 +254,7 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
         placeholder.isHidden = image != nil
         badge.isHidden = !enabled || count <= 1
         badge.text = XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: count)
+        XDriveIOSNativeMapMarkerVisualPolicy.resizeBadge(badge)
         // Old pins may remain visually during a gesture, but must not
         // become actionable VoiceOver targets or stale SDK selections.
         isEnabled = enabled

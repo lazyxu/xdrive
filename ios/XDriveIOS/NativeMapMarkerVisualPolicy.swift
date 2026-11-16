@@ -8,12 +8,14 @@ enum XDriveIOSNativeMapMarkerVisualPolicy {
     static let centerOffset = CGPoint(x: 0, y: -16)
     static let imageFrame = CGRect(x: 2, y: 2, width: 64, height: 64)
     static let placeholderFrame = CGRect(x: 20, y: 20, width: 28, height: 28)
-    static let badgeFrame = CGRect(x: 41, y: -7, width: 33, height: 28)
+    // Match the inset badge in the system Photos map rather than a floating bubble.
+    static let badgeFrame = CGRect(x: 8, y: 44, width: 56, height: 18)
     static let coverCornerRadius: CGFloat = 9
-    static let badgeCornerRadius: CGFloat = 14
-    static let badgeFont = UIFont.boldSystemFont(ofSize: 11)
+    static let badgeCornerRadius: CGFloat = 5
+    static let badgeFont = UIFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
     static let photoBorderWidth: CGFloat = 2
-    static let badgeBorderWidth: CGFloat = 2
+    static let badgeBorderWidth: CGFloat = 0
+    static let badgeBackgroundColor = UIColor.black.withAlphaComponent(0.66)
     static let minimumTouchTarget: CGFloat = 44
 
     /// One stable photograph-card shadow across all native MapKit maps.
@@ -42,7 +44,24 @@ enum XDriveIOSNativeMapMarkerVisualPolicy {
         }
     }
 
+    /// Retain the actual verified photo count, even above 1,000.
+    /// This presentation helper does not change PhotoKit/Owner admission.
     static func badgeText(count: Int) -> String {
-        count >= 1000 ? "999+" : String(max(0, count))
+        NumberFormatter.localizedString(
+            from: NSNumber(value: max(0, count)), number: .decimal)
+    }
+
+    /// A short dark inset adapts to the number, keeping one-digit badges
+    /// compact while preserving a legible full count on dense places.
+    static func resizeBadge(_ badge: UILabel) {
+        badge.adjustsFontSizeToFitWidth = true
+        badge.minimumScaleFactor = 0.75
+        badge.isAccessibilityElement = false
+        let intrinsicWidth = badge.intrinsicContentSize.width
+        let fittedWidth = intrinsicWidth.isFinite && intrinsicWidth > 0
+            ? intrinsicWidth + 10 : 22
+        let width = min(badgeFrame.width, max(22, ceil(fittedWidth)))
+        badge.frame = CGRect(x: badgeFrame.minX, y: badgeFrame.minY,
+                             width: width, height: badgeFrame.height)
     }
 }

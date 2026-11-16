@@ -41,7 +41,7 @@ private final class XDriveIOSUnifiedSourceCover: MKAnnotationView {
         badge.font = XDriveIOSNativeMapMarkerVisualPolicy.badgeFont
         badge.textAlignment = .center
         badge.textColor = .white
-        badge.backgroundColor = .systemBlue
+        badge.backgroundColor = XDriveIOSNativeMapMarkerVisualPolicy.badgeBackgroundColor
         badge.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius
         badge.layer.borderColor = UIColor.white.cgColor
         badge.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.badgeBorderWidth
@@ -55,8 +55,9 @@ private final class XDriveIOSUnifiedSourceCover: MKAnnotationView {
         imageView.image = image
         placeholder.image = UIImage(systemName: unavailable ? "icloud.slash" : "photo")
         placeholder.isHidden = image != nil
-        badge.isHidden = count <= 1
+        badge.isHidden = !enabled || count <= 1
         badge.text = XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: count)
+        XDriveIOSNativeMapMarkerVisualPolicy.resizeBadge(badge)
         isEnabled = enabled
         isAccessibilityElement = enabled
         accessibilityElementsHidden = !enabled

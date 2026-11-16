@@ -6,6 +6,7 @@ const path = require('node:path')
 const read = p => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8')
 const local = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
 const cloud = read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
+const unified = read('ios/XDriveIOS/NativeUnifiedSourceMapSurface.swift')
 const layout = read('ios/XDriveIOS/NativeMapMarkerVisualPolicy.swift')
 
 test('M11 native and Owner MapKit markers share identical verified cover, badge and touch geometry', () => {
@@ -34,9 +35,25 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
 
 test('M11 exact layout assertions explicitly prohibit inconsistent photo pin numerical frames', () => {
   assert.match(layout, /frame = CGRect\(x: 0, y: 0, width: 68, height: 68\)/)
-  assert.match(layout, /badgeFrame = CGRect\(x: 41, y: -7, width: 33, height: 28\)/)
+  assert.match(layout, /badgeFrame = CGRect\(x: 8, y: 44, width: 56, height: 18\)/)
   assert.match(layout, /imageFrame = CGRect\(x: 2, y: 2, width: 64, height: 64\)/)
   assert.match(layout, /badgeText\(count: Int\).*?\{/s)
   assert.doesNotMatch(local, /badge\.frame = CGRect/)
   assert.doesNotMatch(cloud, /badge\.frame = CGRect/)
+})
+
+test('M11 system Photos count inset keeps actual counts and revokes stale source badges', () => {
+  // Above 999 the visual label must represent the full trusted count.
+  assert.match(layout, /NumberFormatter\\.localizedString\\(/)
+  assert.doesNotMatch(layout, /999\\+/)
+  assert.match(layout, /badgeBackgroundColor = UIColor\\.black\\.withAlphaComponent\\(0\\.66\\)/)
+  assert.match(layout, /badge\\.adjustsFontSizeToFitWidth = true/)
+  assert.match(layout, /badge\\.isAccessibilityElement = false/)
+  for (const cover of [local, cloud, unified]) {
+    assert.match(cover, /badge\\.backgroundColor = XDriveIOSNativeMapMarkerVisualPolicy\\.badgeBackgroundColor/)
+    assert.match(cover, /XDriveIOSNativeMapMarkerVisualPolicy\\.badgeText\\(count: count\\)/)
+    assert.match(cover, /XDriveIOSNativeMapMarkerVisualPolicy\\.resizeBadge\\(badge\\)/)
+    assert.doesNotMatch(cover, /badge\\.backgroundColor = \\.systemBlue/)
+  }
+  assert.match(unified, /badge\\.isHidden = !enabled \\|\\| count <= 1/)
 })
