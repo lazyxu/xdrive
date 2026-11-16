@@ -186,6 +186,15 @@ MINIMAL_TARGETS = {
     "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
     "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
     "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+    # Six additional real child-lifecycle XCTest routes from the current PR.
+    # Lightweight observer registration; the original 12 H.264 clips remain
+    # the strict video gate and these six are separately settled-frame gated.
+    "testSavedSearchesAfterFavoritesRecentThenGallery",
+    "testOperationHistoryForegroundFromRecentKeepsSheet",
+    "testCloudDenialSavedSearchesReturnDoesNotResurrectError",
+    "testGalleryPeopleRotationFilesGalleryKeepsPage",
+    "testOriginalsHelpFilesHistoryThenOriginals",
+    "testLocalPhotoDateSheetForegroundFilesThenLocal",
 }
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
