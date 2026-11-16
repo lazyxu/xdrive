@@ -162,6 +162,12 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         lock.unlock()
     }
 
+    func clearBackgroundIfNeeded() {
+        lock.lock()
+        if binding?.backgroundGrant != nil { binding = nil }
+        lock.unlock()
+    }
+
     private func networkChanged(_ local: Bool) {
         lock.lock()
         onLocalNetwork = local
