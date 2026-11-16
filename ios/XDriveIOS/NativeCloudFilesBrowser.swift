@@ -2890,6 +2890,16 @@ struct XDriveIOSNativeFilesBrowser: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if !selecting {
                     Menu {
+                        // The Home organizer was hidden near the bottom of a
+                        // long SwiftUI Menu on iOS 18.5. Keep it at the top so
+                        // the real More -> Organizer route stays accessible.
+                        if isHome {
+                            Button { presentOrganizeHome() } label: {
+                                Label("整理浏览首页", systemImage: "square.grid.2x2")
+                            }
+                            .accessibilityIdentifier("native-ios-files-toolbar-organize-home")
+                            Divider()
+                        }
                         Button {
                             guard canSelectPage, !batchTrash.busy, !batchTarget.busy,
                                   !batchExport.busy, batchExport.prepared.isEmpty else { return }
@@ -3002,12 +3012,6 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .disabled(login.owner == nil || selecting)
                     .accessibilityIdentifier("native-ios-files-toolbar-manage-tags")
-                    if isHome {
-                        Button { presentOrganizeHome() } label: {
-                            Label("整理浏览首页", systemImage: "square.grid.2x2")
-                        }
-                        .accessibilityIdentifier("native-ios-files-toolbar-organize-home")
-                    }
                     Button("撤销最近操作") {
                         if let operation = mostRecentUndo {
                             pendingQuickOperation = .init(action: .undo, operation: operation)
