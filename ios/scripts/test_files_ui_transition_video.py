@@ -55,7 +55,7 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         ]
         self.assertIsNone(classify_bright_blank(frames, 0.1))
 
-    def test_single_white_frame_does_not_claim_flicker(self):
+    def test_single_white_frame_must_fail_flash_audit(self):
         frames = [
             {"time": 0.35 + i * 0.1,
              "ymin": 251 if i == 3 else 12, "ymax": 253,
@@ -88,7 +88,7 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         self.assertEqual(classify_bright_blank(frames, 0.2),
                          "suspected_solid_black_transition")
 
-    def test_single_solid_black_frame_is_not_called_a_blackout(self):
+    def test_single_black_frame_must_fail_flash_audit(self):
         frames = [
             {"time": i / 10,
              "ymin": 16 if i == 4 else 12,
@@ -387,17 +387,18 @@ class FilesUIContentVideoCodecRegressionTests(unittest.TestCase):
         self.assertEqual(classify_bright_blank(frames, 1.0),
                          "suspected_solid_black_transition")
 
-    def test_alternating_white_black_flash_does_not_escape_two_frame_gate(self):
-        # Neither same-color streak alone reaches two frames.
+    def test_alternating_white_black_flash_reports_first_blank_frame(self):
+        # The first white frame is sufficient: no consecutive streak is required.
         frames = self._decoded_chrome_page(
             ("white", 1.05, 1.15), ("black", 1.15, 1.25)
         )
         self.assertEqual(classify_bright_blank(frames, 1.0),
-                         "suspected_alternating_blank_transition")
+                         "suspected_solid_white_transition")
 
-    def test_one_white_frame_is_diagnostic_not_a_false_flicker_verdict(self):
+    def test_one_brief_white_flash_with_stable_chrome_fails_gate(self):
         frames = self._decoded_chrome_page(("white", 1.05, 1.15))
-        self.assertIsNone(classify_bright_blank(frames, 1.0))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_white_transition")
 
     def test_later_content_only_flash_in_transition_window_is_detected(self):
         frames = self._decoded_chrome_page(("white", 1.85, 2.05))
@@ -413,11 +414,12 @@ class FilesUIContentVideoCodecRegressionTests(unittest.TestCase):
         frames = self._decoded_chrome_page(("white", 0.25, 0.45))
         self.assertIsNone(classify_bright_blank(frames, 1.0))
 
-    def test_two_disconnected_white_samples_are_not_called_continuous(self):
+    def test_two_separate_white_flashes_each_trigger_strict_gate(self):
         frames = self._decoded_chrome_page(
             ("white", 1.05, 1.15), ("white", 1.45, 1.55)
         )
-        self.assertIsNone(classify_bright_blank(frames, 1.0))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_white_transition")
 
 
 if __name__ == "__main__":

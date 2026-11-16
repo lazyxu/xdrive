@@ -51,7 +51,7 @@ MIN_TAP_WINDOW_SECONDS = 0.55
 
 
 def classify_bright_blank(frames, tap_second):
-    """Reject consecutive all-white or all-black frames immediately after a tap.
+    """Flag even one all-white or all-black frame after a native tap.
 
     A uniformly dark real screen must stay distinguishable from a textured
     dark-mode page. Even one uniformly blank decoded frame is suspicious;
