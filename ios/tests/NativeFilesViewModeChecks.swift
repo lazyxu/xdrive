@@ -31,6 +31,18 @@ struct XDriveIOSNativeFilesViewModeChecks {
                 active: denied != 5
             ), "reject stale ticket Owner range anchor mode inactive or hidden route")
         }
+        require(abs(P.relativeAlignment(rowTop: 60, rowHeight: 60,
+                                        viewportHeight: 600) - (60.0 / 540.0)) < 1e-9,
+                "viewport alignment")
+        require(P.relativeAlignment(rowTop: -15, rowHeight: 60,
+                                    viewportHeight: 600) < 0,
+                "partially visible top row")
+        require(P.relativeAlignment(rowTop: .nan, rowHeight: 60,
+                                    viewportHeight: 600) == 0,
+                "invalid source geometry")
+        require(P.relativeAlignment(rowTop: 20, rowHeight: 600,
+                                    viewportHeight: 600) == 0,
+                "invalid viewport size")
         print("Files List/Grid anchor checks PASS")
     }
 }

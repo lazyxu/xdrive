@@ -111,6 +111,36 @@ struct XDriveIOSNativeFilesFallbackIcon: View {
     }
 }
 
+// The renderer observes only mounted, Owner-verified rows. Geometry is never
+// persisted and never used as authorization for a directory or file mutation.
+struct XDriveIOSNativeFilesRowFramesKey: PreferenceKey {
+    static var defaultValue: [UInt64: CGRect] = [:]
+    static func reduce(value: inout [UInt64: CGRect],
+                       nextValue: () -> [UInt64: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+struct XDriveIOSNativeFilesViewportHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct XDriveIOSNativeFilesRowFrameReporter: ViewModifier {
+    let nodeID: UInt64
+    let spaceName: String
+    func body(content: Content) -> some View {
+        content.background(GeometryReader { geometry in
+            Color.clear.preference(
+                key: XDriveIOSNativeFilesRowFramesKey.self,
+                value: [nodeID: geometry.frame(in: .named(spaceName))]
+            )
+        })
+    }
+}
+
 /// Read-only, Owner-fenced metadata from an already verified list snapshot.
 /// This view never requests file contents or performs a second mutation.
 struct XDriveIOSNativeFilesQuickInfoPanel: View {
