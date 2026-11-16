@@ -185,8 +185,19 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 let id = route == "files.search.date"
                     ? "native-ios-files-search-date-filter"
                     : "native-ios-files-search-size-filter"
-                let filter = filesHomeAction(id, app: app)
-                XCTAssertTrue(filter.isHittable, "Real Files search filter must be visible")
+                // These controls live inside the real horizontally scrolling
+                // Files filter strip, not the vertical Files list. Scroll the
+                // visible native strip rather than treating an offscreen
+                // filter as absent or short-circuiting the measurement.
+                let strip = view("native-ios-files-filter-strip", app: app)
+                _ = reveal(strip, app: app)
+                let filter = view(id, app: app)
+                for _ in 0..<8 {
+                    if filter.exists && filter.isHittable { break }
+                    strip.swipeLeft()
+                }
+                XCTAssertTrue(filter.exists && filter.isHittable,
+                              "Real Files search filter is unreachable after horizontal swipes: \\(id)")
             case "files.home.more-organizer":
                 let menu = view("native-ios-files-more-options", app: app)
                 XCTAssertTrue(menu.waitForExistence(timeout: 15) && menu.isHittable,
