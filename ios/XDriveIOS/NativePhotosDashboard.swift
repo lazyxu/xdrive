@@ -1010,7 +1010,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var files: some View {
-        XDriveIOSNativeFilesBrowser(login: login)
+        // Retain the Files view tree while switching tabs, but retire its
+        // native search overlay even when TabView skips onDisappear.
+        XDriveIOSNativeFilesBrowser(login: login, isRootTabActive: tab == .files)
     }
 
     private var mine: some View {
