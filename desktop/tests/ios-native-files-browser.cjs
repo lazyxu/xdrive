@@ -14,7 +14,7 @@ const management = read('ios/XDriveIOS/NativeFilesManagementPanel.swift');
 const filesStyle = read('ios/XDriveIOS/NativeFilesUIStyle.swift');
 
 test('native Files replaces its fixed-tab placeholder without returning to WebView', () => {
-  assert.match(dashboard, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
+  assert.match(dashboard, /private var files: some View \{[\s\S]*?XDriveIOSNativeFilesBrowser\(login: login, isRootTabActive: tab == \.files\)/);
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.files\)/);
   assert.match(dashboard, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.notes, \.clipboard, \.backup: return true/);
   assert.doesNotMatch(view, /import WebKit|WKWebView\s*\(|document\.cookie|evaluateJavaScript\s*\(/);

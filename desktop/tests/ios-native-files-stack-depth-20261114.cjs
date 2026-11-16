@@ -123,8 +123,11 @@ test('signed-in Gallery never eagerly mounts the Files view graph; first Files v
   assert.match(dashboard, /private func resetNavigation\(\) \{\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false\s*filesTabActivated = false/)
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.files\)/)
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.gallery\)/)
-  assert.equal((dashboard.match(/XDriveIOSNativeFilesBrowser\(login: login\)/g) || []).length, 1,
-    'do not substitute another unauthenticated Files root')
+  assert.equal((dashboard.match(/XDriveIOSNativeFilesBrowser\(login: login,\s*isRootTabActive: tab == \.files\)/g) || []).length, 1,
+    'keep exactly one Owner-scoped Files root and retire search only when its tab is hidden')
+  assert.match(dashboard, /if tab == \.files \|\| filesTabActivated \{/)
+  assert.doesNotMatch(dashboard, /\.id\(tab\)/,
+    'tab selection must not reconstruct the verified Files tree')
   const restore = dashboard.slice(dashboard.indexOf('private func restoreNavigationIfNeeded()'),
     dashboard.indexOf('private func saveNavigationIfReady()'))
   assert.match(restore, /tab = XDriveIOSNativeBottomTab\(rawValue: snapshot\.selectedTab\) \?\? \.gallery/)

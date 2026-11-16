@@ -51,5 +51,5 @@ test('rotation changes only presentation, not source identity, L2, or L3 Viewer'
   assert.match(route, /if source == \.map \{[\s\S]*?mapReturnGallerySource/)
   assert.match(route, /mapReturnOwnerScopeKey = mapReturnGallerySource != nil/);
   assert.match(shell, /case \.files:\s*tab = \.files/);
-  assert.match(shell, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
+  assert.match(shell, /private var files: some View \{[\s\S]*?XDriveIOSNativeFilesBrowser\(login: login, isRootTabActive: tab == \.files\)/);
 });
