@@ -237,6 +237,13 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         tap("native-ios-local-timeline-open", app)
         let done = control("native-ios-local-timeline-done", app)
         XCTAssertTrue(done.waitForExistence(timeout: 15))
+        // Real regression: Home/foreground used to set showingDates=false.
+        // The date sheet must remain reachable before explicit user dismissal.
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertTrue(done.waitForExistence(timeout: 15),
+                      "PhotoKit date sheet auto-dismissed when returning to foreground")
         done.tap()
         openFilesSheet("native-ios-files-open-saved-searches",
                        pageID: "native-ios-files-saved-searches-page", app)
@@ -293,6 +300,12 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         search.typeText("six-subpage")
         XCTAssertTrue((search.value as? String ?? "").contains("six-subpage"))
         tap("native-ios-tab-gallery", app)
+        let keyboardGone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: app.keyboards.firstMatch
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [keyboardGone], timeout: 10), .completed,
+                       "Files searchable keyboard leaked onto Gallery tab")
         tap("native-ios-gallery-people", app)
         closePeople(app)
         XCTAssertFalse(app.keyboards.firstMatch.exists,
