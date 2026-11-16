@@ -300,9 +300,7 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
     private let lock = NSLock()
     private var stopped = false
     private var responseStarted = false
-    private var session: URLSession?
-    private var task: URLSessionDataTask?
-    private var delegate: RoutedDelegate?
+    private var handle: XDriveIOSRoutedSessionPool.Handle?
     private var retryCount = 0
     private var physicalURL: URL?
 
@@ -331,40 +329,28 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
         var forwarded = request
         forwarded.url = target
         forwarded.httpShouldHandleCookies = false
-        let config = URLSessionConfiguration.ephemeral
-        // Never recursively intercept a transport already routed here.
-        config.protocolClasses = []
-        config.httpShouldSetCookies = false
-        config.httpCookieAcceptPolicy = .never
-        config.urlCache = nil
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.allowsCellularAccess = request.allowsCellularAccess
-        let nextDelegate = RoutedDelegate(protocolHandler: self)
-        let nextSession = URLSession(configuration: config,
-                                     delegate: nextDelegate, delegateQueue: nil)
-        let nextTask = nextSession.dataTask(with: forwarded)
+        // Reuse bounded, cookie-free URLSessions across all thumbnail,
+        // gallery, file, notes, SSE and upload tasks. A separate pool enforces
+        // Wi-Fi-only originals even when the proxy changes physical hosts.
+        let next = XDriveIOSRoutedSessionPool.shared.start(
+            forwarded, handler: self)
         lock.lock()
         if stopped {
             lock.unlock()
-            nextSession.invalidateAndCancel()
+            next.cancel()
             return
         }
-        delegate = nextDelegate
-        session = nextSession
-        task = nextTask
+        handle = next
         lock.unlock()
-        nextTask.resume()
     }
 
     override func stopLoading() {
         lock.lock()
         stopped = true
-        let old = session
-        session = nil
-        task = nil
-        delegate = nil
+        let old = handle
+        handle = nil
         lock.unlock()
-        old?.invalidateAndCancel()
+        old?.cancel()
     }
 
     fileprivate func receive(_ response: URLResponse) {
@@ -401,16 +387,12 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
         let active = !stopped
         let partial = responseStarted
         let currentURL = physicalURL
-        let oldSession = session
-        session = nil
-        task = nil
-        delegate = nil
+        handle = nil
         if let failure, retryCount == 0,
            XDriveIOSAutoRouteSafety.mayReplay(request, after: failure, responseStarted: partial) {
             retryCount = 1
             lock.unlock()
-            oldSession?.finishTasksAndInvalidate()
-            guard active, let original = request.url, let currentURL else { return }
+             guard active, let original = request.url, let currentURL else { return }
             Task { [weak self] in
                 guard let self else { return }
                 if let other = await XDriveIOSAutoRoute.shared.recover(
@@ -424,8 +406,7 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         lock.unlock()
-        oldSession?.finishTasksAndInvalidate()
-        guard active else { return }
+         guard active else { return }
         if let failure {
             // A write or a partial SSE must receive its original failure:
             // schedule a new, independently-proved route for future requests,
@@ -450,14 +431,84 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
         if active { client?.urlProtocol(self, didFailWithError: error) }
     }
 
-    private final class RoutedDelegate: XDriveIOSServerTLSDelegate,
-                                        URLSessionDataDelegate, URLSessionTaskDelegate,
-                                        @unchecked Sendable {
-        private weak var handler: XDriveIOSRoutedURLProtocol?
+}
 
-        init(protocolHandler: XDriveIOSRoutedURLProtocol) {
-            handler = protocolHandler
-            super.init()
+/// A small shared pool avoids one TLS session per thumbnail or file row.
+/// Sessions never keep cookies or Owner credentials; each URLRequest carries
+/// its own current authorization, and task callbacks route to one protocol.
+private final class XDriveIOSRoutedSessionPool: @unchecked Sendable {
+    static let shared = XDriveIOSRoutedSessionPool()
+
+    final class Handle {
+        let task: URLSessionDataTask
+        private let owner: Delegate
+        init(_ task: URLSessionDataTask, owner: Delegate) {
+            self.task = task
+            self.owner = owner
+        }
+        func cancel() {
+            owner.remove(task.taskIdentifier)
+            task.cancel()
+        }
+    }
+
+    private final class Session {
+        let delegate = Delegate()
+        let session: URLSession
+        init(cellular: Bool) {
+            let config = URLSessionConfiguration.ephemeral
+            // Do not re-enter the outer routed URLProtocol.
+            config.protocolClasses = []
+            config.allowsCellularAccess = cellular
+            config.httpShouldSetCookies = false
+            config.httpCookieAcceptPolicy = .never
+            config.urlCache = nil
+            config.requestCachePolicy = .reloadIgnoringLocalCacheData
+            session = URLSession(configuration: config, delegate: delegate,
+                                 delegateQueue: nil)
+        }
+    }
+
+    private let cellular = Session(cellular: true)
+    private let wifiOnly = Session(cellular: false)
+    private init() {}
+
+    func start(_ request: URLRequest,
+               handler: XDriveIOSRoutedURLProtocol) -> Handle {
+        let selected = request.allowsCellularAccess ? cellular : wifiOnly
+        let task = selected.session.dataTask(with: request)
+        selected.delegate.insert(task.taskIdentifier, handler: handler)
+        let handle = Handle(task, owner: selected.delegate)
+        task.resume()
+        return handle
+    }
+
+    final class Delegate: XDriveIOSServerTLSDelegate,
+                          URLSessionDataDelegate, URLSessionTaskDelegate,
+                          @unchecked Sendable {
+        private final class WeakHandler {
+            weak var value: XDriveIOSRoutedURLProtocol?
+            init(_ value: XDriveIOSRoutedURLProtocol) { self.value = value }
+        }
+        private let lock = NSLock()
+        private var handlers: [Int: WeakHandler] = [:]
+
+        func insert(_ id: Int, handler: XDriveIOSRoutedURLProtocol) {
+            lock.lock()
+            handlers[id] = WeakHandler(handler)
+            lock.unlock()
+        }
+        func remove(_ id: Int) {
+            lock.lock()
+            handlers.removeValue(forKey: id)
+            lock.unlock()
+        }
+        private func handler(_ id: Int, remove: Bool = false) -> XDriveIOSRoutedURLProtocol? {
+            lock.lock()
+            let value = handlers[id]?.value
+            if remove { handlers.removeValue(forKey: id) }
+            lock.unlock()
+            return value
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask,
@@ -470,18 +521,18 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
                         didReceive response: URLResponse,
                         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-            handler?.receive(response)
+            handler(dataTask.taskIdentifier)?.receive(response)
             completionHandler(.allow)
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
                         didReceive data: Data) {
-            handler?.receive(data)
+            handler(dataTask.taskIdentifier)?.receive(data)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask,
                         didCompleteWithError error: Error?) {
-            handler?.completed(error)
+            handler(task.taskIdentifier, remove: true)?.completed(error)
         }
     }
 }
