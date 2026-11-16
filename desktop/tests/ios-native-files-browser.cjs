@@ -11,6 +11,7 @@ const source = read('web/src/api.ts');
 const web = read('web/src/WebFileExplorer.tsx');
 const server = read('internal/api/search.go');
 const management = read('ios/XDriveIOS/NativeFilesManagementPanel.swift');
+const filesStyle = read('ios/XDriveIOS/NativeFilesUIStyle.swift');
 
 test('native Files replaces its fixed-tab placeholder without returning to WebView', () => {
   assert.match(dashboard, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
@@ -51,7 +52,13 @@ test('native Files decodes and displays Server modification timestamps in list a
   assert.match(page, /var updated_at: String\? = nil/)
   assert.match(page, /enum XDriveIOSNativeFilesDatePolicy/)
   assert.match(page, /fractionDigits\.utf8\.count <= 9/)
-  assert.equal((view.match(/XDriveIOSNativeFilesDatePolicy\.display\(modifiedDate\)/g) || []).length, 2)
+  // The grid still renders its visible modification timestamp directly.
+  // The compact two-line List now uses the shared display helper instead.
+  assert.match(view, /XDriveIOSNativeFilesDatePolicy\.display\(modifiedDate\)/)
+  assert.match(view, /XDriveIOSNativeFilesUIStyle\.compactMetadata\(entry\.node, path: entry\.path\)/)
+  assert.match(filesStyle, /static func compactMetadata\(/)
+  assert.match(filesStyle, /if let date = node\.modifiedDate/)
+  assert.match(filesStyle, /XDriveIOSNativeFilesDatePolicy\.display\(date\)/)
   assert.match(management, /file\.modifiedDate/)
   assert.match(management, /directory\.modifiedDate/)
 })
