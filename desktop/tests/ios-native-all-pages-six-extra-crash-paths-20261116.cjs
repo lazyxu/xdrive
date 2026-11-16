@@ -130,3 +130,35 @@ test("five additional real signed-out, Launcher, Files and Gallery child journey
     assert.match(method(name), /native-ios-files-grid/);
   }
 });
+
+
+test("five real iOS process cold-relaunch crash paths are XCTest and frame-watcher registered", () => {
+  const cold = [
+    "testFilesDirectSyntheticOwnerColdRelaunchThreeTimesKeepsShellAlive",
+    "testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid",
+    "testFilesManagementSheetsAfterColdRelaunchDoNotRestoreStalePresentation",
+    "testLauncherPhotoPagesFilesColdRelaunchSurviveNoCrash",
+    "testLauncherToolPagesFilesColdRelaunchSurviveNoCrash",
+  ];
+  assert.equal(new Set(cold).size, 5);
+  const all = [...crash.matchAll(/\bfunc\s+(test\w+)\(\)/g)].map(x => x[1]);
+  assert.ok(all.length >= 45, "cold restart paths must extend the 40-page matrix");
+  assert.equal(new Set(all).size, all.length);
+  for (const name of cold) {
+    const body = method(name);
+    assert.ok(watcher.includes('"' + name + '"'), name + " missing live frame watcher registration");
+    assert.match(body, /app\.terminate\(\)/);
+    assert.match(body, /app\.launch\(\)/);
+    assert.match(body, /native-ios-files-section-browse/);
+    assert.doesNotMatch(body, /XCTSkip|mockServerLogin|fakeToken|startBackup\(/);
+  }
+  for (const name of cold.slice(0, 3)) {
+    assert.match(method(name), /native-ios-files-grid/);
+  }
+  assert.match(method(cold[0]), /-xdrive-ui-files-direct/);
+  assert.match(method(cold[1]), /native-ios-files-error-page/);
+  assert.match(method(cold[2]), /native-ios-files-saved-searches-page/);
+  assert.match(method(cold[2]), /native-ios-files-operation-history-page/);
+  assert.match(method(cold[3]), /"local", "native-ios-local-timeline-open"/);
+  assert.match(method(cold[4]), /"transfers", "native-ios-transfer-overview"/);
+});

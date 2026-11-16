@@ -254,6 +254,16 @@ MINIMAL_TARGETS.update({
     "testBackupAuditQueueAndFilesReturnDoNotExit",
     "testMineSignedOutControlsAndGalleryReturnDoNotExit",
 })
+
+# Distinct real process terminations/relaunches and Files sheet rebuilds.
+# Registered on the existing mandatory candidate-navigation Simulator shard.
+MINIMAL_TARGETS.update({
+    "testFilesDirectSyntheticOwnerColdRelaunchThreeTimesKeepsShellAlive",
+    "testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid",
+    "testFilesManagementSheetsAfterColdRelaunchDoNotRestoreStalePresentation",
+    "testLauncherPhotoPagesFilesColdRelaunchSurviveNoCrash",
+    "testLauncherToolPagesFilesColdRelaunchSurviveNoCrash",
+})
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
 TARGETS.update({

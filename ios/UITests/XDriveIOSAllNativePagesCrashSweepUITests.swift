@@ -1144,4 +1144,119 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         capture(app, "files-management-three-sheets-rotation")
     }
 
+
+    /// The original iOS 26.6 EXC_BAD_ACCESS occurred while constructing the
+    /// Files view graph. Recreate the actual process three times, rather than
+    /// merely switching an already mounted tab. Synthetic Owner has no bearer.
+    func testFilesDirectSyntheticOwnerColdRelaunchThreeTimesKeepsShellAlive() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke",
+                               "-xdrive-ui-files-direct",
+                               "-xdrive-ui-navigation-synthetic-owner"]
+        for cycle in 0..<3 {
+            app.launch()
+            ready("native-ios-files-section-browse", app)
+            ready("native-ios-files-open-root-location", app)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            ready("native-ios-files-section-browse", app)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists,
+                           "Cold Files root exposed private rows in cycle \(cycle)")
+            if cycle < 2 { app.terminate() }
+        }
+        capture(app, "files-direct-cold-relaunch-three-cycles")
+    }
+
+    /// Terminate the app on the real read-only cloud-error child. On the next
+    /// launch the unauthenticated Owner must not resurrect a stale cloud grid.
+    func testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid() {
+        let app = launch()
+        for cycle in 0..<2 {
+            filesHomeChild("native-ios-files-open-root-location",
+                           page: "native-ios-files-error-page", app)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists,
+                           "No-session cloud failure displayed protected rows")
+            app.terminate()
+            app.launch()
+            ready("native-ios-files-section-browse", app)
+            tap("native-ios-files-section-browse", app)
+            ready("native-ios-files-home-list", app)
+            XCTAssertFalse(element("native-ios-files-error-page", app).exists,
+                           "Cold Files home retained failed child from cycle \(cycle)")
+            XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        }
+        capture(app, "files-error-cold-relaunch-no-private-grid")
+    }
+
+    /// Kill and rebuild the app while each distinct Files sheet is visible.
+    /// A cold Owner-less launch cannot revive a retained sheet/viewer tree.
+    func testFilesManagementSheetsAfterColdRelaunchDoNotRestoreStalePresentation() {
+        let app = launch()
+        let children = [
+            ("native-ios-files-open-saved-searches",
+             "native-ios-files-saved-searches-page"),
+            ("native-ios-files-open-operations",
+             "native-ios-files-operation-history-page")
+        ]
+        for (entry, page) in children {
+            filesHomeChild(entry, page: page, app)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists)
+            app.terminate()
+            app.launch()
+            ready("native-ios-files-section-browse", app)
+            tap("native-ios-files-section-browse", app)
+            ready("native-ios-files-home-list", app)
+            XCTAssertFalse(element(page, app).exists,
+                           "Cold Files home resurrected dismissed child: \(page)")
+            XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        }
+        capture(app, "files-two-sheets-cold-relaunch")
+    }
+
+    /// Cold restart after actual PhotoKit, Albums, Originals and Map roots,
+    /// then mount Files on every new process. No synthetic media is invented.
+    func testLauncherPhotoPagesFilesColdRelaunchSurviveNoCrash() {
+        let app = launch()
+        let roots = [
+            ("local", "native-ios-local-timeline-open"),
+            ("albums", "native-ios-album-create"),
+            ("originals", "native-ios-cloud-original-layout-help"),
+            ("map", "native-ios-map-source-selector")
+        ]
+        for (route, marker) in roots {
+            openLauncher(route, app)
+            ready(marker, app)
+            tap("native-ios-tab-files", app)
+            ready("native-ios-files-section-browse", app)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists)
+            app.terminate()
+            app.launch()
+            ready("native-ios-tab-launcher", app)
+        }
+        capture(app, "photo-pages-files-cold-relaunch")
+    }
+
+    /// Native Notes, Clipboard, Transfers and Backup share the same root
+    /// lifecycle but use distinct child graphs. Re-enter Files on fresh apps.
+    func testLauncherToolPagesFilesColdRelaunchSurviveNoCrash() {
+        let app = launch()
+        let roots = [
+            ("notes", "native-ios-notes-page"),
+            ("clipboard", "ios-clipboard-draft"),
+            ("transfers", "native-ios-transfer-overview"),
+            ("backup", "native-ios-backup-overview")
+        ]
+        for (route, marker) in roots {
+            openLauncher(route, app)
+            ready(marker, app)
+            tap("native-ios-tab-files", app)
+            ready("native-ios-files-section-browse", app)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists)
+            app.terminate()
+            app.launch()
+            ready("native-ios-tab-launcher", app)
+        }
+        capture(app, "tool-pages-files-cold-relaunch")
+    }
+
 }
