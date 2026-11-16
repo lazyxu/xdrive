@@ -309,6 +309,9 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
     @StateObject private var model = XDriveIOSNativePhotoTimelineModel()
     @StateObject private var changes = XDriveIOSNativePhotoTimelineChangeMonitor()
     @State private var showingDates = false
+    // Preserve an open date sheet across Home/foreground only for the same
+    // PhotoKit authorization; a Settings permission change revokes it.
+    @State private var datesPermissionAtPresentation: PHAuthorizationStatus?
     @State private var scale: XDriveIOSNativePhotoTimelineScale = .year
     @State private var selectedYearKey: String?
     @State private var selectedMonthKey: String?
@@ -324,6 +327,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Button {
+                    datesPermissionAtPresentation = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                     showingDates = true
                     model.load(mediaFilter: mediaFilter)
                 } label: {
@@ -515,6 +519,8 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                 exactDateTarget = nil
                 jumpDateMessage = nil
                 scale = .year
+            } else {
+                datesPermissionAtPresentation = nil
             }
         }
         .onChange(of: jumpDate) { _ in jumpDateMessage = nil }
@@ -528,10 +534,25 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                // Suspend stale index and selected items, not the sheet itself:
+                // backgrounding is not a user-requested dismissal.
                 model.invalidate()
                 exactDateTarget = nil
                 setMapDateScope(nil)
+                return
+            }
+            guard showingDates else { return }
+            let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            guard permission == datesPermissionAtPresentation else {
+                // Full/Limited/Denied changes must never expose an old index.
                 showingDates = false
+                model.invalidate()
+                exactDateTarget = nil
+                setMapDateScope(nil)
+                return
+            }
+            if permission == .authorized || permission == .limited {
+                model.load(mediaFilter: mediaFilter)
             }
         }
     }
