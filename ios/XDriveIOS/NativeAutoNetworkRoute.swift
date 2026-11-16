@@ -3,28 +3,13 @@ import Network
 
 /// Transport-only routing. Owner identity and its Keychain scope never change
 /// when the phone moves between Wi-Fi and cellular networks.
-enum XDriveIOSAutoRouteSafety {
-    static func sameOwner(_ lhs: XDriveNativeOwnerRoot, _ rhs: XDriveNativeOwnerRoot) -> Bool {
-        lhs.instanceID == rhs.instanceID &&
-        lhs.ownerID == rhs.ownerID &&
-        lhs.username == rhs.username &&
-        lhs.rootNodeID == rhs.rootNodeID
-    }
-
-    /// Never replay a write, a partial GET, an SSE stream that already emitted
-    /// bytes, a cancelled task, an HTTP 401/403 or a TLS identity failure.
-    static func mayReplay(_ request: URLRequest, after error: Error,
-                          responseStarted: Bool) -> Bool {
-        guard !responseStarted,
-              ["GET", "HEAD"].contains((request.httpMethod ?? "GET").uppercased()),
-              let failure = error as? URLError else { return false }
-        switch failure.code {
-        case .timedOut, .networkConnectionLost, .notConnectedToInternet,
-             .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
-            return true
-        default:
-            return false
-        }
+extension XDriveIOSAutoRouteSafety {
+    static func sameOwner(_ lhs: XDriveNativeOwnerRoot,
+                          _ rhs: XDriveNativeOwnerRoot) -> Bool {
+        sameIdentity(lhsInstance: lhs.instanceID, lhsOwner: lhs.ownerID,
+                     lhsUsername: lhs.username, lhsRoot: lhs.rootNodeID,
+                     rhsInstance: rhs.instanceID, rhsOwner: rhs.ownerID,
+                     rhsUsername: rhs.username, rhsRoot: rhs.rootNodeID)
     }
 }
 
