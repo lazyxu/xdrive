@@ -36,14 +36,14 @@ test('03 removes the extra personal-cloud tagline', () => {
 })
 test('04 private-IP editor is gated behind a default-closed Advanced disclosure', () => {
   assert.match(ui, /@State private var showAdvancedConnection = false/)
-  assert.match(advanced, /if showAdvancedConnection \\{/)
+  assert.match(advanced, /if showAdvancedConnection \{/)
   assert.match(advanced, /TextField\("192\.168\.2\.4", text: \$model\.lanIPText\)/)
   assert.match(advanced, /native-ios-login-lan-ip/)
   assert.match(advanced, /"高级连接设置", systemImage: "network"/)
   assert.match(uiTest, /testAdvancedConnectionAndLANHelpRemainAvailable/)
 })
 test('05 full route policy is help-only, not permanently on login screen', () => {
-  assert.match(advanced, /if showLANHelp \\{/)
+  assert.match(advanced, /if showLANHelp \{/)
   assert.match(advanced, /登录前检测一次内网 HTTPS/)
   assert.match(ui, /@State private var showLANHelp = false/)
 })
