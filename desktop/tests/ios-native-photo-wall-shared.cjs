@@ -174,7 +174,12 @@ test('busy and empty feedback are one inert SwiftUI presentation, with source-ow
   assert.match(shared, /ProgressView\(message\)/)
   assert.match(shared, /\.accessibilityIdentifier\(accessibilityID\)/)
   assert.match(shared, /\.frame\(maxWidth: \.infinity, minHeight: minHeight, alignment: \.leading\)/)
-  for (const surface of [local, album, cloud, unified]) {
+  // The local continuous wall intentionally composes loading and scoped
+  // retry in one Feedback host; source-specific readers remain outside it.
+  assert.match(local, /XDriveIOSNativePhotoWallFeedback\(/)
+  assert.match(local, /isLoading: loading && total == 0/)
+  assert.match(local, /loadingMessage: "正在读取已授权图库…"/)
+  for (const surface of [album, cloud, unified]) {
     assert.match(surface, /XDriveIOSNativePhotoWallLoadingMessage\(/)
   }
   for (const surface of [map, cluster]) {
@@ -199,7 +204,10 @@ test('Gallery, album and cloud retry UI retains the original scoped callbacks an
   assert.match(unified, /if let message = model\.notice \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)
   assert.match(unified, /canRetry: visible && displayActive && wall\.failure == nil &&\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
   assert.match(unified, /\) \{ retry = UUID\(\) \}/)
-  assert.match(local, /if let failure \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)
+  assert.match(local, /XDriveIOSNativePhotoWallFeedback\(/)
+  assert.match(local, /error: failure/)
+  assert.match(local, /buttonTitle: "重新读取"/)
+  assert.match(local, /\) \{ reload\(\) \}/)
   assert.match(local, /canRetry: authorized && phase == \.active && selected == nil &&\s*!actionBusy && !shareBusy/)
   assert.match(album, /canRetry: !loading && !albumActionBusy && !albumShareBusy &&\s*selected == nil && phase == \.active/)
   assert.match(album, /\) \{ savedOffset = 0; reload\(\) \}/)

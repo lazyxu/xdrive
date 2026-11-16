@@ -126,7 +126,12 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(local, /savedOffset = next\.startOffset/)
   assert.match(local, /restoreAfterViewer\(\)/)
   assert.match(local, /refresh\(at: savedOffset\)/)
-  assert.match(local, /GridItem\(\.adaptive\(minimum: 95, maximum: 150\)/)
+  // The old 64-item local route is retained, but its fixed-width duplicate
+  // grid has been replaced with the same bounded SectionList/Tile as Places.
+  assert.match(local, /page\.items\.filter \{ \$0\.kind != "unsupported" \}/)
+  assert.match(local, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(local, /XDriveIOSNativeSquarePhotoTile\(candidate: candidate, framing: framing\)/)
+  assert.doesNotMatch(local, /GridItem\(\.adaptive\(minimum: 95, maximum: 150\)/)
   if (album.includes('XDriveIOSNativeAlbumVirtualPage(')) {
     // #3670 continuous album uses dynamic-density columns; keep the bound exact.
     assert.match(album, /XDriveIOSNativePhotoWallGrid\(density: density\)/)

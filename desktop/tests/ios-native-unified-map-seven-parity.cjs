@@ -87,7 +87,9 @@ test('G05: location walls use one verified-section renderer and a bounded return
   // then handled by the shared scroll + accessibility-focus presentation helper.
   assert.match(map, /guard active, viewing == nil, let id = viewerReturnID,[\s\S]*?\(previous \+ current\)\.filter\(\{ \$0\.id == id \}\)\.count == 1/)
   assert.match(map, /XDriveIOSNativePhotoWallWindowPolicy\.canRestore\(\s*id, in: \(previous \+ current\)\.map\(\\\.id\),\s*scopeActive: active\)/)
-  assert.match(map, /xdrivePhotoWallFocusVerifiedTile\(\s*id, scroll: scroll, focus: \$focusedTileID\s*\)/)
+  assert.match(map, /xdrivePhotoWallFocusVerifiedTile\(\s*id, scroll: scroll, focus: \$focusedTileID,\s*anchor: alignment \?\? \.center\s*\)/)
+  assert.match(map, /viewerReturnViewport\?\.alignment\(\s*for: id, window: currentWindow/)
+  assert.match(walls, /verifiedID == itemID, window == windowIndex/)
   assert.match(map, /photoButton\(for: row\)\.id\(row\.id\)/)
   assert.match(map, /previous = current\s*current = Array\(selected\.prefix\(48\)\)/)
 })

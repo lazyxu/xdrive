@@ -63,7 +63,14 @@ test('P1-4 live tap and neighbor admission rechecks PhotoKit and Owner Node', ()
 
 test('P1-5 same-window Viewer return preserves pixel scroll and cross-window uses verified focus', () => {
   assert.match(map, /viewerOpeningID = row\.id/)
-  assert.match(map, /viewerOpeningWindow = isNearbyExpansion/)
+  // An explicit current-window capture is required before Viewer admission:
+  // the exact same ID/window keeps pixels, a changed tile uses the
+  // current-window geometry only after its current Owner/source check.
+  assert.match(map, /let openedWindow = isNearbyExpansion \? nearbyWindowIndex : windowIndex/)
+  assert.match(map, /viewerOpeningWindow = openedWindow/)
+  assert.match(map, /viewerReturnViewport = openedFrame\.map/)
+  assert.match(map, /viewerReturnViewport\?\.alignment\(/)
+  assert.match(shared, /verifiedID == itemID, window == windowIndex/)
   assert.match(map, /viewerOpeningID == id && sameWindow/)
   assert.match(map, /xdrivePhotoWallFocusVerifiedTile\(/)
   assert.match(map, /focusedTileID = id/)

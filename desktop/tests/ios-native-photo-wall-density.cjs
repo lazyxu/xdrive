@@ -96,7 +96,10 @@ test('local wall complete-photo option fits the full image within stable square 
   const loader = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
   const checks = read('ios/tests/NativePhotoWallDensityPolicyChecks.swift')
   assert.match(density, /enum XDriveIOSNativePhotoWallFraming:/)
-  assert.match(screen, /@State private var framing: XDriveIOSNativePhotoWallFraming = \.square/)
+  // Appearance-only framing now follows the same key as Gallery/Places;
+  // the private PhotoKit page identity and 64-slot reader are untouched.
+  assert.match(screen, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)\s*private var framing: XDriveIOSNativePhotoWallFraming = \.square/)
+  assert.match(screen, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
   assert.match(screen, /ForEach\(XDriveIOSNativePhotoWallFraming\.allCases\)/)
   assert.match(screen, /native-ios-local-wall-framing/)
   assert.match(screen, /framing: framing, selectionMode: selectionMode/)
