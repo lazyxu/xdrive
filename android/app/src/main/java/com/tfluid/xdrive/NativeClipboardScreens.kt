@@ -239,7 +239,7 @@ internal fun NativeClipboardScreen(
     // Keep all action controls reachable above the five-slot bottom bar on narrow screens.
     // The former unscrollable Column collapsed directed-send/CAS controls to 0px.
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("剪贴板", style = MaterialTheme.typography.headlineSmall)
@@ -287,7 +287,9 @@ internal fun NativeClipboardScreen(
             // Target selection is explicit. A directed v2 message must never
             // be passed to the v1 broadcast send branch.
             Box {
-                OutlinedButton(onClick={targetMenu=true},enabled=!busy) {
+                OutlinedButton(onClick={targetMenu=true},
+                    modifier=Modifier.testTag("native-clipboard-target-selector"),
+                    enabled=!busy) {
                     Text(if (targetID.isEmpty()) "发送范围：当前账号广播" else
                         "定向发送：" + (devices.firstOrNull { it.deviceID == targetID }?.name ?: "设备已失效"))
                 }

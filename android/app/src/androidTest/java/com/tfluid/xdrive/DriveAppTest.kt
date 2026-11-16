@@ -3807,11 +3807,11 @@ class DriveAppTest {
         // visibility gate: retry the actual scroll, never click off-screen.
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching {
-                compose.onNodeWithText("定向发送：Fixture Clip")
+                compose.onNodeWithTag("native-clipboard-target-selector")
                     .performScrollTo().assertIsDisplayed().assertIsEnabled()
             }.isSuccess
         }
-        compose.onNodeWithText("定向发送：Fixture Clip")
+        compose.onNodeWithTag("native-clipboard-target-selector")
             .assertIsDisplayed().assertIsEnabled().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             runCatching {
