@@ -128,7 +128,7 @@ struct XDriveIOSNativeClipboardClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = body
         }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
@@ -170,7 +170,7 @@ struct XDriveIOSNativeClipboardClient {
         }
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
@@ -310,7 +310,7 @@ struct XDriveIOSNativeClipboardClient {
             request.setValue(deviceProof.secret, forHTTPHeaderField: "X-XDrive-Device-Token")
         }
         request.httpShouldHandleCookies = false
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         let session = URLSession(configuration: config, delegate: XDriveIOSClipboardRejectRedirects(),
