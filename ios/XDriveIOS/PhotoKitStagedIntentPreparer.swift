@@ -202,8 +202,7 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
               staged.resources.count == 1,
               let original = staged.resources.first,
               original.role == (role == .still ? "still" : "video"),
-              original.byteCount > 0,
-              validServerFilename(original.originalFilename) else {
+              original.byteCount > 0 else {
             // A Live still must not be independently scheduled without its
             // paired motion original and a Server atomic pair commit.
             throw XDriveIOSPhotoIntentPreparationError.originalNotEligible
@@ -239,24 +238,13 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
         // local asset tag. It is NOT a Server Device token; it only selects
         // a deterministic conflict-free Owner-root filename. The full hash
         // also changes the name when the actual edited original changes.
-        let destinationName: String
-        if let destinationTag {
-            guard destinationTag.utf8.count == 24,
-                  destinationTag.utf8.allSatisfy({
-                      ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
-                  }) else {
-                throw XDriveIOSPhotoIntentPreparationError.originalNotEligible
-            }
-            let source = original.originalFilename as NSString
-            let stem = source.deletingPathExtension
-            let ext = source.pathExtension
-            let prefix = String(stem.prefix(90))
-            let suffix = "-xios-" + destinationTag + "-" + String(fullHash.prefix(12))
-            destinationName = prefix + suffix + (ext.isEmpty ? "" : "." + ext)
-        } else {
-            destinationName = original.originalFilename
-        }
-        guard validServerFilename(destinationName) else {
+        // An imported PhotoKit filename is untrusted metadata, not a Node
+        // destination. Preserve previous safe names exactly; normalize only
+        // unsafe names using the same stable tag and content hash.
+        guard let destinationName = XDriveIOSOriginalBackupFilenamePolicy.destinationName(
+            originalFilename: original.originalFilename,
+            destinationTag: destinationTag, fullSHA256: fullHash
+        ) else {
             throw XDriveIOSPhotoIntentPreparationError.originalNotEligible
         }
 
