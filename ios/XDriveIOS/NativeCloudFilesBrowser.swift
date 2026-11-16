@@ -1432,27 +1432,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     @ViewBuilder private var filesHome: some View {
-        Section {
-            HStack(spacing: 12) {
-                Image(systemName: "externaldrive.fill")
-                    .font(.title2)
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 48, height: 48)
-                    .background(Color.accentColor.opacity(0.10),
-                                in: RoundedRectangle(cornerRadius: XDriveIOSNativeFilesUIStyle.cardRadius))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("我的文件").font(.title3.weight(.semibold))
-                    Text("云端位置 · 收藏目录 · 智能整理")
-                        .font(XDriveIOSNativeFilesUIStyle.metadataFont)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 6)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("native-ios-files-home-overview")
-        }
-        .listRowBackground(Color.clear)
+        // The Browse title already identifies this page. Show real locations
+        // and organization actions immediately without a second introduction.
         // A visible Search affordance on Browse Home opens the same native
         // searchable drawer and progressive Server search. No second reader.
         Section {
@@ -2921,6 +2902,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                         .disabled(!canSelectPage)
                         .accessibilityIdentifier("native-ios-files-multi-select")
                         Divider()
+                    Menu {
                     Picker("显示方式", selection: Binding(
                         get: { viewMode }, set: { chooseFilesViewMode($0) }
                     )) {
@@ -2951,7 +2933,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Toggle("文件夹优先", isOn: $foldersFirst)
                         .disabled(isHome || isGlobalSearch || selecting || model.loading)
                         .accessibilityIdentifier("native-ios-files-folders-first")
-                    Divider()
+                    } label: {
+                        Label("显示与排序", systemImage: "line.3.horizontal.decrease.circle")
+                    }
+                    Menu {
                     Button {
                         openManagement(for: nil, quickAction: .createFolder)
                     } label: {
@@ -2992,6 +2977,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                               batchExport.busy || !batchExport.prepared.isEmpty ||
                               login.owner == nil || !activeQuery.isEmpty)
                     .accessibilityIdentifier("native-ios-files-quick-upload-folder")
+                    } label: {
+                        Label("新建与上传", systemImage: "square.and.arrow.up")
+                    }
+                    Menu {
                     if isGlobalSearch {
                         Button { presentSavedSearches() } label: {
                             Label("保存或管理智能文件夹", systemImage: "folder.badge.gearshape")
@@ -3020,6 +3009,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .disabled(login.owner == nil || selecting)
                     .accessibilityIdentifier("native-ios-files-toolbar-manage-tags")
+                    } label: {
+                        Label("浏览与整理", systemImage: "folder")
+                    }
+                    Menu {
                     Button("撤销最近操作") {
                         if let operation = mostRecentUndo {
                             pendingQuickOperation = .init(action: .undo, operation: operation)
@@ -3044,6 +3037,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .disabled(selecting || model.loading || login.owner == nil)
                     .accessibilityIdentifier("native-ios-files-operations")
+                    } label: {
+                        Label("操作与历史", systemImage: "clock.arrow.circlepath")
+                    }
                     Button {
                         showingClipboardPasteConfirmation = true
                     } label: {
@@ -3074,8 +3070,17 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// the app-wide five-slot rail remains owned by the native dashboard.
     @ViewBuilder private var filesMain: some View {
         VStack(spacing: 0) {
-            // One compact Files-only TOP selector, not a second bottom bar.
-            // Keep its geometry stable during selection to prevent a list jump.
+            switch quickSection {
+            case .recent:
+                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
+            case .browse:
+                filesChrome
+            case .favorites:
+                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
+            }
+            if !selecting {
+            // Place one Files-only compact selector in the thumb zone above the unchanged app navigation.
+            // Hide it when the selection dock is active, so only one Files action row is mounted.
             HStack(spacing: 8) {
                 ForEach(XDriveIOSNativeFilesQuickSection.allCases) { option in
                     Button {
@@ -3118,14 +3123,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             .background(.bar)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("native-ios-files-quick-rail")
-            switch quickSection {
-            case .recent:
-                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
-            case .browse:
-                filesChrome
-            case .favorites:
-                XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
             }
+
         }
     }
 
@@ -4801,23 +4800,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             )
             VStack(alignment: .leading, spacing: 3) {
                 XDriveIOSNativeFilesUIStyle.rowName(entry.node.name)
-                if let path = entry.path {
-                    XDriveIOSNativeFilesUIStyle.metadata(path)
-                }
-                HStack(spacing: 8) {
-                    if !entry.node.isDirectory {
-                        XDriveIOSNativeFilesUIStyle.typeBadge(entry.node)
-                        Text(ByteCountFormatter.string(
-                            fromByteCount: entry.node.size, countStyle: .file
-                        )).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let modifiedDate = entry.node.modifiedDate {
-                        Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
+                XDriveIOSNativeFilesUIStyle.metadata(
+                    XDriveIOSNativeFilesUIStyle.compactMetadata(entry.node, path: entry.path)
+                )
             }
             Spacer(minLength: 6)
         }

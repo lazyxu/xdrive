@@ -11,7 +11,7 @@ enum XDriveIOSNativeFilesUIStyle {
     static let dockLabelFont: Font = .caption2.weight(.semibold)
 
     static func rowName(_ value: String) -> some View {
-        Text(value).font(.subheadline.weight(.medium)).lineLimit(2)
+        Text(value).font(.subheadline.weight(.medium)).lineLimit(1)
     }
 
     static func tileName(_ value: String) -> some View {
@@ -47,6 +47,19 @@ extension XDriveIOSNativeFilesUIStyle {
         }
     }
 
+    /// Compact path-first metadata used across Browse/Recent/Favorites.
+    static func compactMetadata(_ node: XDriveIOSNativeFilesNode, path: String? = nil) -> String {
+        if let path, !path.isEmpty { return path }
+        var parts: [String] = [fileAppearance(node).label]
+        if !node.isDirectory {
+            parts.append(ByteCountFormatter.string(fromByteCount: node.size, countStyle: .file))
+        }
+        if let date = node.modifiedDate {
+            parts.append(XDriveIOSNativeFilesDatePolicy.display(date))
+        }
+        return parts.joined(separator: " · ")
+    }
+
     static func typeBadge(_ node: XDriveIOSNativeFilesNode) -> some View {
         let appearance = fileAppearance(node)
         return Text(appearance.label)
@@ -56,6 +69,45 @@ extension XDriveIOSNativeFilesUIStyle {
             .padding(.vertical, 2)
             .background(appearance.tint.opacity(0.10), in: Capsule())
             .accessibilityLabel("文件类型：" + appearance.label)
+    }
+}
+
+/// Shared iOS-native rendering of the PWA's blue folder and format-band design.
+/// Pure presentation: no extra network request or source MIME guess.
+struct XDriveIOSNativeFilesFallbackIcon: View {
+    let node: XDriveIOSNativeFilesNode
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if node.isDirectory {
+                Image(systemName: "folder.fill")
+                    .resizable().scaledToFit()
+                    .foregroundStyle(LinearGradient(
+                        colors: [
+                            Color(red: 0.49, green: 0.81, blue: 0.94),
+                            Color(red: 0.30, green: 0.68, blue: 0.86)
+                        ], startPoint: .top, endPoint: .bottom))
+            } else {
+                ZStack(alignment: .bottom) {
+                    Image(systemName: "doc.fill")
+                        .resizable().scaledToFit()
+                        .foregroundStyle(Color(uiColor: .secondarySystemBackground))
+                    Image(systemName: "doc")
+                        .resizable().scaledToFit()
+                        .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                    Text(XDriveIOSNativeFilesUIStyle.fileAppearance(node).label)
+                        .font(.system(size: max(7, size * 0.18), weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 3).padding(.vertical, 1)
+                        .background(XDriveIOSNativeFilesUIStyle.fileAppearance(node).tint,
+                                    in: RoundedRectangle(cornerRadius: 2))
+                        .padding(.bottom, size * 0.16)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 

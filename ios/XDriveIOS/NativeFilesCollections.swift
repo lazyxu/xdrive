@@ -1194,12 +1194,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             )
             VStack(alignment: .leading, spacing: 3) {
                 XDriveIOSNativeFilesUIStyle.rowName(item.node.name)
-                HStack(spacing: 6) {
-                    if !item.node.isDirectory {
-                        XDriveIOSNativeFilesUIStyle.typeBadge(item.node)
-                    }
-                    XDriveIOSNativeFilesUIStyle.metadata(item.path)
-                }
+                XDriveIOSNativeFilesUIStyle.metadata(
+                    XDriveIOSNativeFilesUIStyle.compactMetadata(item.node, path: item.path)
+                )
             }
             Spacer(minLength: 4)
         }

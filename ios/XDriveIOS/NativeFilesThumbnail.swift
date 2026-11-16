@@ -157,9 +157,9 @@ struct XDriveIOSNativeFilesThumbnailTile: View {
                     .frame(width: width, height: height)
                     .clipped()
             } else {
-                Image(systemName: XDriveIOSNativeFilesUIStyle.fileAppearance(node).symbol)
-                    .font(.system(size: min(32, max(18, height * 0.46))))
-                    .foregroundStyle(XDriveIOSNativeFilesUIStyle.fileAppearance(node).tint)
+                XDriveIOSNativeFilesFallbackIcon(
+                    node: node, size: min(38, max(22, height * 0.72))
+                )
             }
         }
         .frame(width: width, height: height)
