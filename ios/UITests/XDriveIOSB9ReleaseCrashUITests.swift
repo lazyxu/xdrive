@@ -166,8 +166,28 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         // normal termination. A fixed sleep can race the SwiftUI mount.
         let readiness = app.descendants(matching: .any)
             .matching(identifier: "native-ios-prelogin-build").firstMatch
+        // Published b9 shows the build label directly. The current compact
+        // login intentionally hides diagnostics under its real About section.
+        // Reveal that section via native UI before asserting the same durable
+        // startup state; never treat a collapsed label as a process crash.
+        if !readiness.waitForExistence(timeout: 2) {
+            let about = app.descendants(matching: .any)
+                .matching(identifier: "native-ios-login-about").firstMatch
+            XCTAssertTrue(about.waitForExistence(timeout: 16),
+                          "Neither historical build label nor compact About exists")
+            let loginScroll = app.scrollViews.containing(
+                .any, identifier: "native-ios-login-server").firstMatch
+            XCTAssertTrue(loginScroll.waitForExistence(timeout: 12),
+                          "Real signed-out Login form scroll is unavailable")
+            for _ in 0..<8 {
+                if about.isHittable { break }
+                loginScroll.swipeUp()
+            }
+            XCTAssertTrue(about.isHittable, "Real compact About is not tappable")
+            about.tap()
+        }
         XCTAssertTrue(readiness.waitForExistence(timeout: 16),
-                      "Startup checkpoint indicator missing")
+                      "Startup checkpoint indicator missing after opening About")
         if readiness.label.contains("b9d5f9695826") {
             // The historical published binary has no readiness AX value.
             // Preserve its original 4-second baseline, without claiming
