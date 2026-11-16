@@ -41,8 +41,12 @@ func portableCLIOnlyDistribution(executable, goos string) bool {
 	return !installed
 }
 
-func runCLIOnlyUpdate(ctx context.Context, current, channel, source string, download bool) error {
-	result, err := xupdate.CheckCLIOnlyTargetFromSource(ctx, current, channel, source, runtime.GOOS, runtime.GOARCH)
+func runCLIOnlyUpdate(ctx context.Context, current, channel, source string, download, standalone bool) error {
+	check := xupdate.CheckCLIOnlyTargetFromSource
+	if standalone {
+		check = xupdate.CheckStandaloneCLIOnlyTargetFromSource
+	}
+	result, err := check(ctx, current, channel, source, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return err
 	}
@@ -55,7 +59,11 @@ func runCLIOnlyUpdate(ctx context.Context, current, channel, source string, down
 		fmt.Printf("archive size: %s\n", formatStorageBytes(result.Asset.Size))
 	}
 	if !download {
-		fmt.Printf("run: xd update --cli-only --download --source %s --channel %s\n", source, channel)
+		flag := ""
+		if standalone {
+			flag = " --standalone"
+		}
+		fmt.Printf("run: xd update --cli-only%s --download --source %s --channel %s\n", flag, source, channel)
 		fmt.Println("This checks the CLI-only release, not the Desktop installer.")
 		return nil
 	}
@@ -95,6 +103,9 @@ func runCLIOnlyUpdate(ctx context.Context, current, channel, source string, down
 	return nil
 }
 
+// matchCLIOnlyServerBundle supports both the original Backup-only pair and
+// the separately packaged standalone pair; both require independent GitLab
+// SHA-256, exact source, channel and version matching.
 // matchCLIOnlyServerBundle requires an independently pinned GitLab checksum
 // matching the authenticated Server's exact source Commit and version.
 // CLI-only archives remain download-only, never an install permission.
@@ -115,8 +126,10 @@ func matchCLIOnlyServerBundle(
 				artifact.InstallMode == "manual" &&
 				strings.EqualFold(artifact.SHA256, digest) &&
 				(result.Asset.Size <= 0 || result.Asset.Size == artifact.Size) &&
-				((goos == "linux" && artifact.Filename == "xdrive-backup-linux-amd64.tar.gz") ||
-					(goos == "windows" && artifact.Filename == "xdrive-backup-windows-amd64.zip")) {
+				((goos == "linux" && (artifact.Filename == "xdrive-backup-linux-amd64.tar.gz" ||
+					artifact.Filename == "xdrive-cli-linux-amd64.tar.gz")) ||
+					(goos == "windows" && (artifact.Filename == "xdrive-backup-windows-amd64.zip" ||
+						artifact.Filename == "xdrive-cli-windows-amd64.zip"))) {
 				return artifact, true
 			}
 		}

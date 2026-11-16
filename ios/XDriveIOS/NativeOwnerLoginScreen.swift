@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import UIKit
 
 /// Native Owner-verified app root. A single controller owns the auto runner;
 /// the account card is shown ONLY while signed out, never behind a push route.
@@ -20,6 +21,15 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     @State private var clearSavedLoginConfirm = false
     @State private var emergencyStopBusy = false
     @State private var emergencyStopNotice: String?
+    // Presentation state only. Authentication, Keychain, TLS and backup
+    // protection stay in the existing native model/controllers.
+    @State private var showAdvancedConnection = false
+    @State private var showLANHelp = false
+    @State private var showLoginPreferences = false
+    @State private var showHelpAndEmergency = false
+    @State private var showAbout = false
+    @State private var showErrorDetails = false
+    @State private var showNoticeDetails = false
 
     var body: some View {
         Group {
@@ -42,23 +52,8 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 NavigationStack {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            HStack(spacing: 12) {
-                                Image("Brand")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 48, height: 48)
-                                    .accessibilityLabel("xDrive")
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("xDrive")
-                                        .font(.title.bold())
-                                    Text("iOS 原生客户端")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Text("连接到你的个人云端")
-                                .font(.title3.weight(.semibold))
-
+                            // The navigation bar is the single xDrive brand
+                            // title; no second logo/title/subtitle stack.
                             loginForm
                             if let logoutWarning {
                                 Text(logoutWarning)
@@ -68,44 +63,84 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                             }
 
                             if let warning = model.errorMessage {
-                                Text(warning)
-                                    .foregroundStyle(.red)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Label(compactFeedback(warning, isError: true),
+                                          systemImage: "exclamationmark.triangle")
+                                        .foregroundStyle(.red)
+                                        .font(.footnote)
+                                        .accessibilityIdentifier("native-ios-login-error")
+                                    HStack(spacing: 16) {
+                                        Button(showErrorDetails ? "收起详情" : "查看详情") {
+                                            showErrorDetails.toggle()
+                                        }
+                                        .accessibilityIdentifier("native-ios-login-error-details-toggle")
+                                        if !model.lanIPText.isEmpty &&
+                                           (warning.contains("证书") || warning.contains("HTTPS") ||
+                                            warning.contains("TLS") || warning.contains("第 3 步")) {
+                                            Button("检查内网连接") {
+                                                showAdvancedConnection = true
+                                            }
+                                            .accessibilityIdentifier("native-ios-lan-open-advanced-on-error")
+                                        }
+                                    }
                                     .font(.footnote)
-                                    .accessibilityIdentifier("native-ios-login-error")
-                            }
-                            if model.canRetryStoredSessionForCurrentDraft {
-                                Button("重试恢复已保存的登录") {
-                                    Task { await model.retryStoredSession() }
+                                    if showErrorDetails {
+                                        Text(warning)
+                                            .font(.footnote)
+                                            .textSelection(.enabled)
+                                            .accessibilityIdentifier("native-ios-login-error-detail")
+                                        Text(XDriveIOSNativeBuildIdentity.label)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                            .accessibilityIdentifier("native-ios-prelogin-build")
+                        // Retain the original startup-readiness accessibility signal.
+                        .accessibilityValue(startupReady ? "启动完成" : "正在启动")
+                                        Button("复制诊断信息") {
+                                            // humanMessage() already emits sanitized data;
+                                            // never append username, password or credentials.
+                                            UIPasteboard.general.string =
+                                                String((warning + "\n" +
+                                                    XDriveIOSNativeBuildIdentity.label).prefix(2048))
+                                        }
+                                        .accessibilityIdentifier("native-ios-login-copy-diagnostics")
+                                    }
+                                    // A failed session restore may be retried explicitly,
+                                    // but no stored password is replayed automatically.
+                                    if model.canRetryStoredSessionForCurrentDraft {
+                                        Button("重试恢复已保存的登录") {
+                                            Task { await model.retryStoredSession() }
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .disabled(model.busy)
+                                        .accessibilityIdentifier("native-ios-saved-session-retry")
+                                    }
                                 }
-                                .buttonStyle(.bordered)
-                                .disabled(model.busy)
-                                .accessibilityIdentifier("native-ios-saved-session-retry")
                             }
                             if let notice = model.noticeMessage {
-                                Text(notice)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(compactFeedback(notice, isError: false))
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .accessibilityIdentifier("native-ios-login-notice")
+                                    if notice.count > 70 {
+                                        Button(showNoticeDetails ? "收起操作详情" : "查看操作详情") {
+                                            showNoticeDetails.toggle()
+                                        }
+                                        .font(.footnote)
+                                        .accessibilityIdentifier("native-ios-login-notice-details-toggle")
+                                        if showNoticeDetails {
+                                            Text(notice)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .textSelection(.enabled)
+                                                .accessibilityIdentifier("native-ios-login-notice-detail")
+                                        }
+                                    }
+                                }
                             }
-                            Text(XDriveIOSNativeBuildIdentity.label)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                                .accessibilityIdentifier("native-ios-prelogin-build")
-                                // Expose actual persisted-startup readiness, not
-                                // just the presence of a signed-out login field.
-                                .accessibilityValue(startupReady ? "启动完成" : "正在启动")
-                            // Stop-only operation remains available even
-                            // when login/Keychain or the Server is unavailable.
-                            Button("紧急停止本机相册自动备份", role: .destructive) {
-                                Task { await emergencyStopWithoutAccount() }
-                            }
-                            .disabled(emergencyStopBusy)
-                            .accessibilityIdentifier("native-ios-offline-emergency-stop")
-                            if let emergencyStopNotice {
-                                Text(emergencyStopNotice)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
+                            helpAndEmergency
+                            aboutSection
                         }
                         .padding(24)
                         .frame(maxWidth: 430, alignment: .leading)
@@ -117,6 +152,8 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                         .frame(maxWidth: .infinity)
                     }
                     .background(Color(uiColor: .systemGroupedBackground))
+                    .onChange(of: model.errorMessage) { _ in showErrorDetails = false }
+                    .onChange(of: model.noticeMessage) { _ in showNoticeDetails = false }
                     .navigationTitle("xDrive")
                     .navigationBarTitleDisplayMode(.inline)
                 }
@@ -232,21 +269,35 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         }
     }
 
+    /// A compact default: only HTTPS Server, username, password, and Sign In.
+    /// Advanced/Keychain/backup controls remain available by deliberate tap.
     private var loginForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             if safeStartup {
-                Label("安全启动：本次不自动登录、清理旧凭据或运行前台自动备份。", systemImage: "shield")
+                Label("安全启动：本次不自动登录、清理旧凭据或运行前台自动备份。",
+                      systemImage: "shield")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-startup-safe-mode")
             }
+
             if !model.savedProfiles.isEmpty {
-                Menu("选择已保存的服务器和账号") {
+                Menu {
                     ForEach(model.savedProfiles) { profile in
                         Button(profile.username + " · " + profile.server) {
                             model.chooseSavedProfile(profile)
                         }
                     }
+                    if let selected = model.currentSavedProfile,
+                       model.savedProfiles.contains(selected) {
+                        Divider()
+                        Button("忘记当前服务器和账号资料", role: .destructive) {
+                            clearSavedLoginConfirm = true
+                        }
+                        .accessibilityIdentifier("native-ios-clear-saved-login")
+                    }
+                } label: {
+                    Label("已保存的账号", systemImage: "person.crop.circle")
                 }
                 .accessibilityIdentifier("native-ios-saved-login-profiles")
             }
@@ -262,32 +313,6 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .onChange(of: model.serverText) { _ in
                     model.discardPasswordAfterIdentityEdit()
                 }
-
-            Text("内网 IP（可选）").font(.subheadline.weight(.medium))
-            TextField("192.168.2.4", text: $model.lanIPText)
-                .keyboardType(.numbersAndPunctuation)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("native-ios-login-lan-ip")
-                .onChange(of: model.lanIPText) { _ in
-                    model.discardPasswordAfterIdentityEdit()
-                }
-            Text("登录前检测一次内网 HTTPS；不可达或超时才使用上方域名。登录后固定已选入口，不自动切换；内网证书必须匹配 IP。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if !model.lanIPText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("首次使用或 Caddy 根证书更换后，请连接服务器所在的内网并配对。xDrive 会验证上方域名的证书，再核验内网 IP。配对只在此 App 内生效。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("native-ios-lan-certificate-help")
-                Button("配对或更新内网 HTTPS 证书") {
-                    Task { await model.pairLANHTTPS() }
-                }
-                .buttonStyle(.bordered)
-                .disabled(model.busy || model.serverText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityIdentifier("native-ios-lan-https-pairing")
-            }
 
             Text("用户名").font(.subheadline.weight(.medium))
             TextField("用户名", text: $model.username)
@@ -322,16 +347,17 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .textFieldStyle(.roundedBorder)
             .accessibilityIdentifier("native-ios-login-password")
 
-            // Use an explicit user-action binding: automatic Keychain prefill
-            // must never be confused with a request to revoke a saved secret.
-            Toggle("安全保存当前账号密码", isOn: Binding(
-                get: { model.rememberPassword },
-                set: { model.setRememberPasswordFromUser($0) }
-            ))
-                .accessibilityIdentifier("native-ios-remember-password")
-            Toggle("保持登录", isOn: $model.keepSignedIn)
             Button {
-                Task { await model.signIn() }
+                Task {
+                    // The one primary button also handles an explicitly saved
+                    // password for the exact current HTTPS Server/Owner hint.
+                    // A nonempty manually typed password always takes priority.
+                    if model.password.isEmpty && model.savedProfilePasswordAvailable {
+                        await model.signInWithSavedPassword()
+                    } else {
+                        await model.signIn()
+                    }
+                }
             } label: {
                 HStack {
                     if model.busy { ProgressView() }
@@ -342,36 +368,179 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .buttonStyle(.borderedProminent)
             .disabled(model.busy)
             .accessibilityIdentifier("native-ios-login-submit")
-            if model.savedProfilePasswordAvailable {
-                Button("使用已安全保存的密码重新登录") {
-                    Task { await model.signInWithSavedPassword() }
+
+            // Explicit native buttons give each collapsed section one
+            // reliable 44-pt tap target and a visible, testable open state.
+            compactSectionHeader(
+                "高级连接设置", systemImage: "network", expanded: showAdvancedConnection
+            ) { showAdvancedConnection.toggle() }
+            .accessibilityIdentifier("native-ios-login-advanced-connection")
+            if showAdvancedConnection {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("内网 IP（可选）").font(.subheadline.weight(.medium))
+                    TextField("192.168.2.4", text: $model.lanIPText)
+                        .keyboardType(.numbersAndPunctuation)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("native-ios-login-lan-ip")
+                        .onChange(of: model.lanIPText) { _ in
+                            model.discardPasswordAfterIdentityEdit()
+                        }
+                    if !model.lanIPText.trimmingCharacters(
+                        in: .whitespacesAndNewlines).isEmpty {
+                        Button("配对或更新内网 HTTPS 证书") {
+                            Task { await model.pairLANHTTPS() }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.busy ||
+                            model.serverText.trimmingCharacters(
+                                in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("native-ios-lan-https-pairing")
+                    }
+                    compactSectionHeader(
+                        "内网 HTTPS 使用说明", systemImage: "info.circle",
+                        expanded: showLANHelp
+                    ) { showLANHelp.toggle() }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-lan-certificate-help")
+                    if showLANHelp {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("登录前检测一次内网 HTTPS；仅网络不可达或超时才使用上方域名。登录后固定已选入口，证书必须匹配内网 IP。")
+                            Text("首次使用或 Caddy 根证书更换后，请在服务器所在的内网进行配对；App 会先验证域名证书，再验证内网 IP。")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
                 }
-                .disabled(model.busy)
-                .accessibilityIdentifier("native-ios-saved-password-login")
+                .padding(.top, 8)
             }
 
-            Button("忘记当前服务器和账号资料", role: .destructive) {
-                clearSavedLoginConfirm = true
-            }
-            .accessibilityIdentifier("native-ios-clear-saved-login")
-            .confirmationDialog(
-                "确认只删除当前服务器和账号的本机资料？",
-                isPresented: $clearSavedLoginConfirm,
-                titleVisibility: .visible
-            ) {
-                Button("确认忘记当前账号", role: .destructive) {
-                    backup.cancel()
-                    model.clearSavedLogin()
+            compactSectionHeader(
+                "登录偏好", systemImage: "slider.horizontal.3", expanded: showLoginPreferences
+            ) { showLoginPreferences.toggle() }
+            .accessibilityIdentifier("native-ios-login-preferences")
+            if showLoginPreferences {
+                VStack(alignment: .leading, spacing: 8) {
+                    // Only a direct user toggle may revoke the selected
+                    // Keychain password: automatic prefill must never do so.
+                    Toggle("安全保存当前账号密码", isOn: Binding(
+                        get: { model.rememberPassword },
+                        set: { model.setRememberPasswordFromUser($0) }
+                    ))
+                    .accessibilityIdentifier("native-ios-remember-password")
+                    Toggle("保持登录", isOn: $model.keepSignedIn)
+                        .accessibilityIdentifier("native-ios-keep-signed-in")
                 }
-            } message: {
-                Text("只删除选中服务器和用户名的本机密码档案与匹配的刷新会话，不影响其他账号、照片和备份记录。")
+                .padding(.top, 8)
             }
-
-            Text("仅使用原生 HTTPS 会话；不会读取或复制 PWA Cookie。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .disabled(model.busy)
+        // The destructive action remains guarded by the exact selected
+        // credential and by its original model-side Owner checks.
+        .confirmationDialog(
+            "确认只删除当前服务器和账号的本机资料？",
+            isPresented: $clearSavedLoginConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("确认忘记当前账号", role: .destructive) {
+                backup.cancel()
+                model.clearSavedLogin()
+            }
+        } message: {
+            Text("只删除选中服务器和用户名的本机密码档案与匹配的刷新会话，不影响其他账号、照片和备份记录。")
+        }
+    }
+
+    // This is an emergency OFF operation even while signed out or offline.
+    // Hiding the dangerous button must not make it unreachable without login.
+    private var helpAndEmergency: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            compactSectionHeader(
+                "帮助与紧急操作", systemImage: "questionmark.circle",
+                expanded: showHelpAndEmergency
+            ) { showHelpAndEmergency.toggle() }
+            .accessibilityIdentifier("native-ios-login-help-emergency")
+            if showHelpAndEmergency {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("无法登录时，也可以停止本机自动备份与待执行后台任务。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("紧急停止本机相册自动备份", role: .destructive) {
+                        Task { await emergencyStopWithoutAccount() }
+                    }
+                    .disabled(emergencyStopBusy)
+                    .accessibilityIdentifier("native-ios-offline-emergency-stop")
+                    if let emergencyStopNotice {
+                        Text(emergencyStopNotice)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-offline-emergency-stop-result")
+                    }
+                }
+                .padding(.top, 8)
+            }
+        }
+    }
+
+    private var aboutSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            compactSectionHeader("关于", systemImage: "info.circle", expanded: showAbout) {
+                showAbout.toggle()
+            }
+            .accessibilityIdentifier("native-ios-login-about")
+            if showAbout {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(XDriveIOSNativeBuildIdentity.label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("native-ios-prelogin-build")
+                        // Retain the original startup-readiness accessibility signal.
+                        .accessibilityValue(startupReady ? "启动完成" : "正在启动")
+                    Button("复制版本信息") {
+                        UIPasteboard.general.string = XDriveIOSNativeBuildIdentity.label
+                    }
+                    .accessibilityIdentifier("native-ios-copy-version")
+                }
+                .padding(.top, 8)
+            }
+        }
+    }
+
+    /// A fully tappable native row. A conditional body disappears completely
+    /// when collapsed rather than remaining in a nested accessibility group.
+    private func compactSectionHeader(
+        _ title: String, systemImage: String, expanded: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Label(title, systemImage: systemImage)
+                Spacer(minLength: 8)
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(expanded ? "已展开" : "已收起")
+    }
+
+    private func compactFeedback(_ message: String, isError: Bool) -> String {
+        if isError && message.hasPrefix("第 3 步失败") {
+            return "内网 HTTPS 证书验证失败"
+        }
+        if isError && message.hasPrefix("第 2 步失败") {
+            return "内网 HTTPS 证书配对失败"
+        }
+        if !isError && message.contains("已配对") {
+            return "内网 HTTPS 证书已配对"
+        }
+        let first = message.components(separatedBy: "\n").first ?? message
+        return first.count <= 70 ? first : String(first.prefix(69)) + "…"
     }
 
     /// Native stop-only recovery for an unavailable Owner/Server.

@@ -141,3 +141,52 @@ func TestCLIOnlyGitLabServerPreferenceRequiresIndependentDigest(t *testing.T) {
 		t.Fatal("cross-platform CLI archive selected")
 	}
 }
+
+func TestStandaloneCLIServerFirstRequiresIndependentGitLabProvenance(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	digest := strings.Repeat("b", 64)
+	for _, tc := range []struct{ goos, filename string }{
+		{"linux", "xdrive-cli-linux-amd64.tar.gz"},
+		{"windows", "xdrive-cli-windows-amd64.zip"},
+	} {
+		t.Run(tc.goos, func(t *testing.T) {
+			artifact := client.ReleaseBundleArtifact{
+				Platform: "cli", Filename: tc.filename, BuildCommit: commit,
+				SHA256: digest, Size: 400, InstallMode: "manual", Cached: true,
+			}
+			listing := client.ReleaseBundleListing{
+				Commit: commit, Channel: xupdate.ChannelMaster,
+				ServerVersion: "snapshot", Artifacts: []client.ReleaseBundleArtifact{artifact},
+			}
+			target := xupdate.Result{
+				Commit: commit, Channel: xupdate.ChannelMaster, Latest: "snapshot",
+				UpdateAvailable: true, Asset: xupdate.Asset{Name: tc.filename, Size: 400},
+			}
+			if got, ok := matchCLIOnlyServerBundle(target, listing, digest, tc.goos); !ok ||
+				got.Filename != tc.filename {
+				t.Fatal("source-exact standalone pair was not eligible for Server cache")
+			}
+			if _, ok := matchCLIOnlyServerBundle(target, listing, strings.Repeat("f", 64), tc.goos); ok {
+				t.Fatal("standalone server cache accepted a mismatched independent SHA")
+			}
+			wrong := listing
+			wrong.Commit = strings.Repeat("c", 40)
+			if _, ok := matchCLIOnlyServerBundle(target, wrong, digest, tc.goos); ok {
+				t.Fatal("standalone CLI cross-commit substitution accepted")
+			}
+			wrong = listing
+			wrong.Artifacts = append([]client.ReleaseBundleArtifact(nil), listing.Artifacts...)
+			wrong.Artifacts[0].InstallMode = "manual_test_only"
+			if _, ok := matchCLIOnlyServerBundle(target, wrong, digest, tc.goos); ok {
+				t.Fatal("standalone CLI testing-only package accepted")
+			}
+			other := "linux"
+			if tc.goos == "linux" {
+				other = "windows"
+			}
+			if _, ok := matchCLIOnlyServerBundle(target, listing, digest, other); ok {
+				t.Fatal("cross-platform standalone CLI archive accepted")
+			}
+		})
+	}
+}
