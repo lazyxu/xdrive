@@ -765,7 +765,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             }
         }
         }
-        .padding(.horizontal, 8)
+        // MapKit fills the full safe-area width; source controls and
+        // verified markers retain their own internal touch margins.
         .navigationTitle("云端照片地图")
         .navigationBarTitleDisplayMode(.inline)
         .alert("云端照片地图说明", isPresented: $showingMapHelp) {

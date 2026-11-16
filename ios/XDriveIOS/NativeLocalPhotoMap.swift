@@ -1808,7 +1808,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             }
         }
         }
-        .padding(.horizontal, 8)
+        // Keep the MapKit canvas edge-to-edge in the permitted state. Only
+        // permission/recovery content needs a readable horizontal inset.
+        .padding(.horizontal, authorization == .authorized ? 0 : 12)
         .navigationTitle(album.map { "\($0.name) · 地图" } ??
             (mediaFilter.isAll ? "地图" : "地图 · \(mediaFilter.title)"))
         .navigationBarTitleDisplayMode(.inline)
