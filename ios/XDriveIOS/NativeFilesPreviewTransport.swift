@@ -58,7 +58,7 @@ struct XDriveIOSNativeFilesPreviewReader {
     // Task cancellation still cancels the individual URLSession data task,
     // rather than disrupting another Owner's in-flight preview.
     private static let session: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
