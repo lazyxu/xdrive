@@ -150,9 +150,9 @@ test('all 14 Launcher destinations and 24 native all-page/child process crash jo
   assert.ok(sweep.includes('favoritesDisclosure(app)'))
   assert.ok(files.includes('@AppStorage("xdrive.ios.files.home.favorites-expanded.v1")'))
   // The old container-level modifier overwrote ALL descendant route IDs.
-  assert.match(files, /DisclosureGroup\\(isExpanded: \\$favoriteFoldersExpanded\\)/)
-  assert.match(files, /Text\\("收藏夹和常用收藏"\\)\\s*\\.accessibilityIdentifier\\("native-ios-files-favorites-disclosure"\\)/)
-  assert.doesNotMatch(files, /\\}\\s*\\.accessibilityIdentifier\\("native-ios-files-favorites-disclosure"\\)/)
+  assert.ok(files.includes('DisclosureGroup(isExpanded: $favoriteFoldersExpanded) {'))
+  assert.ok(files.includes('Text("收藏夹和常用收藏")\n                    .accessibilityIdentifier("native-ios-files-favorites-disclosure")'))
+  assert.ok(!files.includes('            }\n            .accessibilityIdentifier("native-ios-files-favorites-disclosure")'))
   assert.ok(files.includes('.accessibilityValue(favoriteFoldersExpanded ? "已展开" : "已折叠")'))
   const denied = fs.readFileSync(
     path.join(root, 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'), 'utf8')
