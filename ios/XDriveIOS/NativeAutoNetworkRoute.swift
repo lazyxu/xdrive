@@ -132,7 +132,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         lock.lock()
         if let old = binding, let verified = old.owner,
            XDriveIOSAutoRouteSafety.sameOwner(verified, owner),
-           verified.origin == owner.origin {
+           verified.origin == owner.origin, old.token != token {
             binding = Binding(id: UUID(), logical: old.logical, domain: old.domain,
                               lan: old.lan, active: old.active, proven: old.proven,
                               owner: owner, token: token,
