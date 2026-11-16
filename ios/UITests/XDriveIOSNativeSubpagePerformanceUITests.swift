@@ -82,6 +82,34 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         reveal(view(id, app: app), app: app)
     }
 
+    /// A native SwiftUI toolbar Menu may expose a menu-item label but not
+    /// its child Button accessibilityIdentifier on iOS 18. Require evidence
+    /// of the opened More menu before the label fallback; never substitute
+    /// the unrelated Files Home list shortcut for a successful toolbar tap.
+    private func filesMoreOrganizer(_ app: XCUIApplication) -> XCUIElement {
+        let item = view("native-ios-files-toolbar-organize-home", app: app)
+        if item.exists && item.isHittable { return item }
+        let nativeItem = app.menuItems["整理浏览首页"].firstMatch
+        if nativeItem.exists && nativeItem.isHittable { return nativeItem }
+        let menuOnly = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "前往文件夹路径…"))
+            .firstMatch
+        XCTAssertTrue(menuOnly.waitForExistence(timeout: 8),
+                      "Real Files toolbar More menu is not open")
+        let choices = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "整理浏览首页"))
+            .allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
+        guard !choices.isEmpty else {
+            XCTFail("Real Files More organizer item is not accessible")
+            return item
+        }
+        let moreFrame = view("native-ios-files-more-options", app: app).frame
+        return choices.min(by: {
+            abs($0.frame.midY - moreFrame.midY) <
+                abs($1.frame.midY - moreFrame.midY)
+        })!
+    }
+
     private func openLauncher(_ feature: String, app: XCUIApplication) {
         tap("native-ios-tab-launcher", app: app)
         let entry = view("native-ios-launcher-\(feature)", app: app)
@@ -133,9 +161,8 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 XCTAssertTrue(menu.waitForExistence(timeout: 15) && menu.isHittable,
                               "Real Files toolbar More menu unavailable")
                 menu.tap()
-                XCTAssertTrue(view("native-ios-files-toolbar-organize-home", app: app)
-                    .waitForExistence(timeout: 15),
-                    "Native Files toolbar organizer unavailable")
+                XCTAssertTrue(filesMoreOrganizer(app).isHittable,
+                              "Native Files toolbar organizer unavailable")
             case "files.home.edit-mode":
                 let edit = view("native-ios-files-home-edit-toggle", app: app)
                 XCTAssertTrue(edit.waitForExistence(timeout: 15))
@@ -351,9 +378,18 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             XCTAssertTrue(option.waitForExistence(timeout: 15) && option.isHittable,
                           "Real Files filtering option was not opened")
             option.tap()
+            // A synthetic UI Owner intentionally has no Server Session. The
+            // filtered request must show a real fail-closed Files error, not
+            // fabricated Node results; the real filter menu stays recoverable.
+            XCTAssertTrue(view("native-ios-files-error-page", app: app)
+                .waitForExistence(timeout: 15),
+                "Files no-Session filter did not fail closed")
             ready = view(id, app: app)
         case "files.home.more-organizer":
-            tap("native-ios-files-toolbar-organize-home", app: app)
+            let item = filesMoreOrganizer(app)
+            XCTAssertTrue(item.isHittable, "Real Files More organizer is not tappable")
+            item.tap()
+            XCTAssertEqual(app.state, .runningForeground)
             ready = app.navigationBars["整理浏览首页"].firstMatch
         case "files.home.edit-mode":
             tap("native-ios-files-home-edit-toggle", app: app)
@@ -610,6 +646,11 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             XCTAssertTrue(menu.label.contains(isDate ? "修改时间" : "文件大小"))
             XCTAssertFalse(menu.label.contains("已筛选"),
                            "Files filter must be reset before next measured trial")
+            XCTAssertFalse(view("native-ios-files-error-page", app: app).exists,
+                           "Resetting Files filter must retire the denied search state")
+            XCTAssertTrue(view("native-ios-files-section-browse", app: app)
+                .waitForExistence(timeout: 15),
+                "Resetting Files filter did not restore Browse")
         case "files.home.more-organizer":
             finishOrganizer(app)
         case "files.home.edit-mode":

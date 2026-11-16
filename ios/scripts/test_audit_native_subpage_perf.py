@@ -291,6 +291,30 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertIn('accessibilityIdentifier("native-ios-gallery-sort-filter-open-filters")', gallery)
         self.assertIn('accessibilityIdentifier("native-ios-shared-photo-time-scale")', shared)
 
+    def test_files_filter_error_recovery_and_real_toolbar_menu_fallback(self):
+        files = (module.ROOT / "ios/XDriveIOS/NativeCloudFilesBrowser.swift").read_text(
+            encoding="utf-8"
+        )
+        suite = module.SOURCE.read_text(encoding="utf-8")
+        # An unavailable Server Session must never drop all filter controls,
+        # leaving a filtered request stranded on a non-recoverable error page.
+        self.assertIn("if isGlobalSearch {\n                        filesHeader", files)
+        self.assertIn('accessibilityIdentifier("native-ios-files-error-page")', files)
+        for marker in ("native-ios-files-search-date-filter",
+                       "native-ios-files-search-size-filter"):
+            self.assertIn(marker, files)
+            self.assertIn(marker, suite)
+        self.assertIn('view("native-ios-files-error-page", app: app)', suite)
+        self.assertIn("Files no-Session filter did not fail closed", suite)
+        self.assertIn("Resetting Files filter must retire the denied search state", suite)
+        self.assertIn("Files filter must be reset before next measured trial", suite)
+        # The toolbar More route must exercise the opened menu, not silently
+        # fall back to a different Home-list action sharing the same title.
+        self.assertIn('app.menuItems["整理浏览首页"]', suite)
+        self.assertIn('matching(NSPredicate(format: "label == %@", "前往文件夹路径…"))', suite)
+        self.assertIn('let item = filesMoreOrganizer(app)', suite)
+        self.assertNotIn('tap("native-ios-files-organize-home", app: app)', suite)
+
     def test_files_search_and_photo_wall_presentation_are_measured(self):
         files = (module.ROOT / "ios/XDriveIOS/NativeCloudFilesBrowser.swift").read_text(encoding="utf-8")
         gallery = (module.ROOT / "ios/XDriveIOS/NativeUnifiedPhotoGallery.swift").read_text(encoding="utf-8")

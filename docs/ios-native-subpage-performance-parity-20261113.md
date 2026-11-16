@@ -246,3 +246,35 @@ per-page report, **not** evidence that the 68 selected Web performance
 workflows are completed on iOS. Only results from the new exact HEAD
 Actions run can be treated as actual measurements; no invented speedup,
 signed iPhone, 100k PhotoKit or server-backed Owner results.
+
+### 2026-11-16 — 49-route native Simulator failure triage and recovery candidate
+
+The exact previous SHA `ed0df95b861f7167a6782fe8b75d16937ca419a8`
+executed [49 genuine XCUITest methods](https://github.com/lazyxu/xdrive/actions/runs/43709327191):
+46 passed and **three failed**, so no complete 147-sample native result or
+Web/iOS numeric parity can be claimed. The failures were
+`files.home.more-organizer` (SwiftUI native Menu omitted the child Button
+accessibility ID), `files.search.date` and `files.search.size` (the
+no-Session filtered request correctly failed closed but the error state
+unmounted its editable filter controls). The follow-up preserves the actual
+More Menu route, requires evidence of the open menu before a native label
+fallback, and keeps the real bounded filter header visible on the denied
+search state. The UI test now explicitly proves the error remains denied
+and that resetting the filter returns to the original Browse UI. All 49
+registered paths, 3 retained trials per route, app CPU/RSS, forward/return
+AX samples, and original screenshots remain mandatory; no skipped or
+synthetic-success tests.
+
+The separate [candidate-mapkit failure](https://github.com/lazyxu/xdrive/actions/runs/43709327073)
+was `testMapCameraLayoutAndUnverifiedGestureNeverClosesTheApp`: the real
+map existed, but `native-ios-local-map-basemap` was absent. That is an
+independent native MapKit visual/AX gate with overlapping scope in the
+consolidated Maps PR #4362, not permission to disable map verification
+or to claim performance acceptance. The 68 selected Web workflow mappings
+remain `not_verified`; real authenticated content, 10k/100k scale,
+first composed media frames, genuine FPS, and 1/4 GiB transfers are still
+separate unmeasured requirements.
+
+**Gate:** keep #4328 Draft until a new exact-HEAD complete CI, IPA,
+real Simulator 49/49, relevant navigation and Final Gate pass. This
+section describes a code-level correction, **not a new macOS run pass**.

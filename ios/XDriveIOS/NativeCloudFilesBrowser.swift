@@ -2594,6 +2594,13 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Label("无法读取当前目录", systemImage: "exclamationmark.triangle")
                         .font(.headline)
                     Text(failure).font(.subheadline).foregroundStyle(.secondary)
+                    if isGlobalSearch {
+                        // The request remains unauthorized without a real Session.
+                        // Retain only the real, bounded search controls so that
+                        // selecting/resetting a filter never traps the user on
+                        // an unrecoverable error page or reveals private rows.
+                        filesHeader
+                    }
                     HStack {
                         Button("重试当前页") { reload() }
                             .accessibilityIdentifier("native-ios-files-retry")
