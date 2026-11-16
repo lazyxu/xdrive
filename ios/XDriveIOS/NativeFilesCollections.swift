@@ -532,11 +532,17 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
 
     private func chooseCollectionViewMode(_ next: String) {
         guard (next == "list" || next == "grid"), viewMode != next else { return }
-        pendingModeSwitchAnchor = XDriveIOSNativeFilesViewModePolicy.anchor(
+        let selectedAnchor = XDriveIOSNativeFilesViewModePolicy.anchor(
             preferred: visibleModeAnchorID ?? lastVisibleItemID,
             loaded: filteredItems.map { $0.node.id }
         )
-        pendingModeSwitchAlignment = visibleModeAnchorID == nil ? nil : visibleModeAlignment
+        pendingModeSwitchAnchor = selectedAnchor
+        // A evicted/re-sorted row must never lend its visual offset to a new Node.
+        pendingModeSwitchAlignment = XDriveIOSNativeFilesViewModePolicy.matchedAlignment(
+            visibleAnchor: visibleModeAnchorID,
+            selectedAnchor: selectedAnchor,
+            measured: visibleModeAlignment
+        )
         modeSwitchTicket = UUID()
         var transaction = Transaction()
         transaction.disablesAnimations = true
@@ -694,15 +700,17 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: viewMode) { next in
                 let ticket = modeSwitchTicket
-                let alignment = pendingModeSwitchAlignment
                 let anchor = pendingModeSwitchAnchor ??
                     XDriveIOSNativeFilesViewModePolicy.anchor(
                         preferred: visibleModeAnchorID ?? lastVisibleItemID,
                         loaded: filteredItems.map { $0.node.id }
                     )
+                let alignment = pendingModeSwitchAnchor == anchor ?
+                    pendingModeSwitchAlignment : nil
                 guard isVisible, model.verified, model.matches(login.owner, kind: kind),
                       let owner = login.owner, let anchor else {
                     pendingModeSwitchAnchor = nil
+                    pendingModeSwitchAlignment = nil
                     return
                 }
                 Task { @MainActor in
@@ -716,7 +724,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                         expectedMode: next, currentMode: viewMode,
                         active: phase == .active && isVisible
                     ) else {
-                        if ticket == modeSwitchTicket { pendingModeSwitchAnchor = nil }
+                        if ticket == modeSwitchTicket {
+                            pendingModeSwitchAnchor = nil
+                            pendingModeSwitchAlignment = nil
+                        }
                         return
                     }
                     var transaction = Transaction()
@@ -911,6 +922,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 isVisible = false
                 modeSwitchTicket = UUID()
                 pendingModeSwitchAnchor = nil
+                pendingModeSwitchAlignment = nil
                 if !viewerRefreshPending && selectedFile == nil &&
                     locateIntent == nil && managementIntent == nil &&
                     quickInfoIntent == nil && quickRenameIntent == nil {
@@ -945,6 +957,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             .onChange(of: kind) { _ in
                 modeSwitchTicket = UUID()
                 pendingModeSwitchAnchor = nil
+                pendingModeSwitchAlignment = nil
+                visibleModeAnchorID = nil
+                visibleModeAlignment = 0
+                visibleModeViewportHeight = 0
                 lastVisibleItemID = nil
                 viewerRefreshPending = false
                 // SwiftUI may reuse a StateObject when switching collection
@@ -970,6 +986,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             .onChange(of: login.owner) { _ in
                 modeSwitchTicket = UUID()
                 pendingModeSwitchAnchor = nil
+                pendingModeSwitchAlignment = nil
+                visibleModeAnchorID = nil
+                visibleModeAlignment = 0
+                visibleModeViewportHeight = 0
                 lastVisibleItemID = nil
                 viewerRefreshPending = false
                 selectedFile = nil
