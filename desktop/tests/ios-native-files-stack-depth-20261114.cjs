@@ -22,7 +22,9 @@ test('iOS 26.6 Files main-thread stack-overflow regression: split every oversize
   assert.match(modal, /private var filesModalsSecondary: some View \{\s*AnyView\(filesModalsPrimary\)/)
   assert.match(modal, /private var filesModals: some View \{\s*AnyView\(filesModalsSecondary\)/)
   const modifiers = modal.match(/\.(?:sheet|alert|confirmationDialog|fullScreenCover)\(/g) || []
-  assert.equal(modifiers.length, 22, 'all 22 originally visible modal modifiers remain')
+  assert.equal(modifiers.length, 23, 'the original 22 plus the verified quick-info sheet must remain')
+  assert.match(modal, /\.sheet\(item: \$quickInfoIntent\) \{ intent in/,
+    'quick-info sheet added on master remains mounted')
   for (const name of ['showingOrganizeHome', 'showingFileOperations', 'showingSavedSearches',
     'showingTagManager', 'batchDestinationIntent', 'managementIntent',
     'versionHistoryIntent', 'selectedFile']) {
