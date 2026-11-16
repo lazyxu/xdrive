@@ -267,9 +267,9 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         // Files may retain Recent/Favorites after a prior tab visit.
         // Reach the actual Browse Home before looking for its lazy rows.
         tap("native-ios-files-section-browse", app: app)
-        XCTAssertTrue(target("native-ios-files-open-root-location", app: app)
-            .waitForExistence(timeout: 15),
-            "Files Browse Home did not mount before opening Operation History")
+        // The Cloud root row is lazy and may be absent at a retained deep
+        // scroll offset. The real Operation History entry is the only
+        // valid proof that this Browse Home route can actually be opened.
         let action = target("native-ios-files-open-operations", app: app)
         // SwiftUI List can surface as UITableView or UICollectionView
         // depending on iOS runtime. Keep a bounded native swipe fallback.
@@ -281,8 +281,12 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         else if collection.exists { list = collection }
         else if scroll.exists { list = scroll }
         for _ in 0..<8 {
-            if action.isHittable { break }
+            if action.exists && action.isHittable { break }
             list.swipeUp()
+        }
+        for _ in 0..<8 {
+            if action.exists && action.isHittable { break }
+            list.swipeDown()
         }
         XCTAssertTrue(action.waitForExistence(timeout: 10),
                       "Files Home operation history entry was not loaded after bounded scrolling")
@@ -417,9 +421,10 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
     private func openFilesSavedSearchesFromBrowse(_ app: XCUIApplication) {
         assertFiles(app)
         tap("native-ios-files-section-browse", app: app)
-        XCTAssertTrue(target("native-ios-files-open-root-location", app: app)
-            .waitForExistence(timeout: 15),
-            "Files Browse Home did not mount before opening Saved Searches")
+        // The Cloud root row lives above the fold in a lazy SwiftUI List.
+        // Actual iOS 18.5 H.264 proves Browse and 智能文件夹 are visible even
+        // when that unrelated row is unmounted. Confirm the REAL saved
+        // searches action below instead of gating on an offscreen sibling.
         let action = target("native-ios-files-open-saved-searches", app: app)
         let table = app.tables.firstMatch
         let collection = app.collectionViews.firstMatch
@@ -429,6 +434,10 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         for _ in 0..<10 {
             if action.exists && action.isHittable { break }
             host.swipeUp()
+        }
+        for _ in 0..<10 {
+            if action.exists && action.isHittable { break }
+            host.swipeDown()
         }
         XCTAssertTrue(action.waitForExistence(timeout: 10),
                       "Files Saved Searches entry was never mounted")
@@ -659,12 +668,25 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         openLocalPhotoSource(app)
         assertLocalPhotoContent(app)
         tap("native-ios-local-timeline-open", app: app)
-        let done = app.navigationBars.buttons["完成"].firstMatch
-        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        // Query the actual PhotoKit timeline sheet's stable button ID; the
+        // generic navigationBars["完成"] selector may rebind to the underlying
+        // parent toolbar on foreground restoration. Still REQUIRE the same
+        // date sheet after Home -> activate; never count auto-dismissal as pass.
+        let done = target("native-ios-local-timeline-done", app: app)
+        XCTAssertTrue(done.waitForExistence(timeout: 15),
+                      "Real PhotoKit date sheet did not present its close action")
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertEqual(app.state, .runningForeground)
-        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        if !done.waitForExistence(timeout: 15) {
+            print("LOCAL_PHOTOKIT_DATE_FOREGROUND_MISSING AX tree:\n\(app.debugDescription)")
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "native-local-date-foreground-missing"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        XCTAssertTrue(done.exists,
+                      "Real PhotoKit timeline date sheet disappeared after foreground")
         done.tap()
         assertLocalPhotoContent(app)
         tap("native-ios-tab-files", app: app)

@@ -54,7 +54,7 @@ test("six new native Gallery/Files child paths are executed and video-audited", 
   }
 })
 
-test("Both Files Home sheet helpers select real Browse before scrolling", () => {
+test("Both Files Home sheet helpers use the real Browse and target row, not an offscreen root", () => {
   const helpers = [
     ["openFilesOperationHistoryFromBrowse",
      "testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages"],
@@ -67,11 +67,16 @@ test("Both Files Home sheet helpers select real Browse before scrolling", () => 
     assert.ok(start >= 0 && end > start, method + " must exist")
     const body = navigation.slice(start, end)
     const browse = body.indexOf('tap("native-ios-files-section-browse", app: app)')
-    const root = body.indexOf('target("native-ios-files-open-root-location", app: app)')
     const row = body.indexOf('let action = target("native-ios-files-open-')
-    assert.ok(browse >= 0 && root > browse && row > root,
-              method + " must activate native Browse and verify Home before lazy scrolling")
-    assert.match(body, /waitForExistence\(timeout: 15\)/)
+    assert.ok(browse >= 0 && row > browse,
+              method + " must tap real Browse and locate a genuine Home action")
+    assert.doesNotMatch(body, /target\("native-ios-files-open-root-location"/,
+                        "An unmounted Cloud root sibling is not proof of Browse navigation")
+    assert.match(body, /if action\.exists && action\.isHittable/)
+    assert.match(body, /\.swipeUp\(\)/)
+    assert.match(body, /\.swipeDown\(\)/)
+    assert.match(body, /XCTAssertTrue\(action\.isHittable/)
+    assert.match(body, /action\.tap\(\)/)
   }
   assert.match(browser, /accessibilityIdentifier\("native-ios-files-open-root-location"\)/)
 })
@@ -130,4 +135,20 @@ test("six additional Gallery Files error and lifecycle stress cases are executed
   assert.match(check, /image\.cropping\(to: contentRect\)/)
   assert.match(check, /context\.draw\(content,/)
   assert.match(stability, /XCUIDevice\.shared\.orientation = \.portrait/)
+})
+
+test("PhotoKit date-sheet foreground uses stable real close ID, not unrelated nav bar", () => {
+  const localTimeline = fs.readFileSync(
+    path.join(root, "ios/XDriveIOS/NativePhotoTimelineBrowser.swift"), "utf8")
+  assert.match(localTimeline,
+    /Button\("完成"\) \{ showingDates = false \}[\s\S]*?accessibilityIdentifier\("native-ios-local-timeline-done"\)/)
+  const start = navigation.indexOf("func testLocalPhotoDateSheetForegroundFilesThenLocal()")
+  const end = navigation.indexOf("\n    func test", start + 5)
+  const body = navigation.slice(start, end > start ? end : undefined)
+  assert.ok(start > 0 && end > start)
+  assert.match(body, /target\("native-ios-local-timeline-done", app: app\)/)
+  assert.match(body, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(body, /LOCAL_PHOTOKIT_DATE_FOREGROUND_MISSING/)
+  assert.match(body, /XCTAssertTrue\(done\.exists,/)
+  assert.match(body, /done\.tap\(\)/)
 })

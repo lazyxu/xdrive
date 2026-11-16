@@ -485,6 +485,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button("完成") { showingDates = false }
+                            .accessibilityIdentifier("native-ios-local-timeline-done")
                     }
                 }
             }
