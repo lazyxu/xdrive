@@ -1377,6 +1377,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     #if DEBUG
     // Test-only, independent, metadata-only PhotoKit inventory: no ID/cache
     // persistence, no thumbnails, no bypass of Full Photos authorization.
+    // Numeric count of the FULL, current-authority verified PhotoKit scan.
+    // A visible-viewport reindex may not overwrite this count. Never cache
+    // 100k media IDs/coordinates or use this Debug value as Viewer authority.
+    @State private var p0WholeLibraryGPSCount: Int?
     @State private var p0IndependentGPSAuditRunning = false
     @State private var p0IndependentGPSAuditResult: String?
     #endif
@@ -1522,7 +1526,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke"),
                    album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
-                   activeCaptureRange == nil, globalViewport == nil,
+                   activeCaptureRange == nil,
+                   p0WholeLibraryGPSCount != nil,
+                   !refinementFailureRequiresRefresh,
                    globalComplete && !busy {
                     HStack(spacing: 0) {
                         Spacer(minLength: 0)
@@ -2322,12 +2328,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     private func runP0IndependentGPSAudit() {
         guard !p0IndependentGPSAuditRunning, mapScope == .library,
               album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
-              activeCaptureRange == nil, globalViewport == nil,
+              activeCaptureRange == nil, !refinementFailureRequiresRefresh,
+              let expected = p0WholeLibraryGPSCount,
               globalComplete, !busy, phase == .active,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
         else { return }
         let ticket = generation
-        let expected = globalLocated
         p0IndependentGPSAuditRunning = true
         p0IndependentGPSAuditResult = nil
         Task { @MainActor in
@@ -2522,6 +2528,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 globalLocated = index.locatedCount
                 globalViewport = viewport
                 globalComplete = true
+                #if DEBUG
+                // Only this completed unrestricted scan proves the whole
+                // library count. Viewport-only scans are not global audits.
+                if viewport == nil { p0WholeLibraryGPSCount = index.locatedCount }
+                #endif
                 globalCameraMoving = false
                 refinementFailureRequiresRefresh = false
                 if let viewport {
@@ -2702,6 +2713,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         globalCameraMoving = false
         refinementFailureRequiresRefresh = false
         #if DEBUG
+        p0WholeLibraryGPSCount = nil
         p0IndependentGPSAuditRunning = false
         p0IndependentGPSAuditResult = nil
         #endif

@@ -308,6 +308,8 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
             -p 'test_audit_native_map_video.py' -v
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
+            -p 'test_audit_native_map_journey.py' -v
           if ! command -v ffmpeg >/dev/null 2>&1; then
             brew install ffmpeg
           fi
@@ -349,9 +351,13 @@ jobs:
           wait "$recorder_pid" || true
           test "$test_status" -eq 0
           test -s "$video"
-          python3 "$GITHUB_WORKSPACE/ios/scripts/audit_native_map_video.py" \
+          # Start at the REAL native MapKit launcher tap (with 2s pre-roll),
+          # not an arbitrary 8s after simctl starts recording SpringBoard.
+          # The same strict <=2 flat frame rule applies throughout every
+          # real Gallery->Map->place->Viewer->Back transition.
+          python3 "$GITHUB_WORKSPACE/ios/scripts/audit_native_map_journey.py" \
             "$video" "$RUNNER_TEMP/native-navigation-results/diagnostics/p0-map-video-audit.json" \
-            --skip-first-seconds 8
+            --xctest-log "$RUNNER_TEMP/native-navigation-results/diagnostics/p0-video-xctest.log"
       - name: Verify native PhotoKit MapKit in dark mode
         if: matrix.source == 'candidate-mapkit'
         shell: bash

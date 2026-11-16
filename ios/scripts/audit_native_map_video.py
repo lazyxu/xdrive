@@ -48,11 +48,21 @@ def classify_frame(frame):
 def audit_frames(frames, *, skip_frames=240, min_observed=120):
     observed = 0
     current_flat = longest_flat = flat_frames = 0
+    pre_flat = pre_flat_run = longest_pre_flat = 0
     for i, frame in enumerate(frames):
+        flat = classify_frame(frame)
         if i < skip_frames:
+            # Startup/Runner frames must be reported, never mislabeled as a
+            # Gallery -> Map -> place -> Viewer transition.
+            if flat:
+                pre_flat += 1
+                pre_flat_run += 1
+                longest_pre_flat = max(longest_pre_flat, pre_flat_run)
+            else:
+                pre_flat_run = 0
             continue
         observed += 1
-        if classify_frame(frame):
+        if flat:
             flat_frames += 1
             current_flat += 1
             longest_flat = max(longest_flat, current_flat)
@@ -64,6 +74,8 @@ def audit_frames(frames, *, skip_frames=240, min_observed=120):
         "physical_iphone_60_120hz_verified": False,
         "proves_zero_unobserved_flicker": False,
         "warmup_skipped_frames": skip_frames,
+        "pre_journey_nearly_white_or_black_frames": pre_flat,
+        "pre_journey_longest_consecutive_flat_frames": longest_pre_flat,
         "observed_frames": observed,
         "nearly_white_or_black_frames": flat_frames,
         "longest_consecutive_flat_content_frames": longest_flat,
