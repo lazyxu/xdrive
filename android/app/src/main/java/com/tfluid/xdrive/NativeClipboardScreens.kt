@@ -14,6 +14,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
@@ -51,6 +53,8 @@ internal fun NativeClipboardScreen(
         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     }
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val epoch = state.nativeUiSessionId
     val actionFence = remember(epoch) { XDriveClipboardSessionFence() }
     var draft by remember(epoch) { mutableStateOf("") }
@@ -481,6 +485,11 @@ internal fun NativeClipboardScreen(
                         message="广播消息回执未确认；请先核对或放弃，不能切换到定向发送。"
                         return@Button
                     }
+                    // A directed-send tap ends editing so the IME cannot conceal the
+                    // real recipient selector when a Server ACK is uncertain.
+                    // The pending wire, verified target, and retry guards stay intact.
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
                     busy = true
                     scope.launch {
                         try {

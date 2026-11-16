@@ -3793,7 +3793,7 @@ class DriveAppTest {
         compose.onNodeWithTag("native-clipboard-directed-send")
             .performScrollTo().assertIsDisplayed().performClick()
         awaitClipboardFixture("exact directed clipboard write") { clipboardWrites.size == 1 }
-        compose.waitUntil(timeoutMillis = 10_000) {
+        awaitClipboardFixture("unknown directed ACK banner") {
             runCatching {
                 compose.onNodeWithText("定向发送回执未知：", substring = true).assertExists()
             }.isSuccess
@@ -3805,7 +3805,7 @@ class DriveAppTest {
         // On the real API-35 emulator the initial scroll may complete before
         // the target button has a visible hit region. Keep the strict real
         // visibility gate: retry the actual scroll, never click off-screen.
-        compose.waitUntil(timeoutMillis = 10_000) {
+        awaitClipboardFixture("visible and enabled recipient selector after unknown ACK") {
             runCatching {
                 compose.onNodeWithTag("native-clipboard-target-selector")
                     .performScrollTo().assertIsDisplayed().assertIsEnabled()
@@ -3813,7 +3813,7 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("native-clipboard-target-selector")
             .assertIsDisplayed().assertIsEnabled().performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
+        awaitClipboardFixture("broadcast menu option after unknown ACK") {
             runCatching {
                 compose.onNodeWithText("当前 Owner 广播").assertIsDisplayed()
             }.isSuccess
