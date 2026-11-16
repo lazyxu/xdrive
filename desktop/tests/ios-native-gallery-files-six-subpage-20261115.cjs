@@ -111,5 +111,7 @@ test('failed search has explicit recovery without exposing an unverified Owner N
   assert.match(error, /if isGlobalSearch \{[\s\S]*?Button\("清除搜索并返回浏览"\) \{ clearSearch\(\) \}/);
   assert.match(error, /native-ios-files-error-clear-search/);
   assert.match(error, /native-ios-files-error-page/);
+  assert.match(native, /tap\("native-ios-files-error-clear-search", app\)/);
+  assert.match(native, /native-ios-files-folder-list/);
   assert.match(files, /private func clearSearch\(\) \{[\s\S]*?activeQuery = ""/);
 });

@@ -323,6 +323,32 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         XCTAssertFalse(app.keyboards.firstMatch.exists,
                        "Files keyboard remained over Gallery People")
         assertVisibleContent(app, label: "Gallery People after Files search")
+        tap("native-ios-tab-files", app)
+        XCTAssertFalse(app.keyboards.firstMatch.exists,
+                       "Retired Files keyboard unexpectedly reappeared over Browse")
+        // A committed Server search survives tab changes. A denied/no-session
+        // result replaces the List with a fail-closed error page; it is NOT
+        // a process crash or a failure to mount the Browse Home by itself.
+        // Recover through a genuine native control before asserting Home.
+        let denial = control("native-ios-files-error-page", app)
+        if denial.waitForExistence(timeout: 8) {
+            XCTAssertFalse(control("native-ios-files-grid", app).exists,
+                           "Unverified Owner search exposed private file tiles")
+            tap("native-ios-files-error-clear-search", app)
+        } else {
+            let clear = control("native-ios-files-clear-search", app)
+            if clear.waitForExistence(timeout: 5) {
+                let results = control("native-ios-files-folder-list", app)
+                for _ in 0..<8 {
+                    if clear.isHittable { break }
+                    if !results.exists { break }
+                    results.swipeDown()
+                }
+                XCTAssertTrue(clear.isHittable,
+                              "Retained global Files search has no reachable clear action")
+                tap("native-ios-files-clear-search", app)
+            }
+        }
         enterFilesBrowse(app)
         XCTAssertFalse(control("native-ios-gallery-people-page", app).exists)
         XCTAssertFalse(control("native-ios-files-operation-history-page", app).exists)
