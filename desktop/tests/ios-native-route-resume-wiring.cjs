@@ -84,7 +84,7 @@ test('mounted native map source picker borrows parent route hints for local MapK
   assert.match(wrapper, /let cloudAllowed = cloudSourceAllowed && ownerSelection\.valid/);
   assert.match(wrapper, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
   assert.match(wrapper, /Picker\("地图照片来源", selection: \$source\)/);
-  assert.match(wrapper, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/);
+  assert.match(wrapper, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/);
   assert.doesNotMatch(wrapper, /@State private var localMapScope|@State private var localMapPageOffset/);
 });
 
@@ -167,7 +167,7 @@ test('outgoing cloud/map focus events cannot overwrite a different native Galler
   assert.match(ui, /case \.map:[\s\S]*?onFocusChange: \{\s*updateGalleryFocus\(\s*\$0, from: \.map, expectedOwnerKey: focusOwnerKey/);
   assert.doesNotMatch(ui, /onFocusChange: \{ galleryFocused = \$0 \}/);
   assert.match(focusPolicy, /gallerySource == callbackSource/);
-  assert.match(focusPolicy, /ownerVerified && tab == "gallery"/);
-  assert.match(ui, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
+  assert.match(focusPolicy, /tab == "gallery" && gallerySource == callbackSource &&[\s\S]*?callbackSource == "map" \|\|[\s\S]*?callbackSource == "cloud" && ownerVerified/);
+  assert.match(ui, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)[\s\S]*?galleryFocused = gallerySource == \.map/);
   assert.match(ui, /private func resetNavigation\(\) \{\s*galleryFocusGeneration = UUID\(\)/);
 });

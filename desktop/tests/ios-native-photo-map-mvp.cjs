@@ -408,7 +408,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   const progressIndex = library.indexOf('ProgressView(album == nil ? "正在读取照片位置…" : "正在读取相册位置…")')
   assert.ok(mapIndex >= 0 && progressIndex > mapIndex,
     'MapKit must stay on-screen during initial scan, with progress beside it')
-  assert.match(library, /if globalComplete && globalCells\.isEmpty \{[\s\S]*?\}\s*\/\/ Keep MapKit mounted/)
+  assert.match(library, /if globalComplete && globalCells\.isEmpty \{[\s\S]*?\}\s*\/\/ A real PhotoKit audit must own finite, hittable layout\.[\s\S]*?#if DEBUG[\s\S]*?p0WholeLibraryGPSCount != nil,[\s\S]*?\.frame\(minWidth: 190, minHeight: 44\)[\s\S]*?\.layoutPriority\(10\)[\s\S]*?#endif\s*\/\/ Keep MapKit mounted/)
   assert.match(library, /items: \[\], globalCells: globalComplete \? globalCells : provisionalCells,\s*revision: mapRevision, mapType: mapType, cameraReturn: globalCamera,\s*focusRequestID: currentLocation\.requestID,\s*focusCamera: currentLocation\.camera,\s*showsUserDot: currentLocation\.showsUserDot,\s*provisional: !globalComplete && !provisionalCells\.isEmpty/)
   assert.match(localMap, /private var refinedViewportIsCurrent: Bool \{\s*\/\/ Scanned-incomplete cells[\s\S]*?guard globalComplete, !busy else \{ return false \}/)
   assert.match(library, /canSelectCells: refinedViewportIsCurrent/)

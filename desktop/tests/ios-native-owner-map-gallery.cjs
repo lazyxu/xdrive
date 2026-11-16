@@ -210,7 +210,7 @@ test('single native Gallery map entry exposes local and Owner cloud sources with
   assert.match(map, /Picker\("地图照片来源", selection: \$source\)/)
   assert.match(map, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/)
   assert.match(map, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange,\s*cameraReturn: cloudMapCamera,\s*onCameraChange: \{ next in[\s\S]*?cloudMapCamera = next/);
-  assert.match(map, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
+  assert.match(map, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/)
   assert.doesNotMatch(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
   assert.doesNotMatch(map, /@State private var localMapScope|@State private var localMapPageOffset/)
 })
@@ -229,7 +229,7 @@ test('cloud MapKit restores the same-Owner camera and selected map source after 
   assert.match(make, /map\.setRegion\(initialCamera, animated: false\)[\s\S]*?map\.delegate = context\.coordinator/)
   assert.match(map, /initialCamera: cameraReturn \?\? camera/)
   assert.match(map, /onCamera: \{ next in\s*camera = next\s*onCameraChange\?\(next\)/)
-  assert.match(map, /\.onAppear \{\s*if let cameraReturn \{ camera = cameraReturn \}[\s\S]*?reload\(\)/)
+  assert.match(map, /\.onAppear \{\s*if onFocusChange != nil \{\s*focused = true\s*onFocusChange\?\(true\)\s*\}\s*if let cameraReturn \{ camera = cameraReturn \}\s*if overview == nil && !busy && phase == \.active \{ reload\(\) \}/)
   assert.match(dashboard, /mapSource = \.local\s*cloudMapCamera = nil/)
   assert.doesNotMatch(dashboard, /UserDefaults\.set\(cloudMapCamera|navigationRouteStore\.save\([^)]*cloudMapCamera/)
 })
@@ -321,7 +321,7 @@ test('native map source uses one navigation menu instead of a permanently stacke
   assert.match(root, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?mapScope: \$localMapScope,[\s\S]*?offset: \$localMapPageOffset/)
   assert.match(root, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?cameraReturn: cloudMapCamera/);
   assert.match(root, /guard source == \.cloud, let expectedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?cloudMapCamera = next/)
-  assert.match(root, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
+  assert.match(root, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/)
 })
 
 

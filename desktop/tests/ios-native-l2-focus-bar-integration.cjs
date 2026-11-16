@@ -31,7 +31,7 @@ test('cloud and album Viewer return uses source-local L2 and explicit restore ac
   assert.match(wall, /if selected != nil \{\s*model\.suspendForViewer\(\)/);
   assert.match(wall, /focusedBrowsing = false\s*onFocusChange\?\(false\)\s*accessibilityFocusedMediaID = nil\s*model\.suspendForNavigation\(\)/);
   assert.match(shell, /private func resetNavigation\(\) \{\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
-  assert.match(shell, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
+  assert.match(shell, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)[\s\S]*?galleryFocused = gallerySource == \.map/);
   assert.match(shell, /\.onChange\(of: tab\) \{ next in\s*galleryFocusGeneration = UUID\(\)\s*if next != \.gallery \{ galleryFocused = false \}/);
 });
 
@@ -47,7 +47,7 @@ test('rotation changes only presentation, not source identity, L2, or L3 Viewer'
   const end = shell.indexOf('private func closeGalleryMap(', start)
   assert.ok(start >= 0 && end > start)
   const route = shell.slice(start, end)
-  assert.match(route, /galleryFocusGeneration = UUID\(\)\s*galleryFocused = false\s*if source == \.map \|\| source == \.local \{ localMapJump = nil \}\s*gallerySource = source\s*tab = \.gallery/)
+  assert.match(route, /galleryFocusGeneration = UUID\(\)[\s\S]*?galleryFocused = source == \.map\s*if source == \.map \|\| source == \.local \{ localMapJump = nil \}\s*gallerySource = source\s*tab = \.gallery/)
   assert.match(route, /if source == \.map \{[\s\S]*?mapReturnGallerySource/)
   assert.match(route, /mapReturnOwnerScopeKey = mapReturnGallerySource != nil/);
   assert.match(shell, /case \.files:\s*tab = \.files/);

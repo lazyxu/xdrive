@@ -72,7 +72,7 @@ test('failed PhotoKit refinement never restores an old location or VoiceOver sel
   assert.match(map, /guard !globalCameraMoving, let current = globalCamera else/)
   assert.match(map, /guard !refinementFailureRequiresRefresh else \{ return false \}/)
   assert.match(refinement, /if !refinementFailureRequiresRefresh,\s*let cached = recentVerifiedWindows\.first/)
-  assert.match(scan, /globalComplete = true\s*globalCameraMoving = false\s*refinementFailureRequiresRefresh = false/)
+  assert.match(scan, /globalComplete = true\s*#if DEBUG[\s\S]*?if viewport == nil \{ p0WholeLibraryGPSCount = index\.locatedCount \}\s*#endif\s*globalCameraMoving = false\s*refinementFailureRequiresRefresh = false/)
   assert.match(map, /globalCameraMoving = false\s*refinementFailureRequiresRefresh = false\s*error = nil\s*mapRevision = UUID\(\)/)
   assert.match(map, /guard !XDriveIOSNativeLocalMapAutoRefinePolicy\.shouldRefine\(\s*visible, scanned: globalViewport/)
   assert.match(map, /return XDriveIOSNativeLocalMapSpatialPolicy\.containsViewport\(\s*scanned, current: visible/)
