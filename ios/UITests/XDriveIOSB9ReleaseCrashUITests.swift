@@ -168,11 +168,20 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             .matching(identifier: "native-ios-prelogin-build").firstMatch
         XCTAssertTrue(readiness.waitForExistence(timeout: 16),
                       "Startup checkpoint indicator missing")
-        let ready = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", "启动完成"),
-            object: readiness)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed,
-                       "Login mounted, but startup never reached durable ready")
+        if readiness.label.contains("b9d5f9695826") {
+            // The historical published binary has no readiness AX value.
+            // Preserve its original 4-second baseline, without claiming
+            // that comparator proves durable startup. CI treats it separately.
+            Thread.sleep(forTimeInterval: 4)
+        } else {
+            // Current candidate must expose and reach the actual .ready state.
+            // Do not silently fall back if its readiness signal is missing.
+            let ready = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "启动完成"),
+                object: readiness)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed,
+                           "Login mounted, but startup never reached durable ready")
+        }
         alive(app, "startup-stabilized")
         app.terminate()
         app.launchArguments = []
