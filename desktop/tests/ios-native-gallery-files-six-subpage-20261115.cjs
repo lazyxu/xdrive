@@ -7,6 +7,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..', '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const native = read('ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift');
+const stability = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift');
 const workflow = read('.github/workflows/ios-native-navigation-runtime.yml');
 const watcher = read('ios/scripts/capture-navigation-smoke-frames.py');
 const h264 = read('ios/scripts/files_ui_transition_video.py');
@@ -59,8 +60,8 @@ test('candidate-gallery-files must actually RUN the six child tests in macOS Xco
   assert.match(workflow, /xcodebuild test/);
   assert.match(workflow, /resultBundlePath/);
   assert.match(workflow, /-parallel-testing-enabled NO/);
-  assert.match(workflow, /--minimum 32/,
-    'all 32 separate real navigation clips must be audited without opt-out');
+  assert.match(workflow, /--minimum 38/,
+    'all 38 separate real navigation clips must be audited without opt-out');
   for (const name of journeys) {
     assert.match(watcher, new RegExp('"' + name + '"'));
   }
@@ -114,4 +115,27 @@ test('failed search has explicit recovery without exposing an unverified Owner N
   assert.match(native, /tap\("native-ios-files-error-clear-search", app\)/);
   assert.match(native, /native-ios-files-folder-list/);
   assert.match(files, /private func clearSearch\(\) \{[\s\S]*?activeQuery = ""/);
+});
+
+test('six additional real Files/Gallery transitions are H.264-audited, including rotation and search', () => {
+  const cases = [
+    'testFilesHomeDeepScrollTabReturnKeepsQuickNavigation',
+    'testFilesSearchFocusThenGalleryReturnPreservesShell',
+    'testGalleryFilesRotateLandscapeAndReturnPortrait',
+    'testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank',
+    'testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes',
+    'testFilesHomeAfterRepeatedNativeGallerySourceChanges',
+  ];
+  assert.equal(new Set(cases).size, 6);
+  for (const name of cases) {
+    assert.match(h264, new RegExp('"' + name + '"'), name + ' must have a real video target');
+    const start = stability.indexOf('func ' + name + '()');
+    assert.ok(start >= 0, name + ' actual XCUITest is missing');
+    const next = stability.indexOf('\n    func test', start + 5);
+    const body = stability.slice(start, next >= 0 ? next : undefined);
+    assert.match(body, /waitForRealH264RecordingPrelude\(\)/, name + ' missing recorder pre-roll');
+    assert.match(body, /select\("native-ios-tab-/,
+      name + ' must tap a real native Gallery or Files tab');
+  }
+  assert.match(workflow, /--minimum 38/);
 });

@@ -456,6 +456,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     func testGalleryFilesRotateLandscapeAndReturnPortrait() {
         let device = XCUIDevice.shared
         let app = launch()
+        waitForRealH264RecordingPrelude()
         defer { device.orientation = .portrait }
         select("native-ios-tab-files", in: app)
         checkFilesHome(app)
@@ -485,6 +486,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesHomeDeepScrollTabReturnKeepsQuickNavigation() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         let list = app.descendants(matching: .any)
             .matching(identifier: "native-ios-files-home-list").firstMatch
@@ -516,6 +518,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesSearchFocusThenGalleryReturnPreservesShell() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         let search = app.searchFields["搜索全部文件"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 15))
@@ -667,6 +670,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesHomeAfterRepeatedNativeGallerySourceChanges() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for source in ["albums", "unified", "originals", "unified"] {
             select("native-ios-gallery-source-\(source)", in: app)
             checkGallery(app)
@@ -720,6 +724,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         select("native-ios-files-open-root-location", in: app)
         XCTAssertTrue(target("native-ios-files-error-page", in: app)
@@ -915,6 +920,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         let search = app.searchFields["搜索全部文件"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 15))
