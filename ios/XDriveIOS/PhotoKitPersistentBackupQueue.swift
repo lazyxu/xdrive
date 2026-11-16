@@ -138,6 +138,31 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         }
         let pending = try store.pending(limit: limit)
         guard !pending.isEmpty else { return [] }
+        let visible = try currentVisibleCandidates(pending, epoch: epoch)
+        // Keep normal newest-first priority when at least one head item is
+        // visible. Invisible items remain pending: Limited authorization or
+        // an incomplete delete notification is not proof of deletion.
+        if !visible.isEmpty || pending.count < limit { return visible }
+
+        // Without bounded rotation, 64 invisible head entries can starve
+        // every newer/older eligible original for every subsequent tick.
+        // This read-only cursor never settles an item or advances history.
+        let next = try store.pendingBeyondInvisibleHead(limit: limit)
+        let eligible = try currentVisibleCandidates(next, epoch: epoch)
+        if !eligible.isEmpty {
+            // The writer caps each automatic pass at 20 new originals.
+            // Returning a 64-item page does not prove all were uploaded.
+            // Revisit this page until every visible member settles.
+            try store.repeatPendingPageAfterVisibleProgress()
+        }
+        return eligible
+    }
+
+    private func currentVisibleCandidates(
+        _ pending: [XDriveIOSPhotoBackupChangeQueueStore.Pending],
+        epoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot
+    ) throws -> [Candidate] {
+        guard !pending.isEmpty else { return [] }
         let identifiers = pending.map(\.localIdentifier)
         let fetched = PHAsset.fetchAssets(
             withLocalIdentifiers: identifiers, options: nil
@@ -150,9 +175,7 @@ actor XDriveIOSPhotoKitPersistentBackupQueue {
         try verifyAuthorization(stillMatches: epoch)
         return pending.compactMap { row in
             guard let asset = assets[row.localIdentifier] else {
-                // Missing from the currently authorized fetch is not proof of
-                // deletion under Limited access. Persistent delete events
-                // alone move the row to missingLocal.
+                // Missing from the current grant is not a delete receipt.
                 return nil
             }
             let kind: String

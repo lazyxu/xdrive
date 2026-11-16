@@ -572,3 +572,99 @@ struct XDriveIOSNativeFilesSavedSearchesScreen: View {
         model.perform(.reorder(ids), login: login)
     }
 }
+
+
+// Read-only Browse Home shortcuts, projected from the same verified Saved
+// Search API/model as the management screen. No cached rule, guessed Owner or
+// provisional server response is allowed to become a navigable shortcut.
+struct XDriveIOSNativeFilesHomeSavedSearchShortcuts: View {
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let expectedOwner: XDriveNativeOwnerRoot
+    let onManage: () -> Void
+    let onOpen: (XDriveIOSNativeFilesSavedSearch) -> Void
+    @StateObject private var model: XDriveIOSNativeFilesSavedSearchModel
+    @Environment(\.scenePhase) private var phase
+
+    init(login: XDriveIOSNativeOwnerLoginModel,
+         expectedOwner: XDriveNativeOwnerRoot,
+         onManage: @escaping () -> Void,
+         onOpen: @escaping (XDriveIOSNativeFilesSavedSearch) -> Void) {
+        self.login = login
+        self.expectedOwner = expectedOwner
+        self.onManage = onManage
+        self.onOpen = onOpen
+        _model = StateObject(
+            wrappedValue: XDriveIOSNativeFilesSavedSearchModel(owner: expectedOwner)
+        )
+    }
+
+    private var currentOwner: Bool {
+        login.hasLocalOwnerSession &&
+            XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
+    }
+
+    var body: some View {
+        Group {
+            if currentOwner && model.matches(login.owner) {
+                ForEach(Array(model.items.prefix(4))) { saved in
+                    Button {
+                        guard currentOwner, phase == .active, !model.loading,
+                              model.matches(login.owner), model.items.contains(saved),
+                              XDriveIOSNativeFilesSavedSearchPolicy.valid(saved)
+                        else { return }
+                        onOpen(saved)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "folder.badge.gearshape")
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 32)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(saved.name).font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
+                                Text(saved.query.isEmpty ? "按筛选条件" : saved.query)
+                                    .font(XDriveIOSNativeFilesUIStyle.metadataFont)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(minHeight: XDriveIOSNativeFilesUIStyle.rowHeight)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("native-ios-files-home-saved-search-\(saved.id)")
+                }
+                if model.items.count > 4 {
+                    Button("查看全部 \(model.items.count) 个智能文件夹", action: onManage)
+                        .accessibilityIdentifier("native-ios-files-home-saved-search-all")
+                }
+            } else if currentOwner && model.loading {
+                ProgressView("正在验证智能文件夹…")
+            } else if currentOwner && model.status != nil {
+                Button("重新读取智能文件夹") {
+                    guard phase == .active else { return }
+                    model.load(login: login)
+                }
+                .accessibilityIdentifier("native-ios-files-home-saved-search-retry")
+            }
+        }
+        .onAppear {
+            if currentOwner && phase == .active { model.load(login: login) }
+        }
+        .onChange(of: phase) { next in
+            if next != .active {
+                model.invalidate()
+            } else if currentOwner {
+                model.load(login: login)
+            }
+        }
+        .onChange(of: login.owner) { owner in
+            if !XDriveIOSNativePhotoOwnerScope.matches(owner, expectedOwner) {
+                model.invalidate()
+            }
+        }
+        .onDisappear { model.invalidate() }
+    }
+}
