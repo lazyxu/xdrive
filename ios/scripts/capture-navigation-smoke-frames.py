@@ -177,6 +177,15 @@ MINIMAL_TARGETS = {
     # by the same bounded Simulator frame observer after branch integration.
     "testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank",
     "testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership",
+    # Each new child route also has its own required H.264 video. Keep just
+    # a lightweight real first-tap/screenshot sample here to avoid competing
+    # with the dedicated video recorder's 10-Hz post-tap audit.
+    "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
+    "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
+    "testFilesCloudDenialThenQuickSectionsKeepNativeContent",
+    "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
+    "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
+    "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
 }
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)

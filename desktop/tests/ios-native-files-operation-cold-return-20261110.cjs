@@ -80,12 +80,25 @@ test('11 native foreground return under operation-history sheet is exercised wit
   assert.match(ui, /XCUIDevice.shared.press\(\.home\)[\s\S]*?app.activate\(\)/)
   assert.match(ui, /assertVisiblePixels\(app, route: "Gallery after operations foreground"\)/)
 })
-test('12 all 70 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
+test('12 all 76 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
   const a = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
   const names = [...a.matchAll(/func (test\w+)\(\)/g), ...ui.matchAll(/func (test\w+)\(\)/g)]
     .map(x => x[1])
   const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(x => x[1]))
-  assert.equal(names.length, 70)
+  assert.equal(names.length, 76)
+  assert.equal(new Set(names).size, 76)
+  const sixRealChildRoutes = [
+    "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
+    "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
+    "testFilesCloudDenialThenQuickSectionsKeepNativeContent",
+    "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
+    "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
+    "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+  ]
+  for (const name of sixRealChildRoutes) {
+    assert.ok(names.includes(name), name + ' genuine XCTest missing')
+    assert.ok(registered.has(name), name + ' live screenshot registration missing')
+  }
   assert.deepEqual(names.filter(n => !registered.has(n)), [])
 })
 test('13 operation-history regression runs in the required unsigned IPA workflow', () => {
