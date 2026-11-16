@@ -54,7 +54,7 @@ def navigation_start_seconds(log, movie_created, *, preroll_seconds=2):
     if not (0 <= preroll_seconds <= 3):
         raise ValueError("navigation pre-roll must be 0..3 seconds")
     testcase = "testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted"
-    if not re.search(r"Test Case .*" + testcase + r"' passed", log):
+    if not re.search(r"Test Case .*" + testcase + r"\]'\s+passed", log):
         raise ValueError("the genuine real-device-route XCTest did not pass")
     start_match = re.search(
         r"Test Suite 'XDriveIOSMapNavigationRuntimeUITests' started at "
