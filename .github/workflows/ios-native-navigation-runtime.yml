@@ -182,25 +182,40 @@ jobs:
           python3 -m py_compile ios/scripts/clipboard-owner-https-fixture.py
           # A fresh short-lived CA/leaf, installed only in this job's iPhone
           # Simulator. No bypass of ATS, trust, hostname/IP SAN or redirects.
+          cat > "$dir/ca.cnf" <<'CA'
+          [ req ]
+          default_md = sha256
+          distinguished_name = dn
+          prompt = no
+          x509_extensions = v3_ca
+          [ dn ]
+          CN = xDrive Temporary CI Clipboard Root
+          [ v3_ca ]
+          subjectKeyIdentifier = hash
+          authorityKeyIdentifier = keyid:always,issuer
+          basicConstraints = critical,CA:TRUE,pathlen:0
+          keyUsage = critical,keyCertSign,cRLSign
+          CA
           openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 2 \
             -keyout "$dir/ca.key" -out "$dir/ca.pem" \
-            -subj '/CN=xDrive Temporary CI Clipboard Root' \
-            -addext 'basicConstraints=critical,CA:TRUE' \
-            -addext 'keyUsage=critical,keyCertSign,cRLSign'
+            -config "$dir/ca.cnf" -extensions v3_ca
           openssl req -new -newkey rsa:2048 -nodes \
             -keyout "$dir/leaf.key" -out "$dir/leaf.csr" \
             -subj '/CN=127.0.0.1'
           cat > "$dir/leaf.ext" <<'EXT'
-          basicConstraints=critical,CA:FALSE
-          keyUsage=critical,digitalSignature,keyEncipherment
-          extendedKeyUsage=serverAuth
-          subjectAltName=IP:127.0.0.1,DNS:localhost
+          [ v3_server ]
+          subjectKeyIdentifier = hash
+          authorityKeyIdentifier = keyid,issuer
+          basicConstraints = critical,CA:FALSE
+          keyUsage = critical,digitalSignature,keyEncipherment
+          extendedKeyUsage = serverAuth
+          subjectAltName = IP:127.0.0.1,DNS:localhost
           EXT
           echo "CI_CLIPBOARD_TLS_STAGE sign short-lived leaf"
           openssl x509 -req -in "$dir/leaf.csr" -CA "$dir/ca.pem" \
             -CAkey "$dir/ca.key" -CAcreateserial -out "$dir/leaf.pem" \
-            -days 2 -sha256 -extfile "$dir/leaf.ext"
-          openssl verify -CAfile "$dir/ca.pem" "$dir/leaf.pem"
+            -days 2 -sha256 -extfile "$dir/leaf.ext" -extensions v3_server
+          openssl verify -purpose sslserver -CAfile "$dir/ca.pem" "$dir/leaf.pem"
           echo "CI_CLIPBOARD_TLS_STAGE install root only into genuine Simulator keychain"
           python3 - <<'PY'
           import os, subprocess, time
