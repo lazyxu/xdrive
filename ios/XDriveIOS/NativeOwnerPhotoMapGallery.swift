@@ -222,6 +222,7 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
 
     private func setup() {
         frame = XDriveIOSNativeMapMarkerVisualPolicy.frame
+        XDriveIOSNativeMapMarkerVisualPolicy.decorate(self)
         centerOffset = XDriveIOSNativeMapMarkerVisualPolicy.centerOffset
         collisionMode = .circle
         displayPriority = .defaultHigh
@@ -262,8 +263,15 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
         accessibilityHint = enabled ? "双击打开已核对的地点照片" : nil
     }
 
+    override func setSelected(_ selected: Bool, animated: Bool) {
+        super.setSelected(selected, animated: animated)
+        XDriveIOSNativeMapMarkerVisualPolicy.updateSelection(
+            selected, view: self, animated: animated)
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
+        transform = .identity
         imageView.image = nil
         placeholder.isHidden = false
         badge.text = nil
