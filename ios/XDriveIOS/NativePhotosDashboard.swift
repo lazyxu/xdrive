@@ -421,6 +421,11 @@ struct XDriveIOSNativePhotosDashboard: View {
             // the durable plan without changing the logged-in Owner.
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             backup.refresh(owner: login.owner)
+            // Native Photos map is immersive by default after foregrounding.
+            // The map's explicit "显示底部导航" action can still reveal chrome.
+            if tab == .gallery && gallerySource == .map {
+                galleryFocused = true
+            }
         }
         .onChange(of: ownerScopeKey) { _ in
             transfers.selectOwner(login.owner)
@@ -477,7 +482,10 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .onChange(of: gallerySource) { _ in
             galleryFocusGeneration = UUID()
-            galleryFocused = false
+            // Ordinary photo walls retain the full dashboard chrome, but
+            // opening the native photo map must not sandwich the MapKit canvas
+            // between backup/source strips and the five-slot tab bar.
+            galleryFocused = gallerySource == .map
         }
     }
 
@@ -1103,7 +1111,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             mapReturnOwnerScopeKey = nil
         }
         galleryFocusGeneration = UUID()
-        galleryFocused = false
+        // Preserve the same map instance/camera. Only the surrounding
+        // Dashboard chrome changes; no PhotoKit/Owner Reader restarts.
+        galleryFocused = source == .map
         if source == .map || source == .local { localMapJump = nil }
         gallerySource = source
         tab = .gallery
