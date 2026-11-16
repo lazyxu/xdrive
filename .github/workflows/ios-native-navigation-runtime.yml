@@ -370,11 +370,11 @@ jobs:
             brew install ffmpeg
           fi
           ffmpeg -version | sed -n '1p'
-          # Require genuine clips from all twelve named native journeys.
+          # Require genuine clips from all eighteen named native journeys.
           python3 "$GITHUB_WORKSPACE/ios/scripts/files_ui_transition_video.py" audit \
             "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video" \
             "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video-audit.json" \
-            --minimum 12
+            --minimum 18
       - name: Reject candidate xDriveIOS process crash reports
         if: ${{ always() && matrix.source != 'release-c83' }}
         shell: bash

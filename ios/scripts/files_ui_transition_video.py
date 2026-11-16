@@ -3,7 +3,7 @@
 
 watch: record *real* simctl H.264 clips while selected existing XCUITests run.
 audit: decode sampled frames, reject missing tap-adjacent evidence and likely
-solid-white flashes. Simulator 10 Hz samples are NOT signed-device 60/120 FPS.
+solid-white flashes. Simulator 30 Hz samples are NOT signed-device 60/120 FPS.
 No Owner data, fake media, or invented accessibility/tap events are created.
 """
 import argparse
@@ -30,6 +30,12 @@ TARGETS = frozenset({
     "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
     "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
     "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+    "testOriginalsHelpHistoryReturnWithoutGhostAlert",
+    "testHistoryForegroundAlbumsReturnWithoutGhostSheet",
+    "testLocalPhotoFavoritesRecentDateAfterFilesReturn",
+    "testPeopleCloudDenialPeopleReentryKeepsContent",
+    "testSavedSearchFilterHistorySheetsStayIndependent",
+    "testAlbumsOriginalsFilesSectionRoundTripKeepsSource",
 })
 CASE_START = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 CASE_END = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
@@ -48,28 +54,22 @@ def classify_bright_blank(frames, tap_second):
     """Reject consecutive all-white or all-black frames immediately after a tap.
 
     A uniformly dark real screen must stay distinguishable from a textured
-    dark-mode page. Two decoded samples are required; one frame is diagnostic,
-    not proof of visible flicker. At 10 Hz this is still NOT a 60/120 Hz gate.
+    dark-mode page. Even one uniformly blank decoded frame is suspicious;
+    this conservative gate is not a signed-device 60/120 Hz FPS test.
     """
     # +0.12 silently missed the first decoded post-tap sample at +0.1s.
     sample = [f for f in frames if tap_second + 0.02 <= f["time"] <= tap_second + 1.45]
     if len(sample) < 3:
         return "missing_post_tap_frames"
-    white_run = black_run = blank_run = 0
     for f in sample:
         spread = f["ymax"] - f["ymin"]
         # ffmpeg signalstats uses limited-range YUV: white=235, black=16.
         white = spread <= 6 and f["yavg"] >= 230
         black = spread <= 6 and f["yavg"] <= 26 and f["ymax"] <= 32
-        blank_run = blank_run + 1 if white or black else 0
-        white_run = white_run + 1 if white else 0
-        black_run = black_run + 1 if black else 0
-        if white_run >= 2:
+        if white:
             return "suspected_solid_white_transition"
-        if black_run >= 2:
+        if black:
             return "suspected_solid_black_transition"
-        if blank_run >= 2:
-            return "suspected_alternating_blank_transition"
     return None
 
 
@@ -98,7 +98,7 @@ def read_frames(path):
          # Observe the actual page content: a stable native navigation bar
          # and bottom tab rail can conceal a child-only white/black flash in
          # whole-screen luminance, so exclude both persistent chrome regions.
-         "-vf", "fps=10,scale=64:64,crop=64:40:0:12,signalstats,metadata=print:file=-",
+         "-vf", "fps=30,scale=64:64,crop=64:40:0:12,signalstats,metadata=print:file=-",
          "-an", "-f", "null", "-"],
         capture_output=True, text=True, timeout=80,
     )
@@ -284,7 +284,7 @@ def audit(directory, report, minimum):
         audited.append({
             "test": name, "recording": entry.get("file"),
             "taps": len(taps) if isinstance(taps, list) else 0,
-            "decoded_10hz_samples": len(frames), "failures": failures,
+            "decoded_30hz_samples": len(frames), "failures": failures,
             "estimated_recording_startup_seconds": (
                 round(capture_offset, 3) if capture_offset is not None else None
             ),
@@ -297,7 +297,7 @@ def audit(directory, report, minimum):
     result = {
         "status": status, "required_distinct_real_test_clips": minimum,
         "observed_clips": len(audited), "validated_clips": len(good),
-        "frame_sampling": "ffmpeg 10 Hz decoded Simulator H264, not iPhone FPS",
+        "frame_sampling": "ffmpeg 30 Hz decoded Simulator H264, not iPhone FPS",
         "frame_region": "central 62.5% of native page; top/bottom chrome excluded",
         "timeline_alignment": "estimated monotonic stop minus last decoded MP4 PTS; reject uncertain clocks",
         "physical_60_120_hz_verified": False,

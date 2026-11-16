@@ -75,3 +75,20 @@ test("Both Files Home sheet helpers select real Browse before scrolling", () => 
   }
   assert.match(browser, /accessibilityIdentifier\("native-ios-files-open-root-location"\)/)
 })
+
+test("six extra child-to-child native H264 journeys verify visible content", () => {
+  const names = ["testOriginalsHelpHistoryReturnWithoutGhostAlert","testHistoryForegroundAlbumsReturnWithoutGhostSheet","testLocalPhotoFavoritesRecentDateAfterFilesReturn","testPeopleCloudDenialPeopleReentryKeepsContent","testSavedSearchFilterHistorySheetsStayIndependent","testAlbumsOriginalsFilesSectionRoundTripKeepsSource"]
+  for (const name of names) {
+    const start = navigation.indexOf("func " + name + "()")
+    assert.ok(start >= 0, "missing XCUITest: " + name)
+    const next = navigation.indexOf("\n    func test", start + 4)
+    const body = navigation.slice(start, next < 0 ? undefined : next)
+    assert.ok(body.includes("waitForRealH264RecordingPrelude()"), name + " has no real video prelude")
+    assert.ok(body.includes("assertVisiblePixels(app,"), name + " never inspects child pixels")
+    assert.ok(body.includes('tap("native-ios-tab-files"'), name + " never visits Files")
+    assert.ok(body.includes('tap("native-ios-tab-gallery"'), name + " never revisits Gallery")
+    assert.ok(video.includes('"' + name + '"'), name + " was not added to H264 recorder")
+  }
+  assert.ok(video.includes("fps=30,scale=64:64,crop=64:40"), "30 Hz source capture missing")
+  assert.ok(video.includes('"decoded_30hz_samples": len(frames)'), "30 Hz evidence count missing")
+})

@@ -546,4 +546,149 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
             assertVisiblePixels(app, route: "Gallery source/filter Files return \(cycle)")
         }
     }
+
+    // Independent real XCUITest + simctl-video navigation sequences.
+    // No synthetic screenshots, bearer token or private media is installed.
+    func testOriginalsHelpHistoryReturnWithoutGhostAlert() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-cloud-original-layout-help", app: app)
+        let alert = app.alerts["云端备份原件说明"].firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 15))
+        alert.buttons["完成"].tap()
+        tap("native-ios-tab-files", app: app)
+        openFilesOperationHistoryFromBrowse(app)
+        XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-files-operation-history-done", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertCloudOriginalsChild(app)
+        XCTAssertFalse(alert.exists, "Originals help unexpectedly reopened")
+        assertVisiblePixels(app, route: "Originals return after Files history")
+    }
+
+    func testHistoryForegroundAlbumsReturnWithoutGhostSheet() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-tab-files", app: app)
+        openFilesOperationHistoryFromBrowse(app)
+        let sheet = target("native-ios-files-operation-history-page", app: app)
+        XCTAssertTrue(sheet.waitForExistence(timeout: 15))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertTrue(sheet.waitForExistence(timeout: 15))
+        tap("native-ios-files-operation-history-done", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        tap("native-ios-gallery-source-albums", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Albums after Files foreground")
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        XCTAssertFalse(sheet.exists, "History sheet leaked across tabs")
+        assertVisiblePixels(app, route: "Files after Albums return")
+    }
+
+    func testLocalPhotoFavoritesRecentDateAfterFilesReturn() {
+        let app = launch()
+        waitForRealH264RecordingPrelude()
+        openLocalPhotoSource(app)
+        assertLocalPhotoContent(app)
+        tap("native-ios-tab-files", app: app)
+        for section in ["favorites", "recent", "browse"] {
+            tap("native-ios-files-section-\(section)", app: app)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertLocalPhotoContent(app)
+        tap("native-ios-local-timeline-open", app: app)
+        let done = app.navigationBars.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        assertLocalPhotoContent(app)
+        assertVisiblePixels(app, route: "Local Photos date after Files rail")
+    }
+
+    func testPeopleCloudDenialPeopleReentryKeepsContent() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-gallery-people", app: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", app: app)
+            .waitForExistence(timeout: 15))
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        assertGallery(app)
+        tap("native-ios-tab-files", app: app)
+        tap("native-ios-files-open-root-location", app: app)
+        XCTAssertTrue(target("native-ios-files-error-page", app: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertFalse(target("native-ios-files-grid", app: app).exists,
+                       "Unauthenticated Files unexpectedly exposed cloud content")
+        tap("native-ios-files-error-return", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        tap("native-ios-gallery-people", app: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", app: app)
+            .waitForExistence(timeout: 15))
+        let secondBack = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(secondBack.waitForExistence(timeout: 15))
+        secondBack.tap()
+        assertGallery(app)
+        assertVisiblePixels(app, route: "People reentry after cloud denial")
+    }
+
+    func testSavedSearchFilterHistorySheetsStayIndependent() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-tab-files", app: app)
+        openFilesSavedSearchesFromBrowse(app)
+        let saved = target("native-ios-files-saved-searches-page", app: app)
+        XCTAssertTrue(saved.waitForExistence(timeout: 15))
+        tap("native-ios-files-saved-searches-done", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        tap("native-ios-gallery-open-filters", app: app)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        cancel.tap()
+        assertGallery(app)
+        tap("native-ios-tab-files", app: app)
+        openFilesOperationHistoryFromBrowse(app)
+        XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertFalse(saved.exists, "Saved Search sheet leaked into History")
+        tap("native-ios-files-operation-history-done", app: app)
+        assertFiles(app)
+        assertVisiblePixels(app, route: "Files after Saved Search Filter History")
+    }
+
+    func testAlbumsOriginalsFilesSectionRoundTripKeepsSource() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        tap("native-ios-gallery-source-albums", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Albums before Files rail")
+        tap("native-ios-tab-files", app: app)
+        for section in ["recent", "favorites", "browse"] {
+            tap("native-ios-files-section-\(section)", app: app)
+            assertFiles(app)
+        }
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-gallery-source-unified", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Unified after Albums Originals Files")
+    }
 }

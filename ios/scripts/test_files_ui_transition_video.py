@@ -16,7 +16,7 @@ from files_ui_transition_video import (
 
 class FilesUITransitionVideoTests(unittest.TestCase):
     def test_real_targets_are_distinct(self):
-        self.assertEqual(len(TARGETS), 12)
+        self.assertEqual(len(TARGETS), 18)
         self.assertTrue({
             "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
             "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
@@ -62,7 +62,8 @@ class FilesUITransitionVideoTests(unittest.TestCase):
              "yavg": 252 if i == 3 else 181}
             for i in range(8)
         ]
-        self.assertIsNone(classify_bright_blank(frames, 0.1))
+        self.assertEqual(classify_bright_blank(frames, 0.1),
+                         "suspected_solid_white_transition")
 
     def test_immediate_post_tap_white_blink_is_not_skipped(self):
         # The old +0.12s cutoff lost the 0.2s frame after a 0.1s tap.
@@ -95,7 +96,8 @@ class FilesUITransitionVideoTests(unittest.TestCase):
              "yavg": 16 if i == 4 else 180}
             for i in range(20)
         ]
-        self.assertIsNone(classify_bright_blank(frames, 0.2))
+        self.assertEqual(classify_bright_blank(frames, 0.2),
+                         "suspected_solid_black_transition")
 
     def test_real_dark_textured_ui_is_not_mistaken_for_solid_black(self):
         frames = [
@@ -132,6 +134,33 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         accepted, report = self._audit_sample(frames=frames)
         self.assertFalse(accepted)
         self.assertIn("invalid_frame_signalstats", report["clips"][0]["failures"])
+
+    def test_single_30_hz_white_video_sample_is_not_silently_accepted(self):
+        frames = [
+            {"time": i / 30, "ymin": 235 if i == 13 else 12,
+             "ymax": 235 if i == 13 else 250,
+             "yavg": 235 if i == 13 else 175}
+            for i in range(60)
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.3),
+                         "suspected_solid_white_transition")
+
+    def test_single_30_hz_black_video_sample_is_not_silently_accepted(self):
+        frames = [
+            {"time": i / 30, "ymin": 16 if i == 14 else 12,
+             "ymax": 16 if i == 14 else 250,
+             "yavg": 16 if i == 14 else 175}
+            for i in range(60)
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.3),
+                         "suspected_solid_black_transition")
+
+    def test_textured_dark_30_hz_frames_remain_valid(self):
+        frames = [
+            {"time": i / 30, "ymin": 15, "ymax": 58, "yavg": 24}
+            for i in range(60)
+        ]
+        self.assertIsNone(classify_bright_blank(frames, 0.3))
 
     def test_video_metadata_decode(self):
         sample = ("frame:0 pts:0 pts_time:0.1\n"
