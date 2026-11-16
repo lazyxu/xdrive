@@ -75,3 +75,28 @@ test("Both Files Home sheet helpers select real Browse before scrolling", () => 
   }
   assert.match(browser, /accessibilityIdentifier\("native-ios-files-open-root-location"\)/)
 })
+
+test("six additional executable Gallery and Files child lifecycle journeys", () => {
+  const names = [
+    "testSavedSearchesAfterFavoritesRecentThenGallery",
+    "testOperationHistoryForegroundFromRecentKeepsSheet",
+    "testCloudDenialSavedSearchesReturnDoesNotResurrectError",
+    "testGalleryPeopleRotationFilesGalleryKeepsPage",
+    "testOriginalsHelpFilesHistoryThenOriginals",
+    "testLocalPhotoDateSheetForegroundFilesThenLocal",
+  ]
+  for (const name of names) {
+    const start = navigation.indexOf("func " + name + "()")
+    assert.ok(start > 0, name + " real XCTest missing")
+    const next = navigation.indexOf("\n    func test", start + 6)
+    const body = navigation.slice(start, next < 0 ? undefined : next)
+    assert.match(body, /assertVisiblePixels\(app,/)
+    assert.match(body, /waitForExistence\(timeout: 15\)/)
+  }
+  const frame = navigation.slice(navigation.indexOf("private func assertVisiblePixels("),
+    navigation.indexOf("private func openLocalPhotoSource("))
+  assert.match(frame, /let width = 96, height = 64/)
+  assert.match(frame, /image\.cropping\(to: contentRegion\)/)
+  assert.match(frame, /context\.draw\(content,/)
+  assert.match(navigation, /XCUIDevice\.shared\.orientation = \.portrait/)
+})

@@ -6,7 +6,11 @@ import UIKit
 /// The synthetic Owner is deliberately not authenticated; protected cloud
 /// operations must fail closed without replacing the Gallery/Files shell.
 final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        // A prior orientation test must not contaminate the next route.
+        XCUIDevice.shared.orientation = .portrait
+    }
 
     /// CI starts a real simctl recorder after the XCTest "started" log line.
     /// Measured first decoded video frames appeared up to ~17 seconds late.
@@ -55,7 +59,16 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
             XCTFail("Could not sample native screenshot at \(route)")
             return
         }
-        let width = 24, height = 32
+        // Test content, not permanently colorful navigation chrome. The
+        // previous 24x32 whole-screen downsample aliased sparse landscape
+        // pages and missed a white child behind the header/tab rail.
+        let contentRegion = CGRect(x: 0, y: CGFloat(image.height) * 0.1875,
+            width: CGFloat(image.width), height: CGFloat(image.height) * 0.625)
+        guard let content = image.cropping(to: contentRegion) else {
+            XCTFail("Could not crop native page content at \(route)")
+            return
+        }
+        let width = 96, height = 64
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let rendered = pixels.withUnsafeMutableBytes { bytes -> Bool in
             guard let base = bytes.baseAddress,
@@ -66,7 +79,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
                   ) else { return false }
             context.interpolationQuality = .low
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            context.draw(content, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
         XCTAssertTrue(rendered, "Missing screenshot bitmap at \(route)")
@@ -546,4 +559,119 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
             assertVisiblePixels(app, route: "Gallery source/filter Files return \(cycle)")
         }
     }
+    // 1. Preserve real Home reachability after a retained non-Browse section.
+    func testSavedSearchesAfterFavoritesRecentThenGallery() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app: app)
+        for section in ["favorites", "recent"] {
+            tap("native-ios-files-section-\(section)", app: app)
+            assertFiles(app)
+        }
+        openFilesSavedSearchesFromBrowse(app)
+        XCTAssertTrue(target("native-ios-files-saved-searches-page", app: app)
+            .waitForExistence(timeout: 15))
+        assertVisiblePixels(app, route: "Saved Searches after Favorites")
+        tap("native-ios-files-saved-searches-done", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Gallery after Saved Searches")
+    }
+
+    // 2. The operation-history modal must remain coherent after an app wake.
+    func testOperationHistoryForegroundFromRecentKeepsSheet() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app: app)
+        tap("native-ios-files-section-recent", app: app)
+        openFilesOperationHistoryFromBrowse(app)
+        XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+            .waitForExistence(timeout: 15))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-files-operation-history-done", app: app)
+        assertFiles(app)
+        assertVisiblePixels(app, route: "History after foreground")
+    }
+
+    // 3. A dismissed denial must never obstruct the next genuine Files child.
+    func testCloudDenialSavedSearchesReturnDoesNotResurrectError() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-tab-files", app: app)
+        tap("native-ios-files-open-root-location", app: app)
+        XCTAssertTrue(target("native-ios-files-error-page", app: app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-files-error-return", app: app)
+        openFilesSavedSearchesFromBrowse(app)
+        XCTAssertTrue(target("native-ios-files-saved-searches-page", app: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertFalse(target("native-ios-files-error-page", app: app).exists)
+        tap("native-ios-files-saved-searches-done", app: app)
+        assertFiles(app)
+        assertVisiblePixels(app, route: "Saved Searches after denied cloud")
+    }
+
+    // 4. Rotate inside a real Gallery People child and return through Files.
+    func testGalleryPeopleRotationFilesGalleryKeepsPage() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-gallery-people", app: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", app: app)
+            .waitForExistence(timeout: 15))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(target("native-ios-gallery-people-page", app: app)
+            .waitForExistence(timeout: 15))
+        assertVisiblePixels(app, route: "People child landscape")
+        XCUIDevice.shared.orientation = .portrait
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        assertGallery(app)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "People rotation after Files")
+    }
+
+    // 5. Originals help and Files operation-history must retire independently.
+    func testOriginalsHelpFilesHistoryThenOriginals() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-gallery-source-originals", app: app)
+        assertCloudOriginalsChild(app)
+        tap("native-ios-cloud-original-layout-help", app: app)
+        let info = app.alerts["云端备份原件说明"].firstMatch
+        XCTAssertTrue(info.waitForExistence(timeout: 15))
+        info.buttons["完成"].tap()
+        tap("native-ios-tab-files", app: app)
+        openFilesOperationHistoryFromBrowse(app)
+        XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
+            .waitForExistence(timeout: 15))
+        tap("native-ios-files-operation-history-done", app: app)
+        tap("native-ios-tab-gallery", app: app)
+        assertCloudOriginalsChild(app)
+        assertVisiblePixels(app, route: "Originals after Files History")
+    }
+
+    // 6. PhotoKit date sheet must survive a real foreground transition.
+    func testLocalPhotoDateSheetForegroundFilesThenLocal() {
+        let app = launch()
+        openLocalPhotoSource(app)
+        assertLocalPhotoContent(app)
+        tap("native-ios-local-timeline-open", app: app)
+        let done = app.navigationBars.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        assertLocalPhotoContent(app)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        tap("native-ios-tab-gallery", app: app)
+        assertLocalPhotoContent(app)
+        assertVisiblePixels(app, route: "Local PhotoKit after foreground Files")
+    }
+
 }
