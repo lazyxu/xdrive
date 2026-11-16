@@ -219,11 +219,21 @@ test('MapKit XCTest has one ordinary launcher and exactly one performance/stage 
 test('P0 real MapKit audit CTA is top-visible and native transition-video regression suite actually exists', () => {
   const video = read('ios/scripts/files_ui_transition_video.py')
   const videoTests = read('ios/scripts/test_files_ui_transition_video.py')
-  // The previous bottom-right 214x58pt control existed in AX but iOS 18.5
-  // reported isHittable=false. Move the DEBUG-only control away from the
-  // bottom app chrome instead of weakening XCTest or tapping fake coordinates.
-  assert.match(local, /\.overlay\(alignment: \.topTrailing\) \{\s*#if DEBUG[\s\S]*?native-ios-map-p0-audit-trigger/)
-  assert.match(local, /\.disabled\(p0IndependentGPSAuditRunning\)[\s\S]*?native-ios-map-p0-audit-trigger/)
+  // The previous MapKit overlay produced an AX control with an INVALID
+  // activation point even when the button existed. A fixed-size sibling is
+  // mounted before the flexible map and retains the 44pt real hit requirement.
+  const libraryStart = local.indexOf('} else if mapScope == .library {')
+  const mapStart = local.indexOf('XDriveIOSMapKitPhotoPage(', libraryStart)
+  const trigger = local.indexOf('native-ios-map-p0-audit-trigger', libraryStart)
+  assert.ok(libraryStart >= 0 && trigger > libraryStart && mapStart > trigger,
+    'real debug-only audit control must be a sibling BEFORE flexible MapKit')
+  const audit = local.slice(libraryStart, mapStart)
+  assert.match(audit, /#if DEBUG[\s\S]*?globalComplete && !busy/)
+  assert.match(audit, /\.frame\(minWidth: 190, minHeight: 44\)/)
+  assert.match(audit, /\.layoutPriority\(10\)/)
+  assert.match(audit, /\.disabled\(p0IndependentGPSAuditRunning\)[\s\S]*?native-ios-map-p0-audit-trigger/)
+  assert.doesNotMatch(local.slice(mapStart, mapStart + 6500),
+    /\.overlay\(alignment: \.topTrailing\) \{\s*#if DEBUG[\s\S]*?native-ios-map-p0-audit-trigger/)
   assert.match(ui, /Native MapKit audit button must have a genuine visible hit target/)
   assert.match(ui, /trigger\.isHittable && touchFrame\.width >= 44/)
   assert.match(video, /def watch\(/)

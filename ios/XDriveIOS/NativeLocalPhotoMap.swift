@@ -1514,6 +1514,44 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         "此相册没有可显示位置的照片或视频。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                // A real PhotoKit audit must own finite, hittable layout.
+                // The prior MapKit .overlay produced an AX button with an
+                // invalid activation point on iOS 18.5 despite a 44pt label.
+                // Reserve a fixed-height, high-priority DEBUG-only sibling
+                // ABOVE the flexible MapKit canvas; never bypass real taps.
+#if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke"),
+                   album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
+                   activeCaptureRange == nil, globalViewport == nil,
+                   globalComplete && !busy {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        VStack(alignment: .trailing, spacing: 6) {
+                            Button {
+                                runP0IndependentGPSAudit()
+                            } label: {
+                                Text("独立核对 PhotoKit GPS")
+                                    .frame(minWidth: 190, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(p0IndependentGPSAuditRunning)
+                            .accessibilityIdentifier("native-ios-map-p0-audit-trigger")
+                            if let p0IndependentGPSAuditResult {
+                                Text(p0IndependentGPSAuditResult)
+                                    .font(.caption).monospacedDigit()
+                                    .accessibilityIdentifier("native-ios-map-p0-independent-count")
+                            }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(10)
+                }
+#endif
                 // Keep MapKit mounted through the full 64-cell bounded scan.
                 // Early representative covers are inert and hide partial counts
                 // until the PhotoKit snapshot is fully verified.
@@ -1612,49 +1650,6 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier(album == nil ? "native-ios-full-library-gps-map" : "native-ios-album-gps-map")
-                    // Only a real Debug UI test may expose the actual PhotoKit
-                    // independent second-enumeration control. A flexible
-                    // MKMapView can compress a following VStack Button to
-                    // CGRect(infinity, infinity, 0, 0), making XCTest unable
-                    // to tap it. Anchor this 44pt target inside the VISIBLE
-                    // native map canvas; never bypass Full-Access authority.
-                    // Actual iOS 18.5 XCTest found the bottom-right button
-                    // geometrically valid (214 x 58pt) but not hit-testable.
-                    // Put this CI-only control at the map's TOP, away from
-                    // the bottom tab/navigation chrome. Keep real AX hit tests.
-                    .overlay(alignment: .topTrailing) {
-#if DEBUG
-                        if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke"),
-                           album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
-                           activeCaptureRange == nil, globalViewport == nil,
-                           globalComplete && !busy {
-                            VStack(alignment: .trailing, spacing: 6) {
-                                Button {
-                                    runP0IndependentGPSAudit()
-                                } label: {
-                                    // The *button label*, not merely its parent
-                                    // layout frame, must be at least 44pt tall.
-                                    // XCTest measured the old AX button at
-                                    // only 34.3pt on the real iOS 18.5 Simulator.
-                                    Text("独立核对 PhotoKit GPS")
-                                        .frame(minWidth: 190, minHeight: 44)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(p0IndependentGPSAuditRunning)
-                                .accessibilityIdentifier("native-ios-map-p0-audit-trigger")
-                                if let p0IndependentGPSAuditResult {
-                                    Text(p0IndependentGPSAuditResult)
-                                        .font(.caption).monospacedDigit()
-                                        .accessibilityIdentifier("native-ios-map-p0-independent-count")
-                                }
-                            }
-                            .padding(12)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                            .padding(12)
-                        }
-#endif
-                    }
                 if globalComplete && !globalCells.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "mappin.and.ellipse")
