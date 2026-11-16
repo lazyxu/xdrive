@@ -1464,7 +1464,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             .accessibilityIdentifier("native-ios-files-open-recent")
         }
         Section("个人收藏文件夹") {
-            DisclosureGroup("收藏夹和常用收藏", isExpanded: $favoriteFoldersExpanded) {
+            DisclosureGroup(isExpanded: $favoriteFoldersExpanded) {
                 NavigationLink {
                     if login.hasLocalOwnerSession {
                         XDriveIOSNativeFilesCollectionScreen(login: login, kind: .favorites)
@@ -1508,9 +1508,13 @@ struct XDriveIOSNativeFilesBrowser: View {
                             .accessibilityIdentifier("native-ios-files-favorite-retry")
                     }
                 }
+            } label: {
+                // Keep AX identity on the label, not the whole group:
+                // group modifiers overwrite descendant navigation link IDs.
+                Text("收藏夹和常用收藏")
+                    .accessibilityIdentifier("native-ios-files-favorites-disclosure")
+                    .accessibilityValue(favoriteFoldersExpanded ? "已展开" : "已折叠")
             }
-            .accessibilityIdentifier("native-ios-files-favorites-disclosure")
-            .accessibilityValue(favoriteFoldersExpanded ? "已展开" : "已折叠")
             // Keep Favorites and pinned shortcuts in the same home grouping
             // as Web/PWA. Both nested disclosures retain their own load/status
             // and permission guards, but do not consume separate long Sections.

@@ -19,7 +19,32 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
+    /// A previously collapsed Favorites group is not an app crash.
+    /// Expand its real native disclosure before testing the no-Session route.
+    private func expandFavoritesIfNeeded(_ app: XCUIApplication) {
+        let home = element("native-ios-files-home-list", app)
+        XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
+        let disclosure = element("native-ios-files-favorites-disclosure", app)
+        for _ in 0..<10 {
+            if disclosure.exists && disclosure.isHittable { break }
+            home.swipeUp()
+        }
+        XCTAssertTrue(disclosure.exists && disclosure.isHittable,
+                      "Favorites disclosure is inaccessible")
+        if (disclosure.value as? String) == "已折叠" {
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-favorites-disclosure")
+            disclosure.tap()
+        }
+        let expanded = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已展开"), object: disclosure)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 8), .completed,
+                       "Favorites disclosure did not expand")
+    }
+
     private func tap(_ id: String, _ app: XCUIApplication) {
+        if id == "native-ios-files-open-favorites" {
+            expandFavoritesIfNeeded(app)
+        }
         let control = element(id, app)
         XCTAssertTrue(control.waitForExistence(timeout: 15),
                       "Missing native route: \(id)")

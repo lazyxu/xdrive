@@ -91,6 +91,9 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                                 .accessibilityIdentifier("native-ios-prelogin-build")
+                                // Expose actual persisted-startup readiness, not
+                                // just the presence of a signed-out login field.
+                                .accessibilityValue(startupReady ? "启动完成" : "正在启动")
                             // Stop-only operation remains available even
                             // when login/Keychain or the Server is unavailable.
                             Button("紧急停止本机相册自动备份", role: .destructive) {

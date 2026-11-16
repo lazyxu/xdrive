@@ -332,11 +332,22 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
     /// an authenticated Owner in the synthetic-Owner test environment.
     private func openGalleryBackup(_ child: String, _ app: XCUIApplication) {
         tap("native-ios-tab-gallery", app)
-        let backup = element("native-ios-gallery-backup-settings", app)
+        // Menu is exposed as a Button; querying .any can resolve its
+        // non-hittable wrapper while the actual control settles after tab switch.
+        let backup = app.buttons.matching(
+            identifier: "native-ios-gallery-backup-settings").firstMatch
         XCTAssertTrue(backup.waitForExistence(timeout: 15),
-                      "Gallery backup toolbar is absent")
-        XCTAssertTrue(backup.isHittable, "Gallery backup toolbar is obstructed")
-        tap("native-ios-gallery-backup-settings", app)
+                      "Gallery backup toolbar Button is absent")
+        let hittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == YES"), object: backup)
+        if XCTWaiter.wait(for: [hittable], timeout: 12) != .completed {
+            capture(app, "gallery-backup-menu-not-hittable")
+            XCTFail("Gallery backup Button remained obstructed after settling")
+            return
+        }
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-backup-settings")
+        backup.tap()
+        XCTAssertEqual(app.state, .runningForeground)
         tapNamed(child, app)
     }
 

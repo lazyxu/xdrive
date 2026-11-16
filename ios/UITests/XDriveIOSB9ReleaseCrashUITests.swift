@@ -162,7 +162,17 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             .matching(identifier: "native-ios-login-server").firstMatch
         if !field.waitForExistence(timeout: 16) { record(app, "login-not-mounted") }
         XCTAssertTrue(field.exists)
-        Thread.sleep(forTimeInterval: 4)
+        // Wait for the real three-second durable startup gate before
+        // normal termination. A fixed sleep can race the SwiftUI mount.
+        let readiness = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-prelogin-build").firstMatch
+        XCTAssertTrue(readiness.waitForExistence(timeout: 16),
+                      "Startup checkpoint indicator missing")
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "启动完成"),
+            object: readiness)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed,
+                       "Login mounted, but startup never reached durable ready")
         alive(app, "startup-stabilized")
         app.terminate()
         app.launchArguments = []
