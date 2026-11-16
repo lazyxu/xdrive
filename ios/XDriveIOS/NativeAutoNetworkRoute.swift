@@ -270,6 +270,22 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         return false
     }
 
+    /// Keep a separately proven WAN path warm while home Wi-Fi prefers LAN.
+    /// The route only gains a proof bit; this never swaps the active LAN route.
+    private func warmWANIfNeeded() async {
+        guard let (initial, local, epoch) = snapshotEpoch(), local,
+              initial.owner != nil, initial.lan != nil,
+              !initial.proven.contains(initial.domain.absoluteString),
+              await verify(initial.domain, against: initial) else { return }
+        lock.lock()
+        if var current = binding, current.id == initial.id,
+           networkEpoch == epoch, onLocalNetwork {
+            current.proven.insert(initial.domain.absoluteString)
+            binding = current
+        }
+        lock.unlock()
+    }
+
     func revalidateRoutes() async {
         guard let (initial, local, epoch) = snapshotEpoch(), initial.owner != nil else { return }
         let candidates: [URL?] = local ? [initial.lan, initial.domain] : [initial.domain]
@@ -277,6 +293,9 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
             // Prefer the FIRST reachable route. Do not verify LAN and then
             // accidentally overwrite it with WAN in the same Wi-Fi pass.
             if target == initial.active, initial.proven.contains(target.absoluteString) {
+                if local, target == initial.lan {
+                    Task { await self.warmWANIfNeeded() }
+                }
                 return
             }
             let accepted: Bool
@@ -298,6 +317,9 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
             current.active = target
             binding = current
             lock.unlock()
+            if local, target == initial.lan {
+                Task { await self.warmWANIfNeeded() }
+            }
             return
         }
     }
