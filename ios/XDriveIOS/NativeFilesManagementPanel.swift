@@ -804,7 +804,7 @@ private struct XDriveIOSNativeFilesTagClient {
 
     private func perform(_ path: String, method: String = "GET",
                          body: Data? = nil, accepted: Set<Int>) async throws -> Data {
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
