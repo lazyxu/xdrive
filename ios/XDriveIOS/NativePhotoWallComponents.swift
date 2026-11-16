@@ -28,6 +28,7 @@ struct XDriveIOSNativePhotoMapPlaceHeader: View {
     let title: String
     let count: Int?
     var detail: String? = nil
+    var titleAccessibilityID = "native-ios-map-place-title"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -35,6 +36,7 @@ struct XDriveIOSNativePhotoMapPlaceHeader: View {
                 .font(.title3.weight(.semibold))
                 .lineLimit(2)
                 .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier(titleAccessibilityID)
             if let count {
                 Text("\(count) 张照片")
                     .font(.subheadline)
