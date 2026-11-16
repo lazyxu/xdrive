@@ -20,7 +20,7 @@ test('iOS SSE uses verified Owner HTTPS bearer and cancellable ephemeral URLSess
   assert.match(swiftClient, /url\.queryItems = \[URLQueryItem\(name: "after"/)
   assert.match(swiftClient, /endpoint\.scheme == "https"/)
   assert.ok(swiftClient.includes('request.setValue("Bearer \\(token)"'))
-  assert.match(swiftClient, /URLSessionConfiguration\.ephemeral/)
+  assert.match(swiftClient, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(swiftClient, /XDriveIOSClipboardRejectRedirects\(\)/)
   assert.match(swiftClient, /session\.bytes\(for: request\)/)
   assert.match(swiftClient, /defer \{ session\.invalidateAndCancel\(\) \}/)

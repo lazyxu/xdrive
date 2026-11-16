@@ -60,7 +60,7 @@ test('local revoke and OS expiration fence each subsequent chunk without credent
   const login=read('NativeOwnerLoginScreen.swift')
   assert.match(transport,/XDriveIOSApprovedPhotoBGVault\.shared\.current\(\)/)
   assert.match(transport,/local\.grantID == approved\.grantID/)
-  assert.match(transport,/URLSessionConfiguration\.ephemeral/)
+  assert.match(transport,/XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(transport,/NativePhotoDenyRedirects/)
   assert.match(login,/XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
   assert.match(schedule,/pausedForReview/)
