@@ -129,6 +129,14 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         return (binding, onLocalNetwork)
     }
 
+    private static func origin(of url: URL) -> URL? {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        parts.path = ""
+        parts.query = nil
+        parts.fragment = nil
+        return parts.url
+    }
+
     private func matching(_ origin: URL, binding: Binding) -> Bool {
         [binding.logical, binding.domain, binding.lan].compactMap { $0 }.contains {
             $0.scheme == origin.scheme && $0.host == origin.host &&
@@ -211,6 +219,11 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         lock.lock()
         if var current = binding, current.id == initial.id {
             current.active = alternative
+            current.proven.remove(failedPhysical.absoluteString)
+            // Proven routes are origin URLs, not full request endpoints.
+            if let failedOrigin = Self.origin(of: failedPhysical) {
+                current.proven.remove(failedOrigin.absoluteString)
+            }
             current.proven.insert(alternative.absoluteString)
             binding = current
         }
