@@ -13,7 +13,7 @@ private struct XDriveIOSNativeFilesManageDestinationIntent: Identifiable {
 /// No context-menu action bypasses the existing verified Owner-scoped
 /// operation or its destination / rename / destructive confirmation UI.
 enum XDriveIOSNativeFilesQuickAction {
-    case createFolder, uploadFile, uploadMultiple, copy, move, rename, favorite, shareLink, download, trash
+    case createFolder, uploadFile, uploadMultiple, uploadFolder, copy, move, rename, favorite, shareLink, download, trash
 }
 
 /// Native Server Files operations live beside, never inside, the independent
@@ -559,6 +559,9 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         case .uploadMultiple:
             guard file == nil, directory == nil else { return }
             showingMultiImporter = true
+        case .uploadFolder:
+            guard file == nil, directory == nil else { return }
+            showingFolderImporter = true
         case .copy, .move, .rename, .favorite, .shareLink, .download, .trash:
             guard let selected = file ?? directory else { return }
             switch initialQuickAction {
@@ -584,7 +587,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                 }
             case .trash:
                 showingTrash = true
-            case .createFolder, .uploadFile, .uploadMultiple:
+            case .createFolder, .uploadFile, .uploadMultiple, .uploadFolder:
                 return
             }
         }
