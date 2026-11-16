@@ -977,4 +977,158 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         capture(app, "clipboard-denial-notes-files-foreground")
     }
 
+
+    /// Focus real signed-out credential fields, then resume the same native
+    /// login screen; keyboard and scene changes must never authenticate Owner.
+    func testSignedOutLoginThreeFieldsKeyboardForegroundNoCrash() {
+        let app = launchRealSignedOut()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        for id in ["native-ios-login-server", "native-ios-login-username",
+                   "native-ios-login-password"] {
+            let field = element(id, app)
+            XCTAssertTrue(field.waitForExistence(timeout: 15),
+                          "Real signed-out field missing: " + id)
+            for _ in 0..<8 {
+                if field.isHittable { break }
+                scroll.swipeUp()
+            }
+            XCTAssertTrue(field.isHittable, "Real sign-in field inaccessible: " + id)
+            print("IOS_NATIVE_NAV_TAP_START route=" + id)
+            field.tap()
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        for id in ["native-ios-login-server", "native-ios-login-username",
+                   "native-ios-login-password", "native-ios-login-submit"] {
+            ready(id, app)
+        }
+        XCTAssertFalse(element("native-ios-mine-server-account", app).exists,
+                       "Keyboard and foreground cannot implicitly authenticate Owner")
+        capture(app, "signed-out-login-fields-keyboard-foreground")
+    }
+
+    /// Real Launcher placeholders must survive orientation and foreground
+    /// changes, then return to protected Files without a usable bearer.
+    func testUnavailableLauncherFourToolsRotationForegroundFilesNoCrash() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        let routes = [
+            ("sync", "同步尚未接通"), ("storage", "存储尚未接通"),
+            ("devices", "设备尚未接通"), ("diagnostics", "诊断尚未接通")
+        ]
+        for (index, route) in routes.enumerated() {
+            openLauncher(route.0, app)
+            let placeholder = app.staticTexts[route.1].firstMatch
+            XCTAssertTrue(placeholder.waitForExistence(timeout: 15),
+                          "Actual unavailable Launcher route missing: " + route.0)
+            if index.isMultiple(of: 2) {
+                device.orientation = .landscapeLeft
+                XCTAssertTrue(placeholder.waitForExistence(timeout: 15))
+                device.orientation = .portrait
+                device.press(.home)
+                app.activate()
+                XCTAssertTrue(placeholder.waitForExistence(timeout: 15))
+            }
+            tap("native-ios-tab-files", app)
+            ready("native-ios-files-section-browse", app)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        }
+        capture(app, "launcher-placeholders-rotation-files-no-session")
+    }
+
+    /// Three actual unauthorized cloud-folder child pushes and returns on
+    /// the same Files view tree, including one foreground transition.
+    func testFilesRootDeniedThreeCyclesForegroundGalleryNoCrash() {
+        let app = launch()
+        for cycle in 0..<3 {
+            filesHomeChild("native-ios-files-open-root-location",
+                           page: "native-ios-files-error-page", app)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists)
+            if cycle == 1 {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                ready("native-ios-files-error-page", app)
+            }
+            tap("native-ios-files-error-return", app)
+            waitRetired("native-ios-files-error-page", app)
+            tap("native-ios-tab-gallery", app)
+            ready("native-ios-unified-photo-gallery", app)
+            tap("native-ios-tab-files", app)
+            ready("native-ios-files-section-browse", app)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        capture(app, "files-cloud-root-denied-three-cycles")
+    }
+
+    /// Gallery backup-queue and thumbnail-cache children are distinct
+    /// sheets. Reopening them must retire old state and never upload.
+    func testGalleryBackupQueueCacheTwoRoundsFilesNoCrash() {
+        let app = launch()
+        for cycle in 0..<2 {
+            openGalleryBackup("查看备份任务队列", app)
+            ready("native-ios-photo-task-list-done", app)
+            tap("native-ios-photo-task-list-done", app)
+            waitRetired("native-ios-photo-task-list-done", app)
+            ready("native-ios-backup-overview", app)
+            openGalleryBackup("释放本机缓存空间（不删除照片原件）", app)
+            ready("native-ios-gallery-thumbnail-cache", app)
+            if cycle == 0 {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                ready("native-ios-gallery-thumbnail-cache", app)
+            }
+            tap("native-ios-backup-cache-sheet-close", app)
+            waitRetired("native-ios-gallery-thumbnail-cache", app)
+            tap("native-ios-tab-gallery", app)
+            ready("native-ios-unified-photo-gallery", app)
+            tap("native-ios-tab-files", app)
+            ready("native-ios-files-section-browse", app)
+            XCTAssertFalse(element("native-ios-gallery-thumbnail-cache", app).exists)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        }
+        capture(app, "gallery-queue-cache-files-two-rounds")
+    }
+
+    /// Files tags, saved searches and operation history must retire after
+    /// rotation and foreground interruptions without a stale sheet or grid.
+    func testFilesManagementThreeSheetsRotationGalleryNoCrash() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        filesHomeChild("native-ios-files-home-manage-tags",
+                       page: "native-ios-files-tag-management", app)
+        device.orientation = .landscapeLeft
+        ready("native-ios-files-tag-management", app)
+        device.orientation = .portrait
+        tapNamed("完成", app)
+        waitRetired("native-ios-files-tag-management", app)
+        for (entry, page, done) in [
+            ("native-ios-files-open-saved-searches",
+             "native-ios-files-saved-searches-page", "native-ios-files-saved-searches-done"),
+            ("native-ios-files-open-operations",
+             "native-ios-files-operation-history-page", "native-ios-files-operation-history-done")
+        ] {
+            filesHomeChild(entry, page: page, app)
+            device.press(.home)
+            app.activate()
+            ready(page, app)
+            tap(done, app)
+            waitRetired(page, app)
+            tap("native-ios-tab-gallery", app)
+            ready("native-ios-unified-photo-gallery", app)
+        }
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        for id in ["native-ios-files-tag-management",
+                   "native-ios-files-saved-searches-page",
+                   "native-ios-files-operation-history-page"] {
+            XCTAssertFalse(element(id, app).exists, "Old Files modal still mounted: " + id)
+        }
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "files-management-three-sheets-rotation")
+    }
+
 }

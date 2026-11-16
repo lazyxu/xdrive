@@ -97,3 +97,36 @@ test("five more actual Map, Files, Backup, Originals and Clipboard crash journey
     assert.match(method(name), /native-ios-files-grid/);
   }
 });
+
+test("five additional real signed-out, Launcher, Files and Gallery child journeys remain fail closed", () => {
+  const names = [
+    "testSignedOutLoginThreeFieldsKeyboardForegroundNoCrash",
+    "testUnavailableLauncherFourToolsRotationForegroundFilesNoCrash",
+    "testFilesRootDeniedThreeCyclesForegroundGalleryNoCrash",
+    "testGalleryBackupQueueCacheTwoRoundsFilesNoCrash",
+    "testFilesManagementThreeSheetsRotationGalleryNoCrash",
+  ];
+  const all = [...crash.matchAll(/\bfunc\s+(test\w+)\(\)/g)].map(m => m[1]);
+  assert.ok(all.length >= 40);
+  assert.equal(new Set(all).size, all.length);
+  for (const name of names) {
+    const body = method(name);
+    assert.ok(watcher.includes('"' + name + '"'), name + " missing real Simulator watcher");
+    assert.match(body, /ready\(/);
+    assert.match(body, /capture\(/);
+    assert.doesNotMatch(body, /XCTSkip|mockServerLogin|fakeToken|startBackup\(/);
+  }
+  assert.match(method(names[0]), /native-ios-login-password/);
+  assert.match(method(names[0]), /XCUIDevice\.shared\.press\(\.home\)/);
+  assert.match(method(names[1]), /"sync", "同步尚未接通"/);
+  assert.match(method(names[1]), /orientation = \.landscapeLeft/);
+  assert.match(method(names[2]), /cycle in 0\.\.<3/);
+  assert.match(method(names[2]), /native-ios-files-error-page/);
+  assert.match(method(names[3]), /native-ios-gallery-thumbnail-cache/);
+  assert.match(method(names[3]), /native-ios-photo-task-list-done/);
+  assert.match(method(names[4]), /native-ios-files-tag-management/);
+  assert.match(method(names[4]), /native-ios-files-operation-history-page/);
+  for (const name of names.slice(1)) {
+    assert.match(method(name), /native-ios-files-grid/);
+  }
+});

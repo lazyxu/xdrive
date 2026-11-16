@@ -226,6 +226,14 @@ MINIMAL_TARGETS.update({
     "testBackupAuditQueueDeniedFilesReturnDoesNotExit",
     "testClipboardDeniedReceiverNotesFilesForegroundDoesNotExit",
 })
+# Additional distinct real child navigation/foreground crash paths.
+MINIMAL_TARGETS.update({
+    "testSignedOutLoginThreeFieldsKeyboardForegroundNoCrash",
+    "testUnavailableLauncherFourToolsRotationForegroundFilesNoCrash",
+    "testFilesRootDeniedThreeCyclesForegroundGalleryNoCrash",
+    "testGalleryBackupQueueCacheTwoRoundsFilesNoCrash",
+    "testFilesManagementThreeSheetsRotationGalleryNoCrash",
+})
 # One frame per all-native-page crash journey; original taps remain logged.
 # These are real native XCTest routes, not fabricated Owner/Viewer data.
 MINIMAL_TARGETS.update({
