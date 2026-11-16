@@ -73,8 +73,8 @@ test('F4 Viewer adds explicit checked export and retains native media', () => {
 test('F5 real video and decoded-frame audit, not screenshot-only', () => {
   assert.match(workflow, /files_ui_transition_video\.py" watch/)
   assert.match(workflow, /files_ui_transition_video\.py" audit/)
-  // The real H.264 gate requires 26 distinct journeys, all video-audited.
-  assert.match(workflow, /--minimum 26/)
+  // The real H.264 gate requires 32 distinct journeys, all video-audited.
+  assert.match(workflow, /--minimum 32/)
   assert.match(video, /1 <= minimum <= len\(TARGETS\)/)
   assert.match(video, /"xcrun", "simctl", "io", simulator, "recordVideo"/)
   // Decode the native page center rather than persistent tab/navigation chrome.

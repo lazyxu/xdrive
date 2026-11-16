@@ -11,6 +11,12 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    /// The actual simctl H.264 watcher starts after XCTest announces this
+    /// test. Do not navigate during the bounded real recorder startup.
+    private func waitForRealH264RecordingPrelude() {
+        Thread.sleep(forTimeInterval: 24)
+    }
+
     private func launch(syntheticOwner: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
@@ -155,6 +161,7 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
     // rebuild an unchanged Gallery wall or briefly replace its child content.
     func testFilterPeopleDeniedCloudReturnKeepsVerifiedGalleryGeneration() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         let generation = unifiedGeneration(app)
         tap("native-ios-gallery-open-filters", app)
         let cancel = app.buttons["取消"].firstMatch
@@ -180,6 +187,7 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
     // child switch; neither may reappear on the returning Browse route.
     func testFilesHistorySavedSearchesAcrossOriginalsHaveNoGhostSheets() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         openFilesSheet("native-ios-files-open-operations",
                        pageID: "native-ios-files-operation-history-page", app)
         dismissFilesSheet("native-ios-files-operation-history-done",
@@ -202,6 +210,7 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
     // shows its explicit no-session error and the user returns to Originals.
     func testOriginalsHelpTrashDeniedReturnDoesNotReopenAlert() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         tap("native-ios-gallery-source-originals", app)
         tap("native-ios-cloud-original-layout-help", app)
         let alert = app.alerts["云端备份原件说明"].firstMatch
@@ -228,6 +237,7 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
     // sheet and Files Saved Searches sheet close across a tab round-trip.
     func testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         tap("native-ios-gallery-source-menu", app)
         let local = app.buttons["本机照片"].firstMatch
         XCTAssertTrue(local.waitForExistence(timeout: 15))
@@ -266,6 +276,7 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
     // neither its page nor the denied Files child may replace the Gallery wall.
     func testMapModalFilesCloudDenialDoesNotRemountUnifiedWall() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         let generation = unifiedGeneration(app)
         tap("native-ios-gallery-open-filters", app)
         let map = control("native-ios-unified-gallery-show-map", app)
@@ -293,6 +304,7 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
     // navigation; switching back must not leave a phantom keyboard or overlay.
     func testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         enterFilesBrowse(app)
         let search = app.searchFields["搜索全部文件"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 15))

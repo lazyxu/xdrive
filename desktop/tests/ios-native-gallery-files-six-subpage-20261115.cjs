@@ -9,6 +9,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const native = read('ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift');
 const workflow = read('.github/workflows/ios-native-navigation-runtime.yml');
 const watcher = read('ios/scripts/capture-navigation-smoke-frames.py');
+const h264 = read('ios/scripts/files_ui_transition_video.py');
 const gallery = read('ios/XDriveIOS/NativeUnifiedPhotoGallery.swift');
 const files = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift');
 const history = read('ios/XDriveIOS/NativeFilesOperationHistory.swift');
@@ -29,6 +30,12 @@ test('all six real native cross-subpage journeys are registered exactly once', (
   for (const name of journeys) {
     assert.equal(native.split('func ' + name + '()').length, 2, name);
     assert.match(watcher, new RegExp('"' + name + '"'));
+    assert.match(h264, new RegExp('"' + name + '"'),
+      name + ' must be included in real 30-Hz H.264 video audit');
+    const start = native.indexOf('func ' + name + '()');
+    assert.match(native.slice(start, start + 160),
+      /let app = launch\([^\n]*\)\s*waitForRealH264RecordingPrelude\(\)/,
+      name + ' must wait until actual recorder has started before first tap');
   }
   assert.match(native, /let app = XCUIApplication\(\)/);
   assert.match(native, /app\.launch\(\)/);
@@ -52,6 +59,8 @@ test('candidate-gallery-files must actually RUN the six child tests in macOS Xco
   assert.match(workflow, /xcodebuild test/);
   assert.match(workflow, /resultBundlePath/);
   assert.match(workflow, /-parallel-testing-enabled NO/);
+  assert.match(workflow, /--minimum 32/,
+    'all 32 separate real navigation clips must be audited without opt-out');
   for (const name of journeys) {
     assert.match(watcher, new RegExp('"' + name + '"'));
   }

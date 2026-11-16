@@ -44,6 +44,12 @@ TARGETS = frozenset({
     "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
     "testGalleryAlbumsOriginalsAndUnifiedRoundTripsKeepPixels",
     "testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent",
+    "testFilterPeopleDeniedCloudReturnKeepsVerifiedGalleryGeneration",
+    "testFilesHistorySavedSearchesAcrossOriginalsHaveNoGhostSheets",
+    "testOriginalsHelpTrashDeniedReturnDoesNotReopenAlert",
+    "testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild",
+    "testMapModalFilesCloudDenialDoesNotRemountUnifiedWall",
+    "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
 })
 CASE_START = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 CASE_END = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
