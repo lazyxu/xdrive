@@ -101,8 +101,15 @@ for (const id of accepted) {
           assert.match(source,
             /candidate-clipboard-owner\)[\s\S]*?XDriveIOSClipboardAuthenticatedUITests/,
             'the authenticated Clipboard shard must execute its native XCTest class')
-          assert.match(source, /simctl keychain.*add-root-cert/,
-            'authenticated Clipboard must use an installed ephemeral TLS root')
+          // The secure CA install is executed through subprocess.run using
+          // explicit argument tokens, not a shell string. Verify the real
+          // simctl call and fail-closed condition without weakening trust.
+          assert.match(source,
+            /args\s*=\s*\["xcrun",\s*"simctl",\s*"keychain",\s*sim,\s*"add-root-cert",\s*ca\]/,
+            'authenticated Clipboard must install a real Simulator TLS root')
+          assert.match(source,
+            /raise SystemExit\("Refusing Clipboard XCTest without genuine iOS Simulator CA trust"\)/,
+            'Clipboard XCTest must fail closed if the CA cannot be installed')
         }
         if (source.includes('candidate-mapkit')) {
           assert.match(source,
