@@ -116,5 +116,92 @@ class NativeCrashAuditTests(unittest.TestCase):
         self.assertIn('no_crash_report_roots_available', report['scan_errors'])
 
 
+    def make_log(self, content, *, before=False):
+        path = self.root / 'xcodebuild.log'
+        path.write_text(content, encoding='utf-8')
+        ns = self.start - 1_000_000_000 if before else self.start + 1_000_000_000
+        os.utime(path, ns=(ns, ns))
+        return path
+
+    def test_real_xctest_lost_target_app_without_ips_is_inconclusive_not_pass(self):
+        # Exact native failure shape reproduced in a MapKit PhotoKit-revoke
+        # Simulator run: XCUI lost the application PID; independent .ips audit
+        # found only unrelated reports. Never call that a clean native pass.
+        log = self.make_log(
+            "/Users/runner/work/xdrive/xdrive/ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift:193: error: -[xDriveIOSNavigationUITests.XDriveIOSMapNavigationRuntimeUITests testZP0ExternallyRevokedPhotosRejectOldMapAndRecover] : Failed to get matching snapshots: Lost connection to the application (pid 51223). (Underlying Error: Couldn’t communicate with a helper application.)" + '\n'
+            'Checking for crash reports corresponding to unexpected termination '
+            'of com.lazyxu.xdrive.ios\n'
+        )
+        result = audit(self.marker, [self.sim], xcodebuild_log=log)
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['app_crash_report_count'], 0)
+        self.assertEqual(result['app_connection_lost_count'], 1)
+        self.assertIn('xctest_app_disconnected_without_crash_report', result['scan_errors'])
+
+    def test_xctest_disconnection_with_real_app_ips_remains_confirmed_failure(self):
+        log = self.make_log("/Users/runner/work/xdrive/xdrive/ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift:193: error: -[xDriveIOSNavigationUITests.XDriveIOSMapNavigationRuntimeUITests testZP0ExternallyRevokedPhotosRejectOldMapAndRecover] : Failed to get matching snapshots: Lost connection to the application (pid 51223). (Underlying Error: Couldn’t communicate with a helper application.)" + '\n')
+        self.make_report('xDriveIOS-incident.ips', '{}')
+        result = audit(self.marker, [self.sim], xcodebuild_log=log)
+        self.assertEqual(result['status'], 'fail')
+        self.assertEqual(result['app_connection_lost_count'], 1)
+        self.assertEqual(result['app_crash_report_count'], 1)
+
+    def test_unrelated_system_app_xctest_disconnection_not_xdriveios_crash(self):
+        log = self.make_log(
+            '/tmp/OtherUITests.swift:44: error: -[OtherUITests.OtherTests '
+            'testSomething] : Lost connection to the application (pid 42)\n'
+        )
+        result = audit(self.marker, [self.sim], xcodebuild_log=log)
+        self.assertEqual(result['status'], 'pass')
+        self.assertEqual(result['app_connection_lost_count'], 0)
+
+    def test_plain_navigation_assertion_is_not_a_process_disconnection(self):
+        log = self.make_log(
+            '/tmp/XDriveIOSMapNavigationRuntimeUITests.swift:406: error: '
+            '-[xDriveIOSNavigationUITests.XDriveIOSMapNavigationRuntimeUITests '
+            'testMapCameraLayoutAndUnverifiedGestureNeverClosesTheApp] : '
+            'XCTAssertTrue failed\n'
+        )
+        self.assertEqual(
+            audit(self.marker, [self.sim], xcodebuild_log=log)['status'], 'pass'
+        )
+
+    def test_arbitrary_log_line_containing_loss_words_is_not_runtime_evidence(self):
+        log = self.make_log(
+            'print("Lost connection to the application (pid 42)")\n'
+            'Test Case has failed but no process termination is known\n'
+        )
+        self.assertEqual(
+            audit(self.marker, [self.sim], xcodebuild_log=log)['status'], 'pass'
+        )
+
+    def test_required_log_missing_is_inconclusive_not_false_pass(self):
+        result = audit(
+            self.marker, [self.sim], xcodebuild_log=self.root / 'missing.log'
+        )
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('xcodebuild_log_missing', result['scan_errors'])
+
+    def test_log_predating_test_marker_is_not_current_process_evidence(self):
+        log = self.make_log("/Users/runner/work/xdrive/xdrive/ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift:193: error: -[xDriveIOSNavigationUITests.XDriveIOSMapNavigationRuntimeUITests testZP0ExternallyRevokedPhotosRejectOldMapAndRecover] : Failed to get matching snapshots: Lost connection to the application (pid 51223). (Underlying Error: Couldn’t communicate with a helper application.)", before=True)
+        result = audit(self.marker, [self.sim], xcodebuild_log=log)
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('xcodebuild_log_predates_test_marker', result['scan_errors'])
+        self.assertEqual(result['app_connection_lost_count'], 0)
+
+    def test_cli_exit_is_nonzero_for_lost_process_without_ips(self):
+        log = self.make_log("/Users/runner/work/xdrive/xdrive/ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift:193: error: -[xDriveIOSNavigationUITests.XDriveIOSMapNavigationRuntimeUITests testZP0ExternallyRevokedPhotosRejectOldMapAndRecover] : Failed to get matching snapshots: Lost connection to the application (pid 51223). (Underlying Error: Couldn’t communicate with a helper application.)" + '\n')
+        destination = self.root / 'audit-lost-app.json'
+        rc = main([
+            '--marker', str(self.marker),
+            '--output', str(destination),
+            '--xcodebuild-log', str(log), str(self.sim)
+        ])
+        self.assertEqual(rc, 1)
+        result = json.loads(destination.read_text())
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['app_connection_lost_count'], 1)
+
+
 if __name__ == '__main__':
     unittest.main()

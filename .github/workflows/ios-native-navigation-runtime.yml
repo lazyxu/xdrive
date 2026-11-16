@@ -383,6 +383,7 @@ jobs:
           sim_reports="$HOME/Library/Developer/CoreSimulator/Devices/${SMOKE_SIM:-unknown}/data/Library/Logs"
           python3 "$GITHUB_WORKSPACE/ios/scripts/assert_native_ios_no_crash.py" \
             --marker "$RUNNER_TEMP/native-navigation-results/xcodebuild-start.marker" \
+            --xcodebuild-log "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
             --output "$RUNNER_TEMP/native-navigation-results/diagnostics/app-process-crash-audit.json" \
             "$HOME/Library/Logs/DiagnosticReports" \
             "$sim_reports/CrashReporter" "$sim_reports/DiagnosticReports"
