@@ -15,6 +15,11 @@ test('native Files and cloud media never give a signed remote ticket directly to
   assert.doesNotMatch(cloud, /AVPlayer\(url: url\)/)
   assert.match(cloud, /AVPlayer\(url: live\.files\.motionURL\)/, 'local paired Live motion remains local')
   assert.match(cloud, /routedMediaLoader\?\.cancelAll\(\)/)
+  const photoasset = read('NativeServerMediaGallery.swift')
+  assert.match(photoasset, /let loader = try XDriveIOSRoutedMediaLoader\(ticketURL: url\)/)
+  assert.doesNotMatch(photoasset, /AVPlayer\(url: url\)/)
+  assert.match(photoasset, /AVPlayer\(url: live\.files\.motionURL\)/)
+  assert.match(photoasset, /routedMediaLoader\?\.cancelAll\(\)/)
 })
 
 test('remote AV ranges remain bounded, TLS-pinned, nonredirecting and Owner scoped', () => {
