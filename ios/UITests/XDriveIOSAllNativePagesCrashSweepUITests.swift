@@ -533,6 +533,9 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
 
     func testRealSignedOutLANHelpWithoutCertificatePairingDoesNotExit() {
         let app = launchRealSignedOut()
+        // The current compact login folds LAN options by default.
+        // Tap the real disclosure: never grant implicit LAN or Owner access.
+        tap("native-ios-login-advanced-connection", app)
         let ip = element("native-ios-login-lan-ip", app)
         XCTAssertTrue(ip.waitForExistence(timeout: 15))
         ip.tap()
@@ -540,6 +543,11 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         // certificate, install a trust root or submit this value to Server.
         ip.typeText("192.0.2.4")
         ready("native-ios-lan-certificate-help", app)
+        tap("native-ios-lan-certificate-help", app)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "登录前检测一次内网 HTTPS")).firstMatch
+            .waitForExistence(timeout: 10),
+            "The native LAN help must expand after an explicit tap")
         ready("native-ios-lan-https-pairing", app)
         XCUIDevice.shared.press(.home)
         app.activate()
@@ -693,6 +701,8 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
 
     func testRealSignedOutPasswordPreferenceToggleRestoresOriginalDoesNotExit() {
         let app = launchRealSignedOut()
+        // Preserve the compact login default: preferences are opened deliberately.
+        tap("native-ios-login-preferences", app)
         let toggle = element("native-ios-remember-password", app)
         let scroll = app.scrollViews.containing(
             .any, identifier: "native-ios-login-password").firstMatch
