@@ -69,7 +69,10 @@ concurrency:
 jobs:
   simulator-navigation:
     runs-on: macos-15
-    timeout-minutes: 60
+    # The Gallery/Files shard now executes 100 genuine UI journeys plus
+    # 26 H.264 audits; its previous 60-minute limit cancelled real XCTest
+    # midway. Retain a 60-minute bound for the other independent shards.
+    timeout-minutes: ${{ matrix.source == 'candidate-gallery-files' && 100 || 60 }}
     strategy:
       fail-fast: false
       matrix:
