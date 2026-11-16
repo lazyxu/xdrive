@@ -191,7 +191,7 @@ private struct XDriveIOSBGOriginalNodeReceiptVerifier {
         guard let url = parts.url else {
             throw XDriveIOSNodeReceiptReadbackError.invalidOwner
         }
-        let cfg = URLSessionConfiguration.ephemeral
+        let cfg = XDriveIOSAutoRoute.ephemeralConfiguration()
         cfg.httpShouldSetCookies = false
         cfg.httpCookieAcceptPolicy = .never
         cfg.urlCache = nil
@@ -265,7 +265,7 @@ private struct XDriveIOSManagedOriginalNodeReceiptVerifier {
         guard let url = parts.url else {
             throw XDriveIOSNodeReceiptReadbackError.invalidOwner
         }
-        let cfg = URLSessionConfiguration.ephemeral
+        let cfg = XDriveIOSAutoRoute.ephemeralConfiguration()
         cfg.httpShouldSetCookies = false
         cfg.httpCookieAcceptPolicy = .never
         cfg.urlCache = nil
