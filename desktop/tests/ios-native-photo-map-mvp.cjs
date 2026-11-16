@@ -603,3 +603,24 @@ test('MapKit real GPS fixture wipes only its freshly created isolated Simulator 
     'seeding must also be restricted to the same freshly created device')
 })
 
+
+
+test('P0 independent GPS count excludes camera-refine generation races without bypassing real PhotoKit', () => {
+  const refineStart = map.indexOf('private func scheduleAutomaticRefinement(_ current: MKCoordinateRegion)')
+  const auditStart = map.indexOf('private func runP0IndependentGPSAudit()')
+  const auditEnd = map.indexOf('private func openPhotoSettings()', auditStart)
+  assert.ok(refineStart > 0 && auditStart > refineStart && auditEnd > auditStart)
+  const refinement = map.slice(refineStart, auditStart)
+  const audit = map.slice(auditStart, auditEnd)
+  const retire = map.slice(map.indexOf('private func suspendForSheet()'), map.indexOf('private func clearReturnCamera()'))
+  assert.match(refinement, /guard !p0IndependentGPSAuditRunning else \{ return \}/)
+  assert.match(audit, /autoRefineTask\?\.cancel\(\)\s*autoRefineTask = nil\s*let ticket = generation\s*p0IndependentGPSAuditRunning = true/)
+  assert.match(audit, /Task\.detached\(priority: \.userInitiated\)/)
+  assert.match(audit, /PHAsset\.fetchAssets\(with: PHFetchOptions\(\)\)/)
+  assert.match(audit, /asset\.location\?\.coordinate/)
+  assert.match(audit, /guard generation == ticket else \{ return \}/)
+  assert.match(audit, /authorizationStatus\(for: \.readWrite\) == \.authorized/)
+  assert.match(audit, /p0IndependentGPSAuditResult = "独立 GPS/)
+  assert.match(retire, /generation = UUID\(\)[\s\S]*?p0IndependentGPSAuditTask\?\.cancel\(\)[\s\S]*?p0IndependentGPSAuditRunning = false/)
+  assert.doesNotMatch(audit, /fixtureGPSCount|mockPhotoKit|skipRealAudit/)
+});

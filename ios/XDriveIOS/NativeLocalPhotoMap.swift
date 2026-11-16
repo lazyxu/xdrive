@@ -2230,6 +2230,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     /// camera quiet and a significant zoom / exit from the last overscan.
     /// Each subsequent gesture cancels the timer; no persistent GPS index.
     private func scheduleAutomaticRefinement(_ current: MKCoordinateRegion) {
+#if DEBUG
+        // A real full-library GPS audit and a MapKit viewport refinement must
+        // not race for the same in-memory generation. Library/permission changes
+        // still call invalidate() and retire both, without publishing stale GPS.
+        guard !p0IndependentGPSAuditRunning else { return }
+#endif
         autoRefineTask?.cancel()
         autoRefineTask = nil
         guard mapScope == .library, globalComplete, !busy,
@@ -2336,6 +2342,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
               globalComplete, !busy, phase == .active,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
         else { return }
+        // Cancel a settled-camera timer before opening the independent audit:
+        // a later viewport scan calls suspendForSheet() and rotates generation.
+        // Never let that cancel a valid full-library count merely because the
+        // MKMapView automatically centered itself after importing GPS photos.
+        autoRefineTask?.cancel()
+        autoRefineTask = nil
         let ticket = generation
         p0IndependentGPSAuditRunning = true
         p0IndependentGPSAuditResult = nil
@@ -2688,6 +2700,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         autoRefineTask?.cancel()
         autoRefineTask = nil
         generation = UUID()
+#if DEBUG
+        // A retired generation may never publish or leave a forever-disabled
+        // GPS audit button. Cancel the independent enumeration too; its
+        // MainActor completion still checks the original generation/Full grant.
+        p0IndependentGPSAuditTask?.cancel()
+        p0IndependentGPSAuditTask = nil
+        p0IndependentGPSAuditRunning = false
+        p0IndependentGPSAuditResult = nil
+#endif
         task?.cancel()
         task = nil
         if let scanner { Task { await scanner.reset() } }
