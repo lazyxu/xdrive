@@ -29,12 +29,13 @@ struct XDriveIOSNativePhotoMapPlaceHeader: View {
     let count: Int?
     var detail: String? = nil
     var titleAccessibilityID = "native-ios-map-place-title"
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.title3.weight(.semibold))
-                .lineLimit(2)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier(titleAccessibilityID)
             if let count {
