@@ -25,7 +25,7 @@ test('remote AV ranges remain bounded, TLS-pinned, nonredirecting and Owner scop
   assert.match(source, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(source, /session\.bytes\(for: request\)/)
   assert.match(source, /http\.statusCode == 206/)
-  assert.match(source, /ByteRange\.parse\(http\.value\(forHTTPHeaderField: "Content-Range"\)\)/)
+  assert.match(source, /ByteRange\.bounded\(\s*http\.value\(forHTTPHeaderField: "Content-Range"\)/)
   assert.match(source, /httpShouldSetCookies = false/)
   assert.match(source, /completionHandler\(nil\)/)
   assert.match(source, /XDriveIOSAutoRouteSafety\.isNetworkFailure\(error\)/)
