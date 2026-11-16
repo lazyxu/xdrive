@@ -524,11 +524,18 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let app = openLocalMap()
         let map = element("native-ios-full-library-gps-map", in: app)
         XCTAssertTrue(map.exists)
+        // Photo-first iOS map keeps only one visible action menu;
+        // the date and basemap actions remain real nested UIKit menu items.
+        // Open the actual menu before asserting them (no fake AX success).
+        let actions = element("native-ios-local-map-actions", in: app)
+        XCTAssertTrue(actions.waitForExistence(timeout: 10))
+        XCTAssertTrue(actions.isHittable)
+        actions.tap()
         XCTAssertTrue(element("native-ios-local-map-basemap", in: app).exists)
-        XCTAssertTrue(element("native-ios-local-map-capture-menu", in: app).exists)
-        // UI date → month selection exists on the real MapKit route, and
-        // cancelling it does not destroy the previously verified photo scope.
-        element("native-ios-local-map-capture-menu", in: app).tap()
+        let dateMenu = element("native-ios-local-map-capture-menu", in: app)
+        XCTAssertTrue(dateMenu.waitForExistence(timeout: 6))
+        // UI date → month selection must preserve verified PhotoKit scope.
+        dateMenu.tap()
         // SwiftUI Menu children are menuItems on some iOS 18.5 builds,
         // not XCUIElementTypeButton. Query the real app's stable item ID,
         // then its label across AX types; never pretend a missing menu passed.
