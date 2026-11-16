@@ -611,6 +611,71 @@ import SQLite3
             ).count == 1)
         }
 
+
+        // P0: 64 invisible head IDs must not permanently starve a visible
+        // older imported original. Rotation is bounded, survives restart and
+        // never settles/loses a queue row or advances the PhotoKit baseline.
+        let invisibleHeadURL = dir.appendingPathComponent("invisible-head.sqlite3")
+        let ids = Set((0..<193).map { "import-\($0)" })
+        var first64 = Set<String>()
+        var afterHead = Set<String>()
+        do {
+            let store = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: invisibleHeadURL)
+            try expect(try store.installBaselineIfAbsent(
+                token: Data([160]), authorization: 3
+            ))
+            _ = try store.apply(
+                inserted: ids, updated: [], deleted: [],
+                expectedToken: Data([160]), nextToken: Data([161]),
+                authorization: 3
+            )
+            first64 = Set(try store.pending(limit: 64).map(\.localIdentifier))
+            let second = try store.pendingBeyondInvisibleHead(limit: 64)
+            afterHead = Set(second.map(\.localIdentifier))
+            precondition(second.count == 64 && first64.isDisjoint(with: afterHead))
+            // If only 20/64 eligible originals upload in one run, the next
+            // run must revisit the same fallback page before older pages.
+            try store.repeatPendingPageAfterVisibleProgress()
+            let repeated = try store.pendingBeyondInvisibleHead(limit: 64)
+            precondition(Set(repeated.map(\.localIdentifier)) == afterHead)
+            try expect(try store.counts().pending == 193)
+            try expect(try store.baseline()?.token == Data([161]))
+            try expect(first64 == Set(try store.pending(limit: 64).map(\.localIdentifier)))
+        }
+        do {
+            // Reopened DB must use the exact prior inspection cursor.
+            let store = try XDriveIOSPhotoBackupChangeQueueStore(fileURL: invisibleHeadURL)
+            let third = try store.pendingBeyondInvisibleHead(limit: 64)
+            let thirdIDs = Set(third.map(\.localIdentifier))
+            precondition(third.count == 64 &&
+                first64.isDisjoint(with: thirdIDs) &&
+                afterHead.isDisjoint(with: thirdIDs))
+            let tail = try store.pendingBeyondInvisibleHead(limit: 64)
+            precondition(tail.count == 1)
+            let seen = first64.union(afterHead).union(thirdIDs)
+            precondition(seen.isDisjoint(with: Set(tail.map(\.localIdentifier))))
+            precondition(seen.count + tail.count == 193)
+            let wrapped = try store.pendingBeyondInvisibleHead(limit: 64)
+            precondition(Set(wrapped.map(\.localIdentifier)) == afterHead)
+            try expect(try store.counts().pending == 193)
+            try store.replaceBaselineForFreshOnlyNewConsent(
+                token: Data([162]), authorization: 3
+            )
+            // A fresh consent must not inherit the old inspection cursor.
+            _ = try store.apply(
+                inserted: Set((0..<70).map { "fresh-\($0)" }),
+                updated: [], deleted: [],
+                expectedToken: Data([162]), nextToken: Data([163]),
+                authorization: 3
+            )
+            let freshHead = Set(try store.pending(limit: 64).map(\.localIdentifier))
+            let freshTail = try store.pendingBeyondInvisibleHead(limit: 64)
+            precondition(freshTail.count == 6)
+            precondition(freshHead.isDisjoint(
+                with: Set(freshTail.map(\.localIdentifier))
+            ))
+            try expect(try store.baseline()?.token == Data([163]))
+        }
         print("iOS PhotoKit change queue atomic token+priority+restart+Owner isolation+failure codes: PASS")
     }
 }

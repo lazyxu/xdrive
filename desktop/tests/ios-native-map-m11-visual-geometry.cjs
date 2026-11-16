@@ -26,6 +26,7 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
   // Preserve tested degraded-poster and final-rendition transitions.
   assert.match(local, /PHImageResultIsDegradedKey/)
   assert.match(local, /if !degraded \|\| failed \{/)
+  assert.match(local, /XDriveIOSNativeMapMarkerVisualPolicy\.badgeText\(count: count\)/)
   assert.match(local, /isAccessibilityElement = !provisional/)
   assert.match(cloud, /isAccessibilityElement = enabled/)
   assert.doesNotMatch(layout, /PHAsset|Owner|URLSession|upload|requestAuthorization/)
