@@ -218,6 +218,14 @@ MINIMAL_TARGETS.update({
     "testGalleryFocusedBackupConsentDoesNotAutoUploadNoCrash",
     "testNotesSourcesThreeRoundsClipboardFilesNoCrash",
 })
+# More independent cross-page lifecycle journeys from the older #4298 matrix.
+MINIMAL_TARGETS.update({
+    "testMapRecentDeniedBackupQueueMapForegroundDoesNotExit",
+    "testFilesTagSheetRotationMapReturnDoesNotExit",
+    "testOriginalsDeniedCloudNotesGalleryReturnDoesNotExit",
+    "testBackupAuditQueueDeniedFilesReturnDoesNotExit",
+    "testClipboardDeniedReceiverNotesFilesForegroundDoesNotExit",
+})
 # One frame per all-native-page crash journey; original taps remain logged.
 # These are real native XCTest routes, not fabricated Owner/Viewer data.
 MINIMAL_TARGETS.update({

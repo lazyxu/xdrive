@@ -848,4 +848,133 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         capture(app, "notes-sources-clipboard-files")
     }
 
+
+    /// MapKit -> denied Files child -> read-only Backup queue -> MapKit.
+    /// This re-enters real native view graphs without an authenticated token.
+    func testMapRecentDeniedBackupQueueMapForegroundDoesNotExit() {
+        let app = launch()
+        openLauncher("map", app)
+        ready("native-ios-map-source-selector", app)
+        filesHomeChild("native-ios-files-open-recent",
+                       page: "native-ios-files-recent-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        tap("native-ios-files-recent-error-return", app)
+        waitRetired("native-ios-files-recent-error-page", app)
+        openLauncher("backup", app)
+        ready("native-ios-backup-overview", app)
+        tap("native-ios-photos-task-list", app)
+        ready("native-ios-photo-task-list-done", app)
+        tap("native-ios-photo-task-list-done", app)
+        waitRetired("native-ios-photo-task-list-done", app)
+        openLauncher("map", app)
+        ready("native-ios-map-source-selector", app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-map-source-selector", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "map-denied-recent-backup-map-foreground")
+    }
+
+    /// The real native Files tag manager must retire through rotation,
+    /// preserving the previously selected Map and Owner's no-bearer fence.
+    func testFilesTagSheetRotationMapReturnDoesNotExit() {
+        let app = launch()
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        openLauncher("map", app)
+        ready("native-ios-map-source-selector", app)
+        filesHomeChild("native-ios-files-home-manage-tags",
+                       page: "native-ios-files-tag-management", app)
+        device.orientation = .landscapeLeft
+        ready("native-ios-files-tag-management", app)
+        device.orientation = .portrait
+        tapNamed("完成", app)
+        waitRetired("native-ios-files-tag-management", app)
+        device.press(.home)
+        app.activate()
+        ready("native-ios-files-section-browse", app)
+        tap("native-ios-tab-gallery", app)
+        ready("native-ios-map-source-selector", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        capture(app, "files-tag-rotation-map-return")
+    }
+
+    /// Cloud Originals must not accidentally reuse a denied Files folder
+    /// or resurrect it when returning from the Notes subpage.
+    func testOriginalsDeniedCloudNotesGalleryReturnDoesNotExit() {
+        let app = launch()
+        openLauncher("originals", app)
+        ready("native-ios-cloud-original-layout-help", app)
+        filesHomeChild("native-ios-files-open-root-location",
+                       page: "native-ios-files-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        tap("native-ios-files-error-return", app)
+        waitRetired("native-ios-files-error-page", app)
+        openLauncher("notes", app)
+        ready("native-ios-notes-page", app)
+        tap("native-ios-tab-gallery", app)
+        ready("native-ios-cloud-original-layout-help", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "originals-denied-files-notes-gallery")
+    }
+
+    /// The read-only Backup Audit and Queue are separate children; after
+    /// foreground return they must not expose protected Cloud Files.
+    func testBackupAuditQueueDeniedFilesReturnDoesNotExit() {
+        let app = launch()
+        openLauncher("backup", app)
+        ready("native-ios-backup-overview", app)
+        tapNamed("逐项核验当前云端原件", app)
+        ready("native-ios-backup-portrait-form", app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-backup-portrait-form", app)
+        tapNamed("返回相册备份", app)
+        ready("native-ios-backup-overview", app)
+        tap("native-ios-photos-task-list", app)
+        ready("native-ios-photo-task-list-done", app)
+        tap("native-ios-photo-task-list-done", app)
+        waitRetired("native-ios-photo-task-list-done", app)
+        filesHomeChild("native-ios-files-open-root-location",
+                       page: "native-ios-files-error-page", app)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        tap("native-ios-files-error-return", app)
+        waitRetired("native-ios-files-error-page", app)
+        openLauncher("backup", app)
+        ready("native-ios-backup-overview", app)
+        capture(app, "backup-audit-queue-denied-files-return")
+    }
+
+    /// Device receiver denial remains denied across Notes source switching,
+    /// Files navigation and a background/foreground lifecycle.
+    func testClipboardDeniedReceiverNotesFilesForegroundDoesNotExit() {
+        let app = launch()
+        openLauncher("clipboard", app)
+        ready("ios-clipboard-draft", app)
+        tapNamed("启用本机设备定向接收", app)
+        ready("ios-clipboard-status", app)
+        XCTAssertFalse(app.staticTexts["设备定向接收已启用"].firstMatch.exists)
+        openLauncher("notes", app)
+        ready("native-ios-notes-page", app)
+        let source = app.segmentedControls.firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 15))
+        let iosBackup = source.buttons["iOS 备份"].firstMatch
+        XCTAssertTrue(iosBackup.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-notes-backup-after-clipboard")
+        iosBackup.tap()
+        ready("native-ios-notes-page", app)
+        tap("native-ios-tab-files", app)
+        ready("native-ios-files-section-browse", app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        ready("native-ios-files-section-browse", app)
+        openLauncher("clipboard", app)
+        ready("ios-clipboard-draft", app)
+        XCTAssertFalse(app.staticTexts["设备定向接收已启用"].firstMatch.exists)
+        XCTAssertFalse(element("native-ios-files-grid", app).exists)
+        capture(app, "clipboard-denial-notes-files-foreground")
+    }
+
 }

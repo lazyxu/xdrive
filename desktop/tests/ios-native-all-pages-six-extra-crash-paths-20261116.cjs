@@ -68,3 +68,32 @@ test("Notes dual-source and Clipboard/Files return use production SwiftUI routes
   assert.match(method(cases[5]), /openLauncher\("clipboard"/);
   assert.match(method(cases[5]), /native-ios-files-section-browse/);
 });
+
+test("five more actual Map, Files, Backup, Originals and Clipboard crash journeys stay fail closed", () => {
+  const extra = [
+    "testMapRecentDeniedBackupQueueMapForegroundDoesNotExit",
+    "testFilesTagSheetRotationMapReturnDoesNotExit",
+    "testOriginalsDeniedCloudNotesGalleryReturnDoesNotExit",
+    "testBackupAuditQueueDeniedFilesReturnDoesNotExit",
+    "testClipboardDeniedReceiverNotesFilesForegroundDoesNotExit",
+  ];
+  assert.equal(new Set(extra).size, 5);
+  const allNames = [...crash.matchAll(/\bfunc\s+(test\w+)\(\)/g)].map(x => x[1]);
+  assert.ok(allNames.length >= 35);
+  assert.equal(new Set(allNames).size, allNames.length);
+  for (const name of extra) {
+    const body = method(name);
+    assert.ok(watcher.includes('"' + name + '"'), "no real Simulator frame capture: " + name);
+    assert.match(body, /app\.state|ready\(/);
+    assert.doesNotMatch(body, /XCTSkip|mockServerLogin|fakeToken|startBackup\(/);
+  }
+  assert.match(method(extra[0]), /native-ios-map-source-selector/);
+  assert.match(method(extra[1]), /native-ios-files-tag-management/);
+  assert.match(method(extra[1]), /orientation = \.landscapeLeft/);
+  assert.match(method(extra[2]), /native-ios-cloud-original-layout-help/);
+  assert.match(method(extra[3]), /native-ios-photo-task-list-done/);
+  assert.match(method(extra[4]), /设备定向接收已启用/);
+  for (const name of [extra[0], extra[2], extra[3], extra[4]]) {
+    assert.match(method(name), /native-ios-files-grid/);
+  }
+});
