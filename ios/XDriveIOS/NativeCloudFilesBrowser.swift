@@ -1053,10 +1053,15 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var locatedFileNotice: String?
     private let folder: XDriveIOSNativeFilesFolder?
     private let focusedNode: XDriveIOSNativeFilesNode?
+    // Only the fixed Files tab receives an external visibility signal.
+    // Child folder screens keep their existing NavigationStack lifecycle.
+    private let isRootTabActive: Bool
 
     init(login: XDriveIOSNativeOwnerLoginModel,
-         initialOffset: Int = 0, focus: XDriveIOSNativeFilesNode? = nil) {
+         initialOffset: Int = 0, focus: XDriveIOSNativeFilesNode? = nil,
+         isRootTabActive: Bool = true) {
         self.login = login
+        self.isRootTabActive = isRootTabActive
         folder = nil
         focusedNode = focus
         _offset = State(initialValue: initialOffset)
@@ -1065,6 +1070,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     private init(login: XDriveIOSNativeOwnerLoginModel,
                  folder: XDriveIOSNativeFilesFolder) {
         self.login = login
+        self.isRootTabActive = true
         self.folder = folder
         focusedNode = nil
         _offset = State(initialValue: folder.initialOffset)
@@ -1080,6 +1086,7 @@ struct XDriveIOSNativeFilesBrowser: View {
          folderName: String, initialOffset: Int = 0,
          focus: XDriveIOSNativeFilesNode? = nil) {
         self.login = login
+        self.isRootTabActive = true
         self.folder = XDriveIOSNativeFilesFolder(id: folderID, name: folderName)
         focusedNode = focus
         _offset = State(initialValue: initialOffset)
@@ -3900,6 +3907,16 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func filesOwnerLifecycle(returnScroll: ScrollViewProxy) -> some View {
         AnyView(filesForegroundLifecycle(returnScroll: returnScroll))
+        .onChange(of: isRootTabActive) { active in
+            guard !active else { return }
+            // TabView retains Files NavigationStack while Gallery is active;
+            // onDisappear alone may not clear an expanded searchable overlay.
+            // Close only presentation/keyboard, not the verified query, Owner,
+            // section, scroll anchor or retained file rows.
+            submittedSearchRestoreQuery = nil
+            searchPresented = false
+            dismissSearch()
+        }
         .onChange(of: login.owner) { _ in
             quickHistoryReadAttempted = false
             showingAncestorsSheet = false
