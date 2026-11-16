@@ -40,6 +40,12 @@ MAX_CAPTURE_DURATION_SECONDS = 2.5
 # Bounded per test to avoid exhausting storage on rapid 16-cycle suites.
 TAP_CAPTURE_NUMBERS = frozenset((1, 2, 4, 8, 12, 16))
 TARGETS = {
+    "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
+    "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
+    "testFilesCloudDenialThenQuickSectionsKeepNativeContent",
+    "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
+    "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
+    "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
     # Repeated real native subpage, keyboard, source and foreground crash paths.
     "testLauncherSearchKeyboardForegroundFilesReturnDoesNotExit",
     "testDynamicRecentPickerTwiceFilesGalleryForegroundDoesNotExit",
