@@ -35,7 +35,11 @@ test('P0-2 world-view or zoomed region disables stale aggregate before first cam
 test('P0-3 real PhotoKit independent GPS inventory and exact import delta do not pretend synthetic 100k is real', () => {
   assert.match(local, /private func runP0IndependentGPSAudit\(\)/)
   assert.match(local, /PHAsset\.fetchAssets\(with: PHFetchOptions\(\)\)/)
-  assert.match(local, /independentlyLocated \+= 1/)
+  assert.match(local, /let audit = Task\.detached\(priority: \.userInitiated\)[\s\S]*?PHAsset\.fetchAssets\(with: PHFetchOptions\(\)\)[\s\S]*?let asset = assets\.object\(at: index\)[\s\S]*?asset\.location\?\.coordinate[\s\S]*?located \+= 1/)
+  assert.match(local, /if Task\.isCancelled \{ return nil \}/)
+  assert.match(local, /guard generation == ticket else \{ return \}/)
+  assert.match(local, /guard let independentlyLocated = observed, phase == \.active,[\s\S]*?authorizationStatus\(for: \.readWrite\) == \.authorized/)
+  assert.match(local, /independentlyLocated == expected \? "一致" : "不一致"/)
   assert.match(local, /native-ios-map-p0-independent-count/)
   assert.match(ui, /func testP0RealPhotoKitIndependentGPSCountMatchesCurrentMap\(\)/)
   assert.match(ui, /XCTAssertEqual\(real, indexed,/)
@@ -119,11 +123,10 @@ test('P0 real Settings return may re-request Full Photos only after an explicit 
   const prompt = ui.indexOf('handleInitialPhotoLibraryPromptIfPresent()', selection)
   const systemStop = ui.indexOf('if app.state == .notRunning {', prompt)
   const secondResume = ui.indexOf('resumeMapAfterSystemPhotosChange(', systemStop)
-  const readback = ui.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings")', secondResume)
-  // The current real iOS recovery path checks MapKit during a bounded
-  // foreground poll. The legacy one-shot "if !element" guard was removed
-  // to recover actual OS-terminated TCC processes, NOT to waive the gate.
-  const deadline = ui.indexOf('let reentryDeadline = Date().addingTimeInterval(35)', readback)
+  // The OS may kill the target between Settings consent and the first AX
+  // lookup; a stale-PID readback before the map poll is unsafe. Keep the real
+  // permission readback strictly AFTER verified MapKit remount.
+  const deadline = ui.indexOf('let reentryDeadline = Date().addingTimeInterval(35)', secondResume)
   const poll = ui.indexOf('while Date() < reentryDeadline {', deadline)
   const lateStop = ui.indexOf('if app.state == .notRunning {', poll)
   const lateResume = ui.indexOf('resumeMapAfterSystemPhotosChange(', lateStop)
@@ -131,11 +134,16 @@ test('P0 real Settings return may re-request Full Photos only after an explicit 
   const admitted = ui.indexOf('mapRestored = true', mapGate)
   const rejection = ui.indexOf('if !mapRestored {', admitted)
   const failClosed = ui.indexOf('XCTFail(systemRelaunched', rejection)
+  const verifiedReadback = ui.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings-verified-map")', failClosed)
+  const diagnosticScope = ui.indexOf('if mapRestored {', failClosed)
   assert.ok(selection >= 0 && selection < prompt && prompt < systemStop &&
-            systemStop < secondResume && secondResume < readback && readback < deadline &&
+            systemStop < secondResume && secondResume < deadline &&
             deadline < poll && poll < lateStop && lateStop < lateResume &&
             lateResume < mapGate && mapGate < admitted && admitted < rejection &&
-            rejection < failClosed)
+            rejection < failClosed && failClosed < diagnosticScope &&
+            diagnosticScope < verifiedReadback)
+  assert.ok(ui.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings")', secondResume) < 0,
+    'Do not query a possibly OS-terminated Photos target before real MapKit returns')
   assert.match(ui, /if app\.state != \.notRunning \{\s*app\.activate\(\)/)
   assert.match(ui, /The still-running app must resume immediately from Settings/)
   assert.match(ui, /A still-running app must mount real MapKit immediately on Settings return/)

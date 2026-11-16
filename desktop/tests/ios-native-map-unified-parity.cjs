@@ -212,10 +212,13 @@ test('Settings-return permission transition is live-revalidated and cold-start f
   const permissionTap = simulator.indexOf('full.tap()')
   const proof = simulator.indexOf('MAP_PHOTOS_FULL_ACCESS_POST_TAP')
   const resume = simulator.indexOf('var systemRelaunched = resumeMapAfterSystemPhotosChange(', proof)
-  const liveReadback = simulator.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings")', resume)
-  const coldStart = simulator.indexOf('MAP_PHOTOS_COLD_START_PROBE', liveReadback)
+  const coldStart = simulator.indexOf('MAP_PHOTOS_COLD_START_PROBE', resume)
+  const mapRestored = simulator.indexOf('if mapRestored {', coldStart)
+  const liveReadback = simulator.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings-verified-map")', mapRestored)
   assert.ok(permissionTap >= 0 && permissionTap < proof && proof < resume &&
-            resume < liveReadback && liveReadback < coldStart)
+            resume < coldStart && coldStart < mapRestored && mapRestored < liveReadback)
+  assert.ok(simulator.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings")', resume) < 0,
+    'A TCC-stopped target must be checked only after a genuine reopened MapKit is verified')
 })
 
 test('real iOS first-use Photo Library system prompt cannot be default-denied by XCTest', () => {
