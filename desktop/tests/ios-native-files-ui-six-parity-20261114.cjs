@@ -16,8 +16,9 @@ const policy = source('ios/XDriveIOS/NativeFilesViewModePolicy.swift')
 const workflow = source('.github/workflows/ios-native-navigation-runtime.yml')
 const video = source('ios/scripts/files_ui_transition_video.py')
 
-test('F1 Home has an overview and collapsed secondary tags', () => {
-  assert.match(browse, /native-ios-files-home-overview/)
+test('F1 Home starts with real destinations and search, not redundant overview', () => {
+  assert.doesNotMatch(browse, /native-ios-files-home-overview|Text\("我的文件"\)/)
+  assert.match(browse, /native-ios-files-home-search/)
   assert.match(browse, /DisclosureGroup\("标签与分类", isExpanded: \$homeTagsExpanded\)/)
   assert.match(browse, /private var homeTagsExpanded = false/)
   for (const id of ['native-ios-files-open-root-location',
