@@ -919,7 +919,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var shouldRestoreViewerTile = false
     // At most two verified 48-row windows; presentation-only measurements.
     @State private var visibleTileFrames: [String: CGRect] = [:]
-    @State private var pinchReturnID: String?
+    @State private var pinchReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
     @State private var photoWallViewportHeight: CGFloat = 0
     @State private var viewerReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
     @AccessibilityFocusState private var focusedTileID: String?
@@ -1229,22 +1229,43 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             .xdrivePhotoWallPinch(
                 density: $density, enabled: active && viewing == nil && !busy,
                 onDensityChange: { _ in
-                    pinchReturnID = visibleTileFrames
+                    // Keep the same fully visible tile at its measured pixel
+                    // position, matching the main Gallery's pinch behavior.
+                    // This only stores transient presentation geometry.
+                    let verifiedWindow = isNearbyExpansion
+                        ? nearbyWindowIndex : windowIndex
+                    pinchReturnViewport = visibleTileFrames
                         .filter { $0.value.minY >= 0 &&
-                                  $0.value.minY <= photoWallViewportHeight }
-                        .min(by: { $0.value.minY < $1.value.minY })?.key
+                                  $0.value.maxY <= photoWallViewportHeight }
+                        .min(by: { $0.value.minY < $1.value.minY })
+                        .map { entry in
+                            XDriveIOSNativePhotoWallViewportAnchor(
+                                itemID: entry.key,
+                                windowIndex: verifiedWindow,
+                                viewportOffset: entry.value.minY,
+                                tileHeight: entry.value.height)
+                        }
                 }
             )
             .onChange(of: density) { _ in
-                defer { pinchReturnID = nil }
-                guard active, viewing == nil, let id = pinchReturnID,
-                      (previous + current).filter({ $0.id == id }).count == 1
+                defer { pinchReturnViewport = nil }
+                let verifiedWindow = isNearbyExpansion
+                    ? nearbyWindowIndex : windowIndex
+                guard active, viewing == nil,
+                      let anchor = pinchReturnViewport,
+                      (previous + current).filter({
+                          $0.id == anchor.itemID
+                      }).count == 1,
+                      let alignment = anchor.alignment(
+                          for: anchor.itemID, window: verifiedWindow,
+                          viewportHeight: photoWallViewportHeight)
                 else { return }
-                scroll.scrollTo(id, anchor: .top)
+                xdrivePhotoWallScrollVerifiedTile(
+                    anchor.itemID, scroll: scroll, anchor: alignment)
             }
             .onChange(of: backfillAnchorID) { anchor in
                 defer {
-                    backfillAnchorID = nil; backfillViewportAnchor = nil
+                    backfillAnchorID = nil
                     backfillViewportAnchor = nil
                 }
                 guard active, let anchor,
