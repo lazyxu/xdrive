@@ -1920,13 +1920,20 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     if let mapSource {
-                        Picker("地图照片来源", selection: mapSource) {
-                            Text(XDriveIOSNativePhotoMapSource.local.label)
-                                .tag(XDriveIOSNativePhotoMapSource.local)
-                            if canSelectCloudMap {
-                                Text(XDriveIOSNativePhotoMapSource.cloud.label)
-                                    .tag(XDriveIOSNativePhotoMapSource.cloud)
+                        // SwiftUI can flatten a Picker directly within an
+                        // enclosing Menu, hiding its AX identifier on iOS.
+                        // Give source selection a real, tappable submenu.
+                        Menu {
+                            Picker("地图照片来源", selection: mapSource) {
+                                Text(XDriveIOSNativePhotoMapSource.local.label)
+                                    .tag(XDriveIOSNativePhotoMapSource.local)
+                                if canSelectCloudMap {
+                                    Text(XDriveIOSNativePhotoMapSource.cloud.label)
+                                        .tag(XDriveIOSNativePhotoMapSource.cloud)
+                                }
                             }
+                        } label: {
+                            Label("照片来源", systemImage: "photo.on.rectangle")
                         }
                         .accessibilityIdentifier("native-ios-map-source-selector")
                     }

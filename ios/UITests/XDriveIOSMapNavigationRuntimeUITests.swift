@@ -570,10 +570,17 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(actions.waitForExistence(timeout: 10))
         XCTAssertTrue(actions.isHittable)
         actions.tap()
-        // The source Picker is only exposed inside this genuine menu.
-        XCTAssertTrue(element("native-ios-map-source-selector", in: app)
-            .waitForExistence(timeout: 6),
-            "Map source selection must stay in the advanced actions menu")
+        // The accessible submenu must be visible inside the *real* MapKit
+        // actions menu. iOS may expose its label instead of the AX ID.
+        let sourceControl = element("native-ios-map-source-selector", in: app)
+        let sourceLabel = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "照片来源")).firstMatch
+        if !sourceControl.waitForExistence(timeout: 6) &&
+            !sourceLabel.waitForExistence(timeout: 6) {
+            diagnose("Real MapKit source submenu is not accessible", in: app)
+        }
+        XCTAssertTrue(sourceControl.exists || sourceLabel.exists,
+                      "Map source selection must stay in the advanced actions menu")
         let dateMenu = element("native-ios-local-map-capture-menu", in: app)
         XCTAssertTrue(dateMenu.waitForExistence(timeout: 6))
         // UI date → month selection must preserve verified PhotoKit scope.
@@ -620,8 +627,11 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let close = element("native-ios-map-dismiss", in: app)
         XCTAssertTrue(close.waitForExistence(timeout: 15))
         close.tap()
-        XCTAssertTrue(element("native-ios-tab-gallery", in: app)
+        // After MapKit closes, the Photos chrome must return, including
+        // when its timeline selector replaces the transient Library button.
+        XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app)
             .waitForExistence(timeout: 15))
+        XCTAssertTrue(element("native-ios-gallery-more-menu", in: app).exists)
         XCTAssertEqual(app.state, .runningForeground)
     }
 
@@ -753,11 +763,12 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let mapClose = element("native-ios-map-dismiss", in: app)
         XCTAssertTrue(mapClose.waitForExistence(timeout: 15))
         mapClose.tap()
-        let gallery = element("native-ios-tab-gallery", in: app)
-        XCTAssertTrue(gallery.waitForExistence(timeout: 15))
-        gallery.tap()
-        // Compare the actual same PhotoKit library, not a cloud placeholder.
-        let sourceMenu = element("native-ios-gallery-source-menu", in: app)
+        // Map close restores the Gallery. Its native Photos bar may show
+        // Year/Month/All at the retained scroll position rather than a
+        // tappable Library tab. Open the real source menu instead.
+        XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app)
+            .waitForExistence(timeout: 15))
+        let sourceMenu = element("native-ios-gallery-more-menu", in: app)
         XCTAssertTrue(sourceMenu.waitForExistence(timeout: 15))
         sourceMenu.tap()
         let localSource = app.buttons["本机照片"].firstMatch
@@ -946,8 +957,11 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let done = element("native-ios-map-dismiss", in: app)
         XCTAssertTrue(done.waitForExistence(timeout: 15))
         done.tap()
-        XCTAssertTrue(element("native-ios-tab-gallery", in: app)
+        // After MapKit closes, the Photos chrome must return, including
+        // when its timeline selector replaces the transient Library button.
+        XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app)
             .waitForExistence(timeout: 15))
+        XCTAssertTrue(element("native-ios-gallery-more-menu", in: app).exists)
         XCTAssertEqual(app.state, .runningForeground)
     }
 
