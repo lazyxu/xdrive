@@ -108,6 +108,109 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     }
 }
 
+/// Collections retains PhotoKit's own album readers and navigation stacks.
+/// Unsupported Memories/Trips/AI curation are not synthesized from fake
+/// thumbnails or unverified server membership.
+struct XDriveIOSNativePhotosCollectionsScreen: View {
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @Binding var savedAlbumOffset: Int
+    @State private var recentOffset = 0
+    @State private var recentFilter: XDriveIOSNativePhotoMediaFilter = .all
+    @State private var videoOffset = 0
+    @State private var videoFilter: XDriveIOSNativePhotoMediaFilter = .videos
+    @State private var liveOffset = 0
+    @State private var liveFilter: XDriveIOSNativePhotoMediaFilter = .livePhotos
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("最近的日子")
+                        .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    NavigationLink {
+                        XDriveIOSNativeLocalPhotoTimelineContainer(
+                            savedOffset: $recentOffset, mediaFilter: $recentFilter
+                        )
+                    } label: {
+                        Label("按拍摄日期浏览", systemImage: "calendar")
+                            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                            .padding(.horizontal, 14)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                        in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .accessibilityIdentifier("native-ios-collections-recent-days")
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("人物与宠物")
+                        .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    NavigationLink {
+                        XDriveIOSNativeGalleryPeople(login: login)
+                    } label: {
+                        Label("查看人物与宠物", systemImage: "person.2.crop.square.stack")
+                            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                            .padding(.horizontal, 14)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                        in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .accessibilityIdentifier("native-ios-collections-people")
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("相簿")
+                        .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    NavigationLink {
+                        XDriveIOSNativePhotoAlbumsScreen(savedOffset: $savedAlbumOffset)
+                    } label: {
+                        Label("查看全部相簿", systemImage: "rectangle.stack")
+                            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                            .padding(.horizontal, 14)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                        in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .accessibilityIdentifier("native-ios-collections-albums")
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("媒体类型")
+                        .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    HStack(spacing: 10) {
+                        NavigationLink {
+                            XDriveIOSNativeLocalPhotoTimelineContainer(
+                                savedOffset: $videoOffset, mediaFilter: $videoFilter
+                            )
+                        } label: {
+                            Label("视频", systemImage: "video")
+                                .frame(maxWidth: .infinity, minHeight: 64)
+                                .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                            in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .accessibilityIdentifier("native-ios-collections-videos")
+                        NavigationLink {
+                            XDriveIOSNativeLocalPhotoTimelineContainer(
+                                savedOffset: $liveOffset, mediaFilter: $liveFilter
+                            )
+                        } label: {
+                            Label("实况照片", systemImage: "livephoto")
+                                .frame(maxWidth: .infinity, minHeight: 64)
+                                .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                            in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .accessibilityIdentifier("native-ios-collections-live")
+                    }
+                }
+            }
+            .foregroundStyle(.primary)
+            .padding(16)
+        }
+        .accessibilityIdentifier("native-ios-photos-collections")
+    }
+}
+
 /// Native Photos-style Gallery shell with separate xDrive feature navigation. All routes are native SwiftUI/UIKit;
 /// unfinished domains remain explicitly unavailable rather than embedded browser
 /// fallbacks or fake success. No separate Owner session or upload runner.
