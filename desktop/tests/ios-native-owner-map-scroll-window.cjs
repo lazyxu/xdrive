@@ -77,7 +77,7 @@ test('cloud map album returns to last verified Viewer Node and never restores a 
   assert.match(album, /@State private var viewerReturn: XDriveIOSNativeMediaItem\?/)
   assert.match(album, /@State private var visiblePageRevision = UUID\(\)/)
   assert.match(album, /viewerReturn = item\s*viewerReturnViewport = visibleTileFrames\[String\(item\.id\)\]\.map[\s\S]*?viewing = item/)
-  assert.match(album, /onNavigate: \{ neighbor in[\s\S]*?viewerReturn = neighbor\s*return true/)
+  assert.match(album, /onNavigate: \{ neighbor in[\s\S]*?page\.items\.contains\(where: \{[\s\S]*?sameVisibleRevision\(as: neighbor\)[\s\S]*?viewerReturn = neighbor\s*viewerReturnViewport = visibleTileFrames\[String\(neighbor\.id\)\]\.map[\s\S]*?return true/)
   assert.match(album, /onCrossedRange: \{ opened, verifiedRange in[\s\S]*?viewerReturn = opened/)
   assert.match(album, /\.id\(item\.id\)/)
   assert.match(album, /\.onChange\(of: visiblePageRevision\) \{ _ in/)
@@ -139,7 +139,7 @@ test('verified cloud map auto-paging restores the retained last tile when the tw
   assert.match(album, /autoScrollReturnViewport\?\.alignment\([\s\S]*?returnScroll\.scrollTo\(anchor\.id, anchor: restored \?\? \.bottom\)[\s\S]*?autoScrollReturn = nil/)
   assert.match(album, /if autoAdvance, let departingPage,[\s\S]*?priorWindow = departingPage\s*priorWindowCursor = departingCursor\s*autoScrollReturn = departingPage\.items\.last/)
   assert.match(album, /autoScrollReturn = departingPage\.items\.last[\s\S]*?cursor = target\s*earlier = history\s*next = following\s*page = fetched\s*visiblePageRevision = UUID\(\)/)
-  assert.match(album, /private func invalidate\(\) \{[\s\S]*?viewerReturn = nil\s*viewerOpeningItem = nil\s*focusedTileID = nil\s*autoScrollReturn = nil/)
+  assert.match(album, /private func invalidate\(\) \{[\s\S]*?viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*autoScrollReturnViewport = nil[\s\S]*?focusedTileID = nil\s*autoScrollReturn = nil/)
   assert.match(album, /if autoAdvance \|\| target != cursor \{ viewerReturn = nil \}\s*autoScrollReturn = nil/)
   assert.match(album, /if !autoAdvance \{[\s\S]*?priorWindow = nil\s*priorWindowCursor = nil/)
   // Reverified SAME Owner+exact Node/revision may keep already painted covers
