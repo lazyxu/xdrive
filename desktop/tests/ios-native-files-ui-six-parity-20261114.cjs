@@ -160,7 +160,10 @@ test('F10 Viewer first displayed frame and all-file subroute gate remain explici
 test('F11 real H264 recorder has pre-tap video for all six native cases', () => {
   // Do not suppress missing_pre_tap_frames: instead start the recorder before
   // the six real test methods issue their first route transition.
-  assert.match(video, /MAX_CLIP_SECONDS = 120/)
+  // A real 138.5-second XCUITest previously exceeded the 120-second clip cutoff.
+  // Retain a finite 210-second recording limit and reject absent tap/frames.
+  assert.match(video, /MAX_CLIP_SECONDS = 210/)
+  assert.match(video, /MAX_TIMELINE_STARTUP_SECONDS = 20/)
   assert.match(video, /missing_pre_tap_frames/)
   for (const src of [stability, transitions]) {
     assert.match(src, /Thread\.sleep\(forTimeInterval: 24\)/)

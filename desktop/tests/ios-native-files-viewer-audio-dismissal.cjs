@@ -38,7 +38,7 @@ test('audio progress never exceeds the native slider bound',()=>{
 })
 test('backgrounded Viewer refuses audio autoplay on reactivation',()=>{
   assert.match(viewer,/@State private var allowAudioAutoplay = true/)
-  assert.match(viewer,/if next != \.active \{\s*allowAudioAutoplay = false\s*retire\(\)/)
+  assert.match(viewer,/if next != \.active \{\s*showingFileDetails = false\s*allowAudioAutoplay = false\s*retire\(\)/)
 })
 test('audio surface is bound to actual per-viewer autoplay intent',()=>{
   assert.match(viewer,/XDriveIOSNativeFileAudioSurface\(player: player, autoplay: allowAudioAutoplay\)/)
