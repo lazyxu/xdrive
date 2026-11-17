@@ -272,7 +272,9 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                                firstCapturedAt: section.items.first?.capturedAt,
                                scale: timeScale
                            ) { return nil }
-                        return timeScale.label(for: section.key)
+                        return xdriveIOSNativePhotoWallHeading(
+                            scale: timeScale, key: section.key,
+                            firstSection: section.id == 0)
                     },
                     items: { $0.items }
                 ) { row in

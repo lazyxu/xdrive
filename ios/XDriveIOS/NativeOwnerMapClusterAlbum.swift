@@ -201,14 +201,25 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             ScrollViewReader { returnScroll in
             XDriveIOSNativePhotoWallScrollContainer {
                 XDriveIOSNativePhotoWallCollectionStack {
+                    if activeOwner && busy && page == nil && priorWindow == nil {
+                        XDriveIOSNativePhotoWallSkeletonGrid(
+                            density: wallDensity, count: min(48, selectedPhotoCount)
+                        )
+                    }
+                    if activeOwner && !busy && error == nil &&
+                       page?.items.isEmpty == true && priorWindow == nil {
+                        XDriveIOSNativePhotoWallEmptyState(
+                            message: "此地点没有可访问的照片或视频")
+                    }
                     // Render no stale Owner pixels even before onChange clears
                     // thumbnail tasks and expired server revisions.
                     if activeOwner {
                         XDriveIOSNativePhotoWallSectionList(
                             sections: visibleSections, density: wallDensity,
                             title: { section in
-                                wallTimeScale == .all ? nil :
-                                    wallTimeScale.label(for: section.key)
+                                xdriveIOSNativePhotoWallHeading(
+                                    scale: wallTimeScale, key: section.key,
+                                    firstSection: section.id == 0)
                             },
                             items: { $0.items }
                         ) { entry in
@@ -229,7 +240,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, XDriveIOSNativePhotoWallLayout.horizontalInset)
             }
             .coordinateSpace(name: "xdrive-ios-owner-place-wall")
             .background {

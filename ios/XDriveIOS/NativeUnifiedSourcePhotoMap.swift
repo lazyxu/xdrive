@@ -1151,6 +1151,16 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         ScrollViewReader { scroll in
             XDriveIOSNativePhotoWallScrollContainer {
                 XDriveIOSNativePhotoWallCollectionStack {
+                if active && busy && previous.isEmpty && current.isEmpty {
+                    XDriveIOSNativePhotoWallSkeletonGrid(
+                        density: density, count: min(48, max(0, pin.count))
+                    )
+                }
+                if active && !busy && !opening && ended && error == nil &&
+                   previous.isEmpty && current.isEmpty {
+                    XDriveIOSNativePhotoWallEmptyState(
+                        message: "此地点没有可访问的照片或视频")
+                }
                 if (isNearbyExpansion ? nearbyWindowIndex > 1 : windowIndex > 1)
                     && !busy && active && viewing == nil && !opening {
                     Color.clear.frame(height: 32)
@@ -1169,8 +1179,11 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 ) { displayTimeScale.key(for: $0.capturedAt) }
                 XDriveIOSNativePhotoWallSectionList(
                     sections: sections, density: density,
-                    title: { displayTimeScale == .all ? nil :
-                        displayTimeScale.label(for: $0.key) },
+                    title: { section in
+                        xdriveIOSNativePhotoWallHeading(
+                            scale: displayTimeScale, key: section.key,
+                            firstSection: section.id == 0)
+                    },
                     items: { $0.items }
                 ) { row in
                     photoButton(for: row).id(row.id)
@@ -1188,7 +1201,8 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 }
                 }
             }
-            .padding(4)
+            .padding(.horizontal, XDriveIOSNativePhotoWallLayout.horizontalInset)
+            .padding(.vertical, 4)
             .coordinateSpace(name: "xdrive-ios-source-place-wall")
             .background {
                 GeometryReader { viewport in

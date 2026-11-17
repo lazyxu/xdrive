@@ -1408,7 +1408,10 @@ private struct XDriveIOSNativeServerVirtualRange: View {
                             firstCapturedAt: verified.items.first?.metadata.captured_at,
                             scale: timeScale
                         ) == true
-                        return continues ? nil : timeScale.label(for: section.key)
+                        return xdriveIOSNativePhotoWallHeading(
+                            scale: timeScale, key: section.key,
+                            firstSection: section.id == 0,
+                            verifiedContinuation: continues)
                     },
                     items: { $0.items }
                 ) { item in
@@ -1670,7 +1673,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, placeID == nil ? 12 : 6)
+            .padding(.horizontal, XDriveIOSNativePhotoWallLayout.horizontalInset)
             .padding(.vertical, 8)
         }
         .xdrivePhotoWallPinch(

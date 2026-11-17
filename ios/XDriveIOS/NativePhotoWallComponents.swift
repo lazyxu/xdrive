@@ -207,6 +207,30 @@ struct XDriveIOSNativePhotoWallStatusMessage: View {
     }
 }
 
+/// Shared empty-scope layout; deciding that an authorized range is really
+/// empty remains the responsibility of each PhotoKit/Owner caller.
+struct XDriveIOSNativePhotoWallEmptyState: View {
+    let message: String
+    var body: some View {
+        XDriveIOSNativePhotoWallStatusMessage(message: message, minHeight: 96)
+            .padding(.horizontal, XDriveIOSNativePhotoWallLayout.horizontalInset)
+    }
+}
+
+/// One date-header visibility contract for all verified Gallery/Places pages.
+/// A preceding heading is suppressed ONLY by a caller-proven adjacent range;
+/// an inferred date membership never grants a missing photo.
+func xdriveIOSNativePhotoWallHeading(
+    scale: XDriveIOSNativePhotoWallTimeScale,
+    key: String,
+    firstSection: Bool,
+    verifiedContinuation: Bool = false
+) -> String? {
+    guard scale != .all else { return nil }
+    if firstSection && verifiedContinuation { return nil }
+    return scale.label(for: key)
+}
+
 /// A day heading only for a capture-time-ordered collection. Location ranges
 /// are not automatically chronological and must not show invented headings.
 struct XDriveIOSNativePhotoWallDayHeader: View {

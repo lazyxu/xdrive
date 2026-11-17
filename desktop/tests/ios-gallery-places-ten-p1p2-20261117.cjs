@@ -67,3 +67,31 @@ test('backward place paging restores only a unique current-window tile', () => {
   assert.match(source, /backfillViewportAnchor = visibleTileFrames\[anchor\]\.map/)
   assert.match(source, /filter\(\{ \$0\.id == anchor \}\)\.count == 1/)
 })
+
+test('chronological headers share one presentation policy without guessing missing ranges', () => {
+  assert.match(shared, /func xdriveIOSNativePhotoWallHeading\(/)
+  assert.match(shared, /firstSection && verifiedContinuation/)
+  for (const n of ['NativeOwnerMapClusterAlbum','NativeUnifiedSourcePhotoMap',
+                   'NativeUnifiedPhotoWall','NativeServerMediaGallery'])
+    assert.match(swift(n), /xdriveIOSNativePhotoWallHeading\(/)
+  assert.match(swift('NativeServerMediaGallery'), /precedingBoundary\?\.continues\(/)
+  assert.match(swift('NativeUnifiedPhotoWall'), /wall\.continuesPreviousDate\(/)
+})
+test('shared place empty, skeleton and horizontal metrics stay permission-free', () => {
+  assert.match(shared, /struct XDriveIOSNativePhotoWallEmptyState: View/)
+  assert.match(owner, /page\?\.items\.isEmpty == true/)
+  assert.match(source, /ended && error == nil/)
+  assert.match(owner, /XDriveIOSNativePhotoWallLayout\.horizontalInset/)
+  assert.match(source, /XDriveIOSNativePhotoWallLayout\.horizontalInset/)
+  assert.match(swift('NativeUnifiedPhotoGallery'), /\.padding\(\.horizontal, XDriveIOSNativePhotoWallLayout\.horizontalInset\)/)
+  assert.match(swift('NativeServerMediaGallery'), /\.padding\(\.horizontal, XDriveIOSNativePhotoWallLayout\.horizontalInset\)/)
+})
+test('legacy local Gallery is not dispatched by production native Dashboard', () => {
+  const dashboard = swift('NativePhotosDashboard')
+  assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(/)
+  assert.doesNotMatch(dashboard, /XDriveIOSNativeLocalGalleryScreen\(/)
+  const dir = path.join(__dirname, '../../ios/XDriveIOS')
+  const stale = fs.readdirSync(dir).filter(n => n.endsWith('.swift')).filter(n =>
+    fs.readFileSync(path.join(dir, n), 'utf8').includes('XDriveIOSNativeLocalGalleryScreen('))
+  assert.deepEqual(stale, [], 'legacy screen has regained a production call site')
+})

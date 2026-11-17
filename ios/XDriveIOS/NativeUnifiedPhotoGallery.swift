@@ -368,7 +368,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                         }
                     }
                     .id(wall.generation)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .padding(.horizontal, XDriveIOSNativePhotoWallLayout.horizontalInset)
+                    .padding(.vertical, 8)
                 }
                 .coordinateSpace(name: "xdrive-ios-unified-gallery-wall")
                 .background {
@@ -394,10 +395,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             .filter { !$0.key.isEmpty && $0.value.minY >= 0 &&
                                       $0.value.maxY <= photoWallViewportHeight }
                             .min(by: { $0.value.minY < $1.value.minY })
-                            .map { id, frame in
+                            .map { entry in
                                 XDriveIOSNativePhotoWallViewportAnchor(
-                                    itemID: id, windowIndex: 0,
-                                    viewportOffset: frame.minY, tileHeight: frame.height)
+                                    itemID: entry.key, windowIndex: 0,
+                                    viewportOffset: entry.value.minY,
+                                    tileHeight: entry.value.height)
                             }
                     }
                 )
