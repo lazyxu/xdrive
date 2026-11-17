@@ -196,7 +196,10 @@ test('short landscape Owner map retains verified camera, feedback, Sheet and acc
   assert.match(map, /\.alert\("云端照片地图说明", isPresented: \$showingMapHelp\)/);
   assert.match(map, /\.accessibilityIdentifier\("native-ios-owner-map-layout-help"\)/);
   assert.match(map, /Button\("刷新当前视窗"\)/);
-  assert.match(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
+  // The Photos map keeps native Library/Collections/Search; a second xDrive
+  // five-slot focus toggle must not be offered by its Owner menu.
+  assert.doesNotMatch(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
+  assert.match(map, /Label\("地图操作", systemImage: "ellipsis.circle"\)/);
   assert.match(map, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/);
   assert.match(map, /if busy \{[\s\S]*?ProgressView\("正在加载照片位置…"/);
   assert.match(map, /\.sheet\(item: \$selected, onDismiss:/);

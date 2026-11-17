@@ -48,6 +48,10 @@ test('Collections cards preserve current PhotoKit permission and request cancell
 
 test('Gallery still shows one bar and preserves real xDrive navigation routes', () => {
   assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)/)
-  assert.match(ui, /if tab == \.gallery && gallerySource != \.map \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
+  // One native Photos bar stays visible on Library, Collections and Map.
+  // xDrive five-slot navigation only appears on non-Gallery modules.
+  assert.match(ui, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
+  assert.match(ui, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap,[\s\S]*?\.safeAreaInset\(edge: \.bottom, spacing: 0\) \{\s*nativePhotosBottomBar/)
+  assert.doesNotMatch(ui, /if tab == \.gallery && gallerySource != \.map/)
   assert.match(ui, /Section\("xDrive"\) \{[\s\S]*?Button\("文件"\) \{ tab = \.files \}/)
 })
