@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,6 +31,19 @@ const (
 )
 
 var errLocalPushAutoUnavailable = errors.New("local Push automatic scheduling unavailable")
+
+// Only a bounded diagnostic code reaches the Agent log. The raw backend
+// error can contain native filesystem paths, authorization or HTTP details.
+func localPushAutoStartErrorCode(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "scheduler_cancelled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "scheduler_deadline"
+	default:
+		return "owning_runner_rejected"
+	}
+}
 
 // These are authenticated Owner-readable *identifiers* only. They are NOT
 // local Root grants and never confer native filesystem access or upload rights.
@@ -424,7 +438,12 @@ func (c *agentController) localPushAutoTick(
 		attempts[key] = now
 		// This may fail if another owning Desktop starts manually; the
 		// existing one-Source worker/lease fails closed, without requeueing.
-		_, _ = c.CloudStartLocalBoundBackupCommonBatch(ctx, sourceID)
+		if _, startErr := c.CloudStartLocalBoundBackupCommonBatch(ctx, sourceID); startErr != nil {
+			// The durable cooldown was already recorded; do not bypass it
+			// or create a replacement original Operation on failure.
+			log.Printf("local backup auto start: source_id=%d reason=%s",
+				sourceID, localPushAutoStartErrorCode(startErr))
+		}
 		return nil
 	}
 	return nil

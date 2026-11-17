@@ -3,6 +3,7 @@
 package localpush
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -153,4 +154,81 @@ func ListVerifiedCommonUploadVersionedPlans(configDir string, grant RootGrant,
 func commonUploadVersionedPathHash(relativePath string) string {
 	sum := sha256.Sum256([]byte("xdrive/localpush/versioned-path/v1\x00" + relativePath))
 	return hex.EncodeToString(sum[:])
+}
+
+const maxCommonOriginalJournalPathEntries = 1000064
+
+// CountAbsentVerifiedCommonUploadVersionedPaths reports distinct, authenticated
+// versioned original-journal paths absent from the caller's fully traversed
+// VERIFIED inventory. It is diagnostic only: a missing path is NOT a pending
+// SQL receipt, a deleted source file, a CAS claim or permission to replay.
+// The input map and decoded paths remain entirely inside the owning Agent.
+func CountAbsentVerifiedCommonUploadVersionedPaths(
+	ctx context.Context, configDir string, grant RootGrant, ownerSession string,
+	presentPaths map[string]struct{},
+) (uint64, error) {
+	deny := ErrCommonUploadPlanQuarantined
+	if ctx == nil || ctx.Err() != nil || ownerSession == "" ||
+		!grant.StrongIdentity || presentPaths == nil {
+		return 0, deny
+	}
+	stored, err := LoadRootGrant(configDir, grant.Server, grant.Account, grant.RootID)
+	if err != nil || !sameLocalIdentityRoot(stored, grant) {
+		return 0, deny
+	}
+	dir, err := commonUploadPlanJournalDir(configDir, grant)
+	if err != nil {
+		return 0, deny
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) > maxCommonOriginalJournalPathEntries {
+		return 0, deny
+	}
+	var absent uint64
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		if !strings.HasPrefix(entry.Name(), "path-") {
+			// Private checkpoint, run-history, cooldown and legacy non-versioned
+			// records are different formats. Never mistake them for v2 paths.
+			continue
+		}
+		subdir := filepath.Join(dir, entry.Name())
+		info, err := os.Lstat(subdir)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
+			(runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) ||
+			len(entry.Name()) != len("path-")+64 {
+			return 0, deny
+		}
+		slots, err := os.ReadDir(subdir)
+		if err != nil || len(slots) == 0 ||
+			len(slots) > maxCommonUploadVersionedPlansPerPath {
+			return 0, deny
+		}
+		if slots[0].IsDir() {
+			return 0, deny
+		}
+		_, first, err := readCommonUploadPlanSlot(
+			filepath.Join(subdir, slots[0].Name()), ownerSession)
+		if err != nil || first.SourceID != grant.SourceID ||
+			first.Server != grant.Server || first.Account != grant.Account ||
+			first.DeviceID != grant.DeviceID || first.RootID != grant.RootID ||
+			first.RootFingerprint != grant.Fingerprint ||
+			!validCommonUploadVersionedRelativePath(first.RelativePath) ||
+			entry.Name() != "path-"+commonUploadVersionedPathHash(first.RelativePath) {
+			return 0, deny
+		}
+		// Validate EVERY original record (including pending ones) before
+		// counting this path. No Server request or write occurs in this audit.
+		plans, err := ListVerifiedCommonUploadVersionedPlans(
+			configDir, grant, ownerSession, first.RelativePath)
+		if err != nil || len(plans) != len(slots) {
+			return 0, deny
+		}
+		if _, found := presentPaths[first.RelativePath]; !found {
+			absent++
+		}
+	}
+	return absent, nil
 }

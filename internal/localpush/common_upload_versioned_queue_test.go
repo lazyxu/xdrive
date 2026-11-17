@@ -103,3 +103,46 @@ func TestCommonVersionedCorruptedOriginalBlocksReadback(t *testing.T) {
 		t.Fatalf("corrupted existing target revision replaced: %v", err)
 	}
 }
+
+func TestCountAbsentVerifiedCommonVersionedPathsIsReadOnlyAndOwnerScoped(t *testing.T) {
+	f := makeCommonPlanFixture(t)
+	if _, err := prepareVersionedFixture(f, "alpha.txt", f.target); err != nil {
+		t.Fatal(err)
+	}
+	bravo := localpushcommon.Target{ParentID: f.target.ParentID, Name: "bravo.txt"}
+	if _, err := prepareVersionedFixture(f, "bravo.txt", bravo); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	present := map[string]struct{}{"alpha.txt": {}, "bravo.txt": {}}
+	count := func(session string) (uint64, error) {
+		return CountAbsentVerifiedCommonUploadVersionedPaths(
+			ctx, f.config, f.grant, session, present)
+	}
+	if n, err := count(f.secret); err != nil || n != 0 {
+		t.Fatalf("all recorded paths remain in inventory: %d %v", n, err)
+	}
+	delete(present, "bravo.txt")
+	if n, err := count(f.secret); err != nil || n != 1 {
+		t.Fatalf("missing old path was not reported without writing: %d %v", n, err)
+	}
+	if _, err := count("different-owner-session"); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("foreign session read private original journal: %v", err)
+	}
+	// A corrupt old operation is not silently counted as a legitimate
+	// missing-path record; it requires the existing safe reconciliation.
+	dir, err := commonUploadPlanJournalDir(f.config, f.grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot, err := commonUploadVersionedSlot(dir, "bravo.txt", 7, bravo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(slot, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := count(f.secret); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("corrupt original journal was treated as trustworthy: %v", err)
+	}
+}

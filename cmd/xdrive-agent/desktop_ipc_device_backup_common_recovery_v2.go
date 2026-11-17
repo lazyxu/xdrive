@@ -28,6 +28,8 @@ type localCommonRecoveryReviewPage struct {
 	CurrentNodeMatch    uint64 `json:"current_node_metadata_match_files"`
 	CurrentNodeMismatch uint64 `json:"current_node_metadata_mismatch_files"`
 	PendingFiles        uint64 `json:"pending_original_files"`
+	AbsentPaths         uint64 `json:"absent_original_paths"`
+	JournalChecked      bool   `json:"journal_checked"`
 	NextAfterFile       uint64 `json:"next_after_file"`
 	PageEpoch           string `json:"page_epoch"`
 	HasMore             bool   `json:"has_more"`
@@ -115,7 +117,8 @@ func validLocalCommonRecoveryReviewPage(
 		(page.HasMore && (page.ReviewedFiles != localCommonRecoveryReviewPageSize ||
 			page.NextAfterFile != after+page.ReviewedFiles)) ||
 		(!page.HasMore && page.NextAfterFile != 0) ||
-		page.NextAfterFile > localCommonRecoveryReviewMaxAfter {
+		page.NextAfterFile > localCommonRecoveryReviewMaxAfter ||
+		page.AbsentPaths > localCommonRecoveryReviewMaxAfter {
 		return false
 	}
 	return true
