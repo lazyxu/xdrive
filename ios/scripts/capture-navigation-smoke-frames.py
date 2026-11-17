@@ -217,6 +217,7 @@ MINIMAL_TARGETS.update({
 })
 # Additional native all-pages/subpage crash journeys: real controls only.
 MINIMAL_TARGETS.update({
+    "testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner",
     "testInterruptedWorkspaceSafeEntryForegroundNoCrash",
     "testInterruptedSessionFullRetryRendersLoginNoCrash",
     "testTransfersFilesBackupRoundTripAndForegroundNoCrash",

@@ -815,6 +815,28 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         return app
     }
 
+    /// A process-argument UserDefaults fixture exercises rendering only. It
+    /// does not pretend that MetricKit delivered a live device crash report.
+    func testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner() {
+        let app = XCUIApplication()
+        let fixture = "MetricKit-fixture-signal-11"
+        app.launchArguments = [
+            "-xdrive.ios.native.launch-checkpoint.v1", "mountingWorkspace",
+            "-xdrive.ios.native.latest-crash-metric.v1", fixture
+        ]
+        app.launch()
+        ready("native-ios-startup-recovery", app)
+        ready("native-ios-system-crash-diagnostic", app)
+        XCTAssertTrue(element("native-ios-system-crash-diagnostic", app)
+            .label.contains(fixture), "OS-delivered metadata must be visible after recovery")
+        XCTAssertFalse(element("native-ios-five-slot-bar", app).exists,
+                       "Recovery must not mount an unverified private Files/Gallery workspace")
+        tap("native-ios-startup-safe-entry", app)
+        ready("native-ios-login-server", app)
+        XCTAssertEqual(app.state, .runningForeground)
+        capture(app, "delayed-system-crash-metric-recovery")
+    }
+
     func testInterruptedWorkspaceSafeEntryForegroundNoCrash() {
         let app = launchInterruptedCheckpoint("mountingWorkspace")
         tap("native-ios-startup-safe-entry", app)
