@@ -17,13 +17,13 @@ test('Owner cloud map keeps MapKit dominant and relocates refresh to a verified 
   assert.match(screen, /accessibilityIdentifier\("native-ios-owner-map-actions"\)/)
 })
 
-test('Owner native map uses a compact in-map verified count and retains truthful accessibility', () => {
+test('Owner map keeps count only in the current-proof accessible grid and place sheet', () => {
   assert.match(screen, /XDriveIOSNativePhotoMapStatusPill\(/)
   assert.match(screen, /\.overlay\(alignment: \.bottomLeading\)/)
-  assert.match(screen, /verifiedBounds != nil[\s\S]*?overview\.total_photo_count/)
-  assert.match(screen, /native-ios-owner-map-verified-count/)
-  assert.match(screen, /native-ios-owner-map-stale-count/)
-  assert.match(screen, /if let overview, displayedOverviewMatchesLogin/)
+  assert.match(screen, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/)
+  assert.match(screen, /overview\.map \{ "\\($0\.total_photo_count\) 张照片" \}/)
+  assert.doesNotMatch(screen, /native-ios-owner-map-verified-count|native-ios-owner-map-stale-count/)
+  assert.match(screen, /if busy \{[\s\S]*?ProgressView\("正在加载照片位置…"/)
   assert.match(screen, /if let error \{[\s\S]*?XDriveIOSNativePhotoMapStatusPill\(/)
   assert.match(screen, /Button\(focused \? "显示底部导航" : "专注地图"\)/)
   assert.match(screen, /Label\("地图说明", systemImage: "info.circle"\)/)
