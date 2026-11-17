@@ -94,9 +94,12 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
     let density: XDriveIOSNativePhotoWallDensity
     let framing: XDriveIOSNativePhotoWallFraming
     let timeScale: XDriveIOSNativePhotoWallTimeScale
+    let selectionMode: Bool
+    let selectedPhotoIDs: Set<String>
     let displayActive: Bool
     let retainWhileCovered: Bool
     let open: (XDriveIOSNativeUnifiedGalleryPage, Int) -> Void
+    let onSelect: (String) -> Void
     let loaded: ([String]) -> Void
     let pairing: (XDriveIOSNativeUnifiedPhoto) -> Void
     @StateObject private var model = XDriveIOSNativeUnifiedPhotoTimeline()
@@ -280,8 +283,17 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                 ) { row in
                             Button {
                                 guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
-                                      let position = model.rows.firstIndex(where: { $0.id == row.id }) else { return }
-                                open(.init(number: page.id, rows: model.rows), position)
+                                      let position = model.rows.firstIndex(where: { $0.id == row.id }),
+                                      model.rows.filter({ $0.id == row.id }).count == 1
+                                else { return }
+                                if selectionMode {
+                                    // A selection is only admitted after the
+                                    // bounded current Owner page is verified.
+                                    guard model.completed, displayActive else { return }
+                                    onSelect(row.id)
+                                } else {
+                                    open(.init(number: page.id, rows: model.rows), position)
+                                }
                             } label: {
                                 ZStack(alignment: .topLeading) {
                                     XDriveIOSUnifiedPhotoTile(
@@ -290,6 +302,15 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                                         retainWhileCovered: retainWhileCovered,
                                         framing: framing
                                     )
+                                    if selectionMode {
+                                        XDriveIOSNativePhotoWallSelectionIndicator(
+                                            selected: selectedPhotoIDs.contains(row.id),
+                                            accented: true
+                                        )
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity,
+                                               alignment: .topTrailing)
+                                        .accessibilityHidden(true)
+                                    }
                                     if let local = row.local, backupBadgeOwner != nil,
                                        let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy.badge(
                                         for: displayedBackupState(for: row),
@@ -310,7 +331,7 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                             .xdrivePhotoWallMeasureTile(
                                 displayActive && model.completed ? row.id : "",
                                 in: "xdrive-ios-unified-gallery-wall")
-                            .accessibilityLabel("\(row.isLive ? "实况照片" : row.isVideo ? "视频" : "照片")，\(row.presence.title)")
+                            .accessibilityLabel("\(row.isLive ? "实况照片" : row.isVideo ? "视频" : "照片")，\(row.presence.title)\(selectionMode && selectedPhotoIDs.contains(row.id) ? "，已选择" : "")")
                             .contextMenu {
                                 Button("来源与核对详情") { pairing(row) }
                                 if let local = row.local, let priorityAction {
