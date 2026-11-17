@@ -103,3 +103,20 @@ test('real Simulator journeys use visible Photos or xDrive actions and keep star
   assert.match(b9, /Workspace stayed at mountingWorkspace/);
   assert.doesNotMatch(nav, /coordinate\(withNormalizedOffset:/);
 });
+
+test('native Photos Collections use real bounded PhotoKit cover cards, never invented AI content', () => {
+  assert.match(ui, /struct XDriveIOSNativePhotosCollectionCover: View/);
+  for (const kind of ['recent', 'videos', 'livePhotos']) {
+    assert.match(ui, new RegExp('XDriveIOSNativePhotosCollectionCover\\(kind: \\.' + kind + '\\)'));
+  }
+  assert.match(ui, /options\.fetchLimit = kind == \.livePhotos \? 96 : 1/);
+  assert.match(ui, /PHAsset\.fetchAssets\(with: \.video, options: options\)/);
+  assert.match(ui, /asset\.mediaSubtypes\.contains\(\.photoLive\)/);
+  assert.match(ui, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
+  assert.match(ui, /onDisappear \{\s*changes\.stop\(\)\s*loader\.cancel\(\)/);
+  assert.match(ui, /onChange\(of: changes\.change\) \{ _ in loadCurrentCover\(\) \}/);
+  assert.match(ui, /onChange\(of: phase\) \{ next in[\s\S]*?else \{ loader\.cancel\(\) \}/);
+  const cover = ui.slice(ui.indexOf('private struct XDriveIOSNativePhotosCollectionCover: View'),
+                         ui.indexOf('/// Collections retains PhotoKit'));
+  assert.doesNotMatch(cover, /performChanges|requestImageDataAndOrientation|UploadSession|accessToken|UserDefaults/);
+});

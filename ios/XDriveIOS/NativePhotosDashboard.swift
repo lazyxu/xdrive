@@ -108,6 +108,119 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     }
 }
 
+/// Collection covers are visible thumbnails from the currently granted
+/// PhotoKit library, never guesses about People, Memories or Trips.
+/// Only the latest bounded candidates are read. No original bytes, persistent
+/// identifier, server Owner request or background backup operation is started.
+private enum XDriveIOSNativePhotosCollectionCoverKind {
+    case recent, videos, livePhotos
+
+    var title: String {
+        switch self {
+        case .recent: return "按拍摄日期浏览"
+        case .videos: return "视频"
+        case .livePhotos: return "实况照片"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .recent: return "calendar"
+        case .videos: return "video"
+        case .livePhotos: return "livephoto"
+        }
+    }
+}
+
+private struct XDriveIOSNativePhotosCollectionCover: View {
+    let kind: XDriveIOSNativePhotosCollectionCoverKind
+    @StateObject private var loader = XDriveIOSPhotoImageLoader()
+    @StateObject private var changes = XDriveIOSUnifiedPhotoObserver()
+    @Environment(\.scenePhase) private var phase
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .bottomLeading) {
+                if let image = loader.image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                } else {
+                    Rectangle()
+                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        .overlay {
+                            Image(systemName: kind.symbol)
+                                .font(.system(size: 34, weight: .light))
+                                .foregroundStyle(.secondary)
+                        }
+                }
+                LinearGradient(colors: [.clear, .black.opacity(0.65)],
+                               startPoint: .center, endPoint: .bottom)
+                Label(kind.title, systemImage: kind.symbol)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(14)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+        }
+        .aspectRatio(1.65, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onAppear {
+            changes.start()
+            loadCurrentCover()
+        }
+        .onDisappear {
+            changes.stop()
+            loader.cancel()
+        }
+        .onChange(of: changes.change) { _ in loadCurrentCover() }
+        .onChange(of: phase) { next in
+            if next == .active { loadCurrentCover() }
+            else { loader.cancel() }
+        }
+        .accessibilityLabel(kind.title)
+    }
+
+    private func loadCurrentCover() {
+        loader.cancel()
+        guard phase == .active,
+              [.authorized, .limited].contains(
+                PHPhotoLibrary.authorizationStatus(for: .readWrite)
+              ) else { return }
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        // Live Photos may not be the newest item. A bounded sample is only
+        // a cover candidate search, never a complete collection membership.
+        options.fetchLimit = kind == .livePhotos ? 96 : 1
+        let assets: PHFetchResult<PHAsset>
+        switch kind {
+        case .recent: assets = PHAsset.fetchAssets(with: options)
+        case .videos: assets = PHAsset.fetchAssets(with: .video, options: options)
+        case .livePhotos: assets = PHAsset.fetchAssets(with: .image, options: options)
+        }
+        let coverID: String?
+        if kind == .livePhotos {
+            var liveID: String?
+            for index in 0..<min(assets.count, 96) {
+                let asset = assets.object(at: index)
+                if asset.mediaSubtypes.contains(.photoLive) {
+                    liveID = asset.localIdentifier
+                    break
+                }
+            }
+            coverID = liveID
+        } else {
+            coverID = assets.firstObject?.localIdentifier
+        }
+        guard let coverID else { return }
+        loader.load(coverID, size: CGSize(width: 420, height: 280),
+                    contentMode: .aspectFill)
+    }
+}
+
 /// Collections retains PhotoKit's own album readers and navigation stacks.
 /// Unsupported Memories/Trips/AI curation are not synthesized from fake
 /// thumbnails or unverified server membership.
@@ -133,11 +246,8 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
                             savedOffset: $recentOffset, mediaFilter: $recentFilter
                         )
                     } label: {
-                        Label("按拍摄日期浏览", systemImage: "calendar")
-                            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .background(Color(uiColor: .secondarySystemGroupedBackground),
-                                        in: RoundedRectangle(cornerRadius: 16))
+                        XDriveIOSNativePhotosCollectionCover(kind: .recent)
+                            .frame(maxWidth: .infinity)
                     }
                     .accessibilityIdentifier("native-ios-collections-recent-days")
                 }
@@ -184,10 +294,8 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
                                 savedOffset: $videoOffset, mediaFilter: $videoFilter
                             )
                         } label: {
-                            Label("视频", systemImage: "video")
-                                .frame(maxWidth: .infinity, minHeight: 64)
-                                .background(Color(uiColor: .secondarySystemGroupedBackground),
-                                            in: RoundedRectangle(cornerRadius: 14))
+                            XDriveIOSNativePhotosCollectionCover(kind: .videos)
+                                .frame(maxWidth: .infinity)
                         }
                         .accessibilityIdentifier("native-ios-collections-videos")
                         NavigationLink {
@@ -195,10 +303,8 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
                                 savedOffset: $liveOffset, mediaFilter: $liveFilter
                             )
                         } label: {
-                            Label("实况照片", systemImage: "livephoto")
-                                .frame(maxWidth: .infinity, minHeight: 64)
-                                .background(Color(uiColor: .secondarySystemGroupedBackground),
-                                            in: RoundedRectangle(cornerRadius: 14))
+                            XDriveIOSNativePhotosCollectionCover(kind: .livePhotos)
+                                .frame(maxWidth: .infinity)
                         }
                         .accessibilityIdentifier("native-ios-collections-live")
                     }
