@@ -8,7 +8,8 @@ const read = name => fs.readFileSync(path.join(root,'ios/XDriveIOS',name),'utf8'
 
 test('BG task performs a bounded real original run only after current native grant proof',()=>{
   const task=read('BackgroundPhotoTask.swift')
-  assert.match(task,/\.proveInBackground\(\)/)
+  assert.match(task,/XDriveIOSApprovedPhotoBGVault\.prove\(\s*savedGrant, at: route\.selected, direct: true\)/)
+  assert.match(task,/try Task\.checkCancellation\(\)\s*try XDriveIOSAutoRoute\.shared\.activateBackground\(/)
   assert.match(task,/UIApplication\.shared\.isProtectedDataAvailable/)
   assert.match(task,/XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
   assert.match(task,/\.reserveDue\(owner: owner, approved: approved\)/)
@@ -23,7 +24,7 @@ test('BG task performs a bounded real original run only after current native gra
   assert.match(task,/!progress\.stoppedForReview/)
   assert.match(task,/task\.expirationHandler = \{[\s\S]*?expiration\.systemExpired = true[\s\S]*?operation\.cancel\(\)/)
   assert.doesNotMatch(task,/Bearer |refreshToken|localStorage|createUploadSession|\.setValue\("Authorization"/)
-  assert.ok(task.indexOf('.proveInBackground()') < task.indexOf('isProtectedDataAvailable'),
+  assert.ok(task.indexOf('XDriveIOSApprovedPhotoBGVault.prove(') < task.indexOf('isProtectedDataAvailable'),
     'no PhotoKit work before current Server grant proof')
   assert.ok(task.indexOf('reserveDue(') < task.indexOf('XDriveIOSForegroundPhotoBackupMVP('),
     'persist due reservation before possible network writes')

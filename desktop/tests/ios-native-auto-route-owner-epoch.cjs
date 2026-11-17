@@ -34,5 +34,25 @@ test('in-flight HTTP and SSE callbacks fail closed on logout, Owner replacement 
   assert.match(source, /backgroundGrant: grant/)
   assert.match(source, /backgroundGrant: nil/)
   assert.match(source, /XDriveIOSApprovedPhotoBGVault\.prove\(/)
+  const bgTask = fs.readFileSync(path.resolve(__dirname, '../..',
+    'ios/XDriveIOS/BackgroundPhotoTask.swift'), 'utf8')
+  const vault = fs.readFileSync(path.resolve(__dirname, '../..',
+    'ios/XDriveIOS/ApprovedBackgroundPhotoVault.swift'), 'utf8')
+  assert.match(bgTask, /XDriveIOSAutoRoute\.shared\s*\.prepareBackground\(savedGrant\)/)
+  assert.match(bgTask, /XDriveIOSApprovedPhotoBGVault\.prove\(\s*savedGrant, at: route\.selected, direct: true\)/)
+  assert.ok(bgTask.indexOf('XDriveIOSApprovedPhotoBGVault.prove(') <
+    bgTask.indexOf('XDriveIOSAutoRoute.shared.activateBackground('),
+    'independently prove the BG grant before route activation')
+  assert.doesNotMatch(bgTask.slice(
+    bgTask.indexOf('let savedGrant ='), bgTask.indexOf('let owner = try approved.ownerScope()')
+  ), /\.proveInBackground\(\)/, 'never verify the pre-activation grant through the router')
+  assert.match(vault, /proof\.server_instance_id == item\.instanceID/)
+  assert.match(vault, /proof\.owner_id == item\.ownerID/)
+  assert.match(vault, /proof\.device_id == item\.deviceID/)
+  assert.match(vault, /proof\.source_id == item\.sourceID/)
+  assert.match(vault, /proof\.target_node_id == item\.targetNodeID/)
+  assert.match(vault, /completionHandler\(nil\)/)
+  assert.match(source, /approved\.grantSecret == presentedGrant/)
+
 
 })

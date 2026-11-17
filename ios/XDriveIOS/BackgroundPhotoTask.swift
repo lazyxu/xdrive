@@ -101,7 +101,16 @@ enum XDriveIOSBackgroundPhotoTask {
                 }
                 let route = try await XDriveIOSAutoRoute.shared
                     .prepareBackground(savedGrant)
-                let approved = try await vault.proveInBackground()
+                // IMPORTANT: this one-use admission proof must be DIRECT.
+                // The router rejects requests carrying a background Grant
+                // until activateBackground has installed that very Grant.
+                // A routed proof here would deadlock its own authorization.
+                // The independent HTTPS/TLS delegate still refuses redirects
+                // and the response proves exact Grant, Device, Owner, Server,
+                // cloud root and managed Source before any original upload.
+                let approved = try await XDriveIOSApprovedPhotoBGVault.prove(
+                    savedGrant, at: route.selected, direct: true)
+                try Task.checkCancellation()
                 try XDriveIOSAutoRoute.shared.activateBackground(
                     grant: approved, domain: route.domain, lanIP: route.lanIP,
                     selected: route.selected)
