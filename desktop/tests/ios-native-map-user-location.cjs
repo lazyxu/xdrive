@@ -46,7 +46,7 @@ test('local map locates only on explicit tap and preserves PhotoKit Cell authori
   assert.match(local, /if let focusID = focusRequestID,[\s\S]*?context\.coordinator\.focusRequestID = focusID[\s\S]*?map\.setRegion\(focusCamera, animated: true\)/)
   assert.match(local, /\.onChange\(of: currentLocation\.requestID\)[\s\S]*?globalCameraMoving = true[\s\S]*?globalCamera = target/)
   assert.match(local, /canSelectCells: refinedViewportIsCurrent/)
-  assert.match(local, /\.onDisappear \{\s*currentLocation\.cancel\(\)/)
+  assert.match(local, /\.onDisappear \{\s*\/\/ A calendar or recent-trip chooser[\s\S]*?guard !datePickerOpen && !showingRecentDaysAndTrips else \{ return \}\s*currentLocation\.cancel\(\)/)
 })
 
 test('cloud Owner map locates and revokes prior verified camera before scoped reread', () => {
@@ -56,7 +56,7 @@ test('cloud Owner map locates and revokes prior verified camera before scoped re
   assert.match(owner, /\.onChange\(of: currentLocation\.requestID\) \{ _ in[\s\S]*?guard phase == \.active, login\.owner != nil,[\s\S]*?revokeCameraAuthorization\(\)[\s\S]*?scheduleCameraRefresh\(\)/)
   assert.match(owner, /map\.setRegion\(focusCamera, animated: true\)/)
   assert.match(owner, /\.onChange\(of: login\.owner\) \{ _ in\s*currentLocation\.cancel\(\)/)
-  assert.match(owner, /\.onDisappear \{\s*currentLocation\.cancel\(\)/)
+  assert.match(owner, /\.onDisappear \{\s*\/\/ Date picker and help overlay[\s\S]*?guard !datePickerOpen && !showingMapHelp else \{ return \}\s*currentLocation\.cancel\(\)/)
   assert.doesNotMatch(owner, /CLLocationManager\(|requestWhenInUseAuthorization\(/)
 })
 

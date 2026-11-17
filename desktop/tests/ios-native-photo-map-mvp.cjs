@@ -46,7 +46,7 @@ test('only a fresh authorized PhotoKit 64-slot scan supplies local map pins', ()
 })
 
 test('a presented cluster keeps PhotoKit change observation until dismissal', () => {
-  assert.match(map, /\.onDisappear \{\s*currentLocation\.cancel\(\)\s*\/\/ A presented cluster sheet/)
+  assert.match(map, /\.onDisappear \{[\s\S]*?guard !datePickerOpen && !showingRecentDaysAndTrips else \{ return \}\s*currentLocation\.cancel\(\)\s*\/\/ A presented cluster sheet/)
   assert.match(map, /if selection == nil && globalSelection == nil &&\s*pendingNearbySelection == nil && nearbySelection == nil && singleViewer == nil \{\s*changes\.stop\(\)/)
   assert.match(map, /\} else \{ suspendForSheet\(\) \}/)
   assert.match(map, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?let returningCamera = globalCamera[\s\S]*?onLibraryCameraChange\?\(nil\)\s*clearReturnCamera\(\)\s*invalidate\(\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?guard phase == \.active, authorization == \.authorized else \{ return \}/)
@@ -509,7 +509,8 @@ test('native local Gallery opens the full-library map from its filter menu witho
   assert.match(localWall, /Button\("重置筛选"\) \{ mediaFilter = \.all \}/)
   assert.match(localWall, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in\s*pendingViewerMapJump = jump/)
   assert.match(localWall, /private func restoreAfterViewer\(\)[\s\S]*?pendingViewerMapJump[\s\S]*?mapJump = jump[\s\S]*?showingMap = true/)
-  assert.match(dashboard, /ForEach\(XDriveIOSNativeGallerySource\.allCases\.filter \{\s*\$0 != \.map &&/)
+  assert.match(dashboard, /Section\("图库来源"\) \{[\s\S]*?Button\("本机照片"\) \{ openGallery\(\.local\) \}[\s\S]*?Button\("地图"\) \{ openGallery\(\.map\) \}/)
+  assert.doesNotMatch(dashboard, /private var gallerySourceRow:/)
   assert.match(dashboard, /onClose: \{ closeGalleryMap\(\) \}/)
   assert.match(mapGallery, /var onClose: \(\(\) -> Void\)\? = nil/)
   assert.match(mapGallery, /if source == \.cloud[\s\S]*?accessibilityIdentifier\("native-ios-map-close"\)/)

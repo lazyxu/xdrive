@@ -51,7 +51,7 @@ test('M07: source identity map never broadens to unfiltered local or cloud cells
   assert.match(sourceMap, /photoChanges\.start\(\)/)
   assert.match(sourceMap, /\.onChange\(of: photoChanges\.change\) \{ _ in/)
   assert.match(sourceMap, /photoChanges\.stop\(\)/)
-  assert.match(sourceMap, /if selected == nil \{/)
+  assert.match(sourceMap, /if selected == nil && !showingViewportGrid \{[\s\S]*?photoChanges\.stop\(\)[\s\S]*?invalidate\(\)/)
   assert.match(gallery, /final class XDriveIOSUnifiedPhotoObserver/)
   assert.doesNotMatch(sourceMap, /UserDefaults|FileManager\.default|Data\(contentsOf:|performChanges/)
 })
@@ -141,10 +141,10 @@ test('M16: arbitrary multi-year exact range retains half-open boundary and nativ
 })
 
 test('M17: visible native Photos sort/filter map action uses committed query', () => {
-  assert.match(gallery, /Menu \{[\s\S]*?Button\("排序和筛选"\)/)
+  assert.match(gallery, /Menu \{[\s\S]*?Label\("搜索与筛选", systemImage: "magnifyingglass"\)/)
   assert.match(gallery, /Label\("显示地图", systemImage: "map"\)/)
   assert.match(gallery, /native-ios-gallery-sort-filter-show-map/)
-  assert.match(gallery, /native-ios-gallery-sort-filter-menu/)
+  assert.match(gallery, /native-ios-gallery-open-filters/)
   assert.match(gallery, /private func showMapForAppliedQuery\(\)/)
   assert.match(gallery, /guard mapUnavailableReason\(for: query\) == nil/)
   assert.match(gallery, /if sourceFilter != nil &&\s*!\(sourceFilter == \.localOnly && login.owner == nil\) \{\s*showingSourceFilteredMap = true/)
