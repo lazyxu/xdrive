@@ -20,7 +20,11 @@ test('Files collection grid retains individual tile AX identities', () => {
   assert.match(collection, /accessibilityIdentifier\("native-ios-files-collection-open-\\\(item\.id\)"\)/);
 });
 test('Opening Files Viewer arms a single return refresh before presentation', () => {
-  assert.match(collection, /returnFile = item\.node\s*viewerRefreshPending = true\s*selectedFile = item/);
+  const openFile = between(collection, 'private func openFile(', 'private func gridTile(');
+  assert.match(openFile, /guard isVisible, phase == \.active, model\.verified, !model\.loading/);
+  assert.match(openFile, /model\.matches\(login\.owner, kind: kind\)/);
+  assert.match(openFile, /selectedOwner = owner\s*returnFile = item\.node/);
+  assert.match(openFile, /returnFile = item\.node[\s\S]*?viewerReturnViewport = nil[\s\S]*?XDriveIOSNativeFilesViewModePolicy\.matchedAlignment\([\s\S]*?viewerRefreshPending = true\s*selectedFile = item/);
 });
 test('Files Viewer dismissal performs a single foreground read', () => {
   const s = between(collection, '.fullScreenCover(item: $selectedFile, onDismiss:', 'onNavigate: { next in');
