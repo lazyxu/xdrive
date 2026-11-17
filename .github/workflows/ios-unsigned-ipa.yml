@@ -127,7 +127,7 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-launch-check"
           node --test desktop/tests/ios-native-launch-recovery.cjs
 
-      - name: Verify native Files audio and Clipboard fatal-trap boundaries
+      - name: Verify native Files audio, Viewer pixel metadata and Clipboard fatal-trap boundaries
         run: |
           set -euo pipefail
           swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
@@ -135,6 +135,13 @@ jobs:
             ios/tests/NativeFileAudioTimecodeChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-file-audio-bounds"
           "$RUNNER_TEMP/xdrive-ios-file-audio-bounds"
+          # UIImage geometry without a CGImage is not guaranteed finite.
+          # Converting NaN/Infinity to Int is a Swift fatal runtime trap.
+          swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
+            ios/XDriveIOS/NativeViewerPixelDimensionPolicy.swift \
+            ios/tests/NativeViewerPixelDimensionPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-viewer-pixel-bounds"
+          "$RUNNER_TEMP/xdrive-ios-viewer-pixel-bounds"
           swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
             ios/XDriveIOS/NativeClipboardFolderBackPolicy.swift \
             ios/tests/NativeClipboardFolderBackPolicyChecks.swift \

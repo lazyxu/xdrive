@@ -90,3 +90,25 @@ test('native Files array indexing and sliding-window retirement stay guarded on 
   assert.match(windowChecks, /oversized aligned next-page cursor fails without integer overflow/);
   assert.match(windowChecks, /oversized aligned return cursor fails without integer overflow/);
 });
+
+
+test('both cloud media info Viewers reject unsafe UIImage dimensions before Int conversion', () => {
+  const policy = read('ios/XDriveIOS/NativeViewerPixelDimensionPolicy.swift');
+  const checks = read('ios/tests/NativeViewerPixelDimensionPolicyChecks.swift');
+  const workflow = read('.github/workflows/ios-unsigned-ipa.yml');
+  assert.match(policy, /points\.isFinite, points > 0, scale\.isFinite, scale > 0/);
+  assert.match(policy, /product\.isFinite, product >= 1/);
+  assert.match(policy, /product < Double\(Int\.max\)/);
+  for (const filename of ['NativeCloudOriginalGallery.swift', 'NativeServerMediaGallery.swift']) {
+    const viewer = read('ios/XDriveIOS/' + filename);
+    assert.equal((viewer.match(/XDriveIOSNativeViewerPixelDimensionPolicy\.pixels\(/g) || []).length, 2,
+      filename + ' must guard both fallback pixel dimensions');
+    assert.doesNotMatch(viewer, /Int\(\$0\.size\.(?:width|height) \* \$0\.scale\)/,
+      filename + ' must not reintroduce a Swift floating-to-Int trap');
+  }
+  for (const edge of ['.nan', '.infinity', 'Double.greatestFiniteMagnitude', 'Double(Int.max)']) {
+    assert.ok(checks.includes(edge), 'missing executable Swift boundary: ' + edge);
+  }
+  assert.match(workflow, /NativeViewerPixelDimensionPolicyChecks\.swift/);
+  assert.match(workflow, /xdrive-ios-viewer-pixel-bounds/);
+});
