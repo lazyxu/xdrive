@@ -47,9 +47,11 @@ import Foundation
         let live = XDriveIOSClipboardSSEProgress()
         await live.advance(41)
         await live.advance(40)
-        precondition(await live.current() == 41)
+        let before = await live.current()
+        precondition(before == 41)
         await live.advance(42)
-        precondition(await live.current() == 42)
+        let after = await live.current()
+        precondition(after == 42)
         print("iOS Clipboard SSE: cursor, framing, disconnect progress and privacy checks passed")
     }
 }
