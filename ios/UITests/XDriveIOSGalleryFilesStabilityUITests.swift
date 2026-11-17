@@ -146,6 +146,56 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         assertNotSolidScreen(app, label)
     }
 
+    /// iOS 26 Photos visual/navigation audit: use the *actual* native
+    /// Library / Collections / Search controls. Screenshot attachments are
+    /// comparison evidence, not fabricated proof of pixel-level parity.
+    func testPhotosLibraryCollectionsSearchSelectionAndNoStackedTabBars() {
+        let app = launch(syntheticOwner: true)
+        checkGallery(app)
+        let photosBar = target("native-ios-photos-bottom-bar", in: app)
+        XCTAssertTrue(photosBar.waitForExistence(timeout: 15))
+        XCTAssertFalse(target("native-ios-five-slot-bar", in: app).exists,
+                       "iOS Photos and xDrive navigation must not stack")
+        let library = XCTAttachment(screenshot: app.screenshot())
+        library.name = "native-photos-26-library-initial"
+        library.lifetime = .keepAlways
+        add(library)
+
+        let selecting = target("native-ios-gallery-select", in: app)
+        XCTAssertTrue(selecting.waitForExistence(timeout: 15))
+        selecting.tap()
+        XCTAssertTrue(target("native-ios-gallery-selection-summary", in: app)
+            .waitForExistence(timeout: 10))
+        selecting.tap()
+        XCTAssertFalse(target("native-ios-gallery-selection-summary", in: app).exists)
+
+        select("native-ios-gallery-source-albums", in: app)
+        XCTAssertTrue(target("native-ios-photos-collections", in: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertTrue(target("native-ios-collections-recent-days", in: app).exists)
+        XCTAssertTrue(target("native-ios-collections-people", in: app).exists)
+        XCTAssertTrue(target("native-ios-collections-albums", in: app).exists)
+        let collections = XCTAttachment(screenshot: app.screenshot())
+        collections.name = "native-photos-26-collections-initial"
+        collections.lifetime = .keepAlways
+        add(collections)
+
+        select("native-ios-gallery-source-unified", in: app)
+        select("native-ios-photos-search", in: app)
+        XCTAssertTrue(app.navigationBars["搜索与筛选"].firstMatch
+            .waitForExistence(timeout: 15),
+            "Photos bottom Search must open the real Owner/PhotoKit query editor")
+        app.buttons["取消"].firstMatch.tap()
+        checkGallery(app)
+
+        select("native-ios-gallery-source-menu", in: app)
+        XCTAssertTrue(app.buttons["备份设置"].firstMatch.waitForExistence(timeout: 10),
+                      "Backup must remain available via one secondary menu")
+        // Dismiss without leaving the library.
+        app.swipeDown()
+        checkGallery(app)
+    }
+
     func testRapidGalleryFilesTabOscillationPreservesBothShells() {
         let app = launch()
         waitForRealH264RecordingPrelude()
