@@ -38,7 +38,7 @@ test('immersive still hides only image chrome; files PDF/audio/video/error and r
   assert.match(viewer, /case \.text\(let content, let truncated\):/)
   assert.match(viewer, /if authorized && exportFallbackEligible/)
   assert.match(viewer, /private func retire\(\) \{[\s\S]*?showImageChrome = true/)
-  assert.match(viewer, /\.onChange\(of: login\.owner\) \{ _ in close\(\) \}/)
+  assert.match(viewer, /\.onChange\(of: login\.owner\) \{ _ in\s*showingFileDetails = false\s*close\(\)\s*\}/)
   assert.match(viewer, /\.onChange\(of: phase\)[\s\S]*?retire\(\)/)
   assert.match(viewer, /\.onDisappear \{ retire\(\) \}/)
   assert.doesNotMatch(viewer, /WKWebView|localStorage|userDefaults|\.upload\(/)
