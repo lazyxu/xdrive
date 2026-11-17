@@ -22,7 +22,9 @@ for (const [name, source, screenIdentifier] of [
     assert.match(source, /onToggleStyle: \{/)
     assert.match(shared, /struct XDriveIOSNativePhotoMapFloatingTools: View/)
     assert.match(shared, /Button\(action: onToggleStyle\)/)
-    assert.ok(source.includes('.accessibilityIdentifier("' + screenIdentifier + '")'))
+    // The 44pt floating UIKit control owns this ID, not the old Menu.
+    assert.match(source, new RegExp('styleID: "' + screenIdentifier + '"'))
+    assert.match(shared, /\.accessibilityIdentifier\(styleID\)/)
   })
 
   test(name + ' changes MapKit layer without invalidating photo pins or the camera', () => {

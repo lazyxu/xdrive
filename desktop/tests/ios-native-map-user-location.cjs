@@ -39,7 +39,8 @@ test('local map locates only on explicit tap and preserves PhotoKit Cell authori
   assert.match(local, /XDriveIOSNativePhotoMapFloatingTools\(/);
   assert.match(local, /locateEnabled: !currentLocation\.isLocating && phase == \.active &&\s*authorization == \.authorized/);
   assert.match(local, /onLocate: \{ currentLocation\.locate\(\) \}/);
-  assert.match(local, /if mapScope == \.library && authorization == \.authorized \{/)
+  assert.match(local, /else if mapScope == \.library \{[\s\S]*?XDriveIOSNativePhotoMapFloatingTools\(/)
+  assert.match(local, /locateEnabled: !currentLocation\.isLocating && phase == \.active &&\s*authorization == \.authorized/)
   assert.match(local, /native-ios-local-map-locate/)
   assert.match(local, /focusRequestID: currentLocation\.requestID,[\s\S]*?focusCamera: currentLocation\.camera,[\s\S]*?showsUserDot: currentLocation\.showsUserDot/)
   assert.match(local, /if let focusID = focusRequestID,[\s\S]*?context\.coordinator\.focusRequestID = focusID[\s\S]*?map\.setRegion\(focusCamera, animated: true\)/)
