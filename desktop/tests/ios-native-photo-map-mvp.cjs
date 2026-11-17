@@ -267,7 +267,8 @@ test('short landscape local map preserves controls and PhotoKit authority while 
   assert.doesNotMatch(map, /showingMapHelp|native-ios-map-layout-help/);
   assert.match(map, /Button\("查找下一批有定位照片"\)/);
   assert.match(map, /Button\("刷新当前页"\)/);
-  assert.match(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
+  // iOS 26 Photos Map uses only the Photos floating chrome, not a five-slot toggle.
+  assert.doesNotMatch(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
   assert.doesNotMatch(map, /onChange\(of: compactMap\)|\.id\(compactMap\)/);
 });
 
@@ -396,7 +397,8 @@ test('PhotoKit full-library map is photo-first after scan, with only recovery re
   assert.match(localMap, /accessibilityIdentifier\("native-ios-local-map-actions"\)/)
   assert.doesNotMatch(localMap, /Text\(mapScope == \.page/)
   assert.doesNotMatch(localMap, /native-ios-map-full-library-summary|native-ios-map-stale-viewport/)
-  assert.match(localMap, /Button\(focused \? "显示底部导航" : "专注地图"\)/)
+  assert.doesNotMatch(localMap, /Button\(focused \? "显示底部导航" : "专注地图"\)/)
+  assert.match(localMap, /XDriveIOSNativePhotoMapFloatingTools\(/)
   assert.match(localMap, /onChange\(of: changes\.revision\) \{ _ in[\s\S]*?clearReturnCamera\(\)\s*invalidate\(\)/)
 })
 
@@ -476,7 +478,8 @@ test('native Photos album exposes Show Map only with Full Photo Library access',
   assert.match(albumBrowser, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in\s*pendingAlbumMapJump = jump/)
   assert.match(albumBrowser, /private func restoreAfterViewer\(\)[\s\S]*?pendingAlbumMapJump[\s\S]*?mapAlbumScope = nil[\s\S]*?albumMapJump = jump[\s\S]*?showingAlbumMap = true/)
   assert.match(map, /var album: XDriveLocalPhotoAlbumSummary\? = nil/)
-  assert.match(map, /if album == nil && onFocusChange != nil \{\s*Button\(focused \? "显示底部导航" : "专注地图"\)[\s\S]*?native-ios-map-focus-toggle/)
+  assert.doesNotMatch(map, /native-ios-map-focus-toggle/)
+  assert.match(map, /if album != nil \|\| onClose != nil \{[\s\S]*?Button \{[\s\S]*?onClose\?\(\)/)
   assert.match(map, /worker\.startMap\(\s*atOffset: 0, album: album, mediaFilter: mediaFilter,\s*captureRange: activeCaptureRange,\s*filenameTerm: filenameTerm,\s*tripScope: chosenLocalTrip\s*\)/)
   assert.match(map, /\.sheet\(item: \$globalSelection, onDismiss: \{[\s\S]*?\}\) \{ chosen in[\s\S]*?XDriveIOSMapSpatialAlbum\(\s*selection: chosen, album: album,/)
   assert.match(map, /scanner\.startMap\(\s*atOffset: 0, album: album, mediaFilter: selection\.mediaFilter,\s*captureRange: selection\.captureRange,\s*filenameTerm: selection.filenameTerm,\s*tripScope: selection.tripScope\s*\)/)
@@ -506,7 +509,7 @@ test('native local Gallery opens the full-library map from its filter menu witho
   assert.match(localWall, /@State private var mapCamera: MKCoordinateRegion\?/)
   assert.match(localWall, /\.environment\(\\\.xdriveNativeLocalMapJump, mapJump\)/)
   assert.match(map, /if album != nil \|\| onClose != nil[\s\S]*?if onClose != nil \{ onClose\?\(\) \}/)
-  assert.match(map, /if album == nil && onFocusChange != nil/)
+  assert.doesNotMatch(map, /if album == nil && onFocusChange != nil/)
   assert.match(localWall, /Toggle\("照片", isOn: mediaFilterBinding\(for: \.photos\)\)/)
   assert.match(localWall, /Button\("重置筛选"\) \{ mediaFilter = \.all \}/)
   assert.match(localWall, /\.environment\(\\\.xdriveOpenNativeLocalMap, \{ jump in\s*pendingViewerMapJump = jump/)
@@ -562,13 +565,13 @@ test('native Map Done works without cloud login while restored Owner Gallery sou
   assert.match(routing, /if source == \.map \{[\s\S]*?if gallerySource != \.map \{/)
   assert.match(routing, /mapReturnGallerySource = tab == \.gallery && login\.owner != nil[\s\S]*?\? gallerySource : nil/)
   assert.match(routing, /mapReturnOwnerScopeKey = mapReturnGallerySource != nil[\s\S]*?\? ownerScopeKey : nil/)
-  assert.match(routing, /else \{\s*mapReturnGallerySource = nil\s*mapReturnOwnerScopeKey = nil/)
+  assert.match(routing, /else \{\s*mapOpenedFromCollections = false\s*mapReturnGallerySource = nil\s*mapReturnOwnerScopeKey = nil/)
   const close = routing.slice(routing.indexOf('private func closeGalleryMap()'))
   assert.match(close, /guard gallerySource == \.map else \{ return \}/)
   assert.doesNotMatch(close, /guard gallerySource == \.map, login\.owner != nil/)
   assert.match(close, /mapReturnOwnerScopeKey == ownerScopeKey[\s\S]*?\? mapReturnGallerySource : nil/)
   assert.match(routing, /let fallback = XDriveIOSNativeGallerySource\(rawValue: "unified"\) \?\? \.local/)
-  assert.match(routing, /mapReturnOwnerScopeKey == ownerScopeKey[\s\S]*?\? mapReturnGallerySource : nil[\s\S]*?openGallery\(prior \?\? fallback\)/)
+  assert.match(routing, /mapReturnOwnerScopeKey == ownerScopeKey[\s\S]*?\? mapReturnGallerySource : nil[\s\S]*?openGallery\(mapOpenedFromCollections \? \.albums : \(prior \?\? fallback\)\)/)
   assert.match(dashboard, /onClose: \{ closeGalleryMap\(\) \}/)
   assert.doesNotMatch(dashboard, /onClose: \{ openGallery\(\.local\) \}/)
   assert.match(dashboard, /\.onChange\(of: login\.owner\) \{ owner in[\s\S]*?mapReturnGallerySource = nil\s*mapReturnOwnerScopeKey = nil/)
