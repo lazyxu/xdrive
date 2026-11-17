@@ -108,7 +108,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     }
 }
 
-/// Native Photos-first five-slot shell. All routes are native SwiftUI/UIKit;
+/// Native Photos-style Gallery shell with separate xDrive feature navigation. All routes are native SwiftUI/UIKit;
 /// unfinished domains remain explicitly unavailable rather than embedded browser
 /// fallbacks or fake success. No separate Owner session or upload runner.
 struct XDriveIOSNativePhotosDashboard: View {
@@ -168,6 +168,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
     @State private var showingLocalPhotoSearch = false
+    // Native Photos bottom search opens the unified PhotoKit + Owner filter/search sheet.
+    @State private var requestUnifiedPhotoSearch = false
     @State private var galleryFocused = false
     // Default photo maps are immersive even during L2/Sheet lifecycle races.
     // Only the current map's explicit action can reveal the five-slot bar.
@@ -244,8 +246,19 @@ struct XDriveIOSNativePhotosDashboard: View {
 
             NavigationStack {
                 gallery
-                    .navigationTitle("图库")
+                    .navigationTitle(
+                        gallerySource == .albums ? "精选集" :
+                        gallerySource == .unified ? "图库" : gallerySource.title
+                    )
                     .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        // The iOS Photos toolbar is primarily Gallery chrome.
+                        // xDrive-specific sources, backup and other app destinations
+                        // live behind ONE secondary menu, not permanent rows.
+                        ToolbarItem(placement: .topBarLeading) {
+                            galleryMoreMenu
+                        }
+                    }
             }
             .tabItem { Label("图库", systemImage: "photo.on.rectangle") }
             .tag(XDriveIOSNativeBottomTab.gallery)
@@ -276,7 +289,11 @@ struct XDriveIOSNativePhotosDashboard: View {
                 focused: galleryPresentationFocused,
                 ownerVerified: login.owner != nil
             ) {
-                nativeBottomBar
+                if tab == .gallery && gallerySource != .map {
+                    nativePhotosBottomBar
+                } else {
+                    nativeBottomBar
+                }
             }
         }
         .id(ownerScopeKey)
@@ -501,6 +518,87 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
     }
 
+    // iOS 26 Photos-style Library / Collections / Search chrome while in the
+    // Gallery. xDrive's five-slot bar remains available in other app modules.
+    // The extra global routes are reachable from galleryMoreMenu, not stacked
+    // into a second, competing row below the native Photos controls.
+    private var nativePhotosBottomBar: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 2) {
+                Button {
+                    if gallerySource != .unified { openGallery(.unified) }
+                } label: {
+                    Text("图库")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(gallerySource == .unified ? Color.accentColor : Color.primary)
+                        .frame(minWidth: 68, minHeight: 44)
+                        .background(gallerySource == .unified ? Color.accentColor.opacity(0.12) : Color.clear,
+                                    in: Capsule())
+                }
+                .accessibilityIdentifier("native-ios-photos-library-tab")
+                .accessibilityAddTraits(gallerySource == .unified ? .isSelected : [])
+                Button {
+                    if gallerySource != .albums { openGallery(.albums) }
+                } label: {
+                    Text("精选集")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(gallerySource == .albums ? Color.accentColor : Color.primary)
+                        .frame(minWidth: 74, minHeight: 44)
+                        .background(gallerySource == .albums ? Color.accentColor.opacity(0.12) : Color.clear,
+                                    in: Capsule())
+                }
+                .accessibilityIdentifier("native-ios-photos-collections-tab")
+                .accessibilityAddTraits(gallerySource == .albums ? .isSelected : [])
+            }
+            .padding(3)
+            .background(.regularMaterial, in: Capsule())
+            Spacer(minLength: 0)
+            Button {
+                // The unified editor searches both authorized local and
+                // current Owner media; switching from Collections carries an
+                // ephemeral request, never an old Owner's search result.
+                requestUnifiedPhotoSearch = true
+                if gallerySource != .unified { openGallery(.unified) }
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 50, height: 50)
+                    .background(.regularMaterial, in: Circle())
+            }
+            .accessibilityLabel("搜索照片")
+            .accessibilityIdentifier("native-ios-photos-search")
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+        .accessibilityIdentifier("native-ios-photos-bottom-bar")
+    }
+
+    private var galleryMoreMenu: some View {
+        Menu {
+            Section("图库来源") {
+                Button("全部照片") { openGallery(.unified) }
+                Button("本机照片") { openGallery(.local) }
+                Button("云端图库") { openGallery(.cloud) }
+                Button("备份原件") { openGallery(.originals) }
+                Button("地图") { openGallery(.map) }
+            }
+            Section("备份与管理") { backupMenuItems }
+            Section("xDrive") {
+                Button("全部功能") { tab = .launcher }
+                Button("文件") { tab = .files }
+                Button("我的") { tab = .mine }
+            }
+        } label: {
+            Image(systemName: backup.schedule?.pausedForReview == true
+                ? "exclamationmark.circle" : "ellipsis.circle")
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("图库来源、备份与 xDrive")
+        .accessibilityIdentifier("native-ios-gallery-more-menu")
+    }
+
     // L1 native bottom bar. The system safe-area inset remains managed by
     // SwiftUI; 48/56pt here is visual height, not the home-indicator inset.
     // Unlike a TabView tabItem, these buttons support an actual context menu.
@@ -583,50 +681,6 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
 
-    // On short, sufficiently wide safe-area viewports, the Gallery source
-    // chooser and backup shortcut share one row. The media wall below is
-    // outside the branch so rotation does not remount Gallery/Viewer state.
-    private var galleryStatusRow: some View {
-                HStack(spacing: 10) {
-                    if backup.busy {
-                        Label("正在检查相册备份", systemImage: "arrow.triangle.2.circlepath")
-                    } else if let state = backup.schedule, state.enabled {
-                        if state.pausedForReview {
-                            Label("自动备份已暂停：需核对收据",
-                                  systemImage: "exclamationmark.shield")
-                        } else if photoAuthorization != .authorized && photoAuthorization != .limited {
-                            // The persisted schedule remains enabled, but its
-                            // PhotoKit reader cannot run without authorization.
-                            Label("备份计划已保存：照片权限不可用",
-                                  systemImage: "exclamationmark.triangle")
-                        } else if photoAuthorization == .limited &&
-                                  state.backupStartRule == .onlyNew {
-                            Label("仅新增备份已暂停：需要所有照片权限",
-                                  systemImage: "exclamationmark.triangle")
-                        } else if photoAuthorization == .limited {
-                            Label("自动备份只覆盖当前选定的照片（Limited）",
-                                  systemImage: "exclamationmark.triangle")
-                        } else {
-                            Label("前台自动备份已开启",
-                                  systemImage: "checkmark.shield")
-                        }
-                    } else {
-                        Label("前台自动备份未开启", systemImage: "icloud.slash")
-                    }
-                    Spacer(minLength: 4)
-                    if gallerySource == .local || gallerySource == .albums {
-                        gallerySearchAction
-                    }
-                    Menu { backupMenuItems } label: {
-                        Label("备份", systemImage: "icloud.and.arrow.up")
-                    }
-                        .accessibilityIdentifier("native-ios-gallery-backup-settings")
-                }
-                .font(.caption)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 44)
-    }
-
     @ViewBuilder
     private var backupMenuItems: some View {
         Button("查看备份任务队列") { openBackup(.queue) }
@@ -653,117 +707,17 @@ struct XDriveIOSNativePhotosDashboard: View {
         showPriorityConsent = true
     }
 
-    private var gallerySourceRow: some View {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(XDriveIOSNativeGallerySource.allCases.filter {
-                        $0 != .map && (($0 != .local && $0 != .cloud) || $0 == gallerySource)
-                    }) { source in
-                        Button {
-                            if source == .map { localMapJump = nil }
-                            gallerySource = source
-                        } label: {
-                            Text(source.title)
-                                .font(.subheadline)
-                                .frame(minHeight: 44)
-                                .padding(.horizontal, 13)
-                                .foregroundStyle(
-                                    gallerySource == source ? Color.accentColor : Color.primary
-                                )
-                                .background(
-                                    gallerySource == source ?
-                                        Color.accentColor.opacity(0.14) :
-                                        Color(uiColor: .secondarySystemGroupedBackground),
-                                    in: Capsule()
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("native-ios-gallery-source-\(source.rawValue)")
-                    }
-                    Menu {
-                        Button("本机照片") { gallerySource = .local }
-                        Button("云端图库") { gallerySource = .cloud }
-                    } label: {
-                        Label("单独浏览", systemImage: "line.3.horizontal.decrease.circle")
-                            .font(.subheadline)
-                            .frame(minHeight: 44)
-                            .padding(.horizontal, 10)
-                    }
-                    .accessibilityIdentifier("native-ios-gallery-source-menu")
-                }
-                .padding(.horizontal, 12)
-            }
-            .padding(.vertical, 3)
-    }
-
-    private var gallerySearchAction: some View {
-        Button {
-            showingLocalPhotoSearch = true
-        } label: {
-            Image(systemName: "magnifyingglass")
-                .frame(width: 44, height: 44)
-        }
-        .buttonStyle(.plain)
-        .disabled(photoAuthorization != .authorized &&
-                  photoAuthorization != .limited)
-        .accessibilityLabel("搜索本机照片")
-        .accessibilityIdentifier("native-ios-gallery-local-photo-search")
-    }
-
-    private var galleryCompactBackupAction: some View {
-        Menu { backupMenuItems } label: {
-            Image(systemName: backup.busy ? "arrow.triangle.2.circlepath" :
-                  backup.schedule?.pausedForReview == true ? "exclamationmark.shield" :
-                  (photoAuthorization != .authorized && photoAuthorization != .limited) ?
-                      "exclamationmark.triangle" : "icloud.and.arrow.up")
-                .font(.body)
-                .frame(width: 48, height: 44)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(
-            backup.schedule?.pausedForReview == true ? Color.orange : Color.accentColor
-        )
-        .accessibilityLabel("备份设置")
-        .accessibilityValue(
-            backup.busy ? "正在检查备份" :
-            backup.schedule?.pausedForReview == true ? "自动备份已暂停，需核对收据" :
-            (photoAuthorization != .authorized && photoAuthorization != .limited) ?
-                "照片权限不可用" :
-            backup.schedule?.enabled == true ? "前台自动备份已开启" :
-                "前台自动备份未开启"
-        )
-        .accessibilityIdentifier("native-ios-gallery-backup-settings-compact")
-    }
-
     private var gallery: some View {
         // Capture the presenting Owner when this source's focus callback is
         // built; a disappearing view must not affect a later Owner's Gallery.
         let focusOwnerKey = ownerScopeKey
         let focusGeneration = galleryFocusGeneration
-        return GeometryReader { availableSpace in
-            VStack(spacing: 0) {
-                if !galleryPresentationFocused {
-                    if availableSpace.size.width >= 680 &&
-                        availableSpace.size.height < 500 &&
-                        !dynamicTypeSize.isAccessibilitySize {
-                        HStack(spacing: 0) {
-                            gallerySourceRow
-                            if gallerySource == .local || gallerySource == .albums {
-                                gallerySearchAction
-                            }
-                            galleryCompactBackupAction
-                        }
-                        .frame(minHeight: 48)
-                    } else {
-                        galleryStatusRow
-                        gallerySourceRow
-                    }
-                }
-            Group {
-                switch gallerySource {
+        return Group {
+            switch gallerySource {
                 case .unified:
                     XDriveIOSNativeUnifiedPhotoGallery(
                         login: login, openBackup: { openBackup(.overview) },
+                        requestSearch: $requestUnifiedPhotoSearch,
                         priorityBackup: { id in requestPriorityBackup(id: id, failed: false) },
                         // A different tab covers, but does not scroll-evict,
                         // this bounded verified Gallery wall.
@@ -807,8 +761,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                         )
                     )
                 case .albums:
-                    XDriveIOSNativePhotoAlbumsScreen(
-                        savedOffset: $localAlbumDirectoryOffset
+                    XDriveIOSNativePhotosCollectionsScreen(
+                        login: login, savedAlbumOffset: $localAlbumDirectoryOffset
                     )
                 case .cloud:
                     XDriveIOSNativeServerMediaWall(
@@ -845,8 +799,6 @@ struct XDriveIOSNativePhotosDashboard: View {
                         inheritedCaptureRange: galleryMapCaptureRange
                     )
                 }
-            }
-            }
         }
         .fullScreenCover(isPresented: $presentingUnifiedMap, onDismiss: {
             unifiedMapCaptureRange = nil
