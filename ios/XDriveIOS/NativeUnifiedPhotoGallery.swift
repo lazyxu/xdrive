@@ -4,6 +4,14 @@ import Photos
 import SwiftUI
 import UIKit
 
+/// Render-only scroll offset for the native iOS Photos floating date bar.
+private struct XDriveIOSNativePhotosTimelineScrollY: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 final class XDriveIOSUnifiedPhotoObserver: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     @Published private(set) var change = UUID()
     private var observing = false
@@ -36,6 +44,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     let openBackup: () -> Void
     // Parent-owned one-shot request from the native Photos Search button.
     @Binding var requestSearch: Bool
+    @Binding var wallTimeScale: XDriveIOSNativePhotoWallTimeScale
+    @Binding var showTimelineNavigator: Bool
     let priorityBackup: (String) -> Void
     let isTabActive: Bool
     // The parent presents the existing shared MapKit route as an overlay.
@@ -54,8 +64,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
-    // Apple Photos opens to its ungrouped full-grid view.
-    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
+    // Date scale is parent-owned presentation state; reader bounds unchanged.
     @State private var isSelecting = false
     @State private var selectedIDs: Set<String> = []
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
@@ -326,6 +335,17 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 XDriveIOSNativePhotoWallScrollContainer {
                     XDriveIOSNativePhotoWallCollectionStack {
                         galleryStatus.id("gallery-page-top")
+                        Color.clear.frame(height: 0)
+                            .background {
+                                GeometryReader { anchor in
+                                    Color.clear.preference(
+                                        key: XDriveIOSNativePhotosTimelineScrollY.self,
+                                        value: anchor.frame(
+                                            in: .named("xdrive-ios-unified-gallery-wall")
+                                        ).minY
+                                    )
+                                }
+                            }
                         if let owner = login.owner {
                             ForEach(wall.index.pages) { page in
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
@@ -406,6 +426,16 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     .padding(.vertical, 8)
                 }
                 .coordinateSpace(name: "xdrive-ios-unified-gallery-wall")
+                .onPreferenceChange(XDriveIOSNativePhotosTimelineScrollY.self) { y in
+                    // iOS Photos changes the lower-left control after the
+                    // user scrolls through its photo timeline. The safe-area
+                    // bar keeps the same height to avoid a visible jump.
+                    guard isTabActive, phase == .active else { return }
+                    let visible = y < -48
+                    if showTimelineNavigator != visible {
+                        showTimelineNavigator = visible
+                    }
+                }
                 .background {
                     GeometryReader { viewport in
                         Color.clear
@@ -474,6 +504,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     pinchGeneration = nil
                     visibleTileFrames = [:]
                     viewerOpeningViewport = nil
+                    showTimelineNavigator = false
                     scroll.scrollTo("gallery-page-top", anchor: .top)
                 }
             }

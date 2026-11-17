@@ -273,6 +273,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var showingLocalPhotoSearch = false
     // Native Photos bottom search opens the unified PhotoKit + Owner filter/search sheet.
     @State private var requestUnifiedPhotoSearch = false
+    // iOS Photos changes its lower-left floating control to year/month/all
+    // while browsing the Library time line. Never store media identities.
+    @State private var galleryTimelineExpanded = false
+    @State private var galleryTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
     @State private var galleryFocused = false
     // Default photo maps are immersive even during L2/Sheet lifecycle races.
     // Only the current map's explicit action can reveal the five-slot bar.
@@ -628,6 +632,30 @@ struct XDriveIOSNativePhotosDashboard: View {
     private var nativePhotosBottomBar: some View {
         HStack(spacing: 12) {
             HStack(spacing: 2) {
+                if gallerySource == .unified && galleryTimelineExpanded {
+                    ForEach([
+                        XDriveIOSNativePhotoWallTimeScale.year,
+                        .month, .all
+                    ]) { scale in
+                        Button {
+                            galleryTimeScale = scale
+                        } label: {
+                            Text(scale.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(
+                                    galleryTimeScale == scale ? Color.accentColor : Color.primary
+                                )
+                                .frame(minWidth: 54, minHeight: 44)
+                                .background(
+                                    galleryTimeScale == scale
+                                        ? Color.accentColor.opacity(0.12) : Color.clear,
+                                    in: Capsule()
+                                )
+                        }
+                        .accessibilityIdentifier("native-ios-photos-time-" + scale.rawValue)
+                        .accessibilityAddTraits(galleryTimeScale == scale ? .isSelected : [])
+                    }
+                } else {
                 Button {
                     if gallerySource != .unified { openGallery(.unified) }
                 } label: {
@@ -652,6 +680,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
                 .accessibilityIdentifier("native-ios-photos-collections-tab")
                 .accessibilityAddTraits(gallerySource == .albums ? .isSelected : [])
+                }
             }
             .padding(3)
             .background(.regularMaterial, in: Capsule())
@@ -821,6 +850,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                     XDriveIOSNativeUnifiedPhotoGallery(
                         login: login, openBackup: { openBackup(.overview) },
                         requestSearch: $requestUnifiedPhotoSearch,
+                        wallTimeScale: $galleryTimeScale,
+                        showTimelineNavigator: $galleryTimelineExpanded,
                         priorityBackup: { id in requestPriorityBackup(id: id, failed: false) },
                         // A different tab covers, but does not scroll-evict,
                         // this bounded verified Gallery wall.
@@ -1258,6 +1289,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     private func resetNavigation() {
         galleryFocusGeneration = UUID()
         galleryFocused = false
+        galleryTimelineExpanded = false
+        galleryTimeScale = .all
         mapNavigationExplicitlyShown = false
         mapReturnGallerySource = nil
         mapReturnOwnerScopeKey = nil
