@@ -659,7 +659,18 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         app.launch()
         handleInitialPhotoLibraryPromptIfPresent()
         let collections = element("native-ios-photos-collections-tab", in: app)
-        XCTAssertTrue(collections.waitForExistence(timeout: 20))
+        if !collections.waitForExistence(timeout: 8) {
+            // On genuine iOS 26 Photos, Years/Months/All temporarily
+            // replaces the tab pill while scrolled. Use its visible
+            // compact return action, never a synthetic route or tap point.
+            let returnTabs = element("native-ios-photos-return-tabs", in: app)
+            if returnTabs.exists && returnTabs.isHittable { returnTabs.tap() }
+        }
+        if !collections.waitForExistence(timeout: 12) {
+            diagnose("Collections absent after native Photos tab restoration", in: app)
+        }
+        XCTAssertTrue(collections.exists,
+                      "Collections must remain reachable through native Photos controls")
         collections.tap()
         let collectionsPage = element("native-ios-photos-collections", in: app)
         XCTAssertTrue(collectionsPage.waitForExistence(timeout: 15))

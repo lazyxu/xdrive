@@ -946,6 +946,19 @@ struct XDriveIOSNativePhotosDashboard: View {
             HStack(spacing: 2) {
                 if gallerySource == .unified && galleryTimelineExpanded &&
                    !presentingUnifiedMap {
+                    // Native Photos shrinks its Library/Collections tab
+                    // into a compact return control while the date picker
+                    // expands; keep an accessible path back to both tabs.
+                    Button {
+                        galleryTimelineExpanded = false
+                    } label: {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("返回图库与精选集")
+                    .accessibilityIdentifier("native-ios-photos-return-tabs")
                     ForEach([
                         XDriveIOSNativePhotoWallTimeScale.year,
                         .month, .all
