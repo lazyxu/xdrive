@@ -393,19 +393,38 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         // Live Simulator screenshots show the Gallery backup Menu visible,
         // but SwiftUI can expose its identifier on an AX wrapper which is
         // not hittable. Require a *real* hittable Button or Menu label.
-        let candidates = [
-            app.buttons.matching(identifier: "native-ios-gallery-backup-settings").firstMatch,
-            app.buttons["备份"].firstMatch,
-            app.buttons.matching(identifier: "native-ios-gallery-backup-settings-compact").firstMatch
-        ]
+        // SwiftUI Menu may present its actual tappable label below a
+        // non-hittable accessibility wrapper. Inspect every real matching
+        // element rather than firstMatch on a hidden outer wrapper.
+        func actualBackupControls() -> [XCUIElement] {
+            var controls: [XCUIElement] = []
+            for identifier in [
+                "native-ios-gallery-backup-action",
+                "native-ios-gallery-backup-settings",
+                "native-ios-gallery-backup-action-compact",
+                "native-ios-gallery-backup-settings-compact"
+            ] {
+                controls += app.descendants(matching: .any)
+                    .matching(identifier: identifier).allElementsBoundByIndex
+            }
+            controls += app.buttons.matching(
+                NSPredicate(format: "label == %@", "备份")
+            ).allElementsBoundByIndex
+            controls += app.buttons.matching(
+                NSPredicate(format: "label == %@", "备份设置")
+            ).allElementsBoundByIndex
+            return controls
+        }
         var target: XCUIElement?
-        for _ in 0..<48 {
-            target = candidates.first(where: { $0.exists && $0.isHittable })
+        for _ in 0..<12 {
+            target = actualBackupControls().first(where: { $0.exists && $0.isHittable })
             if target != nil { break }
             Thread.sleep(forTimeInterval: 0.25)
         }
         guard let backup = target else {
             capture(app, "gallery-backup-menu-not-hittable")
+            print("GALLERY_BACKUP_AX_NOT_HITTABLE: " +
+                  String(app.debugDescription.prefix(12000)))
             XCTFail("No real Gallery backup Menu became hittable")
             return
         }
@@ -723,15 +742,22 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         let app = launch()
         filesHomeChild("native-ios-files-home-edit-inline",
                        page: "native-ios-files-home-list", app)
-        let edit = element("native-ios-files-home-edit-inline", app)
+        // A DisclosureGroup change may replace the original AX element.
+        // Check the actual editing value AND dynamic control label.
+        let editing = element("native-ios-files-home-edit-inline", app)
         let started = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label CONTAINS %@", "完成首页整理"), object: edit)
-        XCTAssertEqual(XCTWaiter.wait(for: [started], timeout: 8), .completed)
+            predicate: NSPredicate(format: "value == %@", "已开启"), object: editing)
+        XCTAssertEqual(XCTWaiter.wait(for: [started], timeout: 8), .completed,
+                       "Files Home editing did not enter its accessible state")
+        XCTAssertTrue(editing.label.contains("完成首页整理"))
         filesHomeChild("native-ios-files-home-edit-inline",
                        page: "native-ios-files-home-list", app)
+        let finishedButton = element("native-ios-files-home-edit-inline", app)
         let finished = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label CONTAINS %@", "直接编辑浏览首页"), object: edit)
-        XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 8), .completed)
+            predicate: NSPredicate(format: "value == %@", "已关闭"), object: finishedButton)
+        XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 8), .completed,
+                       "Files Home editing did not exit its accessible state")
+        XCTAssertTrue(finishedButton.label.contains("直接编辑浏览首页"))
         filesHomeChild("native-ios-files-open-saved-searches",
                        page: "native-ios-files-saved-searches-page", app)
         tap("native-ios-files-saved-searches-done", app)

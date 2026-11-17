@@ -622,10 +622,17 @@ struct XDriveIOSNativePhotosDashboard: View {
                     }
                     Menu { backupMenuItems } label: {
                         Label("备份", systemImage: "icloud.and.arrow.up")
+                            .frame(minWidth: 60, minHeight: 44)
+                            .contentShape(Rectangle())
+                            // Native Menu may expose a non-tappable AX wrapper:
+                            // tag the real label surface independently.
+                            .accessibilityIdentifier("native-ios-gallery-backup-action")
                     }
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(minWidth: 60, minHeight: 44)
                     .layoutPriority(2)
+                    .accessibilityLabel("备份")
+                    .accessibilityHint("打开备份任务、设置及原件核验菜单")
                     .accessibilityIdentifier("native-ios-gallery-backup-settings")
                 }
                 .font(.caption)
@@ -724,6 +731,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                       "exclamationmark.triangle" : "icloud.and.arrow.up")
                 .font(.body)
                 .frame(width: 48, height: 44)
+                .contentShape(Rectangle())
+                .accessibilityIdentifier("native-ios-gallery-backup-action-compact")
         }
         .buttonStyle(.plain)
         .foregroundStyle(

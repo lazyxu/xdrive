@@ -120,6 +120,21 @@ test('P0: Recent/Favorites Viewer preserves exact same-Node viewport when reopen
   assert.match(collection, /viewerReturnViewport = nil\s*locateIntent = nil/)
 })
 
+test('P0: native Gallery backup action and Files Home editing expose usable AX states', () => {
+  const native = source('ios/XDriveIOS/NativeCloudFilesBrowser.swift')
+  const gallery = source('ios/XDriveIOS/NativePhotosDashboard.swift')
+  const crash = source('ios/UITests/XDriveIOSAllNativePagesCrashSweepUITests.swift')
+  const workflow = source('.github/workflows/ios-native-navigation-runtime.yml')
+  assert.match(native, /accessibilityValue\(isHomeEditing \? "已开启" : "已关闭"\)/)
+  assert.match(gallery, /native-ios-gallery-backup-action/)
+  assert.match(gallery, /native-ios-gallery-backup-action-compact/)
+  assert.match(crash, /func actualBackupControls\(\) -> \[XCUIElement\]/)
+  assert.match(crash, /controls \+= app\.descendants\(matching: \.any\)/)
+  assert.match(crash, /GALLERY_BACKUP_AX_NOT_HITTABLE/)
+  assert.match(crash, /value == %@/)
+  assert.match(workflow, /matrix\.source == 'candidate-navigation'\) && 100/)
+})
+
 test('P0: the prior stack-overflow safety fix and native Viewer remain intact', () => {
   assert.match(browser, /private var filesModalsPrimary: some View/)
   assert.match(browser, /AnyView\(filesModalsSecondary\)/)

@@ -1729,6 +1729,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                           systemImage: isHomeEditing ? "checkmark" : "pencil")
                 }
                 .accessibilityIdentifier("native-ios-files-home-edit-inline")
+                .accessibilityValue(isHomeEditing ? "已开启" : "已关闭")
                 Button { presentOrganizeHome() } label: {
                     Label("整理浏览首页", systemImage: "square.grid.2x2")
                 }
