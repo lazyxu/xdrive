@@ -51,6 +51,22 @@ test('unified-source pinch preserves the verified tile pixel anchor, not just it
   assert.match(pinch, /defer \{ pinchReturnViewport = nil \}/)
 })
 
+test('Owner place pinch preserves a signed pixel anchor without a stale page', () => {
+  const start = owner.indexOf('.onChange(of: wallDensity)')
+  const end = owner.indexOf('.onChange(of: visiblePageRevision)', start)
+  assert.ok(start >= 0 && end > start, 'Owner pinch requires its own bounded handler')
+  const restore = owner.slice(start, end)
+  assert.match(restore, /pinchReturnCursor == cursor/)
+  assert.match(restore, /pinchReturnRevision == visiblePageRevision/)
+  assert.match(restore, /filter\(\{ \$0\.id == id \}\)\.count == 1/)
+  assert.match(restore, /anchor\.alignment\([\s\S]*?window: cursor\.offset/)
+  assert.match(restore, /xdrivePhotoWallScrollVerifiedTile\([\s\S]*?anchor: alignment/)
+  assert.doesNotMatch(restore, /returnScroll\.scrollTo\(id, anchor: \.top\)/)
+  assert.match(owner, /pinchReturnViewport = visibleTileFrames[\s\S]*?value\.maxY <= photoWallViewportHeight/)
+  assert.doesNotMatch(owner, /pinchReturnID/)
+  assert.doesNotMatch(source, /pinchReturnID/)
+})
+
 test('local/cloud/source Viewer filmstrips share one inert scroll geometry', () => {
   assert.match(shared, /struct XDriveIOSNativePhotoWallViewerFilmstripScroll<Content: View>/)
   for (const n of ['NativeLocalPhotoViewerFilmstrip','NativeCloudPhotoAssetViewerFilmstrip','NativeUnifiedSourcePhotoMap'])

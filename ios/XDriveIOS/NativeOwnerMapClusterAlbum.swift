@@ -83,7 +83,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     @State private var autoScrollReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
     @State private var visibleTileFrames: [String: CGRect] = [:]
     @State private var photoWallViewportHeight: CGFloat = 0
-    @State private var pinchReturnID: UInt64?
+    @State private var pinchReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var pinchReturnCursor: XDriveIOSOwnerClusterCursor?
+    @State private var pinchReturnRevision: UUID?
     @AccessibilityFocusState private var focusedTileID: UInt64?
     // During a verified automatic append, preserve the last visible tile
     // while the former two-window head rotates out of the LazyVGrid.
@@ -257,12 +259,26 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 if visibleTileFrames != frames { visibleTileFrames = frames }
             }
             .onChange(of: wallDensity) { _ in
-                defer { pinchReturnID = nil }
-                guard activeOwner, viewing == nil, let id = pinchReturnID,
+                defer {
+                    pinchReturnViewport = nil
+                    pinchReturnCursor = nil
+                    pinchReturnRevision = nil
+                }
+                // Never re-anchor an old Owner place or a rotated signed
+                // 48-photo window after a concurrent page replacement.
+                guard activeOwner, viewing == nil,
+                      pinchReturnCursor == cursor,
+                      pinchReturnRevision == visiblePageRevision,
+                      let anchor = pinchReturnViewport,
+                      let id = UInt64(anchor.itemID),
                       ((priorWindow?.items ?? []) + (page?.items ?? []))
-                          .filter({ $0.id == id }).count == 1
+                          .filter({ $0.id == id }).count == 1,
+                      let alignment = anchor.alignment(
+                          for: String(id), window: cursor.offset,
+                          viewportHeight: photoWallViewportHeight)
                 else { return }
-                returnScroll.scrollTo(id, anchor: .top)
+                xdrivePhotoWallScrollVerifiedTile(
+                    id, scroll: returnScroll, anchor: alignment)
             }
             .onChange(of: visiblePageRevision) { _ in
                 // Auto paging replaces the previous pair of 48-photo windows.
@@ -390,11 +406,21 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             density: $wallDensity,
             enabled: activeOwner && !busy && viewing == nil,
             onDensityChange: { _ in
-                pinchReturnID = visibleTileFrames
+                pinchReturnCursor = cursor
+                pinchReturnRevision = visiblePageRevision
+                // Match the Gallery's measured fully-visible tile placement;
+                // never persist these presentation-only photo identifiers.
+                pinchReturnViewport = visibleTileFrames
                     .filter { $0.value.minY >= 0 &&
-                              $0.value.minY <= photoWallViewportHeight }
+                              $0.value.maxY <= photoWallViewportHeight }
                     .min(by: { $0.value.minY < $1.value.minY })
-                    .flatMap { UInt64($0.key) }
+                    .flatMap { entry -> XDriveIOSNativePhotoWallViewportAnchor? in
+                        guard UInt64(entry.key) != nil else { return nil }
+                        return XDriveIOSNativePhotoWallViewportAnchor(
+                            itemID: entry.key, windowIndex: cursor.offset,
+                            viewportOffset: entry.value.minY,
+                            tileHeight: entry.value.height)
+                    }
             }
         )
         .fullScreenCover(item: $viewing, onDismiss: {
@@ -789,7 +815,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         autoScrollReturnViewport = nil
         visibleTileFrames = [:]
         photoWallViewportHeight = 0
-        pinchReturnID = nil
+        pinchReturnViewport = nil
+        pinchReturnCursor = nil
+        pinchReturnRevision = nil
         focusedTileID = nil
         autoScrollReturn = nil
         priorWindow = nil

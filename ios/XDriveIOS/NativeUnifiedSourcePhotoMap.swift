@@ -1633,7 +1633,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         viewerOpeningWindow = -1
         shouldRestoreViewerTile = false
         viewerReturnViewport = nil
-        pinchReturnID = nil
+        pinchReturnViewport = nil
         visibleTileFrames = [:]
         photoWallViewportHeight = 0
         focusedTileID = nil
