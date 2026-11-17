@@ -580,6 +580,10 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         // camera movement. Changing orientation must not recreate the route.
         map.swipeLeft()
         map.pinch(withScale: 1.4, velocity: 1.0)
+        let cameraShot = XCTAttachment(screenshot: app.screenshot())
+        cameraShot.name = "native-mapkit-pan-zoom-portrait"
+        cameraShot.lifetime = .keepAlways
+        add(cameraShot)
         XCTAssertEqual(app.state, .runningForeground)
         XCTAssertTrue(map.exists)
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -762,6 +766,12 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
                 format: "label CONTAINS %@", "已扫描图库区域有2张带定位照片"))
             .firstMatch
         XCTAssertTrue(marker.waitForExistence(timeout: 30))
+        let controls = element("native-ios-local-map-basemap", in: app)
+        XCTAssertTrue(controls.exists)
+        let mapShot = XCTAttachment(screenshot: app.screenshot())
+        mapShot.name = "gallery-places-parity-map-dark-controls"
+        mapShot.lifetime = .keepAlways
+        add(mapShot)
         marker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(element("native-ios-map-photo-wall-tile", in: app)
             .waitForExistence(timeout: 45))

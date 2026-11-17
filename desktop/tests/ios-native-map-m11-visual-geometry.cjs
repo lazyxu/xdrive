@@ -57,3 +57,15 @@ test('M11 system Photos count inset keeps actual counts and revokes stale source
   }
   assert.match(unified, /badge\.isHidden = !enabled \|\| count <= 1/)
 })
+
+test('M11 a reused MapKit cover cannot retain prior selected depth or VoiceOver action', () => {
+  const unified = read('ios/XDriveIOS/NativeUnifiedSourceMapSurface.swift')
+  assert.match(layout, /view\.layer\.zPosition = selected \? 10 : 0/)
+  assert.match(layout, /static func resetSelection\(_ view: MKAnnotationView\)/)
+  assert.match(layout, /view\.layer\.zPosition = 0/)
+  for (const source of [local, cloud, unified]) {
+    assert.match(source, /override func prepareForReuse\(\)[\s\S]*?XDriveIOSNativeMapMarkerVisualPolicy\.resetSelection\(self\)/)
+    assert.match(source, /override func prepareForReuse\(\)[\s\S]*?isEnabled = false/)
+    assert.match(source, /override func prepareForReuse\(\)[\s\S]*?accessibilityIdentifier = nil/)
+  }
+})

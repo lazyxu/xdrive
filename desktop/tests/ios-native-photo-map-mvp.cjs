@@ -520,8 +520,8 @@ test('native local Gallery opens the full-library map from its filter menu witho
 
 
 test('album-scoped place wall exposes Show Nearby Photos into the full-library slice', () => {
-  assert.match(map, /if album != nil, onShowNearby != nil[\s\S]*?Button\("显示附近照片"\)/)
-  assert.match(map, /Button\("显示附近照片"\) \{\s*onShowNearby\?\(\)\s*dismiss\(\)/)
+  assert.match(map, /if album != nil, onShowNearby != nil[\s\S]*?Label\("显示附近照片", systemImage: "mappin.and.ellipse"\)/)
+  assert.match(map, /Button \{\s*onShowNearby\?\(\)\s*dismiss\(\)\s*\} label: \{\s*Label\("显示附近照片"/)
   assert.match(map, /@State private var pendingNearbySelection: XDriveIOSMapSpatialSelection\?/)
   assert.match(map, /@State private var nearbySelection: XDriveIOSMapSpatialSelection\?/)
   assert.match(map, /sheet\(item: \$globalSelection, onDismiss: \{[\s\S]*?pendingNearbySelection[\s\S]*?nearbySelection = pending/)
