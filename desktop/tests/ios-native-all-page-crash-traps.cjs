@@ -42,3 +42,51 @@ test('unsigned IPA gate runs both executable Swift regressions and integration c
   assert.match(workflow, /NativeClipboardFolderBackPolicyChecks\.swift/);
   assert.match(workflow, /node --test desktop\/tests\/ios-native-all-page-crash-traps\.cjs/);
 });
+
+
+test('every native Files child rejects unconditional Swift fatal operations', () => {
+  // Not a replacement for the real Simulator/process-crash audit. This catches
+  // newly introduced unconditional fatal operations in Files subpage sources
+  // before a native IPA is produced; comments are excluded from the scan.
+  const dir = path.join(root, 'ios/XDriveIOS');
+  const filenames = fs.readdirSync(dir).filter(name =>
+    /^Native(?:Cloud)?Files.*\.swift$/.test(name)
+  );
+  assert.ok(filenames.length >= 45,
+    'all NativeFiles and NativeCloudFiles child modules must be audited');
+  const fatal = /\b(?:try\s*!|as\s*!|fatalError\s*\(|preconditionFailure\s*\(|unsafeBitCast\s*\()/;
+  for (const filename of filenames) {
+    const executable = fs.readFileSync(path.join(dir, filename), 'utf8')
+      .split('\n')
+      .filter(line => !/^\s*(?:\/\/|\*)/.test(line))
+      .map(line => line.replace(/\/\/.*$/, ''))
+      .join('\n');
+    assert.doesNotMatch(executable, fatal,
+      filename + ' has an unconditional Swift runtime trap');
+  }
+});
+
+test('native Files array indexing and sliding-window retirement stay guarded on every child route', () => {
+  const browser = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift');
+  const picker = read('ios/XDriveIOS/NativeFilesDestinationPicker.swift');
+  const inline = read('ios/XDriveIOS/NativeFilesInlineFolders.swift');
+  const windowPolicy = read('ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift');
+  const windowChecks = read('ios/tests/NativeFilesContinuousWindowChecks.swift');
+  assert.match(browser,
+    /providers\.count == 1,\s*providers\[0\]\.hasItemConformingToTypeIdentifier/,
+    'foreign drag providers must be counted before subscripting');
+  assert.match(browser,
+    /if chosenItems\.count == 1 \{\s*return chosenItems\[0\]\.type/,
+    'single-selection direct download needs a verified count guard');
+  for (const [name, source] of [['browser', browser], ['destination picker', picker], ['inline folders', inline]]) {
+    assert.match(source, /XDriveIOSNativeFilesContinuousWindowPolicy\.mergePlan\(/,
+      name + ' must validate a server range before trimming');
+    assert.match(source, /if plan\.dropFromBack > 0 \{/,
+      name + ' must only trim a positive verified range');
+  }
+  assert.match(windowPolicy,
+    /drop <= currentIDs\.count else \{ return nil \}/,
+    'reverse-page drop cannot exceed the currently verified page');
+  assert.match(windowChecks, /oversized aligned next-page cursor fails without integer overflow/);
+  assert.match(windowChecks, /oversized aligned return cursor fails without integer overflow/);
+});
