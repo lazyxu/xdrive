@@ -136,6 +136,9 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
     @State private var coverImages: [String: UIImage] = [:]
     @State private var coverUnavailable: Set<String> = []
     @State private var selected: XDriveIOSUnifiedSourceMapPin?
+    // The current viewport wall is independent of a selected single Cell.
+    // It uses the same proven Owner/PhotoKit/source page reader, no new API.
+    @State private var showingViewportGrid = false
     @State private var provedOwner: XDriveNativeOwnerRoot?
     @State private var provedLibrary: Data?
     @State private var provedCamera: MKCoordinateRegion?
@@ -184,7 +187,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 do { try await Task.sleep(nanoseconds: 30_000_000_000) }
                 catch { break }
                 guard !Task.isCancelled else { break }
-                if phase == .active && selected == nil && !busy { reload() }
+                if phase == .active && selected == nil &&
+                    !showingViewportGrid && !busy { reload() }
             }
         }
     }
@@ -265,16 +269,15 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 .padding(12)
             }
             .overlay(alignment: .bottomTrailing) {
-                // The current single verified cell is already a precise
-                // bounded Source+Owner+PhotoKit member set. Multiple cells
-                // must never be silently broadened to the entire Gallery.
+                // The full current verified viewport is a union of the
+                // existing exact GPS Cells, not the entire merged Gallery.
                 XDriveIOSNativePhotoMapGridAction(
-                    enabled: currentProof && pins.count == 1,
+                    enabled: currentProof && !pins.isEmpty,
                     accessibilityID: "native-ios-unified-source-map-current-grid"
                 ) {
-                    guard currentProof, pins.count == 1, let only = pins.first,
-                          only.count > 0 else { return }
-                    selected = only
+                    guard currentProof, !pins.isEmpty,
+                          pins.allSatisfy({ $0.count > 0 }) else { return }
+                    showingViewportGrid = true
                 }
                 .padding(12)
             }
@@ -395,6 +398,25 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         .alert(item: $currentLocation.alert) { issue in
             Alert(title: Text("无法获取当前位置"), message: Text(issue.message),
                   dismissButton: .default(Text("完成")))
+        }
+        .sheet(isPresented: $showingViewportGrid, onDismiss: {
+            if phase == .active { reload() } else { invalidate() }
+        }) {
+            if let owner = provedOwner, let library = provedLibrary,
+               currentProof, !pins.isEmpty,
+               pins.allSatisfy({ $0.count > 0 }) {
+                NavigationStack {
+                    XDriveIOSNativeUnifiedSourceMapCellWall(
+                        login: login, owner: owner, library: library,
+                        presence: presence, query: scopedQuery, pin: pins[0],
+                        sourceCoordinates: cachedCoordinates,
+                        sourceCursors: cachedCursors, viewportPins: pins)
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            } else {
+                Text("当前地图照片核验已失效，请重新进入。")
+            }
         }
         .sheet(item: $selected, onDismiss: {
             // Cloud changes that happened while a place sheet covered the map
@@ -856,6 +878,9 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     let sourceCoordinates: [XDriveIOSUnifiedSourceCachedCoordinate]
     let sourceCursors: [XDriveIOSNativeGalleryCursor]
     var isNearbyExpansion = false
+    // Scoped collection of already verified Cell keys for a viewport grid.
+    // No PhotoKit asset identifiers, cloud Node IDs or new Owner capability.
+    var viewportPins: [XDriveIOSUnifiedSourceMapPin]? = nil
 
     @Environment(\.scenePhase) private var phase
     @StateObject private var photoChanges = XDriveIOSUnifiedPhotoObserver()
@@ -899,6 +924,13 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var placeGeocoder = CLGeocoder()
     @State private var placeNameTask: Task<Void, Never>?
 
+    private var initialWallCursor: XDriveIOSNativeGalleryCursor {
+        // A multi-cell viewport can include photos *before* the first
+        // representative Cell cursor. Begin at the first verified source
+        // page, then use existing <=48-item bounded page windows.
+        viewportPins == nil ? pin.firstCursor : .init()
+    }
+
     private var active: Bool {
         phase == .active &&
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) &&
@@ -920,7 +952,10 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     /// a human-readable locality by Apple's CoreLocation geocoder. No
     /// reverse-geocoded result is stored or used as a media membership proof.
     private func resolvePlaceName() {
-        guard active, placeName == nil, placeNameTask == nil else { return }
+        // Reverse geocoding one representative would mislabel a multi-place
+        // viewport as a single town. The union sheet has its own title.
+        guard viewportPins == nil, active, placeName == nil,
+              placeNameTask == nil else { return }
         let ticket = generation
         let geocoder = placeGeocoder
         let target = CLLocation(latitude: pin.latitude, longitude: pin.longitude)
@@ -944,6 +979,13 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     }
 
     private func matchesPlace(latitude: Double, longitude: Double) -> Bool {
+        if let viewportPins {
+            return !viewportPins.isEmpty && viewportPins.contains { cell in
+                XDriveIOSUnifiedSourceMapPolicy.member(
+                    latitude: latitude, longitude: longitude,
+                    key: cell.key, viewport: cell.viewport)
+            }
+        }
         if isNearbyExpansion {
             guard let nearbyViewport else { return false }
             return XDriveIOSNativeLocalMapSpatialPolicy.includes(
@@ -958,12 +1000,16 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         VStack(spacing: 8) {
             if active {
                 XDriveIOSNativePhotoMapPlaceHeader(
-                    title: placeName ?? (isNearbyExpansion
-                        ? "附近照片" : "此地点的照片"),
-                    count: isNearbyExpansion ? nil : pin.count,
-                    detail: isNearbyExpansion ? "按距离浏览" : nil,
+                    title: viewportPins != nil ? "当前地图的照片" :
+                        (placeName ?? (isNearbyExpansion
+                            ? "附近照片" : "此地点的照片")),
+                    count: isNearbyExpansion ? nil :
+                        (viewportPins?.reduce(0) { $0 + $1.count } ?? pin.count),
+                    detail: viewportPins != nil
+                        ? "\(viewportPins?.count ?? 0) 个地点" :
+                        (isNearbyExpansion ? "按距离浏览" : nil),
                     titleAccessibilityID: "native-ios-unified-map-place-name")
-                if !isNearbyExpansion {
+                if !isNearbyExpansion && viewportPins == nil {
                     Button {
                         guard active, !busy, !opening else { return }
                         nearbyPresented = true
@@ -1077,7 +1123,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 if isNearbyExpansion {
                     prepareNearbyRanking()
                 } else {
-                    load(from: pin.firstCursor)
+                    load(from: initialWallCursor)
                 }
             }
         }
@@ -1574,7 +1620,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             viewerReturnID = nil
             ended = false
             error = nil
-            load(from: pin.firstCursor)
+            load(from: initialWallCursor)
         }
     }
 
