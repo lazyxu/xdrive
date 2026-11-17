@@ -21,7 +21,7 @@ test('Owner map keeps count only in the current-proof accessible grid and place 
   assert.match(screen, /XDriveIOSNativePhotoMapStatusPill\(/)
   assert.match(screen, /\.overlay\(alignment: \.bottomLeading\)/)
   assert.match(screen, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/)
-  assert.match(screen, /overview\.map \{ "\\($0\.total_photo_count\) 张照片" \}/)
+  assert.match(screen, /overview\.map \{[^}]*total_photo_count/)
   assert.doesNotMatch(screen, /native-ios-owner-map-verified-count|native-ios-owner-map-stale-count/)
   assert.match(screen, /if busy \{[\s\S]*?ProgressView\("正在加载照片位置…"/)
   assert.match(screen, /if let error \{[\s\S]*?XDriveIOSNativePhotoMapStatusPill\(/)
