@@ -65,7 +65,7 @@ const maven429 = [
   "A problem occurred configuring root project 'xDriveAndroid'.",
   "> Could not resolve all artifacts for configuration 'classpath'.",
   "> Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-reflect/2.0.20/kotlin-reflect-2.0.20.pom'. Received status code 429 from server: Too Many Requests",
-].join('\\n')
+].join('\n')
 
 test('exact Maven Central 429 classpath POM fetch is retried and must succeed', () => {
   const r = runScenario(2, maven429)
@@ -87,7 +87,7 @@ test('unrelated HTTP 429 alone is not misclassified as a Gradle dependency retry
 })
 
 test('a classpath compiler error without Maven POM 429 remains terminal', () => {
-  const r = runScenario(3, "Could not resolve all artifacts for configuration 'classpath'.\\ne: Foo.kt:11 unresolved reference")
+  const r = runScenario(3, "Could not resolve all artifacts for configuration 'classpath'.\ne: Foo.kt:11 unresolved reference")
   assert.equal(r.status, 14)
   assert.equal(r.count, 1)
 })
