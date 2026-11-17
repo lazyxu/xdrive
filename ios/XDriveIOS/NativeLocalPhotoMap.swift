@@ -1801,8 +1801,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
 
                 // Status and explicit recovery remain visible in map overlays.
             } else if let page {
-                Text("当前页 · \(page.items.count) 张照片")
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                // Keep this legacy, bounded 64-photo route usable without
+                // shrinking its native MapKit surface for a pagination footer.
                 XDriveIOSMapKitPhotoPage(
                     items: page.items, revision: mapRevision, mapType: mapType, cameraReturn: cameraReturn
                 ) { selected, region in
@@ -1840,57 +1840,38 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("native-ios-local-photo-map")
-                if page.items.isEmpty {
-                    Text("当前页暂无有效 GPS 照片，可以切换下一页。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if gpsFindPagesScanned > 0 {
-                    Text("已检查 \(gpsFindPagesScanned) 页")
-                        .font(.footnote).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-map-gps-find-progress")
-                }
-                HStack {
-                    Button("上一页") { refresh(at: max(0, page.page.startOffset - 64)) }
-                        .disabled(busy || page.page.startOffset == 0)
-                    Spacer()
-                    Button("下一页") { refresh(at: page.page.nextOffset) }
-                        .disabled(busy || page.page.finished)
-                }.buttonStyle(.bordered)
-                Button("查找下一批有定位照片") {
-                    refresh(at: page.page.nextOffset, findNextGPS: true)
-                }
-                .disabled(busy || page.page.finished)
-                .frame(minHeight: 44)
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("native-ios-map-find-next-gps-page")
-                .accessibilityHint("最多读取 16 页；不代表全库已完成扫描。")
-                if !compactMap {
-                    Text("继续查找更多照片")
-                        .font(.footnote).foregroundStyle(.secondary)
+                .overlay(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        if page.items.isEmpty {
+                            XDriveIOSNativePhotoMapStatusPill(
+                                message: "当前页暂无有效定位照片",
+                                accessibilityID: "native-ios-map-page-empty")
+                        }
+                        if let activeCaptureRange {
+                            XDriveIOSNativePhotoMapStatusPill(
+                                message: activeCaptureRange.label,
+                                accessibilityID: "native-ios-map-page-capture-range")
+                        }
+                        if basemapUnavailable {
+                            XDriveIOSNativePhotoMapStatusPill(
+                                message: "地图暂时无法加载，请检查网络后重试。",
+                                accessibilityID: "native-ios-map-page-basemap-error",
+                                systemImage: "wifi.exclamationmark")
+                        }
+                        if let error {
+                            XDriveIOSNativePhotoMapStatusPill(
+                                message: error,
+                                accessibilityID: "native-ios-map-page-error",
+                                systemImage: "exclamationmark.triangle")
+                        }
+                    }
+                    .frame(maxWidth: 240, alignment: .leading)
                 }
             } else if busy {
                 ProgressView("读取授权照片位置…")
             }
-            // The optional legacy 64-item page retains its own status;
-            // whole-library status is overlaid on the full-height MapKit.
-            if mapScope == .page {
-                if let activeCaptureRange {
-                    Text("位置时间范围：\(activeCaptureRange.label)")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if basemapUnavailable {
-                    Text("地图暂时无法加载，请检查网络后重试。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if let error {
-                    Text(error).foregroundStyle(.secondary).font(.footnote)
-                }
-            }
-            if mapScope == .page {
-                Button("刷新当前页") { refresh(at: offset) }
-                    .frame(minHeight: CGFloat(XDriveIOSNativePhotoMapPolicy.minimumInteractiveTarget))
-                    .disabled(busy || authorization == .denied || authorization == .restricted)
-            }
+            // Page-only status uses transient in-map overlays. Pagination
+            // and refresh remain available in the map's accessible More menu.
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
                 Text("仅显示已授权的照片位置。")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -1967,6 +1948,36 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     // its 44pt floating MapKit tool. The legacy 64-slot page
                     // cannot use that user's location camera, so it keeps a
                     // scoped fallback basemap menu until migrated.
+                    if mapScope == .page {
+                        // Keep the historical bounded PhotoKit reader; only
+                        // its navigation actions leave the visible map canvas.
+                        Section("当前页 · \(page?.items.count ?? 0) 张照片") {
+                            if gpsFindPagesScanned > 0 {
+                                Text("已检查 \(gpsFindPagesScanned) 页")
+                                    .accessibilityIdentifier("native-ios-map-gps-find-progress")
+                            }
+                            Button("上一页") {
+                                guard let page else { return }
+                                refresh(at: max(0, page.page.startOffset - 64))
+                            }
+                            .disabled(busy || page?.page.startOffset == 0 || page == nil)
+                            Button("下一页") {
+                                guard let page else { return }
+                                refresh(at: page.page.nextOffset)
+                            }
+                            .disabled(busy || page?.page.finished != false)
+                            Button("查找下一批有定位照片") {
+                                guard let page else { return }
+                                refresh(at: page.page.nextOffset, findNextGPS: true)
+                            }
+                            .disabled(busy || page?.page.finished != false)
+                            .accessibilityIdentifier("native-ios-map-find-next-gps-page")
+                            .accessibilityHint("最多读取 16 页；不代表全库已完成扫描。")
+                            Button("刷新当前页") { refresh(at: offset) }
+                                .disabled(busy || authorization == .denied ||
+                                          authorization == .restricted)
+                        }
+                    }
                     if mapScope == .page {
                     Menu {
                         Picker("底图样式", selection: $mapType) {
