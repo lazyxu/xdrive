@@ -707,16 +707,46 @@ struct XDriveIOSNativePhotosDashboard: View {
         .accessibilityIdentifier("native-ios-photos-bottom-bar")
     }
 
+    // Keep a critical permission or receipt warning discoverable without a
+    // permanent backup strip shrinking the native Photos grid.
+    private var galleryBackupStatus: String? {
+        if backup.busy { return "正在检查相册备份" }
+        guard let state = backup.schedule, state.enabled else { return nil }
+        if state.pausedForReview { return "自动备份已暂停：需核对收据" }
+        if photoAuthorization != .authorized && photoAuthorization != .limited {
+            return "备份计划已保存：照片权限不可用"
+        }
+        if photoAuthorization == .limited && state.backupStartRule == .onlyNew {
+            return "仅新增备份已暂停：需要所有照片权限"
+        }
+        if photoAuthorization == .limited {
+            return "自动备份只覆盖当前选定的照片"
+        }
+        return nil
+    }
+
     private var galleryMoreMenu: some View {
         Menu {
             Section("图库来源") {
                 Button("全部照片") { openGallery(.unified) }
+                if gallerySource == .local || gallerySource == .albums {
+                    Button("搜索本机照片") { showingLocalPhotoSearch = true }
+                        .disabled(photoAuthorization != .authorized &&
+                                  photoAuthorization != .limited)
+                        .accessibilityIdentifier("native-ios-gallery-local-photo-search")
+                }
                 Button("本机照片") { openGallery(.local) }
                 Button("云端图库") { openGallery(.cloud) }
                 Button("备份原件") { openGallery(.originals) }
                 Button("地图") { openGallery(.map) }
             }
-            Section("备份与管理") { backupMenuItems }
+            Section("备份与管理") {
+                if let status = galleryBackupStatus {
+                    Button(status) { openBackup(.overview) }
+                        .accessibilityIdentifier("native-ios-gallery-backup-status")
+                }
+                backupMenuItems
+            }
             Section("xDrive") {
                 Button("全部功能") { tab = .launcher }
                 Button("文件") { tab = .files }
@@ -728,6 +758,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 .frame(width: 44, height: 44)
         }
         .accessibilityLabel("图库来源、备份与 xDrive")
+        .accessibilityValue(galleryBackupStatus ?? "备份设置")
         .accessibilityIdentifier("native-ios-gallery-more-menu")
     }
 
