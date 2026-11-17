@@ -214,6 +214,68 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         ]
         self.assertIsNone(classify_bright_blank(frames, 0.3))
 
+    # A valid, textured native page can briefly repaint its *content* to a
+    # flat neutral colour while the Photos/Files chrome remains unchanged.
+    # White/black-only classification missed this kind of real visible blink.
+    def _neutral_transition_frames(self, indices, y):
+        return [
+            {"time": i / 10,
+             "ymin": y if i in indices else 12,
+             "ymax": y + 2 if i in indices else 246,
+             "yavg": y + 1 if i in indices else 175}
+            for i in range(26)
+        ]
+
+    def test_one_mid_gray_content_frame_is_not_considered_smooth(self):
+        frames = self._neutral_transition_frames({10}, 125)
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "suspected_solid_neutral_transition")
+
+    def test_two_light_gray_content_frames_are_not_hidden_by_chrome(self):
+        frames = self._neutral_transition_frames({10, 11}, 218)
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "suspected_solid_neutral_transition")
+
+    def test_near_black_gray_content_pulse_is_not_a_valid_dark_page(self):
+        frames = self._neutral_transition_frames({11}, 36)
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "suspected_solid_neutral_transition")
+
+    def test_full_neutral_content_replacement_must_not_pass_transition(self):
+        frames = self._neutral_transition_frames(set(range(7, 26)), 119)
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "suspected_solid_neutral_transition")
+
+    def test_no_immediate_decoded_post_tap_frames_must_not_pass(self):
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26) if i not in {7, 8, 9, 10}
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "missing_immediate_post_tap_frames")
+
+    def test_missing_early_transition_frames_must_not_pass(self):
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26) if i not in {9, 10, 11}
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "sparse_early_transition_frames")
+
+    def test_neutral_frame_rejection_reaches_real_video_gate(self):
+        frames = self._neutral_transition_frames({10}, 131)
+        accepted, report = self._audit_sample(frames=frames)
+        self.assertFalse(accepted, report)
+        self.assertIn("suspected_solid_neutral_transition",
+                      report["clips"][0]["failures"])
+
+    def test_textured_30hz_content_remains_a_valid_navigation_surface(self):
+        frames = [
+            {"time": i / 30, "ymin": 15, "ymax": 58, "yavg": 25}
+            for i in range(70)
+        ]
+        self.assertIsNone(classify_bright_blank(frames, 0.6))
+
     def test_video_metadata_decode(self):
         sample = ("frame:0 pts:0 pts_time:0.1\n"
                   "lavfi.signalstats.YMIN=11\nlavfi.signalstats.YMAX=250\n"
