@@ -1726,7 +1726,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     .overlay(alignment: .bottomTrailing) {
                         XDriveIOSNativePhotoMapGridAction(
                             enabled: canOpenCurrentMapGrid,
-                            accessibilityID: "native-ios-local-map-current-grid"
+                            accessibilityID: "native-ios-local-map-current-grid",
+                            verifiedSummary: globalComplete && refinedViewportIsCurrent
+                                ? "\(globalLocated) 张照片，\(globalCells.count) 个位置"
+                                : nil
                         ) { openCurrentMapGrid() }
                         .padding(12)
                     }
@@ -1770,13 +1773,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         .frame(maxWidth: 240, alignment: .leading)
                     }
                     .overlay(alignment: .bottomLeading) {
-                        if globalComplete && !globalCells.isEmpty {
-                            XDriveIOSNativePhotoMapStatusPill(
-                                message: refinedViewportIsCurrent
-                                    ? "\(globalLocated) 张照片 · \(globalCells.count) 个位置"
-                                    : "正在更新当前位置…",
-                                accessibilityID: "native-ios-map-verified-count")
-                        } else if busy {
+                        // Apple Photos keeps the verified count in the opened
+                        // location grid; never leave a permanent count capsule
+                        // covering the photograph markers or map attribution.
+                        // During a scan the transient progress remains visible.
+                        if busy {
                             ProgressView(album == nil ? "正在加载照片位置…" : "正在加载相册位置…")
                                 .font(.caption).padding(10)
                                 .background(.regularMaterial, in: Capsule())
