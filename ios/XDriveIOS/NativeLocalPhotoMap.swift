@@ -1325,6 +1325,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     var cameraOnEntry: MKCoordinateRegion? = nil
     var onLibraryCameraChange: ((MKCoordinateRegion?) -> Void)? = nil
     var onFocusChange: ((Bool) -> Void)?
+    var mapSource: Binding<XDriveIOSNativePhotoMapSource>? = nil
+    var canSelectCloudMap = true
     // The local map is a projection of the calling Gallery's exact media scope.
     var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     var filenameTerm: String = ""
@@ -1905,6 +1907,17 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // Locate and basemap controls are in the map's floating group.
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    if let mapSource {
+                        Picker("地图照片来源", selection: mapSource) {
+                            Text(XDriveIOSNativePhotoMapSource.local.label)
+                                .tag(XDriveIOSNativePhotoMapSource.local)
+                            if canSelectCloudMap {
+                                Text(XDriveIOSNativePhotoMapSource.cloud.label)
+                                    .tag(XDriveIOSNativePhotoMapSource.cloud)
+                            }
+                        }
+                        .accessibilityIdentifier("native-ios-map-source-selector")
+                    }
                     Menu {
                         Button("全部日期") { setCaptureRange(nil) }
                         Button("最近的日子与旅行") {

@@ -85,7 +85,7 @@ private struct XDriveIOSOwnerMapCoverRead: @unchecked Sendable {
 
 enum XDriveIOSNativePhotoMapSource: String, CaseIterable {
     case local, cloud
-    var label: String { self == .local ? "本机位置" : "云端 Owner" }
+    var label: String { self == .local ? "本机位置" : "云端照片" }
 }
 
 /// Keep one Gallery map route; source selection does not create an independent
@@ -137,6 +137,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                         localMapCamera = next
                     },
                     onFocusChange: onFocusChange,
+                    mapSource: $source, canSelectCloudMap: cloudAllowed,
                     mediaFilter: mediaFilter,
                     filenameTerm: filenameTerm,
                     inheritedCaptureRange: inheritedCaptureRange
@@ -145,6 +146,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                 if cloudAllowed {
                     XDriveIOSNativeOwnerPhotoMapScreen(
                     login: login, onFocusChange: onFocusChange,
+                    mapSource: $source, canSelectCloudMap: cloudAllowed,
                     cameraReturn: cloudMapCamera,
                     onCameraChange: { next in
                         guard source == .cloud, let expectedOwner,
@@ -174,21 +176,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                     .accessibilityIdentifier("native-ios-map-close")
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Picker("地图照片来源", selection: $source) {
-                        ForEach(XDriveIOSNativePhotoMapSource.allCases.filter {
-                            cloudAllowed || $0 == .local
-                        }, id: \.self) { item in
-                            Text(item.label).tag(item)
-                        }
-                    }
-                } label: {
-                    Label("照片来源", systemImage: "square.stack.3d.up")
-                }
-                .accessibilityLabel("地图照片来源：\(source.label)")
-                .accessibilityIdentifier("native-ios-map-source-selector")
-            }
+            // Source is inside the active MapKit actions menu, not a second toolbar item.
         }
         // Swapping between local and Owner MapKit must keep the same immersive
         // map presentation. Do not briefly reveal the Gallery strips.
@@ -547,6 +535,8 @@ private struct XDriveIOSOwnerMapChosenPlace: Identifiable {
 struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     var onFocusChange: ((Bool) -> Void)?
+    var mapSource: Binding<XDriveIOSNativePhotoMapSource>? = nil
+    var canSelectCloudMap = true
     // Transient same-Owner camera only, never serialized as GPS history.
     var cameraReturn: MKCoordinateRegion? = nil
     var onCameraChange: ((MKCoordinateRegion) -> Void)? = nil
@@ -888,6 +878,17 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             // The location control lives beside map style in the canvas.
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    if let mapSource {
+                        Picker("地图照片来源", selection: mapSource) {
+                            Text(XDriveIOSNativePhotoMapSource.local.label)
+                                .tag(XDriveIOSNativePhotoMapSource.local)
+                            if canSelectCloudMap {
+                                Text(XDriveIOSNativePhotoMapSource.cloud.label)
+                                    .tag(XDriveIOSNativePhotoMapSource.cloud)
+                            }
+                        }
+                        .accessibilityIdentifier("native-ios-map-source-selector")
+                    }
                     Menu {
                         Button("全部日期") { setCaptureRange(nil) }
                         Button("最近 7 天") {
