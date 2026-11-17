@@ -34,11 +34,22 @@ const extendedJourneys = [
   'testGalleryMapFilesSavedSearchesReturnKeepsGeneration',
   'testGalleryPeopleFiltersFilesTrashDenialReturnWithoutGhost',
 ];
+// Six more verified real XCUITest journeys were added after the 50-clip gate.
+// They are mandatory evidence, never optional extras or source-only tests.
+const newestJourneys = [
+  'testFilesTrashDenialQuickRailBounceDoesNotReviveError',
+  'testFilesSavedSearchesForegroundGalleryReturnTwoCycles',
+  'testFilesHistoryForegroundGalleryPeopleBackRetiresSheet',
+  'testGalleryMapRotateFilesReturnPreservesWallGeneration',
+  'testGalleryOriginalsFilesCloudErrorSourceReturnKeepsSurface',
+  'testLocalPhotoDateRotateFilesHistoryReturnsRealPhotoKit',
+];
+const allJourneys = [...journeys, ...extendedJourneys, ...newestJourneys];
 
-test('all twelve real native cross-subpage journeys are registered exactly once', () => {
-  assert.equal((native.match(/    func test[A-Z]\w*\(\)/g) || []).length, 12);
-  assert.equal(new Set([...journeys, ...extendedJourneys]).size, 12);
-  for (const name of [...journeys, ...extendedJourneys]) {
+test('all eighteen real native cross-subpage journeys are registered exactly once', () => {
+  assert.equal((native.match(/    func test[A-Z]\w*\(\)/g) || []).length, 18);
+  assert.equal(new Set(allJourneys).size, 18);
+  for (const name of allJourneys) {
     assert.equal(native.split('func ' + name + '()').length, 2, name);
     assert.match(watcher, new RegExp('"' + name + '"'));
     assert.match(h264, new RegExp('"' + name + '"'),
@@ -60,7 +71,7 @@ test('all twelve real native cross-subpage journeys are registered exactly once'
   assert.match(native, /XCTAttachment|app\.screenshot\(\)/);
 });
 
-test('candidate-gallery-files must actually RUN the six child tests in macOS Xcode', () => {
+test('candidate-gallery-files must actually RUN all eighteen child tests in macOS Xcode', () => {
   assert.match(workflow, /'ios\/UITests\/XDriveIOSGalleryFilesSixSubpageUITests\.swift'/);
   const candidate = workflow.slice(workflow.indexOf('            candidate-gallery-files)'),
     workflow.indexOf('            candidate-no-session)'));
@@ -70,9 +81,9 @@ test('candidate-gallery-files must actually RUN the six child tests in macOS Xco
   assert.match(workflow, /xcodebuild test/);
   assert.match(workflow, /resultBundlePath/);
   assert.match(workflow, /-parallel-testing-enabled NO/);
-  assert.match(workflow, /--minimum 50/,
-    'all 50 separate real navigation clips must be audited without opt-out');
-  for (const name of [...journeys, ...extendedJourneys]) {
+  assert.match(workflow, /--minimum 56/,
+    'all 56 separate real navigation clips must be audited without opt-out');
+  for (const name of allJourneys) {
     assert.match(watcher, new RegExp('"' + name + '"'));
   }
 });
@@ -147,7 +158,7 @@ test('six additional real Files/Gallery transitions are H.264-audited, including
     assert.match(body, /select\("native-ios-tab-/,
       name + ' must tap a real native Gallery or Files tab');
   }
-  assert.match(workflow, /--minimum 50/);
+  assert.match(workflow, /--minimum 56/);
 });
 
 test('both existing Gallery/Files native suites audit child viewport rather than colorful tab chrome', () => {
@@ -237,7 +248,7 @@ test('six additional high-risk Gallery/Files transitions require true H264 evide
       name + ' must check real native content pixels');
     assert.ok(h264.includes('"' + name + '"'), name + ' missing bounded real H264 watcher');
   }
-  assert.match(workflow, /--minimum 50/, 'all 50 clips must be real and audited');
+  assert.match(workflow, /--minimum 56/, 'all 56 clips must be real and audited');
   assert.match(h264, /MAX_CLIP_SECONDS = 210/,
     'long genuine XCTest must not be truncated by old 120-second clip limit');
 });
@@ -247,7 +258,7 @@ test('every mandatory real H264 target belongs to exactly one executable XCTest 
   // The active video gate grew from 44 to 50 actual journeys. Verify source
   // parity from the target registry, rather than hardcoding a stale count.
   const targets = [...h264.matchAll(/^\s*"(test\w+)",?$/gm)].map(m => m[1]);
-  assert.equal(targets.length, 50, 'never silently reduce the mandatory H.264 case set');
+  assert.equal(targets.length, 56, 'never silently reduce the mandatory H.264 case set');
   assert.equal(new Set(targets).size, targets.length, 'duplicate video targets are invalid');
   const suites = [stability, frameContinuity, native];
   const methods = suites.flatMap(code =>
@@ -265,6 +276,6 @@ test('every mandatory real H264 target belongs to exactly one executable XCTest 
     assert.ok(watcher.includes('"' + name + '"'),
       name + ' must have live Simulator frame sampling');
   }
-  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 50/,
-    'all 50 distinct actual video clips must remain mandatory');
+  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 56/,
+    'all 56 distinct actual video clips must remain mandatory');
 });

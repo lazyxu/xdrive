@@ -246,6 +246,6 @@ test("six more real native Gallery/Files cross-child transitions retain H264 fai
     "Files root search overlay retirement must remain protected")
   const workflow = fs.readFileSync(path.join(root,
     ".github/workflows/ios-native-navigation-runtime.yml"), "utf8")
-  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 50/,
-    "all 50 distinct real video clips must remain mandatory")
+  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 56/,
+    "all 56 distinct real video clips must remain mandatory")
 })

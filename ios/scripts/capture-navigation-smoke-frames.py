@@ -221,6 +221,14 @@ MINIMAL_TARGETS.update({
     "testLocalPhotoDateSheetFilesQuickSectionsThenReopen",
     "testGalleryMapFilesSavedSearchesReturnKeepsGeneration",
     "testGalleryPeopleFiltersFilesTrashDenialReturnWithoutGhost",
+    # Six latest native pages must also produce live still-frame evidence,
+    # alongside the strict per-test 30 Hz H.264 recorder.
+    "testFilesTrashDenialQuickRailBounceDoesNotReviveError",
+    "testFilesSavedSearchesForegroundGalleryReturnTwoCycles",
+    "testFilesHistoryForegroundGalleryPeopleBackRetiresSheet",
+    "testGalleryMapRotateFilesReturnPreservesWallGeneration",
+    "testGalleryOriginalsFilesCloudErrorSourceReturnKeepsSurface",
+    "testLocalPhotoDateRotateFilesHistoryReturnsRealPhotoKit",
 })
 # Additional native all-pages/subpage crash journeys: real controls only.
 MINIMAL_TARGETS.update({
