@@ -71,7 +71,10 @@ test('P0-4 every published Owner map is bound to the exact verified Owner, and H
     ownerUIView.indexOf('guard context.coordinator.revision != revision'))
   assert.match(ownerUIView, /context\.coordinator\.revision = nil\s*return/)
   assert.match(cloud, /coverImages:\s*displayedOverviewMatchesLogin \? coverImages : \[:\]/)
-  assert.match(cloud, /if let overview, displayedOverviewMatchesLogin/)
+  // The owner-gated MapKit surface and grid VoiceOver value must never use an unverified Owner's data.
+  assert.match(cloud, /overview:\s*displayedOverviewMatchesLogin \? overview : nil/)
+  assert.match(cloud, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/)
+  assert.doesNotMatch(cloud, /native-ios-owner-map-stale-count/)
   assert.match(cloud, /displayedOverviewOwner = nil/)
   assert.match(cloud, /verifiedOverviewOwner = nil[\s\S]*?verifiedBounds = nil/)
   assert.match(cloud, /if case \.response\(let status\) = failure, status == 401 \|\| status == 403/)
