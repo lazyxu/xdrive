@@ -68,6 +68,12 @@ TARGETS = frozenset({
     "testLocalPhotoDateSheetFilesQuickSectionsThenReopen",
     "testGalleryMapFilesSavedSearchesReturnKeepsGeneration",
     "testGalleryPeopleFiltersFilesTrashDenialReturnWithoutGhost",
+    "testFilesTrashDenialQuickRailBounceDoesNotReviveError",
+    "testFilesSavedSearchesForegroundGalleryReturnTwoCycles",
+    "testFilesHistoryForegroundGalleryPeopleBackRetiresSheet",
+    "testGalleryMapRotateFilesReturnPreservesWallGeneration",
+    "testGalleryOriginalsFilesCloudErrorSourceReturnKeepsSurface",
+    "testLocalPhotoDateRotateFilesHistoryReturnsRealPhotoKit",
 })
 CASE_START = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 CASE_END = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
