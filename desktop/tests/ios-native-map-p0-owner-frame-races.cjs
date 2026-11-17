@@ -84,7 +84,7 @@ test('P0 rapid Viewer return does not re-center an unchanged authorized item', (
   assert.match(cluster, /viewerOpeningItem = item[\s\S]*?viewerReturn = item/)
   // Current exact Owner/Node/revision reauthorization gates return focus;
   // same-media Back changes AX focus without re-centering the photo wall.
-  assert.match(cluster, /viewerOpeningItem\.map\(\{[\s\S]*?!\$0\.sameVisibleRevision\(as: anchor\)[\s\S]*?\}\) \?\? true \{\s*xdrivePhotoWallFocusVerifiedTile\(/)
+  assert.match(cluster, /viewerOpeningItem\.map\(\{[\s\S]*?!\$0\.sameVisibleRevision\(as: anchor\)[\s\S]*?\}\) \?\? true \|\| viewerOpeningCursor != cursor \{[\s\S]*?xdrivePhotoWallFocusVerifiedTile\(/)
   assert.match(cluster, /\} else \{\s*focusedTileID = anchor\.id\s*\}\s*viewerReturn = nil\s*viewerOpeningItem = nil/)
   assert.match(local, /\.accessibilityValue\("return-anchor-\\\(item\.id\.hashValue\)"\)/)
   assert.match(ui, /testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted\(\)/)
