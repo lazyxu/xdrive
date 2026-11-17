@@ -222,3 +222,30 @@ test("leaving Files dismisses native search without clearing verified results", 
   assert.match(sixSubpage, /func testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay\(\)/)
   assert.match(sixSubpage, /native-ios-files-home-list/)
 })
+
+
+test("six more real native Gallery/Files cross-child transitions retain H264 fail-closed audit", () => {
+  const names = ["testFilesMoreOrganizerGalleryReturnPreservesBrowseHome","testFilesQuickRailRotationPeopleReturnKeepsNativeShell","testGalleryFilterFilesHistoryForegroundKeepsWallGeneration","testLocalPhotoDateSheetFilesQuickSectionsThenReopen","testGalleryMapFilesSavedSearchesReturnKeepsGeneration","testGalleryPeopleFiltersFilesTrashDenialReturnWithoutGhost"]
+  for (const name of names) {
+    const start = sixSubpage.indexOf("func " + name + "()")
+    assert.ok(start >= 0, "missing XCUITest route: " + name)
+    const end = sixSubpage.indexOf("\n    func test", start + 4)
+    const body = sixSubpage.slice(start, end < 0 ? undefined : end)
+    assert.match(body, /waitForRealH264RecordingPrelude\(\)/,
+      "real simctl recorder must start before navigation: " + name)
+    assert.match(body, /assertVisibleContent\(app, label:/,
+      "missing actual child-viewport screenshot assertion: " + name)
+    assert.match(body, /native-ios-/,
+      "test must tap named live native controls: " + name)
+    assert.ok(video.includes('"' + name + '"'),
+      "missing strict real H264 target: " + name)
+  }
+  assert.match(browser, /native-ios-files-toolbar-organize-home/,
+    "organizer must be a live Files More menu action")
+  assert.match(browser, /onChange\(of: isRootTabActive\)/,
+    "Files root search overlay retirement must remain protected")
+  const workflow = fs.readFileSync(path.join(root,
+    ".github/workflows/ios-native-navigation-runtime.yml"), "utf8")
+  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 50/,
+    "all 50 distinct real video clips must remain mandatory")
+})
