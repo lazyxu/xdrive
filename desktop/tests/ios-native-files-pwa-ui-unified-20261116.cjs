@@ -103,6 +103,23 @@ test('P2: native simulator checks Files rail geometry in both orientations and d
   assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSNavigationRuntimeUITests\/testFilesQuickRailAndFiveTabBarDoNotOverlapInPortraitOrLandscape/)
 })
 
+test('P0: Recent/Favorites Viewer preserves exact same-Node viewport when reopening', () => {
+  assert.match(collection, /private struct XDriveIOSNativeFilesCollectionViewerViewport/)
+  assert.match(collection, /opened: XDriveIOSNativeFilesNode/)
+  assert.match(collection, /anchor: XDriveIOSNativeFilesNode/)
+  assert.match(collection, /viewerReturnViewport = \.init\(/)
+  assert.match(collection, /snapshot\.opened == target &&/)
+  assert.match(collection, /snapshot\.query == filterQuery/)
+  assert.match(collection, /model\.items\.contains\(where: \{ \$0\.node == snapshot\.anchor \}\)/)
+  assert.match(collection, /filteredItems\.contains\(where: \{ \$0\.node == saved\.anchor \}\)/)
+  assert.match(collection, /expectedMode: snapshot\.mode, currentMode: viewMode/)
+  assert.match(collection, /returnScroll\.scrollTo\(snapshot\.anchor\.id,/)
+  assert.match(collection, /anchor: UnitPoint\(x: 0\.5, y: alignment\)/)
+  assert.match(collection, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/)
+  assert.match(collection, /viewerReturnViewport = nil\s*returnFile = nil/)
+  assert.match(collection, /viewerReturnViewport = nil\s*locateIntent = nil/)
+})
+
 test('P0: the prior stack-overflow safety fix and native Viewer remain intact', () => {
   assert.match(browser, /private var filesModalsPrimary: some View/)
   assert.match(browser, /AnyView\(filesModalsSecondary\)/)

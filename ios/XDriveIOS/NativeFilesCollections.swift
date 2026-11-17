@@ -497,6 +497,16 @@ private struct XDriveIOSNativeFilesCollectionManageIntent: Identifiable {
     let quickAction: XDriveIOSNativeFilesQuickAction?
 }
 
+/// A purely visual, transient return lease. Only exact current Owner and Node
+/// snapshots may consume it; no persisted media identities or private paths.
+private struct XDriveIOSNativeFilesCollectionViewerViewport {
+    let opened: XDriveIOSNativeFilesNode
+    let anchor: XDriveIOSNativeFilesNode
+    let alignment: Double
+    let mode: String
+    let query: String
+}
+
 struct XDriveIOSNativeFilesCollectionScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let kind: XDriveIOSNativeFilesCollectionKind
@@ -510,6 +520,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var selectedFile: XDriveIOSNativeFilesCollectionItem?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnFile: XDriveIOSNativeFilesNode?
+    @State private var viewerReturnViewport: XDriveIOSNativeFilesCollectionViewerViewport?
     // Viewer may re-appear before dismissal finishes; refresh at most once.
     @State private var viewerRefreshPending = false
     @State private var locateIntent: XDriveIOSNativeFilesCollectionItem?
@@ -877,6 +888,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if shouldRefresh && isVisible && phase == .active &&
                    !model.loading && model.matches(login.owner, kind: kind) {
                     reload(preserveVerifiedRows: true)
+                } else {
+                    viewerReturnViewport = nil
+                    returnFile = nil
                 }
             }) { initial in
                 if let openedOwner = selectedOwner {
@@ -968,6 +982,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 selectedFile = nil
                 selectedOwner = nil
                 returnFile = nil
+                viewerReturnViewport = nil
                 locateIntent = nil
                 locateOwner = nil
                 managementIntent = nil
@@ -995,6 +1010,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 selectedFile = nil
                 selectedOwner = nil
                 returnFile = nil
+                viewerReturnViewport = nil
                 locateIntent = nil
                 locateOwner = nil
                 managementIntent = nil
@@ -1019,8 +1035,43 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if isVisible && phase == .active && model.verified &&
                    model.matches(login.owner, kind: kind) &&
                    model.items.contains(where: { $0.node == target }) {
-                    returnScroll.scrollTo(target.id, anchor: .center)
+                    let snapshot = viewerReturnViewport
+                    let anchorCurrent = snapshot.map { saved in
+                        filteredItems.contains(where: { $0.node == saved.anchor })
+                    } ?? false
+                    let alignment = snapshot.flatMap { saved in
+                        XDriveIOSNativeFilesViewModePolicy.matchedAlignment(
+                            visibleAnchor: saved.anchor.id,
+                            selectedAnchor: saved.anchor.id,
+                            measured: saved.alignment
+                        )
+                    }
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        if let snapshot, let alignment,
+                           XDriveIOSNativeFilesViewModePolicy.canRestore(
+                             ticketCurrent: snapshot.opened == target &&
+                                 snapshot.query == filterQuery,
+                             ownerValid: model.matches(login.owner, kind: kind),
+                             pageValid: model.verified &&
+                                 model.items.contains(where: { $0.node == snapshot.anchor }),
+                             anchorVisible: anchorCurrent, screenVisible: isVisible,
+                             expectedMode: snapshot.mode, currentMode: viewMode,
+                             active: phase == .active
+                           ) {
+                            // Preserve the prior top visible row and measured
+                            // viewport fraction; do not center a read-only file.
+                            returnScroll.scrollTo(snapshot.anchor.id,
+                                anchor: UnitPoint(x: 0.5, y: alignment))
+                        } else {
+                            // Neighbor swipe, changed filter/version or missing
+                            // anchor: only navigate to the current verified file.
+                            returnScroll.scrollTo(target.id, anchor: .center)
+                        }
+                    }
                 }
+                viewerReturnViewport = nil
                 returnFile = nil
             }
         }
@@ -1167,6 +1218,20 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
               model.items.contains(item) else { return }
         selectedOwner = owner
         returnFile = item.node
+        // Capture geometry BEFORE the full-screen Viewer hides the collection.
+        // The resulting lease is scoped to the exact Node and current filter.
+        viewerReturnViewport = nil
+        if let anchorID = visibleModeAnchorID,
+           let anchorNode = filteredItems.first(where: { $0.node.id == anchorID })?.node,
+           let alignment = XDriveIOSNativeFilesViewModePolicy.matchedAlignment(
+             visibleAnchor: anchorID, selectedAnchor: anchorNode.id,
+             measured: visibleModeAlignment
+           ) {
+            viewerReturnViewport = .init(
+                opened: item.node, anchor: anchorNode, alignment: alignment,
+                mode: viewMode, query: filterQuery
+            )
+        }
         viewerRefreshPending = true
         selectedFile = item
     }
