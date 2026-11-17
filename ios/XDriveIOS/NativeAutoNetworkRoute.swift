@@ -227,7 +227,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         return matching(requestURL, binding: pair.0)
     }
 
-    func selectedURL(for original: URL) -> URL? {
+    func selectedRoute(for original: URL) -> (url: URL, id: UUID)? {
         guard let (state, local, epoch) = snapshotEpoch(),
               matching(original, binding: state) else { return nil }
         // Before the Network monitor's first callback, the anonymous TLS
@@ -242,7 +242,22 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         components.scheme = preferred.scheme
         components.host = preferred.host
         components.port = preferred.port
-        return components.url
+        guard let routed = components.url else { return nil }
+        return (routed, state.id)
+    }
+
+    func selectedURL(for original: URL) -> URL? {
+        selectedRoute(for: original)?.url
+    }
+
+    /// Prevent an in-flight request from publishing bytes after logout,
+    /// Owner replacement or refresh-token rotation. Network switching
+    /// itself keeps the same verified logical Owner and request generation.
+    func isCurrentRoute(_ id: UUID, original: URL) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let current = binding, current.id == id else { return false }
+        return matching(original, binding: current)
     }
 
     /// Only an exact current Owner proof authorizes a *new* physical route.
@@ -380,6 +395,25 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
     private var handle: XDriveIOSRoutedSessionPool.Handle?
     private var retryCount = 0
     private var physicalURL: URL?
+    private var expectedRouteID: UUID?
+
+    private func routeIsCurrent() -> Bool {
+        guard let expectedRouteID, let original = request.url else { return false }
+        return XDriveIOSAutoRoute.shared.isCurrentRoute(expectedRouteID, original: original)
+    }
+
+    /// A previous Owner cannot deliver another header or SSE frame after
+    /// its Keychain / in-memory authorization has been retired.
+    private func retireStaleRoute() {
+        lock.lock()
+        guard !stopped else { lock.unlock(); return }
+        stopped = true
+        let old = handle
+        handle = nil
+        lock.unlock()
+        old?.cancel()
+        client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+    }
 
     override class func canInit(with request: URLRequest) -> Bool {
         XDriveIOSAutoRoute.shared.canRoute(request)
@@ -389,14 +423,16 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         guard let original = request.url,
-              let physical = XDriveIOSAutoRoute.shared.selectedURL(for: original) else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+              let route = XDriveIOSAutoRoute.shared.selectedRoute(for: original) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
             return
         }
-        begin(physical)
+        expectedRouteID = route.id
+        begin(route.url)
     }
 
     private func begin(_ target: URL) {
+        guard routeIsCurrent() else { retireStaleRoute(); return }
         lock.lock()
         if stopped { lock.unlock(); return }
         physicalURL = target
@@ -431,6 +467,7 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     fileprivate func receive(_ response: URLResponse) {
+        guard routeIsCurrent() else { retireStaleRoute(); return }
         lock.lock()
         let active = !stopped
         responseStarted = true
@@ -452,6 +489,7 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     fileprivate func receive(_ bytes: Data) {
+        guard routeIsCurrent() else { retireStaleRoute(); return }
         lock.lock()
         let active = !stopped
         responseStarted = true
@@ -460,6 +498,7 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     fileprivate func completed(_ failure: Error?) {
+        guard routeIsCurrent() else { retireStaleRoute(); return }
         lock.lock()
         let active = !stopped
         let partial = responseStarted
