@@ -374,7 +374,7 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
                     <Typography variant="caption" color="text.secondary">
                       此 Agent 尚未提供当前清单以外的历史 Operation 路径统计。
                     </Typography>
-                  )
+                  )}
                   <Alert severity="warning">
                     历史提交记录不能当作当前 CAS 物理完整性证明；跨页结果也不是同一时点的数据库快照。
                     待确认的 Operation 不允许自动重发。
