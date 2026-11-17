@@ -117,7 +117,7 @@ private enum XDriveIOSNativePhotosCollectionCoverKind {
 
     var title: String {
         switch self {
-        case .recent: return "按拍摄日期浏览"
+        case .recent: return "最近的日子"
         case .videos: return "视频"
         case .livePhotos: return "实况照片"
         }
@@ -166,7 +166,7 @@ private struct XDriveIOSNativePhotosCollectionCover: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
         }
-        .aspectRatio(1.65, contentMode: .fit)
+        .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onAppear {
             changes.start()
@@ -216,17 +216,61 @@ private struct XDriveIOSNativePhotosCollectionCover: View {
             coverID = assets.firstObject?.localIdentifier
         }
         guard let coverID else { return }
-        loader.load(coverID, size: CGSize(width: 420, height: 280),
+        loader.load(coverID, size: CGSize(width: 400, height: 400),
                     contentMode: .aspectFill)
     }
 }
 
-/// Collections retains PhotoKit's own album readers and navigation stacks.
-/// Unsupported Memories/Trips/AI curation are not synthesized from fake
-/// thumbnails or unverified server membership.
+/// The native Collections surface is intentionally a presentation layer over
+/// existing authorized readers. Entries never manufacture Memories or Trips.
+private enum XDriveIOSNativePhotosCollectionDestination: String, CaseIterable, Identifiable {
+    case recentDays, people, albums, videos, livePhotos, trips
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .recentDays: return "最近的日子"
+        case .people: return "人物与宠物"
+        case .albums: return "相簿"
+        case .videos: return "视频"
+        case .livePhotos: return "实况照片"
+        case .trips: return "旅行"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .recentDays: return "calendar"
+        case .people: return "person.2.crop.square.stack"
+        case .albums: return "rectangle.stack"
+        case .videos: return "video"
+        case .livePhotos: return "livephoto"
+        case .trips: return "map"
+        }
+    }
+
+    var accessibilityID: String {
+        switch self {
+        case .recentDays: return "native-ios-collections-recent-days"
+        case .people: return "native-ios-collections-people"
+        case .albums: return "native-ios-collections-albums"
+        case .videos: return "native-ios-collections-videos"
+        case .livePhotos: return "native-ios-collections-live"
+        case .trips: return "native-ios-collections-trips"
+        }
+    }
+}
+
+/// The Pinned section contains only real, navigable destinations. Its on-device
+/// preference is a list of fixed route names, never a PhotoKit asset ID, a
+/// server Owner ID or a cached membership claim.
 struct XDriveIOSNativePhotosCollectionsScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Binding var savedAlbumOffset: Int
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @AppStorage("xdrive.native.photos.pinned-collection-routes.v1")
+    private var pinnedRoutesRaw = "recentDays,people,albums"
     @State private var recentOffset = 0
     @State private var recentFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var videoOffset = 0
@@ -234,84 +278,169 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
     @State private var liveOffset = 0
     @State private var liveFilter: XDriveIOSNativePhotoMediaFilter = .livePhotos
 
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("最近的日子")
-                        .font(.title2.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    NavigationLink {
-                        XDriveIOSNativeLocalPhotoTimelineContainer(
-                            savedOffset: $recentOffset, mediaFilter: $recentFilter
-                        )
-                    } label: {
-                        XDriveIOSNativePhotosCollectionCover(kind: .recent)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .accessibilityIdentifier("native-ios-collections-recent-days")
-                }
+    private var cardWidth: CGFloat {
+        horizontalSizeClass == .regular ? 200 : 160
+    }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("人物与宠物")
-                        .font(.title2.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    NavigationLink {
-                        XDriveIOSNativeGalleryPeople(login: login)
-                    } label: {
-                        Label("查看人物与宠物", systemImage: "person.2.crop.square.stack")
-                            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .background(Color(uiColor: .secondarySystemGroupedBackground),
-                                        in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    .accessibilityIdentifier("native-ios-collections-people")
-                }
+    private var pinnedRoutes: [XDriveIOSNativePhotosCollectionDestination] {
+        let requested = pinnedRoutesRaw.split(separator: ",")
+            .compactMap { XDriveIOSNativePhotosCollectionDestination(rawValue: String($0)) }
+        var visited = Set<XDriveIOSNativePhotosCollectionDestination>()
+        return requested.filter { visited.insert($0).inserted }
+    }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("相簿")
-                        .font(.title2.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    NavigationLink {
-                        XDriveIOSNativePhotoAlbumsScreen(savedOffset: $savedAlbumOffset)
-                    } label: {
-                        Label("查看全部相簿", systemImage: "rectangle.stack")
-                            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .background(Color(uiColor: .secondarySystemGroupedBackground),
-                                        in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    .accessibilityIdentifier("native-ios-collections-albums")
-                }
+    private func togglePin(_ route: XDriveIOSNativePhotosCollectionDestination) {
+        let current = pinnedRoutes
+        let updated = current.contains(route) ? current.filter { $0 != route } :
+            current + [route]
+        pinnedRoutesRaw = updated.map(\.rawValue).joined(separator: ",")
+    }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("媒体类型")
-                        .font(.title2.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    HStack(spacing: 10) {
-                        NavigationLink {
-                            XDriveIOSNativeLocalPhotoTimelineContainer(
-                                savedOffset: $videoOffset, mediaFilter: $videoFilter
-                            )
-                        } label: {
-                            XDriveIOSNativePhotosCollectionCover(kind: .videos)
-                                .frame(maxWidth: .infinity)
+    @ViewBuilder
+    private func destination(for route: XDriveIOSNativePhotosCollectionDestination) -> some View {
+        switch route {
+        case .recentDays:
+            XDriveIOSNativeLocalPhotoTimelineContainer(
+                savedOffset: $recentOffset, mediaFilter: $recentFilter
+            )
+        case .people:
+            XDriveIOSNativeGalleryPeople(login: login)
+        case .albums:
+            XDriveIOSNativePhotoAlbumsScreen(savedOffset: $savedAlbumOffset)
+        case .videos:
+            XDriveIOSNativeLocalPhotoTimelineContainer(
+                savedOffset: $videoOffset, mediaFilter: $videoFilter
+            )
+        case .livePhotos:
+            XDriveIOSNativeLocalPhotoTimelineContainer(
+                savedOffset: $liveOffset, mediaFilter: $liveFilter
+            )
+        case .trips:
+            // The existing screen admits only current, server-verified Owner
+            // GPS-calendar trip members. There is no inferred local "trip".
+            XDriveIOSNativeExactTripsScreen(login: login)
+        }
+    }
+
+    @ViewBuilder
+    private func cover(for route: XDriveIOSNativePhotosCollectionDestination) -> some View {
+        switch route {
+        case .recentDays:
+            XDriveIOSNativePhotosCollectionCover(kind: .recent)
+        case .videos:
+            XDriveIOSNativePhotosCollectionCover(kind: .videos)
+        case .livePhotos:
+            XDriveIOSNativePhotosCollectionCover(kind: .livePhotos)
+        case .people, .albums, .trips:
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                Image(systemName: route.symbol)
+                    .font(.system(size: 36, weight: .ultraLight))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityHidden(true)
+                LinearGradient(colors: [.clear, .black.opacity(0.38)],
+                               startPoint: .center, endPoint: .bottom)
+                Label(route.title, systemImage: route.symbol)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(12)
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private func collectionLink(
+        _ route: XDriveIOSNativePhotosCollectionDestination, pinned: Bool = false
+    ) -> some View {
+        NavigationLink {
+            destination(for: route)
+        } label: {
+            cover(for: route)
+                .frame(width: cardWidth, height: cardWidth)
+                .contentShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                togglePin(route)
+            } label: {
+                Label(pinnedRoutes.contains(route) ? "取消固定" : "固定到精选集",
+                      systemImage: pinnedRoutes.contains(route) ? "pin.slash" : "pin")
+            }
+        }
+        .accessibilityLabel(route.title)
+        .accessibilityHint("长按可固定或取消固定")
+        .accessibilityIdentifier(
+            pinned ? "native-ios-collections-pinned-" + route.rawValue :
+                route.accessibilityID
+        )
+    }
+
+    private func collectionSection(
+        _ title: String, routes: [XDriveIOSNativePhotosCollectionDestination],
+        isPinned: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(title)
+                    .font(.title2.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                if isPinned {
+                    Menu {
+                        ForEach(XDriveIOSNativePhotosCollectionDestination.allCases) { route in
+                            Button {
+                                togglePin(route)
+                            } label: {
+                                Label(route.title, systemImage: pinnedRoutes.contains(route)
+                                      ? "checkmark.circle.fill" : "circle")
+                            }
                         }
-                        .accessibilityIdentifier("native-ios-collections-videos")
-                        NavigationLink {
-                            XDriveIOSNativeLocalPhotoTimelineContainer(
-                                savedOffset: $liveOffset, mediaFilter: $liveFilter
-                            )
-                        } label: {
-                            XDriveIOSNativePhotosCollectionCover(kind: .livePhotos)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .accessibilityIdentifier("native-ios-collections-live")
+                    } label: {
+                        Text("编辑").font(.subheadline.weight(.medium))
+                            .frame(minWidth: 44, minHeight: 44)
                     }
+                    .accessibilityIdentifier("native-ios-collections-edit-pinned")
                 }
             }
-            .foregroundStyle(.primary)
-            .padding(16)
+            .padding(.horizontal, 16)
+            if routes.isEmpty {
+                Text("可从其他精选集的长按菜单中添加")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(routes) { route in
+                            collectionLink(route, pinned: isPinned)
+                                .frame(width: cardWidth)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+                .accessibilityIdentifier(
+                    isPinned ? "native-ios-collections-pinned-strip" :
+                        "native-ios-collections-section-" + title
+                )
+            }
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                collectionSection("最近的日子", routes: [.recentDays])
+                collectionSection("人物与宠物", routes: [.people])
+                collectionSection("固定精选集", routes: pinnedRoutes, isPinned: true)
+                collectionSection("相簿", routes: [.albums])
+                collectionSection("旅行", routes: [.trips])
+                collectionSection("媒体类型", routes: [.videos, .livePhotos])
+            }
+            .padding(.vertical, 16)
         }
         .accessibilityIdentifier("native-ios-photos-collections")
     }
