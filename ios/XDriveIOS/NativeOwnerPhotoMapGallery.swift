@@ -264,11 +264,16 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        transform = .identity
+        XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(self)
         imageView.image = nil
         placeholder.isHidden = false
         badge.text = nil
+        isEnabled = false
+        isAccessibilityElement = false
+        accessibilityElementsHidden = true
+        accessibilityTraits = []
         accessibilityLabel = nil
+        accessibilityIdentifier = nil
     }
 }
 

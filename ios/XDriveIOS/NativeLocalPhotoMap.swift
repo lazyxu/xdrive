@@ -256,10 +256,15 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        transform = .identity
+        XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(self)
         cancel()
         badge.text = nil
+        isEnabled = false
+        isAccessibilityElement = false
+        accessibilityElementsHidden = true
+        accessibilityTraits = []
         accessibilityLabel = nil
+        accessibilityIdentifier = nil
     }
 
     override func didMoveToSuperview() {
@@ -901,6 +906,19 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 )
                 .accessibilityValue(busy ? "正在读取位置照片" :
                     (hasNext ? "可继续滚动浏览" : "已显示全部可访问照片"))
+                if album != nil, onShowNearby != nil {
+                    Button {
+                        onShowNearby?()
+                        dismiss()
+                    } label: {
+                        Label("显示附近照片", systemImage: "mappin.and.ellipse")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .padding(.horizontal, 14)
+                    .disabled(busy || viewer != nil || phase != .active)
+                    .accessibilityIdentifier("native-ios-local-map-nearby")
+                }
                 XDriveIOSNativePhotoWallFeedback(
                     isLoading: busy, loadingMessage: "正在读取位置照片…",
                     error: error, canRetry: !busy && phase == .active,
@@ -983,13 +1001,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         density: $wallDensity, framing: $wallFraming,
                         accessibilityID: "native-ios-map-cluster-more"
                     ) {
-                        if album != nil, onShowNearby != nil {
-                            Button("显示附近照片") {
-                                onShowNearby?()
-                                dismiss()
-                            }
-                            .disabled(busy || viewer != nil || phase != .active)
-                        }
+                        // Nearby is a visible place-header action.
                         Button("重新核对当前位置照片") { loadInitial() }
                             .disabled(busy || viewer != nil || phase != .active)
                     }

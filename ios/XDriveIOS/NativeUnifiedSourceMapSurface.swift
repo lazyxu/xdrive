@@ -75,7 +75,10 @@ private final class XDriveIOSUnifiedSourceCover: MKAnnotationView {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        transform = .identity
+        XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(self)
+        isEnabled = false
+        accessibilityElementsHidden = true
+        accessibilityTraits = []
         imageView.image = nil
         badge.text = nil
         placeholder.isHidden = false

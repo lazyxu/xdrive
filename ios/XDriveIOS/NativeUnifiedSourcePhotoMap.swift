@@ -962,6 +962,19 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     count: isNearbyExpansion ? nil : pin.count,
                     detail: isNearbyExpansion ? "按距离浏览" : nil,
                     titleAccessibilityID: "native-ios-unified-map-place-name")
+                if !isNearbyExpansion {
+                    Button {
+                        guard active, !busy, !opening else { return }
+                        nearbyPresented = true
+                    } label: {
+                        Label("显示附近照片", systemImage: "mappin.and.ellipse")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .padding(.horizontal, 14)
+                    .disabled(busy || opening || viewing != nil)
+                    .accessibilityIdentifier("native-ios-unified-source-map-nearby")
+                }
                 // Share presentation only; source-owned retry retains
                 // Owner/PhotoKit authorization and cursor verification.
                 XDriveIOSNativePhotoWallFeedback(
@@ -997,14 +1010,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     // Navigate within the existing place-sheet NavigationStack,
                     // not a second nested modal sheet hiding the map.
                     if !isNearbyExpansion {
-                        Button {
-                            guard active, !busy, !opening else { return }
-                            nearbyPresented = true
-                        } label: {
-                            Label("显示附近照片", systemImage: "mappin.and.ellipse")
-                        }
-                        .disabled(!active || busy || opening)
-                        .accessibilityIdentifier("native-ios-unified-source-map-nearby")
+                        // Nearby has a visible header action; time scale remains advanced.
 
                         Section("时间分组") {
                             ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in

@@ -31,6 +31,10 @@ enum XDriveIOSNativeMapMarkerVisualPolicy {
     static func updateSelection(_ selected: Bool, view: MKAnnotationView,
                                 animated: Bool) {
         let change = {
+            // Selection floats above adjacent image covers while maintaining
+            // one stable origin and MapKit's own camera animation.
+            view.layer.zPosition = selected ? 10 : 0
+            view.layer.shadowOpacity = selected ? 0.32 : 0.22
             view.transform = selected
                 ? CGAffineTransform(scaleX: 1.09, y: 1.09)
                 : .identity
@@ -46,6 +50,13 @@ enum XDriveIOSNativeMapMarkerVisualPolicy {
 
     /// Retain the actual verified photo count, even above 1,000.
     /// This presentation helper does not change source admission.
+    /// Reused annotations must not inherit a previous place's visual depth.
+    static func resetSelection(_ view: MKAnnotationView) {
+        view.transform = .identity
+        view.layer.zPosition = 0
+        view.layer.shadowOpacity = 0.22
+    }
+
     static func badgeText(count: Int) -> String {
         NumberFormatter.localizedString(
             from: NSNumber(value: max(0, count)), number: .decimal)
