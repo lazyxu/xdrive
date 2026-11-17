@@ -477,7 +477,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             if isSelecting {
                 HStack {
-                    Text("已选择 \\(selectedIDs.count) 项")
+                    Text("已选择 \(selectedIDs.count) 项")
                         .font(.subheadline)
                     Spacer()
                     Button("清除选择") { selectedIDs.removeAll() }
