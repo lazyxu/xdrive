@@ -21,7 +21,7 @@ test('iOS MapKit and Gallery use the same SwiftUI framing, density and date-scal
   assert.match(sharedComponents,/struct XDriveIOSNativePhotoWallTimeScaleControls/)
   assert.match(sharedComponents,/func xdrivePhotoWallFramingButtons/)
   assert.match(ownerMap,/XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
-  assert.match(unifiedGallery,/XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
+  assert.match(unifiedGallery,/Menu\("时间浏览"\)[\s\S]*?ForEach\(XDriveIOSNativePhotoWallTimeScale\.allCases\)[\s\S]*?wallTimeScale = option/)
   assert.match(ownerMap,/XDriveIOSNativePhotoWallDisplayMenu\([\s\S]*?framing: \$wallFraming/)
   assert.match(unifiedGallery,/XDriveIOSNativePhotoWallDisplayMenu\([\s\S]*?framing: \$wallFraming/)
   assert.match(ownerMap,/wallFraming == \.complete \? \.fit : \.fill/)

@@ -12,8 +12,9 @@ const local = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
 const focusPolicy = read('ios/XDriveIOS/NativeFocusVisibilityPolicy.swift')
 
 test('entering the native PhotoKit map hides Gallery-only backup/source strips by default', () => {
-  assert.match(dashboard, /if !galleryPresentationFocused \{/)
-  assert.match(dashboard, /galleryStatusRow\s*\n\s*gallerySourceRow/)
+  assert.doesNotMatch(dashboard, /private var galleryStatusRow:/)
+  assert.doesNotMatch(dashboard, /private var gallerySourceRow:/)
+  assert.match(dashboard, /if tab == \.gallery && gallerySource != \.map \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
   assert.match(dashboard, /galleryFocused = source == \.map/)
   assert.match(dashboard, /gallerySource == \.map \? !mapNavigationExplicitlyShown : galleryFocused/)
   assert.match(dashboard, /mapNavigationExplicitlyShown = !focused/)

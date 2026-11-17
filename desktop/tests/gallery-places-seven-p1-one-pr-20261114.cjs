@@ -34,8 +34,12 @@ test('P1-01 one shared native scrolling shell, loading/retry feedback, source-ow
 test('P1-02 shared year/month/day, crop/contain and density menus, separate source actions', () => {
   for (const content of [gallery, ownerMap, cloud, localMap, sourceMap])
     assert.match(content, /XDriveIOSNativePhotoWallDisplayMenu\(/)
-  for (const content of [gallery, ownerMap, cloud, localMap])
+  // Native Photos keeps the same verified scale policy, but moves the
+  // Gallery switch into its menu instead of taking permanent grid height.
+  for (const content of [ownerMap, cloud, localMap])
     assert.match(content, /XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
+  assert.match(gallery, /Menu\("时间浏览"\)[\s\S]*?wallTimeScale = option/)
+  assert.doesNotMatch(gallery, /XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
   // The unified-source place wall owns its own timeScale state. Nearby
   // intentionally renders GPS-distance order without false calendar dates.
   assert.match(sourceMap, /if !isNearbyExpansion \{\s*XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$timeScale\)/)

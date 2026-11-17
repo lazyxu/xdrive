@@ -633,13 +633,13 @@ struct XDriveIOSNativePhotosDashboard: View {
                 } label: {
                     Text("图库")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(gallerySource == .unified ? Color.accentColor : Color.primary)
+                        .foregroundStyle(gallerySource != .albums ? Color.accentColor : Color.primary)
                         .frame(minWidth: 68, minHeight: 44)
-                        .background(gallerySource == .unified ? Color.accentColor.opacity(0.12) : Color.clear,
+                        .background(gallerySource != .albums ? Color.accentColor.opacity(0.12) : Color.clear,
                                     in: Capsule())
                 }
                 .accessibilityIdentifier("native-ios-photos-library-tab")
-                .accessibilityAddTraits(gallerySource == .unified ? .isSelected : [])
+                .accessibilityAddTraits(gallerySource != .albums ? .isSelected : [])
                 Button {
                     if gallerySource != .albums { openGallery(.albums) }
                 } label: {

@@ -126,10 +126,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                 }
                             }
                         }
-                        Menu("显示选项") {
-                            Section("缩略图大小") { xdrivePhotoWallDensityButtons($wallDensity) }
-                            Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
-                        }
+                        // Reuse the shared, tested display menu inside the
+                        // native Photos filter menu, not a permanent toolbar row.
+                        XDriveIOSNativePhotoWallDisplayMenu(
+                            density: $wallDensity, framing: $wallFraming,
+                            accessibilityID: "native-ios-unified-wall-density"
+                        ) { EmptyView() }
                         if onShowMap != nil {
                             Button {
                                 showMapForAppliedQuery()
