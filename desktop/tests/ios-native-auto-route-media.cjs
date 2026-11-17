@@ -34,6 +34,10 @@ test('remote AV ranges remain bounded, TLS-pinned, nonredirecting and Owner scop
   assert.match(source, /httpShouldSetCookies = false/)
   assert.match(source, /completionHandler\(nil\)/)
   assert.match(source, /XDriveIOSAutoRouteSafety\.isNetworkFailure\(error\)/)
+  assert.match(source, /let physicalAtStart = XDriveIOSAutoRoute\.shared\.selectedURL\(for: logicalURL\)/)
+  assert.match(source, /XDriveIOSAutoRoute\.shared\.recover\([\s\S]*?failedPhysical: physicalAtStart, original: logicalURL/)
+  assert.match(source, /try Task\.checkCancellation\(\)/)
+
   assert.match(source, /dataRequest\.respond\(with: buffer\)/)
   assert.doesNotMatch(source, /URLSession\.shared|URLSessionConfiguration\.background|\.data\(for: request\)/)
   assert.match(policy, /candidate\.last - candidate\.first < maximumBytes/)

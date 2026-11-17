@@ -153,6 +153,10 @@ final class XDriveIOSRoutedMediaLoader: NSObject, AVAssetResourceLoaderDelegate,
         // validation. No partial data is delivered to the AVPlayer on failure.
         for attempt in 0...1 {
             try Task.checkCancellation()
+            // Capture the actual physical route BEFORE an interrupted Range.
+            // A retry must prove the alternate Server/Owner, not blindly
+            // reopen the same private-IP endpoint on a different Wi-Fi.
+            let physicalAtStart = XDriveIOSAutoRoute.shared.selectedURL(for: logicalURL)
             do {
                 let (stream, response) = try await session.bytes(for: request)
                 guard let http = response as? HTTPURLResponse,
@@ -177,7 +181,13 @@ final class XDriveIOSRoutedMediaLoader: NSObject, AVAssetResourceLoaderDelegate,
             } catch {
                 guard attempt == 0, XDriveIOSAutoRouteSafety.isNetworkFailure(error),
                       !Task.isCancelled else { throw error }
-                await XDriveIOSAutoRoute.shared.revalidateRoutes()
+                if let physicalAtStart {
+                    _ = await XDriveIOSAutoRoute.shared.recover(
+                        failedPhysical: physicalAtStart, original: logicalURL)
+                } else {
+                    await XDriveIOSAutoRoute.shared.revalidateRoutes()
+                }
+                try Task.checkCancellation()
             }
         }
         throw Failure.truncated
