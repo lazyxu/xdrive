@@ -67,6 +67,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             } else {
                 control = app.buttons["人物与宠物"].firstMatch
             }
+        } else if id == "native-ios-gallery-source-menu" {
+            control = target("native-ios-gallery-more-menu", in: app)
         } else if id == "native-ios-gallery-source-albums" {
             control = target("native-ios-photos-collections-tab", in: app)
         } else if id == "native-ios-gallery-source-unified" {
@@ -679,14 +681,14 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         XCTAssertTrue(local.waitForExistence(timeout: 15),
                       "Native local Photos source is missing from source Menu")
         local.tap()
-        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+        XCTAssertTrue(app.navigationBars["本机照片"].firstMatch
             .waitForExistence(timeout: 15),
                       "Native local PhotoKit source did not become selected")
         assertNotSolidScreen(app, "Local PhotoKit source")
         select("native-ios-tab-files", in: app)
         checkFilesHome(app)
         select("native-ios-tab-gallery", in: app)
-        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+        XCTAssertTrue(app.navigationBars["本机照片"].firstMatch
             .waitForExistence(timeout: 15))
         select("native-ios-gallery-source-unified", in: app)
         checkGallery(app)
