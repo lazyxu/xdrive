@@ -91,7 +91,7 @@ jobs:
           subprocess.run(["xcrun","simctl","bootstatus",d["udid"],"-b"],
                          timeout=240,check=True)
           PY
-      - name: Real 25-root and 49-child AX CPU peak memory n3 on one Simulator
+      - name: Real 25-root and 50-child AX CPU peak memory n3 on one Simulator
         shell: bash
         run: |
           set -euo pipefail
@@ -107,7 +107,7 @@ jobs:
             -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeResourcePerformanceUITests \
             -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests \
             2>&1 | tee "$RUNNER_TEMP/native-subpage-perf/xcodebuild.log"
-      - name: Require 25 root plus 49 child real app resource and return metrics
+      - name: Require 25 root plus 50 child real app resource and return metrics
         shell: bash
         run: |
           set -euo pipefail
@@ -139,15 +139,15 @@ jobs:
                   and root["resource_routes_with_3_cpu_and_rss_samples"] == 24
                   and root["cold_launch_routes_with_3_duration_samples"] == 1
                   and root["retained_trials_per_route"] == 3
-                  and child["route_count"] == 49
-                  and child["recorded_test_invocations"] == 196
-                  and child["total_ax_samples"] == 147
-                  and child["total_return_samples"] == 147
+                  and child["route_count"] == 50
+                  and child["recorded_test_invocations"] == 200
+                  and child["total_ax_samples"] == 150
+                  and child["total_return_samples"] == 150
                   and child["retained_trials_per_route"] == 3):
-              raise SystemExit("Actual 25-root/49-child n3 performance suite incomplete")
-          print("IOS_NATIVE_PAGE_AND_SUBPAGE_COMPLETE roots=25 children=49"
-                " root_invocations=100 child_invocations=196"
-                " child_forward=147 child_return=147 source_sha=" + sha)
+              raise SystemExit("Actual 25-root/50-child n3 performance suite incomplete")
+          print("IOS_NATIVE_PAGE_AND_SUBPAGE_COMPLETE roots=25 children=50"
+                " root_invocations=100 child_invocations=200"
+                " child_forward=150 child_return=150 source_sha=" + sha)
           PY
           printf '%s\n' "SOURCE_HEAD=$(git rev-parse HEAD)"
       - name: Preserve original logs, app metrics and failed route evidence

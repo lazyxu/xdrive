@@ -78,6 +78,38 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         XCTAssertEqual(browse.value as? String, "已选择")
     }
 
+    private func filesSearchFilterID(_ route: String) -> String {
+        switch route {
+        case "files.search.date": return "native-ios-files-search-date-filter"
+        case "files.search.size": return "native-ios-files-search-size-filter"
+        case "files.search.kind": return "native-ios-files-search-kind-filter"
+        default:
+            XCTFail("Unknown Files search filter: \(route)")
+            return "native-ios-files-search-kind-filter"
+        }
+    }
+
+    /// Exercise the real SwiftUI kind Picker; it may expose nested Menu items.
+    private func selectFilesKind(_ label: String, app: XCUIApplication) {
+        let choice = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", label)).firstMatch
+        if !choice.waitForExistence(timeout: 4) {
+            let submenu = app.buttons["搜索类型"].firstMatch
+            if submenu.exists && submenu.isHittable { submenu.tap() }
+        }
+        if !choice.waitForExistence(timeout: 15) || !choice.isHittable {
+            print("IOS_FILES_KIND_PICKER_MISSING label=\(label) AX=\(app.debugDescription)")
+            let evidence = XCTAttachment(screenshot: app.screenshot())
+            evidence.name = "files-kind-picker-\(label)"
+            evidence.lifetime = .keepAlways
+            add(evidence)
+        }
+        XCTAssertTrue(choice.exists && choice.isHittable,
+                      "Real Files image-kind menu item is unreachable: \(label)")
+        choice.tap()
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     private func filesHomeAction(_ id: String, app: XCUIApplication) -> XCUIElement {
         reveal(view(id, app: app), app: app)
     }
@@ -181,14 +213,9 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                 openFilesHomeDisclosure("标签与分类",
                                         action: "native-ios-files-home-manage-tags", app: app)
                 _ = filesHomeAction("native-ios-files-home-manage-tags", app: app)
-            case "files.search.date", "files.search.size":
-                let id = route == "files.search.date"
-                    ? "native-ios-files-search-date-filter"
-                    : "native-ios-files-search-size-filter"
-                // These controls live inside the real horizontally scrolling
-                // Files filter strip, not the vertical Files list. Scroll the
-                // visible native strip rather than treating an offscreen
-                // filter as absent or short-circuiting the measurement.
+            case "files.search.date", "files.search.size", "files.search.kind":
+                let id = filesSearchFilterID(route)
+                // Native horizontal filter rail: real gestures, not direct state edits.
                 let strip = view("native-ios-files-filter-strip", app: app)
                 _ = reveal(strip, app: app)
                 let filter = view(id, app: app)
@@ -197,7 +224,7 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                     strip.swipeLeft()
                 }
                 XCTAssertTrue(filter.exists && filter.isHittable,
-                              "Real Files search filter is unreachable after horizontal swipes: \\(id)")
+                              "Real Files search filter unreachable after horizontal swipes: \(id)")
             case "files.home.more-organizer":
                 let menu = view("native-ios-files-more-options", app: app)
                 XCTAssertTrue(menu.waitForExistence(timeout: 15) && menu.isHittable,
@@ -411,18 +438,20 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "files.tags":
             tap("native-ios-files-home-manage-tags", app: app)
             ready = view("native-ios-files-tag-management", app: app)
-        case "files.search.date", "files.search.size":
+        case "files.search.date", "files.search.size", "files.search.kind":
             let isDate = route == "files.search.date"
-            let id = isDate ? "native-ios-files-search-date-filter" :
-                              "native-ios-files-search-size-filter"
+            let isKind = route == "files.search.kind"
+            let id = filesSearchFilterID(route)
             tap(id, app: app)
-            let option = app.buttons[isDate ? "最近 7 天" : "小于 1 MiB"].firstMatch
-            XCTAssertTrue(option.waitForExistence(timeout: 15) && option.isHittable,
-                          "Real Files filtering option was not opened")
-            option.tap()
-            // A synthetic UI Owner intentionally has no Server Session. The
-            // filtered request must show a real fail-closed Files error, not
-            // fabricated Node results; the real filter menu stays recoverable.
+            if isKind {
+                selectFilesKind("图片", app: app)
+            } else {
+                let option = app.buttons[isDate ? "最近 7 天" : "小于 1 MiB"].firstMatch
+                XCTAssertTrue(option.waitForExistence(timeout: 15) && option.isHittable,
+                              "Real Files filtering option was not opened")
+                option.tap()
+            }
+            // Without a genuine Owner Session the Server must fail closed.
             XCTAssertTrue(view("native-ios-files-error-page", app: app)
                 .waitForExistence(timeout: 15),
                 "Files no-Session filter did not fail closed")
@@ -581,6 +610,10 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             XCTAssertTrue(ready.label.contains("文件大小已筛选"),
                           "Files size filter did not apply")
         }
+        if route == "files.search.kind" {
+            XCTAssertTrue(ready.label.contains("图片"),
+                          "Files kind filter must show the selected image type")
+        }
         if route == "gallery.wall.density" {
             XCTAssertTrue((ready.value as? String ?? "").contains("紧凑"),
                           "Actual Gallery density did not change")
@@ -675,19 +708,29 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             let closed = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "exists == false"), object: tag)
             XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 12), .completed)
-        case "files.search.date", "files.search.size":
+        case "files.search.date", "files.search.size", "files.search.kind":
             let isDate = route == "files.search.date"
-            let id = isDate ? "native-ios-files-search-date-filter" :
-                              "native-ios-files-search-size-filter"
+            let isKind = route == "files.search.kind"
+            let id = filesSearchFilterID(route)
             tap(id, app: app)
-            let clear = app.buttons[isDate ? "不限时间" : "不限大小"].firstMatch
-            XCTAssertTrue(clear.waitForExistence(timeout: 15) && clear.isHittable)
-            clear.tap()
+            if isKind {
+                selectFilesKind("全部类型", app: app)
+            } else {
+                let clear = app.buttons[isDate ? "不限时间" : "不限大小"].firstMatch
+                XCTAssertTrue(clear.waitForExistence(timeout: 15) && clear.isHittable)
+                clear.tap()
+            }
             let menu = view(id, app: app)
             XCTAssertTrue(menu.waitForExistence(timeout: 15))
-            XCTAssertTrue(menu.label.contains(isDate ? "修改时间" : "文件大小"))
-            XCTAssertFalse(menu.label.contains("已筛选"),
-                           "Files filter must be reset before next measured trial")
+            XCTAssertTrue(menu.label.contains(isDate ? "修改时间" :
+                          (isKind ? "类型" : "文件大小")))
+            if isKind {
+                XCTAssertTrue(menu.label.contains("全部类型"),
+                              "Files kind must reset before next measured trial")
+            } else {
+                XCTAssertFalse(menu.label.contains("已筛选"),
+                               "Files filter must be reset before next measured trial")
+            }
             XCTAssertFalse(view("native-ios-files-error-page", app: app).exists,
                            "Resetting Files filter must retire the denied search state")
             XCTAssertTrue(view("native-ios-files-section-browse", app: app)
@@ -981,6 +1024,7 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
     func testSubpageFilesHomeMoreOrganizer() { run("files.home.more-organizer") }
     func testSubpageFilesSearchDate() { run("files.search.date") }
     func testSubpageFilesSearchSize() { run("files.search.size") }
+    func testSubpageFilesSearchKind() { run("files.search.kind") }
     func testSubpageGalleryWallDensity() { run("gallery.wall.density") }
     func testSubpageGalleryWallFraming() { run("gallery.wall.framing") }
     func testSubpageGallerySortMenuFilters() { run("gallery.sort-menu.filters") }

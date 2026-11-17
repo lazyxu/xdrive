@@ -9,7 +9,7 @@ The original 25-route AX-ready baseline passed 75/75 on \`a32cac1\`.
 This follow-up is now directly targeted at master, not stacked onto an
 unmerged development parent.
 
-This additive PR currently registers **49 native interaction/entry paths**
+This additive PR currently registers **50 native interaction/entry paths**
 (the previous 39 plus six native Gallery source and Files quick-section paths),
 without inventing Owner authentication or media fixtures. It retains separate
 route IDs and test cases even where multiple navigation paths render the same
@@ -43,6 +43,7 @@ resource lifetimes differ.
 | files.quick.favorites | 文件 → 收藏夹快捷页 → 浏览 | native-ios-files-section-favorites selected | Real native quick rail; no authenticated content |
 | files.search.date | 文件 → 修改时间筛选（最近7天）→ 恢复不限时间 | native-ios-files-search-date-filter label | Real native menu choice/reset; no authenticated search results |
 | files.search.size | 文件 → 文件大小筛选（小于1MiB）→ 恢复不限大小 | native-ios-files-search-size-filter label | Real native menu choice/reset; no authenticated search results |
+| files.search.kind | 文件 → 类型筛选（图片）→ 重置为全部类型 | native-ios-files-search-kind-filter | Existing native Picker and fail-closed no-Session Server state; no private data fabricated |
 | gallery.sort-menu.filters | 统一图库→排序和筛选菜单→筛选编辑页 | native-ios-unified-gallery-map-scope | Genuine native Menu→Sheet, no Owner fixture |
 | gallery.wall.month-group | 统一图库→照片时间分组→月→全部 | native-ios-shared-photo-time-scale selected state | Native presentation change, no real large-data scroll |
 | gallery.wall.density | 统一图库 → 缩略图大小 → 紧凑 → 标准 | native-ios-unified-wall-density AX value | Real SwiftUI density binding; no full 100k wall redraw |
@@ -278,3 +279,8 @@ separate unmeasured requirements.
 **Gate:** keep #4328 Draft until a new exact-HEAD complete CI, IPA,
 real Simulator 49/49, relevant navigation and Final Gate pass. This
 section describes a code-level correction, **not a new macOS run pass**.
+
+
+### 2026-11-17: 50th real native child path candidate
+
+New `files.search.kind` measures the real SwiftUI type Picker (图片 → 全部类型) in the horizontal Files filter strip. XCTest requires actual actionable menu items, denied Server loading without any fake authenticated Node data, and reset to a recoverable Browse page. On this HEAD it is **registered but not yet passed on a real Simulator**. Candidate now requires 50 × (warmup + n=3) = 200 child invocations, 150 retained entered/returned AX-ready samples, original XCTest CPU/RSS and after-AX/return screenshots. Historical 49/49 success remains evidence **only for its historical source SHA**, not proof of this new route.

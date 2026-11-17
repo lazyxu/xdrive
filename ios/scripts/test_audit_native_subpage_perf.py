@@ -122,11 +122,11 @@ class NativeSubpageAuditTests(unittest.TestCase):
                 module.write_route_csv(wrong_samples, target)
             self.assertFalse(target.exists())
 
-    def test_actual_repository_registration_has_all_forty_nine_routes(self):
+    def test_actual_repository_registration_has_all_fifty_routes(self):
         module.ROUTES = self.old
         registered = module.source_routes(module.SOURCE.read_text(encoding="utf-8"))
         self.assertEqual(set(registered.values()), set(module.ROUTES))
-        self.assertEqual(len(module.ROUTES), 49)
+        self.assertEqual(len(module.ROUTES), 50)
 
     def test_gallery_backup_routes_use_existing_product_navigation(self):
         gallery = (module.ROOT / "ios/XDriveIOS/NativePhotosDashboard.swift").read_text(
@@ -334,6 +334,7 @@ class NativeSubpageAuditTests(unittest.TestCase):
         for route, token, content in (
             ("files.search.date", "native-ios-files-search-date-filter", files),
             ("files.search.size", "native-ios-files-search-size-filter", files),
+            ("files.search.kind", "native-ios-files-search-kind-filter", files),
             ("gallery.wall.density", "native-ios-shared-density-", components),
             ("gallery.wall.framing", "native-ios-shared-framing-", components),
         ):
@@ -342,6 +343,10 @@ class NativeSubpageAuditTests(unittest.TestCase):
                                 f', "{route}"' in line for line in suite.splitlines()))
             self.assertIn(token, content)
         self.assertIn('accessibilityValue(wallDensity.title + " · " + wallFraming.title)', gallery)
+        self.assertIn('Picker("搜索类型", selection: $searchFilters.kind)', files)
+        self.assertIn('selectFilesKind("图片", app: app)', suite)
+        self.assertIn('selectFilesKind("全部类型", app: app)', suite)
+        self.assertIn("Files kind must reset before next measured trial", suite)
         self.assertIn("Files filter must be reset before next measured trial", suite)
         self.assertIn("Gallery photo wall presentation must restore both defaults", suite)
 
@@ -464,8 +469,8 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertIn("GITHUB_SHA=\"$XD_PERF_SOURCE_SHA\" python3 ios/scripts/audit_native_resource_perf.py",
                       workflow)
         self.assertIn("root-summary.json", workflow)
-        self.assertIn("IOS_NATIVE_PAGE_AND_SUBPAGE_COMPLETE roots=25 children=49", workflow)
-        self.assertIn("child[\"total_ax_samples\"] == 147", workflow)
+        self.assertIn("IOS_NATIVE_PAGE_AND_SUBPAGE_COMPLETE roots=25 children=50", workflow)
+        self.assertIn("child[\"total_ax_samples\"] == 150", workflow)
         self.assertIn("root[\"observed_invocations\"] == 100", workflow)
 
 

@@ -50,10 +50,10 @@ The machine-audited inventory lives in ios/performance/native-seven-workloads.js
 - A pending row remains pending with explicit missing evidence. Green workflow
   registration only asserts that nobody falsely marked the incomplete
   work as measured.
-- The current candidate binds **25 native root-page resource routes** and **49
+- The current candidate binds **25 native root-page resource routes** and **50
   genuinely native child / interaction paths** into one exact-HEAD iOS Simulator
   `xcodebuild test` invocation. Each route has one warmup and 3 retained trials:
-  100 root and 196 child invocations, including 147 forward and 147 return
+  100 root and 200 child invocations, including 150 forward and 150 return
   AX-ready child timings. App-targeted CPU time and peak physical memory are
   audited independently for both suites, and child screenshots are retained
   after AX-ready and after return. The job fails unless **both** original
@@ -81,7 +81,7 @@ performance, unrelated offline/security tests and native-only Notes/Settings
 are tracked outside this Web UI workflow selector; do not describe this set
 as the whole GitHub workflow directory.
 
-The 49-route candidate also conditionally requests Apple's real
+The 50-route candidate also conditionally requests Apple's real
 `XCTHitchMetric(application: app)` on **Xcode 26 and iOS 26**; the existing
 Xcode 16.4/iOS 18.5 runner uses navigation/scroll signpost **durations**
 instead. Neither route register nor signpost fallback establishes a physical

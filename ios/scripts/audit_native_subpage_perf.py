@@ -33,6 +33,7 @@ ROUTES = (
     "files.quick.favorites",
     "files.search.date",
     "files.search.size",
+    "files.search.kind",
     "backup.tasks",
     "backup.setup",
     "backup.details",
