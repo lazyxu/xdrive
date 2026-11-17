@@ -592,6 +592,11 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         generation &+= 1
         let ticket = generation
         defer { busy = false }
+        // A failed, cancelled or rejected sign-in cannot leave a provisional
+        // transport route available for stale credential-bearing requests.
+        defer {
+            if active == nil { XDriveIOSAutoRoute.shared.clear() }
+        }
         do {
             let configuredOrigin = try ServerAddress.parse(serverInput)
             // Probe before any credentials. The selected URL is the only
@@ -606,6 +611,13 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                     requestedUsername else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
+            // Bootstrap a single strictly probed HTTPS endpoint BEFORE
+            // /me and /nodes/root. A provisional binding carries no trusted
+            // Owner until both proofs succeed, but prevents native API
+            // requests from silently falling back to unprotected CFNetwork.
+            XDriveIOSAutoRoute.shared.prepareRestore(
+                logical: origin, domain: configuredOrigin,
+                lanIP: lanInput, selected: origin)
             let response = try await AuthService(origin: origin).login(
                 username: requestedUsername, password: password
             )

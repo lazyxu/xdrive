@@ -93,8 +93,12 @@ test('native login reuses chosen HTTPS origin for real login, Owner, refresh and
   const signIn = model.slice(model.indexOf('func signIn() async'), model.indexOf('func signOut() async'))
   assert.match(signIn, /let configuredOrigin = try ServerAddress\.parse\(serverInput\)/)
   assert.match(signIn, /let origin = try await XDriveIOSNativeLANLoginRoute\.selectOrigin/)
-  assert.ok(signIn.indexOf('selectOrigin(') < signIn.indexOf('AuthService(origin: origin).login('),
-    'anonymous probe must precede the only credential POST')
+  assert.ok(signIn.indexOf('selectOrigin(') < signIn.indexOf('XDriveIOSAutoRoute.shared.prepareRestore('),
+    'strict anonymous TLS selection precedes provisional route admission')
+  assert.ok(signIn.indexOf('XDriveIOSAutoRoute.shared.prepareRestore(') <
+    signIn.indexOf('AuthService(origin: origin).login('),
+    'Owner/root probes cannot bypass the verified provisional HTTPS route')
+  assert.match(signIn, /if active == nil \{ XDriveIOSAutoRoute\.shared\.clear\(\) \}/)
   assert.match(signIn, /lanIPText == lanInput/)
   assert.match(signIn, /XDriveNativeOwnerRootVerifier\(\s*origin: origin,/)
   assert.match(signIn, /active = Session\(\s*origin: origin/)
