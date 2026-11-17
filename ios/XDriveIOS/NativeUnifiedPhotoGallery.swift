@@ -34,6 +34,8 @@ final class XDriveIOSUnifiedPhotoObserver: NSObject, ObservableObject, PHPhotoLi
 struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let openBackup: () -> Void
+    // Parent-owned one-shot request from the native Photos Search button.
+    @Binding var requestSearch: Bool
     let priorityBackup: (String) -> Void
     let isTabActive: Bool
     // The parent presents the existing shared MapKit route as an overlay.
@@ -52,7 +54,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
-    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .day
+    // Apple Photos opens to its ungrouped full-grid view.
+    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
+    @State private var isSelecting = false
+    @State private var selectedIDs: Set<String> = []
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
@@ -96,6 +101,67 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
 
     var body: some View {
         galleryContent
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            draft = query
+                            showFilters = true
+                        } label: {
+                            Label("搜索与筛选", systemImage: "magnifyingglass")
+                        }
+                        Menu("照片来源") {
+                            filterButton(nil, title: "全部")
+                            ForEach(XDriveIOSNativeGalleryPresence.allCases) { presence in
+                                filterButton(presence, title: presence.title)
+                            }
+                        }
+                        Menu("时间浏览") {
+                            ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
+                                Button {
+                                    wallTimeScale = option
+                                } label: {
+                                    Label(option.title, systemImage:
+                                        wallTimeScale == option ? "checkmark" : "calendar")
+                                }
+                            }
+                        }
+                        Menu("显示选项") {
+                            Section("缩略图大小") { xdrivePhotoWallDensityButtons($wallDensity) }
+                            Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
+                        }
+                        if onShowMap != nil {
+                            Button {
+                                showMapForAppliedQuery()
+                            } label: {
+                                Label("显示地图", systemImage: "map")
+                            }
+                            .disabled(mapUnavailableReason(for: query) != nil)
+                            .accessibilityIdentifier("native-ios-gallery-sort-filter-show-map")
+                        }
+                        Button("人物与宠物") { showingPeople = true }
+                        Button("管理缩略图缓存") { showingThumbnailCache = true }
+                        Button("手动核对所有本机原件（耗时）") {
+                            requestOriginalAudit(retryUnavailable: false)
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                    }
+                    .accessibilityLabel("排序、筛选与显示选项")
+                    .accessibilityIdentifier("native-ios-gallery-open-filters")
+                    Button(isSelecting ? "完成" : "选择") {
+                        isSelecting.toggle()
+                        if !isSelecting { selectedIDs.removeAll() }
+                    }
+                    .accessibilityIdentifier("native-ios-gallery-select")
+                }
+            }
+            .navigationDestination(isPresented: $showingPeople) {
+                XDriveIOSNativeGalleryPeople(login: login)
+            }
+            .navigationDestination(isPresented: $showingThumbnailCache) {
+                XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
+            }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("native-ios-unified-photo-gallery")
             .accessibilityValue(galleryWallGenerationDiagnostic)
@@ -116,6 +182,10 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 } else {
                     validateForegroundWall()
                 }
+                openSearchIfRequested()
+            }
+            .onChange(of: requestSearch) { wanted in
+                if wanted { openSearchIfRequested() }
             }
             .onDisappear {
                 photoObserver.stop()
@@ -141,6 +211,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     XDriveIOSUnifiedMapCameraStore.clear(owner: prior)
                 }
                 showingPeople = false; showingThumbnailCache = false
+                isSelecting = false; selectedIDs.removeAll()
+                requestSearch = false
                 sourceFilter = nil; query = .init(); draft = .init()
                 openMapAfterFilterDismiss = false
                 openSourceMapAfterFilterDismiss = false
@@ -158,12 +230,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 // map markers while a full-screen source map is visible.
                 showingSourceFilteredMap = false
                 openSourceMapAfterFilterDismiss = false
+                isSelecting = false; selectedIDs.removeAll()
                 savedMapCamera = nil; savedMapOwner = nil
                 resetWall()
                 restoreMapCameraForCurrentOwner()
             }
             .onChange(of: query) { _ in
                 showingSourceFilteredMap = false
+                isSelecting = false; selectedIDs.removeAll()
                 resetWall()
             }
             .onChange(of: timeline.indexRevision) { _ in resetWall() }
@@ -180,6 +254,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     validateForegroundWall()
                 } else {
                     explicitOriginalAudit = false
+                    isSelecting = false; selectedIDs.removeAll()
                     selected = nil
                     indexRequest = UUID()
                     // Keep the bounded verified page state for a same-grant
@@ -245,58 +320,6 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
 
     private var galleryContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Button { draft = query; showFilters = true } label: {
-                    Label(query == .init() ? "搜索与筛选" : "已筛选", systemImage: "line.3.horizontal.decrease.circle")
-                }
-                .accessibilityIdentifier("native-ios-gallery-open-filters")
-                // The native Photos-style menu applies the *committed* filter.
-                // Unsubmitted sheet edits are never allowed to leak into it.
-                if onShowMap != nil {
-                    Menu {
-                        Button("排序和筛选") {
-                            draft = query
-                            showFilters = true
-                        }
-                        Button {
-                            showMapForAppliedQuery()
-                        } label: {
-                            Label("显示地图", systemImage: "map")
-                        }
-                        .disabled(mapUnavailableReason(for: query) != nil)
-                        .accessibilityIdentifier("native-ios-gallery-sort-filter-show-map")
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .accessibilityLabel("排序和筛选")
-                    .accessibilityIdentifier("native-ios-gallery-sort-filter-menu")
-                }
-                Spacer()
-                if query != .init() { Button("清除") { query = .init() } }
-                XDriveIOSNativePhotoWallDisplayMenu(
-                    density: $wallDensity, framing: $wallFraming,
-                    accessibilityID: "native-ios-unified-wall-density"
-                ) { EmptyView() }
-                NavigationLink(isActive: $showingThumbnailCache) {
-                    XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
-                } label: {
-                    Image(systemName: "internaldrive")
-                }.accessibilityLabel("管理缩略图缓存")
-                Menu {
-                    Button("手动核对所有本机原件（耗时）") {
-                        requestOriginalAudit(retryUnavailable: false)
-                    }
-                } label: {
-                    Image(systemName: "checkmark.shield")
-                }
-                .accessibilityLabel("手动核对本机原件")
-                .accessibilityIdentifier("native-ios-gallery-explicit-audit")
-            }.padding(.horizontal, 12).padding(.vertical, 4)
-            filters.padding(.horizontal, 12).padding(.vertical, 4)
-            XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
-                .padding(.horizontal, 12).padding(.vertical, 4)
-            Divider()
             ScrollViewReader { scroll in
                 XDriveIOSNativePhotoWallScrollContainer {
                     XDriveIOSNativePhotoWallCollectionStack {
@@ -306,6 +329,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
                                     filter: sourceFilter, query: query, density: wallDensity,
                                     framing: wallFraming, timeScale: wallTimeScale,
+                                    selectionMode: isSelecting, selectedPhotoIDs: selectedIDs,
                                     displayActive: selected == nil && phase == .active && isTabActive,
                                      // A tab switch covers a loaded 48-row
                                      // window; ordinary off-screen scrolling
@@ -314,7 +338,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                          showingPeople || showingThumbnailCache ||
                                          phase != .active || !isTabActive,
                                     open: { payload, position in
-                                        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                                        guard !isSelecting,
+                                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
                                               payload.rows.indices.contains(position),
                                               payload.rows.filter({
                                                   $0.id == payload.rows[position].id
@@ -332,6 +357,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                                 tileHeight: frame.height)
                                         }
                                         selected = .init(owner: owner, page: payload, position: position)
+                                    }, onSelect: { id in
+                                        guard isSelecting, phase == .active,
+                                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+                                        else { return }
+                                        if !selectedIDs.insert(id).inserted {
+                                            selectedIDs.remove(id)
+                                        }
                                     }, loaded: { verifiedIDs in
                                         guard selected == nil, viewerReturnPage == page.id,
                                               let anchor = viewerReturnAnchor,
@@ -443,22 +475,27 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     scroll.scrollTo("gallery-page-top", anchor: .top)
                 }
             }
+            if isSelecting {
+                HStack {
+                    Text("已选择 \\(selectedIDs.count) 项")
+                        .font(.subheadline)
+                    Spacer()
+                    Button("清除选择") { selectedIDs.removeAll() }
+                        .disabled(selectedIDs.isEmpty)
+                }
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .background(.regularMaterial)
+                .accessibilityIdentifier("native-ios-gallery-selection-summary")
+            }
         }
     }
 
-    private var filters: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack {
-                NavigationLink(isActive: $showingPeople) {
-                    XDriveIOSNativeGalleryPeople(login: login)
-                } label: { Label("人物", systemImage: "person.2") }
-                .accessibilityIdentifier("native-ios-gallery-people")
-                filterButton(nil, title: "全部")
-                ForEach(XDriveIOSNativeGalleryPresence.allCases) { presence in filterButton(presence, title: presence.title) }
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("native-ios-unified-gallery-filters")
+    private func openSearchIfRequested() {
+        guard requestSearch else { return }
+        requestSearch = false
+        draft = query
+        showFilters = true
     }
 
     private func filterButton(_ value: XDriveIOSNativeGalleryPresence?, title: String) -> some View {
@@ -693,6 +730,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     }
 
     private func resetWall() {
+        isSelecting = false
+        selectedIDs.removeAll()
         selected = nil
         viewerReturnAnchor = nil
         viewerOpeningPage = nil
