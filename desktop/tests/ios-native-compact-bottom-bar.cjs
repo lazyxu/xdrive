@@ -80,3 +80,26 @@ test('Collections exposes only backed PhotoKit routes without fabricated AI cura
   assert.match(ui, /XDriveIOSNativePhotoAlbumsScreen\(savedOffset: \$savedAlbumOffset\)/);
   assert.doesNotMatch(ui, /Button\("回忆"\)|Button\("旅行"\)/);
 });
+
+test('real Simulator journeys use visible Photos or xDrive actions and keep startup recovery strict', () => {
+  const root = path.resolve(__dirname, '../..');
+  const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
+  const nav = read('ios/UITests/XDriveIOSNavigationRuntimeUITests.swift');
+  const b9 = read('ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift');
+  const files = read('ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift');
+  const frames = read('ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift');
+  const login = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift');
+  assert.match(nav, /enum XDriveIOSNativePhotosTestNavigator/);
+  assert.match(nav, /if direct\.exists && direct\.isHittable \{ direct\.tap\(\); return true \}/);
+  assert.match(nav, /let menu = found\("native-ios-gallery-more-menu", in: app\)/);
+  assert.match(nav, /"native-ios-tab-files": "文件"/);
+  assert.match(nav, /"native-ios-gallery-source-albums": "native-ios-photos-collections-tab"/);
+  for (const suite of [nav, b9, files, frames]) {
+    assert.match(suite, /XDriveIOSNativePhotosTestNavigator\.tap\(/);
+  }
+  assert.match(login, /\.onChange\(of: restoreFinished\) \{ finished in/);
+  assert.match(login, /\.onChange\(of: workspaceVisible\) \{ visible in/);
+  assert.match(b9, /XCTNSPredicateExpectation\([\s\S]*?"ready"/);
+  assert.match(b9, /Workspace stayed at mountingWorkspace/);
+  assert.doesNotMatch(nav, /coordinate\(withNormalizedOffset:/);
+});
