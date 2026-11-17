@@ -67,6 +67,25 @@ enum XDriveIOSNativePhotosTestNavigator {
             let action = found(actual, in: app)
             if action.exists && action.isHittable { action.tap(); return true }
         }
+        // The genuine Photos timeline can temporarily replace both tabs
+        // with Year/Month/All. Restore the real bar before navigating; never
+        // attempt to tap a hidden SwiftUI TabView destination.
+        if id == "native-ios-tab-gallery" ||
+           id == "native-ios-gallery-source-unified" ||
+           id == "native-ios-gallery-source-albums" {
+            let compact = found("native-ios-photos-return-tabs", in: app)
+            if compact.exists && compact.isHittable {
+                compact.tap()
+                let restoredID = id == "native-ios-gallery-source-albums"
+                    ? "native-ios-photos-collections-tab"
+                    : "native-ios-photos-library-tab"
+                let restored = found(restoredID, in: app)
+                guard restored.waitForExistence(timeout: 10) &&
+                      restored.isHittable else { return false }
+                restored.tap()
+                return true
+            }
+        }
 
         // The source-specific people/search commands belong to the Gallery
         // options Menu, not a hidden but programmatically tappable toolbar.

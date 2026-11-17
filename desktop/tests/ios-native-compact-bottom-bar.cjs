@@ -123,3 +123,19 @@ test('native Photos Collections use real bounded PhotoKit cover cards, never inv
                          ui.indexOf('/// Collections retains PhotoKit'));
   assert.doesNotMatch(cover, /performChanges|requestImageDataAndOrientation|UploadSession|accessToken|UserDefaults/);
 });
+
+test('compact Photos timeline reveals actual tabs before Gallery and Collections navigation', () => {
+  const root = path.resolve(__dirname, '../..')
+  const nav = fs.readFileSync(path.join(root, 'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'), 'utf8')
+  const start = nav.indexOf('enum XDriveIOSNativePhotosTestNavigator')
+  const end = nav.indexOf('final class XDriveIOSNavigationRuntimeUITests', start)
+  assert.ok(start >= 0 && end > start, 'shared native navigator must remain')
+  const helper = nav.slice(start, end)
+  assert.match(ui, /native-ios-photos-return-tabs/)
+  assert.match(helper, /let compact = found\("native-ios-photos-return-tabs", in: app\)/)
+  assert.match(helper, /compact\.exists && compact\.isHittable[\s\S]*?compact\.tap\(\)/)
+  assert.match(helper, /id == "native-ios-gallery-source-albums"[\s\S]*?native-ios-photos-collections-tab/)
+  assert.match(helper, /restored\.waitForExistence\(timeout: 10\) &&[\s\S]*?restored\.isHittable/)
+  assert.match(helper, /restored\.tap\(\)[\s\S]*?return true/)
+  assert.doesNotMatch(helper, /coordinate\(withNormalizedOffset:|simctl privacy grant/)
+})
