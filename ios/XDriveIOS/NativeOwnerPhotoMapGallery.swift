@@ -786,7 +786,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             .overlay(alignment: .bottomTrailing) {
                 XDriveIOSNativePhotoMapGridAction(
                     enabled: canOpenCurrentMapGrid,
-                    accessibilityID: "native-ios-owner-map-current-grid"
+                    accessibilityID: "native-ios-owner-map-current-grid",
+                    verifiedSummary: mapMarkersEnabled && verifiedBounds != nil
+                        ? overview.map { "\($0.total_photo_count) 张照片" }
+                        : nil
                 ) { openCurrentMapGrid() }
                 .padding(12)
             }
@@ -813,15 +816,11 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 .frame(maxWidth: 240, alignment: .leading)
             }
             .overlay(alignment: .bottomLeading) {
-                if let overview, displayedOverviewMatchesLogin {
-                    XDriveIOSNativePhotoMapStatusPill(
-                        message: verifiedBounds != nil
-                            ? "\(overview.total_photo_count) 张照片"
-                            : "正在更新当前位置…",
-                        accessibilityID: verifiedBounds != nil
-                            ? "native-ios-owner-map-verified-count"
-                            : "native-ios-owner-map-stale-count")
-                } else if busy {
+                // A location's actual verified count belongs to its photo
+                // sheet (and the VoiceOver grid action), not a permanent
+                // capsule obscuring the map. Never display an old count
+                // during Owner/camera verification.
+                if busy {
                     ProgressView("正在加载照片位置…")
                         .font(.caption).padding(10)
                         .background(.regularMaterial, in: Capsule()).padding(10)
