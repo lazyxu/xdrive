@@ -170,8 +170,8 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         // its deliberate crash-recovery page a false positive. Read the
         // actual foreground UI's non-secret ready marker instead of a
         // guessed fixed sleep. A never-ready workspace still FAILS.
-        let readiness = app.images.matching(
-            identifier: "native-ios-login-startup-readiness"
+        let readiness = app.buttons.matching(
+            identifier: "native-ios-login-submit"
         ).firstMatch
         XCTAssertTrue(readiness.waitForExistence(timeout: 20),
                       "Signed-out workspace did not expose startup readiness")
