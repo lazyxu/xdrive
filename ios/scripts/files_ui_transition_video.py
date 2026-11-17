@@ -42,10 +42,13 @@ CASE_END = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
 TAP = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 FRAME = re.compile(r"frame:\s*\d+.*pts_time:([0-9.]+)")
 STAT = re.compile(r"lavfi\.signalstats\.(YMIN|YMAX|YAVG)=([0-9.]+)")
-# Recorder startup on busy macOS runners can take ~17 seconds. Twelve real
-# UI tests wait for genuine recorder pre-roll before their first tap, while
-# the longest observed test ran ~60s; preserve a bounded post-prelude margin.
-MAX_CLIP_SECONDS = 120
+# Genuine iOS 18.5 CI run #44004882680 contains a 129.575s passing
+# foreground-resume XCUITest: a 60s XCTest animation-idle wait occurred after
+# the Files size-filter tap. The previous 120s cap truncated its H.264 clip
+# before XCTest finished (17/18 passed video audit), despite a real XCTest
+# PASS. Retain a finite 180s limit for a 24s recorder prelude + 130s test
+# + margin. All 18 clips and every tap-adjacent frame remain mandatory.
+MAX_CLIP_SECONDS = 180
 MAX_TIMELINE_STARTUP_SECONDS = 20
 MIN_TAP_WINDOW_SECONDS = 0.55
 
