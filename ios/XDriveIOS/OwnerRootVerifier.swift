@@ -35,8 +35,15 @@ struct XDriveNativeOwnerRootVerifier {
             throw XDriveNativeOwnerRootFailure.invalidSession
         }
 
-        let configuration = bypassAutoRoute ? URLSessionConfiguration.ephemeral
-            : XDriveIOSAutoRoute.ephemeralConfiguration()
+        // The iOS app has the central verified LAN/WAN router. Standalone
+        // macOS regression tests compile the Owner verifier without that
+        // application graph and must use direct, strictly verified HTTPS.
+        #if os(iOS)
+        let configuration: URLSessionConfiguration = bypassAutoRoute
+            ? .ephemeral : XDriveIOSAutoRoute.ephemeralConfiguration()
+        #else
+        let configuration: URLSessionConfiguration = .ephemeral
+        #endif
         if bypassAutoRoute { configuration.protocolClasses = [] }
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
