@@ -75,6 +75,25 @@ struct XDriveIOSAutoRouteSafetyChecks {
         precondition(XDriveIOSAutoRouteSafety.preferredOrigin(
             domain: wan, lan: nil, proven: [wan.absoluteString],
             onLocalNetwork: true) == wan)
+        // A failed/retired Owner must not allow protected native clients
+        // to bypass the router and send old tokens directly over CFNetwork.
+        func required(_ path: String, method: String = "GET",
+                      bearer: Bool = false) -> Bool {
+            var req = URLRequest(url: URL(string: "https://drive.example.com" + path)!)
+            req.httpMethod = method
+            if bearer { req.setValue("Bearer old-owner", forHTTPHeaderField: "Authorization") }
+            return XDriveIOSAutoRouteSafety.needsVerifiedRoute(req)
+        }
+        precondition(required("/api/v1/nodes/root", bearer: true))
+        precondition(required("/api/v1/clipboard/events", bearer: true))
+        precondition(required("/api/v1/file-preview/17?ticket=opaque"))
+        precondition(required("/api/v1/ios/photos/background-grants/proof"))
+        precondition(required("/api/v1/auth/refresh", method: "POST"))
+        precondition(required("/api/v1/auth/login", method: "GET"))
+        precondition(required("/api/v1/auth/logout", method: "POST", bearer: true))
+        precondition(!required("/api/v1/auth/login", method: "POST"))
+        precondition(!required("/api/v1/auth/logout", method: "POST"))
+        precondition(!required("/outside/api/v1/nodes/root"))
         print("iOS LAN/WAN safety: exact Owner, unproven-route denial, no TLS/cancel/write replay passed")
     }
 }

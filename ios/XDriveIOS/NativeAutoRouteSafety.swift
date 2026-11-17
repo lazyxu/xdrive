@@ -30,6 +30,24 @@ enum XDriveIOSAutoRouteSafety {
         return nil
     }
 
+    /// A native authenticated xDrive request must not fall through from the
+    /// routed URLSession to CFNetwork when its Owner route is absent/revoked.
+    /// Explicit credential POST at sign-in and final logout are intentionally
+    /// direct; the caller selects/verifies their HTTPS endpoint separately.
+    static func needsVerifiedRoute(_ request: URLRequest) -> Bool {
+        guard let url = request.url, url.scheme?.lowercased() == "https",
+              url.path.hasPrefix("/api/v1/") else { return false }
+        let method = (request.httpMethod ?? "GET").uppercased()
+        let anonymousAuth = url.path == "/api/v1/auth/login" ||
+            url.path == "/api/v1/auth/logout"
+        if anonymousAuth && method == "POST" &&
+           request.value(forHTTPHeaderField: "Authorization") == nil &&
+           request.value(forHTTPHeaderField: "X-XDrive-IOS-Photo-Grant") == nil {
+            return false
+        }
+        return true
+    }
+
     static func isNetworkFailure(_ error: Error) -> Bool {
         guard let url = error as? URLError else { return false }
         switch url.code {

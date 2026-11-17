@@ -416,7 +416,12 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        XDriveIOSAutoRoute.shared.canRoute(request)
+        // IMPORTANT: "false" would silently hand a protected request back to
+        // the default CFNetwork transport, even after logout/Owner switch.
+        // Intercept all xDrive API calls that require a proven route, and
+        // fail closed in startLoading() if that route has disappeared.
+        XDriveIOSAutoRouteSafety.needsVerifiedRoute(request) ||
+            XDriveIOSAutoRoute.shared.canRoute(request)
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
