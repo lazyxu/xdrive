@@ -168,7 +168,7 @@ test('system Photos TCC termination preserves real app recovery and crash eviden
   assert.match(diagnostic, /MAP_ROUTE_DIAGNOSTIC_TARGET_NOT_FOREGROUND/)
   // An OS-terminated target is not the same as a live Settings return.
   assert.match(resume, /if app\.state != \.notRunning \{[\s\S]*?app\.activate\(\)[\s\S]*?return false/)
-  assert.match(resume, /app\.launch\(\)[\s\S]*?native-ios-launcher-map[\s\S]*?native-ios-map-source-selector/)
+  assert.match(resume, /app\.launch\(\)[\s\S]*?native-ios-launcher-map[\s\S]*?native-ios-local-map-actions/)
   assert.match(resume, /handleInitialPhotoLibraryPromptIfPresent\(\)/)
   // Only actual Full Access may display MapKit. A live-app refresh failure
   // remains a failing XCTest, not a silently accepted test-driven restart.
