@@ -474,9 +474,12 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             }
         }
         .onDisappear {
-            // Keep observing while a place sheet covers the map. Retire the
-            // observation only on actual route departure.
-            if selected == nil {
+            // SwiftUI may call onDisappear while either a single-place Sheet
+            // or the current-viewport grid is presented. Neither event is a
+            // map-route exit: keep the PhotoKit observer, current GPS proof,
+            // authenticated Owner and camera alive behind the Sheet.
+            // A real route departure (no presented sheet) retires them.
+            if selected == nil && !showingViewportGrid {
                 remotePollTask?.cancel(); remotePollTask = nil
                 currentLocation.cancel()
                 if currentProof { onSaveCamera?(camera) }
