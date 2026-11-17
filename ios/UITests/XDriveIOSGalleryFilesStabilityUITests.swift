@@ -46,13 +46,62 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     private func select(_ id: String, in app: XCUIApplication) {
-        let control = target(id, in: app)
+        var control = target(id, in: app)
+        // The Gallery now follows iOS 26 Photos: Library / Collections /
+        // Search are visible; xDrive routes and sources live inside a menu.
+        // Exercise those real menus rather than resurrect hidden test buttons.
+        if id == "native-ios-gallery-open-filters" {
+            XCTAssertTrue(control.waitForExistence(timeout: 15))
+            control.tap()
+            control = app.buttons["搜索与筛选"].firstMatch
+        } else if id == "native-ios-gallery-people" ||
+                  id == "native-ios-gallery-source-both" {
+            let menu = target("native-ios-gallery-open-filters", in: app)
+            XCTAssertTrue(menu.waitForExistence(timeout: 15))
+            menu.tap()
+            if id == "native-ios-gallery-source-both" {
+                let source = app.buttons["照片来源"].firstMatch
+                XCTAssertTrue(source.waitForExistence(timeout: 10))
+                source.tap()
+                control = app.buttons["两端都有"].firstMatch
+            } else {
+                control = app.buttons["人物与宠物"].firstMatch
+            }
+        } else if id == "native-ios-gallery-source-albums" {
+            control = target("native-ios-photos-collections-tab", in: app)
+        } else if id == "native-ios-gallery-source-unified" {
+            control = target("native-ios-photos-library-tab", in: app)
+        } else if id == "native-ios-gallery-source-originals" ||
+                  id == "native-ios-gallery-source-local" ||
+                  id == "native-ios-gallery-source-cloud" {
+            let menu = target("native-ios-gallery-more-menu", in: app)
+            XCTAssertTrue(menu.waitForExistence(timeout: 15))
+            menu.tap()
+            let title = id == "native-ios-gallery-source-originals" ? "备份原件" :
+                        id == "native-ios-gallery-source-local" ? "本机照片" : "云端图库"
+            control = app.buttons[title].firstMatch
+        } else if !control.exists {
+            let route: String?
+            switch id {
+            case "native-ios-tab-files": route = "文件"
+            case "native-ios-tab-mine": route = "我的"
+            case "native-ios-tab-launcher": route = "全部功能"
+            case "native-ios-tab-gallery":
+                control = target("native-ios-photos-library-tab", in: app)
+                route = nil
+            default: route = nil
+            }
+            if let route {
+                let menu = target("native-ios-gallery-more-menu", in: app)
+                XCTAssertTrue(menu.waitForExistence(timeout: 15))
+                menu.tap()
+                control = app.buttons[route].firstMatch
+            }
+        }
         XCTAssertTrue(control.waitForExistence(timeout: 15),
-                      "Missing native navigation control: \(id)")
+                      "Missing real native navigation control: \(id)")
         navigationStarted = Date()
         navigationID = id
-        // Live CI screenshot observer can sample near the actual route switch,
-        // rather than only 0.5s after the XCTest case itself started.
         print("IOS_NATIVE_NAV_TAP_START route=\(id)")
         control.tap()
         XCTAssertEqual(app.state, .runningForeground, "App exited after \(id)")
@@ -66,8 +115,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     private func checkGallery(_ app: XCUIApplication) {
-        XCTAssertTrue(target("native-ios-gallery-source-unified", in: app)
-            .waitForExistence(timeout: 15), "Gallery source rail disappeared")
+        XCTAssertTrue(target("native-ios-photos-bottom-bar", in: app)
+            .waitForExistence(timeout: 15), "Photos-native Gallery navigation disappeared")
         XCTAssertEqual(app.state, .runningForeground)
         reportNavigationReady("gallery")
     }
@@ -171,13 +220,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     func testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership() {
         let app = launch()
         checkGallery(app)
-        let paired = app.buttons["两端都有"].firstMatch
-        XCTAssertTrue(paired.waitForExistence(timeout: 15),
-                      "Unified Gallery source filter is unavailable")
-        if !paired.isHittable {
-            target("native-ios-unified-gallery-filters", in: app).swipeLeft()
-        }
-        paired.tap()
+        select("native-ios-gallery-source-both", in: app)
         select("native-ios-gallery-open-filters", in: app)
         let open = target("native-ios-unified-gallery-show-map", in: app)
         XCTAssertTrue(open.waitForExistence(timeout: 15))
