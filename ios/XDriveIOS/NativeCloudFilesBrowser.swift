@@ -910,6 +910,23 @@ private struct XDriveIOSNativeFilesSearchPresentation: ViewModifier {
     }
 }
 
+/// Temporary, in-memory scroll geometry for a verified native Browse Viewer.
+/// Owner identity is fenced separately by returnOwner; this lease never
+/// authorizes a Node or outlives a changed filter/arrangement.
+private struct XDriveIOSNativeFilesBrowseViewerViewport {
+    let opened: XDriveIOSNativeFilesNode
+    let anchor: XDriveIOSNativeFilesNode
+    let alignment: Double
+    let folderID: UInt64
+    let mode: String
+    let query: String
+    let filters: XDriveIOSNativeFilesSearchFilterState
+    let sort: String
+    let order: String
+    let grouping: String
+    let foldersFirst: Bool
+}
+
 /// iOS fixed Files tab: genuine native bounded Owner directory navigation
 /// and whole-library search. File previews use the separate native L3 Viewer;
 /// Owner-bound creation, transfers and mutations live in the native action sheet.
@@ -1049,6 +1066,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnOwner: XDriveNativeOwnerRoot?
     @State private var lastViewedFile: XDriveIOSNativeFilesNode?
+    @State private var viewerReturnViewport: XDriveIOSNativeFilesBrowseViewerViewport?
     @State private var didRestoreLocatedFile = false
     @State private var locatedFileNotice: String?
     private let folder: XDriveIOSNativeFilesFolder?
@@ -3736,9 +3754,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                ),
                (lastViewedFile == nil ||
                 model.entries.contains(where: { $0.node == lastViewedFile })) {
-                // Read-only Viewer preserved a live, verified source row.
+                // Read-only Viewer preserved the same verified List. Leave
+                // the actual mounted scroll position untouched: no recenter.
                 lastViewedFile = nil
                 returnOwner = nil
+                viewerReturnViewport = nil
             } else if let target = lastViewedFile,
                       !isHome && !isGlobalSearch,
                       target.parent_id == parentID {
@@ -3746,6 +3766,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             } else {
                 lastViewedFile = nil
                 returnOwner = nil
+                viewerReturnViewport = nil
                 reload()
             }
         }) { initial in
@@ -4058,6 +4079,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             tagManagerOwner = nil
             returnOwner = nil
             lastViewedFile = nil
+            viewerReturnViewport = nil
             offset = 0
             queryDraft = ""
             activeQuery = ""
@@ -4300,11 +4322,63 @@ struct XDriveIOSNativeFilesBrowser: View {
             guard let target = lastViewedFile else { return }
             if let owner = returnOwner,
                XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+               let folderID = parentID,
+               model.canResume(
+                  owner: owner, folderID: folderID,
+                  query: activeQuery, filters: searchFilters,
+                  sort: sort, order: order,
+                  grouping: grouping, foldersFirst: foldersFirst
+               ),
                model.entries.contains(where: { $0.node == target }) {
-                returnScroll.scrollTo(target.id, anchor: .center)
+                let saved = viewerReturnViewport
+                let aligned = saved.flatMap { saved in
+                    XDriveIOSNativeFilesViewModePolicy.matchedAlignment(
+                        visibleAnchor: saved.anchor.id,
+                        selectedAnchor: saved.anchor.id,
+                        measured: saved.alignment
+                    )
+                }
+                let canRestore = saved.map { saved in
+                    XDriveIOSNativeFilesViewModePolicy.canRestore(
+                        ticketCurrent: saved.opened == target &&
+                            saved.folderID == folderID &&
+                            saved.query == activeQuery &&
+                            saved.filters == searchFilters &&
+                            saved.sort == sort && saved.order == order &&
+                            saved.grouping == grouping &&
+                            saved.foldersFirst == foldersFirst,
+                        ownerValid: XDriveIOSNativePhotoOwnerScope.matches(
+                            login.owner, owner
+                        ),
+                        pageValid: model.entries.contains(where: { $0.node == saved.anchor }),
+                        anchorVisible: model.entries.contains(where: { $0.node == saved.anchor }),
+                        screenVisible: filesViewVisible,
+                        expectedMode: saved.mode, currentMode: viewMode,
+                        active: phase == .active && quickSection == .browse
+                    )
+                } ?? false
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    if let saved, let aligned, canRestore {
+                        // Exact same verified row and relative pixel anchor.
+                        returnScroll.scrollTo(
+                            saved.anchor.id,
+                            anchor: UnitPoint(x: 0.5, y: aligned)
+                        )
+                        lastAppearedNodeID = saved.anchor.id
+                    } else {
+                        // Cross-page swipe, changed Node/revision or arrangement:
+                        // return only to the verified current file.
+                        returnScroll.scrollTo(target.id, anchor: .center)
+                        lastAppearedNodeID = target.id
+                    }
+                }
+                persistVisibleAnchorSoon()
             }
             lastViewedFile = nil
             returnOwner = nil
+            viewerReturnViewport = nil
         }
         }
     }
@@ -4746,6 +4820,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             quickActionNotice = "查看的文件不在当前目录，请刷新后定位。"
             lastViewedFile = nil
             returnOwner = nil
+            viewerReturnViewport = nil
             reload()
             return
         }
@@ -4799,6 +4874,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                 else { return }
                 lastViewedFile = nil
                 returnOwner = nil
+                viewerReturnViewport = nil
                 quickActionNotice = "返回位置无法核验，请从当前目录重新选择文件。"
                 reload(resetOffset: true)
             }
@@ -4814,6 +4890,30 @@ struct XDriveIOSNativeFilesBrowser: View {
         returnOwner = owner
         viewerAdmitted.removeAll()
         viewerAdmissionOrder.removeAll()
+        viewerReturnViewport = nil
+        // The User's real visible row is the restore target, not necessarily
+        // the file they tapped. Only accept exact current Owner and row data.
+        if !isHome, !isGlobalSearch, let folderID = parentID,
+           model.canResume(
+             owner: owner, folderID: folderID,
+             query: activeQuery, filters: searchFilters,
+             sort: sort, order: order,
+             grouping: grouping, foldersFirst: foldersFirst
+           ),
+           let anchorID = visibleModeAnchorID,
+           let anchor = model.entries.first(where: { $0.node.id == anchorID })?.node,
+           let alignment = XDriveIOSNativeFilesViewModePolicy.matchedAlignment(
+             visibleAnchor: anchorID, selectedAnchor: anchor.id,
+             measured: visibleModeAlignment
+           ) {
+            viewerReturnViewport = .init(
+                opened: entry.node, anchor: anchor, alignment: alignment,
+                folderID: folderID, mode: viewMode,
+                query: activeQuery, filters: searchFilters,
+                sort: sort, order: order,
+                grouping: grouping, foldersFirst: foldersFirst
+            )
+        }
         lastViewedFile = entry.node
         selectedFile = entry
     }

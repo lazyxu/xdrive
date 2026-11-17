@@ -157,6 +157,36 @@ test('P1: selected filter chips mirror PWA and cannot show a previous Owner labe
   assert.match(browser, /URLQueryItem\(name: "tag_id", value: String\(tagID\)\)/)
 })
 
+test('P0: Browse Viewer returns to the exact verified visible row, never stale Owner pixels', () => {
+  assert.match(browser, /private struct XDriveIOSNativeFilesBrowseViewerViewport/)
+  const state = browser.slice(browser.indexOf('private struct XDriveIOSNativeFilesBrowseViewerViewport'),
+    browser.indexOf('struct XDriveIOSNativeFilesBrowser: View'))
+  for (const field of ['opened','anchor','alignment','folderID','mode','query',
+    'filters','sort','order','grouping','foldersFirst']) {
+    assert.ok(state.includes('let ' + field + ':'), field)
+  }
+  const open = browser.slice(browser.indexOf('private func openViewer('),
+    browser.indexOf('private func gridTile(', browser.indexOf('private func openViewer(')))
+  assert.match(open, /viewerReturnViewport = nil/)
+  assert.match(open, /model\.canResume\(/)
+  assert.match(open, /let anchorID = visibleModeAnchorID/)
+  assert.match(open, /viewerReturnViewport = \.init\(/)
+  const restore = browser.slice(browser.indexOf('guard let target = lastViewedFile else { return }'),
+    browser.indexOf('var body: some View', browser.indexOf('guard let target = lastViewedFile else { return }')))
+  assert.match(restore, /model\.canResume\(/)
+  assert.match(restore, /saved\.opened == target/)
+  assert.match(restore, /saved\.filters == searchFilters/)
+  assert.match(restore, /saved\.sort == sort && saved\.order == order/)
+  assert.match(restore, /saved\.grouping == grouping/)
+  assert.match(restore, /pageValid: model\.entries\.contains\(where: \{ \$0\.node == saved\.anchor \}\)/)
+  assert.match(restore, /XDriveIOSNativeFilesViewModePolicy\.canRestore/)
+  assert.match(restore, /returnScroll\.scrollTo\(\s*saved\.anchor\.id,/)
+  assert.match(restore, /anchor: UnitPoint\(x: 0\.5, y: aligned\)/)
+  assert.match(restore, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/)
+  assert.match(restore, /viewerReturnViewport = nil/)
+  assert.match(browser, /onChange\(of: login\.owner\)[\s\S]*?viewerReturnViewport = nil/)
+})
+
 test('P0: the prior stack-overflow safety fix and native Viewer remain intact', () => {
   assert.match(browser, /private var filesModalsPrimary: some View/)
   assert.match(browser, /AnyView\(filesModalsSecondary\)/)
