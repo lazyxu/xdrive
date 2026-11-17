@@ -121,9 +121,11 @@ def classify_bright_blank(frames, tap_second):
     # and the coarser 10Hz unit-test fixtures without blessing a 0.4s hole.
     if sample[0]["time"] - tap_second > 0.32:
         return "missing_immediate_post_tap_frames"
-    early = [f for f in sample if f["time"] <= tap_second + 0.9]
+    # Check *every* adjacent sample, including the boundary from one
+    # initially decoded frame to a much later frame. Restricting both ends
+    # to an "early" sub-window silently accepted that entire missing gap.
     if any(b["time"] - a["time"] > 0.24
-           for a, b in zip(early, early[1:])):
+           for a, b in zip(sample, sample[1:])):
         return "sparse_early_transition_frames"
 
     def neutral(f):
