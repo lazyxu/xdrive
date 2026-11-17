@@ -547,9 +547,15 @@ struct XDriveIOSNativeFilesViewer: View {
                         Section("当前预览") {
                             switch display {
                             case .image(let image), .imageThumbnail(let image):
-                                let w = image.cgImage?.width ?? Int(image.size.width * image.scale)
-                                let h = image.cgImage?.height ?? Int(image.size.height * image.scale)
-                                LabeledContent("解码分辨率", value: "\(w) × \(h)")
+                                let w = image.cgImage?.width ??
+                                    XDriveIOSNativeFilesViewerPolicy.safePixelDimension(
+                                        Double(image.size.width) * Double(image.scale))
+                                let h = image.cgImage?.height ??
+                                    XDriveIOSNativeFilesViewerPolicy.safePixelDimension(
+                                        Double(image.size.height) * Double(image.scale))
+                                if let w, let h {
+                                    LabeledContent("解码分辨率", value: "\(w) × \(h)")
+                                }
                                 if case .imageThumbnail = display {
                                     Text("当前为云端缩略图，非完整原件")
                                         .foregroundStyle(.secondary)
@@ -563,9 +569,12 @@ struct XDriveIOSNativeFilesViewer: View {
                                     }
                                     if case .video = display {
                                         let size = item.presentationSize
-                                        if size.width > 0 && size.height > 0 {
+                                        if let width = XDriveIOSNativeFilesViewerPolicy.safePixelDimension(
+                                                Double(size.width)),
+                                           let height = XDriveIOSNativeFilesViewerPolicy.safePixelDimension(
+                                                Double(size.height)) {
                                             LabeledContent("视频尺寸",
-                                                value: "\(Int(size.width)) × \(Int(size.height))")
+                                                value: "\(width) × \(height)")
                                         }
                                     }
                                 }

@@ -148,6 +148,20 @@ struct XDriveIOSNativeFilesViewerPolicyChecks {
         require(!XDriveIOSNativeFilesViewerPolicy.validTicketType(
             kind: .pdf, ticketKind: "image", mime: "image/jpeg"
         ), "refuse mistyped media")
+        // A signed movie/image can contain malformed floating-point geometry.
+        // The old Int(CGFloat) conversions would trap the entire iOS app.
+        require(XDriveIOSNativeFilesViewerPolicy.safePixelDimension(1920) == 1920,
+                "valid video width")
+        require(XDriveIOSNativeFilesViewerPolicy.safePixelDimension(1080.9) == 1080,
+                "positive fractional image size is truncated safely")
+        require(XDriveIOSNativeFilesViewerPolicy.safePixelDimension(Double(Int32.max))
+                == Int(Int32.max), "maximum bounded image size")
+        for invalid in [Double.nan, Double.infinity, -Double.infinity, 0.0,
+                        -1.0, 0.5, Double(Int32.max) + 1,
+                        Double.greatestFiniteMagnitude] {
+            require(XDriveIOSNativeFilesViewerPolicy.safePixelDimension(invalid) == nil,
+                    "reject corrupt/malicious media geometry")
+        }
         print("native Files Viewer policy: PASS")
     }
 }

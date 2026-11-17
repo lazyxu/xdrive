@@ -298,3 +298,13 @@ test('Files Viewer reuses one authenticated request-scoped ephemeral connection 
   assert.match(reader, /url, authenticated: false,/);
   assert.match(reader, /guard let absolute = url\.url, absolute\.scheme == "https"/);
 });
+
+test('iOS Files image and video detail labels never trap on malformed floating-point media geometry', () => {
+  assert.match(policy, /static func safePixelDimension\(_ value: Double\) -> Int\?/);
+  assert.match(policy, /value\.isFinite, value >= 1,/);
+  assert.match(view, /Double\(image\.size\.width\) \* Double\(image\.scale\)/);
+  assert.match(view, /Double\(image\.size\.height\) \* Double\(image\.scale\)/);
+  assert.match(view, /safePixelDimension\(\s*Double\(size\.width\)\)/);
+  assert.match(view, /safePixelDimension\(\s*Double\(size\.height\)\)/);
+  assert.doesNotMatch(view, /Int\(image\.size\.(?:width|height)|Int\(size\.(?:width|height)\)/);
+});
