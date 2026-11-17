@@ -27,6 +27,9 @@ struct XDriveIOSNativeUnifiedPhotoViewer: View {
     @State private var showingPairing = false
     @State private var operation: Task<Void, Never>?
     @State private var request = UUID()
+    @State private var scrubStartIndex: Int?
+    @State private var lastScrubbedID: String?
+    @State private var lastScrubDispatch: TimeInterval = 0
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     // The Viewer filmstrip follows the exact same visual-only Gallery/Places framing choice.
@@ -75,7 +78,8 @@ struct XDriveIOSNativeUnifiedPhotoViewer: View {
         .onChange(of: login.owner) { _ in cancel(); dismiss() }
         .onChange(of: wall.generation) { _ in cancel(); dismiss() }
         .onChange(of: phase) { if $0 != .active { cancel(); dismiss() } }
-        .onDisappear { cancel() }
+        .onChange(of: page.number) { _ in resetScrub() }
+        .onDisappear { resetScrub(); cancel() }
     }
 
     @ViewBuilder private var media: some View {
@@ -110,16 +114,28 @@ struct XDriveIOSNativeUnifiedPhotoViewer: View {
                     .disabled(busy || (position == page.rows.count - 1 && page.number == wall.index.pages.count - 1))
             }
             ScrollViewReader { scroll in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 4) {
-                        ForEach(Array(page.rows.enumerated()), id: \.element.id) { index, photo in
-                            filmstripCell(photo, at: index)
-                        }
-                    }.padding(3)
+                XDriveIOSNativePhotoWallViewerFilmstripScroll {
+                    ForEach(Array(page.rows.enumerated()), id: \.element.id) { index, photo in
+                        filmstripCell(photo, at: index)
+                    }
                 }
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 18, coordinateSpace: .local)
+                        .onChanged { scrubChanged($0.translation) }
+                        .onEnded {
+                            scrubChanged($0.translation, force: true)
+                            resetScrub()
+                        }
+                )
                 .onAppear { scroll.scrollTo(row.id, anchor: .center) }
-                .onChange(of: row.id) { scroll.scrollTo($0, anchor: .center) }
+                .onChange(of: row.id) { id in
+                    guard authorized else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        scroll.scrollTo(id, anchor: .center)
+                    }
+                }
             }
+            .accessibilityIdentifier("native-ios-unified-viewer-filmstrip")
         }
         .padding(.horizontal, 8).background(.ultraThinMaterial)
         .accessibilityIdentifier("native-ios-unified-viewer-navigation")
@@ -148,8 +164,42 @@ struct XDriveIOSNativeUnifiedPhotoViewer: View {
         .accessibilityLabel("\(photo.presence.title)，第 \(index + 1) 张")
     }
 
+    /// The same bounded, authorization-aware filmstrip scrub used by local
+    /// PhotoKit and cloud viewers. It never walks beyond the verified 48-row
+    /// mixed page or starts an unrequested neighboring-page read.
+    private func scrubChanged(_ translation: CGSize, force: Bool = false) {
+        guard authorized, !busy, page.rows.count > 1, page.rows.count <= 48,
+              page.rows.indices.contains(position),
+              page.rows.filter({ $0.id == row.id }).count == 1
+        else { resetScrub(); return }
+        let origin = scrubStartIndex ?? position
+        if scrubStartIndex == nil { scrubStartIndex = origin }
+        guard let target = XDriveIOSNativePhotoFilmstripScrubPolicy.targetIndex(
+            startingAt: origin, loadedCount: page.rows.count,
+            horizontal: translation.width, vertical: translation.height,
+            authorized: authorized
+        ), page.rows.indices.contains(target), target != position else { return }
+        let targetID = page.rows[target].id
+        guard targetID != lastScrubbedID,
+              page.rows.filter({ $0.id == targetID }).count == 1 else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || lastScrubDispatch == 0 ||
+              now - lastScrubDispatch >= 0.08 else { return }
+        lastScrubDispatch = now
+        lastScrubbedID = targetID
+        show(page: page, at: target)
+    }
+
+    private func resetScrub() {
+        scrubStartIndex = nil
+        lastScrubbedID = nil
+        lastScrubDispatch = 0
+    }
+
     private func show(page: XDriveIOSNativeUnifiedGalleryPage, at index: Int) {
         guard authorized, page.rows.indices.contains(index) else { return }
+        let selectedID = page.rows[index].id
+        guard page.rows.filter({ $0.id == selectedID }).count == 1 else { return }
         cancel()
         self.page = page; position = index
         cloud = nil; usedFallback = false; failure = nil
