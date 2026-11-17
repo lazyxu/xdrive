@@ -209,7 +209,7 @@ test('single native Gallery map entry exposes local and Owner cloud sources with
   assert.match(map, /struct XDriveIOSNativePhotoMapsScreen: View \{[\s\S]*?@ObservedObject var login: XDriveIOSNativeOwnerLoginModel[\s\S]*?@Binding var localMapScope: XDriveIOSNativeLocalMapScope[\s\S]*?@Binding var localMapPageOffset: Int/)
   assert.match(map, /Picker\("地图照片来源", selection: mapSource\)/)
   assert.match(map, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/)
-  assert.match(map, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange,\s*cameraReturn: cloudMapCamera,\s*onCameraChange: \{ next in[\s\S]*?cloudMapCamera = next/);
+  assert.match(map, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange,\s*mapSource: \$source, canSelectCloudMap: cloudAllowed,\s*cameraReturn: cloudMapCamera,\s*onCameraChange: \{ next in[\s\S]*?cloudMapCamera = next/);
   assert.match(map, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/)
   assert.doesNotMatch(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
   assert.doesNotMatch(map, /@State private var localMapScope|@State private var localMapPageOffset/)

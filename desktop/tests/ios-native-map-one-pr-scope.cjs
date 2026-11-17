@@ -40,7 +40,8 @@ test('unrepresentable Owner/source filters cannot silently broaden map access',(
  assert.match(m,/mapSelection: ownerSelection/)
  assert.match(u,/openSourceMapAfterFilterDismiss = true/)
  assert.match(u,/XDriveIOSNativeUnifiedSourcePhotoMapScreen\(/)
- assert.match(m,/cloudAllowed \|\| \$0 == \.local/)
+ assert.match(m,/mapSource: \$source, canSelectCloudMap: cloudAllowed/)
+ assert.match(m,/if canSelectCloudMap \{[\s\S]*?tag\(XDriveIOSNativePhotoMapSource\.cloud\)/)
  assert.match(m,/native-ios-map-cloud-filter-unavailable/)
 })
 test('real simulator keeps fixture exact-two marker while reporting true library count',()=>{

@@ -36,7 +36,9 @@ test('one-shot foreground fix must be fresh and valid, and cancellation revokes 
 
 test('local map locates only on explicit tap and preserves PhotoKit Cell authorization', () => {
   assert.match(local, /@StateObject private var currentLocation = XDriveIOSNativeMapUserLocationController\(\)/)
-  assert.match(local, /Button \{\s*currentLocation\.locate\(\)\s*\} label: \{\s*Label\("我的位置", systemImage: "location"\)/)
+  assert.match(local, /XDriveIOSNativePhotoMapFloatingTools\(/);
+  assert.match(local, /locateEnabled: !currentLocation\.isLocating && phase == \.active &&\s*authorization == \.authorized/);
+  assert.match(local, /onLocate: \{ currentLocation\.locate\(\) \}/);
   assert.match(local, /if mapScope == \.library && authorization == \.authorized \{/)
   assert.match(local, /native-ios-local-map-locate/)
   assert.match(local, /focusRequestID: currentLocation\.requestID,[\s\S]*?focusCamera: currentLocation\.camera,[\s\S]*?showsUserDot: currentLocation\.showsUserDot/)
