@@ -15,7 +15,7 @@ const cameraStore = read('ios/XDriveIOS/NativeUnifiedMapCameraStore.swift')
 test('M01: current cloud source is periodically reverified and revoked on scope change', () => {
   assert.match(map, /remotePollTask = Task/)
   assert.match(map, /Task\.sleep\(nanoseconds: 30_000_000_000\)/)
-  assert.match(map, /selected == nil && !busy \{ reload\(\) \}/)
+  assert.match(map, /selected == nil &&\s*!showingViewportGrid && !busy \{ reload\(\) \}/)
   assert.match(map, /remotePollTask\?\.cancel\(\)/)
   assert.match(map, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, provedOwner\)/)
 })
@@ -62,7 +62,7 @@ test('M04: both directions use retained source cursor indexes and two bounded wi
   assert.match(map, /private func retreat\(forViewer: Bool = false\)/)
   assert.match(map, /windowStarts\[windowIndex - 2\]/)
   assert.match(map, /backfillAnchorID = anchor/)
-  assert.match(map, /scroll\.scrollTo\(anchor, anchor: \.top\)/)
+  assert.match(map, /backfillViewportAnchor\?\.alignment\([\s\S]*?scroll\.scrollTo\(anchor, anchor: alignment \?\? \.top\)/)
   assert.match(map, /windowStarts\.append\(from\)/)
   assert.match(map, /previous = current\s*current = Array\(selected\.prefix\(48\)\)/)
 })
@@ -72,7 +72,7 @@ test('M04: failed page retry resets ordinary place cursor history before restart
   assert.ok(retry, 'retryCurrentArea implementation must exist')
   assert.match(retry, /if isNearbyExpansion \{[\s\S]*?nearbyStarts = \[\]; nearbyWindowIndex = -1/)
   const ordinaryRetry = retry.slice(retry.lastIndexOf('\n        } else {'))
-  assert.match(ordinaryRetry, /previous = \[\]; current = \[\]; next = nil\s*windowStarts = \[\]; windowIndex = -1\s*backfillAnchorID = nil\s*viewerReturnID = nil\s*ended = false\s*error = nil\s*load\(from: pin\.firstCursor\)/)
+  assert.match(ordinaryRetry, /previous = \[\]; current = \[\]; next = nil\s*windowStarts = \[\]; windowIndex = -1\s*backfillAnchorID = nil; backfillViewportAnchor = nil\s*viewerReturnID = nil\s*ended = false\s*error = nil\s*load\(from: initialWallCursor\)/)
   assert.doesNotMatch(retry, /load\(from: next \?\? pin\.firstCursor\)/)
 })
 
@@ -156,7 +156,7 @@ test('M13 M14: locality is display only; nearby uses whole verified GPS distance
   // The time grouping renderer must not reorder the verified GPS distances.
   assert.match(map, /isNearbyExpansion \? \.all : timeScale/)
   assert.match(map, /previous \+ current, scale: displayTimeScale/)
-  assert.match(map, /if !isNearbyExpansion \{[\s\S]*?nearbyPresented = true[\s\S]*?Section\("时间分组"\)/)
+  assert.match(map, /if !isNearbyExpansion \{[\s\S]*?Section\("时间分组"\)[\s\S]*?\.navigationDestination\(isPresented: \$nearbyPresented\)/)
 })
 
 test('M15 M16: camera is restored only within verified Owner session; MapKit revokes gestures synchronously', () => {

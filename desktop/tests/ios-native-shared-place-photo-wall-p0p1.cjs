@@ -54,7 +54,7 @@ test('P0: date-picker action toolbar must close before the native Owner map tool
   assert.match(region, /\.navigationTitle\("选择云端地图日期"\)\s*\.toolbar \{\s*ToolbarItem\(placement: \.confirmationAction\)/)
   assert.match(region, /Button\("显示当天"\)[\s\S]*?XDriveIOSNativePhotoMapCaptureRange\.day\([\s\S]*?datePickerOpen = false/)
   assert.match(region, /ToolbarItem\(placement: \.cancellationAction\)[\s\S]*?Button\("取消"\) \{ datePickerOpen = false \}/)
-  assert.match(region, /\n        \}\n        \.toolbar \{\s*ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-owner-map-actions/)
+  assert.match(region, /\n        \}\n        \.toolbar \{[\s\S]*?ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-owner-map-actions/)
   assert.match(owner, /if XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, place\.owner\)[\s\S]*?placeDisplayName: place\.name/)
 })
 
@@ -169,8 +169,8 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
   assert.match(density, /case compact, standard, large/)
   assert.match(density, /func applyingPinch\(/)
   for (const [name, source, expected] of [
-    ['local gallery', gallery, 1], ['local album', album, 1],
-    ['local location', map, 0], ['cloud gallery', cloud, 1],
+    ['local gallery', gallery, 0], ['local album', album, 1],
+    ['local location', map, 0], ['cloud gallery', cloud, 0],
     ['cloud cluster', cluster, 0]
   ]) {
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
@@ -183,7 +183,7 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
   assert.match(cloud, /XDriveIOSNativePhotoWallSectionList\(/)
   assert.doesNotMatch(map, /MagnificationGesture\(minimumScaleDelta:/)
   assert.match(shared, /struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier/)
-  assert.match(shared, /density = density\.applyingPinch\(scale\)/)
+  assert.match(shared, /let changed = density\.applyingPinch\(scale\)[\s\S]*?onDensityChange\?\(changed\)[\s\S]*?density = changed/)
   assert.match(cluster, /\.xdrivePhotoWallPinch\(/)
   assert.match(cluster, /density: \$wallDensity,/)
   assert.match(cluster, /enabled: activeOwner && !busy && viewing == nil/)
