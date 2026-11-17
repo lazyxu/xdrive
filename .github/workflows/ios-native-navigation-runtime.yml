@@ -19,6 +19,11 @@ on:
       - 'ios/XDriveIOS/NativeLocalPhotoMap.swift'
       - 'ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'
       - 'ios/XDriveIOS/NativeExactTripMap.swift'
+      # Every Files child route (including future destination/preview/selection
+      # files) must trigger real native process-crash navigation tests.
+      # Listing only selected subpages left other Files-only edits unchecked.
+      - 'ios/XDriveIOS/NativeFiles*.swift'
+      - 'ios/XDriveIOS/NativeCloudFiles*.swift'
       - 'ios/XDriveIOS/NativeFilesTrash.swift'
       - 'ios/XDriveIOS/NativeFilesSavedSearches.swift'
       - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
