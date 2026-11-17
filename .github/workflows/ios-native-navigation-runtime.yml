@@ -310,6 +310,22 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             "${native_test_args[@]}" \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
+      - name: Verify native Files rails and hit targets in dark appearance
+        if: matrix.source == 'candidate-navigation'
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl ui "$SMOKE_SIM" appearance dark
+          xcodebuild test \
+            -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
+            -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SMOKE_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/native-navigation-results/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/native-navigation-results/DarkFiles.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesQuickRailAndFiveTabBarDoNotOverlapInPortraitOrLandscape \
+            test 2>&1 | tee "$RUNNER_TEMP/native-navigation-results/dark-files.log"
       - name: Verify native PhotoKit MapKit in dark mode
         if: matrix.source == 'candidate-mapkit'
         shell: bash

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// Real simulator app-exit and native tab/rail UI checks. This uses the actual
 /// Dashboard and Files/Gallery screens, but has no authenticated Server Owner.
@@ -125,6 +126,44 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         captured.name = "files-stack-depth-owner-foreground-three-rounds"
         captured.lifetime = .keepAlways
         add(captured)
+    }
+
+    /// Real simulator geometry: the Files category row must stay above the
+    /// app-wide five slots in portrait AND landscape, without hit obstruction.
+    /// A source-only order assertion cannot detect an overlapping safe area.
+    func testFilesQuickRailAndFiveTabBarDoNotOverlapInPortraitOrLandscape() {
+        let device = XCUIDevice.shared
+        let app = launch(syntheticOwner: true)
+        defer { device.orientation = .portrait }
+        select("native-ios-tab-files", in: app)
+
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            device.orientation = orientation
+            let filesRail = find("native-ios-files-quick-rail", in: app)
+            let appBar = find("native-ios-five-slot-bar", in: app)
+            XCTAssertTrue(filesRail.waitForExistence(timeout: 15),
+                          "Files category row disappeared after rotation")
+            XCTAssertTrue(appBar.waitForExistence(timeout: 15),
+                          "Five global tabs disappeared after rotation")
+            XCTAssertGreaterThan(filesRail.frame.height, 20)
+            XCTAssertGreaterThan(appBar.frame.height, 20)
+            XCTAssertLessThanOrEqual(filesRail.frame.maxY, appBar.frame.minY + 1,
+                "Files category row overlaps global tabs in orientation \(orientation.rawValue)")
+
+            for section in ["recent", "browse", "favorites", "browse"] {
+                let control = find("native-ios-files-section-\(section)", in: app)
+                XCTAssertTrue(control.isHittable,
+                              "Files category is obscured: \(section)")
+                select("native-ios-files-section-\(section)", in: app)
+                XCTAssertLessThanOrEqual(filesRail.frame.maxY, appBar.frame.minY + 1,
+                    "Files category overlaps global tabs after \(section)")
+                XCTAssertEqual(app.state, .runningForeground)
+            }
+        }
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "files-rail-five-tab-geometry-portrait-landscape"
+        capture.lifetime = .keepAlways
+        add(capture)
     }
 
     func testFilesRecentBrowseFavoritesRepeatedWithoutCrash() {

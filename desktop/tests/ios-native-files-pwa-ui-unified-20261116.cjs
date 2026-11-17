@@ -91,6 +91,18 @@ test('P1: both Files grids have one metadata line; readable Dynamic Type and act
   assert.match(viewer, /onChange\(of: viewed\.revision\)/)
 })
 
+test('P2: native simulator checks Files rail geometry in both orientations and dark appearance', () => {
+  const tests = source('ios/UITests/XDriveIOSNavigationRuntimeUITests.swift')
+  const workflow = source('.github/workflows/ios-native-navigation-runtime.yml')
+  assert.match(tests, /func testFilesQuickRailAndFiveTabBarDoNotOverlapInPortraitOrLandscape\(\)/)
+  assert.match(tests, /filesRail\.frame\.maxY, appBar\.frame\.minY \+ 1/)
+  assert.match(tests, /XCUIDevice\.shared/)
+  assert.match(tests, /\.landscapeLeft/)
+  assert.match(tests, /control\.isHittable/)
+  assert.match(workflow, /xcrun simctl ui "\$SMOKE_SIM" appearance dark/)
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSNavigationRuntimeUITests\/testFilesQuickRailAndFiveTabBarDoNotOverlapInPortraitOrLandscape/)
+})
+
 test('P0: the prior stack-overflow safety fix and native Viewer remain intact', () => {
   assert.match(browser, /private var filesModalsPrimary: some View/)
   assert.match(browser, /AnyView\(filesModalsSecondary\)/)
