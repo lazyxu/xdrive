@@ -192,3 +192,11 @@ test('only user-requested pairing emits bounded TLS evidence, never changes trus
   assert.doesNotMatch(trust, /print\(|NSLog\(|debugPrint\(|os_log\(/)
   assert.doesNotMatch(trust, /privateKey|SecKeyCopyExternalRepresentation|Authorization:|Cookie:|Bearer /)
 })
+
+test('iOS AuthService uses routed ephemeral transport while isolated macOS LAN policy test retains strict ephemeral TLS', () => {
+  const source = read('ios/XDriveIOS/AuthService.swift')
+  assert.match(source, /#if os\(iOS\)\s*let config = XDriveIOSAutoRoute\.ephemeralConfiguration\(\)\s*#else\s*let config = URLSessionConfiguration\.ephemeral\s*#endif/)
+  assert.match(source, /config\.httpShouldSetCookies = false\s*config\.httpCookieAcceptPolicy = \.never/)
+  assert.match(source, /config\.urlCache = nil/)
+  assert.match(source, /URLSession\(configuration: config, delegate: RejectRedirects\(\), delegateQueue: nil\)/)
+})

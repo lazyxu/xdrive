@@ -140,7 +140,15 @@ struct AuthService {
         request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: fields)
 
+        // The iOS target includes the verified LAN/WAN router. The narrow
+        // standalone macOS LAN policy check compiles AuthService without the
+        // app's Network/Owner/Grant graph and still uses a cookie-free session.
+        // Only the iOS app can hand an authenticated request to the router.
+        #if os(iOS)
         let config = XDriveIOSAutoRoute.ephemeralConfiguration()
+        #else
+        let config = URLSessionConfiguration.ephemeral
+        #endif
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
