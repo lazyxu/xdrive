@@ -143,6 +143,11 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-viewer-pixel-bounds"
           "$RUNNER_TEMP/xdrive-ios-viewer-pixel-bounds"
           swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
+            ios/XDriveIOS/NativeZoomAccessibilityPolicy.swift \
+            ios/tests/NativeZoomAccessibilityPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-zoom-accessibility-bounds"
+          "$RUNNER_TEMP/xdrive-ios-zoom-accessibility-bounds"
+          swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
             ios/XDriveIOS/NativeClipboardFolderBackPolicy.swift \
             ios/tests/NativeClipboardFolderBackPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-clipboard-back-bounds"

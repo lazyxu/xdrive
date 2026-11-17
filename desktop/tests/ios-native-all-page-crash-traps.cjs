@@ -112,3 +112,24 @@ test('both cloud media info Viewers reject unsafe UIImage dimensions before Int 
   assert.match(workflow, /NativeViewerPixelDimensionPolicyChecks\.swift/);
   assert.match(workflow, /xdrive-ios-viewer-pixel-bounds/);
 });
+
+
+test('shared still-image Viewer zoom VoiceOver never converts invalid CGFloat to Int', () => {
+  const zoom = read('ios/XDriveIOS/NativeZoomablePhotoView.swift');
+  const policy = read('ios/XDriveIOS/NativeZoomAccessibilityPolicy.swift');
+  const checks = read('ios/tests/NativeZoomAccessibilityPolicyChecks.swift');
+  const workflow = read('.github/workflows/ios-unsigned-ipa.yml');
+  assert.match(zoom, /XDriveIOSNativeZoomAccessibilityPolicy\.label\(\s*scale: Double\(scroll\.zoomScale\)/);
+  assert.doesNotMatch(zoom, /Int\(\(scroll\.zoomScale \* 100\)\.rounded\(\)\)/);
+  assert.match(zoom, /guard current\.isFinite, current > 0, factor\.isFinite, factor > 0,/);
+  assert.match(zoom, /guard target\.isFinite, target > 0,/);
+  assert.match(zoom, /guard visible\.width\.isFinite, visible\.height\.isFinite,/);
+  assert.match(policy, /scale\.isFinite, scale > 0, scale <= 100/);
+  assert.match(policy, /percent < Double\(Int\.max\)/);
+  assert.equal((checks.match(/precondition\(label\(/g) || []).length, 14);
+  for (const edge of ['.nan', '.infinity', 'Double.greatestFiniteMagnitude', 'Double(Int.max)']) {
+    assert.ok(checks.includes(edge), 'missing zoom executable edge: ' + edge);
+  }
+  assert.match(workflow, /NativeZoomAccessibilityPolicyChecks\.swift/);
+  assert.match(workflow, /xdrive-ios-zoom-accessibility-bounds/);
+});
