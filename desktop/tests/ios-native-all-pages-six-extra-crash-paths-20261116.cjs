@@ -224,15 +224,43 @@ test("iOS 26.5 Files fatal-crash repro is a mandatory, exact-source native Simul
     "testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit",
     "testFilesDirectSyntheticOwnerColdRelaunchThreeTimesKeepsShellAlive",
     "testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid",
+    "testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit",
+    "testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit",
     "testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner",
     "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
   ];
   assert.equal((block.match(/-only-testing:xDriveIOSNavigationUITests\//g)||[]).length,
-    selected.length, "all eight targeted real iOS 26 XCTest journeys stay mandatory");
+    selected.length, "all ten targeted real iOS 26 XCTest journeys stay mandatory");
   for (const name of selected) {
     assert.ok(block.includes("/"+name+'"'), "iOS 26 native crash route missing: " + name);
   }
   assert.match(workflow, /continue-on-error: \${{ matrix\.source == 'release-c83' }}/);
   assert.match(workflow, /matrix\.source != 'release-c83'/);
   assert.doesNotMatch(block, /-skip-testing:|continue-on-error|\|\| true/);
+});
+
+
+test("two recovered #4298 Files denial/return journeys remain executable and registered", () => {
+  const recovered = [
+    "testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit",
+    "testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit"
+  ];
+  for (const name of recovered) {
+    const body = method(name);
+    assert.match(body, /for cycle in 0\.\.<2/,
+      name + " must repeat actual native navigation");
+    assert.match(body, /native-ios-files-open-saved-searches/,
+      name + " must open the existing Files child");
+    assert.match(body, /native-ios-tab-gallery/,
+      name + " must cross native tabs");
+    assert.match(body, /XCTAssertFalse\(element\("native-ios-files-/,
+      name + " must reject stale/private child state");
+    assert.ok(watcher.includes('"' + name + '"'),
+      name + " must be captured by the real Simulator watcher");
+    assert.doesNotMatch(body, /XCTSkip|fakeToken|mockServerLogin|startBackup\(/);
+  }
+  assert.match(method(recovered[0]), /native-ios-files-recent-error-page/);
+  assert.match(method(recovered[0]), /XCUIDevice\.shared\.press\(\.home\)/);
+  assert.match(method(recovered[1]), /native-ios-files-operation-history-page/);
+  assert.match(method(recovered[1]), /Old Files child sheet survived after cycle/);
 });

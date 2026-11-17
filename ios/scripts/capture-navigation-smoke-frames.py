@@ -232,6 +232,12 @@ MINIMAL_TARGETS.update({
     "testGalleryFocusedBackupConsentDoesNotAutoUploadNoCrash",
     "testNotesSourcesThreeRoundsClipboardFilesNoCrash",
 })
+# Preserve two additional distinct real Files child journeys from conflicted
+# #4298 without merging its stale app sources into this SwiftUI crash fix.
+MINIMAL_TARGETS.update({
+    "testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit",
+    "testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit",
+})
 # More independent cross-page lifecycle journeys from the older #4298 matrix.
 MINIMAL_TARGETS.update({
     "testMapRecentDeniedBackupQueueMapForegroundDoesNotExit",

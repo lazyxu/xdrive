@@ -284,6 +284,64 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         capture(app, "files-cloud-trash-foreground")
     }
 
+    /// Distinct #4298 case: repeat denied Recent followed by the real Saved
+    /// Searches child and a background/Gallery return with no bearer session.
+    func testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit() {
+        let app = launch()
+        for cycle in 0..<2 {
+            filesHomeChild("native-ios-files-open-recent",
+                           page: "native-ios-files-recent-error-page", app)
+            XCTAssertFalse(element("native-ios-files-grid", app).exists,
+                           "Denied Recent child may not expose private rows")
+            tap("native-ios-files-recent-error-return", app)
+            waitRetired("native-ios-files-recent-error-page", app)
+            filesHomeChild("native-ios-files-open-saved-searches",
+                           page: "native-ios-files-saved-searches-page", app)
+            if cycle == 0 {
+                XCUIDevice.shared.press(.home)
+                app.activate()
+                ready("native-ios-files-saved-searches-page", app)
+            }
+            XCTAssertFalse(element("native-ios-files-grid", app).exists,
+                           "Saved Searches cannot leak unverified Owner nodes")
+            tap("native-ios-files-saved-searches-done", app)
+            waitRetired("native-ios-files-saved-searches-page", app)
+            tap("native-ios-tab-gallery", app)
+            ready("native-ios-unified-photo-gallery", app)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        capture(app, "files-recent-denied-saved-searches-foreground")
+    }
+
+    /// Distinct #4298 case: ensure Saved Searches and Operation History
+    /// do not leave stale sheets after repeated Gallery/Files tab returns.
+    func testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit() {
+        let app = launch()
+        for cycle in 0..<2 {
+            for (entry, page, done) in [
+                ("native-ios-files-open-saved-searches",
+                 "native-ios-files-saved-searches-page",
+                 "native-ios-files-saved-searches-done"),
+                ("native-ios-files-open-operations",
+                 "native-ios-files-operation-history-page",
+                 "native-ios-files-operation-history-done")
+            ] {
+                filesHomeChild(entry, page: page, app)
+                tap(done, app)
+                waitRetired(page, app)
+            }
+            tap("native-ios-tab-gallery", app)
+            ready("native-ios-unified-photo-gallery", app)
+            tap("native-ios-tab-files", app)
+            ready("native-ios-files-home-list", app)
+            XCTAssertFalse(element("native-ios-files-saved-searches-page", app).exists)
+            XCTAssertFalse(element("native-ios-files-operation-history-page", app).exists,
+                           "Old Files child sheet survived after cycle \(cycle)")
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        capture(app, "files-two-management-sheets-repeat")
+    }
+
     func testFilesSavedHistoryAndTagSheetsRetireAcrossTabs() {
         let app = launch()
         filesHomeChild("native-ios-files-open-saved-searches",

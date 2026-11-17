@@ -330,6 +330,8 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesDirectSyntheticOwnerColdRelaunchThreeTimesKeepsShellAlive")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesSixSubpageUITests/testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay") ;;
             *) echo "Unsupported UI suite" >&2; exit 2 ;;
