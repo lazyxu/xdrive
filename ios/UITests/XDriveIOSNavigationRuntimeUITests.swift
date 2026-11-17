@@ -276,27 +276,35 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     // even though the actual buttons were visible and the app stayed running.
     func testNativeFiveTabsHaveDistinctAccessibilityTargets() {
         let app = launch()
-        // The historic release uses one parent identifier on every actual
-        // button. Its baseline tests must tap those buttons, but should not
-        // pretend that the *new* distinct-ID accessibility contract existed.
-        let legacyTab = app.buttons.matching(
-            identifier: "native-ios-five-slot-bar"
-        ).matching(
-            NSPredicate(format: "label == %@", "文件")
-        ).firstMatch
-        if legacyTab.waitForExistence(timeout: 2) {
-            print("NAV_SMOKE old release: verifying real tap paths, not distinct IDs")
+        // Archived c83 displayed the five destinations directly; the
+        // candidate follows native Photos and must NEVER stack both bars.
+        let legacy = app.buttons.matching(identifier: "native-ios-five-slot-bar")
+            .matching(NSPredicate(format: "label == %@", "文件")).firstMatch
+        if legacy.exists && legacy.isHittable {
             XCTAssertEqual(app.state, .runningForeground)
             return
         }
-        for name in ["launcher", "dynamic", "gallery", "files", "mine"] {
-            let identifier = "native-ios-tab-\(name)"
-            let exact = app.descendants(matching: .any)
-                .matching(identifier: identifier).firstMatch
-            XCTAssertTrue(exact.waitForExistence(timeout: 20),
-                          "Candidate must expose exact unique tab ID: \(name)")
+        let photos = find("native-ios-photos-bottom-bar", in: app)
+        XCTAssertTrue(photos.waitForExistence(timeout: 15))
+        XCTAssertFalse(find("native-ios-five-slot-bar", in: app).exists,
+                       "Gallery must not show two bottom navigation bars")
+        for id in ["native-ios-photos-library-tab",
+                   "native-ios-photos-collections-tab", "native-ios-photos-search"] {
+            XCTAssertTrue(find(id, in: app).exists, "Missing native Photos action " + id)
         }
-        XCTAssertEqual(app.state, .runningForeground)
+        // All xDrive destinations remain reachable through real user taps
+        // and keep distinct AX IDs on their own five-slot screen.
+        select("native-ios-tab-files", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+        for name in ["launcher", "dynamic", "gallery", "files", "mine"] {
+            let id = "native-ios-tab-\(name)"
+            XCTAssertTrue(app.descendants(matching: .any)
+                .matching(identifier: id).firstMatch.exists,
+                "xDrive destination lost from non-Gallery bar: " + id)
+        }
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(find("native-ios-photos-bottom-bar", in: app).exists)
+        XCTAssertFalse(find("native-ios-five-slot-bar", in: app).exists)
     }
 
     func testFilesRailHasThreeIndependentNavigationTargets() {

@@ -48,7 +48,11 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
     }
 
     private func tap(_ id: String, in app: XCUIApplication) {
-        entry(id, in: app).tap()
+        // Both the archived b9 five-slot baseline and the candidate Photos
+        // two-tab shell must follow a REAL visible route, not a hidden ID.
+        if !XDriveIOSNativePhotosTestNavigator.tap(id, in: app) {
+            entry(id, in: app).tap()
+        }
         alive(app, "tap-\(id)")
     }
 
