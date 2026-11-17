@@ -2299,6 +2299,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             }
         }
         .onDisappear {
+            // A calendar or recent-trip chooser covers the MapKit surface;
+            // it is not a route departure. Keep camera, GPS count, observer
+            // and scan generation mounted until the user commits a new scope.
+            guard !datePickerOpen && !showingRecentDaysAndTrips else { return }
             currentLocation.cancel()
             // A presented cluster sheet may hide its map presenter. Keep
             // PhotoKit change observation active until the sheet is dismissed,

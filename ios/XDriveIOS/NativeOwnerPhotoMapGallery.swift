@@ -1038,6 +1038,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
             }
         }
         .onDisappear {
+            // Date picker and help overlay are transient map controls, not
+            // an exit to Gallery. Do not tear down the signed Owner snapshot
+            // or expose the Gallery chrome while these are presented.
+            guard !datePickerOpen && !showingMapHelp else { return }
             currentLocation.cancel()
             if selected == nil && selectedCluster == nil && singleViewer == nil {
                 focused = false

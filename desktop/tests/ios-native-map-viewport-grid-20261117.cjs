@@ -7,6 +7,10 @@ const map = fs.readFileSync(path.resolve(__dirname,
     '../../ios/XDriveIOS/NativeUnifiedSourcePhotoMap.swift'), 'utf8')
 const shared = fs.readFileSync(path.resolve(__dirname,
     '../../ios/XDriveIOS/NativePhotoWallComponents.swift'), 'utf8')
+const local = fs.readFileSync(path.resolve(__dirname,
+    '../../ios/XDriveIOS/NativeLocalPhotoMap.swift'), 'utf8')
+const owner = fs.readFileSync(path.resolve(__dirname,
+    '../../ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'), 'utf8')
 
 test('unified map opens one verified current-viewport grid, not an unfiltered Gallery', () => {
   assert.match(map, /@State private var showingViewportGrid = false/)
@@ -52,4 +56,24 @@ test('current viewport Sheet does not trigger a false map-route exit or clear ve
   assert.match(map, /\.onChange\(of: photoChanges\.change\) \{ _ in[\s\S]*?invalidate\(\)/)
   assert.match(map, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?invalidate\(\)/)
   assert.match(map, /showingViewportGrid = false[\s\S]*?provedOwner = nil/)
+})
+
+test('date, recent-trip and help sheets preserve mounted MapKit on transient disappearance', () => {
+  const localMap = local.slice(local.indexOf('struct XDriveIOSNativeLocalPhotoMapScreen: View'))
+  const ownerMap = owner.slice(owner.indexOf('struct XDriveIOSNativeOwnerPhotoMapScreen: View'))
+  const sourceMap = map.slice(map.indexOf('struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View'),
+                              map.indexOf('private struct XDriveIOSNativeUnifiedSourceMapCellWall: View'))
+  // Do not treat ordinary date/trip selections as map-route departure.
+  assert.match(localMap, /\.onDisappear \{\s*\/\/ A calendar or recent-trip chooser[\s\S]*?guard !datePickerOpen && !showingRecentDaysAndTrips else \{ return \}/)
+  assert.match(ownerMap, /\.onDisappear \{\s*\/\/ Date picker and help overlay[\s\S]*?guard !datePickerOpen && !showingMapHelp else \{ return \}/)
+  assert.match(sourceMap, /\.onDisappear \{\s*\/\/ Date picker presentation[\s\S]*?guard !datePickerOpen else \{ return \}/)
+  assert.match(localMap, /\.sheet\(isPresented: \$datePickerOpen\)/)
+  assert.match(localMap, /\.sheet\(isPresented: \$showingRecentDaysAndTrips, onDismiss:/)
+  assert.match(ownerMap, /\.sheet\(isPresented: \$datePickerOpen\)/)
+  assert.match(sourceMap, /\.sheet\(isPresented: \$datePickerOpen\)/)
+  assert.match(sourceMap, /if selected == nil && !showingViewportGrid \{/)
+  // All three map routes still revoke actual Owner/PhotoKit scope changes.
+  assert.match(localMap, /\.onChange\(of: changes\.revision\) \{ _ in[\s\S]*?invalidate\(\)/)
+  assert.match(ownerMap, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?invalidate\(\)/)
+  assert.match(sourceMap, /\.onChange\(of: login\.owner\) \{ _ in invalidate\(\)/)
 })

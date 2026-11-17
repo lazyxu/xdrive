@@ -474,6 +474,9 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
             }
         }
         .onDisappear {
+            // Date picker presentation must not destroy the current verified
+            // source Camera/Owner/PhotoKit index or restart a full scan.
+            guard !datePickerOpen else { return }
             // SwiftUI may call onDisappear while either a single-place Sheet
             // or the current-viewport grid is presented. Neither event is a
             // map-route exit: keep the PhotoKit observer, current GPS proof,
