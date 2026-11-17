@@ -57,7 +57,9 @@ permissions:
   contents: read
 concurrency:
   group: native-ios-runtime-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: false
+  # Only the latest exact PR HEAD should consume macOS Simulator capacity.
+  # Manual workflow_dispatch runs retain their original non-cancelling behavior.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   simulator-navigation:
     runs-on: macos-15
