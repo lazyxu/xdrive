@@ -1,5 +1,12 @@
 import SwiftUI
 
+/// Shared presentation metrics. Never a credential or page count.
+enum XDriveIOSNativePhotoWallLayout {
+    static let sectionSpacing: CGFloat = 10
+    static let horizontalInset: CGFloat = 8
+    static let maximumSkeletonCount = 64
+}
+
 /// Compact status remains INSIDE MapKit instead of shrinking the photo map.
 /// Authorization, source counts, retries and media access remain caller-owned.
 struct XDriveIOSNativePhotoMapStatusPill: View {
@@ -150,6 +157,22 @@ struct XDriveIOSNativePhotoWallPlaceholderTile: View {
             .fill(Color(uiColor: .secondarySystemGroupedBackground))
             .aspectRatio(1, contentMode: .fit)
             .accessibilityHidden(true)
+    }
+}
+
+/// Bounded, square first-paint placeholders, with no invented media rows.
+struct XDriveIOSNativePhotoWallSkeletonGrid: View {
+    let density: XDriveIOSNativePhotoWallDensity
+    let count: Int
+
+    var body: some View {
+        XDriveIOSNativePhotoWallGrid(density: density) {
+            ForEach(0..<max(0, min(count, XDriveIOSNativePhotoWallLayout.maximumSkeletonCount)),
+                    id: \.self) { _ in
+                XDriveIOSNativePhotoWallPlaceholderTile()
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -383,12 +406,16 @@ struct XDriveIOSNativePhotoWallSelectionIndicator: View {
 struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier {
     @Binding var density: XDriveIOSNativePhotoWallDensity
     let enabled: Bool
+    var onDensityChange: ((XDriveIOSNativePhotoWallDensity) -> Void)? = nil
 
     func body(content: Content) -> some View {
         content.simultaneousGesture(
             MagnificationGesture(minimumScaleDelta: 0.14).onEnded { scale in
                 guard enabled else { return }
-                density = density.applyingPinch(scale)
+                let changed = density.applyingPinch(scale)
+                guard changed != density else { return }
+                onDensityChange?(changed)
+                density = changed
             }
         )
     }
@@ -397,10 +424,12 @@ struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier {
 extension View {
     func xdrivePhotoWallPinch(
         density: Binding<XDriveIOSNativePhotoWallDensity>,
-        enabled: Bool
+        enabled: Bool,
+        onDensityChange: ((XDriveIOSNativePhotoWallDensity) -> Void)? = nil
     ) -> some View {
         modifier(XDriveIOSNativePhotoWallPinchModifier(
-            density: density, enabled: enabled
+            density: density, enabled: enabled,
+            onDensityChange: onDensityChange
         ))
     }
 }
@@ -460,6 +489,19 @@ struct XDriveIOSNativePhotoWallScrollContainer<Content: View>: View {
 
     var body: some View {
         ScrollView {
+            content
+        }
+    }
+}
+
+/// A single lazy chronology/sentinel stack for Gallery and both Places
+/// routes. The enclosing reader still owns its authenticated page windows.
+struct XDriveIOSNativePhotoWallCollectionStack<Content: View>: View {
+    private let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    var body: some View {
+        LazyVStack(alignment: .leading,
+                   spacing: XDriveIOSNativePhotoWallLayout.sectionSpacing) {
             content
         }
     }
@@ -568,6 +610,30 @@ struct XDriveIOSNativePhotoWallTileFramesKey: PreferenceKey {
     static func reduce(value: inout [String: CGRect],
                        nextValue: () -> [String: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { _, newer in newer })
+    }
+}
+
+/// Shared transient view geometry; measurement never grants media access.
+private struct XDriveIOSNativePhotoWallMeasureTile: ViewModifier {
+    let id: String
+    let coordinateSpace: String
+    func body(content: Content) -> some View {
+        content.background {
+            GeometryReader { tile in
+                Color.clear.preference(
+                    key: XDriveIOSNativePhotoWallTileFramesKey.self,
+                    value: [id: tile.frame(in: .named(coordinateSpace))]
+                )
+            }
+        }
+    }
+}
+
+extension View {
+    func xdrivePhotoWallMeasureTile(_ id: String,
+                                   in coordinateSpace: String) -> some View {
+        modifier(XDriveIOSNativePhotoWallMeasureTile(
+            id: id, coordinateSpace: coordinateSpace))
     }
 }
 

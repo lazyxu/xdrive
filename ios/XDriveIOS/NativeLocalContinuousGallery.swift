@@ -354,11 +354,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     .frame(maxWidth: .infinity)
                 // Match the number of real grid cells before PhotoKit finishes.
                 // A one-row spinner would shift the entire scroll offset later.
-                XDriveIOSNativePhotoWallGrid(density: density) {
-                    ForEach(0..<min(64, expectedTotal - offset), id: \.self) { _ in
-                        placeholderTile.accessibilityHidden(true)
-                    }
-                }
+                XDriveIOSNativePhotoWallSkeletonGrid(
+                    density: density, count: min(64, expectedTotal - offset)
+                )
             }
         }
         .padding(.horizontal, 12)

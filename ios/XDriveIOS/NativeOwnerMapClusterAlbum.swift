@@ -77,6 +77,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // Owner page after L3 closes, without persisting any photo identities.
     @State private var viewerReturn: XDriveIOSNativeMediaItem?
     @State private var viewerOpeningItem: XDriveIOSNativeMediaItem?
+    @State private var viewerOpeningCursor: XDriveIOSOwnerClusterCursor?
+    @State private var viewerReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var autoScrollReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var visibleTileFrames: [String: CGRect] = [:]
+    @State private var photoWallViewportHeight: CGFloat = 0
+    @State private var pinchReturnID: UInt64?
     @AccessibilityFocusState private var focusedTileID: UInt64?
     // During a verified automatic append, preserve the last visible tile
     // while the former two-window head rotates out of the LazyVGrid.
@@ -194,7 +200,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             }
             ScrollViewReader { returnScroll in
             XDriveIOSNativePhotoWallScrollContainer {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                XDriveIOSNativePhotoWallCollectionStack {
                     // Render no stale Owner pixels even before onChange clears
                     // thumbnail tasks and expired server revisions.
                     if activeOwner {
@@ -225,6 +231,27 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 }
                 .padding(.horizontal, 4)
             }
+            .coordinateSpace(name: "xdrive-ios-owner-place-wall")
+            .background {
+                GeometryReader { viewport in
+                    Color.clear
+                        .onAppear { photoWallViewportHeight = viewport.size.height }
+                        .onChange(of: viewport.size.height) {
+                            photoWallViewportHeight = $0
+                        }
+                }
+            }
+            .onPreferenceChange(XDriveIOSNativePhotoWallTileFramesKey.self) { frames in
+                if visibleTileFrames != frames { visibleTileFrames = frames }
+            }
+            .onChange(of: wallDensity) { _ in
+                defer { pinchReturnID = nil }
+                guard activeOwner, viewing == nil, let id = pinchReturnID,
+                      ((priorWindow?.items ?? []) + (page?.items ?? []))
+                          .filter({ $0.id == id }).count == 1
+                else { return }
+                returnScroll.scrollTo(id, anchor: .top)
+            }
             .onChange(of: visiblePageRevision) { _ in
                 // Auto paging replaces the previous pair of 48-photo windows.
                 // Re-anchor only to a Node+revision still present in the exact
@@ -236,9 +263,14 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                            scopeActive: activeOwner,
                            matches: { $0.sameVisibleRevision(as: $1) }
                        ) {
-                        returnScroll.scrollTo(anchor.id, anchor: .bottom)
+                        let restored = autoScrollReturnViewport?.alignment(
+                            for: String(anchor.id),
+                            window: priorWindowCursor?.offset ?? -1,
+                            viewportHeight: photoWallViewportHeight)
+                        returnScroll.scrollTo(anchor.id, anchor: restored ?? .bottom)
                     }
                     autoScrollReturn = nil
+                    autoScrollReturnViewport = nil
                 }
                 // Restore the exact first signed tile of a requested day,
                 // not merely the 48-item page's top or an old scroll offset.
@@ -271,15 +303,21 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 // Same-revision Viewer return must not re-center.
                 if viewerOpeningItem.map({
                     !$0.sameVisibleRevision(as: anchor)
-                }) ?? true {
+                }) ?? true || viewerOpeningCursor != cursor {
+                    let restored = viewerReturnViewport?.alignment(
+                        for: String(anchor.id), window: cursor.offset,
+                        viewportHeight: photoWallViewportHeight)
                     xdrivePhotoWallFocusVerifiedTile(
-                        anchor.id, scroll: returnScroll, focus: $focusedTileID
+                        anchor.id, scroll: returnScroll, focus: $focusedTileID,
+                        anchor: restored ?? .center
                     )
                 } else {
                     focusedTileID = anchor.id
                 }
                 viewerReturn = nil
                 viewerOpeningItem = nil
+                viewerOpeningCursor = nil
+                viewerReturnViewport = nil
             }
             .onChange(of: busy) { isBusy in
                 if !isBusy { advanceIfVisible() }
@@ -330,7 +368,14 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         }
         .xdrivePhotoWallPinch(
             density: $wallDensity,
-            enabled: activeOwner && !busy && viewing == nil
+            enabled: activeOwner && !busy && viewing == nil,
+            onDensityChange: { _ in
+                pinchReturnID = visibleTileFrames
+                    .filter { $0.value.minY >= 0 &&
+                              $0.value.minY <= photoWallViewportHeight }
+                    .min(by: { $0.value.minY < $1.value.minY })
+                    .flatMap { UInt64($0.key) }
+            }
         )
         .fullScreenCover(item: $viewing, onDismiss: {
             pendingViewerCross = nil
@@ -353,6 +398,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                               $0.sameVisibleRevision(as: neighbor)
                           }) else { return false }
                     viewerReturn = neighbor
+                    viewerReturnViewport = visibleTileFrames[String(neighbor.id)].map {
+                        XDriveIOSNativePhotoWallViewportAnchor(
+                            itemID: String(neighbor.id), windowIndex: cursor.offset,
+                            viewportOffset: $0.minY, tileHeight: $0.height)
+                    }
                     return true
                 },
                 canCrossMapPlace: { previous, anchor, direction in
@@ -508,6 +558,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     cursor = admitted
                     page = verifiedRange
                     viewerReturn = opened
+                    viewerReturnViewport = nil
                     priorWindow = nil
                     priorWindowCursor = nil
                     coverTask?.cancel()
@@ -580,7 +631,13 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 priorWindowCursor = nil
             }
             viewerOpeningItem = item
+            viewerOpeningCursor = cursor
             viewerReturn = item
+            viewerReturnViewport = visibleTileFrames[String(item.id)].map {
+                XDriveIOSNativePhotoWallViewportAnchor(
+                    itemID: String(item.id), windowIndex: cursor.offset,
+                    viewportOffset: $0.minY, tileHeight: $0.height)
+            }
             viewing = item
         } label: {
             XDriveIOSNativePhotoWallTileShell(isVideo: item.isVideo, isLive: item.isLive) {
@@ -609,6 +666,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         .id(item.id)
         .accessibilityIdentifier("native-ios-owner-map-cluster-tile-\(item.id)-\(item.node.revision)")
         .accessibilityFocused($focusedTileID, equals: item.id)
+        .xdrivePhotoWallMeasureTile(String(item.id), in: "xdrive-ios-owner-place-wall")
         .accessibilityLabel(item.isLive ? "实况照片" :
                              item.isVideo ? "视频" : "照片")
     }
@@ -706,6 +764,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         page = nil
         viewerReturn = nil
         viewerOpeningItem = nil
+        viewerOpeningCursor = nil
+        viewerReturnViewport = nil
+        autoScrollReturnViewport = nil
+        visibleTileFrames = [:]
+        photoWallViewportHeight = 0
+        pinchReturnID = nil
         focusedTileID = nil
         autoScrollReturn = nil
         priorWindow = nil
@@ -750,6 +814,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         // different place or new 48-item Range. Dismissal reloads the SAME.
         if autoAdvance || target != cursor { viewerReturn = nil }
         autoScrollReturn = nil
+        autoScrollReturnViewport = nil
         scrollFootVisible = false
         loadTask?.cancel()
         coverTask?.cancel()
@@ -888,6 +953,14 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     priorWindow = departingPage
                     priorWindowCursor = departingCursor
                     autoScrollReturn = departingPage.items.last
+                    autoScrollReturnViewport = autoScrollReturn.flatMap {
+                        visibleTileFrames[String($0.id)].map { frame in
+                            XDriveIOSNativePhotoWallViewportAnchor(
+                                itemID: String($0.id),
+                                windowIndex: departingCursor.offset,
+                                viewportOffset: frame.minY, tileHeight: frame.height)
+                        }
+                    }
                     let admitted = Set(
                         departingPage.items.map(\.id) + fetched.items.map(\.id)
                     )
@@ -898,6 +971,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     priorWindow = nil
                     priorWindowCursor = nil
                     autoScrollReturn = nil
+                    autoScrollReturnViewport = nil
                     if target == departingCursor, let departingPage,
                        departingPage.sameVisibleSnapshot(as: fetched), activeOwner {
                         // Preserve only byte-identical visible revisions.

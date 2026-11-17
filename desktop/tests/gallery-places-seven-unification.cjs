@@ -98,7 +98,7 @@ test('P2-6: Gallery and trusted Places share numeric-only viewport identity and 
 test('P2-7: same native header, grid, spacing and repeatable real Simulator visual attachments', () => {
   assert.match(shared, /XDriveIOSNativePhotoWallDayHeader\(title: heading\)/)
   assert.match(shared, /spacing: CGFloat = 10/)
-  assert.match(owner, /LazyVStack\(alignment: \.leading, spacing: 10\)/)
+  assert.match(owner, /XDriveIOSNativePhotoWallCollectionStack\s*\{/)
   assert.match(cloud, /sections: visibleSections\(verified\), density: density,\s*spacing: 10/)
   assert.match(unified, /VStack\(alignment: \.leading, spacing: 10\)/)
   assert.match(nativeRuntime, /func testGalleryAndPlaceWallShareDateControlsAndCaptureBothOrientations\(\)/)

@@ -890,6 +890,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var shouldRestoreViewerTile = false
     // At most two verified 48-row windows; presentation-only measurements.
     @State private var visibleTileFrames: [String: CGRect] = [:]
+    @State private var pinchReturnID: String?
     @State private var photoWallViewportHeight: CGFloat = 0
     @State private var viewerReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
     @AccessibilityFocusState private var focusedTileID: String?
@@ -1093,6 +1094,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     private var photoWall: some View {
         ScrollViewReader { scroll in
             XDriveIOSNativePhotoWallScrollContainer {
+                XDriveIOSNativePhotoWallCollectionStack {
                 if (isNearbyExpansion ? nearbyWindowIndex > 1 : windowIndex > 1)
                     && !busy && active && viewing == nil && !opening {
                     Color.clear.frame(height: 32)
@@ -1128,6 +1130,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                         }
                         .accessibilityHidden(true)
                 }
+                }
             }
             .padding(4)
             .coordinateSpace(name: "xdrive-ios-source-place-wall")
@@ -1143,7 +1146,22 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             .onPreferenceChange(XDriveIOSNativePhotoWallTileFramesKey.self) { frames in
                 if visibleTileFrames != frames { visibleTileFrames = frames }
             }
-            .xdrivePhotoWallPinch(density: $density, enabled: viewing == nil)
+            .xdrivePhotoWallPinch(
+                density: $density, enabled: active && viewing == nil && !busy,
+                onDensityChange: { _ in
+                    pinchReturnID = visibleTileFrames
+                        .filter { $0.value.minY >= 0 &&
+                                  $0.value.minY <= photoWallViewportHeight }
+                        .min(by: { $0.value.minY < $1.value.minY })?.key
+                }
+            )
+            .onChange(of: density) { _ in
+                defer { pinchReturnID = nil }
+                guard active, viewing == nil, let id = pinchReturnID,
+                      (previous + current).filter({ $0.id == id }).count == 1
+                else { return }
+                scroll.scrollTo(id, anchor: .top)
+            }
             .onChange(of: backfillAnchorID) { anchor in
                 guard active, let anchor,
                       (previous + current).contains(where: { $0.id == anchor })
@@ -1201,14 +1219,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-unified-source-map-photo")
         .accessibilityFocused($focusedTileID, equals: row.id)
-        .background {
-            GeometryReader { tile in
-                Color.clear.preference(
-                    key: XDriveIOSNativePhotoWallTileFramesKey.self,
-                    value: [row.id: tile.frame(in: .named("xdrive-ios-source-place-wall"))]
-                )
-            }
-        }
+        .xdrivePhotoWallMeasureTile(row.id, in: "xdrive-ios-source-place-wall")
     }
 
     private func openAfterLiveAdmission(_ row: XDriveIOSNativeUnifiedPhoto) {
@@ -1515,6 +1526,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         viewerOpeningWindow = -1
         shouldRestoreViewerTile = false
         viewerReturnViewport = nil
+        pinchReturnID = nil
         visibleTileFrames = [:]
         photoWallViewportHeight = 0
         focusedTileID = nil
