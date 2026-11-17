@@ -890,6 +890,9 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let dashboardBar = element("native-ios-five-slot-bar", in: app)
         XCTAssertFalse(dashboardBar.exists,
                        "Native MapKit must open without the Gallery five-slot bar")
+        XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app)
+            .waitForExistence(timeout: 15),
+            "The Map must retain only the native Photos Library / Collections / Search bar")
         let currentGrid = element("native-ios-local-map-current-grid", in: app)
         XCTAssertTrue(currentGrid.waitForExistence(timeout: 20))
         XCTAssertTrue(currentGrid.isEnabled,

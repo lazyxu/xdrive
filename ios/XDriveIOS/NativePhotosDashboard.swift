@@ -473,6 +473,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     // Never persist camera/GPS coordinates with the navigation snapshot.
     @State private var mapSource: XDriveIOSNativePhotoMapSource = .local
     // Session-only return destination; never persist an Owner or GPS identity.
+    // UI-only origin to select the correct Photos tab while on Map.
+    // No Owner, PhotoKit ID, coordinate or media membership is stored.
+    @State private var mapOpenedFromCollections = false
     @State private var mapReturnGallerySource: XDriveIOSNativeGallerySource?
     @State private var mapReturnOwnerScopeKey: String?
     @State private var cloudMapCamera: MKCoordinateRegion?
@@ -631,7 +634,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                 focused: galleryPresentationFocused,
                 ownerVerified: login.owner != nil
             ) {
-                if tab == .gallery && gallerySource != .map {
+                // One Photos-native bar throughout Library, Collections and Map.
+                // Never display the xDrive five-slot bar over a Photos map.
+                if tab == .gallery {
                     nativePhotosBottomBar
                 } else {
                     nativeBottomBar
@@ -864,10 +869,15 @@ struct XDriveIOSNativePhotosDashboard: View {
     // Gallery. xDrive's five-slot bar remains available in other app modules.
     // The extra global routes are reachable from galleryMoreMenu, not stacked
     // into a second, competing row below the native Photos controls.
+    private var photosChromeCollectionsSelected: Bool {
+        gallerySource == .map ? mapOpenedFromCollections : gallerySource == .albums
+    }
+
     private var nativePhotosBottomBar: some View {
         HStack(spacing: 12) {
             HStack(spacing: 2) {
-                if gallerySource == .unified && galleryTimelineExpanded {
+                if gallerySource == .unified && galleryTimelineExpanded &&
+                   !presentingUnifiedMap {
                     ForEach([
                         XDriveIOSNativePhotoWallTimeScale.year,
                         .month, .all
@@ -892,6 +902,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                     }
                 } else {
                 Button {
+                    if presentingUnifiedMap { presentingUnifiedMap = false }
                     if gallerySource != .unified { openGallery(.unified) }
                 } label: {
                     VStack(spacing: 2) {
@@ -899,14 +910,15 @@ struct XDriveIOSNativePhotosDashboard: View {
                             .font(.body.weight(.semibold))
                         Text("图库").font(.caption2.weight(.semibold))
                     }
-                        .foregroundStyle(gallerySource != .albums ? Color.accentColor : Color.primary)
+                        .foregroundStyle(!photosChromeCollectionsSelected ? Color.accentColor : Color.primary)
                         .frame(minWidth: 68, minHeight: 50)
-                        .background(gallerySource != .albums ? Color.accentColor.opacity(0.12) : Color.clear,
+                        .background(!photosChromeCollectionsSelected ? Color.accentColor.opacity(0.12) : Color.clear,
                                     in: Capsule())
                 }
                 .accessibilityIdentifier("native-ios-photos-library-tab")
-                .accessibilityAddTraits(gallerySource != .albums ? .isSelected : [])
+                .accessibilityAddTraits(!photosChromeCollectionsSelected ? .isSelected : [])
                 Button {
+                    if presentingUnifiedMap { presentingUnifiedMap = false }
                     if gallerySource != .albums { openGallery(.albums) }
                 } label: {
                     VStack(spacing: 2) {
@@ -914,13 +926,13 @@ struct XDriveIOSNativePhotosDashboard: View {
                             .font(.body.weight(.semibold))
                         Text("精选集").font(.caption2.weight(.semibold))
                     }
-                        .foregroundStyle(gallerySource == .albums ? Color.accentColor : Color.primary)
+                        .foregroundStyle(photosChromeCollectionsSelected ? Color.accentColor : Color.primary)
                         .frame(minWidth: 74, minHeight: 50)
-                        .background(gallerySource == .albums ? Color.accentColor.opacity(0.12) : Color.clear,
+                        .background(photosChromeCollectionsSelected ? Color.accentColor.opacity(0.12) : Color.clear,
                                     in: Capsule())
                 }
                 .accessibilityIdentifier("native-ios-photos-collections-tab")
-                .accessibilityAddTraits(gallerySource == .albums ? .isSelected : [])
+                .accessibilityAddTraits(photosChromeCollectionsSelected ? .isSelected : [])
                 }
             }
             .padding(3)
@@ -931,6 +943,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 // current Owner media; switching from Collections carries an
                 // ephemeral request, never an old Owner's search result.
                 requestUnifiedPhotoSearch = true
+                if presentingUnifiedMap { presentingUnifiedMap = false }
                 if gallerySource != .unified { openGallery(.unified) }
             } label: {
                 Image(systemName: "magnifyingglass")
@@ -1229,6 +1242,11 @@ struct XDriveIOSNativePhotosDashboard: View {
                     inheritedCaptureRange: unifiedMapCaptureRange
                 )
             }
+            // A full-screen source-filtered map is above the Gallery TabView.
+            // Give it the SAME floating Photos bar, not a second xDrive tab.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                nativePhotosBottomBar
+            }
         }
     }
 
@@ -1474,6 +1492,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     private func openGallery(_ source: XDriveIOSNativeGallerySource) {
         if source == .map {
             if gallerySource != .map {
+                mapOpenedFromCollections = tab == .gallery && gallerySource == .albums
                 // Only an active, authenticated Gallery supplies return state.
                 // Launcher and dynamic shortcuts use the default.
                 mapReturnGallerySource = tab == .gallery && login.owner != nil
@@ -1482,6 +1501,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                     ? ownerScopeKey : nil
             }
         } else {
+            mapOpenedFromCollections = false
             mapReturnGallerySource = nil
             mapReturnOwnerScopeKey = nil
         }
@@ -1564,6 +1584,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         galleryTimelineExpanded = false
         galleryTimeScale = .all
         mapNavigationExplicitlyShown = false
+        mapOpenedFromCollections = false
         mapReturnGallerySource = nil
         mapReturnOwnerScopeKey = nil
         gallerySource = .unified

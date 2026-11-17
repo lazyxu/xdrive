@@ -14,7 +14,8 @@ const focusPolicy = read('ios/XDriveIOS/NativeFocusVisibilityPolicy.swift')
 test('entering the native PhotoKit map hides Gallery-only backup/source strips by default', () => {
   assert.doesNotMatch(dashboard, /private var galleryStatusRow:/)
   assert.doesNotMatch(dashboard, /private var gallerySourceRow:/)
-  assert.match(dashboard, /if tab == \.gallery && gallerySource != \.map \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
+  assert.match(dashboard, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
+  assert.match(focusPolicy, /if tab == "gallery" && gallerySource == "map" \{ return true \}/)
   assert.match(dashboard, /galleryFocused = source == \.map/)
   assert.match(dashboard, /gallerySource == \.map \? !mapNavigationExplicitlyShown : galleryFocused/)
   assert.match(dashboard, /mapNavigationExplicitlyShown = !focused/)
@@ -32,16 +33,17 @@ test('switching local and Owner sources stays immersive without touching PhotoKi
 })
 
 test('signed-out local PhotoKit map is immersive without granting any cloud Owner focus', () => {
-  assert.match(focusPolicy, /gallerySource == "map" \|\|/)
+  assert.match(focusPolicy, /if tab == "gallery" && gallerySource == "map" \{ return true \}/)
   assert.match(focusPolicy, /gallerySource == "cloud" && ownerVerified/)
   assert.match(focusPolicy, /callbackSource == "map" \|\|/)
   assert.match(focusPolicy, /callbackSource == "cloud" && ownerVerified/)
 })
 
-test('explicit map focus toggle still restores five-tab navigation when requested', () => {
-  assert.match(local, /Button\(focused \? "显示底部导航" : "专注地图"\) \{\s*focused\.toggle\(\)\s*onFocusChange\?\(focused\)/)
-  assert.match(wrapper, /Button\(focused \? "显示底部导航" : "专注地图"\) \{\s*focused\.toggle\(\)\s*onFocusChange\?\(focused\)/)
-  assert.match(dashboard, /if next != \.gallery \{[\s\S]*?mapNavigationExplicitlyShown = false[\s\S]*?\}/)
+test('Map no longer offers xDrive five-slot override; only native Photos chrome can appear', () => {
+  assert.doesNotMatch(local, /Button\(focused \? "显示底部导航" : "专注地图"/)
+  assert.doesNotMatch(wrapper, /Button\(focused \? "显示底部导航" : "专注地图"/)
+  assert.match(dashboard, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
+  assert.match(dashboard, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap,[\s\S]*?\.safeAreaInset\(edge: \.bottom, spacing: 0\) \{\s*nativePhotosBottomBar/)
   assert.match(dashboard, /galleryFocused = gallerySource == \.map/)
 })
 

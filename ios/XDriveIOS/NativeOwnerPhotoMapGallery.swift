@@ -925,12 +925,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     Button("刷新当前视窗") { reload() }
                         .disabled(busy || login.owner == nil || phase != .active)
                         .accessibilityIdentifier("native-ios-owner-map-refresh")
-                    if onFocusChange != nil {
-                        Button(focused ? "显示底部导航" : "专注地图") {
-                            focused.toggle()
-                            onFocusChange?(focused)
-                        }
-                    }
+                    // Library / Collections / Search remains the only Photos
+                    // navigation over this Owner map; no five-slot override.
                     NavigationLink {
                         XDriveIOSNativeExactTripsScreen(login: login)
                     } label: {

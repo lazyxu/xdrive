@@ -2005,13 +2005,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         .accessibilityIdentifier(album == nil
                             ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
                     }
-                    if album == nil && onFocusChange != nil {
-                        Button(focused ? "显示底部导航" : "专注地图") {
-                            focused.toggle()
-                            onFocusChange?(focused)
-                        }
-                        .accessibilityIdentifier("native-ios-map-focus-toggle")
-                    }
+                    // Photos-native navigation remains visible over MapKit.
+                    // Do not expose the old action that revealed xDrive's
+                    // unrelated five-slot bar over the system Photos layout.
                 } label: {
                     Label("地图操作", systemImage: "ellipsis.circle")
                         .frame(minWidth: 44, minHeight: 44)

@@ -8,9 +8,11 @@ enum XDriveIOSNativeFocusVisibilityPolicy {
     static func showsBar(
         tab: String, gallerySource: String, focused: Bool, ownerVerified: Bool
     ) -> Bool {
-        !(tab == "gallery" && focused &&
-          (gallerySource == "map" ||
-           (gallerySource == "cloud" && ownerVerified)))
+        // Photos on iOS 26 keeps Library / Collections / Search visible
+        // over the Map. Only an Owner-verified cloud L2 focus hides L1.
+        if tab == "gallery" && gallerySource == "map" { return true }
+        return !(tab == "gallery" && focused &&
+                 gallerySource == "cloud" && ownerVerified)
     }
 
     /// A departed Gallery child cannot set the current source's L2 focus.

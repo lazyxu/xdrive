@@ -20,7 +20,7 @@ test('five stable native bottom positions own the same feature-local TabView sta
   assert.match(ui, /TabView\(selection: \$tab\)/);
   assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)/);
   assert.match(ui, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)\s*\{\s*if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
-  assert.match(ui, /if tab == \.gallery && gallerySource != \.map \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/);
+  assert.match(ui, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/);
   assert.match(ui, /\.accessibilityIdentifier\("native-ios-photos-bottom-bar"\)/);
   assert.match(ui, /\.accessibilityIdentifier\("native-ios-five-slot-bar"\)/);
   assert.match(ui, /\.id\(ownerScopeKey\)/);
@@ -64,7 +64,9 @@ test('Gallery uses Photos-like Library, Collections and Search instead of stacke
   assert.doesNotMatch(ui, /private var galleryStatusRow:/);
   assert.doesNotMatch(ui, /private var gallerySourceRow:/);
   assert.match(ui, /gallerySource == \.map \? !mapNavigationExplicitlyShown : galleryFocused/);
-  assert.match(ui, /mapNavigationExplicitlyShown = !focused/);
+  assert.match(ui, /photosChromeCollectionsSelected/);
+  assert.match(ui, /mapOpenedFromCollections = tab == \.gallery && gallerySource == \.albums/);
+  assert.match(ui, /if presentingUnifiedMap \{ presentingUnifiedMap = false \}/);
   assert.match(ui, /case \.albums:\s*XDriveIOSNativePhotosCollectionsScreen/);
   assert.equal((ui.match(/switch gallerySource/g) || []).length, 1);
 });

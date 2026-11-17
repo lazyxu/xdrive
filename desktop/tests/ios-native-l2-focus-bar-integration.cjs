@@ -18,6 +18,8 @@ test('only one native L1 bar: scoped Gallery L2 hides the custom bar, not a syst
   assert.match(shell, /ownerVerified: login\.owner != nil/);
   assert.match(policy, /tab == "gallery"/);
   assert.match(policy, /gallerySource == "cloud"/);
+  assert.match(policy, /if tab == "gallery" && gallerySource == "map" \{ return true \}/);
+  assert.match(shell, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/);
   assert.match(policy, /ownerVerified/);
   assert.match(shell, /gallerySource == \.map \? !mapNavigationExplicitlyShown : galleryFocused/);
   assert.match(shell, /mapNavigationExplicitlyShown = !focused/);

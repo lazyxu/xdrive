@@ -16,10 +16,10 @@ struct XDriveIOSNativeFocusVisibilityPolicyChecks {
         verify("gallery", "originals", true, true, true)
         verify("gallery", "albums", true, true, true)
         verify("gallery", "local", true, true, true)
-        verify("gallery", "map", true, true, false)
+        verify("gallery", "map", true, true, true)
         verify("gallery", "map", false, true, true)
-        // Signed-out local PhotoKit remains a legitimate immersive map.
-        verify("gallery", "map", true, false, false)
+        // Signed-out local PhotoKit keeps the same visible Photos bar.
+        verify("gallery", "map", true, false, true)
         verify("gallery", "map", false, false, true)
         verify("files", "cloud", true, true, true)
         verify("dynamic", "cloud", true, true, true)
