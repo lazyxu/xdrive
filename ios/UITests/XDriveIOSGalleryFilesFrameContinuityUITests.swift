@@ -168,6 +168,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
 
     func testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         openLocalPhotoSource(app)
         assertLocalPhotoContent(app)
         assertVisiblePixels(app, route: "Local Photos before background")

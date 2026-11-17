@@ -61,8 +61,8 @@ test('candidate-gallery-files must actually RUN the six child tests in macOS Xco
   assert.match(workflow, /xcodebuild test/);
   assert.match(workflow, /resultBundlePath/);
   assert.match(workflow, /-parallel-testing-enabled NO/);
-  assert.match(workflow, /--minimum 38/,
-    'all 38 separate real navigation clips must be audited without opt-out');
+  assert.match(workflow, /--minimum 44/,
+    'all 44 separate real navigation clips must be audited without opt-out');
   for (const name of journeys) {
     assert.match(watcher, new RegExp('"' + name + '"'));
   }
@@ -138,7 +138,7 @@ test('six additional real Files/Gallery transitions are H.264-audited, including
     assert.match(body, /select\("native-ios-tab-/,
       name + ' must tap a real native Gallery or Files tab');
   }
-  assert.match(workflow, /--minimum 38/);
+  assert.match(workflow, /--minimum 44/);
 });
 
 test('both existing Gallery/Files native suites audit child viewport rather than colorful tab chrome', () => {
@@ -201,4 +201,34 @@ test('six existing Gallery/Files high-frequency returns now sample child pixels'
   }
   assert.match(stability, /for y in \(height \/ 5\)\.\.<\(height \* 4 \/ 5\)/);
   assert.match(stability, /for x in \(width \/ 8\)\.\.<\(width \* 7 \/ 8\)/);
+});
+
+test('six additional high-risk Gallery/Files transitions require true H264 evidence', () => {
+  const required = [
+    'testGallerySourcesAlternateWithoutLosingSourceRail',
+    'testRepeatedFilterDismissalRestoresSameGallery',
+    'testGalleryFilterCancelAfterTabAndSourceRoundTrips',
+    'testGalleryPeopleChildReturnRepeatsWithoutLosingGallerySource',
+    'testFilesBackgroundResumeKeepsQuickRailAndPixels',
+    'testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank',
+  ];
+  for (const name of required) {
+    const inStability = stability.includes('func ' + name + '()');
+    const source = inStability ? stability : frameContinuity;
+    const matches = source.match(new RegExp('func ' + name + '\\(\\)', 'g')) || [];
+    assert.equal(matches.length, 1, name + ' requires one genuine XCTest method');
+    const begin = source.indexOf('func ' + name + '()');
+    const end = source.indexOf('\n    func test', begin + 5);
+    const body = source.slice(begin, end >= 0 ? end : undefined);
+    assert.match(body, /let app = launch\([^\n]*\)\s*waitForRealH264RecordingPrelude\(\)/,
+      name + ' must not tap during real recorder startup');
+    assert.match(body, /(?:select|tap)\("native-ios-/,
+      name + ' must generate actual native touch markers');
+    assert.match(body, /assertNotSolidScreen\(app|assertVisiblePixels\(app/,
+      name + ' must check real native content pixels');
+    assert.ok(h264.includes('"' + name + '"'), name + ' missing bounded real H264 watcher');
+  }
+  assert.match(workflow, /--minimum 44/, 'all 44 clips must be real and audited');
+  assert.match(h264, /MAX_CLIP_SECONDS = 210/,
+    'long genuine XCTest must not be truncated by old 120-second clip limit');
 });

@@ -124,6 +124,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testGallerySourcesAlternateWithoutLosingSourceRail() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for _ in 0..<2 {
             for source in ["albums", "unified", "originals", "unified"] {
                 select("native-ios-gallery-source-\(source)", in: app)
@@ -136,6 +137,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testRepeatedFilterDismissalRestoresSameGallery() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for _ in 0..<3 {
             select("native-ios-gallery-open-filters", in: app)
             let cancel = app.buttons["取消"].firstMatch
@@ -288,6 +290,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testGalleryFilterCancelAfterTabAndSourceRoundTrips() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for _ in 0..<3 {
             select("native-ios-gallery-source-albums", in: app)
             select("native-ios-gallery-source-unified", in: app)
@@ -309,6 +312,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testGalleryPeopleChildReturnRepeatsWithoutLosingGallerySource() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         for _ in 0..<3 {
             select("native-ios-gallery-people", in: app)
             XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
@@ -465,6 +469,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesBackgroundResumeKeepsQuickRailAndPixels() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         checkFilesHome(app)
         XCUIDevice.shared.press(.home)
