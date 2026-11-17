@@ -787,7 +787,8 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 XDriveIOSNativePhotoMapGridAction(
                     enabled: canOpenCurrentMapGrid,
                     accessibilityID: "native-ios-owner-map-current-grid",
-                    verifiedSummary: mapMarkersEnabled && verifiedBounds != nil
+                    verifiedSummary: mapMarkersEnabled && verifiedBounds != nil &&
+                        displayedOverviewMatchesLogin
                         ? overview.map { "\($0.total_photo_count) 张照片" }
                         : nil
                 ) { openCurrentMapGrid() }
