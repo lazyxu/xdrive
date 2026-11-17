@@ -83,7 +83,7 @@ jobs:
       matrix:
         # Keep published baseline separate and require both current native
         # suites; no unrelated older CI-success can waive this exact HEAD.
-        source: [release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session, candidate-mapkit, candidate-performance]
+        source: [release-c83, candidate-navigation, candidate-navigation-p0, candidate-gallery-files, candidate-no-session, candidate-mapkit, candidate-performance]
     continue-on-error: ${{ matrix.source == 'release-c83' }}
     steps:
       - uses: actions/checkout@v4
@@ -239,7 +239,7 @@ jobs:
             -p 'test_assert_native_ios_no_crash.py' -v
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
             -p 'test_files_ui_transition_video.py' -v
-          if [[ "${{ matrix.source }}" == "candidate-navigation" ]]; then
+          if [[ "${{ matrix.source }}" == "candidate-navigation" || "${{ matrix.source }}" == "candidate-navigation-p0" ]]; then
             node --test "$GITHUB_WORKSPACE/desktop/tests/ios-native-all-pages-six-extra-crash-paths-20261116.cjs"
           fi
           if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
@@ -285,6 +285,17 @@ jobs:
               # Actual product login shell under CI-only safe-startup,
               # not the synthetic Owner/Files/Gallery navigation fixture.
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSCompactLoginUITests") ;;
+            candidate-navigation-p0)
+              # Separately reproduce the five actual 2026-11-17 failures
+              # plus Files search/keyboard return BEFORE the full 46-case
+              # suite finishes. Both shards are required; do not skip or mock
+              # the existing all-pages test suite to make this one pass.
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testGalleryBackupQueueCacheTwoRoundsFilesNoCrash")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testGalleryBackupSettingsQueueAndFilesReturnDoNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testGalleryFocusedBackupConsentDoesNotAutoUploadNoCrash")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testGalleryThumbnailCacheSheetForegroundDismissDoesNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testLauncherSearchKeyboardForegroundFilesReturnDoesNotExit") ;;
             candidate-gallery-files)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests")

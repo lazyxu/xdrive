@@ -162,3 +162,43 @@ test("five real iOS process cold-relaunch crash paths are XCTest and frame-watch
   assert.match(method(cold[3]), /"local", "native-ios-local-timeline-open"/);
   assert.match(method(cold[4]), /"transfers", "native-ios-transfer-overview"/);
 });
+
+test("Six observed P0 native crash-navigation regressions run independently in real Simulator", () => {
+  // Five of these genuine XCTest cases failed on the 2026-11-17
+  // candidate-navigation shard. A separate short shard catches recurrence
+  // without dropping the full AllNativePagesCrashSweep suite.
+  const selected = [
+    "testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit",
+    "testGalleryBackupQueueCacheTwoRoundsFilesNoCrash",
+    "testGalleryBackupSettingsQueueAndFilesReturnDoNotExit",
+    "testGalleryFocusedBackupConsentDoesNotAutoUploadNoCrash",
+    "testGalleryThumbnailCacheSheetForegroundDismissDoesNotExit",
+    "testLauncherSearchKeyboardForegroundFilesReturnDoesNotExit",
+  ];
+  assert.equal(new Set(selected).size, 6);
+  for (const name of selected) {
+    assert.match(crash, new RegExp("func " + name + "\\(\\)"),
+      "missing real native P0 crash-navigation XCTest " + name);
+  }
+  const fastStart = workflow.indexOf("            candidate-navigation-p0)");
+  const fastEnd = workflow.indexOf("            candidate-gallery-files)", fastStart);
+  assert.ok(fastStart >= 0 && fastEnd > fastStart,
+    "missing dedicated required real Simulator P0 shard");
+  const fastCase = workflow.slice(fastStart, fastEnd);
+  assert.equal((fastCase.match(/-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllNativePagesCrashSweepUITests\/test/g) || []).length, 6);
+  for (const name of selected) {
+    assert.ok(fastCase.includes("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/" + name),
+      "P0 shard must actually execute observed XCTest " + name);
+  }
+  const fullStart = workflow.indexOf("            candidate-navigation)");
+  const fullEnd = workflow.indexOf("            candidate-navigation-p0)", fullStart);
+  assert.ok(fullStart >= 0 && fullEnd > fullStart);
+  assert.match(workflow.slice(fullStart, fullEnd),
+    /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSAllNativePagesCrashSweepUITests/,
+    "complete all-pages native suite must still run");
+  assert.match(workflow,
+    /continue-on-error: \$\{\{ matrix\.source == 'release-c83' \}\}/,
+    "P0 shard must be mandatory, not continue-on-error");
+  assert.doesNotMatch(fastCase, /-skip-testing:|continue-on-error|\|\| true/,
+    "never mask real native P0 failures");
+});
