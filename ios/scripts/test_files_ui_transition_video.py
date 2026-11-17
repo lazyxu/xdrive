@@ -306,15 +306,17 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             self.assertIn("missing_real_recording", report.read_text())
 
 
-    def test_long_running_sixty_second_xctest_is_not_cut_at_26_seconds(self):
-        self.assertGreaterEqual(MAX_CLIP_SECONDS, 70)
-        self.assertLessEqual(MAX_CLIP_SECONDS, 120)
+    def test_real_139_second_xctest_is_not_truncated_at_old_120s_cap(self):
+        # Original macOS test PASSED after 138.545s, while its MP4 stopped
+        # at 120.067s. Timeouts remain fatal to the audit; the cap is sized
+        # to actual complete-test evidence, not a synthetic "pass" flag.
+        self.assertGreaterEqual(MAX_CLIP_SECONDS, 24 + 139 + 20)
+        self.assertLessEqual(MAX_CLIP_SECONDS, 240)
 
-    def test_recorder_prelude_plus_longest_xctest_fits_real_recording_cap(self):
-        # Prior real recordings first emitted frames as much as ~17s after
-        # recordVideo was spawned; six XCTest targets now allow a 24s prelude.
-        # A 60s navigation case must not be cut off by the recording cap.
-        self.assertGreaterEqual(MAX_CLIP_SECONDS, 24 + 60 + 20)
+    def test_recorder_prelude_plus_real_gallery_files_roundtrip_has_margin(self):
+        # Some real clips began after ~17s; tests intentionally pre-roll
+        # before native taps, and one confirmed XCTest lasted 138.545s.
+        self.assertGreaterEqual(MAX_CLIP_SECONDS, 24 + 139 + 20)
 
     def test_real_recorder_startup_is_aligned_before_white_frame_audit(self):
         # The MP4 PTS clock begins after recordVideo startup; using wall-clock

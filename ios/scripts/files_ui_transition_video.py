@@ -62,10 +62,13 @@ CASE_END = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (passed|failed)\b")
 TAP = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 FRAME = re.compile(r"frame:\s*\d+.*pts_time:([0-9.]+)")
 STAT = re.compile(r"lavfi\.signalstats\.(YMIN|YMAX|YAVG)=([0-9.]+)")
-# Recorder startup on busy macOS runners can take ~17 seconds. Twelve real
-# UI tests wait for genuine recorder pre-roll before their first tap, while
-# the longest observed test ran ~60s; preserve a bounded post-prelude margin.
-MAX_CLIP_SECONDS = 120
+# Genuine 2026-11-16 macOS XCTest evidence: the PhotoKit/Gallery↔Files
+# round-trip PASSED after 138.545 seconds, yet the original 120-second
+# recorder cutoff marked its real clip "bounded_timeout". Allow both that
+# long-running test and up to ~20 seconds of recorder startup while keeping
+# a strict finite deadline; neither a timed-out recording nor missing tap/
+# decoded frames can ever pass the audit.
+MAX_CLIP_SECONDS = 210
 MAX_TIMELINE_STARTUP_SECONDS = 20
 MIN_TAP_WINDOW_SECONDS = 0.55
 
