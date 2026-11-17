@@ -63,7 +63,7 @@ test('Owner switch and true PhotoKit mutations still immediately retire the wall
 
 test('leaving foreground cancels old audits and Viewer but never replaces the wall generation', () => {
   const phase = part('.onChange(of: phase) { state in', '.sheet(isPresented: $showFilters, onDismiss:')
-  assert.match(phase, /explicitOriginalAudit = false\s*selected = nil\s*indexRequest = UUID\(\)/)
+  assert.match(phase, /explicitOriginalAudit = false\s*isSelecting = false; selectedIDs\.removeAll\(\)\s*selected = nil\s*indexRequest = UUID\(\)/)
   assert.doesNotMatch(phase, /wall\.reset\(\)|timeline\.reset\(\)/)
 })
 
