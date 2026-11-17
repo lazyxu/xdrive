@@ -529,6 +529,13 @@ struct XDriveIOSNativePhotosDashboard: View {
     // the existing native map over it keeps its loaded pages, zoom density
     // and Viewer return anchor alive instead of switching Gallery sources.
     @State private var presentingUnifiedMap = false
+    // Defer a Photos destination change until the UIKit full-screen MapKit
+    // dismissal ends. Otherwise the Gallery re-creates its source during
+    // the map's disappearance and can reveal an unrelated frame.
+    // The pending route is transient, and scoped to this exact Owner root.
+    @State private var pendingUnifiedMapDestination: XDriveIOSNativeGallerySource?
+    @State private var pendingUnifiedMapSearch = false
+    @State private var pendingUnifiedMapOwnerScope: String?
     @State private var unifiedMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var unifiedMapMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var unifiedMapFilenameTerm = ""
@@ -821,6 +828,9 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .onChange(of: phase) { state in
             guard state == .active else {
+                pendingUnifiedMapDestination = nil
+                pendingUnifiedMapSearch = false
+                pendingUnifiedMapOwnerScope = nil
                 galleryFocusGeneration = UUID()
                 galleryFocused = false
                 mapNavigationExplicitlyShown = false
@@ -891,6 +901,9 @@ struct XDriveIOSNativePhotosDashboard: View {
         .onChange(of: tab) { next in
             galleryFocusGeneration = UUID()
             if next != .gallery {
+                pendingUnifiedMapDestination = nil
+                pendingUnifiedMapSearch = false
+                pendingUnifiedMapOwnerScope = nil
                 galleryFocused = false
                 mapNavigationExplicitlyShown = false
             }
@@ -911,6 +924,21 @@ struct XDriveIOSNativePhotosDashboard: View {
     // into a second, competing row below the native Photos controls.
     private var photosChromeCollectionsSelected: Bool {
         gallerySource == .map ? mapOpenedFromCollections : gallerySource == .albums
+    }
+
+    private func navigatePhotosChrome(
+        to destination: XDriveIOSNativeGallerySource, search: Bool = false
+    ) {
+        guard phase == .active else { return }
+        if presentingUnifiedMap {
+            pendingUnifiedMapDestination = destination
+            pendingUnifiedMapSearch = search
+            pendingUnifiedMapOwnerScope = ownerScopeKey
+            presentingUnifiedMap = false
+            return
+        }
+        if gallerySource != destination { openGallery(destination) }
+        if search { requestUnifiedPhotoSearch = true }
     }
 
     private var nativePhotosBottomBar: some View {
@@ -942,8 +970,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                     }
                 } else {
                 Button {
-                    if presentingUnifiedMap { presentingUnifiedMap = false }
-                    if gallerySource != .unified { openGallery(.unified) }
+                    navigatePhotosChrome(to: .unified)
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: "photo.on.rectangle")
@@ -958,8 +985,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 .accessibilityIdentifier("native-ios-photos-library-tab")
                 .accessibilityAddTraits(!photosChromeCollectionsSelected ? .isSelected : [])
                 Button {
-                    if presentingUnifiedMap { presentingUnifiedMap = false }
-                    if gallerySource != .albums { openGallery(.albums) }
+                    navigatePhotosChrome(to: .albums)
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: "rectangle.stack.fill")
@@ -982,9 +1008,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 // The unified editor searches both authorized local and
                 // current Owner media; switching from Collections carries an
                 // ephemeral request, never an old Owner's search result.
-                requestUnifiedPhotoSearch = true
-                if presentingUnifiedMap { presentingUnifiedMap = false }
-                if gallerySource != .unified { openGallery(.unified) }
+                navigatePhotosChrome(to: .unified, search: true)
             } label: {
                 Image(systemName: "magnifyingglass")
                     .font(.body.weight(.semibold))
@@ -1264,6 +1288,18 @@ struct XDriveIOSNativePhotosDashboard: View {
             unifiedMapCaptureRange = nil
             unifiedMapMediaFilter = .all
             unifiedMapFilenameTerm = ""
+            let destination = pendingUnifiedMapDestination
+            let wantedSearch = pendingUnifiedMapSearch
+            let requestScope = pendingUnifiedMapOwnerScope
+            pendingUnifiedMapDestination = nil
+            pendingUnifiedMapSearch = false
+            pendingUnifiedMapOwnerScope = nil
+            // Never execute a stale close callback after an Owner/root change,
+            // logout, background transition, or switch to a non-Gallery tab.
+            guard let destination, requestScope == ownerScopeKey,
+                  phase == .active, tab == .gallery else { return }
+            if gallerySource != destination { openGallery(destination) }
+            if wantedSearch { requestUnifiedPhotoSearch = true }
         }) {
             // This is the SAME native local/cloud MapKit component used by
             // Gallery's normal Map source, not a second map or media reader.
@@ -1636,6 +1672,9 @@ struct XDriveIOSNativePhotosDashboard: View {
         localMapJump = nil
         galleryMapCaptureRange = nil
         presentingUnifiedMap = false
+        pendingUnifiedMapDestination = nil
+        pendingUnifiedMapSearch = false
+        pendingUnifiedMapOwnerScope = nil
         unifiedMapCaptureRange = nil
         unifiedMapMediaFilter = .all
         unifiedMapFilenameTerm = ""

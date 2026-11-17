@@ -66,7 +66,8 @@ test('Gallery uses Photos-like Library, Collections and Search instead of stacke
   assert.match(ui, /gallerySource == \.map \? !mapNavigationExplicitlyShown : galleryFocused/);
   assert.match(ui, /photosChromeCollectionsSelected/);
   assert.match(ui, /mapOpenedFromCollections = tab == \.gallery && gallerySource == \.albums/);
-  assert.match(ui, /if presentingUnifiedMap \{ presentingUnifiedMap = false \}/);
+  assert.match(ui, /pendingUnifiedMapDestination = destination[\s\S]*?presentingUnifiedMap = false/);
+  assert.match(ui, /if gallerySource != destination \{ openGallery\(destination\) \}/);
   assert.match(ui, /case \.albums:\s*XDriveIOSNativePhotosCollectionsScreen/);
   assert.equal((ui.match(/switch gallerySource/g) || []).length, 1);
 });
