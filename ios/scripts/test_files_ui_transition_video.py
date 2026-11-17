@@ -541,6 +541,24 @@ class FilesUIContentVideoCodecRegressionTests(unittest.TestCase):
         self.assertEqual(classify_bright_blank(frames, 1.0),
                          "suspected_solid_white_transition")
 
+    def test_h264_neutral_gray_child_flash_with_stable_chrome_is_detected(self):
+        # Run the actual ffmpeg/libx264 decoder, not only hand-built YUV values.
+        # The child has a gray repaint while native top/bottom chrome remains.
+        frames = self._decoded_chrome_page(("gray", 1.05, 1.35))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_neutral_transition")
+
+    def test_h264_single_gray_source_frame_is_not_mistaken_for_smooth(self):
+        # The H264->30Hz decoder can duplicate one 10Hz frame; the gate must
+        # still notice the real short child-only gray blink.
+        frames = self._decoded_chrome_page(("gray", 1.05, 1.15))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_neutral_transition")
+
+    def test_h264_gray_child_only_before_tap_is_not_misattributed(self):
+        frames = self._decoded_chrome_page(("gray", 0.25, 0.45))
+        self.assertIsNone(classify_bright_blank(frames, 1.0))
+
     def test_stable_native_chrome_and_textured_content_are_not_blank(self):
         frames = self._decoded_chrome_page()
         self.assertGreaterEqual(len(frames), 20)
