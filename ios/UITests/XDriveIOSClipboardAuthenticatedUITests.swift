@@ -23,10 +23,12 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor
     private func node(_ id: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
+    @MainActor
     private func fill(_ element: XCUIElement, with value: String) {
         XCTAssertTrue(element.waitForExistence(timeout: 25))
         element.tap()
@@ -40,6 +42,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
 
     /// User fills the production login form. No launch argument, synthetic
     /// session, test bypass, bearer injection or mocked SwiftUI ViewModel.
+    @MainActor
     private func signIn(_ user: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launch()
@@ -69,6 +72,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         return app
     }
 
+    @MainActor
     private func openClipboard(_ app: XCUIApplication) {
         let launcher = node("native-ios-tab-launcher", in: app)
         XCTAssertTrue(launcher.waitForExistence(timeout: 15))
@@ -85,6 +89,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
             .waitForExistence(timeout: 20))
     }
 
+    @MainActor
     private func chooseDevice(_ app: XCUIApplication) {
         let menu = node("ios-clipboard-target-picker", in: app)
         XCTAssertTrue(menu.waitForExistence(timeout: 20))
@@ -97,6 +102,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
             .waitForExistence(timeout: 15))
     }
 
+    @MainActor
     private func chooseImageReference(_ app: XCUIApplication) {
         let segment = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@", "现有云端图片引用")).firstMatch
@@ -124,6 +130,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         return observed
     }
 
+    @MainActor
     private func waitMessage(_ text: String, in app: XCUIApplication) {
         let message = node("ios-clipboard-status", in: app)
         XCTAssertTrue(message.waitForExistence(timeout: 20))
@@ -132,6 +139,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [result], timeout: 25), .completed)
     }
 
+    @MainActor
     func testOwnerCloudFileSelectionNeedsSeparateDirectedSend() async throws {
         let user = "ui_cloud_valid"
         let app = signIn(user)
@@ -150,6 +158,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         XCTAssertEqual(receipt.last_node, 55)
     }
 
+    @MainActor
     func testOwnerStaleCloudNodeCannotBecomeSendableReference() async throws {
         let user = "ui_cloud_stale"
         let app = signIn(user)
@@ -192,10 +201,12 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         XCTAssertTrue(app.buttons["撤销所选设备的 Clipboard 接收授权"].exists)
     }
 
+    @MainActor
     func testOwnerRevoke403FailsClosedWithoutAutoRetry() async throws {
         try await rejectedRevoke("ui_revoke403")
     }
 
+    @MainActor
     func testOwnerRevoke404FailsClosedWithoutAutoRetry() async throws {
         try await rejectedRevoke("ui_revoke404")
     }
@@ -230,6 +241,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         return app
     }
 
+    @MainActor
     func testOwnerSystemPNGUploadsVerifiedCASBeforeDirectedSend() async throws {
         let user = "ui_cas_ok"
         let app = importOSPNG(user)
@@ -243,6 +255,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         XCTAssertEqual(sent.last_node, 60)
     }
 
+    @MainActor
     func testOwnerCASMismatchedReadbackNeverSends() async throws {
         let user = "ui_cas_bad"
         let app = importOSPNG(user)
@@ -255,6 +268,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         XCTAssertEqual(observedWrites.writes, 0)
     }
 
+    @MainActor
     func testRealOwnerPageAndForegroundRoundtripCannotReuseOldTarget() async throws {
         let user = "ui_lifecycle"
         let app = signIn(user)
