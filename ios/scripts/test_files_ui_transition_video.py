@@ -272,6 +272,16 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         self.assertEqual(classify_bright_blank(frames, 0.6),
                          "sparse_early_transition_frames")
 
+    def test_single_early_frame_followed_by_late_gap_cannot_pass(self):
+        # A single +0.1s decoded frame, followed by 1.1s without any
+        # H264 samples, was falsely accepted by an early-only pair scan.
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26) if i not in set(range(8, 18))
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "sparse_early_transition_frames")
+
     def test_neutral_frame_rejection_reaches_real_video_gate(self):
         frames = self._neutral_transition_frames({10}, 131)
         accepted, report = self._audit_sample(frames=frames)
