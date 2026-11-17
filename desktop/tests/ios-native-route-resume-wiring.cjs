@@ -121,7 +121,8 @@ test('native local album directory resumes 32-slot anchor through the continuous
   const album = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'), 'utf8');
   const list = album.split('struct XDriveIOSNativePhotoAlbumsScreen: View {')[1];
   assert.match(ui, /@State private var localAlbumDirectoryOffset = 0/);
-  assert.match(ui, /XDriveIOSNativePhotoAlbumsScreen\(\s*savedOffset: \$localAlbumDirectoryOffset\s*\)/);
+  assert.match(ui, /case \.albums:\s*XDriveIOSNativePhotosCollectionsScreen\(\s*login: login, savedAlbumOffset: \$localAlbumDirectoryOffset/)
+  assert.match(ui, /XDriveIOSNativePhotoAlbumsScreen\(savedOffset: \$savedAlbumOffset\)/);
   assert.match(ui, /\.onChange\(of: localAlbumDirectoryOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
   assert.match(ui, /snapshot\.localAlbumDirectoryOffset \?\? 0/);
   assert.match(ui, /localAlbumDirectoryOffset: localAlbumDirectoryOffset/);

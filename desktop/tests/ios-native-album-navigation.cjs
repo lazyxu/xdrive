@@ -35,7 +35,9 @@ assert.ok(album.includes('libraryMonitor.stop()'));
 assert.ok(album.includes('suspendForNavigation()'));
 assert.match(album, /XDriveIOSPhotoImageLoader/);
 assert.doesNotMatch(album, /UploadSession|\.upload\(|UserDefaults|URLSession|WebView|WKWebView/);
-assert.match(dashboard, /XDriveIOSNativePhotoAlbumsScreen\(\s*savedOffset: \$localAlbumDirectoryOffset\s*\)/);
+assert.match(dashboard, /case \.albums:\s*XDriveIOSNativePhotosCollectionsScreen\(\s*login: login, savedAlbumOffset: \$localAlbumDirectoryOffset/)
+assert.match(dashboard, /XDriveIOSNativePhotoAlbumsScreen\(savedOffset: \$savedAlbumOffset\)/)
+assert.match(dashboard, /native-ios-collections-albums/)
 assert.doesNotMatch(dashboard, /LocalPhotoInventoryScreen\(\)/);
 console.log('native iOS PhotoKit albums: bounded, permission-scoped, linked to real Gallery');
 

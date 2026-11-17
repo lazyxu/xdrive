@@ -154,7 +154,9 @@ test('native cloud original list and preview clear stale media across Owner swit
 })
 
 test('native Photos exposes an Owner-bound backup status and cloud-originals route', () => {
-  assert.match(dashboard, /native-ios-gallery-backup-settings/)
+  assert.match(dashboard, /native-ios-gallery-more-menu/)
+  assert.match(dashboard, /native-ios-gallery-backup-status/)
+  assert.match(dashboard, /Button\(status\) \{ openBackup\(\.overview\) \}/)
   assert.match(dashboard, /backup\.schedule/)
   assert.match(dashboard, /backup\.busy/)
   assert.match(dashboard, /自动备份已暂停：需核对收据/)
