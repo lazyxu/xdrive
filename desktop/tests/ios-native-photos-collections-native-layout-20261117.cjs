@@ -55,3 +55,19 @@ test('Gallery still shows one bar and preserves real xDrive navigation routes', 
   assert.doesNotMatch(ui, /if tab == \.gallery && gallerySource != \.map/)
   assert.match(ui, /Section\("xDrive"\) \{[\s\S]*?Button\("文件"\) \{ tab = \.files \}/)
 })
+
+test('real Collections MapKit journey enters Gallery using current visible navigation', () => {
+  const nativeUITest = fs.readFileSync(path.resolve(
+    __dirname, '../../ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'), 'utf8')
+  const start = nativeUITest.indexOf('func testCollectionsUtilityOpensSameMapKitAndReturnsToCollections()')
+  const end = nativeUITest.indexOf('func testAFirstTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap()', start)
+  assert.ok(start >= 0 && end > start, 'real Collections -> MapKit UI test must remain registered')
+  const testBody = nativeUITest.slice(start, end)
+  assert.match(testBody, /openNativeLauncher\(in: app\)[\s\S]*?native-ios-tab-gallery/)
+  assert.match(testBody, /native-ios-gallery-more-menu[\s\S]*?app\.buttons\["全部照片"\]/)
+  assert.match(testBody, /native-ios-photos-bottom-bar[\s\S]*?native-ios-photos-collections-tab/)
+  assert.match(testBody, /native-ios-photos-return-tabs[\s\S]*?native-ios-collections-map/)
+  assert.match(testBody, /native-ios-collections-map[\s\S]*?native-ios-local-map-actions/)
+  assert.match(testBody, /native-ios-map-dismiss[\s\S]*?Closing a signed-out Collections Map must return to Collections/)
+  assert.doesNotMatch(testBody, /-xdrive-ui-navigation-synthetic-owner|launchEnvironment\[|simctl privacy grant/)
+})

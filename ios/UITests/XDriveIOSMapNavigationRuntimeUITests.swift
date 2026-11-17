@@ -658,6 +658,28 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
         app.launch()
         handleInitialPhotoLibraryPromptIfPresent()
+        // A previous genuine Gallery/MapKit test may have left a different
+        // restored module or source active. Navigate through the visible
+        // launcher and Gallery source menu before checking Collections;
+        // never inject Owner credentials, PhotoKit IDs, or a synthetic route.
+        openNativeLauncher(in: app)
+        let gallery = element("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(gallery.waitForExistence(timeout: 15),
+                      "Launcher must expose the real native Gallery destination")
+        XCTAssertTrue(gallery.isHittable,
+                      "Gallery must have a visible, tappable entry")
+        gallery.tap()
+        let more = element("native-ios-gallery-more-menu", in: app)
+        XCTAssertTrue(more.waitForExistence(timeout: 15),
+                      "Native Gallery must expose the real source menu")
+        more.tap()
+        let allPhotos = app.buttons["全部照片"].firstMatch
+        XCTAssertTrue(allPhotos.waitForExistence(timeout: 10),
+                      "Full Gallery must remain reachable in the real menu")
+        allPhotos.tap()
+        XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app)
+            .waitForExistence(timeout: 15),
+            "The actual Gallery must render its single Photos bottom bar")
         let collections = element("native-ios-photos-collections-tab", in: app)
         if !collections.waitForExistence(timeout: 8) {
             // On genuine iOS 26 Photos, Years/Months/All temporarily
