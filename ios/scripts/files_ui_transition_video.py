@@ -86,25 +86,75 @@ MIN_TAP_WINDOW_SECONDS = 0.55
 
 
 def classify_bright_blank(frames, tap_second):
-    """Flag even one all-white or all-black frame after a native tap.
+    """Fail closed on short neutral-content blinks and missing decoded frames.
 
-    A uniformly dark real screen must stay distinguishable from a textured
-    dark-mode page. Even one uniformly blank decoded frame is suspicious;
-    this conservative gate is not a signed-device 60/120 Hz FPS test.
+    The center crop excludes persistent top/bottom native chrome: a real child
+    viewport can become uniformly *gray* even when the overall screenshot
+    never turns white or black. Time is recorded-video PTS, aligned by audit().
+    A uniform frame is suspicious evidence, not proof of an app-process crash
+    or signed-device 60/120-Hz hitch performance.
     """
-    # +0.12 silently missed the first decoded post-tap sample at +0.1s.
-    sample = [f for f in frames if tap_second + 0.02 <= f["time"] <= tap_second + 1.45]
+    sample = [f for f in frames
+              if tap_second + 0.02 <= f["time"] <= tap_second + 1.45]
     if len(sample) < 3:
         return "missing_post_tap_frames"
+
+    # Prioritize visible blank pixels when both a flash and timestamp defect
+    # are present; the audit still fails regardless of which was first.
     for f in sample:
         spread = f["ymax"] - f["ymin"]
         # ffmpeg signalstats uses limited-range YUV: white=235, black=16.
-        white = spread <= 6 and f["yavg"] >= 230
-        black = spread <= 6 and f["yavg"] <= 26 and f["ymax"] <= 32
-        if white:
+        if spread <= 6 and f["yavg"] >= 230:
             return "suspected_solid_white_transition"
-        if black:
+        if spread <= 6 and f["yavg"] <= 26 and f["ymax"] <= 32:
             return "suspected_solid_black_transition"
+
+    # Merely finding three late frames was a false PASS: the first half-second
+    # after a tap may have been dropped by the recorder. A real 30Hz video
+    # produces many samples; these generous tolerances allow timestamp jitter
+    # and the coarser 10Hz unit-test fixtures without blessing a 0.4s hole.
+    if sample[0]["time"] - tap_second > 0.32:
+        return "missing_immediate_post_tap_frames"
+    early = [f for f in sample if f["time"] <= tap_second + 0.9]
+    if any(b["time"] - a["time"] > 0.24
+           for a, b in zip(early, early[1:])):
+        return "sparse_early_transition_frames"
+
+    def neutral(f):
+        return (f["ymax"] - f["ymin"] <= 6
+                and 26 < f["yavg"] < 230)
+
+    # A sustained flat child viewport, even in a neutral gray, is not
+    # acceptable evidence of a smoothly populated Gallery or Files page.
+    if all(neutral(f) for f in sample):
+        return "suspected_solid_neutral_transition"
+
+    # A one- or two-frame flat pulse between textured page frames is equally
+    # visible. Require surrounding textured evidence (from the preceding
+    # native page or the returning child) to avoid flagging a stationary
+    # legitimate empty-state background as a transient flash.
+    old_texture = any(
+        tap_second - 0.30 <= f["time"] < tap_second and
+        f["ymax"] - f["ymin"] > 12 for f in frames
+    )
+    pos = 0
+    while pos < len(sample):
+        if not neutral(sample[pos]):
+            pos += 1
+            continue
+        first = pos
+        while pos < len(sample) and neutral(sample[pos]):
+            pos += 1
+        last = pos - 1
+        before = first > 0 and sample[first - 1]["ymax"] - sample[first - 1]["ymin"] > 12
+        after = pos < len(sample) and sample[pos]["ymax"] - sample[pos]["ymin"] > 12
+        duration = sample[last]["time"] - sample[first]["time"]
+        if duration <= 0.35 and (before or old_texture) and after:
+            return "suspected_solid_neutral_transition"
+        # A child that goes blank gray and never repaints is also a regression.
+        if before and pos == len(sample) and len(sample) - first >= 3:
+            return "suspected_solid_neutral_transition"
+
     return None
 
 
