@@ -94,6 +94,27 @@ struct XDriveIOSAutoRouteSafetyChecks {
         precondition(!required("/api/v1/auth/login", method: "POST"))
         precondition(!required("/api/v1/auth/logout", method: "POST"))
         precondition(!required("/outside/api/v1/nodes/root"))
-        print("iOS LAN/WAN safety: exact Owner, unproven-route denial, no TLS/cancel/write replay passed")
+        // LAN reachability proof cannot outlive the Wi-Fi it was admitted on.
+        // The initial NWPathMonitor callback preserves the LAN generation
+        // only when the existing anonymous probe is still on that same path.
+        func deliver(_ isLAN: Bool, _ proven: Bool, _ local: Bool,
+                     _ admitted: UInt64, _ current: UInt64) -> Bool {
+            XDriveIOSAutoRouteSafety.mayDeliverFromRoute(
+                physicalIsLAN: isLAN, lanProofPresent: proven,
+                localPath: local, admittedLANEpoch: admitted,
+                currentLANEpoch: current)
+        }
+        precondition(deliver(true, true, true, 3, 3))
+        precondition(!deliver(true, false, true, 3, 3),
+                     "retired LAN proof cannot deliver late bytes")
+        precondition(!deliver(true, true, false, 3, 3),
+                     "LAN traffic cannot deliver on cellular")
+        precondition(!deliver(true, true, true, 3, 4),
+                     "old Wi-Fi A requests cannot deliver on Wi-Fi B")
+        precondition(deliver(true, true, true, 4, 4),
+                     "fresh verified Wi-Fi B requests can deliver")
+        precondition(deliver(false, false, false, 3, 4),
+                     "verified WAN is not invalidated by a LAN path change")
+        print("iOS LAN/WAN safety: exact Owner, stale LAN denial, no TLS/cancel/write replay passed")
     }
 }

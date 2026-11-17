@@ -16,7 +16,7 @@ test('network handoff refuses credential transfer to an unproven LAN or cell pat
 })
 
 test('in-flight HTTP and SSE callbacks fail closed on logout, Owner replacement and token rotation', () => {
-  assert.match(source, /func isCurrentRoute\(_ id: UUID, request: URLRequest\) -> Bool/)
+  assert.match(source, /func isCurrentRoute\(_ id: UUID, request: URLRequest,/)
   assert.match(source, /guard let current = binding, current\.id == id,/)
   assert.match(source, /expectedRouteID = route\.id/)
   assert.match(source, /let old = handle[\s\S]*?old\?\.cancel\(\)/)
@@ -55,4 +55,19 @@ test('in-flight HTTP and SSE callbacks fail closed on logout, Owner replacement 
   assert.match(source, /approved\.grantSecret == presentedGrant/)
 
 
+})
+
+test('old LAN frames cannot publish after a Wi-Fi/cellular handoff or route recovery', () => {
+  assert.match(safety, /static func mayDeliverFromRoute\(/)
+  assert.match(safety, /admittedLANEpoch == currentLANEpoch/)
+  assert.match(source, /var lanEvidenceEpoch: UInt64/)
+  assert.equal((source.match(/current\.lanEvidenceEpoch &\+= 1/g) || []).length, 2,
+    'both network changes and failed-LAN recoveries retire old LAN leases')
+  assert.match(source, /return \(routed, state\.id, state\.lanEvidenceEpoch\)/)
+  assert.match(source, /expectedLANEpoch = route\.lanEvidenceEpoch/)
+  assert.match(source, /routeIsCurrent\(physical: target\)/)
+  assert.match(source, /XDriveIOSAutoRouteSafety\.mayDeliverFromRoute\(/)
+  assert.match(source, /matching\(physicalURL, binding: current\)/)
+  assert.match(source, /lanProofPresent: current\.lan\.map/)
+  assert.match(source, /currentLANEpoch: current\.lanEvidenceEpoch/)
 })

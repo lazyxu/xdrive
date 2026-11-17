@@ -48,6 +48,18 @@ enum XDriveIOSAutoRouteSafety {
         return true
     }
 
+    /// A LAN physical request is bound to the exact proof generation present
+    /// when it started. A later Wi-Fi/cellular change or failed LAN recovery
+    /// retires that generation. WAN responses remain independently Owner/TLS
+    /// checked by the caller, so LAN changes do not discard good WAN reads.
+    static func mayDeliverFromRoute(
+        physicalIsLAN: Bool, lanProofPresent: Bool, localPath: Bool,
+        admittedLANEpoch: UInt64, currentLANEpoch: UInt64
+    ) -> Bool {
+        !physicalIsLAN || (lanProofPresent && localPath &&
+                           admittedLANEpoch == currentLANEpoch)
+    }
+
     static func isNetworkFailure(_ error: Error) -> Bool {
         guard let url = error as? URLError else { return false }
         switch url.code {

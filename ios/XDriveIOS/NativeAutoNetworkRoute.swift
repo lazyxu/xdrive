@@ -26,6 +26,8 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         let lan: URL?
         var active: URL
         var proven: Set<String>
+        // Revoked whenever prior LAN reachability proof is retired.
+        var lanEvidenceEpoch: UInt64
         let owner: XDriveNativeOwnerRoot?
         let token: String?
         let backgroundGrant: XDriveIOSApprovedPhotoBGCredential?
@@ -65,7 +67,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         lock.lock()
         binding = Binding(id: UUID(), logical: logical, domain: domain, lan: local,
                           active: selected, proven: [selected.absoluteString],
-                          owner: nil, token: nil, backgroundGrant: nil)
+                          lanEvidenceEpoch: 0, owner: nil, token: nil, backgroundGrant: nil)
         lock.unlock()
     }
 
@@ -77,7 +79,8 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         lock.lock()
         binding = Binding(id: UUID(), logical: owner.origin, domain: domain,
                           lan: local, active: selected,
-                          proven: [selected.absoluteString], owner: owner,
+                          proven: [selected.absoluteString], lanEvidenceEpoch: 0,
+                          owner: owner,
                           token: token, backgroundGrant: nil)
         lock.unlock()
         Task { await self.revalidateRoutes() }
@@ -142,6 +145,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
             binding = Binding(id: live.id, logical: live.logical,
                               domain: live.domain, lan: live.lan,
                               active: live.active, proven: live.proven,
+                              lanEvidenceEpoch: live.lanEvidenceEpoch,
                               owner: liveOwner, token: live.token,
                               backgroundGrant: grant)
             lock.unlock()
@@ -149,7 +153,8 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         }
         binding = Binding(id: UUID(), logical: owner.origin, domain: domain,
                           lan: lan, active: selected,
-                          proven: [selected.absoluteString], owner: owner,
+                          proven: [selected.absoluteString], lanEvidenceEpoch: 0,
+                          owner: owner,
                           token: nil, backgroundGrant: grant)
         lock.unlock()
         Task { await self.revalidateRoutes() }
@@ -164,6 +169,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
            verified.origin == owner.origin, old.token != token {
             binding = Binding(id: UUID(), logical: old.logical, domain: old.domain,
                               lan: old.lan, active: old.active, proven: old.proven,
+                              lanEvidenceEpoch: old.lanEvidenceEpoch,
                               owner: owner, token: token,
                               backgroundGrant: old.backgroundGrant)
         }
@@ -186,6 +192,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
                 binding = Binding(id: live.id, logical: live.logical,
                                   domain: live.domain, lan: live.lan,
                                   active: live.active, proven: live.proven,
+                                  lanEvidenceEpoch: live.lanEvidenceEpoch,
                                   owner: live.owner, token: live.token,
                                   backgroundGrant: nil)
             } else {
@@ -208,6 +215,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         if var current = binding, let lan = current.lan,
            !(wasUnknown && local && current.active == lan) {
             current.proven.remove(lan.absoluteString)
+            current.lanEvidenceEpoch &+= 1
             binding = current
         }
         onLocalNetwork = local
@@ -250,7 +258,7 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         return matching(requestURL, binding: pair.0)
     }
 
-    func selectedRoute(for original: URL) -> (url: URL, id: UUID)? {
+    func selectedRoute(for original: URL) -> (url: URL, id: UUID, lanEvidenceEpoch: UInt64)? {
         guard let (state, local, epoch) = snapshotEpoch(),
               matching(original, binding: state) else { return nil }
         // Before the Network monitor's first callback, the anonymous TLS
@@ -266,27 +274,43 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         components.host = preferred.host
         components.port = preferred.port
         guard let routed = components.url else { return nil }
-        return (routed, state.id)
+        return (routed, state.id, state.lanEvidenceEpoch)
     }
 
     func selectedURL(for original: URL) -> URL? {
         selectedRoute(for: original)?.url
     }
 
-    /// Prevent an in-flight request from publishing bytes after logout,
-    /// Owner replacement or refresh-token rotation. Network switching
-    /// itself keeps the same verified logical Owner and request generation.
-    func isCurrentRoute(_ id: UUID, request: URLRequest) -> Bool {
+    /// Reject old LAN responses after a Wi-Fi/cellular path change, even if
+    /// their Owner session ID is still current. WAN reads remain valid across
+    /// unrelated LAN changes under their independently verified TLS/Owner.
+    func isCurrentRoute(_ id: UUID, request: URLRequest,
+                        physicalURL: URL, lanEvidenceEpoch: UInt64) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard let current = binding, current.id == id,
               let original = request.url,
-              matching(original, binding: current) else { return false }
+              matching(original, binding: current),
+              matching(physicalURL, binding: current) else { return false }
+        let physicalIsLAN = current.lan.map { lan in
+            lan.scheme == physicalURL.scheme && lan.host == physicalURL.host &&
+                (lan.port ?? 443) == (physicalURL.port ?? 443)
+        } ?? false
+        let allowedLocalPath = networkEpoch == 0
+            ? current.active == current.lan : onLocalNetwork
+        guard XDriveIOSAutoRouteSafety.mayDeliverFromRoute(
+            physicalIsLAN: physicalIsLAN,
+            lanProofPresent: current.lan.map {
+                current.proven.contains($0.absoluteString)
+            } ?? false,
+            localPath: allowedLocalPath,
+            admittedLANEpoch: lanEvidenceEpoch,
+            currentLANEpoch: current.lanEvidenceEpoch
+        ) else { return false }
         if let presentedGrant = request.value(
             forHTTPHeaderField: "X-XDrive-IOS-Photo-Grant"
         ) {
-            // An old BG task must not inherit a newly signed-in Owner's
-            // verified LAN/WAN route or continue after grant retirement.
+            // A retired BG task must never inherit a replacement Grant.
             guard let approved = current.backgroundGrant,
                   let owner = current.owner,
                   approved.grantSecret == presentedGrant,
@@ -402,6 +426,14 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         // Proven routes are origin URLs, not full request endpoints.
         if let failedOrigin = Self.origin(of: failedPhysical) {
             current.proven.remove(failedOrigin.absoluteString)
+            if let lan = current.lan,
+               failedOrigin.scheme == lan.scheme &&
+               failedOrigin.host == lan.host &&
+               (failedOrigin.port ?? 443) == (lan.port ?? 443) {
+                // All other pending requests on the retired LAN must stop
+                // publishing bytes, even if their Owner has not changed.
+                current.lanEvidenceEpoch &+= 1
+            }
         }
         current.proven.insert(alternative.absoluteString)
         binding = current
@@ -433,10 +465,22 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
     private var retryCount = 0
     private var physicalURL: URL?
     private var expectedRouteID: UUID?
+    private var expectedLANEpoch: UInt64?
 
-    private func routeIsCurrent() -> Bool {
-        guard let expectedRouteID else { return false }
-        return XDriveIOSAutoRoute.shared.isCurrentRoute(expectedRouteID, request: request)
+    private func routeIsCurrent(physical proposed: URL? = nil) -> Bool {
+        guard let expectedRouteID, let expectedLANEpoch else { return false }
+        let target: URL?
+        if let proposed {
+            target = proposed
+        } else {
+            lock.lock()
+            target = physicalURL
+            lock.unlock()
+        }
+        guard let target else { return false }
+        return XDriveIOSAutoRoute.shared.isCurrentRoute(
+            expectedRouteID, request: request, physicalURL: target,
+            lanEvidenceEpoch: expectedLANEpoch)
     }
 
     /// A previous Owner cannot deliver another header or SSE frame after
@@ -470,11 +514,12 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         expectedRouteID = route.id
+        expectedLANEpoch = route.lanEvidenceEpoch
         begin(route.url)
     }
 
     private func begin(_ target: URL) {
-        guard routeIsCurrent() else { retireStaleRoute(); return }
+        guard routeIsCurrent(physical: target) else { retireStaleRoute(); return }
         lock.lock()
         if stopped { lock.unlock(); return }
         physicalURL = target
