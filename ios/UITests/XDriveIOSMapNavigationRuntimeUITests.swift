@@ -716,6 +716,69 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    /// A real UI journey rather than a source-only transition assertion:
+    /// Photos Library → Search/Filter → modal MapKit → Collections.
+    /// The Gallery wall must not be replaced during UIKit's dismissal.
+    func testUnifiedMapModalCollectionsExitUsesNativePhotosBar() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        handleInitialPhotoLibraryPromptIfPresent()
+        openNativeLauncher(in: app)
+        let gallery = element("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(gallery.waitForExistence(timeout: 15))
+        XCTAssertTrue(gallery.isHittable)
+        gallery.tap()
+
+        let more = element("native-ios-gallery-more-menu", in: app)
+        XCTAssertTrue(more.waitForExistence(timeout: 15))
+        more.tap()
+        let allPhotos = app.buttons["全部照片"].firstMatch
+        XCTAssertTrue(allPhotos.waitForExistence(timeout: 10))
+        allPhotos.tap()
+
+        let search = element("native-ios-photos-search", in: app)
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_MAP_MODAL_TAP phase=open-gallery-search")
+        search.tap()
+        let showMap = element("native-ios-unified-gallery-show-map", in: app)
+        if !showMap.waitForExistence(timeout: 20) {
+            diagnose("Actual Gallery search sheet lacks Show Map", in: app)
+        }
+        XCTAssertTrue(showMap.exists && showMap.isEnabled)
+        print("IOS_NATIVE_MAP_MODAL_TAP phase=show-filtered-map")
+        showMap.tap()
+        let map = element("native-ios-full-library-gps-map", in: app)
+        if !map.waitForExistence(timeout: 60) {
+            diagnose("Actual filtered Gallery did not present native MapKit", in: app)
+        }
+        XCTAssertTrue(map.exists)
+        let mapScreenshot = XCTAttachment(screenshot: app.screenshot())
+        mapScreenshot.name = "native-photos-modal-map-before-collections"
+        mapScreenshot.lifetime = .keepAlways
+        add(mapScreenshot)
+
+        XCTAssertFalse(element("native-ios-five-slot-bar", in: app).exists)
+        let collections = element("native-ios-photos-collections-tab", in: app)
+        XCTAssertTrue(collections.waitForExistence(timeout: 15))
+        XCTAssertTrue(collections.isHittable)
+        print("IOS_NATIVE_MAP_MODAL_TAP phase=close-map-to-collections")
+        collections.tap()
+        let collectionsPage = element("native-ios-photos-collections", in: app)
+        if !collectionsPage.waitForExistence(timeout: 30) {
+            diagnose("Collections did not appear after modal map dismissal", in: app)
+        }
+        XCTAssertTrue(collectionsPage.exists)
+        XCTAssertFalse(map.exists, "Dismissed MapKit cannot remain above Collections")
+        XCTAssertFalse(element("native-ios-five-slot-bar", in: app).exists)
+        XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app).exists)
+        let afterScreenshot = XCTAttachment(screenshot: app.screenshot())
+        afterScreenshot.name = "native-photos-modal-map-after-collections"
+        afterScreenshot.lifetime = .keepAlways
+        add(afterScreenshot)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     // The fixture pair must produce an EXACT two-member location Cell
     // regardless of extra stock GPS assets in iOS 18.5's real Photos library.
     // Real global GPS count and exact fixture membership are separate proofs.
