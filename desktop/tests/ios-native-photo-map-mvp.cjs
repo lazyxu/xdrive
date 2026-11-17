@@ -98,8 +98,10 @@ test('native map restores exact camera after Viewer return only for the same cur
 test('native GPS find-next skips only a bounded PhotoKit snapshot, not 100k assets', () => {
   assert.match(map, /Button\("查找下一批有定位照片"\)/)
   assert.match(map, /refresh\(at: page\.page\.nextOffset, findNextGPS: true\)/)
-  assert.match(map, /\.disabled\(busy \|\| page\.page\.finished\)/)
-  assert.match(map, /refresh\(at: page\.page\.nextOffset, findNextGPS: true\)\s*\}\s*\.disabled\(busy \|\| page\.page\.finished\)\s*\.frame\(minHeight: 44\)/)
+  assert.match(map, /\.disabled\(busy \|\| page\?\.page\.finished != false\)/)
+  // The unchanged bounded scan lives in the accessible native More section, not a footer.
+  assert.match(map, /Section\("当前页 · \\(page\?\.items\.count \?\? 0\) 张照片"\)[\s\S]*?Button\("查找下一批有定位照片"\)[\s\S]*?refresh\(at: page\.page\.nextOffset, findNextGPS: true\)[\s\S]*?\.disabled\(busy \|\| page\?\.page\.finished != false\)/)
+  assert.match(map, /Label\("地图操作", systemImage: "ellipsis.circle"\)[\s\S]*?\.frame\(minWidth: 44, minHeight: 44\)/)
   assert.match(map, /var next = try await worker\.nextLocatedPage\(\)/)
   assert.match(map, /var pagesRead = 1/)
   assert.match(map, /while findNextGPS && XDriveIOSNativePhotoMapPolicy\.shouldSeekNextGPSPage\(/)
@@ -415,7 +417,7 @@ test('first full-library GPS scan displays inert native MapKit while PhotoKit pr
   assert.match(library, /canSelectCells: refinedViewportIsCurrent/)
   assert.match(library, /guard phase == \.active, !busy, globalComplete,\s*refinedViewportIsCurrent/)
   assert.doesNotMatch(library, /native-ios-map-stale-viewport|上次细化的视窗/)
-  assert.match(library, /else if busy \{\s*ProgressView\(album == nil \? "正在加载照片位置…" : "正在加载相册位置…"\)/)
+  assert.match(library, /\.overlay\(alignment: \.bottomLeading\)[\s\S]*?if busy \{\s*ProgressView\(album == nil \? "正在加载照片位置…" : "正在加载相册位置…"\)/)
   assert.match(library, /accessibilityIdentifier\(\s*album == nil \? "native-ios-map-full-library-scan-progress"\s*:\s*"native-ios-map-album-scan-progress"\s*\)/)
   assert.doesNotMatch(library, /扫描完整授权范围中的位置元数据|已检查 .*个槽位/)
   assert.match(library, /if !globalComplete && !busy \{\s*Button\(album == nil \? "扫描已授权图库位置" : "扫描此相册位置"\)/)
