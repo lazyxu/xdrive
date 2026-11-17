@@ -157,11 +157,9 @@ struct XDriveIOSNativeFilesThumbnailTile: View {
                     .frame(width: width, height: height)
                     .clipped()
             } else {
-                Image(systemName: node.isDirectory ? "folder.fill" :
-                    XDriveIOSNativeFilesThumbnailPolicy.isVideo(node) ? "video.fill" :
-                    XDriveIOSNativeFilesThumbnailPolicy.canRequest(node) ? "photo" : "doc")
+                Image(systemName: XDriveIOSNativeFilesUIStyle.fileAppearance(node).symbol)
                     .font(.system(size: min(32, max(18, height * 0.46))))
-                    .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(XDriveIOSNativeFilesUIStyle.fileAppearance(node).tint)
             }
         }
         .frame(width: width, height: height)

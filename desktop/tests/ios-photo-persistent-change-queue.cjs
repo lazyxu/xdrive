@@ -277,3 +277,21 @@ test('Owner installation Keychain failure aborts all original runners without co
   assert.match(scan, /\.run\(allowICloudOriginals:/)
   assert.doesNotMatch(scan, /recordResult\(/)
 })
+
+test('invisible PhotoKit head rotates to bounded older candidates without losing any queue receipts', () => {
+  assert.match(store, /CREATE TABLE IF NOT EXISTS pending_inspection/)
+  assert.match(store, /func pendingBeyondInvisibleHead\(limit: Int = 64\)/)
+  assert.match(store, /SELECT priority,queue_order FROM pending_inspection WHERE id=1/)
+  assert.match(store, /WHERE state='pending' AND \(priority<\? OR/)
+  assert.match(store, /ORDER BY priority DESC,queue_order DESC LIMIT \?/)
+  assert.match(store, /DELETE FROM pending_inspection/)
+  assert.match(source, /let pending = try store\.pending\(limit: limit\)/)
+  assert.match(source, /let visible = try currentVisibleCandidates\(pending, epoch: epoch\)/)
+  assert.match(source, /if !visible\.isEmpty \|\| pending\.count < limit \{ return visible \}/)
+  assert.match(source, /store\.pendingBeyondInvisibleHead\(limit: limit\)/)
+  assert.match(source, /let eligible = try currentVisibleCandidates\(next, epoch: epoch\)/)
+  assert.match(source, /store\.repeatPendingPageAfterVisibleProgress\(\)/)
+  assert.match(store, /func repeatPendingPageAfterVisibleProgress\(\) throws/)
+  assert.match(store, /DELETE FROM pending_inspection WHERE id=1/)
+  assert.doesNotMatch(source, /markMissing\(.*invisible|settle\(.*invisible/)
+});

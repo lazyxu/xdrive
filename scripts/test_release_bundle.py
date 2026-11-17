@@ -344,6 +344,137 @@ class BundleCacheTests(unittest.TestCase):
         self.assertFalse(partial.exists())
 
 
+    def test_cross_origin_resume_never_mixes_gitlab_and_github_bytes(self):
+        """R10: a failed GitLab partial cannot consume the only GitHub attempt."""
+        from unittest.mock import patch
+        from release_bundle import sync
+
+        class Stream:
+            status = 200
+            headers = {}
+
+            def __init__(self, body, fail_midstream=False):
+                self.body = body
+                self.fail_midstream = fail_midstream
+                self.cursor = 0
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+            def read(self, n):
+                if self.fail_midstream and self.cursor:
+                    raise OSError("simulated interrupted origin")
+                if self.cursor >= len(self.body):
+                    return b""
+                chunk = self.body[self.cursor:self.cursor+min(n, 47)]
+                self.cursor += len(chunk)
+                return chunk
+
+        seen = []
+        def opener(request, timeout=None):
+            del timeout
+            seen.append((request.full_url, request.get_header("Range")))
+            if "bad-gitlab" in request.full_url:
+                return Stream(b"untrusted-partial", fail_midstream=True)
+            if request.get_header("Range"):
+                raise AssertionError("GitHub fallback must not inherit GitLab Range offset")
+            return Stream(self.data)
+
+        # Both endpoints are local test fixtures, with an intentionally
+        # interrupted first source; source-exact public URL admission remains
+        # separately enforced by validate(... allow_local=False).
+        self.manifest["artifacts"][0]["sources"]["gitlab"] = (
+            f"http://127.0.0.1:{self.http.server_port}/bad-gitlab")
+        self.manifest["artifacts"][0]["sources"]["github"] = (
+            f"http://127.0.0.1:{self.http.server_port}/pkg.ipa")
+        with patch("release_bundle.OPENER.open", side_effect=opener):
+            self.assertEqual(sync(self.manifest, self.cache, retries=1, allow_local=True), 0)
+        self.assertEqual(len(seen), 2)
+        self.assertIsNone(seen[1][1], "fallback must restart with a complete clean body")
+        self.assertEqual((self.cache / "packages" / ("a" * 40) / "pkg.ipa").read_bytes(), self.data)
+        self.assertFalse((self.cache / "staging" / ("a" * 40) / "pkg.ipa.part.origin").exists())
+
+    def test_same_origin_interrupted_stream_resumes_and_cleans_origin(self):
+        from release_bundle import _download
+        from unittest.mock import patch
+        path = self.root / "same-origin.ipa"
+        url = f"http://127.0.0.1:{self.http.server_port}/pkg.ipa"
+
+        class Stream:
+            status = 200
+            headers = {}
+            def __init__(self, body, *, status=200, headers=None, fail=False):
+                self.body = body
+                self.status = status
+                self.headers = headers or {}
+                self.fail = fail
+                self.cursor = 0
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+            def read(self, n):
+                if self.fail and self.cursor:
+                    raise OSError("disconnected")
+                if self.cursor == len(self.body):
+                    return b""
+                part = self.body[self.cursor:self.cursor+min(n, 47)]
+                self.cursor += len(part)
+                return part
+
+        with patch("release_bundle.OPENER.open", return_value=Stream(self.data, fail=True)):
+            with self.assertRaises(OSError):
+                _download(url, path, len(self.data), hashlib.sha256(self.data).hexdigest(), None)
+        partial = path.with_name(path.name + ".part")
+        origin = path.with_name(path.name + ".part.origin")
+        self.assertEqual(partial.read_bytes(), self.data[:47])
+        self.assertEqual(origin.read_text().strip(), hashlib.sha256(url.encode()).hexdigest())
+        first = partial.stat().st_size
+        expected_header = f"bytes {first}-{len(self.data)-1}/{len(self.data)}"
+        response = Stream(self.data[first:], status=206, headers={"Content-Range": expected_header})
+        with patch("release_bundle.OPENER.open", return_value=response) as opener:
+            _download(url, path, len(self.data), hashlib.sha256(self.data).hexdigest(), None)
+            self.assertEqual(opener.call_args.args[0].get_header("Range"), f"bytes={first}-")
+        self.assertEqual(path.read_bytes(), self.data)
+        self.assertFalse(partial.exists())
+        self.assertFalse(origin.exists())
+
+    def test_unknown_legacy_or_symlinked_origin_never_resumes(self):
+        from release_bundle import _download
+        from unittest.mock import patch
+        path = self.root / "legacy.ipa"
+        url = f"http://127.0.0.1:{self.http.server_port}/pkg.ipa"
+        part = path.with_name(path.name + ".part")
+        marker = path.with_name(path.name + ".part.origin")
+        part.write_bytes(b"bad-old-bytes")
+        # Pre-upgrade partial has no origin metadata. It must restart, not
+        # combine arbitrary old data with current GitHub/GitLab Range bytes.
+        with patch("release_bundle.OPENER.open", wraps=None) as opener:
+            # SimpleHTTPRequestHandler is not invoked; assert first request
+            # cannot carry the legacy offset, then deliberately stop.
+            opener.side_effect = OSError("probe complete")
+            with self.assertRaises(OSError):
+                _download(url, path, len(self.data), hashlib.sha256(self.data).hexdigest(), None)
+            self.assertIsNone(opener.call_args.args[0].get_header("Range"))
+        self.assertFalse(part.exists())
+        # Corrupted or torn marker bytes must be discarded so the next
+        # attempt can restart cleanly, rather than fail every subsequent
+        # GitLab and GitHub fallback.
+        part.write_bytes(b"bad-partial")
+        marker.write_bytes(bytes([0xff, 0xfe, 0x00]))
+        with patch("release_bundle.OPENER.open", side_effect=OSError("offline")) as opener:
+            with self.assertRaises(OSError):
+                _download(url, path, len(self.data), hashlib.sha256(self.data).hexdigest(), None)
+            self.assertIsNone(opener.call_args.args[0].get_header("Range"))
+        self.assertFalse(part.exists())
+        self.assertFalse(marker.exists())
+        other = self.root / "untouchable"
+        other.write_bytes(b"keep me")
+        marker.symlink_to(other)
+        with self.assertRaisesRegex(ValueError, "symlinked"):
+            _download(url, path, len(self.data), hashlib.sha256(self.data).hexdigest(), None)
+        self.assertEqual(other.read_bytes(), b"keep me")
+
     def test_host_control_explicit_retry_rechecks_ready_cache(self):
         """The admin retry must not be swallowed by the ready-status fast path."""
         home = self.root / "host-home"
