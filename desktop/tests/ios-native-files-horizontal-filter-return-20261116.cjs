@@ -12,12 +12,18 @@ const video = source('ios/scripts/files_ui_transition_video.py')
 const still = source('ios/scripts/capture-navigation-smoke-frames.py')
 const workflow = source('.github/workflows/ios-native-navigation-runtime.yml')
 const paths = ["testFilesSizeFilterHorizontalGalleryReturn","testFilesDateThenSizeFiltersKeepNoSessionGuard","testFilesSizeFilterAfterQuickRailReentry","testFilesSizeFilterAfterSavedSearchesDismiss","testFilesSizeFilterAfterCloudDenialReturn","testFilesSizeFilterAfterForegroundResume"]
-test('actual native filter strip scrolls horizontally and is used by the 49-route suite', () => {
+test('actual native filter strip scrolls horizontally and is used by the 50-route suite', () => {
   assert.match(browse, /ScrollView\(\.horizontal, showsIndicators: false\)/)
   assert.match(browse, /native-ios-files-filter-strip/)
-  const stage = perf.slice(perf.indexOf('case "files.search.date", "files.search.size":'), perf.indexOf('case "files.home.more-organizer":'))
+  // All three filters share the real staging branch. An earlier two-filter
+  // string silently returned an empty slice after the kind route was added.
+  const start = perf.indexOf('case "files.search.date", "files.search.size", "files.search.kind":')
+  const end = perf.indexOf('case "files.home.more-organizer":', start)
+  assert.ok(start >= 0 && end > start, 'Missing actual shared Files filter staging branch')
+  const stage = perf.slice(start, end)
+  assert.match(stage, /let id = filesSearchFilterID\(route\)/)
   assert.match(stage, /strip\.swipeLeft\(\)/)
-  assert.match(stage, /native-ios-files-search-size-filter/)
+  assert.match(perf, /case "files\.search\.size": return "native-ios-files-search-size-filter"/)
 })
 test('six independent native Gallery/Files filter journeys are captured by strict H264 and screenshot registries', () => {
   for (const name of paths) {
