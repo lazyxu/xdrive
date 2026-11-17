@@ -182,8 +182,7 @@ struct XDriveIOSNativeCloudPhotoAssetFilmstrip: View {
     var body: some View {
         if admitted, visible.count > 1, let openedOwner {
             ScrollViewReader { scroll in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .center, spacing: 4) {
+                XDriveIOSNativePhotoWallViewerFilmstripScroll {
                         ForEach(visible) { item in
                             Button {
                                 guard !busy, admitted,
@@ -215,12 +214,7 @@ struct XDriveIOSNativeCloudPhotoAssetFilmstrip: View {
                             )
                             .accessibilityIdentifier("native-ios-cloud-filmstrip-tile")
                         }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
                 }
-                .frame(height: 72)
-                .background(.ultraThinMaterial)
                 // Horizontal drag scrubs the bounded page; a short tap keeps
                 // each tile's accessible Button action and native zoom intact.
                 .highPriorityGesture(

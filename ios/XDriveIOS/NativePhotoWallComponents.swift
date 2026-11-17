@@ -507,6 +507,30 @@ struct XDriveIOSNativePhotoWallCollectionStack<Content: View>: View {
     }
 }
 
+/// One bounded native filmstrip host. Source callers own authorization,
+/// scrubbing, exact Owner/PhotoKit revisions, and Viewer selection.
+struct XDriveIOSNativePhotoWallViewerFilmstripScroll<Content: View>: View {
+    let height: CGFloat
+    private let content: Content
+
+    init(height: CGFloat = 72, @ViewBuilder content: () -> Content) {
+        self.height = height
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .center, spacing: 4) {
+                content
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+        }
+        .frame(height: height)
+        .background(.ultraThinMaterial)
+    }
+}
+
 /// Loading and retry messages share a visual layout across local and cloud
 /// place sheets. Source readers still own onRetry, cancellation and authority.
 struct XDriveIOSNativePhotoWallFeedback: View {

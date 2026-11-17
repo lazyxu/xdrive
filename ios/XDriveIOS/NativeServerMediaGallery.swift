@@ -1385,11 +1385,9 @@ private struct XDriveIOSNativeServerVirtualRange: View {
     }
 
     private var placeholders: some View {
-        XDriveIOSNativePhotoWallGrid(density: density) {
-            ForEach(0..<min(48, max(0, expectedTotal - offset)), id: \.self) { _ in
-                XDriveIOSNativePhotoWallPlaceholderTile()
-            }
-        }
+        XDriveIOSNativePhotoWallSkeletonGrid(
+            density: density, count: min(48, max(0, expectedTotal - offset))
+        )
     }
 
     var body: some View {

@@ -20,8 +20,8 @@ test('one adaptive SwiftUI photo grid is wired into local, album, location and c
   assert.match(shared, /minimum: density\.minimumCellWidth/)
   assert.match(shared, /maximum: density\.maximumCellWidth/)
   assert.match(shared, /@ViewBuilder content: \(\) -> Content/)
-  for (const [source, count] of [[local, 1], [album, 1], [map, 0],
-    [cloud, 1], [cluster, 0]]) {
+  for (const [source, count] of [[local, 0], [album, 1], [map, 0],
+    [cloud, 0], [cluster, 0]]) {
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
       count, 'each expected wall and its placeholder must use shared grid')
   }
@@ -38,7 +38,7 @@ test('one SwiftUI gesture policy handles Owner cloud Gallery and map clusters', 
   assert.match(shared, /let enabled: Bool/)
   assert.match(shared, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)
   assert.match(shared, /guard enabled else \{ return \}/)
-  assert.match(shared, /density = density\.applyingPinch\(scale\)/)
+  assert.match(shared, /let changed = density\.applyingPinch\(scale\)[\s\S]*?onDensityChange\?\(changed\)[\s\S]*?density = changed/)
   assert.match(shared, /func xdrivePhotoWallPinch\(/)
   assert.match(cluster, /\.xdrivePhotoWallPinch\(\s*density: \$wallDensity,\s*enabled: activeOwner && !busy && viewing == nil/)
   assert.match(cloud, /\.xdrivePhotoWallPinch\(\s*density: \$wallDensity,[\s\S]*?enabled: phase == \.active && selected == nil && !model\.busy &&\s*login\.owner != nil/)
@@ -110,9 +110,10 @@ test('local, album and cloud ranges share skeleton cells; only chronological pag
   assert.match(shared, /\.accessibilityHidden\(true\)/)
   assert.match(shared, /struct XDriveIOSNativePhotoWallDayHeader: View/)
   assert.match(shared, /\.accessibilityAddTraits\(\.isHeader\)/)
-  for (const source of [local, album, cloud]) {
-    assert.match(source, /XDriveIOSNativePhotoWallPlaceholderTile\(\)/)
-  }
+  assert.match(local, /XDriveIOSNativePhotoWallPlaceholderTile\(\)/)
+  assert.match(album, /XDriveIOSNativePhotoWallPlaceholderTile\(\)/)
+  assert.match(cloud, /XDriveIOSNativePhotoWallSkeletonGrid\(/)
+  assert.match(shared, /struct XDriveIOSNativePhotoWallSkeletonGrid: View/)
   assert.match(local, /XDriveIOSNativePhotoWallSectionList\(\s*sections: daySections, density: density/)
   assert.match(local, /title: \{ \$0\.continuesPreviousPage \? nil : \$0\.title \}/)
   assert.match(album, /XDriveIOSNativePhotoWallSectionList\(/)

@@ -35,3 +35,17 @@ test('shared pinch callback captures a currently visible, unique authorized tile
     assert.match(n, /filter\(\{ \$0\.id == id \}\)\.count == 1/)
   }
 })
+
+test('local/cloud/source Viewer filmstrips share one inert scroll geometry', () => {
+  assert.match(shared, /struct XDriveIOSNativePhotoWallViewerFilmstripScroll<Content: View>/)
+  for (const n of ['NativeLocalPhotoViewerFilmstrip','NativeCloudPhotoAssetViewerFilmstrip','NativeUnifiedSourcePhotoMap'])
+    assert.match(swift(n), /XDriveIOSNativePhotoWallViewerFilmstripScroll/)
+  assert.match(swift('NativeLocalPhotoViewerFilmstrip'), /XDriveIOSNativeLocalFilmstripPolicy\.target/)
+  assert.match(swift('NativeCloudPhotoAssetViewerFilmstrip'), /XDriveIOSNativeCloudFilmstripPolicy\.target/)
+  assert.match(source, /private func admitViewerNeighbor\(/)
+})
+test('cloud PhotoAsset range retains bounded source-verified loading geometry', () => {
+  const cloud = swift('NativeServerMediaGallery')
+  assert.match(cloud, /count: min\(48, max\(0, expectedTotal - offset\)\)/)
+  assert.match(cloud, /XDriveIOSNativePhotoWallSkeletonGrid\(/)
+})

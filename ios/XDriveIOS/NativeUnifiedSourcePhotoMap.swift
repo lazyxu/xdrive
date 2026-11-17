@@ -1341,8 +1341,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 .accessibilityLabel("下一张")
                 .disabled(!active || busy || opening || viewing == nil)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 4) {
+            XDriveIOSNativePhotoWallViewerFilmstripScroll(height: 68) {
                     ForEach(previous + current) { row in
                         Button { admitViewerNeighbor(row) } label: {
                             XDriveIOSUnifiedPhotoTile(
@@ -1359,8 +1358,6 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                         .disabled(!active || busy || opening)
                         .accessibilityLabel("选择此地点的照片")
                     }
-                }
-                .padding(4)
             }
         }
         .padding(.horizontal, 8)
