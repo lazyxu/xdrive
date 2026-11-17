@@ -30,6 +30,18 @@ enum XDriveIOSNativePhotosTestNavigator {
 
     @discardableResult
     static func tap(_ id: String, in app: XCUIApplication) -> Bool {
+        // A Gallery filter button opens a Menu. A requested editor test must
+        // select the *visible* Search/Filter action as its second user tap.
+        if id == "native-ios-gallery-open-filters" {
+            let menu = found(id, in: app)
+            guard menu.exists && menu.isHittable else { return false }
+            menu.tap()
+            let action = app.buttons["搜索与筛选"].firstMatch
+            guard action.waitForExistence(timeout: 10) && action.isHittable
+            else { return false }
+            action.tap()
+            return true
+        }
         let direct = found(id, in: app)
         if direct.exists && direct.isHittable { direct.tap(); return true }
         // The original c83/b9 toolbar remains a real usable baseline.
