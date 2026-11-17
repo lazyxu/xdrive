@@ -16,8 +16,8 @@ test('network handoff refuses credential transfer to an unproven LAN or cell pat
 })
 
 test('in-flight HTTP and SSE callbacks fail closed on logout, Owner replacement and token rotation', () => {
-  assert.match(source, /func isCurrentRoute\(_ id: UUID, original: URL\) -> Bool/)
-  assert.match(source, /guard let current = binding, current\.id == id else \{ return false \}/)
+  assert.match(source, /func isCurrentRoute\(_ id: UUID, request: URLRequest\) -> Bool/)
+  assert.match(source, /guard let current = binding, current\.id == id,/)
   assert.match(source, /expectedRouteID = route\.id/)
   assert.match(source, /let old = handle[\s\S]*?old\?\.cancel\(\)/)
   assert.match(source, /client\?\.urlProtocol\(self, didFailWithError: URLError\(\.cancelled\)\)/)
@@ -27,4 +27,12 @@ test('in-flight HTTP and SSE callbacks fail closed on logout, Owner replacement 
     assert.match(source.slice(from, from+240), /guard routeIsCurrent\(\) else \{ retireStaleRoute\(\); return \}/)
   }
   assert.match(source, /func clear\(\) \{[\s\S]*?binding = nil/)
+  assert.match(source, /func isCurrentRoute\(_ id: UUID, request: URLRequest\)/)
+  assert.match(source, /presentedGrant = request\.value\([\s\S]*?"X-XDrive-IOS-Photo-Grant"/)
+  assert.match(source, /approved\.grantSecret == presentedGrant/)
+  assert.match(source, /approved\.matches\(owner\)/)
+  assert.match(source, /backgroundGrant: grant/)
+  assert.match(source, /backgroundGrant: nil/)
+  assert.match(source, /XDriveIOSApprovedPhotoBGVault\.prove\(/)
+
 })

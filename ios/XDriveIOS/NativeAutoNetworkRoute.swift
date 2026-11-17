@@ -132,9 +132,20 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
         if let live = binding, let liveOwner = live.owner, live.token != nil {
             let matches = live.logical == owner.origin &&
                 XDriveIOSAutoRouteSafety.sameOwner(liveOwner, owner)
+            guard matches else {
+                lock.unlock()
+                throw XDriveIOSPhotoBGVaultFailure.differentOwnerStillApproved
+            }
+            // Foreground and BG can share only the EXACT same Owner. Retain
+            // the foreground generation and route; attach a separate grant
+            // fence for any BG request without recreating the SwiftUI root.
+            binding = Binding(id: live.id, logical: live.logical,
+                              domain: live.domain, lan: live.lan,
+                              active: live.active, proven: live.proven,
+                              owner: liveOwner, token: live.token,
+                              backgroundGrant: grant)
             lock.unlock()
-            if matches { return }
-            throw XDriveIOSPhotoBGVaultFailure.differentOwnerStillApproved
+            return
         }
         binding = Binding(id: UUID(), logical: owner.origin, domain: domain,
                           lan: lan, active: selected,
@@ -168,7 +179,19 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
 
     func clearBackgroundIfNeeded() {
         lock.lock()
-        if binding?.backgroundGrant != nil { binding = nil }
+        if let live = binding, live.backgroundGrant != nil {
+            if live.token != nil {
+                // A completed BGTask must not sign out the foreground Owner.
+                // Keep the original generation to avoid resetting Viewer UI.
+                binding = Binding(id: live.id, logical: live.logical,
+                                  domain: live.domain, lan: live.lan,
+                                  active: live.active, proven: live.proven,
+                                  owner: live.owner, token: live.token,
+                                  backgroundGrant: nil)
+            } else {
+                binding = nil
+            }
+        }
         lock.unlock()
     }
 
@@ -253,11 +276,23 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
     /// Prevent an in-flight request from publishing bytes after logout,
     /// Owner replacement or refresh-token rotation. Network switching
     /// itself keeps the same verified logical Owner and request generation.
-    func isCurrentRoute(_ id: UUID, original: URL) -> Bool {
+    func isCurrentRoute(_ id: UUID, request: URLRequest) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard let current = binding, current.id == id else { return false }
-        return matching(original, binding: current)
+        guard let current = binding, current.id == id,
+              let original = request.url,
+              matching(original, binding: current) else { return false }
+        if let presentedGrant = request.value(
+            forHTTPHeaderField: "X-XDrive-IOS-Photo-Grant"
+        ) {
+            // An old BG task must not inherit a newly signed-in Owner's
+            // verified LAN/WAN route or continue after grant retirement.
+            guard let approved = current.backgroundGrant,
+                  let owner = current.owner,
+                  approved.grantSecret == presentedGrant,
+                  approved.matches(owner) else { return false }
+        }
+        return true
     }
 
     /// Only an exact current Owner proof authorizes a *new* physical route.
@@ -271,6 +306,13 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
             return false
         }
         do {
+            // A foreground bearer proof does not replace the independent
+            // Device/Grant/Source proof required for a background writer.
+            if let grant = binding.backgroundGrant {
+                let exact = try await XDriveIOSApprovedPhotoBGVault.prove(
+                    grant, at: target, direct: true)
+                guard exact.matches(owner) else { return false }
+            }
             if let token = binding.token {
                 let proof = try await XDriveNativeOwnerRootVerifier(
                     origin: target, accessToken: token,
@@ -278,15 +320,10 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
                 ).verify()
                 return XDriveIOSAutoRouteSafety.sameOwner(owner, proof)
             }
-            if let grant = binding.backgroundGrant {
-                let exact = try await XDriveIOSApprovedPhotoBGVault.prove(
-                    grant, at: target, direct: true)
-                return exact.matches(owner)
-            }
+            return binding.backgroundGrant != nil
         } catch {
             return false
         }
-        return false
     }
 
     /// Keep a separately proven WAN path warm while home Wi-Fi prefers LAN.
@@ -398,8 +435,8 @@ final class XDriveIOSRoutedURLProtocol: URLProtocol, @unchecked Sendable {
     private var expectedRouteID: UUID?
 
     private func routeIsCurrent() -> Bool {
-        guard let expectedRouteID, let original = request.url else { return false }
-        return XDriveIOSAutoRoute.shared.isCurrentRoute(expectedRouteID, original: original)
+        guard let expectedRouteID else { return false }
+        return XDriveIOSAutoRoute.shared.isCurrentRoute(expectedRouteID, request: request)
     }
 
     /// A previous Owner cannot deliver another header or SSE frame after
