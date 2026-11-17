@@ -27,7 +27,7 @@ test('in-flight HTTP and SSE callbacks fail closed on logout, Owner replacement 
     assert.match(source.slice(from, from+240), /guard routeIsCurrent\(\) else \{ retireStaleRoute\(\); return \}/)
   }
   assert.match(source, /func clear\(\) \{[\s\S]*?binding = nil/)
-  assert.match(source, /func isCurrentRoute\(_ id: UUID, request: URLRequest\)/)
+  assert.match(source, /physicalURL: URL, lanEvidenceEpoch: UInt64\) -> Bool/)
   assert.match(source, /presentedGrant = request\.value\([\s\S]*?"X-XDrive-IOS-Photo-Grant"/)
   assert.match(source, /approved\.grantSecret == presentedGrant/)
   assert.match(source, /approved\.matches\(owner\)/)
