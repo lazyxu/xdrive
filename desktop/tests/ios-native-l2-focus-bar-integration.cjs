@@ -36,7 +36,9 @@ test('cloud and album Viewer return uses source-local L2 and explicit restore ac
   assert.match(wall, /focusedBrowsing = false\s*onFocusChange\?\(false\)\s*accessibilityFocusedMediaID = nil\s*model\.suspendForNavigation\(\)/);
   assert.match(shell, /private func resetNavigation\(\) \{\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
   assert.match(shell, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)[\s\S]*?galleryFocused = gallerySource == \.map/);
-  assert.match(shell, /\.onChange\(of: tab\) \{ next in\s*galleryFocusGeneration = UUID\(\)\s*if next != \.gallery \{\s*galleryFocused = false\s*mapNavigationExplicitlyShown = false\s*\}/);
+  // Leaving Photos cancels pending post-dismissal destinations before it
+  // revokes L2 focus; a stale map callback must not reopen a Gallery route.
+  assert.match(shell, /\.onChange\(of: tab\) \{ next in\s*galleryFocusGeneration = UUID\(\)\s*if next != \.gallery \{\s*pendingUnifiedMapDestination = nil\s*pendingUnifiedMapSearch = false\s*pendingUnifiedMapOwnerScope = nil\s*galleryFocused = false\s*mapNavigationExplicitlyShown = false\s*\}/);
 });
 
 test('rotation changes only presentation, not source identity, L2, or L3 Viewer', () => {

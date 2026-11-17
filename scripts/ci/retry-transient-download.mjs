@@ -13,6 +13,10 @@ const maxAttempts = 3
 const delayMs = Math.max(0, Math.min(60_000, Number(process.env.XDRIVE_CI_RETRY_DELAY_MS ?? 10_000) || 0))
 const maxCaptured = 128 * 1024
 const transientHTTP = /(?:response code:?\s*504|HTTP(?:\s+response\s+code:?)?\s*504|gateway time-?out)/i
+// A specifically identified, externally downloaded Kotlin Gradle plugin jar
+// can fail with TCP "Connection reset" before any compilation starts. Retry
+// only this Maven Central artifact transfer, never unrelated Gradle errors.
+const transientKotlinMavenReset = /Could not download kotlin-gradle-plugin-[^\s]+\.jar[\s\S]*?Could not get resource 'https:\/\/repo\.maven\.apache\.org\/maven2\/org\/jetbrains\/kotlin\/kotlin-gradle-plugin\/[^']+'[\s\S]*?Connection reset/i
 // A known-good Kotlin Gradle plugin occasionally cannot be resolved from
 // external repositories on a fresh GitHub runner. Only the standalone master
 // APK build opts into this narrow, bounded retry; compiler errors stay fatal.
@@ -43,10 +47,12 @@ function attempt() {
     child.on('close', (code, signal) => {
       const retryHTTP = transientHTTP.test(recent)
       const retryGradle = retryGradlePluginResolution && transientGradlePlugin.test(recent)
+      const retryKotlinMaven = transientKotlinMavenReset.test(recent)
       resolve({
         code: code ?? 1,
-        transient: !signal && (retryHTTP || retryGradle),
-        reason: retryGradle ? 'Kotlin Gradle plugin resolution' : 'HTTP 504 dependency download',
+        transient: !signal && (retryHTTP || retryGradle || retryKotlinMaven),
+        reason: retryKotlinMaven ? 'Kotlin Maven Central jar connection reset' :
+          retryGradle ? 'Kotlin Gradle plugin resolution' : 'HTTP 504 dependency download',
       })
     })
   })
