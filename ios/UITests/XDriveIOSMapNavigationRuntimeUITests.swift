@@ -36,6 +36,22 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         return app.descendants(matching: .any).matching(identifier: substitute).firstMatch
     }
 
+    // The real PhotoKit/viewport proof owns the count. On screen only the
+    // place sheet displays it; VoiceOver can read it on the grid action.
+    private func verifiedLocalMapSummary(
+        in app: XCUIApplication, timeout: TimeInterval
+    ) -> String? {
+        let grid = element("native-ios-local-map-current-grid", in: app)
+        guard grid.waitForExistence(timeout: 20) else { return nil }
+        let predicate = NSPredicate(format: "value CONTAINS %@", "张照片")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: grid)
+        guard XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed,
+              grid.isEnabled else {
+            return nil
+        }
+        return grid.value as? String
+    }
+
     private func openNativeLauncher(in app: XCUIApplication) {
         let launcher = element("native-ios-tab-launcher", in: app)
         if launcher.exists && launcher.isHittable {
@@ -640,18 +656,18 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     // Real global GPS count and exact fixture membership are separate proofs.
     func testAFirstTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap() {
         let app = openLocalMap()
-        let verified = element("native-ios-map-verified-count", in: app)
-        if !verified.waitForExistence(timeout: 90) {
+        let verified = verifiedLocalMapSummary(in: app, timeout: 90)
+        if verified == nil {
             diagnose("Two imported GPS assets not verified by PhotoKit", in: app)
         }
-        XCTAssertTrue(verified.exists,
-                      "Synthetic GPS images were not indexed by real PhotoKit")
+        XCTAssertNotNil(verified,
+                      "Real imported GPS images were not indexed by actual PhotoKit")
         // Newly erased iOS 18.5 may still contain OS-supplied GPS photos.
         // The overall count must report the REAL library, not pretend the
         // two fixture assets are the only photos. Their exact same-location
         // membership is separately verified by the two-member marker below.
-        print("MAP_REAL_PHOTOKIT_GLOBAL_GPS_COUNT \(verified.label)")
-        let countText = verified.label.split(separator: " ").first.map(String.init)
+        print("MAP_REAL_PHOTOKIT_GLOBAL_GPS_COUNT \(verified ?? "")")
+        let countText = (verified ?? "").split(separator: " ").first.map(String.init)
         let count = countText.flatMap(Int.init)
         XCTAssertNotNil(count, "Real PhotoKit GPS count must be numeric")
         XCTAssertGreaterThanOrEqual(count ?? 0, 2,
@@ -868,8 +884,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     func testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted() {
         let app = openLocalMap()
         let map = element("native-ios-full-library-gps-map", in: app)
-        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
-            .waitForExistence(timeout: 90))
+        XCTAssertNotNil(verifiedLocalMapSummary(in: app, timeout: 90))
         // The default photo map is immersive even if a delayed L2 callback
         // fires as the previous Gallery or Sheet disappears.
         let dashboardBar = element("native-ios-five-slot-bar", in: app)
@@ -988,14 +1003,13 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
         XCTAssertTrue(denied.exists, "Denied Photos must fail closed")
         XCTAssertFalse(element("native-ios-full-library-gps-map", in: app).exists)
-        XCTAssertFalse(element("native-ios-map-verified-count", in: app).exists)
+        XCTAssertFalse(element("native-ios-local-map-current-grid", in: app).exists)
         XCTAssertFalse(element("native-ios-map-p0-independent-count", in: app).exists)
         recordActualPhotoKitReadback(app, stage: "verified-denied")
         authorizeFullPhotosInSettings(app)
         XCTAssertTrue(element("native-ios-full-library-gps-map", in: app)
             .waitForExistence(timeout: 60))
-        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
-            .waitForExistence(timeout: 90))
+        XCTAssertNotNil(verifiedLocalMapSummary(in: app, timeout: 90))
 
         // Verify the genuine iOS Selected/Limited Photos permission too.
         // This is not simulatable by a fake PHAuthorizationStatus or by the
@@ -1039,7 +1053,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(limitedBlock.exists)
         XCTAssertFalse(element("native-ios-full-library-gps-map", in: app).exists,
             "Limited Photos may not render a misleading partial location map")
-        XCTAssertFalse(element("native-ios-map-verified-count", in: app).exists)
+        XCTAssertFalse(element("native-ios-local-map-current-grid", in: app).exists)
         let readback = element("native-ios-map-photo-auth-readback", in: app)
         XCTAssertTrue(readback.waitForExistence(timeout: 10))
         XCTAssertTrue(readback.label.contains("rw=4"),
@@ -1059,8 +1073,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         // The native MKMapView mounts while its 100k PhotoKit scan is
         // still running. The authoritative verified-count element appears
         // only after ALL 100k PHAssets have been enumerated and admitted.
-        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
-            .waitForExistence(timeout: 360),
+        XCTAssertNotNil(verifiedLocalMapSummary(in: app, timeout: 360),
             "The initial genuine 100k PhotoKit scan never finished")
         let inventory = element("native-ios-map-perf-inventory", in: app)
         XCTAssertTrue(inventory.waitForExistence(timeout: 30),
@@ -1118,8 +1131,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         // The native MKMapView mounts while its 100k PhotoKit scan is
         // still running. The authoritative verified-count element appears
         // only after ALL 100k PHAssets have been enumerated and admitted.
-        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
-            .waitForExistence(timeout: 360),
+        XCTAssertNotNil(verifiedLocalMapSummary(in: app, timeout: 360),
             "The initial genuine 100k PhotoKit scan never finished")
         let inventory = element("native-ios-map-perf-inventory", in: app)
         XCTAssertTrue(inventory.waitForExistence(timeout: 30),
@@ -1177,8 +1189,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         // The native MKMapView mounts while its 100k PhotoKit scan is
         // still running. The authoritative verified-count element appears
         // only after ALL 100k PHAssets have been enumerated and admitted.
-        XCTAssertTrue(element("native-ios-map-verified-count", in: app)
-            .waitForExistence(timeout: 360),
+        XCTAssertNotNil(verifiedLocalMapSummary(in: app, timeout: 360),
             "The initial genuine 100k PhotoKit scan never finished")
         let inventory = element("native-ios-map-perf-inventory", in: app)
         XCTAssertTrue(inventory.waitForExistence(timeout: 30),
