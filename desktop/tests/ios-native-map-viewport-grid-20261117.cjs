@@ -41,3 +41,15 @@ test('revocation, backgrounds, progress and labels cannot reuse an old viewport'
   assert.match(map, /guard viewportPins == nil, active, placeName == nil/)
   assert.match(map, /if !isNearbyExpansion && viewportPins == nil \{/)
 })
+
+test('current viewport Sheet does not trigger a false map-route exit or clear verified pins', () => {
+  const lifecycle = map.slice(map.indexOf('.onDisappear {\n            // SwiftUI may call onDisappear'),
+    map.indexOf('    private func invalidate(keepCoordinates:'))
+  assert.match(lifecycle, /if selected == nil && !showingViewportGrid \{/)
+  assert.match(lifecycle, /if currentProof \{ onSaveCamera\?\(camera\) \}/)
+  assert.match(lifecycle, /photoChanges\.stop\(\)\s*invalidate\(\)/)
+  assert.match(map, /\.sheet\(isPresented: \$showingViewportGrid, onDismiss: \{\s*if phase == \.active \{ reload\(\) \} else \{ invalidate\(\) \}/)
+  assert.match(map, /\.onChange\(of: photoChanges\.change\) \{ _ in[\s\S]*?invalidate\(\)/)
+  assert.match(map, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?invalidate\(\)/)
+  assert.match(map, /showingViewportGrid = false[\s\S]*?provedOwner = nil/)
+})
