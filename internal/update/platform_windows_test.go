@@ -11,6 +11,17 @@ import (
 	"testing"
 )
 
+func TestHiddenWindowsUpgradeCommand(t *testing.T) {
+	cmd := newHiddenWindowsUpgradeCommand([]string{"-NoProfile", "-File", "transaction.ps1"})
+	if !strings.EqualFold(filepath.Base(cmd.Path), "powershell.exe") {
+		t.Fatalf("unexpected update executable: %q", cmd.Path)
+	}
+	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.HideWindow ||
+		cmd.SysProcAttr.CreationFlags&windowsCreateNoWindow == 0 {
+		t.Fatalf("background PowerShell must not create a console: %+v", cmd.SysProcAttr)
+	}
+}
+
 func TestWriteWindowsUpdateScripts(t *testing.T) {
 	transaction, cleanup, status, logPath, err := writeWindowsUpdateScripts(t.TempDir())
 	if err != nil {
@@ -30,6 +41,7 @@ func TestWriteWindowsUpdateScripts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, marker := range []string{
+		"& $LegacyCleanupScript -UnifiedAppDir $appDir",
 		"last-known-good",
 		"/DEFERLEGACYCLEANUP",
 		"Start-AgentAndVerify",
@@ -51,6 +63,9 @@ func TestWriteWindowsUpdateScripts(t *testing.T) {
 		if !strings.Contains(string(transactionBody), marker) {
 			t.Fatalf("transaction script missing %q", marker)
 		}
+	}
+	if strings.Contains(string(transactionBody), "& powershell.exe") {
+		t.Fatal("legacy cleanup must not launch a second PowerShell process")
 	}
 	// The first Security/Utility cmdlet may otherwise autoload pwsh 7's
 	// incompatible module in a detached Windows PowerShell 5.1 child.
