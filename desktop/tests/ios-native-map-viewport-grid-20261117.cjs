@@ -47,7 +47,7 @@ test('revocation, backgrounds, progress and labels cannot reuse an old viewport'
 })
 
 test('current viewport Sheet does not trigger a false map-route exit or clear verified pins', () => {
-  const lifecycle = map.slice(map.indexOf('.onDisappear {\n            // SwiftUI may call onDisappear'),
+  const lifecycle = map.slice(map.indexOf('.onDisappear {\n            // Date picker presentation'),
     map.indexOf('    private func invalidate(keepCoordinates:'))
   assert.match(lifecycle, /if selected == nil && !showingViewportGrid \{/)
   assert.match(lifecycle, /if currentProof \{ onSaveCamera\?\(camera\) \}/)
@@ -75,5 +75,5 @@ test('date, recent-trip and help sheets preserve mounted MapKit on transient dis
   // All three map routes still revoke actual Owner/PhotoKit scope changes.
   assert.match(localMap, /\.onChange\(of: changes\.revision\) \{ _ in[\s\S]*?invalidate\(\)/)
   assert.match(ownerMap, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?invalidate\(\)/)
-  assert.match(sourceMap, /\.onChange\(of: login\.owner\) \{ _ in invalidate\(\)/)
+  assert.match(sourceMap, /\.onChange\(of: login\.owner\) \{ _ in\s*invalidate\(\)/)
 })
