@@ -1,5 +1,106 @@
 import XCTest
 
+/// Test-only navigation through VISIBLE controls. The candidate Photos
+/// Library intentionally hides xDrive's other five tab controls instead of
+/// stacking two tab bars. Old published baselines still expose direct tabs.
+/// Never use invisible view IDs or coordinate taps as a substitute for real UX.
+enum XDriveIOSNativePhotosTestNavigator {
+    private static func found(_ id: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: id).firstMatch
+    }
+
+    static func visible(_ id: String, in app: XCUIApplication) -> XCUIElement {
+        switch id {
+        case "native-ios-tab-gallery", "native-ios-gallery-source-unified":
+            let library = found("native-ios-photos-library-tab", in: app)
+            return library.exists ? library : found(id, in: app)
+        case "native-ios-gallery-source-albums":
+            let collections = found("native-ios-photos-collections-tab", in: app)
+            return collections.exists ? collections : found(id, in: app)
+        case "native-ios-gallery-source-menu":
+            let menu = found("native-ios-gallery-more-menu", in: app)
+            return menu.exists ? menu : found(id, in: app)
+        case "native-ios-gallery-source-local":
+            let label = app.navigationBars["本机照片"].firstMatch
+            return label.exists ? label : found(id, in: app)
+        default:
+            return found(id, in: app)
+        }
+    }
+
+    @discardableResult
+    static func tap(_ id: String, in app: XCUIApplication) -> Bool {
+        let direct = found(id, in: app)
+        if direct.exists && direct.isHittable { direct.tap(); return true }
+        // The original c83/b9 toolbar remains a real usable baseline.
+        let legacy: [String: String] = [
+            "native-ios-tab-files": "文件",
+            "native-ios-tab-mine": "我的",
+            "native-ios-tab-launcher": "全部",
+            "native-ios-tab-gallery": "图库",
+            "native-ios-tab-dynamic": "地图"
+        ]
+        if let title = legacy[id] {
+            let old = app.buttons.matching(identifier: "native-ios-five-slot-bar")
+                .matching(NSPredicate(format: "label == %@", title)).firstMatch
+            if old.exists && old.isHittable { old.tap(); return true }
+        }
+
+        let idToGalleryTab: [String: String] = [
+            "native-ios-gallery-source-unified": "native-ios-photos-library-tab",
+            "native-ios-gallery-source-albums": "native-ios-photos-collections-tab",
+            "native-ios-tab-gallery": "native-ios-photos-library-tab"
+        ]
+        if let actual = idToGalleryTab[id] {
+            let action = found(actual, in: app)
+            if action.exists && action.isHittable { action.tap(); return true }
+        }
+
+        // The source-specific people/search commands belong to the Gallery
+        // options Menu, not a hidden but programmatically tappable toolbar.
+        if id == "native-ios-gallery-open-filters" ||
+           id == "native-ios-gallery-people" {
+            let menu = found("native-ios-gallery-open-filters", in: app)
+            guard menu.exists && menu.isHittable else { return false }
+            menu.tap()
+            let title = id == "native-ios-gallery-people"
+                ? "人物与宠物" : "搜索与筛选"
+            let action = app.buttons[title].firstMatch
+            guard action.waitForExistence(timeout: 10) && action.isHittable
+            else { return false }
+            action.tap()
+            return true
+        }
+        if id == "native-ios-gallery-source-menu" {
+            let menu = found("native-ios-gallery-more-menu", in: app)
+            if menu.exists && menu.isHittable { menu.tap(); return true }
+        }
+
+        let sourceCommands: [String: String] = [
+            "native-ios-gallery-source-originals": "备份原件",
+            "native-ios-gallery-source-cloud": "云端图库",
+            "native-ios-gallery-source-local": "本机照片"
+        ]
+        let globalCommands: [String: String] = [
+            "native-ios-tab-files": "文件",
+            "native-ios-tab-mine": "我的",
+            "native-ios-tab-launcher": "全部功能",
+            "native-ios-tab-dynamic": "地图"
+        ]
+        if let title = sourceCommands[id] ?? globalCommands[id] {
+            let menu = found("native-ios-gallery-more-menu", in: app)
+            guard menu.exists && menu.isHittable else { return false }
+            menu.tap()
+            let action = app.buttons[title].firstMatch
+            guard action.waitForExistence(timeout: 10) && action.isHittable
+            else { return false }
+            action.tap()
+            return true
+        }
+        return false
+    }
+}
+
 /// Real simulator app-exit and native tab/rail UI checks. This uses the actual
 /// Dashboard and Files/Gallery screens, but has no authenticated Server Owner.
 final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
@@ -60,8 +161,8 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     }
 
     private func find(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
-        let exact = app.descendants(matching: .any)
-            .matching(identifier: identifier).firstMatch
+        let exact = XDriveIOSNativePhotosTestNavigator.visible(identifier, in: app)
+        if exact.exists && exact.isHittable { return exact }
         if exact.waitForExistence(timeout: 4) { return exact }
         // Baseline c83 UI hierarchy recorded actual labels and old container
         // IDs on the buttons. This is a real tap, not a source-only assertion.
@@ -81,9 +182,11 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         return exact
     }
     private func select(_ identifier: String, in app: XCUIApplication) {
-        let control = find(identifier, in: app)
-        XCTAssertTrue(control.exists, "Missing \(identifier)")
-        control.tap()
+        if !XDriveIOSNativePhotosTestNavigator.tap(identifier, in: app) {
+            let control = find(identifier, in: app)
+            XCTAssertTrue(control.exists && control.isHittable, "Missing actionable \(identifier)")
+            control.tap()
+        }
         XCTAssertEqual(app.state, .runningForeground, "App exited at \(identifier)")
     }
     func testFilesFirstOpenAndSixGalleryReturnsDoNotExit() {
@@ -358,10 +461,13 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     // navigation rather than treating a colored tab bar as a rendered page.
     // PNG samples diagnose candidate blanks; they are not 60/120-Hz proof.
     private func observedSelect(_ identifier: String, in app: XCUIApplication) {
-        let element = find(identifier, in: app)
-        XCTAssertTrue(element.exists, "Native route missing before tap: \(identifier)")
         print("IOS_NATIVE_NAV_TAP_START route=\(identifier)")
-        element.tap()
+        if !XDriveIOSNativePhotosTestNavigator.tap(identifier, in: app) {
+            let control = find(identifier, in: app)
+            XCTAssertTrue(control.exists && control.isHittable,
+                          "Native route missing before tap: \(identifier)")
+            control.tap()
+        }
         XCTAssertEqual(app.state, .runningForeground, "Exited after \(identifier)")
     }
 
