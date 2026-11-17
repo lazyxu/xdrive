@@ -302,14 +302,14 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                                         retainWhileCovered: retainWhileCovered,
                                         framing: framing
                                     )
-                                    if selectionMode {
-                                        XDriveIOSNativePhotoWallSelectionIndicator(
-                                            selected: selectedPhotoIDs.contains(row.id),
-                                            accented: true
-                                        )
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity,
-                                               alignment: .topTrailing)
-                                        .accessibilityHidden(true)
+                                    .overlay(alignment: .topTrailing) {
+                                        if selectionMode {
+                                            XDriveIOSNativePhotoWallSelectionIndicator(
+                                                selected: selectedPhotoIDs.contains(row.id),
+                                                accented: true
+                                            )
+                                            .accessibilityHidden(true)
+                                        }
                                     }
                                     if let local = row.local, backupBadgeOwner != nil,
                                        let badge = XDriveIOSNativeVisiblePhotoQueueBadgePolicy.badge(
