@@ -28,8 +28,18 @@ final class XDriveIOSNativeResourcePerformanceUITests: XCTestCase {
         if (control.value as? String) != "已选择" {
             tap(id, app)
         }
-        XCTAssertEqual(control.value as? String, "已选择",
+        // SwiftUI may publish the updated accessibility value one run loop after
+        // the real tap. Wait for that observed app state, not a fixed sleep,
+        // and fail if the real Files route never becomes selected.
+        let selected = item(id, app)
+        let selectedValue = NSPredicate(format: "value == %@", "已选择")
+        let selectedExpectation = XCTNSPredicateExpectation(
+            predicate: selectedValue, object: selected)
+        XCTAssertEqual(XCTWaiter.wait(for: [selectedExpectation], timeout: 5),
+                       .completed,
                        "Files staging must have the real selected route: \(key)")
+        XCTAssertEqual(selected.value as? String, "已选择",
+                       "Files selection changed after staging: \(key)")
         XCTAssertEqual(app.state, .runningForeground)
     }
     private func homeEntry(_ id: String, _ app: XCUIApplication) -> XCUIElement {
