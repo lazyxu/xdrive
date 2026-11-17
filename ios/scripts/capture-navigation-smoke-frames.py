@@ -214,6 +214,13 @@ MINIMAL_TARGETS.update({
     "testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild",
     "testMapModalFilesCloudDenialDoesNotRemountUnifiedWall",
     "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
+    # Six newer registered native journeys must also produce real frame evidence.
+    "testFilesMoreOrganizerGalleryReturnPreservesBrowseHome",
+    "testFilesQuickRailRotationPeopleReturnKeepsNativeShell",
+    "testGalleryFilterFilesHistoryForegroundKeepsWallGeneration",
+    "testLocalPhotoDateSheetFilesQuickSectionsThenReopen",
+    "testGalleryMapFilesSavedSearchesReturnKeepsGeneration",
+    "testGalleryPeopleFiltersFilesTrashDenialReturnWithoutGhost",
 })
 # Additional native all-pages/subpage crash journeys: real controls only.
 MINIMAL_TARGETS.update({

@@ -26,10 +26,19 @@ const journeys = [
   'testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay',
 ];
 
-test('all six real native cross-subpage journeys are registered exactly once', () => {
-  assert.equal((native.match(/    func test[A-Z]\w*\(\)/g) || []).length, 6);
-  assert.equal(new Set(journeys).size, 6);
-  for (const name of journeys) {
+const extendedJourneys = [
+  'testFilesMoreOrganizerGalleryReturnPreservesBrowseHome',
+  'testFilesQuickRailRotationPeopleReturnKeepsNativeShell',
+  'testGalleryFilterFilesHistoryForegroundKeepsWallGeneration',
+  'testLocalPhotoDateSheetFilesQuickSectionsThenReopen',
+  'testGalleryMapFilesSavedSearchesReturnKeepsGeneration',
+  'testGalleryPeopleFiltersFilesTrashDenialReturnWithoutGhost',
+];
+
+test('all twelve real native cross-subpage journeys are registered exactly once', () => {
+  assert.equal((native.match(/    func test[A-Z]\w*\(\)/g) || []).length, 12);
+  assert.equal(new Set([...journeys, ...extendedJourneys]).size, 12);
+  for (const name of [...journeys, ...extendedJourneys]) {
     assert.equal(native.split('func ' + name + '()').length, 2, name);
     assert.match(watcher, new RegExp('"' + name + '"'));
     assert.match(h264, new RegExp('"' + name + '"'),
@@ -61,9 +70,9 @@ test('candidate-gallery-files must actually RUN the six child tests in macOS Xco
   assert.match(workflow, /xcodebuild test/);
   assert.match(workflow, /resultBundlePath/);
   assert.match(workflow, /-parallel-testing-enabled NO/);
-  assert.match(workflow, /--minimum 44/,
-    'all 44 separate real navigation clips must be audited without opt-out');
-  for (const name of journeys) {
+  assert.match(workflow, /--minimum 50/,
+    'all 50 separate real navigation clips must be audited without opt-out');
+  for (const name of [...journeys, ...extendedJourneys]) {
     assert.match(watcher, new RegExp('"' + name + '"'));
   }
 });
@@ -138,7 +147,7 @@ test('six additional real Files/Gallery transitions are H.264-audited, including
     assert.match(body, /select\("native-ios-tab-/,
       name + ' must tap a real native Gallery or Files tab');
   }
-  assert.match(workflow, /--minimum 44/);
+  assert.match(workflow, /--minimum 50/);
 });
 
 test('both existing Gallery/Files native suites audit child viewport rather than colorful tab chrome', () => {
@@ -228,7 +237,7 @@ test('six additional high-risk Gallery/Files transitions require true H264 evide
       name + ' must check real native content pixels');
     assert.ok(h264.includes('"' + name + '"'), name + ' missing bounded real H264 watcher');
   }
-  assert.match(workflow, /--minimum 44/, 'all 44 clips must be real and audited');
+  assert.match(workflow, /--minimum 50/, 'all 50 clips must be real and audited');
   assert.match(h264, /MAX_CLIP_SECONDS = 210/,
     'long genuine XCTest must not be truncated by old 120-second clip limit');
 });
