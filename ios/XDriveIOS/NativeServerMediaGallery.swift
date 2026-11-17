@@ -1530,6 +1530,9 @@ struct XDriveIOSNativeServerMediaWall: View {
     @State private var viewerOpenedOwner: XDriveNativeOwnerRoot?
     @State private var searchDraft = ""
     @State private var appliedSearch = ""
+    // A place sheet opens on photos, not a full-width search form. Search is
+    // still available from the ordinary toolbar and retains the exact placeID.
+    @State private var placeSearchExpanded = false
     @State private var lastOpenedMediaID: UInt64?
     @State private var lastOpenedRevision: UInt64?
     @State private var lastOpenedOwner: XDriveNativeOwnerRoot?
@@ -1554,6 +1557,18 @@ struct XDriveIOSNativeServerMediaWall: View {
                         "已验证的云端相册成员，按服务器分页读取。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if placeID != nil {
+                    // Only the current signed Owner page may publish its
+                    // place name and count; never reuse a stale A-place title
+                    // after a B-owner switch.
+                    XDriveIOSNativePhotoMapPlaceHeader(
+                        title: model.visiblePage(for: login.owner) != nil
+                            ? (placeDisplayName ?? "此地点的照片")
+                            : "正在核对地点照片…",
+                        count: model.visiblePage(for: login.owner)?.total_count)
+                        .accessibilityIdentifier("native-ios-owner-map-place-header")
+                }
+                if placeID == nil || placeSearchExpanded {
                 HStack(spacing: 8) {
                     TextField("搜索照片名称、标签或识别文字", text: $searchDraft)
                         .textFieldStyle(.roundedBorder)
@@ -1580,13 +1595,16 @@ struct XDriveIOSNativeServerMediaWall: View {
                     Text("搜索词不能超过 200 个字符。")
                         .font(.caption).foregroundStyle(.red)
                 }
+                }
                 if let page = model.visiblePage(for: login.owner) {
                     HStack(spacing: 8) {
-                        XDriveIOSNativePhotoWallScopeSummary(
-                            message: page.total_count == 0 ?
-                                "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :
-                                "\(page.total_count) 张照片"
-                        )
+                        if placeID == nil {
+                            XDriveIOSNativePhotoWallScopeSummary(
+                                message: page.total_count == 0 ?
+                                    "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :
+                                    "\(page.total_count) 张照片"
+                            )
+                        }
                         Spacer(minLength: 4)
                         XDriveIOSNativePhotoWallDisplayMenu(
                             density: $wallDensity, framing: $wallFraming,
@@ -1654,7 +1672,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .padding(12)
+            .padding(.horizontal, placeID == nil ? 12 : 6)
+            .padding(.vertical, 8)
         }
         .xdrivePhotoWallPinch(
             density: $wallDensity,
@@ -1707,10 +1726,22 @@ struct XDriveIOSNativeServerMediaWall: View {
                 }
             }
         }
-        .navigationTitle(placeID == nil ? (album?.name ?? "云端图库")
-                                        : (placeDisplayName ?? "此地点的照片"))
+        .navigationTitle(placeID == nil ? (album?.name ?? "云端图库") : "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if placeID != nil {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        placeSearchExpanded.toggle()
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel(placeSearchExpanded
+                        ? "收起此地点搜索" : "搜索此地点")
+                    .accessibilityIdentifier("native-ios-owner-place-search-toggle")
+                }
+            }
             if album == nil && placeID == nil {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     NavigationLink {

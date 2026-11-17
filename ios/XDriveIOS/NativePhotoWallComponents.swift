@@ -94,8 +94,9 @@ struct XDriveIOSNativePhotoMapPlaceHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.title3.weight(.semibold))
+                .font(.title2.weight(.semibold))
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                .minimumScaleFactor(0.92)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier(titleAccessibilityID)
             if let count {
@@ -110,8 +111,8 @@ struct XDriveIOSNativePhotoMapPlaceHeader: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
-        .padding(.top, 4)
-        .padding(.bottom, 2)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
     }
 }
 

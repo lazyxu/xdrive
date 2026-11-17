@@ -892,9 +892,12 @@ private struct XDriveIOSMapSpatialAlbum: View {
             VStack(spacing: 8) {
                 XDriveIOSNativePhotoMapPlaceHeader(
                     title: isNearbyExpansion ? "附近照片" :
-                        (album?.name ?? "此地点的照片"),
+                        (album?.name ?? (selection.cells.count > 1
+                            ? "多个地点的照片" : "此地点的照片")),
                     count: isNearbyExpansion ? nil : selectedPhotoCount,
-                    detail: isNearbyExpansion ? "按位置浏览" : nil
+                    detail: isNearbyExpansion ? "按位置浏览" :
+                        (selection.cells.count > 1
+                            ? "\(selection.cells.count) 个地点" : nil)
                 )
                 .accessibilityValue(busy ? "正在读取位置照片" :
                     (hasNext ? "可继续滚动浏览" : "已显示全部可访问照片"))
