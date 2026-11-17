@@ -9,7 +9,15 @@ const read = name => fs.readFileSync(path.join(root,'ios/XDriveIOS',name),'utf8'
 test('BG task performs a bounded real original run only after current native grant proof',()=>{
   const task=read('BackgroundPhotoTask.swift')
   assert.match(task,/XDriveIOSApprovedPhotoBGVault\.prove\(\s*savedGrant, at: route\.selected, direct: true\)/)
+  assert.match(task,/let latestGrant = try await vault\.current\(\)/)
+  for (const proof of ['origin', 'instanceID', 'ownerID', 'rootNodeID', 'deviceID',
+    'deviceToken', 'grantID', 'grantSecret', 'sourceID', 'targetNodeID']) {
+    assert.match(task, new RegExp('latestGrant\\.' + proof + ' == approved\\.' + proof))
+  }
   assert.match(task,/try Task\.checkCancellation\(\)\s*try XDriveIOSAutoRoute\.shared\.activateBackground\(/)
+  assert.ok(task.indexOf('let latestGrant = try await vault.current()') <
+    task.indexOf('XDriveIOSAutoRoute.shared.activateBackground('),
+    'cancelled/replaced Keychain Grant must not be reactivated by a late network proof')
   assert.match(task,/UIApplication\.shared\.isProtectedDataAvailable/)
   assert.match(task,/XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
   assert.match(task,/\.reserveDue\(owner: owner, approved: approved\)/)

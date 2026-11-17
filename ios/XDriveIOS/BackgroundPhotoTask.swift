@@ -111,6 +111,24 @@ enum XDriveIOSBackgroundPhotoTask {
                 let approved = try await XDriveIOSApprovedPhotoBGVault.prove(
                     savedGrant, at: route.selected, direct: true)
                 try Task.checkCancellation()
+                // A grant can be revoked or replaced locally while the
+                // independent network proof is awaiting HTTPS. Re-read the
+                // authoritative Keychain record immediately before publishing
+                // a BG route, or a late response could resurrect old uploads.
+                guard let latestGrant = try await vault.current(),
+                      latestGrant.origin == approved.origin,
+                      latestGrant.instanceID == approved.instanceID,
+                      latestGrant.ownerID == approved.ownerID,
+                      latestGrant.rootNodeID == approved.rootNodeID,
+                      latestGrant.deviceID == approved.deviceID,
+                      latestGrant.deviceToken == approved.deviceToken,
+                      latestGrant.grantID == approved.grantID,
+                      latestGrant.grantSecret == approved.grantSecret,
+                      latestGrant.sourceID == approved.sourceID,
+                      latestGrant.targetNodeID == approved.targetNodeID else {
+                    throw XDriveIOSPhotoBGVaultFailure.serverRejected
+                }
+                try Task.checkCancellation()
                 try XDriveIOSAutoRoute.shared.activateBackground(
                     grant: approved, domain: route.domain, lanIP: route.lanIP,
                     selected: route.selected)
