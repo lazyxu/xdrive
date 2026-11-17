@@ -149,7 +149,10 @@ struct XDriveIOSNativeClipboardClient {
     /// content: each complete sync/change frame only triggers GET /items.
     /// A stream is bounded server-side to 20s; callers reverify the Owner
     /// bearer and run an authoritative GET on every reconnect.
-    func watchChanges(after: UInt64, onChange: () async -> Void) async throws -> UInt64 {
+    func watchChanges(
+        after: UInt64, onCursor: (UInt64) async -> Void = { _ in },
+        onChange: () async -> Void
+    ) async throws -> UInt64 {
         guard var url = URLComponents(url: owner.origin, resolvingAgainstBaseURL: false) else {
             throw XDriveIOSClipboardPolicy.Failure.invalidOwner
         }
@@ -198,6 +201,9 @@ struct XDriveIOSNativeClipboardClient {
                 line.removeAll(keepingCapacity: true)
                 if try decoder.acceptLine(text) {
                     try Task.checkCancellation()
+                    // Persist the complete-frame cursor before the owner's
+                    // GET refresh; it survives transport errors on this stream.
+                    await onCursor(decoder.cursor)
                     await onChange()
                 }
             } else {

@@ -15,7 +15,7 @@ const androidController = read('android/app/src/main/java/com/tfluid/xdrive/Driv
 const androidParser = read('android/core/src/main/kotlin/com/tfluid/xdrive/core/XDriveClipboardSSECursor.kt')
 
 test('iOS SSE uses verified Owner HTTPS bearer and cancellable ephemeral URLSession', () => {
-  assert.match(swiftClient, /func watchChanges\(after: UInt64, onChange: \(\) async -> Void\)/)
+  assert.match(swiftClient, /func watchChanges\([\s\S]*?after: UInt64, onCursor: \(UInt64\) async -> Void = \{ _ in \},[\s\S]*?onChange: \(\) async -> Void/)
   assert.match(swiftClient, /url\.path = "\/api\/v1\/clipboard\/events"/)
   assert.match(swiftClient, /url\.queryItems = \[URLQueryItem\(name: "after"/)
   assert.match(swiftClient, /endpoint\.scheme == "https"/)
@@ -33,12 +33,15 @@ test('iOS subscription only runs while foregrounded, has 15s GET fallback and re
   assert.match(swiftPage, /\.task\(id: scenePhase == \.active\)/)
   assert.match(swiftPage, /@Environment\(\\\.scenePhase\) private var scenePhase/)
   assert.match(swiftPage, /sessionGeneration == generation/)
-  assert.match(swiftPage, /client\.watchChanges\(after: after\)/)
+  assert.match(swiftPage, /client\.watchChanges\(after: after, onCursor:/)
   assert.match(swiftPage, /await refresh\(\)/)
   assert.match(swiftPage, /15_000_000_000/)
   assert.match(swiftPage, /3_000_000_000/)
   assert.match(swiftPage, /\.onDisappear \{ reset\(\) \}/)
   assert.match(swiftParser, /value == "\{\}"/)
+  assert.match(swiftPage, /after = max\(after, await progress\.current\(\)\)/)
+  assert.match(swiftPage, /await progress\.advance\(cursor\)/)
+  assert.match(swiftClient, /await onCursor\(decoder\.cursor\)/)
 })
 
 test('Android SSE stays on the same pinned Owner transport with cancellable frames', () => {
