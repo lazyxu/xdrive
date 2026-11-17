@@ -7,6 +7,7 @@ const read=p=>fs.readFileSync(path.resolve(__dirname,'../..',p),'utf8')
 const policy=read('ios/XDriveIOS/NativePhotoMapPolicy.swift')
 const local=read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
 const owner=read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
+const chrome=read('ios/XDriveIOS/NativePhotoWallComponents.swift')
 const trips=read('ios/XDriveIOS/NativeExactTripGallery.swift')
 const swift=read('ios/tests/NativePhotoMapPolicyChecks.swift')
 
@@ -23,8 +24,12 @@ test('M14 iPad split view and accessibility use actual safe-area viewport',()=>{
 test('M14 native map touch actions and year chips are at least 44pt',()=>{
   assert.match(policy,/minimumInteractiveTarget: Double = 44/)
   assert.match(trips,/frame\(minHeight: CGFloat\(XDriveIOSNativePhotoMapPolicy\.minimumInteractiveTarget\)\)/)
-  assert.match(local,/Button\("刷新当前页"\)[\s\S]*?frame\(minHeight: CGFloat\(XDriveIOSNativePhotoMapPolicy\.minimumInteractiveTarget\)\)/)
-  assert.match(local,/native-ios-map-verified-count/)
+  // Page actions moved to the 44pt native More menu; a hidden inline footer is not a touch target.
+  assert.match(local,/Button\("刷新当前页"\)/)
+  assert.match(local,/Label\("地图操作", systemImage: "ellipsis.circle"\)[\s\S]*?frame\(minWidth: 44, minHeight: 44\)/)
+  assert.match(chrome,/struct XDriveIOSNativePhotoMapGridAction: View[\s\S]*?frame\(width: 44, height: 44\)/)
+  assert.match(local,/verifiedSummary: globalComplete && refinedViewportIsCurrent/)
+  assert.match(chrome,/\.accessibilityValue\(verifiedSummary \?\? ""\)/)
   assert.match(owner,/native-ios-map-source-selector/)
   assert.match(local,/accessibilityElementsHidden = !canSelectCells/)
   assert.match(swift,/accessibleMapViewport\(/)
