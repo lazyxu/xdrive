@@ -273,7 +273,10 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 // existing exact GPS Cells, not the entire merged Gallery.
                 XDriveIOSNativePhotoMapGridAction(
                     enabled: currentProof && !pins.isEmpty,
-                    accessibilityID: "native-ios-unified-source-map-current-grid"
+                    accessibilityID: "native-ios-unified-source-map-current-grid",
+                    verifiedSummary: currentProof
+                        ? "\(pins.reduce(0) { $0 + $1.count }) 张照片"
+                        : nil
                 ) {
                     guard currentProof, !pins.isEmpty,
                           pins.allSatisfy({ $0.count > 0 }) else { return }
@@ -302,11 +305,9 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 .frame(maxWidth: 240, alignment: .leading)
             }
             .overlay(alignment: .bottomLeading) {
-                if currentProof {
-                    XDriveIOSNativePhotoMapStatusPill(
-                        message: "\(pins.reduce(0) { $0 + $1.count }) 张照片",
-                        accessibilityID: "native-ios-unified-source-map-total")
-                } else if busy {
+                // No permanent count capsule over MapKit; verified totals
+                // stay available in the exact viewport grid and VoiceOver.
+                if busy {
                     ProgressView("正在加载照片位置…")
                         .font(.caption).padding(10)
                         .background(.regularMaterial, in: Capsule()).padding(10)
