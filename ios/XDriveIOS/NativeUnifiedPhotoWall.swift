@@ -370,10 +370,19 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                             XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
                     ) { retry = UUID() }
                 } else if visible && displayActive {
-                    XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取照片与缩略图…")
+                    // Apple Photos paints the grid before decoded media arrive.
+                    // These inert tiles represent only the bounded *requested*
+                    // 48-item page; they never fabricate photo identities or
+                    // trigger a second server/PhotoKit read.
+                    XDriveIOSNativePhotoWallSkeletonGrid(
+                        density: density, count: 48
+                    )
+                    .accessibilityIdentifier("native-ios-gallery-photo-skeleton")
+                    XDriveIOSNativePhotoWallLoadingMessage(
+                        message: "正在读取照片与缩略图…")
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: page.height)
+            .frame(maxWidth: .infinity, minHeight: page.height, alignment: .top)
         }
     }
 }
