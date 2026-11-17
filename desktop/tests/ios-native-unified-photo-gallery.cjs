@@ -114,9 +114,9 @@ test('unified Gallery uses the canonical adaptive photo grid and bounded density
   assert.doesNotMatch(ui, /MagnificationGesture\(minimumScaleDelta:/)
   // Pinch now captures a verified visible-tile anchor before changing density.
   // Preserve that hook instead of requiring the removed direct assignment.
-  assert.match(shared, /let changed = density\\.applyingPinch\\(scale\\)/)
-  assert.match(shared, /guard changed != density else \\{ return \\}/)
-  assert.match(shared, /onDensityChange\\?\\(changed\\)/)
+  assert.match(shared, /let changed = density\.applyingPinch\(scale\)/)
+  assert.match(shared, /guard changed != density else \{ return \}/)
+  assert.match(shared, /onDensityChange\?\(changed\)/)
   assert.match(shared, /density = changed/)
   assert.match(ui, /filter: sourceFilter, query: query, density: wallDensity,[\s\S]*?displayActive: selected == nil && phase == \.active/)
   assert.match(wall, /let density: XDriveIOSNativePhotoWallDensity/)

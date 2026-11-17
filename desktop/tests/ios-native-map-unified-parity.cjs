@@ -245,7 +245,7 @@ test('real iOS first-use Photo Library system prompt cannot be default-denied by
   const openLocalMap = simulator.search(/private func openLocalMap\(\s*appearance: String\?, performance: Bool = false, stage: String = "scan"\s*\) -> XCUIApplication/)
   const launch = simulator.indexOf('app.launch()', openLocalMap)
   const proactive = simulator.indexOf('handleInitialPhotoLibraryPromptIfPresent()', launch)
-  const launcher = simulator.indexOf('let launcher = element("native-ios-tab-launcher", in: app)', launch)
+  const launcher = simulator.indexOf('openNativeLauncher(in: app)', launch)
   assert.ok(monitor >= 0 && monitor < openLocalMap && openLocalMap < launch &&
     proactive > launch && proactive < launcher,
     'Full Access handler must run before native launcher can trigger default denial')

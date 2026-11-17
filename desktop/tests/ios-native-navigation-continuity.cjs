@@ -37,7 +37,7 @@ const scenarios = [
     "checks": [
       {
         "file": "u",
-        "pattern": "NavigationLink\\(isActive: \\$showingPeople\\)",
+        "pattern": "\\.navigationDestination\\(isPresented: \\$showingPeople\\)",
         "flags": ""
       },
       {
@@ -52,7 +52,7 @@ const scenarios = [
     "checks": [
       {
         "file": "u",
-        "pattern": "NavigationLink\\(isActive: \\$showingThumbnailCache\\)",
+        "pattern": "\\.navigationDestination\\(isPresented: \\$showingThumbnailCache\\)",
         "flags": ""
       },
       {
@@ -87,7 +87,7 @@ const scenarios = [
     "checks": [
       {
         "file": "u",
-        "pattern": "showingPeople = false; showingThumbnailCache = false\\s*sourceFilter = nil",
+        "pattern": "showingPeople = false; showingThumbnailCache = false\\s*isSelecting = false; selectedIDs\\.removeAll\\(\\)\\s*requestSearch = false\\s*sourceFilter = nil",
         "flags": ""
       },
       {
@@ -112,7 +112,7 @@ const scenarios = [
       },
       {
         "file": "u",
-        "pattern": "private func resetWall\\(\\) \\{\\s*selected = nil\\s*viewerReturnAnchor = nil\\s*viewerOpeningPage = nil\\s*viewerOpeningItemID = nil\\s*wall\\.reset\\(\\)\\s*viewerOpeningViewport = nil\\s*pinchReturnViewport = nil",
+        "pattern": "private func resetWall\\(\\) \\{\\s*isSelecting = false\\s*selectedIDs\\.removeAll\\(\\)\\s*selected = nil\\s*viewerReturnAnchor = nil\\s*viewerOpeningPage = nil\\s*viewerOpeningItemID = nil\\s*wall\\.reset\\(\\)\\s*viewerOpeningViewport = nil\\s*pinchReturnViewport = nil",
         "flags": ""
       },
       {

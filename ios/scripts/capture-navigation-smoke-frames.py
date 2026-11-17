@@ -42,6 +42,7 @@ TAP_CAPTURE_NUMBERS = frozenset((1, 2, 4, 8, 12, 16))
 TARGETS = {
     # Tab/source/section/sheet/background: real production native SwiftUI.
     "testRapidGalleryFilesTabOscillationPreservesBothShells",
+    "testPhotosLibraryCollectionsSearchSelectionAndNoStackedTabBars",
     "testGalleryFilesAlternationRetainsNonBlankSettledFrames",
     "testFilesQuickRailAlternatingSectionsReturnsToBrowse",
     "testGallerySourcesAlternateWithoutLosingSourceRail",
