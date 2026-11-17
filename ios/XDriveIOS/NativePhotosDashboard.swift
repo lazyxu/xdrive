@@ -268,6 +268,8 @@ private enum XDriveIOSNativePhotosCollectionDestination: String, CaseIterable, I
 struct XDriveIOSNativePhotosCollectionsScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Binding var savedAlbumOffset: Int
+    // Same proven MapKit route used by the main Photo Library, no new reader.
+    let onOpenMap: () -> Void
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("xdrive.native.photos.pinned-collection-routes.v1")
     private var pinnedRoutesRaw = "recentDays,people,albums"
@@ -430,6 +432,43 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
         }
     }
 
+    // Native Photos → Collections → Utilities → Map (one existing route).
+    // The presentation control owns no PhotoKit scope, Owner, GPS or cursor.
+    private var mapUtilitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("实用工具")
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+                Button(action: onOpenMap) {
+                    ZStack(alignment: .bottomLeading) {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        Image(systemName: "map")
+                            .font(.system(size: 38, weight: .ultraLight))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .accessibilityHidden(true)
+                        LinearGradient(colors: [.clear, .black.opacity(0.38)],
+                                       startPoint: .center, endPoint: .bottom)
+                        Label("地图", systemImage: "map")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .padding(12)
+                    }
+                    .frame(width: cardWidth, height: cardWidth)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("地图")
+                .accessibilityHint("查看照片位置地图")
+                .accessibilityIdentifier("native-ios-collections-map")
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -439,6 +478,7 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
                 collectionSection("相簿", routes: [.albums])
                 collectionSection("旅行", routes: [.trips])
                 collectionSection("媒体类型", routes: [.videos, .livePhotos])
+                mapUtilitySection
             }
             .padding(.vertical, 16)
         }
@@ -1181,7 +1221,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                     )
                 case .albums:
                     XDriveIOSNativePhotosCollectionsScreen(
-                        login: login, savedAlbumOffset: $localAlbumDirectoryOffset
+                        login: login, savedAlbumOffset: $localAlbumDirectoryOffset,
+                        onOpenMap: { openGallery(.map) }
                     )
                 case .cloud:
                     XDriveIOSNativeServerMediaWall(
@@ -1525,7 +1566,9 @@ struct XDriveIOSNativePhotosDashboard: View {
         let fallback = XDriveIOSNativeGallerySource(rawValue: "unified") ?? .local
         let prior = mapReturnOwnerScopeKey == ownerScopeKey
             ? mapReturnGallerySource : nil
-        openGallery(prior ?? fallback)
+        // The signed-out local PhotoKit map still remembers a Collections
+        // entry without inventing an Owner return lease.
+        openGallery(mapOpenedFromCollections ? .albums : (prior ?? fallback))
     }
 
     private func openDynamic(_ feature: XDriveIOSNativeDynamicFeature) {

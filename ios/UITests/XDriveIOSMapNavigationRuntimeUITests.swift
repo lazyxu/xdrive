@@ -651,6 +651,38 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    // Use the visible iOS 26 Collections → Utilities → Map action, not a
+    // test-only jump. Signed-out PhotoKit access is explicitly supported.
+    func testCollectionsUtilityOpensSameMapKitAndReturnsToCollections() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        handleInitialPhotoLibraryPromptIfPresent()
+        let collections = element("native-ios-photos-collections-tab", in: app)
+        XCTAssertTrue(collections.waitForExistence(timeout: 20))
+        collections.tap()
+        let collectionsPage = element("native-ios-photos-collections", in: app)
+        XCTAssertTrue(collectionsPage.waitForExistence(timeout: 15))
+        let utilityMap = element("native-ios-collections-map", in: app)
+        for _ in 0..<8 where !utilityMap.isHittable {
+            collectionsPage.swipeUp()
+        }
+        XCTAssertTrue(utilityMap.exists && utilityMap.isHittable,
+                      "Photos Collections must expose the real Utilities Map")
+        utilityMap.tap()
+        XCTAssertTrue(element("native-ios-local-map-actions", in: app)
+            .waitForExistence(timeout: 20),
+            "Collections Map must route to the same native PhotoKit MapKit")
+        XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app).exists)
+        XCTAssertFalse(element("native-ios-five-slot-bar", in: app).exists)
+        let close = element("native-ios-map-dismiss", in: app)
+        XCTAssertTrue(close.waitForExistence(timeout: 15))
+        close.tap()
+        XCTAssertTrue(collectionsPage.waitForExistence(timeout: 20),
+                      "Closing a signed-out Collections Map must return to Collections")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     // The fixture pair must produce an EXACT two-member location Cell
     // regardless of extra stock GPS assets in iOS 18.5's real Photos library.
     // Real global GPS count and exact fixture membership are separate proofs.
