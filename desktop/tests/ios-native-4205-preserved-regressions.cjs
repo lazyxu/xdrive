@@ -87,7 +87,7 @@ for (const id of accepted) {
         assert.equal(check.pattern,
           'source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]')
         assert.match(source,
-          /source:\s*\[release-c83,\s*candidate-navigation,\s*candidate-gallery-files,\s*candidate-no-session(?:,\s*candidate-mapkit)?(?:,\s*candidate-performance)?\s*\]/,
+          /source:\s*\[release-c83,\s*candidate-navigation,\s*(?:candidate-navigation-p0,\s*)?candidate-gallery-files,\s*candidate-no-session(?:,\s*candidate-mapkit)?(?:,\s*candidate-performance)?(?:,\s*candidate-ios26-files)?\s*\]/,
           'historical '+id+' requires all original native UI shards')
         assert.match(source,
           /candidate-no-session\)[\s\S]*?XDriveIOSFilesSessionRecoveryUITests/,

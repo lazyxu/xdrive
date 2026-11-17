@@ -202,3 +202,37 @@ test("Six observed P0 native crash-navigation regressions run independently in r
   assert.doesNotMatch(fastCase, /-skip-testing:|continue-on-error|\|\| true/,
     "never mask real native P0 failures");
 });
+
+
+test("iOS 26.5 Files fatal-crash repro is a mandatory, exact-source native Simulator matrix member", () => {
+  // The real iOS 26.6 stack-guard SIGSEGV was only exercised on an older
+  // iOS 18.5 Simulator before this. 26.5 is the nearest hosted runtime,
+  // not signed iOS 26.6 physical-device acceptance.
+  assert.match(workflow, /source:\s*\[[^\]\n]*candidate-ios26-files\]/);
+  assert.match(workflow, /matrix\.source == 'candidate-ios26-files' && 'macos-26'/);
+  assert.match(workflow, /Xcode_26\.6\.app\/Contents\/Developer/);
+  assert.match(workflow, /requested="iOS-26-5" if newer else "iOS-18-5"/);
+  assert.match(workflow, /signed_ios26_6_verified=false/);
+  const start = workflow.indexOf("            candidate-ios26-files)");
+  const end = workflow.indexOf('            *) echo "Unsupported UI suite"', start);
+  assert.ok(start > 0 && end > start, "iOS 26 Files XCTest case must be in native switch");
+  const block = workflow.slice(start, end);
+  const selected = [
+    "testFilesDeepLifecycleViewStackSurvivesOwnerAndForegroundTransitions",
+    "testFilesFirstOpenAndSixGalleryReturnsDoNotExit",
+    "testFilesRecentBrowseFavoritesRepeatedWithoutCrash",
+    "testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit",
+    "testFilesDirectSyntheticOwnerColdRelaunchThreeTimesKeepsShellAlive",
+    "testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid",
+    "testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner",
+    "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
+  ];
+  assert.equal((block.match(/-only-testing:xDriveIOSNavigationUITests\//g)||[]).length,
+    selected.length, "all eight targeted real iOS 26 XCTest journeys stay mandatory");
+  for (const name of selected) {
+    assert.ok(block.includes("/"+name+'"'), "iOS 26 native crash route missing: " + name);
+  }
+  assert.match(workflow, /continue-on-error: \${{ matrix\.source == 'release-c83' }}/);
+  assert.match(workflow, /matrix\.source != 'release-c83'/);
+  assert.doesNotMatch(block, /-skip-testing:|continue-on-error|\|\| true/);
+});

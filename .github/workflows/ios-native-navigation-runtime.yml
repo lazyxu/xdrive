@@ -73,7 +73,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   simulator-navigation:
-    runs-on: macos-15
+    # The original 18.5 matrix remains intact; the dedicated Files crash
+    # repro uses modern iOS 26.5 Simulator with Xcode 26.6 on macos-26.
+    runs-on: ${{ matrix.source == 'candidate-ios26-files' && 'macos-26' || 'macos-15' }}
     # Candidate navigation with all-page CrashSweep also exceeded 60 real
     # minutes on 2026-11-17, cancelling the final native layout tests. Keep
     # every XCTest and frame audit; only raise its finite runner deadline.
@@ -83,7 +85,7 @@ jobs:
       matrix:
         # Keep published baseline separate and require both current native
         # suites; no unrelated older CI-success can waive this exact HEAD.
-        source: [release-c83, candidate-navigation, candidate-navigation-p0, candidate-gallery-files, candidate-no-session, candidate-mapkit, candidate-performance]
+        source: [release-c83, candidate-navigation, candidate-navigation-p0, candidate-gallery-files, candidate-no-session, candidate-mapkit, candidate-performance, candidate-ios26-files]
     continue-on-error: ${{ matrix.source == 'release-c83' }}
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +97,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -d /Applications/Xcode_16.4.app ]]; then
+          if [[ "${{ matrix.source }}" == candidate-ios26-files ]]; then
+            test -d /Applications/Xcode_26.6.app/Contents/Developer ||
+              { echo "Xcode 26.6 unavailable on macos-26" >&2; exit 1; }
+            sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
+          elif [[ -d /Applications/Xcode_16.4.app ]]; then
             sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
           fi
           xcodebuild -version
@@ -115,6 +121,7 @@ jobs:
       - name: Boot available iPhone simulator
         env:
           MAPKIT_FRESH: ${{ matrix.source == 'candidate-mapkit' }}
+          IOS26_FILES_REPRO: ${{ matrix.source == 'candidate-ios26-files' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -125,13 +132,19 @@ jobs:
           candidates=[(runtime,d) for runtime,arr in rows.items() for d in arr
                       if d.get("isAvailable",True) and d.get("name","").startswith("iPhone")]
           if not candidates: raise SystemExit("No iPhone Simulator is installed")
-          # Keep Simulator runtime paired to selected Xcode 16.4 / SDK 18.5.
+          # iOS 26.5 is the closest hosted Simulator baseline to the user's
+          # iOS 26.6 STACK GUARD crash. It is NOT a signed-device iOS 26.6 pass.
+          newer=os.environ.get("IOS26_FILES_REPRO")=="true"
+          requested="iOS-26-5" if newer else "iOS-18-5"
           compatible=[(runtime,d) for runtime,d in candidates
-                      if runtime.endswith("iOS-18-5")]
+                      if runtime.endswith(requested)]
           if not compatible:
-              raise SystemExit("Xcode 16.4 requires installed iOS 18.5 simulator")
-          runtime,d=next(((r,x) for r,x in compatible if x["name"]=="iPhone 16"),
+              raise SystemExit("Required Simulator runtime unavailable: "+requested)
+          preferred="iPhone 17" if newer else "iPhone 16"
+          runtime,d=next(((r,x) for r,x in compatible if x["name"]==preferred),
                          compatible[0])
+          print("IOS_CRASH_REPRO_OS runtime=",runtime,"xcode26=",newer,
+                "signed_ios26_6_verified=false")
           sim_id=d["udid"]
           if os.environ.get("MAPKIT_FRESH") == "true":
               # A preinstalled iPhone may contain earlier UI-test media.
@@ -308,6 +321,17 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests") ;;
             candidate-performance)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSPagePerformanceUITests") ;;
+            candidate-ios26-files)
+              # Run actual Files SwiftUI lifetime and subpage navigation on
+              # iOS 26.5. No fake login or privileged Owner data is accessed.
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesDeepLifecycleViewStackSurvivesOwnerAndForegroundTransitions")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesFirstOpenAndSixGalleryReturnsDoNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesRecentBrowseFavoritesRepeatedWithoutCrash")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesDirectSyntheticOwnerColdRelaunchThreeTimesKeepsShellAlive")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesSixSubpageUITests/testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay") ;;
             *) echo "Unsupported UI suite" >&2; exit 2 ;;
           esac
           touch "$RUNNER_TEMP/native-navigation-results/xcodebuild-start.marker"
