@@ -56,7 +56,8 @@ test('Gallery uses Photos-like Library, Collections and Search instead of stacke
   assert.match(ui, /requestUnifiedPhotoSearch = true/);
   assert.match(ui, /private var galleryMoreMenu: some View/);
   assert.match(ui, /Section\("图库来源"\)/);
-  assert.match(ui, /Section\("备份与管理"\) \{ backupMenuItems \}/);
+  assert.match(ui, /Section\("备份与管理"\) \{[\s\S]*?if let status = galleryBackupStatus \{[\s\S]*?Button\(status\) \{ openBackup\(\.overview\) \}[\s\S]*?backupMenuItems[\s\S]*?\}/);
+  assert.match(ui, /native-ios-gallery-backup-status/);
   assert.match(ui, /Section\("xDrive"\)/);
   assert.doesNotMatch(ui, /private var galleryStatusRow:/);
   assert.doesNotMatch(ui, /private var gallerySourceRow:/);
