@@ -174,11 +174,16 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
 
     private func networkChanged(_ local: Bool) {
         lock.lock()
+        // The monitor's first callback can arrive after a successful
+        // anonymous LAN probe but before credential/Owner verification.
+        // Do not discard that just-proved endpoint if it is the same Wi-Fi.
+        let wasUnknown = networkEpoch == 0
         networkEpoch &+= 1
         // A proof of reachability on Wi-Fi A is not a proof for Wi-Fi B.
         // Keep WAN's validated HTTPS identity, but remove LAN's prior network
         // evidence; fresh pinned TLS and exact Owner/Grant proof re-admit it.
-        if var current = binding, let lan = current.lan {
+        if var current = binding, let lan = current.lan,
+           !(wasUnknown && local && current.active == lan) {
             current.proven.remove(lan.absoluteString)
             binding = current
         }
@@ -223,16 +228,15 @@ final class XDriveIOSAutoRoute: @unchecked Sendable {
     }
 
     func selectedURL(for original: URL) -> URL? {
-        guard let (state, local) = snapshot(), matching(original, binding: state)
+        guard let (state, local, epoch) = snapshotEpoch(),
+              matching(original, binding: state) else { return nil }
+        // Before the Network monitor's first callback, the anonymous TLS
+        // selector already proved a LAN candidate. Do not assume cellular.
+        let canUseLAN = epoch == 0 ? state.active == state.lan : local
+        guard let preferred = XDriveIOSAutoRouteSafety.preferredOrigin(
+            domain: state.domain, lan: state.lan,
+            proven: state.proven, onLocalNetwork: canUseLAN)
         else { return nil }
-        let preferred: URL
-        if local, let lan = state.lan, state.proven.contains(lan.absoluteString) {
-            preferred = lan
-        } else if state.proven.contains(state.domain.absoluteString) {
-            preferred = state.domain
-        } else {
-            preferred = state.active
-        }
         guard var components = URLComponents(url: original, resolvingAgainstBaseURL: false)
         else { return nil }
         components.scheme = preferred.scheme

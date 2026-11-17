@@ -16,6 +16,20 @@ enum XDriveIOSAutoRouteSafety {
         lhsUsername == rhsUsername && lhsRoot == rhsRoot
     }
 
+    /// Only a proven route may carry credential-bearing requests.
+    /// In particular, never reuse the last LAN IP after leaving Wi-Fi or
+    /// joining another LAN with the same RFC1918 address.
+    static func preferredOrigin(
+        domain: URL, lan: URL?, proven: Set<String>,
+        onLocalNetwork: Bool
+    ) -> URL? {
+        if onLocalNetwork, let lan, proven.contains(lan.absoluteString) {
+            return lan
+        }
+        if proven.contains(domain.absoluteString) { return domain }
+        return nil
+    }
+
     static func isNetworkFailure(_ error: Error) -> Bool {
         guard let url = error as? URLError else { return false }
         switch url.code {

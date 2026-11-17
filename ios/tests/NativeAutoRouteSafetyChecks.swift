@@ -56,6 +56,25 @@ struct XDriveIOSAutoRouteSafetyChecks {
             lhsInstance: "", lhsOwner: 0, lhsUsername: "owner", lhsRoot: 0,
             rhsInstance: "", rhsOwner: 0, rhsUsername: "owner", rhsRoot: 0),
             "empty Owner credentials cannot become an authenticated route")
-        print("iOS LAN/WAN safety: exact Owner, no cross-Owner/TLS/cancel/write replay passed")
+        // Both candidates must be verified; a previously used IP alone is
+        // never permission to send credentials after a Wi-Fi/cellular handoff.
+        let wan = URL(string: "https://drive.example.com:8443")!
+        let lan = URL(string: "https://192.168.2.4:8443")!
+        func selected(_ proven: Set<String>, wifi: Bool) -> URL? {
+            XDriveIOSAutoRouteSafety.preferredOrigin(
+                domain: wan, lan: lan, proven: proven, onLocalNetwork: wifi)
+        }
+        precondition(selected([lan.absoluteString], wifi: true) == lan)
+        precondition(selected([lan.absoluteString], wifi: false) == nil)
+        precondition(selected([wan.absoluteString], wifi: false) == wan)
+        precondition(selected([wan.absoluteString], wifi: true) == wan)
+        precondition(selected([wan.absoluteString, lan.absoluteString], wifi: true) == lan)
+        precondition(selected([wan.absoluteString, lan.absoluteString], wifi: false) == wan)
+        precondition(selected([], wifi: true) == nil)
+        precondition(selected([], wifi: false) == nil)
+        precondition(XDriveIOSAutoRouteSafety.preferredOrigin(
+            domain: wan, lan: nil, proven: [wan.absoluteString],
+            onLocalNetwork: true) == wan)
+        print("iOS LAN/WAN safety: exact Owner, unproven-route denial, no TLS/cancel/write replay passed")
     }
 }
