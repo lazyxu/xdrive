@@ -71,6 +71,9 @@ struct XDriveIOSNativePhotoMapFloatingTools: View {
 struct XDriveIOSNativePhotoMapGridAction: View {
     let enabled: Bool
     let accessibilityID: String
+    // This exact reader's already-verified photo count is available to
+    // VoiceOver without covering the map with a permanent counter capsule.
+    var verifiedSummary: String? = nil
     let onOpen: () -> Void
 
     var body: some View {
@@ -85,6 +88,7 @@ struct XDriveIOSNativePhotoMapGridAction: View {
         .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
         .accessibilityLabel("显示当前地图照片网格")
         .accessibilityHint("仅打开当前已核验地图范围内的照片")
+        .accessibilityValue(verifiedSummary ?? "")
         .accessibilityIdentifier(accessibilityID)
     }
 }
