@@ -54,6 +54,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let selection: XDriveIOSOwnerMapChosenCluster
 
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State private var generation = UUID()
     @State private var loadTask: Task<Void, Never>?
@@ -339,6 +340,14 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("关闭地点照片")
+                .accessibilityIdentifier("native-ios-owner-cluster-dismiss")
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 XDriveIOSNativePhotoWallDisplayMenu(
                     density: $wallDensity, framing: $wallFraming,

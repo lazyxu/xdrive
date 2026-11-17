@@ -1503,6 +1503,7 @@ struct XDriveIOSNativeServerMediaWall: View {
     // Focus visibility belongs to the owning native five-tab shell.
     var onFocusChange: ((Bool) -> Void)? = nil
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingGalleryHelp = false
@@ -1731,6 +1732,14 @@ struct XDriveIOSNativeServerMediaWall: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if placeID != nil {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("关闭地点照片")
+                    .accessibilityIdentifier("native-ios-owner-place-dismiss")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         placeSearchExpanded.toggle()
@@ -1764,27 +1773,29 @@ struct XDriveIOSNativeServerMediaWall: View {
                     }
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    focusedBrowsing.toggle()
-                    onFocusChange?(focusedBrowsing)
-                } label: {
-                    Label(
-                        focusedBrowsing ? "显示底部导航" : "专注浏览",
-                        systemImage: focusedBrowsing ?
-                            "arrow.down.right.and.arrow.up.left" :
-                            "arrow.up.left.and.arrow.down.right"
-                    )
+            if placeID == nil {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        focusedBrowsing.toggle()
+                        onFocusChange?(focusedBrowsing)
+                    } label: {
+                        Label(
+                            focusedBrowsing ? "显示底部导航" : "专注浏览",
+                            systemImage: focusedBrowsing ?
+                                "arrow.down.right.and.arrow.up.left" :
+                                "arrow.up.left.and.arrow.down.right"
+                        )
+                    }
+                    .accessibilityIdentifier("native-ios-gallery-focus-toggle")
                 }
-                .accessibilityIdentifier("native-ios-gallery-focus-toggle")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showingGalleryHelp = true } label: {
-                    Image(systemName: "info.circle")
-                        .frame(minWidth: 44, minHeight: 44)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showingGalleryHelp = true } label: {
+                        Image(systemName: "info.circle")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("云端图库说明")
+                    .accessibilityIdentifier("native-ios-cloud-gallery-layout-help")
                 }
-                .accessibilityLabel("云端图库说明")
-                .accessibilityIdentifier("native-ios-cloud-gallery-layout-help")
             }
         }
         .alert("云端图库说明", isPresented: $showingGalleryHelp) {

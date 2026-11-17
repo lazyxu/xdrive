@@ -866,6 +866,7 @@ private struct XDriveIOSUnifiedMapViewerChoice: Identifiable {
 /// parameter or source proof, and each Viewer retains its normal authority.
 private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @Environment(\.dismiss) private var dismiss
     let owner: XDriveNativeOwnerRoot
     let library: Data
     let presence: XDriveIOSNativeGalleryPresence
@@ -1045,6 +1046,16 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         // A second centered navigation title duplicates the same information.
         .navigationTitle("")
         .toolbar {
+            if !isNearbyExpansion {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("关闭地点照片")
+                    .accessibilityIdentifier("native-ios-unified-source-place-dismiss")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 XDriveIOSNativePhotoWallDisplayMenu(
                     density: $density, framing: $wallFraming,
