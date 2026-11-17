@@ -59,6 +59,7 @@ private final class XDriveIOSUnifiedSourceCover: MKAnnotationView {
         badge.text = XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: count)
         XDriveIOSNativeMapMarkerVisualPolicy.resizeBadge(badge)
         isEnabled = enabled
+        if !enabled { XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(self) }
         isAccessibilityElement = enabled
         accessibilityElementsHidden = !enabled
         accessibilityTraits = enabled ? .button : []

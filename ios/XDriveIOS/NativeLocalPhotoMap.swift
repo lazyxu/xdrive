@@ -347,6 +347,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         for annotation in map.annotations {
             if let cover = map.view(for: annotation) as? XDriveIOSMapPhotoCover {
                 cover.isEnabled = canSelectCells
+                if !canSelectCells {
+                    XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(cover)
+                }
                 cover.isAccessibilityElement = canSelectCells
                 cover.accessibilityElementsHidden = !canSelectCells
                 cover.accessibilityTraits = canSelectCells ? .button : []
@@ -467,6 +470,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
                     guard let cover = mapView.view(for: annotation) as? XDriveIOSMapPhotoCover
                     else { continue }
                     cover.isEnabled = false
+                    XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(cover)
                     cover.isAccessibilityElement = false
                     cover.accessibilityElementsHidden = true
                     cover.accessibilityTraits = []

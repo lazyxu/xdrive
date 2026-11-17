@@ -250,7 +250,9 @@ private final class XDriveIOSOwnerMapPhotoCover: MKAnnotationView {
         // Old pins may remain visually during a gesture, but must not
         // become actionable VoiceOver targets or stale SDK selections.
         isEnabled = enabled
+        if !enabled { XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(self) }
         isAccessibilityElement = enabled
+        accessibilityElementsHidden = !enabled
         accessibilityTraits = enabled ? .button : []
         accessibilityLabel = enabled ? "\(count) 张已索引照片的云端位置" : nil
         accessibilityHint = enabled ? "双击打开已核对的地点照片" : nil

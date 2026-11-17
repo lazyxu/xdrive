@@ -30,6 +30,13 @@ enum XDriveIOSNativeMapMarkerVisualPolicy {
     /// Selected marker scale/animation follows Reduce Motion.
     static func updateSelection(_ selected: Bool, view: MKAnnotationView,
                                 animated: Bool) {
+        // MapKit can deliver a selection after the current PhotoKit/Owner
+        // lease was revoked. An inert or reused cover must never retain
+        // an enlarged selected state, even for a single animation frame.
+        guard view.isEnabled else {
+            resetSelection(view)
+            return
+        }
         let change = {
             // Selection floats above adjacent image covers while maintaining
             // one stable origin and MapKit's own camera animation.
