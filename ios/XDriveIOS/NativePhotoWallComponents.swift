@@ -643,11 +643,13 @@ private struct XDriveIOSNativePhotoWallMeasureTile: ViewModifier {
     let coordinateSpace: String
     func body(content: Content) -> some View {
         content.background {
-            GeometryReader { tile in
-                Color.clear.preference(
-                    key: XDriveIOSNativePhotoWallTileFramesKey.self,
-                    value: [id: tile.frame(in: .named(coordinateSpace))]
-                )
+            if !id.isEmpty {
+                GeometryReader { tile in
+                    Color.clear.preference(
+                        key: XDriveIOSNativePhotoWallTileFramesKey.self,
+                        value: [id: tile.frame(in: .named(coordinateSpace))]
+                    )
+                }
             }
         }
     }

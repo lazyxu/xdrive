@@ -305,6 +305,9 @@ struct XDriveIOSNativeUnifiedPhotoWallPage: View {
                                 }
                             }
                             .buttonStyle(.plain).id(row.id)
+                            .xdrivePhotoWallMeasureTile(
+                                displayActive && model.completed ? row.id : "",
+                                in: "xdrive-ios-unified-gallery-wall")
                             .accessibilityLabel("\(row.isLive ? "实况照片" : row.isVideo ? "视频" : "照片")，\(row.presence.title)")
                             .contextMenu {
                                 Button("来源与核对详情") { pairing(row) }

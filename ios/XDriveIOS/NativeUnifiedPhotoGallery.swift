@@ -75,6 +75,12 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     // Session-only identity; cross-item and cross-page returns must target
     // an independently verified tile, while an unchanged one keeps pixels.
     @State private var viewerOpeningItemID: String?
+    @State private var viewerOpeningViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var visibleTileFrames: [String: CGRect] = [:]
+    @State private var photoWallViewportHeight: CGFloat = 0
+    @State private var pinchReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var pinchOwner: XDriveNativeOwnerRoot?
+    @State private var pinchGeneration: UUID?
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var started = false
     @Environment(\.scenePhase) private var phase
@@ -316,6 +322,15 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                         else { return }
                                         viewerOpeningPage = payload.number
                                         viewerOpeningItemID = payload.rows[position].id
+                                        viewerOpeningViewport = visibleTileFrames[
+                                            payload.rows[position].id
+                                        ].map { frame in
+                                            XDriveIOSNativePhotoWallViewportAnchor(
+                                                itemID: payload.rows[position].id,
+                                                windowIndex: payload.number,
+                                                viewportOffset: frame.minY,
+                                                tileHeight: frame.height)
+                                        }
                                         selected = .init(owner: owner, page: payload, position: position)
                                     }, loaded: { verifiedIDs in
                                         guard selected == nil, viewerReturnPage == page.id,
@@ -335,13 +350,18 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                             // returns still scroll to the freshly admitted ID.
                                             if viewerOpeningPage != viewerReturnPage ||
                                                 viewerOpeningItemID != target {
+                                                let restored = viewerOpeningViewport?.alignment(
+                                                    for: target, window: viewerReturnPage,
+                                                    viewportHeight: photoWallViewportHeight)
                                                 xdrivePhotoWallScrollVerifiedTile(
-                                                    target, scroll: scroll)
+                                                    target, scroll: scroll,
+                                                    anchor: restored ?? .center)
                                             }
                                         }
                                         viewerReturnAnchor = nil
                                         viewerOpeningPage = nil
                                         viewerOpeningItemID = nil
+                                        viewerOpeningViewport = nil
                                     }, pairing: { pairing = $0 })
                                     .id("unified-page-\(page.id)")
                             }
@@ -350,11 +370,55 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     .id(wall.generation)
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 }
+                .coordinateSpace(name: "xdrive-ios-unified-gallery-wall")
+                .background {
+                    GeometryReader { viewport in
+                        Color.clear
+                            .onAppear { photoWallViewportHeight = viewport.size.height }
+                            .onChange(of: viewport.size.height) {
+                                photoWallViewportHeight = $0
+                            }
+                    }
+                }
+                .onPreferenceChange(XDriveIOSNativePhotoWallTileFramesKey.self) { frames in
+                    if visibleTileFrames != frames { visibleTileFrames = frames }
+                }
                 .refreshable { reset() }
                 .xdrivePhotoWallPinch(
                     density: $wallDensity,
-                    enabled: selected == nil && phase == .active && !showFilters && isTabActive
+                    enabled: selected == nil && phase == .active && !showFilters && isTabActive,
+                    onDensityChange: { _ in
+                        pinchOwner = login.owner
+                        pinchGeneration = wall.generation
+                        pinchReturnViewport = visibleTileFrames
+                            .filter { !$0.key.isEmpty && $0.value.minY >= 0 &&
+                                      $0.value.maxY <= photoWallViewportHeight }
+                            .min(by: { $0.value.minY < $1.value.minY })
+                            .map { id, frame in
+                                XDriveIOSNativePhotoWallViewportAnchor(
+                                    itemID: id, windowIndex: 0,
+                                    viewportOffset: frame.minY, tileHeight: frame.height)
+                            }
+                    }
                 )
+                .onChange(of: wallDensity) { _ in
+                    defer {
+                        pinchReturnViewport = nil
+                        pinchOwner = nil
+                        pinchGeneration = nil
+                    }
+                    guard selected == nil, phase == .active, isTabActive,
+                          let owner = pinchOwner, pinchGeneration == wall.generation,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                          let anchor = pinchReturnViewport,
+                          visibleTileFrames[anchor.itemID] != nil,
+                          let alignment = anchor.alignment(
+                              for: anchor.itemID, window: 0,
+                              viewportHeight: photoWallViewportHeight)
+                    else { return }
+                    xdrivePhotoWallScrollVerifiedTile(
+                        anchor.itemID, scroll: scroll, anchor: alignment)
+                }
                 .onChange(of: selected?.id) { selection in
                     guard selection == nil, phase == .active, isTabActive,
                           let anchor = viewerReturnAnchor else { return }
@@ -368,7 +432,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                         )
                     }
                 }
-                .onChange(of: wall.generation) { _ in scroll.scrollTo("gallery-page-top", anchor: .top) }
+                .onChange(of: wall.generation) { _ in
+                    pinchReturnViewport = nil
+                    pinchOwner = nil
+                    pinchGeneration = nil
+                    visibleTileFrames = [:]
+                    viewerOpeningViewport = nil
+                    scroll.scrollTo("gallery-page-top", anchor: .top)
+                }
             }
         }
     }
@@ -625,6 +696,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         viewerOpeningPage = nil
         viewerOpeningItemID = nil
         wall.reset()
+        viewerOpeningViewport = nil
+        pinchReturnViewport = nil
+        pinchOwner = nil
+        pinchGeneration = nil
+        visibleTileFrames = [:]
     }
     private func requestOriginalAudit(retryUnavailable: Bool) {
         // An explicit diagnostic is independent from upload scheduling.

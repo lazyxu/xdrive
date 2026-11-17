@@ -872,6 +872,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
     @State private var windowStarts: [XDriveIOSNativeGalleryCursor] = []
     @State private var windowIndex = -1
     @State private var backfillAnchorID: String?
+    @State private var backfillViewportAnchor: XDriveIOSNativePhotoWallViewportAnchor?
     @State private var nearbyRanked: [XDriveIOSUnifiedSourceCachedCoordinate] = []
     @State private var nearbyNext: Int?
     @State private var nearbyStarts: [Int] = []
@@ -1169,11 +1170,19 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 scroll.scrollTo(id, anchor: .top)
             }
             .onChange(of: backfillAnchorID) { anchor in
+                defer {
+                    backfillAnchorID = nil; backfillViewportAnchor = nil
+                    backfillViewportAnchor = nil
+                }
                 guard active, let anchor,
-                      (previous + current).contains(where: { $0.id == anchor })
+                      (previous + current).filter({ $0.id == anchor }).count == 1
                 else { return }
-                scroll.scrollTo(anchor, anchor: .top)
-                backfillAnchorID = nil
+                let currentWindow = isNearbyExpansion
+                    ? nearbyWindowIndex : windowIndex
+                let alignment = backfillViewportAnchor?.alignment(
+                    for: anchor, window: currentWindow,
+                    viewportHeight: photoWallViewportHeight)
+                scroll.scrollTo(anchor, anchor: alignment ?? .top)
             }
             .onChange(of: shouldRestoreViewerTile) { restore in
                 guard restore else { return }
@@ -1519,7 +1528,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         request?.cancel(); request = nil
         admissionTask?.cancel(); admissionTask = nil
         previous = []; current = []; next = nil
-        windowStarts = []; windowIndex = -1; backfillAnchorID = nil
+        windowStarts = []; windowIndex = -1; backfillAnchorID = nil; backfillViewportAnchor = nil
         nearbyRanked = []; nearbyNext = nil
         nearbyStarts = []; nearbyWindowIndex = -1
         ended = false
@@ -1550,7 +1559,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
         if isNearbyExpansion {
             previous = []; current = []
             nearbyNext = nil; nearbyStarts = []; nearbyWindowIndex = -1
-            backfillAnchorID = nil
+            backfillAnchorID = nil; backfillViewportAnchor = nil
             ended = false
             error = nil
             if nearbyRanked.isEmpty { prepareNearbyRanking() }
@@ -1561,7 +1570,7 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             // place pagination; never append page zero to an old history.
             previous = []; current = []; next = nil
             windowStarts = []; windowIndex = -1
-            backfillAnchorID = nil
+            backfillAnchorID = nil; backfillViewportAnchor = nil
             viewerReturnID = nil
             ended = false
             error = nil
@@ -1684,6 +1693,11 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                     if forViewer {
                         if let row = previous.last { admitViewerNeighbor(row) }
                     } else {
+                        backfillViewportAnchor = visibleTileFrames[oldAnchor].map {
+                            XDriveIOSNativePhotoWallViewportAnchor(
+                                itemID: oldAnchor, windowIndex: nearbyWindowIndex,
+                                viewportOffset: $0.minY, tileHeight: $0.height)
+                        }
                         backfillAnchorID = oldAnchor
                     }
                 } else {
@@ -1753,6 +1767,11 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
             if forViewer {
                 if let row = previous.last { admitViewerNeighbor(row) }
             } else {
+                backfillViewportAnchor = visibleTileFrames[anchor].map {
+                    XDriveIOSNativePhotoWallViewportAnchor(
+                        itemID: anchor, windowIndex: windowIndex,
+                        viewportOffset: $0.minY, tileHeight: $0.height)
+                }
                 backfillAnchorID = anchor
             }
         }

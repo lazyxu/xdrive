@@ -49,3 +49,21 @@ test('cloud PhotoAsset range retains bounded source-verified loading geometry', 
   assert.match(cloud, /count: min\(48, max\(0, expectedTotal - offset\)\)/)
   assert.match(cloud, /XDriveIOSNativePhotoWallSkeletonGrid\(/)
 })
+
+test('unified Gallery pinch and Viewer use transient verified tile geometry', () => {
+  const main = swift('NativeUnifiedPhotoGallery')
+  const tile = swift('NativeUnifiedPhotoWall')
+  assert.match(tile, /\.xdrivePhotoWallMeasureTile\(/)
+  assert.match(main, /viewerOpeningViewport = visibleTileFrames\[/)
+  assert.match(main, /viewerOpeningViewport\?\.alignment\(/)
+  assert.match(main, /pinchGeneration = wall\.generation/)
+  assert.match(main, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.match(main, /pinchReturnViewport = nil/)
+  assert.match(shared, /if !id\.isEmpty/)
+})
+test('backward place paging restores only a unique current-window tile', () => {
+  assert.match(source, /backfillViewportAnchor\?\.alignment\(/)
+  assert.match(source, /backfillViewportAnchor = visibleTileFrames\[oldAnchor\]\.map/)
+  assert.match(source, /backfillViewportAnchor = visibleTileFrames\[anchor\]\.map/)
+  assert.match(source, /filter\(\{ \$0\.id == anchor \}\)\.count == 1/)
+})
