@@ -50,6 +50,8 @@ test('Gallery uses Photos-like Library, Collections and Search instead of stacke
   assert.match(ui, /native-ios-photos-library-tab/);
   assert.match(ui, /native-ios-photos-collections-tab/);
   assert.match(ui, /native-ios-photos-search/);
+  assert.match(ui, /Image\(systemName: "photo\.on\.rectangle"\)/);
+  assert.match(ui, /Image\(systemName: "rectangle\.stack\.fill"\)/);
   assert.match(ui, /native-ios-photos-time-/);
   assert.match(ui, /gallerySource == \.unified && galleryTimelineExpanded/);
   assert.match(ui, /galleryTimeScale = scale/);

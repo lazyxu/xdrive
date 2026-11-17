@@ -659,10 +659,13 @@ struct XDriveIOSNativePhotosDashboard: View {
                 Button {
                     if gallerySource != .unified { openGallery(.unified) }
                 } label: {
-                    Text("图库")
-                        .font(.subheadline.weight(.semibold))
+                    VStack(spacing: 2) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.body.weight(.semibold))
+                        Text("图库").font(.caption2.weight(.semibold))
+                    }
                         .foregroundStyle(gallerySource != .albums ? Color.accentColor : Color.primary)
-                        .frame(minWidth: 68, minHeight: 44)
+                        .frame(minWidth: 68, minHeight: 50)
                         .background(gallerySource != .albums ? Color.accentColor.opacity(0.12) : Color.clear,
                                     in: Capsule())
                 }
@@ -671,10 +674,13 @@ struct XDriveIOSNativePhotosDashboard: View {
                 Button {
                     if gallerySource != .albums { openGallery(.albums) }
                 } label: {
-                    Text("精选集")
-                        .font(.subheadline.weight(.semibold))
+                    VStack(spacing: 2) {
+                        Image(systemName: "rectangle.stack.fill")
+                            .font(.body.weight(.semibold))
+                        Text("精选集").font(.caption2.weight(.semibold))
+                    }
                         .foregroundStyle(gallerySource == .albums ? Color.accentColor : Color.primary)
-                        .frame(minWidth: 74, minHeight: 44)
+                        .frame(minWidth: 74, minHeight: 50)
                         .background(gallerySource == .albums ? Color.accentColor.opacity(0.12) : Color.clear,
                                     in: Capsule())
                 }
