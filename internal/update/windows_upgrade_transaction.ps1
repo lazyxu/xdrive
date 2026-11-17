@@ -503,10 +503,9 @@ try {
 
     $cleanupWarning = ""
     try {
-        & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $LegacyCleanupScript -UnifiedAppDir $appDir
-        if ($LASTEXITCODE -ne 0) {
-            $cleanupWarning = "legacy Desktop cleanup exited with code $LASTEXITCODE"
-        }
+        # Reuse the already headless process; a nested powershell.exe could flash.
+        # A script error is caught below, independently of stale $LASTEXITCODE.
+        & $LegacyCleanupScript -UnifiedAppDir $appDir
     } catch {
         $cleanupWarning = "legacy Desktop cleanup failed: $($_.Exception.Message)"
     }

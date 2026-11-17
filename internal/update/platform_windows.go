@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 //go:embed windows_upgrade_transaction.ps1
@@ -29,6 +30,19 @@ var windowsLegacyCleanupScript string
 var windowsProcessScopeScript string
 
 func platformAssetName() string { return "xDriveSetup-amd64.exe" }
+
+// CREATE_NO_WINDOW prevents a console flash before PowerShell interprets
+// -WindowStyle Hidden. HideWindow also requests a hidden startup window.
+const windowsCreateNoWindow = 0x08000000
+
+func newHiddenWindowsUpgradeCommand(args []string) *exec.Cmd {
+	cmd := exec.Command("powershell.exe", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windowsCreateNoWindow,
+	}
+	return cmd
+}
 
 func writeWindowsUpdateScripts(dir string) (transactionPath, cleanupPath, statusPath, logPath string, err error) {
 	if err = os.MkdirAll(dir, 0o700); err != nil {
@@ -147,9 +161,11 @@ func installDownloaded(_ context.Context, path string, result Result) (string, e
 	if result.PersonalUnsigned {
 		args = append(args, "-PersonalUnsigned")
 	}
-	cmd := exec.Command("powershell.exe", args...)
+	cmd := newHiddenWindowsUpgradeCommand(args)
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("start Windows update transaction: %w", err)
 	}
+	// Detached update logs and final status are persisted by the script.
+	_ = cmd.Process.Release()
 	return "upgrade transaction started; Desktop and Agent will restart after post-install verification", nil
 }
