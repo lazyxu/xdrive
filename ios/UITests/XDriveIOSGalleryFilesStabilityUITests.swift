@@ -228,7 +228,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             XCTFail("No screenshot CGImage after " + reason)
             return
         }
-        let width = 24, height = 32
+        // The colorful native tab/navigation bars can hide an entirely blank
+        // child. Sample the live child viewport at 96x64, not the full shell.
+        let width = 96, height = 64
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let rendered = pixels.withUnsafeMutableBytes { buffer -> Bool in
             guard let base = buffer.baseAddress,
@@ -244,13 +246,19 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         }
         XCTAssertTrue(rendered, "Screenshot could not be sampled after " + reason)
         guard rendered else { return }
-        let unique = Set(stride(from: 0, to: pixels.count, by: 4).map { offset in
-            (Int(pixels[offset]) << 16) |
-            (Int(pixels[offset + 1]) << 8) |
-            Int(pixels[offset + 2])
-        })
+        // Restrict the test to the page body, excluding persistent system
+        // navigation and bottom bars. A full-screen color histogram could
+        // pass even when a retained Files/Gallery child had gone fully blank.
+        var unique = Set<Int>()
+        for y in (height / 5)..<(height * 4 / 5) {
+            for x in (width / 8)..<(width * 7 / 8) {
+                let offset = (y * width + x) * 4
+                unique.insert((Int(pixels[offset]) << 16) |
+                    (Int(pixels[offset + 1]) << 8) | Int(pixels[offset + 2]))
+            }
+        }
         XCTAssertGreaterThan(unique.count, 8,
-                             "Native page became visually uniform after " + reason)
+                             "Native child viewport became uniform after " + reason)
     }
 
     func testGalleryFilesAlternationRetainsNonBlankSettledFrames() {

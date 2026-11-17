@@ -7,6 +7,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..', '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const native = read('ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift');
+const frameContinuity = read('ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift');
 const stability = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift');
 const workflow = read('.github/workflows/ios-native-navigation-runtime.yml');
 const watcher = read('ios/scripts/capture-navigation-smoke-frames.py');
@@ -138,4 +139,43 @@ test('six additional real Files/Gallery transitions are H.264-audited, including
       name + ' must tap a real native Gallery or Files tab');
   }
   assert.match(workflow, /--minimum 38/);
+});
+
+test('both existing Gallery/Files native suites audit child viewport rather than colorful tab chrome', () => {
+  const cases = [
+    [stability, 'assertNotSolidScreen'],
+    [frameContinuity, 'assertVisiblePixels'],
+  ];
+  for (const [source, helper] of cases) {
+    const start = source.indexOf('private func ' + helper);
+    assert.ok(start >= 0, helper + ' must still inspect live native screenshots');
+    const end = source.indexOf('\n    func test', start);
+    const body = source.slice(start, end >= 0 ? end : undefined);
+    assert.match(body, /let width = 96, height = 64/);
+    assert.match(body, /for y in \(height \/ 5\)\.\.<\(height \* 4 \/ 5\)/);
+    assert.match(body, /for x in \(width \/ 8\)\.\.<\(width \* 7 \/ 8\)/);
+    assert.match(body, /XCTAssertGreaterThan\(unique\.count, 8/);
+    assert.doesNotMatch(body, /Set\(stride\(from: 0, to: pixels\.count/,
+      'persistent system tab chrome must not satisfy child-content assertion');
+  }
+});
+
+test('real native UI test suites still cover six independent subpage return situations', () => {
+  const routes = [
+    [stability, 'testFilesHomeDeepScrollTabReturnKeepsQuickNavigation'],
+    [stability, 'testFilesSearchFocusThenGalleryReturnPreservesShell'],
+    [stability, 'testGalleryFilesRotateLandscapeAndReturnPortrait'],
+    [stability, 'testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank'],
+    [frameContinuity, 'testLocalPhotoTimelineSheetRepeatedAfterFilesReturns'],
+    [frameContinuity, 'testHistoryForegroundAlbumsReturnWithoutGhostSheet'],
+  ];
+  for (const [source, name] of routes) {
+    const match = source.match(new RegExp('func ' + name + '\\(\\)'));
+    assert.ok(match, 'missing independently executed native XCTest ' + name);
+    const body = source.slice(source.indexOf('func ' + name + '()'));
+    const next = body.indexOf('\n    func test');
+    assert.match(body.slice(0, next >= 0 ? next : undefined),
+      /assertNotSolidScreen\(app|assertVisiblePixels\(app|checkGallery\(app|checkFilesHome\(app/,
+      'route must inspect a real native child, not just appear in a test name');
+  }
 });

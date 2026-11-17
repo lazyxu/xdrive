@@ -55,7 +55,9 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
             XCTFail("Could not sample native screenshot at \(route)")
             return
         }
-        let width = 24, height = 32
+        // The colorful native tab/navigation bars can hide an entirely blank
+        // child. Sample the live child viewport at 96x64, not the full shell.
+        let width = 96, height = 64
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let rendered = pixels.withUnsafeMutableBytes { bytes -> Bool in
             guard let base = bytes.baseAddress,
@@ -71,12 +73,17 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         }
         XCTAssertTrue(rendered, "Missing screenshot bitmap at \(route)")
         guard rendered else { return }
-        let unique = Set(stride(from: 0, to: pixels.count, by: 4).map { index in
-            (Int(pixels[index]) << 16) |
-            (Int(pixels[index + 1]) << 8) |
-            Int(pixels[index + 2])
-        })
-        XCTAssertGreaterThan(unique.count, 8, "Uniform/blank screen at \(route)")
+        // Sample only the content viewport. Colorful tab chrome does not
+        // establish that the returned PhotoKit or Files child actually painted.
+        var unique = Set<Int>()
+        for y in (height / 5)..<(height * 4 / 5) {
+            for x in (width / 8)..<(width * 7 / 8) {
+                let index = (y * width + x) * 4
+                unique.insert((Int(pixels[index]) << 16) |
+                    (Int(pixels[index + 1]) << 8) | Int(pixels[index + 2]))
+            }
+        }
+        XCTAssertGreaterThan(unique.count, 8, "Uniform/blank child viewport at \(route)")
     }
 
     private func openLocalPhotoSource(_ app: XCUIApplication) {
