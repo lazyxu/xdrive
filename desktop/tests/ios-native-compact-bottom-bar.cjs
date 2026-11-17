@@ -20,7 +20,9 @@ test('five stable native bottom positions own the same feature-local TabView sta
   assert.match(ui, /TabView\(selection: \$tab\)/);
   assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)/);
   assert.match(ui, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)\s*\{\s*if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
-  assert.match(ui, /nativeBottomBar\s*\}\s*\}\s*\.id\(ownerScopeKey\)/);
+  assert.match(ui, /if tab == \.gallery && gallerySource != \.map \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/);
+  assert.match(ui, /\.accessibilityIdentifier\("native-ios-photos-bottom-bar"\)/);
+  assert.match(ui, /\.accessibilityIdentifier\("native-ios-five-slot-bar"\)/);
   assert.match(ui, /\.id\(ownerScopeKey\)/);
 });
 
@@ -43,18 +45,32 @@ test('dynamic long press opens recent features and has an accessible picker', ()
   assert.match(ui, /showRecentPicker = true/);
 });
 
-test('Gallery short landscape uses one safe-area row without remounting its active source', () => {
-  assert.match(ui, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/);
-  assert.match(ui, /GeometryReader \{ availableSpace in/);
-  assert.match(ui, /availableSpace\.size\.width >= 680 &&[\s\S]*?availableSpace\.size\.height < 500 &&[\s\S]*?!dynamicTypeSize\.isAccessibilitySize/);
-  assert.match(ui, /if !galleryPresentationFocused \{[\s\S]*?HStack\(spacing: 0\) \{\s*gallerySourceRow\s*if gallerySource == \.local \|\| gallerySource == \.albums \{\s*gallerySearchAction\s*\}\s*galleryCompactBackupAction\s*\}/);
-  // The same compact Gallery row must stay hidden for default immersive MapKit.
-  // Only an explicit map menu action can reveal the five-slot global chrome.
+test('Gallery uses Photos-like Library, Collections and Search instead of stacked toolbars', () => {
+  assert.match(ui, /private var nativePhotosBottomBar: some View/);
+  assert.match(ui, /native-ios-photos-library-tab/);
+  assert.match(ui, /native-ios-photos-collections-tab/);
+  assert.match(ui, /native-ios-photos-search/);
+  assert.match(ui, /requestUnifiedPhotoSearch = true/);
+  assert.match(ui, /private var galleryMoreMenu: some View/);
+  assert.match(ui, /Section\("图库来源"\)/);
+  assert.match(ui, /Section\("备份与管理"\) \{ backupMenuItems \}/);
+  assert.match(ui, /Section\("xDrive"\)/);
+  assert.doesNotMatch(ui, /private var galleryStatusRow:/);
+  assert.doesNotMatch(ui, /private var gallerySourceRow:/);
   assert.match(ui, /gallerySource == \.map \? !mapNavigationExplicitlyShown : galleryFocused/);
   assert.match(ui, /mapNavigationExplicitlyShown = !focused/);
-  assert.match(ui, /else \{\s*galleryStatusRow\s*gallerySourceRow/);
-  assert.match(ui, /private var gallerySourceRow: some View \{[\s\S]*?ScrollView\(\.horizontal, showsIndicators: false\)/);
-  assert.match(ui, /\.accessibilityValue\([\s\S]*?"自动备份已暂停，需核对收据"/);
-  assert.match(ui, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings-compact"\)/);
+  assert.match(ui, /case \.albums:\s*XDriveIOSNativePhotosCollectionsScreen/);
   assert.equal((ui.match(/switch gallerySource/g) || []).length, 1);
+});
+
+test('Collections exposes only backed PhotoKit routes without fabricated AI curation', () => {
+  assert.match(ui, /struct XDriveIOSNativePhotosCollectionsScreen: View/);
+  for (const route of ['native-ios-collections-recent-days', 'native-ios-collections-people',
+                      'native-ios-collections-albums', 'native-ios-collections-videos',
+                      'native-ios-collections-live']) {
+    assert.ok(ui.includes(route), 'missing usable Collections route: ' + route);
+  }
+  assert.match(ui, /XDriveIOSNativeLocalPhotoTimelineContainer/);
+  assert.match(ui, /XDriveIOSNativePhotoAlbumsScreen\(savedOffset: \$savedAlbumOffset\)/);
+  assert.doesNotMatch(ui, /Button\("回忆"\)|Button\("旅行"\)/);
 });
