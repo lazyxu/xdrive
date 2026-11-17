@@ -282,3 +282,22 @@ test('Files Home Favorites cache call must pass explicit projection kind to comp
   assert.match(view, /guard isHome, favoriteShortcuts\.verified,\s*favoriteShortcuts\.matches\(login\.owner, kind: \.favorites\)/)
   assert.doesNotMatch(view, /favoriteShortcuts\.matches\(login\.owner\)/)
 })
+
+
+test('batch destination sheet fails closed on an empty or stale selection instead of subscripting an array', () => {
+  const start = view.indexOf('.sheet(item: $batchDestinationIntent)')
+  const end = view.indexOf('.confirmationDialog(', start)
+  assert.ok(start >= 0 && end > start, 'missing native batch destination sheet')
+  const batch = view.slice(start, end)
+  assert.match(batch, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, intent\.owner\),\s*let selected = intent\.items\.first/)
+  assert.match(batch, /selected: selected, selectedItems: intent\.items/)
+  assert.doesNotMatch(batch, /intent\.items\[0\]|intent\.items\.first!/)
+  assert.match(batch, /账户或选中项目已变化，请关闭后重新选择/)
+  const openStart = view.indexOf('private func openBatchDestination(')
+  const openEnd = view.indexOf('private func openVersionHistory(', openStart)
+  assert.ok(openStart >= 0 && openEnd > openStart, 'missing verified selection admission')
+  const admission = view.slice(openStart, openEnd)
+  assert.match(admission, /guard selecting, canSelectPage,[\s\S]*?!chosenItems\.isEmpty/)
+  assert.match(admission, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
+  assert.match(admission, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
+});

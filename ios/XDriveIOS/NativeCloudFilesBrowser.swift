@@ -3482,10 +3482,13 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var filesModalsSecondary: some View {
         AnyView(filesModalsSecondaryBase)
         .sheet(item: $batchDestinationIntent) { intent in
-            if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
+            // Stale/invalid selections must never subscript an empty array
+            // during SwiftUI sheet construction.
+            if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner),
+               let selected = intent.items.first {
                 XDriveIOSNativeFilesDestinationPicker(
                     login: login, originalOwner: intent.owner,
-                    selected: intent.items[0], selectedItems: intent.items,
+                    selected: selected, selectedItems: intent.items,
                     kind: intent.kind
                 ) { target in
                     batchDestinationIntent = nil
@@ -3519,7 +3522,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                 }
             } else {
-                Text("账户已变化，请关闭后重新选择。")
+                Text("账户或选中项目已变化，请关闭后重新选择。")
                     .foregroundStyle(.secondary)
             }
         }
