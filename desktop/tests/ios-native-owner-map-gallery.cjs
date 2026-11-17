@@ -52,7 +52,8 @@ test('MapKit gesture revokes previous Owner camera before repaint but keeps iner
   assert.match(map, /let overview, let verifiedBounds,[\s\S]*?isSameViewport\([\s\S]*?currentlyVisibleIDs/)
   assert.match(map, /isSameViewport\(\s*bounds, current: currentBounds\(\)\)/)
   assert.match(map, /verifiedBounds = bounds/)
-  assert.match(map, /verifiedBounds != nil[\s\S]*?native-ios-owner-map-stale-count/)
+  assert.match(map, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/)
+  assert.doesNotMatch(map, /native-ios-owner-map-stale-count/)
   assert.match(policy, /return authorized == current/)
 })
 
@@ -196,7 +197,8 @@ test('short landscape Owner map retains verified camera, feedback, Sheet and acc
   assert.match(map, /\.accessibilityIdentifier\("native-ios-owner-map-layout-help"\)/);
   assert.match(map, /Button\("刷新当前视窗"\)/);
   assert.match(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
-  assert.match(map, /if let overview, displayedOverviewMatchesLogin \{[\s\S]*?verifiedBounds != nil[\s\S]*?native-ios-owner-map-stale-count/);
+  assert.match(map, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/);
+  assert.match(map, /if busy \{[\s\S]*?ProgressView\("正在加载照片位置…"/);
   assert.match(map, /\.sheet\(item: \$selected, onDismiss:/);
   assert.doesNotMatch(map, /onChange\(of: compactMap\)|\.id\(compactMap\)/);
 });
