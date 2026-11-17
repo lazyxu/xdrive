@@ -973,10 +973,10 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     priorWindow = departingPage
                     priorWindowCursor = departingCursor
                     autoScrollReturn = departingPage.items.last
-                    autoScrollReturnViewport = autoScrollReturn.flatMap {
-                        visibleTileFrames[String($0.id)].map { frame in
+                    autoScrollReturnViewport = autoScrollReturn.flatMap { lastItem in
+                        visibleTileFrames[String(lastItem.id)].map { frame in
                             XDriveIOSNativePhotoWallViewportAnchor(
-                                itemID: String($0.id),
+                                itemID: String(lastItem.id),
                                 windowIndex: departingCursor.offset,
                                 viewportOffset: frame.minY, tileHeight: frame.height)
                         }
