@@ -106,7 +106,7 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(simulator, /app\.debugDescription/)
   assert.doesNotMatch(simulator, /app\.buttons\["打开地图"\]/)
   assert.match(dashboard, /private func closeGalleryMap\(\) \{[\s\S]*?guard gallerySource == \.map else \{ return \}/)
-  assert.match(local, /native-ios-map-verified-count/)
+  assert.match(local, /verifiedSummary: globalComplete && refinedViewportIsCurrent/)
   assert.match(local, /navigationBarTitleDisplayMode\(\.inline\)/)
   assert.match(local, /native-ios-map-retry-covers/)
   assert.match(local, /native-ios-map-selected-month/)
@@ -115,8 +115,11 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(local, /native-ios-map-place-dismiss/)
   assert.match(local, /\.presentationDetents\(\[\.medium, \.large\]\)/)
   assert.match(cloud, /badge\.isHidden = !enabled \|\| count <= 1/)
-  assert.match(cloud, /native-ios-owner-map-stale-count/)
-  assert.match(cloud, /XDriveIOSNativePhotoMapStatusPill\([\s\S]*?native-ios-owner-map-stale-count/)
+  // A camera/Owner refresh must not expose a stale *visible* counter.
+  // VoiceOver only receives the count after current viewport proof.
+  assert.match(cloud, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/)
+  assert.doesNotMatch(cloud, /native-ios-owner-map-stale-count/)
+  assert.match(cloud, /if busy \{[\s\S]*?ProgressView\("正在加载照片位置…"/)
   assert.match(simulator, /func testMapCameraLayoutAndUnverifiedGestureNeverClosesTheApp\(/)
   assert.match(simulator, /func testAFirstTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap\(/)
   assert.match(simulator, /map\.swipeLeft\(\)/)
