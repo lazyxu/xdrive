@@ -132,7 +132,15 @@ test('unified Gallery uses the canonical adaptive photo grid and bounded density
   // Verified Owner/48-row admission precedes presentation-only shared scrolling.
   assert.match(ui, /if let target = XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\([\s\S]*?anchor, in: verifiedIDs, authorized: true[\s\S]*?\) \{[\s\S]*?if viewerOpeningPage != viewerReturnPage \|\|\s*viewerOpeningItemID != target \{[\s\S]*?let restored = viewerOpeningViewport\?\.alignment\([\s\S]*?for: target, window: viewerReturnPage,[\s\S]*?xdrivePhotoWallScrollVerifiedTile\(\s*target, scroll: scroll,\s*anchor: restored \?\? \.center\)/)
   assert.match(shared, /func xdrivePhotoWallScrollVerifiedTile<ID: Hashable>\([\s\S]*?scroll\.scrollTo\(id, anchor: anchor\)/)
-  assert.doesNotMatch(ui, /\.onChange\(of: wallDensity\)[\s\S]*?wall\.reset\(\)/)
+  const densityChangedAt = ui.indexOf('.onChange(of: wallDensity) { _ in');
+  const densityNextAt = ui.indexOf('.onChange(of: selected?.id)', densityChangedAt);
+  assert.ok(densityChangedAt >= 0 && densityNextAt > densityChangedAt,
+    'bounded current density-change handler required');
+  const densityChangedHandler = ui.slice(densityChangedAt, densityNextAt);
+  assert.match(densityChangedHandler, /pinchGeneration == wall\.generation/);
+  assert.match(densityChangedHandler, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/);
+  assert.match(densityChangedHandler, /xdrivePhotoWallScrollVerifiedTile\(/);
+  assert.doesNotMatch(densityChangedHandler, /wall\.reset\(\)|resetWall\(\)/);
 })
 
 
