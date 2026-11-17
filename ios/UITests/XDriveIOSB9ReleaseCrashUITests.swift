@@ -166,7 +166,23 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             .matching(identifier: "native-ios-login-server").firstMatch
         if !field.waitForExistence(timeout: 16) { record(app, "login-not-mounted") }
         XCTAssertTrue(field.exists)
-        Thread.sleep(forTimeInterval: 4)
+        // Do not terminate a still-mounting workspace and then call
+        // its deliberate crash-recovery page a false positive. Read the
+        // actual foreground UI's non-secret ready marker instead of a
+        // guessed fixed sleep. A never-ready workspace still FAILS.
+        let readiness = app.images.matching(
+            identifier: "native-ios-login-startup-readiness"
+        ).firstMatch
+        XCTAssertTrue(readiness.waitForExistence(timeout: 20),
+                      "Signed-out workspace did not expose startup readiness")
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "ready"),
+            object: readiness
+        )
+        let state = XCTWaiter.wait(for: [ready], timeout: 25)
+        if state != .completed { record(app, "startup-readiness-stuck") }
+        XCTAssertEqual(state, .completed,
+                       "Workspace stayed at mountingWorkspace; do not erase crash evidence")
         alive(app, "startup-stabilized")
         app.terminate()
         app.launchArguments = []

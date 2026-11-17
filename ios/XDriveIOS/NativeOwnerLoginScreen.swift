@@ -48,6 +48,8 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                     .scaledToFit()
                                     .frame(width: 48, height: 48)
                                     .accessibilityLabel("xDrive")
+                                    .accessibilityIdentifier("native-ios-login-startup-readiness")
+                                    .accessibilityValue(startupReady ? "ready" : "mounting")
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("xDrive")
                                         .font(.title.bold())
@@ -171,6 +173,16 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 backup.stopLibraryChangeMonitoring()
                 backup.cancel()
             }
+        }
+        // ScenePhase and the branch's onAppear can both race the async
+        // restoration transition. Re-arm the same guarded 3-second readiness
+        // check whenever the two required facts become available; never
+        // mistake a vanished progress branch for a terminated app.
+        .onChange(of: restoreFinished) { finished in
+            if finished { armReadinessAfterMount() }
+        }
+        .onChange(of: workspaceVisible) { visible in
+            if visible { armReadinessAfterMount() }
         }
         .onChange(of: model.owner) { _ in
             backup.cancel()
