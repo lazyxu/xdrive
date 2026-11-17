@@ -22,7 +22,35 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     }
 
     private func element(_ id: String, in app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: id).firstMatch
+        let direct = app.descendants(matching: .any).matching(identifier: id).firstMatch
+        if direct.exists { return direct }
+        // iOS Photos Library/Collections replaces the five-slot bar only
+        // while Gallery is active. Return the genuine native button.
+        let substitute: String?
+        switch id {
+        case "native-ios-tab-gallery": substitute = "native-ios-photos-library-tab"
+        case "native-ios-gallery-source-menu": substitute = "native-ios-gallery-more-menu"
+        default: substitute = nil
+        }
+        guard let substitute else { return direct }
+        return app.descendants(matching: .any).matching(identifier: substitute).firstMatch
+    }
+
+    private func openNativeLauncher(in app: XCUIApplication) {
+        let launcher = element("native-ios-tab-launcher", in: app)
+        if launcher.exists && launcher.isHittable {
+            launcher.tap()
+            return
+        }
+        // The Photos-like Gallery has one app route in its real More menu,
+        // not test-only hidden tabs. Exercise the actual secondary action.
+        let menu = element("native-ios-gallery-more-menu", in: app)
+        XCTAssertTrue(menu.waitForExistence(timeout: 15),
+                      "Gallery must expose its real xDrive app route")
+        menu.tap()
+        let all = app.buttons["全部功能"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 10))
+        all.tap()
     }
 
     /// Parse exact numeric counters from the genuine target PhotoKit scan.
@@ -223,10 +251,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground,
                        "System-stopped target must relaunch before PhotoKit is rechecked")
         handleInitialPhotoLibraryPromptIfPresent()
-        let launcher = element("native-ios-tab-launcher", in: app)
-        XCTAssertTrue(launcher.waitForExistence(timeout: 20),
-                      "Relaunched app must expose its real native launcher")
-        launcher.tap()
+        openNativeLauncher(in: app)
         let entry = element("native-ios-launcher-map", in: app)
         XCTAssertTrue(entry.waitForExistence(timeout: 20),
                       "Relaunched app must reopen MapKit through the genuine launcher")
@@ -392,9 +417,10 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
             // for immediate Settings-return reauthorization.
             handleInitialPhotoLibraryPromptIfPresent()
             recordActualPhotoKitReadback(app, stage: "after-restart-before-map")
-            let launcher = element("native-ios-tab-launcher", in: app)
-            let launcherAvailable = launcher.waitForExistence(timeout: 15)
-            if launcherAvailable { launcher.tap() }
+            if element("native-ios-tab-launcher", in: app).exists ||
+                element("native-ios-gallery-more-menu", in: app).exists {
+                openNativeLauncher(in: app)
+            }
             let mapEntry = element("native-ios-launcher-map", in: app)
             let entryAvailable = mapEntry.waitForExistence(timeout: 15)
             if entryAvailable { mapEntry.tap() }
@@ -450,12 +476,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         // The native Dashboard's "全部" launcher has a stable, explicit
         // "地图" route and does not depend on the Dynamic slot's conditional
         // redirect, nor on an earlier authenticated Server Owner.
-        let launcher = element("native-ios-tab-launcher", in: app)
-        if !launcher.waitForExistence(timeout: 15) {
-            diagnose("Native launcher tab missing", in: app)
-        }
-        XCTAssertTrue(launcher.exists, "Native launcher tab must be visible")
-        launcher.tap()
+        openNativeLauncher(in: app)
         let mapEntry = element("native-ios-launcher-map", in: app)
         if !mapEntry.waitForExistence(timeout: 15) {
             diagnose("Real launcher map route missing", in: app)
@@ -940,9 +961,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
         app.launch()
         XCTAssertEqual(app.state, .runningForeground)
-        let launcher = element("native-ios-tab-launcher", in: app)
-        XCTAssertTrue(launcher.waitForExistence(timeout: 15))
-        launcher.tap()
+        openNativeLauncher(in: app)
         let route = element("native-ios-launcher-map", in: app)
         XCTAssertTrue(route.waitForExistence(timeout: 15))
         route.tap()
