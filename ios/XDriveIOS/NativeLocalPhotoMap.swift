@@ -1955,6 +1955,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         Label("地图日期", systemImage: "calendar")
                     }
                     .accessibilityIdentifier("native-ios-local-map-capture-menu")
+                    // The normal full-library basemap is controlled by
+                    // its 44pt floating MapKit tool. The legacy 64-slot page
+                    // cannot use that user's location camera, so it keeps a
+                    // scoped fallback basemap menu until migrated.
+                    if mapScope == .page {
                     Menu {
                         Picker("底图样式", selection: $mapType) {
                             Text("标准地图").tag(MKMapType.standard)
@@ -1963,7 +1968,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     } label: {
                         Label("底图样式", systemImage: "square.3.layers.3d")
                     }
-                    .accessibilityIdentifier("native-ios-local-map-basemap")
+                        .accessibilityIdentifier("native-ios-local-page-map-basemap")
+                    }
                     if mapScope == .library && globalComplete {
                         Button("重新加载位置封面") {
                             guard phase == .active, !busy, globalComplete,

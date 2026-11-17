@@ -112,7 +112,9 @@ test('M07 M08 M10: native MKMapView keeps same UIView during basemap and GPS cam
   assert.match(surface, /mapViewDidFailLoadingMap/)
   assert.match(surface, /mapViewDidFinishLoadingMap/)
   assert.match(map, /currentLocation\.locate\(\)/)
-  assert.match(map, /Picker\("底图样式", selection: \$mapType\)/)
+  assert.match(map, /XDriveIOSNativePhotoMapFloatingTools\(/)
+  assert.match(map, /mapType = mapType == \.satellite \? \.standard : \.satellite/)
+  assert.doesNotMatch(map, /Picker\("底图样式", selection: \$mapType\)/)
   assert.match(map, /basemapUnavailable = \$0/)
 })
 

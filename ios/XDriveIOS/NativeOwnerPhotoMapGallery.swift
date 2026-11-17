@@ -914,15 +914,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                         Label("地图日期", systemImage: "calendar")
                     }
                     .accessibilityIdentifier("native-ios-owner-map-capture-menu")
-                    Menu {
-                        Picker("底图样式", selection: $mapType) {
-                            Text("标准地图").tag(MKMapType.standard)
-                            Text("卫星地图").tag(MKMapType.satellite)
-                        }
-                    } label: {
-                        Label("底图样式", systemImage: "square.3.layers.3d")
-                    }
-                    .accessibilityIdentifier("native-ios-owner-map-basemap")
+                    // Basemap is controlled only by the floating MapKit tool.
                     Button("刷新当前视窗") { reload() }
                         .disabled(busy || login.owner == nil || phase != .active)
                         .accessibilityIdentifier("native-ios-owner-map-refresh")
