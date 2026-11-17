@@ -25,7 +25,9 @@ test('Owner map keeps count only in the current-proof accessible grid and place 
   assert.doesNotMatch(screen, /native-ios-owner-map-verified-count|native-ios-owner-map-stale-count/)
   assert.match(screen, /if busy \{[\s\S]*?ProgressView\("正在加载照片位置…"/)
   assert.match(screen, /if let error \{[\s\S]*?XDriveIOSNativePhotoMapStatusPill\(/)
-  assert.match(screen, /Button\(focused \? "显示底部导航" : "专注地图"\)/)
+  // Native Photos Map shows the Photos bar, never a second five-slot override.
+  assert.doesNotMatch(screen, /Button\(focused \? "显示底部导航" : "专注地图"\)/)
+  assert.match(screen, /Label\("地图操作", systemImage: "ellipsis.circle"\)/)
   assert.match(screen, /Label\("地图说明", systemImage: "info.circle"\)/)
   assert.doesNotMatch(screen, /Text\("当前 Server Owner 已索引/)
   assert.doesNotMatch(screen, /Text\("当前视窗已有 /)

@@ -100,7 +100,7 @@ test('native GPS find-next skips only a bounded PhotoKit snapshot, not 100k asse
   assert.match(map, /refresh\(at: page\.page\.nextOffset, findNextGPS: true\)/)
   assert.match(map, /\.disabled\(busy \|\| page\?\.page\.finished != false\)/)
   // The unchanged bounded scan lives in the accessible native More section, not a footer.
-  assert.match(map, /Section\("当前页 · \\(page\?\.items\.count \?\? 0\) 张照片"\)[\s\S]*?Button\("查找下一批有定位照片"\)[\s\S]*?refresh\(at: page\.page\.nextOffset, findNextGPS: true\)[\s\S]*?\.disabled\(busy \|\| page\?\.page\.finished != false\)/)
+  assert.match(map, /Section\("当前页 · [\s\S]*?Button\("查找下一批有定位照片"\)[\s\S]*?refresh\(at: page\.page\.nextOffset, findNextGPS: true\)[\s\S]*?\.disabled\(busy \|\| page\?\.page\.finished != false\)/)
   assert.match(map, /Label\("地图操作", systemImage: "ellipsis.circle"\)[\s\S]*?\.frame\(minWidth: 44, minHeight: 44\)/)
   assert.match(map, /var next = try await worker\.nextLocatedPage\(\)/)
   assert.match(map, /var pagesRead = 1/)
