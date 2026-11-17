@@ -45,6 +45,29 @@ test('the verified summary is accessible without introducing a new map banner', 
   assert.match(source, /XDriveIOSNativePhotoMapPlaceHeader\(/)
 })
 
+test('legacy bounded PhotoKit page keeps MapKit full height and moves paging to More', () => {
+  const view = local.slice(local.indexOf('struct XDriveIOSNativeLocalPhotoMapScreen: View'))
+  const mapStart = view.indexOf('} else if let page {')
+  const mapEnd = view.indexOf('} else if busy {', mapStart)
+  const pageCanvas = view.slice(mapStart, mapEnd)
+  assert.match(pageCanvas, /XDriveIOSMapKitPhotoPage\(/)
+  assert.match(pageCanvas, /\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/)
+  assert.match(pageCanvas, /\.overlay\(alignment: \.topLeading\)/)
+  assert.doesNotMatch(pageCanvas, /Button\("上一页"\)|Button\("下一页"\)/)
+  assert.doesNotMatch(pageCanvas, /Text\("当前页 ·/)
+  assert.doesNotMatch(pageCanvas, /当前页暂无有效 GPS 照片，可以切换下一页/)
+  const actions = view.slice(view.indexOf('Label("地图日期", systemImage: "calendar")'),
+                              view.indexOf('if mapScope == .library && globalComplete'))
+  assert.match(actions, /if mapScope == \.page \{[\s\S]*?Section\("当前页 ·/)
+  assert.match(actions, /Button\("上一页"\)[\s\S]*?Button\("下一页"\)/)
+  assert.match(actions, /Button\("查找下一批有定位照片"\)/)
+  assert.match(actions, /native-ios-map-find-next-gps-page/)
+  assert.match(actions, /Button\("刷新当前页"\)/)
+  assert.match(actions, /Picker\("底图样式", selection: \$mapType\)/)
+  assert.match(view, /XDriveIOSNativeMapViewerAdmission\.allows\(/)
+  assert.match(view, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+})
+
 test('the quieter map does not remove permission-scoped membership or emergency recovery', () => {
   assert.match(local, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
   assert.match(local, /runP0IndependentGPSAudit\(\)/)
