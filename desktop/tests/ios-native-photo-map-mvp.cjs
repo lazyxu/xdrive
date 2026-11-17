@@ -512,8 +512,10 @@ test('native local Gallery opens the full-library map from its filter menu witho
   assert.match(dashboard, /ForEach\(XDriveIOSNativeGallerySource\.allCases\.filter \{\s*\$0 != \.map &&/)
   assert.match(dashboard, /onClose: \{ closeGalleryMap\(\) \}/)
   assert.match(mapGallery, /var onClose: \(\(\) -> Void\)\? = nil/)
-  assert.match(mapGallery, /if source == \.cloud[\s\S]*?Button\("完成"\) \{ onClose\?\(\) \}/)
-  assert.match(mapGallery, /ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-map-source-selector/)
+  assert.match(mapGallery, /if source == \.cloud[\s\S]*?accessibilityIdentifier\("native-ios-map-close"\)/)
+  assert.match(mapGallery, /mapSource: \$source, canSelectCloudMap: cloudAllowed/)
+  assert.match(mapGallery, /Picker\("地图照片来源", selection: mapSource\)/)
+  assert.match(map, /Picker\("地图照片来源", selection: mapSource\)/)
 })
 
 

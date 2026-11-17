@@ -231,7 +231,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(entry.waitForExistence(timeout: 20),
                       "Relaunched app must reopen MapKit through the genuine launcher")
         entry.tap()
-        XCTAssertTrue(element("native-ios-map-source-selector", in: app)
+        XCTAssertTrue(element("native-ios-local-map-actions", in: app)
             .waitForExistence(timeout: 20),
             "Relaunched app must mount the genuine source-protected MapKit route")
         return true
@@ -467,7 +467,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
 
         // This toolbar exists before PhotoKit authorization and makes the
         // actual Map screen distinguishable from a Gallery/Dynamic fallback.
-        let source = element("native-ios-map-source-selector", in: app)
+        let source = element("native-ios-local-map-actions", in: app)
         if !source.waitForExistence(timeout: 20) {
             diagnose("Native map source toolbar absent after launcher tap", in: app)
         }
@@ -549,6 +549,10 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(actions.waitForExistence(timeout: 10))
         XCTAssertTrue(actions.isHittable)
         actions.tap()
+        // The source Picker is only exposed inside this genuine menu.
+        XCTAssertTrue(element("native-ios-map-source-selector", in: app)
+            .waitForExistence(timeout: 6),
+            "Map source selection must stay in the advanced actions menu")
         let dateMenu = element("native-ios-local-map-capture-menu", in: app)
         XCTAssertTrue(dateMenu.waitForExistence(timeout: 6))
         // UI date → month selection must preserve verified PhotoKit scope.
@@ -932,7 +936,7 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let route = element("native-ios-launcher-map", in: app)
         XCTAssertTrue(route.waitForExistence(timeout: 15))
         route.tap()
-        XCTAssertTrue(element("native-ios-map-source-selector", in: app)
+        XCTAssertTrue(element("native-ios-local-map-actions", in: app)
             .waitForExistence(timeout: 20))
         let denied = element("native-ios-map-open-photo-settings", in: app)
         if !denied.waitForExistence(timeout: 20) {

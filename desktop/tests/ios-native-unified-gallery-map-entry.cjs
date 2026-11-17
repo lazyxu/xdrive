@@ -97,7 +97,7 @@ test('real Simulator Gallery↔Map route is covered without assuming synthetic P
   assert.match(nativeUITests, /func testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank\(/)
   assert.match(nativeUITests, /func testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership\(/)
   assert.match(nativeUITests, /target\("native-ios-unified-gallery-show-map", in: app\)/)
-  assert.match(nativeUITests, /target\("native-ios-map-source-selector", in: app\)/)
+  assert.match(nativeUITests, /target\("native-ios-local-map-actions", in: app\)/)
   assert.match(nativeUITests, /target\("native-ios-map-dismiss", in: app\)/)
   assert.match(nativeUITests, /assertNotSolidScreen\(app, "Unified Gallery after modal MapKit return"\)/)
   assert.match(nativeUITests, /XCTAssertFalse\(open\.isEnabled/)

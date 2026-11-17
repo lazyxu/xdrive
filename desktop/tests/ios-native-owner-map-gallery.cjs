@@ -207,7 +207,7 @@ test('single native Gallery map entry exposes local and Owner cloud sources with
   assert.match(dashboard, /localMapPageOffset = 0/);
   assert.doesNotMatch(dashboard, /snapshot\.mapScope|snapshot\.mapPageOffset/);
   assert.match(map, /struct XDriveIOSNativePhotoMapsScreen: View \{[\s\S]*?@ObservedObject var login: XDriveIOSNativeOwnerLoginModel[\s\S]*?@Binding var localMapScope: XDriveIOSNativeLocalMapScope[\s\S]*?@Binding var localMapPageOffset: Int/)
-  assert.match(map, /Picker\("地图照片来源", selection: \$source\)/)
+  assert.match(map, /Picker\("地图照片来源", selection: mapSource\)/)
   assert.match(map, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/)
   assert.match(map, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange,\s*cameraReturn: cloudMapCamera,\s*onCameraChange: \{ next in[\s\S]*?cloudMapCamera = next/);
   assert.match(map, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/)
@@ -306,24 +306,22 @@ test('single exact Owner map place opens L3 after fresh Owner-scoped Range, not 
 })
 
 
-test('native map source uses one navigation menu instead of a permanently stacked picker row', () => {
+test('native map source is an authenticated choice inside the same advanced MapKit menu', () => {
   const root = map.slice(map.indexOf('struct XDriveIOSNativePhotoMapsScreen: View'),
                          map.indexOf('private final class XDriveIOSOwnerPlaceAnnotation:'))
   assert.match(root, /return Group \{\s*switch source \{/)
   assert.doesNotMatch(root, /return VStack\(spacing: 4\)|\.pickerStyle\(\.segmented\)/)
-  assert.match(root, /\.toolbar \{[\s\S]*?if source == \.cloud \{\s*ToolbarItem\(placement: \.navigationBarLeading\) \{\s*Button\("完成"\)/)
-  assert.match(root, /ToolbarItem\(placement: \.navigationBarTrailing\) \{\s*Menu \{/)
-  assert.match(root, /Menu \{\s*Picker\("地图照片来源", selection: \$source\) \{/)
-  assert.match(root, /ForEach\(XDriveIOSNativePhotoMapSource\.allCases\.filter \{\s*cloudAllowed \|\| \$0 == \.local\s*\}, id: \\.self\)/);
-  assert.match(root, /Label\(source\.label, systemImage: "square\.stack\.3d\.up"\)/)
-  assert.match(root, /\.accessibilityLabel\("地图照片来源：\\\(source\.label\)"\)/)
-  assert.match(root, /\.accessibilityIdentifier\("native-ios-map-source-selector"\)/)
+  assert.match(root, /if source == \.cloud[\s\S]*?ToolbarItem\(placement: \.navigationBarTrailing\)/)
+  assert.match(root, /mapSource: \$source, canSelectCloudMap: cloudAllowed/)
+  assert.doesNotMatch(root, /Label\("照片来源", systemImage: "square\.stack\.3d\.up"\)/)
+  assert.match(map, /Picker\("地图照片来源", selection: mapSource\)/)
+  assert.match(map, /if canSelectCloudMap \{[\s\S]*?tag\(XDriveIOSNativePhotoMapSource.cloud\)/)
+  assert.match(map, /\.accessibilityIdentifier\("native-ios-map-source-selector"\)/)
   assert.match(root, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?mapScope: \$localMapScope,[\s\S]*?offset: \$localMapPageOffset/)
-  assert.match(root, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?cameraReturn: cloudMapCamera/);
+  assert.match(root, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?cameraReturn: cloudMapCamera/)
   assert.match(root, /guard source == \.cloud, let expectedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?cloudMapCamera = next/)
   assert.match(root, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/)
 })
-
 
 test('cloud Owner map album advances on visible sentinel without waiting for every cover', () => {
   assert.match(clusterAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)

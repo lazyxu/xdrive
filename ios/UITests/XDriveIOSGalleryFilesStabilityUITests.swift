@@ -154,7 +154,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         // The filter sheet fully dismisses before presenting the existing
         // MapKit route. The local permission screen may still be denied:
         // never pretend this UI-navigation smoke proves PhotoKit Full Access.
-        XCTAssertTrue(target("native-ios-map-source-selector", in: app)
+        XCTAssertTrue(target("native-ios-local-map-actions", in: app)
             .waitForExistence(timeout: 25),
             "Unified Gallery did not present the real local/cloud map")
         XCTAssertTrue(target("native-ios-map-dismiss", in: app)

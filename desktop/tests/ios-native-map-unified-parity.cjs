@@ -101,7 +101,7 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(dashboard, /if next == \.dynamic && emptyDynamicMapFallback \{\s*openGallery\(\.map\)/)
   assert.match(simulator, /element\("native-ios-tab-launcher", in: app\)/)
   assert.match(simulator, /element\("native-ios-launcher-map", in: app\)/)
-  assert.match(simulator, /element\("native-ios-map-source-selector", in: app\)/)
+  assert.match(simulator, /element\("native-ios-local-map-actions", in: app\)/)
   assert.match(simulator, /MAP_ROUTE_DIAGNOSTIC/)
   assert.match(simulator, /app\.debugDescription/)
   assert.doesNotMatch(simulator, /app\.buttons\["打开地图"\]/)
