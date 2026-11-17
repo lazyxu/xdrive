@@ -241,3 +241,30 @@ test('six additional high-risk Gallery/Files transitions require true H264 evide
   assert.match(h264, /MAX_CLIP_SECONDS = 210/,
     'long genuine XCTest must not be truncated by old 120-second clip limit');
 });
+
+
+test('every mandatory real H264 target belongs to exactly one executable XCTest and live frame watcher', () => {
+  // The active video gate grew from 44 to 50 actual journeys. Verify source
+  // parity from the target registry, rather than hardcoding a stale count.
+  const targets = [...h264.matchAll(/^\s*"(test\w+)",?$/gm)].map(m => m[1]);
+  assert.equal(targets.length, 50, 'never silently reduce the mandatory H.264 case set');
+  assert.equal(new Set(targets).size, targets.length, 'duplicate video targets are invalid');
+  const suites = [stability, frameContinuity, native];
+  const methods = suites.flatMap(code =>
+    [...code.matchAll(/^\s*func (test\w+)\(\)/gm)].map(m => m[1])
+  );
+  for (const name of targets) {
+    assert.equal(methods.filter(method => method === name).length, 1,
+      name + ' must exist in exactly one executed native UI suite');
+    const source = suites.find(code => code.includes('func ' + name + '()'));
+    const start = source.indexOf('func ' + name + '()');
+    const next = source.indexOf('\n    func test', start + 5);
+    const journey = source.slice(start, next < 0 ? undefined : next);
+    assert.match(journey, /waitForRealH264RecordingPrelude\(\)/,
+      name + ' must wait for actual recorder startup before the first tap');
+    assert.ok(watcher.includes('"' + name + '"'),
+      name + ' must have live Simulator frame sampling');
+  }
+  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 50/,
+    'all 50 distinct actual video clips must remain mandatory');
+});
