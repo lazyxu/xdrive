@@ -1111,11 +1111,15 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private var searchSourceFilterTitle: String {
         guard let id = searchFilters.sourceID else { return "同步文件夹" }
+        // Never reuse the previous account's Source label before the current
+        // Owner's options read is verified, even during a transient view render.
+        guard hasVerifiedSearchOptionsForOwner else { return "同步文件夹已筛选" }
         return searchOptions.sources.first(where: { $0.id == id })?.name ?? "同步文件夹已筛选"
     }
 
     private var searchTagFilterTitle: String {
         guard let id = searchFilters.tagID else { return "标签" }
+        guard hasVerifiedSearchOptionsForOwner else { return "标签已筛选" }
         return searchOptions.tags.first(where: { $0.id == id })?.name ?? "标签已筛选"
     }
 
@@ -1783,6 +1787,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .frame(minHeight: XDriveIOSNativeFilesUIStyle.tapHeight)
                 .accessibilityElement(children: .contain)
+                XDriveIOSNativeFilesAppliedFiltersBar(
+                    filters: $searchFilters,
+                    sourceName: searchSourceFilterTitle,
+                    tagName: searchTagFilterTitle
+                )
             }
             if isGlobalSearch {
                 HStack {

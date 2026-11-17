@@ -40,6 +40,118 @@ private struct XDriveIOSNativeFilesAdaptiveText: View {
 }
 
 
+/// The same server-backed filter state as Web/PWA: each visible chip removes
+/// only its own predicate. No local 64-row filtering or new network source.
+/// Keep this isolated from the already deep native Files SwiftUI view graph.
+struct XDriveIOSNativeFilesAppliedFiltersBar: View {
+    @Binding var filters: XDriveIOSNativeFilesSearchFilterState
+    let sourceName: String
+    let tagName: String
+
+    private struct AppliedFilter: Identifiable {
+        let id: String
+        let label: String
+    }
+
+    private var chips: [AppliedFilter] {
+        var result: [AppliedFilter] = []
+        if filters.kind != "all" {
+            result.append(.init(
+                id: "kind",
+                label: "类型：" + XDriveIOSNativeFilesPagePolicy.searchKindLabel(filters.kind)
+            ))
+        }
+        if filters.hasDateFilter {
+            let from = filters.modifiedFrom.map { String($0.prefix(10)) }
+            let to = filters.modifiedTo.map { String($0.prefix(10)) }
+            let label: String
+            if let from, let to {
+                label = "修改：" + from + " – " + to
+            } else if let from {
+                label = "修改：" + from + " 起"
+            } else if let to {
+                label = "修改：" + to + " 前"
+            } else {
+                label = "修改时间已筛选"
+            }
+            result.append(.init(id: "modified", label: label))
+        }
+        if filters.hasSizeFilter {
+            let min = filters.minSize.map {
+                ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
+            }
+            let max = filters.maxSize.map {
+                ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
+            }
+            let label: String
+            if let min, let max {
+                label = "大小：" + min + " – " + max
+            } else if let min {
+                label = "大小：≥ " + min
+            } else if let max {
+                label = "大小：≤ " + max
+            } else {
+                label = "文件大小已筛选"
+            }
+            result.append(.init(id: "size", label: label))
+        }
+        if filters.hasSourceFilter {
+            result.append(.init(id: "source", label: "来源：" + sourceName))
+        }
+        if filters.hasTagFilter {
+            result.append(.init(id: "tag", label: "标签：" + tagName))
+        }
+        return result
+    }
+
+    private func clear(_ id: String) {
+        switch id {
+        case "kind":
+            filters.kind = "all"
+        case "modified":
+            filters.modifiedFrom = nil
+            filters.modifiedTo = nil
+        case "size":
+            filters.minSize = nil
+            filters.maxSize = nil
+        case "source":
+            filters.sourceID = nil
+        case "tag":
+            filters.tagID = nil
+        default:
+            break
+        }
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(chips) { chip in
+                    Button { clear(chip.id) } label: {
+                        HStack(spacing: 5) {
+                            Text(chip.label)
+                                .font(.caption)
+                                .lineLimit(1)
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .accessibilityHidden(true)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: XDriveIOSNativeFilesUIStyle.tapHeight)
+                        .foregroundStyle(Color.accentColor)
+                        .background(Color.accentColor.opacity(0.1), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清除" + chip.label + "筛选")
+                    .accessibilityIdentifier("native-ios-files-applied-filter-" + chip.id)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .accessibilityIdentifier("native-ios-files-applied-filter-chips")
+    }
+}
+
 /// File extensions inform presentation only: never treat badges as MIME proof.
 extension XDriveIOSNativeFilesUIStyle {
     static func fileAppearance(_ node: XDriveIOSNativeFilesNode)

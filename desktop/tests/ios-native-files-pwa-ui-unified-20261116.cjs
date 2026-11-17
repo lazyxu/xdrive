@@ -135,6 +135,28 @@ test('P0: native Gallery backup action and Files Home editing expose usable AX s
   assert.match(workflow, /matrix\.source == 'candidate-navigation'\) && 100/)
 })
 
+test('P1: selected filter chips mirror PWA and cannot show a previous Owner label', () => {
+  for (const field of ['kind', 'modified', 'size', 'source', 'tag']) {
+    assert.ok(style.includes('id: "' + field + '"'), field + ' selected chip missing')
+    assert.ok(style.includes('case "' + field + '":'), field + ' individual clear action missing')
+  }
+  assert.match(style, /struct XDriveIOSNativeFilesAppliedFiltersBar: View/)
+  assert.match(style, /@Binding var filters: XDriveIOSNativeFilesSearchFilterState/)
+  assert.match(style, /native-ios-files-applied-filter-chips/)
+  assert.match(style, /native-ios-files-applied-filter-.*chip\.id/)
+  assert.match(style, /accessibilityLabel\("清除" \+ chip\.label \+ "筛选"\)/)
+  assert.match(browser, /XDriveIOSNativeFilesAppliedFiltersBar\(/)
+  assert.match(browser, /filters: \$searchFilters,/)
+  assert.match(browser, /sourceName: searchSourceFilterTitle/)
+  assert.match(browser, /tagName: searchTagFilterTitle/)
+  const options = browser.slice(browser.indexOf('private var searchSourceFilterTitle:'),
+    browser.indexOf('/// Capture the exact visible Node before List/Grid'))
+  assert.match(options, /guard hasVerifiedSearchOptionsForOwner else \{ return "同步文件夹已筛选" \}/)
+  assert.match(options, /guard hasVerifiedSearchOptionsForOwner else \{ return "标签已筛选" \}/)
+  assert.match(browser, /URLQueryItem\(name: "source_id", value: String\(sourceID\)\)/)
+  assert.match(browser, /URLQueryItem\(name: "tag_id", value: String\(tagID\)\)/)
+})
+
 test('P0: the prior stack-overflow safety fix and native Viewer remain intact', () => {
   assert.match(browser, /private var filesModalsPrimary: some View/)
   assert.match(browser, /AnyView\(filesModalsSecondary\)/)
