@@ -151,7 +151,9 @@ test('F10 Viewer first displayed frame and all-file subroute gate remain explici
 test('F11 real H264 recorder has pre-tap video for all six native cases', () => {
   // Do not suppress missing_pre_tap_frames: instead start the recorder before
   // the six real test methods issue their first route transition.
-  assert.match(video, /MAX_CLIP_SECONDS = 120/)
+  // Keep the real recorder bound aligned with the 180s cap needed for the
+  // observed 129.575s XCTest; truncated clips still fail the full audit.
+  assert.match(video, /MAX_CLIP_SECONDS = 180/)
   assert.match(video, /missing_pre_tap_frames/)
   for (const src of [stability, transitions]) {
     assert.match(src, /Thread\.sleep\(forTimeInterval: 24\)/)
