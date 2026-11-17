@@ -179,3 +179,26 @@ test('real native UI test suites still cover six independent subpage return situ
       'route must inspect a real native child, not just appear in a test name');
   }
 });
+
+test('six existing Gallery/Files high-frequency returns now sample child pixels', () => {
+  const required = [
+    'testRapidGalleryFilesTabOscillationPreservesBothShells',
+    'testFilesQuickRailAlternatingSectionsReturnsToBrowse',
+    'testGallerySourcesAlternateWithoutLosingSourceRail',
+    'testRepeatedFilterDismissalRestoresSameGallery',
+    'testGalleryPeopleChildReturnRepeatsWithoutLosingGallerySource',
+    'testGalleryFilterCancelAfterTabAndSourceRoundTrips',
+  ];
+  for (const name of required) {
+    const begin = stability.indexOf('func ' + name + '()');
+    assert.ok(begin > 0, 'Missing real native XCTest: ' + name);
+    const after = stability.indexOf('\n    func test', begin + 4);
+    const code = stability.slice(begin, after > 0 ? after : undefined);
+    assert.match(code, /assertNotSolidScreen\(app,/,
+      name + ' must verify child pixels after native navigation, not only the tab rail');
+    assert.match(code, /select\("native-ios-/,
+      name + ' must navigate via a real native control');
+  }
+  assert.match(stability, /for y in \(height \/ 5\)\.\.<\(height \* 4 \/ 5\)/);
+  assert.match(stability, /for x in \(width \/ 8\)\.\.<\(width \* 7 \/ 8\)/);
+});

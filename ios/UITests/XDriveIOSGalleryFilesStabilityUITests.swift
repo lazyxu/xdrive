@@ -104,6 +104,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             select("native-ios-tab-gallery", in: app)
             checkGallery(app)
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery after eight rapid Files/Gallery tab changes")
     }
 
     func testFilesQuickRailAlternatingSectionsReturnsToBrowse() {
@@ -116,6 +118,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
                 checkFilesHome(app)
             }
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Files Browse after repeated Recent and Favorites changes")
     }
 
     func testGallerySourcesAlternateWithoutLosingSourceRail() {
@@ -126,6 +130,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
                 checkGallery(app)
             }
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery unified wall after Albums and Originals switching")
     }
 
     func testRepeatedFilterDismissalRestoresSameGallery() {
@@ -140,6 +146,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             XCTAssertTrue(target("native-ios-gallery-open-filters", in: app)
                 .waitForExistence(timeout: 10))
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery after repeated filter dismissal")
     }
 
     func testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank() {
@@ -295,6 +303,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             XCTAssertTrue(target("native-ios-gallery-open-filters", in: app)
                 .waitForExistence(timeout: 10))
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery after filter cancellation and Files tab returns")
     }
 
     func testGalleryPeopleChildReturnRepeatsWithoutLosingGallerySource() {
@@ -309,6 +319,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             back.tap()
             checkGallery(app)
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery after repeated People child returns")
     }
 
     func testGalleryUnchangedForegroundRetainsVerifiedWallGeneration() {
