@@ -507,6 +507,9 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         pins = []
         mapRevision = UUID()
         selected = nil
+        // A revoked Owner, library or camera scope must also dismiss an
+        // opened viewport union sheet before another frame can use old pins.
+        showingViewportGrid = false
         provedOwner = nil
         provedLibrary = nil
         provedCamera = nil
