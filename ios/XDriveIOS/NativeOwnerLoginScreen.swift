@@ -210,6 +210,14 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 backup.cancel()
             }
         }
+        // The restore task replaces the initial progress subtree with the
+        // signed-in Dashboard or signed-out form. Re-arm readiness after that
+        // state transition as well as onAppear / foreground: on iOS 26.x the
+        // first subtree's appearance can precede restoreFinished becoming true.
+        // Never mark ready without the existing Owner/scene guards.
+        .onChange(of: restoreFinished) { finished in
+            if finished { armReadinessAfterMount() }
+        }
         .onChange(of: model.owner) { _ in
             backup.cancel()
             backup.refresh(owner: model.owner)
