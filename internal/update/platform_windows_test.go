@@ -39,47 +39,47 @@ if ([XDriveConsoleProbe]::GetConsoleWindow() -ne [IntPtr]::Zero) {
 	throw "Windows updater PowerShell acquired a console"
 }
 	`
-    path := filepath.Join(t.TempDir(), "console-probe.ps1")
-    if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
-        t.Fatal(err)
-    }
-    if _, err := exec.LookPath("powershell.exe"); err != nil {
-        t.Fatal(err)
-    }
-    cmd := newHiddenWindowsUpgradeCommand([]string{
-        "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-WindowStyle", "Hidden", "-File", path,
-    })
-    output, err := cmd.CombinedOutput()
-    if err != nil {
-        t.Fatalf("headless Windows PowerShell acquired a console or failed: %v\n%s", err, output)
-    }
+	path := filepath.Join(t.TempDir(), "console-probe.ps1")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exec.LookPath("powershell.exe"); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newHiddenWindowsUpgradeCommand([]string{
+		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+		"-WindowStyle", "Hidden", "-File", path,
+	})
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("headless Windows PowerShell acquired a console or failed: %v\n%s", err, output)
+	}
 }
 
 func TestWindowsUpdateNativeCommandsStayHeadless(t *testing.T) {
-    script := windowsUpgradeTransactionScript
-    for _, required := range []string{
-        "$startInfo.UseShellExecute = $false",
-        "$startInfo.CreateNoWindow = $true",
-        "$startInfo.RedirectStandardOutput = $true",
-        "$startInfo.RedirectStandardError = $true",
-        "Quote-WindowsNativeArgument",
-        "Invoke-HiddenNativeProcess -FilePath \"robocopy.exe\"",
-        "Invoke-HiddenNativeProcess -FilePath \"reg.exe\"",
-        "Invoke-HiddenNativeProcess -FilePath $xd -ArgumentList @(\"version\")",
-        "Invoke-HiddenNativeProcess -FilePath $xd -ArgumentList @(\"version\", \"--json\")",
-    } {
-        if !strings.Contains(script, required) {
-            t.Fatalf("Windows transaction missing headless process contract %q", required)
-        }
-    }
-    for _, forbidden := range []string{
-        "& robocopy.exe", "& reg.exe", "& $xd version",
-    } {
-        if strings.Contains(script, forbidden) {
-            t.Fatalf("Windows transaction still launches a native console: %q", forbidden)
-        }
-    }
+	script := windowsUpgradeTransactionScript
+	for _, required := range []string{
+		"$startInfo.UseShellExecute = $false",
+		"$startInfo.CreateNoWindow = $true",
+		"$startInfo.RedirectStandardOutput = $true",
+		"$startInfo.RedirectStandardError = $true",
+		"Quote-WindowsNativeArgument",
+		"Invoke-HiddenNativeProcess -FilePath \"robocopy.exe\"",
+		"Invoke-HiddenNativeProcess -FilePath \"reg.exe\"",
+		"Invoke-HiddenNativeProcess -FilePath $xd -ArgumentList @(\"version\")",
+		"Invoke-HiddenNativeProcess -FilePath $xd -ArgumentList @(\"version\", \"--json\")",
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("Windows transaction missing headless process contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"& robocopy.exe", "& reg.exe", "& $xd version",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("Windows transaction still launches a native console: %q", forbidden)
+		}
+	}
 }
 
 func TestWriteWindowsUpdateScripts(t *testing.T) {
