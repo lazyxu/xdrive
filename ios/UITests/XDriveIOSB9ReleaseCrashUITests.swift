@@ -85,12 +85,25 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
                     return
                 }
             }
-            menu.tap()
+            // First-use Photos access may interrupt and close the menu
+            // without selecting any xDrive action. Retry once through the
+            // real visible menu after the system interruption is gone.
             let item = app.buttons[title].firstMatch
-            XCTAssertTrue(item.waitForExistence(timeout: 12) && item.isHittable,
-                          "Actual Gallery More menu missing native route \(title)")
-            item.tap()
-            alive(app, "tap-\(id)")
+            for attempt in 0..<2 {
+                guard menu.exists && menu.isHittable else { break }
+                menu.tap()
+                if item.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
+                   item.isHittable {
+                    item.tap()
+                    alive(app, "tap-\(id)")
+                    return
+                }
+                if app.alerts.firstMatch.exists ||
+                   XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                       .alerts.firstMatch.exists { break }
+            }
+            record(app, "missing-real-gallery-action-\(id)")
+            XCTFail("Actual Gallery More menu missing native route \(title)")
             return
         }
         // No fallback success: the actual archive/candidate native route must

@@ -126,12 +126,24 @@ enum XDriveIOSNativePhotosTestNavigator {
         if let title = sourceCommands[id] ?? globalCommands[id] {
             let menu = found("native-ios-gallery-more-menu", in: app)
             guard menu.exists && menu.isHittable else { return false }
-            menu.tap()
-            let action = app.buttons[title].firstMatch
-            guard action.waitForExistence(timeout: 10) && action.isHittable
-            else { return false }
-            action.tap()
-            return true
+            // A real first-use Photos permission alert can interrupt this
+            // menu tap. After XCTest has actually dismissed the system alert,
+            // retry the SAME visible menu once, not an invisible tab or fake
+            // navigation route. Keep every failed route a real XCTest failure.
+            for attempt in 0..<2 {
+                guard menu.exists && menu.isHittable else { return false }
+                menu.tap()
+                let action = app.buttons[title].firstMatch
+                if action.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
+                   action.isHittable {
+                    action.tap()
+                    return true
+                }
+                if app.alerts.firstMatch.exists ||
+                   XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                       .alerts.firstMatch.exists { return false }
+            }
+            return false
         }
         return false
     }
