@@ -881,9 +881,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 }
             }
         }
-        .toolbar {
-            // The location control lives beside map style in the canvas.
-            ToolbarItem(placement: .navigationBarTrailing) {
+        // The top Photos toolbar is reserved for the surrounding Map route.
+        // Owner-only dates/trips/retry remain in a secondary floating menu.
+        .overlay(alignment: .bottomLeading) {
+            if login.owner != nil || mapSource != nil {
                 Menu {
                     if let mapSource {
                         // SwiftUI can flatten a Picker directly within an
@@ -944,9 +945,14 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                     .accessibilityIdentifier("native-ios-owner-map-layout-help")
                 } label: {
                     Label("地图操作", systemImage: "ellipsis.circle")
-                        .frame(minWidth: 44, minHeight: 44)
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
+                        .background(.regularMaterial, in: Circle())
+                        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
                 }
                 .accessibilityIdentifier("native-ios-owner-map-actions")
+                .padding(.leading, 12)
+                .padding(.bottom, 62)
             }
         }
         .sheet(item: $selected, onDismiss: {
