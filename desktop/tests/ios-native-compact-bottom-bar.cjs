@@ -21,7 +21,7 @@ test('five stable native bottom positions own the same feature-local TabView sta
   assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)/);
   // The bar is a measured VStack sibling, never an overlay atop Files.
   assert.match(ui, /return VStack\(spacing: 0\) \{\s*TabView\(selection: \$tab\)/);
-  assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/);
+  assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)\s*(?:\/\/[^\n]*\n\s*)*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/);
   assert.match(ui, /if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\([\s\S]*?\)\s*\{\s*nativeBottomBar\s*\}\s*\}\s*\.id\(ownerScopeKey\)/);
   assert.doesNotMatch(ui, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/);
   assert.match(ui, /\.id\(ownerScopeKey\)/);
