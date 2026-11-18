@@ -158,6 +158,15 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
                        "iOS Photos and xDrive navigation must not stack")
         XCTAssertFalse(app.tabBars.firstMatch.exists,
                        "Native TabView must not overlay the Photos floating bar")
+        // The independent accessibility controls, not just the bar's
+        // container, must remain tappable after hiding the system TabBar.
+        for key in ["native-ios-photos-library-tab",
+                    "native-ios-photos-collections-tab",
+                    "native-ios-photos-search"] {
+            let button = app.buttons.matching(identifier: key).firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 12) && button.isHittable,
+                          "Native Photos control missing or blocked by system TabBar: \(key)")
+        }
         let library = XCTAttachment(screenshot: app.screenshot())
         library.name = "native-photos-26-library-initial"
         library.lifetime = .keepAlways
