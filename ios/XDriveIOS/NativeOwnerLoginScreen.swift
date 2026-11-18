@@ -160,9 +160,13 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             }
         }
         .onDisappear {
-            readinessTicket = UUID()
-            readinessTask?.cancel()
-            readinessTask = nil
+            // Group may report a transient disappearance while replacing
+            // the restored-account progress view with the native workspace.
+            // Cancelling readiness here races the newly mounted child's
+            // workspaceAppeared() and can leave the launch checkpoint stuck
+            // at mountingWorkspace forever despite a visible login page.
+            // The actual visible workspace owns readiness cancellation via
+            // workspaceDisappeared(); scene background revokes it below.
             backup.stopLibraryChangeMonitoring()
         }
         .task {
