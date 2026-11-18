@@ -108,6 +108,16 @@ def main():
     )
     result = audit_frames(decoded_frames(args.movie),
                           skip_frames=round(start * FPS))
+    # Report the precise flat-frame movie offsets relative to the genuine
+    # first MapKit entry. Do NOT remove any interval from pass/fail evaluation.
+    for interval in result["flat_content_segments_at_least_3_frames"]:
+        interval["seconds_after_first_real_map_tap"] = round(
+            interval["first_movie_seconds"] - start -
+            provenance["pre_roll_seconds"], 3)
+    if result["longest_flat_content_segment"] is not None:
+        result["longest_flat_content_segment"]["seconds_after_first_real_map_tap"] = round(
+            result["longest_flat_content_segment"]["first_movie_seconds"] -
+            start - provenance["pre_roll_seconds"], 3)
     result.update({
         "scope": "real Gallery-to-MapKit and 3x map-place-Viewer-return journeys",
         "real_navigation_starts_after_movie_seconds": start,

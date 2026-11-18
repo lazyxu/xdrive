@@ -23,7 +23,7 @@ WIDTH, HEIGHT, FPS = 128, 256, 30
 FRAME_BYTES = WIDTH * HEIGHT * 3
 
 
-def classify_frame(frame):
+def classify_frame_tone(frame):
     if len(frame) != FRAME_BYTES:
         raise ValueError("incomplete RGB frame")
     bins = Counter()
@@ -41,16 +41,56 @@ def classify_frame(frame):
     if samples < 100:
         raise ValueError("no useful content samples")
     majority = max(bins.values()) / samples
-    flat = majority >= 0.985 and (whites / samples >= 0.97 or blacks / samples >= 0.97)
-    return flat
+    if majority >= 0.985:
+        if whites / samples >= 0.97:
+            return "white"
+        if blacks / samples >= 0.97:
+            return "black"
+    return None
+
+
+def classify_frame(frame):
+    # Preserve the strict bool contract for callers that classify one frame.
+    return classify_frame_tone(frame) is not None
 
 
 def audit_frames(frames, *, skip_frames=240, min_observed=120):
     observed = 0
     current_flat = longest_flat = flat_frames = 0
     pre_flat = pre_flat_run = longest_pre_flat = 0
+    run_start = None
+    run_kinds = set()
+    flat_segments = []
+    flat_segment_count = 0
+    longest_segment = None
+    last_frame_index = -1
+
+    def record_run(end_frame):
+        nonlocal flat_segment_count, longest_segment
+        if run_start is None or end_frame - run_start + 1 < 3:
+            return
+        length = end_frame - run_start + 1
+        interval = {
+            "first_movie_frame_zero_based": run_start,
+            "last_movie_frame_zero_based": end_frame,
+            "first_movie_seconds": round(run_start / FPS, 3),
+            "last_movie_seconds": round(end_frame / FPS, 3),
+            "seconds_after_audit_scope_start": round(
+                (run_start - skip_frames) / FPS, 3),
+            "duration_frames": length,
+            "duration_seconds": round(length / FPS, 3),
+            "kind": next(iter(run_kinds)) if len(run_kinds) == 1 else "mixed",
+        }
+        flat_segment_count += 1
+        if len(flat_segments) < 20:
+            flat_segments.append(interval)
+        if longest_segment is None or length > longest_segment["duration_frames"]:
+            longest_segment = interval
+
     for i, frame in enumerate(frames):
-        flat = classify_frame(frame)
+        last_frame_index = i
+        kind = classify_frame_tone(frame)
+        flat = kind is not None
         if i < skip_frames:
             # Startup/Runner frames must be reported, never mislabeled as a
             # Gallery -> Map -> place -> Viewer transition.
@@ -64,10 +104,18 @@ def audit_frames(frames, *, skip_frames=240, min_observed=120):
         observed += 1
         if flat:
             flat_frames += 1
+            if run_start is None:
+                run_start = i
+            run_kinds.add(kind)
             current_flat += 1
             longest_flat = max(longest_flat, current_flat)
         else:
+            record_run(i - 1)
+            run_start = None
+            run_kinds.clear()
             current_flat = 0
+    if run_start is not None:
+        record_run(last_frame_index)
     return {
         "evidence": "consecutive decoded iOS Simulator video frames",
         "target_sample_fps": FPS,
@@ -79,6 +127,12 @@ def audit_frames(frames, *, skip_frames=240, min_observed=120):
         "observed_frames": observed,
         "nearly_white_or_black_frames": flat_frames,
         "longest_consecutive_flat_content_frames": longest_flat,
+        # Exact failing movie offsets are diagnostic evidence, not a relaxed
+        # threshold or guessed "startup" exclusion.
+        "flat_content_segments_at_least_3_frames": flat_segments,
+        "flat_content_segment_count": flat_segment_count,
+        "flat_content_segments_omitted": flat_segment_count - len(flat_segments),
+        "longest_flat_content_segment": longest_segment,
         "minimum_observed_frames": min_observed,
         "max_allowed_consecutive_flat_frames": 2,
         "pass": observed >= min_observed and longest_flat <= 2,

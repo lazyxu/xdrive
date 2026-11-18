@@ -48,6 +48,16 @@ class MapKitJourneyEvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             navigation_start_seconds(genuine_log(passed=False), self.created)
 
+    def test_annotated_flat_segment_is_not_accepted_as_navigation_success(self):
+        white = bytes((255, 255, 255)) * (WIDTH * HEIGHT)
+        black = bytes((0, 0, 0)) * (WIDTH * HEIGHT)
+        result = audit_frames([white] * 4 + [black] * 5,
+                              skip_frames=4, min_observed=5)
+        self.assertFalse(result["pass"])
+        self.assertEqual(result["longest_flat_content_segment"]["duration_frames"], 5)
+        self.assertEqual(
+            result["flat_content_segments_at_least_3_frames"][0]["first_movie_frame_zero_based"], 4)
+
     def test_pretest_startup_is_reported_and_later_navigational_flash_fails(self):
         white = bytes((255, 255, 255)) * (WIDTH * HEIGHT)
         black = bytes((0, 0, 0)) * (WIDTH * HEIGHT)

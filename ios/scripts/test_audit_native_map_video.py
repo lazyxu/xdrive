@@ -52,6 +52,40 @@ class NativeMapVideoAuditTests(unittest.TestCase):
         self.assertEqual(result["nearly_white_or_black_frames"], 1)
         self.assertFalse(result["proves_zero_unobserved_flicker"])
 
+    def test_report_exact_95_frame_flat_interval_and_keep_failure(self):
+        # Reproduces the actual 95-frame flat period detected by MapKit CI.
+        result = audit.audit_frames(
+            [self.content] * 4 + [self.blank] * 95 +
+            [self.content] * 4, skip_frames=4, min_observed=120)
+        self.assertFalse(result["pass"])
+        self.assertEqual(result["longest_consecutive_flat_content_frames"], 95)
+        segment = result["longest_flat_content_segment"]
+        self.assertEqual(segment["first_movie_frame_zero_based"], 4)
+        self.assertEqual(segment["last_movie_frame_zero_based"], 98)
+        self.assertEqual(segment["duration_frames"], 95)
+        self.assertEqual(segment["kind"], "white")
+        self.assertEqual(segment["seconds_after_audit_scope_start"], 0)
+        self.assertEqual(result["flat_content_segment_count"], 1)
+
+    def test_real_map_movie_offsets_do_not_hide_post_skip_blank_frames(self):
+        result = audit.audit_frames(
+            [self.black] * 4 + [self.content] * 4 +
+            [self.black] * 3 + [self.content] * 4,
+            skip_frames=4, min_observed=11)
+        self.assertFalse(result["pass"])
+        self.assertEqual(result["pre_journey_nearly_white_or_black_frames"], 4)
+        segment = result["flat_content_segments_at_least_3_frames"][0]
+        self.assertEqual(segment["first_movie_frame_zero_based"], 8)
+        self.assertEqual(segment["last_movie_frame_zero_based"], 10)
+        self.assertEqual(segment["kind"], "black")
+
+    def test_all_flat_to_movie_end_is_not_silently_discarded(self):
+        result = audit.audit_frames(
+            [self.content] * 3 + [self.black] * 3,
+            skip_frames=0, min_observed=6)
+        self.assertFalse(result["pass"])
+        self.assertEqual(result["longest_flat_content_segment"]["duration_frames"], 3)
+
     def test_minimum_evidence_never_passes_on_empty_or_short_movie(self):
         result = audit.audit_frames(
             [self.content] * 5, skip_frames=4, min_observed=3)
