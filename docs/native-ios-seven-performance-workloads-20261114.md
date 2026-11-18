@@ -101,3 +101,18 @@ These are genuine Web tests, but none supplies iOS measurements. The native
 and 1/4 GiB URLSession test remain separate requirements. Missing/deleted or
 incorrectly classified Web workflow now fails the parity audit. This does not
 claim to include backend-only, agent-only or unrelated safety workflows.
+
+## 2026-11-18 — unified original 75-route diagnostics
+
+The macOS native subpage workflow writes `perf-triage.json` and `perf-triage.csv`
+from the **same exact commit** and original audited 25 root + 50 child
+XCTest data, with 1 warmup and n=3 retained observations. It separates
+parent stage, child AX entry, AX return, app CPU, peak RSS and app cold start.
+Missing fields remain `not_measured`. The JSON ranks slowest native AX
+routes and marks >=30s anomalies for investigation, without weakening CI
+or falsely claiming composed first pixels, real 60/120 Hz FPS, or Web parity.
+The 68 selected Web/PWA benchmarks are still `not_verified` natively.
+On source 5e573c5, Gallery wall density entry AX had [5236, 66766, 65133]ms,
+Files kind filter entry AX [75098, 13728, 10227]ms, and Gallery framing
+return AX [5180, 5485, 65237]ms: these include XCTest animation/idling
+and are **not proof of real UI stalls**.
