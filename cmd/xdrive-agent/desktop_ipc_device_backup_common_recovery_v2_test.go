@@ -137,12 +137,12 @@ func TestLocalCommonAbsentSQLReceiptPageUsesNumericPrivateEpoch(t *testing.T) {
 	}
 	for _, q := range []string{
 		"source_id=42&after_absent=16",
-		"source_id=42&after_absent=-1&page_epoch="+epoch,
-		"source_id=42&after_absent=01&page_epoch="+epoch,
-		"source_id=42&after_absent=1000001&page_epoch="+epoch,
-		"source_id=42&after_absent=16&after_absent=17&page_epoch="+epoch,
-		"source_id=42&after_absent=/private/path&page_epoch="+epoch,
-		"source_id=42&after_absent=0&page_epoch="+epoch,
+		"source_id=42&after_absent=-1&page_epoch=" + epoch,
+		"source_id=42&after_absent=01&page_epoch=" + epoch,
+		"source_id=42&after_absent=1000001&page_epoch=" + epoch,
+		"source_id=42&after_absent=16&after_absent=17&page_epoch=" + epoch,
+		"source_id=42&after_absent=/private/path&page_epoch=" + epoch,
+		"source_id=42&after_absent=0&page_epoch=" + epoch,
 	} {
 		req := httptest.NewRequest(http.MethodGet,
 			"http://localhost/v1/device-backups/local-common-batch/recovery-review?"+q, nil)
