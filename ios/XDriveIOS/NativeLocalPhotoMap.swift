@@ -1084,11 +1084,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
             }
             .onAppear {
                 changes.start()
-                resolvePlaceName()
                 if !started {
                     started = true
                     loadInitial()
                 }
+                // loadInitial() advances the PhotoKit generation. Resolve
+                // AFTER it, so the returned locality is not spuriously stale.
+                resolvePlaceName()
             }
             .onChange(of: changes.revision) { _ in
                 cancelPlaceName()
