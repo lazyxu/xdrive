@@ -83,12 +83,15 @@ test('11 native foreground return under operation-history sheet is exercised wit
   assert.match(ui, /XCUIDevice.shared.press\(\.home\)[\s\S]*?app.activate\(\)/)
   assert.match(ui, /assertVisiblePixels\(app, route: "Gallery after operations foreground"\)/)
 })
-test('12 all 82 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
+test('12 all 84 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
   const a = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
   const names = [...a.matchAll(/func (test\w+)\(\)/g), ...ui.matchAll(/func (test\w+)\(\)/g)]
     .map(x => x[1])
   const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(x => x[1]))
-  assert.equal(names.length, 82)
+  assert.equal(names.length, 84)
+  assert.equal(new Set(names).size, 84)
+  assert.ok(names.includes('testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage'))
+  assert.ok(names.includes('testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope'))
   assert.deepEqual(names.filter(n => !registered.has(n)), [])
 })
 test('13 operation-history regression runs in the required unsigned IPA workflow', () => {
@@ -133,7 +136,16 @@ test('16 real Simulator failure: offscreen Files Home operation entry is brought
   assert.match(helper, /XCTAssertTrue\(action\.isHittable/)
   assert.match(helper, /action\.tap\(\)/)
   const history = ui.slice(ui.indexOf('func testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages()'),
-    ui.indexOf('func testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels()'))
+    ui.indexOf('func testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage()'))
+  // The original two histories still run once apiece. The NEW genuine
+  // two-cycle foreground regression is independent and must also remain.
   assert.equal((history.match(/openFilesOperationHistoryFromBrowse\(app\)/g) || []).length, 2)
+  const repeated = ui.slice(ui.indexOf('func testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage()'),
+    ui.indexOf('func testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope()'))
+  assert.match(repeated, /for cycle in 0\.\.<2/)
+  assert.equal((repeated.match(/openFilesOperationHistoryFromBrowse\(app\)/g) || []).length, 1)
+  assert.match(repeated, /app\.wait\(for: \.runningBackground, timeout: 12\)/)
+  assert.match(repeated, /app\.wait\(for: \.runningForeground, timeout: 18\)/)
+  assert.match(repeated, /XCTNSPredicateExpectation\(/)
   assert.doesNotMatch(history, /tap\("native-ios-files-open-operations", app: app\)/)
 })

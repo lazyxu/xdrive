@@ -353,21 +353,21 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
             XCTAssertTrue(sheet.waitForExistence(timeout: 15))
             XCUIDevice.shared.press(.home)
             XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
-                          "Files History process stopped in background cycle \\(cycle)")
+                          "Files History process stopped in background cycle \(cycle)")
             app.activate()
             XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
-                          "Files History failed foreground recovery cycle \\(cycle)")
+                          "Files History failed foreground recovery cycle \(cycle)")
             XCTAssertTrue(sheet.waitForExistence(timeout: 15),
-                          "Files History sheet disappeared after foreground cycle \\(cycle)")
+                          "Files History sheet disappeared after foreground cycle \(cycle)")
             tap("native-ios-files-operation-history-done", app: app)
             let retired = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "exists == false"), object: sheet)
             XCTAssertEqual(XCTWaiter.wait(for: [retired], timeout: 12), .completed,
-                           "Files History modal remained after Done in cycle \\(cycle)")
+                           "Files History modal remained after Done in cycle \(cycle)")
             assertFiles(app)
             tap("native-ios-tab-gallery", app: app)
             assertGallery(app)
-            assertVisiblePixels(app, route: "Gallery after History foreground cycle \\(cycle)")
+            assertVisiblePixels(app, route: "Gallery after History foreground cycle \(cycle)")
         }
     }
 
