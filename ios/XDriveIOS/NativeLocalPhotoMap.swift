@@ -1399,6 +1399,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     var filenameTerm: String = ""
     var inheritedCaptureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
+    var inheritedTripScope: XDriveIOSNativeLocalTripScope? = nil
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
@@ -2236,6 +2237,23 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 onFocusChange?(true)
             }
             authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            // Collections may open the SAME MapKit reader with an exact
+            // candidate trip's GPS day+cell set. Reject stale generations
+            // instead of silently broadening to the entire local library.
+            if let trip = inheritedTripScope {
+                guard authorization == .authorized, trip.valid,
+                      XDriveIOSNativePhotoFingerprintIndex.isCurrent(trip.libraryEpoch)
+                else {
+                    onLibraryCameraChange?(nil)
+                    clearReturnCamera()
+                    invalidate()
+                    error = "该精选集的照片位置已变化，请返回精选集重新核对。"
+                    return
+                }
+                chosenLocalTrip = trip
+                usingCaptureOverride = false
+                captureOverride = nil
+            }
             changes.start()
             guard authorization == .authorized else {
                 onLibraryCameraChange?(nil)
@@ -2256,6 +2274,27 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     scanFullLibrary()
                 }
             }
+        }
+        .onChange(of: inheritedTripScope?.id) { _ in
+            guard phase == .active else { return }
+            if let trip = inheritedTripScope {
+                guard trip.valid,
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      XDriveIOSNativePhotoFingerprintIndex.isCurrent(trip.libraryEpoch)
+                else {
+                    onLibraryCameraChange?(nil)
+                    clearReturnCamera()
+                    invalidate()
+                    error = "该精选集的照片位置已变化，请返回精选集重新核对。"
+                    return
+                }
+                chosenLocalTrip = trip
+                usingCaptureOverride = false
+                captureOverride = nil
+            } else {
+                chosenLocalTrip = nil
+            }
+            // activeMapMembership owns cancellation and re-scanning.
         }
         .onChange(of: incomingMapJump?.id) { _ in
             _ = focusOnRequestedPhotoLocation()
