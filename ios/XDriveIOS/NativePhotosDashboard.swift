@@ -209,7 +209,12 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     var body: some View {
         let expectedRouteOwnerKey = ownerScopeKey
-        return TabView(selection: $tab) {
+        // Give the custom five-slot bar its own measured layout row.
+        // Attaching a safeAreaInset to TabView lets the inner Files quick
+        // rail extend behind the global bar on iOS 26.x (verified by an
+        // actual UI-test overlap: rail maxY 852, bar minY 763).
+        return VStack(spacing: 0) {
+            TabView(selection: $tab) {
             NavigationStack {
                 launcher
                     .navigationTitle("全部")
@@ -262,8 +267,10 @@ struct XDriveIOSNativePhotosDashboard: View {
         // the system tab strip is hidden in favor of an explicit 5-slot bar.
         // This guarantees a compact horizontal label in iPhone landscape and
         // gives the dynamic slot a real long-press/context-menu surface.
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            .toolbar(.hidden, for: .tabBar)
+            // The TabView fills the remaining height above the custom bar;
+            // Gallery Viewer focus still hides that bar using the same policy.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
                 tab: tab.rawValue,
                 gallerySource: gallerySource.rawValue,
