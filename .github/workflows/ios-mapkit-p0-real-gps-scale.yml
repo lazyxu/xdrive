@@ -109,6 +109,31 @@ jobs:
           app="$RUNNER_TEMP/map-p0-build/Build/Products/Debug-iphonesimulator/xDriveIOS.app"
           test -s "$app/xDriveIOS"
           xcrun simctl install "$MAP_P0_SIM" "$app"
+          # simctl install can return before SpringBoard finishes registering
+          # the bundle. XCTest launch then fails with SBMainWorkspace Busy:
+          # "Application is installing or uninstalling" and never reaches GPS.
+          # This is a bounded REAL app launch, not a mocked PhotoKit decision.
+          ready=0
+          for attempt in 1 2 3 4 5 6; do
+            if launch_log="$(xcrun simctl launch "$MAP_P0_SIM" com.lazyxu.xdrive.ios 2>&1)"; then
+              xcrun simctl terminate "$MAP_P0_SIM" com.lazyxu.xdrive.ios >/dev/null 2>&1 || true
+              ready=1
+              echo "MAP_P0_REAL_APP_INSTALL_READY attempt=$attempt"
+              break
+            fi
+            if [[ "$launch_log" != *"is installing or uninstalling"* ]]; then
+              echo "::error title=Real iOS app launch failed::$launch_log" >&2
+              exit 1
+            fi
+            echo "::warning title=Simulator installing app::Real launch Busy attempt $attempt/6" >&2
+            sleep 2
+          done
+          if [[ "$ready" != 1 ]]; then
+            echo "::error title=Simulator registration timeout::Real app never became launchable" >&2
+            exit 1
+          fi
+          # Reset TCC only after the application was installed and terminated.
+          # The following actual XCUI test must still obtain real Full Access.
           xcrun simctl privacy "$MAP_P0_SIM" reset all com.lazyxu.xdrive.ios
       - name: Real PhotoKit baseline with explicit user Full Access
         shell: bash
