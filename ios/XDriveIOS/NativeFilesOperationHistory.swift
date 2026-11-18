@@ -409,7 +409,11 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
         // "操作历史 → 完成". Paint a truthful central no-access/empty state
         // instead of silently showing an unpopulated page.
         .overlay {
-            if isVisible && phase == .active && !model.loading &&
+            // Keep the visibly explanatory state until the actual modal
+            // leaves the screen. SwiftUI can call onDisappear at the BEGINNING
+            // of an animated Done dismissal; gating on isVisible blanked the
+            // outgoing sheet for >1 s in real Simulator H.264 evidence.
+            if phase == .active && !model.loading &&
                (!model.matches(login.owner) ||
                 (model.verified && model.items.isEmpty)) {
                 VStack(spacing: 12) {
