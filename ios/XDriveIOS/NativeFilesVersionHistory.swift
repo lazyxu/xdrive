@@ -85,7 +85,7 @@ private struct XDriveIOSNativeFilesVersionTransport {
     }
 
     private func newSession() -> URLSession {
-        let settings = URLSessionConfiguration.ephemeral
+        let settings = XDriveIOSAutoRoute.ephemeralConfiguration()
         settings.httpShouldSetCookies = false
         settings.httpCookieAcceptPolicy = .never
         settings.requestCachePolicy = .reloadIgnoringLocalCacheData

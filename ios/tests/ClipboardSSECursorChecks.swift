@@ -18,7 +18,7 @@ import Foundation
         catch { return true }
     }
 
-    static func main() throws {
+    static func main() async throws {
         var first = XDriveIOSClipboardSSECursor()
         require(try feed(&first, ["retry: 2000", "event: sync", "data: {}", ""]))
         precondition(first.cursor == 0)
@@ -42,6 +42,16 @@ import Foundation
                         "unknown: value", String(repeating: "x", count: 4097)] {
             precondition(rejects(invalid), "Unexpectedly accepted invalid frame")
         }
-        print("iOS Clipboard SSE: cursor, framing, reconnect, and privacy checks passed")
+        // A stream may emit complete events and then throw: its stored
+        // progress must survive, without accepting incomplete or stale IDs.
+        let live = XDriveIOSClipboardSSEProgress()
+        await live.advance(41)
+        await live.advance(40)
+        let before = await live.current()
+        precondition(before == 41)
+        await live.advance(42)
+        let after = await live.current()
+        precondition(after == 42)
+        print("iOS Clipboard SSE: cursor, framing, disconnect progress and privacy checks passed")
     }
 }

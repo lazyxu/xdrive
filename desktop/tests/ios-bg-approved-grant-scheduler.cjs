@@ -47,7 +47,11 @@ test('BGProcessingTask runs a bounded serial original batch only after approved 
   assert.match(boot, /BGTaskScheduler\.shared\.register/)
   assert.match(boot, /BGProcessingTaskRequest\(identifier: identifier\)/)
   assert.match(boot, /requiresNetworkConnectivity = true/)
-  assert.match(boot, /proveInBackground\(\)/)
+  assert.match(boot, /XDriveIOSApprovedPhotoBGVault\.prove\(\s*savedGrant, at: route\.selected, direct: true\)/)
+  assert.match(boot, /let latestGrant = try await vault\.current\(\)/)
+  assert.match(boot, /latestGrant\.grantID == approved\.grantID/)
+  assert.match(boot, /latestGrant\.grantSecret == approved\.grantSecret/)
+  assert.match(boot, /XDriveIOSAutoRoute\.shared\.activateBackground\(/)
   assert.match(boot, /UIApplication\.shared\.isProtectedDataAvailable/)
   assert.match(boot, /XDriveIOSForegroundPhotoBackupMVP\(/)
   assert.match(boot, /approvedBackgroundGrant: approved/)
@@ -58,7 +62,12 @@ test('BGProcessingTask runs a bounded serial original batch only after approved 
   assert.match(boot, /maximumNewOriginals: min\(\s*XDriveIOSBGOriginalWindowStore\.maximumNewOriginalsPerRun,\s*XDriveIOSForegroundPhotoBackupMVP\.maxNewOriginalsPerRun\s*\)/)
   assert.equal((boot.match(/XDriveIOSForegroundPhotoBackupMVP\(/g) || []).length, 1,
     'one shared serial runner; no separate background writer or parallel batch')
-  assert.ok(boot.indexOf('.proveInBackground()') < boot.indexOf('XDriveIOSOriginalRunGate.shared.acquire()') &&
+  assert.ok(boot.indexOf('XDriveIOSApprovedPhotoBGVault.prove(') <
+    boot.indexOf('let latestGrant = try await vault.current()') &&
+    boot.indexOf('let latestGrant = try await vault.current()') <
+    boot.indexOf('XDriveIOSAutoRoute.shared.activateBackground(') &&
+    boot.indexOf('XDriveIOSAutoRoute.shared.activateBackground(') <
+    boot.indexOf('XDriveIOSOriginalRunGate.shared.acquire()') &&
     boot.indexOf('XDriveIOSOriginalRunGate.shared.acquire()') < boot.indexOf('pendingCount(owner: owner)') &&
     boot.indexOf('pendingCount(owner: owner)') < boot.indexOf('reserveDue(owner: owner, approved: approved)') &&
     boot.indexOf('reserveDue(owner: owner, approved: approved)') < boot.indexOf('XDriveIOSForegroundPhotoBackupMVP('),

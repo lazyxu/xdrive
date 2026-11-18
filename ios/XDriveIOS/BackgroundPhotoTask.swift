@@ -90,10 +90,48 @@ enum XDriveIOSBackgroundPhotoTask {
             do {
                 try Task.checkCancellation()
                 let network = XDriveIOSPhotoBackupNetworkPolicy.shared
-                // The grant proves current Owner, independent Device secret,
-                // Root, Server instance, expiry and revocation. No Web token.
-                let approved = try await XDriveIOSApprovedPhotoBGVault.shared
-                    .proveInBackground()
+                // Establish a credential-free candidate route first. The
+                // independently approved Grant then proves the exact Server,
+                // Owner, Device, Root and Source on that physical route.
+                // No generic bearer is ever used by this BGProcessing task.
+                defer { XDriveIOSAutoRoute.shared.clearBackgroundIfNeeded() }
+                let vault = XDriveIOSApprovedPhotoBGVault.shared
+                guard let savedGrant = try await vault.current() else {
+                    throw XDriveIOSPhotoBGVaultFailure.corrupt
+                }
+                let route = try await XDriveIOSAutoRoute.shared
+                    .prepareBackground(savedGrant)
+                // IMPORTANT: this one-use admission proof must be DIRECT.
+                // The router rejects requests carrying a background Grant
+                // until activateBackground has installed that very Grant.
+                // A routed proof here would deadlock its own authorization.
+                // The independent HTTPS/TLS delegate still refuses redirects
+                // and the response proves exact Grant, Device, Owner, Server,
+                // cloud root and managed Source before any original upload.
+                let approved = try await XDriveIOSApprovedPhotoBGVault.prove(
+                    savedGrant, at: route.selected, direct: true)
+                try Task.checkCancellation()
+                // A grant can be revoked or replaced locally while the
+                // independent network proof is awaiting HTTPS. Re-read the
+                // authoritative Keychain record immediately before publishing
+                // a BG route, or a late response could resurrect old uploads.
+                guard let latestGrant = try await vault.current(),
+                      latestGrant.origin == approved.origin,
+                      latestGrant.instanceID == approved.instanceID,
+                      latestGrant.ownerID == approved.ownerID,
+                      latestGrant.rootNodeID == approved.rootNodeID,
+                      latestGrant.deviceID == approved.deviceID,
+                      latestGrant.deviceToken == approved.deviceToken,
+                      latestGrant.grantID == approved.grantID,
+                      latestGrant.grantSecret == approved.grantSecret,
+                      latestGrant.sourceID == approved.sourceID,
+                      latestGrant.targetNodeID == approved.targetNodeID else {
+                    throw XDriveIOSPhotoBGVaultFailure.serverRejected
+                }
+                try Task.checkCancellation()
+                try XDriveIOSAutoRoute.shared.activateBackground(
+                    grant: approved, domain: route.domain, lanIP: route.lanIP,
+                    selected: route.selected)
                 // Legacy Owner-root grants are read-only for historical
                 // receipts/revocation, never a fresh system BG upload.
                 guard approved.hasManagedDestination else {

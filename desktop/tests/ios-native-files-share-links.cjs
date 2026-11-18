@@ -37,7 +37,7 @@ test('only authorized Server capability API is used; no WebView or implicit down
   assert.match(share, /\/api\/v1\/shares\/\\\(id\)/)
   assert.match(share, /expecting: 201/)
   assert.match(share, /expecting: 204, maximumBytes: 0/)
-  assert.match(share, /URLSessionConfiguration\.ephemeral/)
+  assert.match(share, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(share, /completionHandler\(nil\)/)
   assert.doesNotMatch(share, /WKWebView|import WebKit|URLSession\.shared|UserDefaults|@AppStorage|\/api\/v1\/uploads/)
 })

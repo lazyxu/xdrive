@@ -65,7 +65,7 @@ test('native login and restoration re-prove exact Server Owner/root, not JS cook
 test('native logout never exposes login until exact Keychain credential is deleted', () => {
   const logout = model.slice(model.indexOf('func signOut() async -> Bool'))
   const steps = ['generation &+= 1', 'XDriveIOSNativeOwnerSessionStore.clear()',
-    'active = nil', 'owner = nil', 'AuthService(origin: previous.origin).logout']
+    'XDriveIOSAutoRoute.shared.clear()', 'active = nil', 'owner = nil', 'AuthService(origin: logoutOrigin ?? previous.origin).logout']
     .map(x => logout.indexOf(x))
   assert.ok(steps.every((x, i) => x >= 0 && (i === 0 || x > steps[i - 1])))
   const blocked = logout.slice(logout.indexOf('catch {'),

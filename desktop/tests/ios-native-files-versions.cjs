@@ -48,7 +48,7 @@ test('version list rejects malformed, stale, oversized or mismatched Owner recor
   assert.match(screen, /XDriveIOSNativeFilesVersionHistoryPolicy\.valid\(versions, for: node\)/)
   assert.match(screen, /guard try await current\(node\.id, session: client\) == node/)
   assert.match(screen, /maximum: 2_097_152/)
-  assert.match(screen, /URLSessionConfiguration\.ephemeral/)
+  assert.match(screen, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(screen, /completionHandler\(nil\)/)
   assert.match(screen, /let auth = try await login\.verifiedAuthorization\(\)/)
   assert.match(screen, /let after = try await login\.verifiedAuthorization\(\)/)

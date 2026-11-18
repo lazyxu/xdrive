@@ -282,7 +282,7 @@ actor XDriveIOSDeviceEnrollment {
         guard let url = components.url else {
             throw XDriveIOSDeviceEnrollmentError.invalidOwnerScope
         }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
