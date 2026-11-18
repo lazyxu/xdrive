@@ -1066,6 +1066,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnOwner: XDriveNativeOwnerRoot?
     @State private var lastViewedFile: XDriveIOSNativeFilesNode?
+    // Keep opening identity even without a measured row; never infer it from
+    // the final Node when a Viewer has navigated to the next/previous file.
+    @State private var viewerOpeningNode: XDriveIOSNativeFilesNode?
+    @State private var pendingViewerNavigationReturn: XDriveIOSNativeFilesNode?
     @State private var viewerReturnViewport: XDriveIOSNativeFilesBrowseViewerViewport?
     @State private var didRestoreLocatedFile = false
     @State private var locatedFileNotice: String?
@@ -2752,7 +2756,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onPreferenceChange(XDriveIOSNativeFilesRowFramesKey.self) { frames in
             guard filesViewVisible, phase == .active, quickSection == .browse,
-                  !isHome, !isGlobalSearch, !selecting, model.verifiedPage,
+                  !isHome, !selecting, model.verifiedPage,
                   let visible = XDriveIOSNativeFilesUIStyle.topVisibleAnchor(
                     frames: frames, accepted: model.entries.map(\.id),
                     viewportHeight: visibleModeViewportHeight
@@ -3751,25 +3755,37 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedOwner = nil
             viewerAdmitted.removeAll()
             viewerAdmissionOrder.removeAll()
+            let opened = viewerOpeningNode
+            viewerOpeningNode = nil
             if let folderID = parentID,
+               let expectedOwner = returnOwner,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
                model.canResume(
-                owner: login.owner, folderID: folderID,
+                owner: expectedOwner, folderID: folderID,
                 query: activeQuery, filters: searchFilters,
                 sort: sort, order: order,
                 grouping: grouping, foldersFirst: foldersFirst
                ),
                (lastViewedFile == nil ||
                 model.entries.contains(where: { $0.node == lastViewedFile })) {
-                // Read-only Viewer preserved the same verified List. Leave
-                // the actual mounted scroll position untouched: no recenter.
+                // Keep the actual mounted pixels when opening and closing
+                // the same Node. After a real Viewer swipe, reanchor to the
+                // *final* authorized Node without reloading this verified page.
+                if let target = lastViewedFile, let opened,
+                   target != opened,
+                   model.entries.contains(where: { $0.node == target }) {
+                    pendingViewerNavigationReturn = target
+                }
                 lastViewedFile = nil
                 returnOwner = nil
                 viewerReturnViewport = nil
             } else if let target = lastViewedFile,
                       !isHome && !isGlobalSearch,
                       target.parent_id == parentID {
+                // Preserve the existing cross-window reauthorization/read.
                 reanchorReturnedViewer(target)
             } else {
+                pendingViewerNavigationReturn = nil
                 lastViewedFile = nil
                 returnOwner = nil
                 viewerReturnViewport = nil
@@ -3850,10 +3866,47 @@ struct XDriveIOSNativeFilesBrowser: View {
     // A distinct opaque return type alone is not an AttributeGraph boundary:
     // erase the nested modal and modifier types at EACH lifecycle stage.
     // This does not gate authorization, hide a route or invalidate a file row.
+    /// Dismissal can precede the retained List's next appearance. A verified
+    /// Search/Browse result may scroll only to its exact current Node/revision;
+    /// never use an old Owner or a pre-filter viewport as an authorization.
+    @MainActor
+    private func restoreVerifiedViewerNavigationReturn(returnScroll: ScrollViewProxy) {
+        guard let target = pendingViewerNavigationReturn else { return }
+        Task { @MainActor in
+            await Task.yield()
+            guard pendingViewerNavigationReturn == target else { return }
+            // A full-screen Viewer sometimes covers the native List before its
+            // onAppear fires. Keep the one-shot target until it is visible.
+            guard filesViewVisible, phase == .active,
+                  quickSection == .browse, selectedFile == nil else { return }
+            guard !isHome, let owner = login.owner, let folderID = parentID,
+                  model.canResume(
+                    owner: owner, folderID: folderID,
+                    query: activeQuery, filters: searchFilters,
+                    sort: sort, order: order,
+                    grouping: grouping, foldersFirst: foldersFirst
+                  ),
+                  model.entries.contains(where: { $0.node == target })
+            else {
+                pendingViewerNavigationReturn = nil
+                return
+            }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                returnScroll.scrollTo(target.id, anchor: .center)
+            }
+            lastAppearedNodeID = target.id
+            pendingViewerNavigationReturn = nil
+            persistVisibleAnchorSoon()
+        }
+    }
+
     private func filesForegroundLifecycle(returnScroll: ScrollViewProxy) -> some View {
         AnyView(filesModals)
         .onAppear {
             filesViewVisible = true
+            restoreVerifiedViewerNavigationReturn(returnScroll: returnScroll)
             restoreFilesSectionIfNeeded()
             if phase == .active, let owner = login.owner,
                !quickHistoryReadAttempted {
@@ -4085,6 +4138,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             tagManagerOwner = nil
             returnOwner = nil
             lastViewedFile = nil
+            viewerOpeningNode = nil
+            pendingViewerNavigationReturn = nil
             viewerReturnViewport = nil
             offset = 0
             queryDraft = ""
@@ -4113,6 +4168,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         AnyView(filesOwnerLifecycle(returnScroll: returnScroll))
         .onChange(of: quickSection) { next in
             if next != .browse {
+                pendingViewerNavigationReturn = nil
                 modeSwitchTicket = UUID()
                 pendingModeSwitchAnchor = nil
                 pendingModeSwitchAlignment = nil
@@ -4183,7 +4239,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             // Never apply a displaced row's offset to a fallback anchor.
             let alignment = pendingModeSwitchAnchor == anchor ?
                 pendingModeSwitchAlignment : nil
-            guard filesViewVisible, !isHome, !isGlobalSearch, !selecting,
+            guard filesViewVisible, !isHome, !selecting,
                   let folderID = parentID, let owner = login.owner,
                   model.canReanchor(owner: owner, folderID: folderID,
                                     query: activeQuery, filters: searchFilters),
@@ -4203,7 +4259,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                         query: activeQuery, filters: searchFilters
                     ),
                     anchorVisible: model.entries.contains(where: { $0.id == anchor }),
-                    screenVisible: filesViewVisible && !isHome && !isGlobalSearch && !selecting,
+                    screenVisible: filesViewVisible && !isHome && !selecting,
                     expectedMode: next, currentMode: viewMode,
                     active: phase == .active && quickSection == .browse
                 ) else {
@@ -4385,6 +4441,11 @@ struct XDriveIOSNativeFilesBrowser: View {
             lastViewedFile = nil
             returnOwner = nil
             viewerReturnViewport = nil
+        }
+        .onChange(of: pendingViewerNavigationReturn) { target in
+            if target != nil {
+                restoreVerifiedViewerNavigationReturn(returnScroll: returnScroll)
+            }
         }
         }
     }
@@ -4896,10 +4957,12 @@ struct XDriveIOSNativeFilesBrowser: View {
         returnOwner = owner
         viewerAdmitted.removeAll()
         viewerAdmissionOrder.removeAll()
+        pendingViewerNavigationReturn = nil
+        viewerOpeningNode = entry.node
         viewerReturnViewport = nil
         // The User's real visible row is the restore target, not necessarily
         // the file they tapped. Only accept exact current Owner and row data.
-        if !isHome, !isGlobalSearch, let folderID = parentID,
+        if !isHome, let folderID = parentID,
            model.canResume(
              owner: owner, folderID: folderID,
              query: activeQuery, filters: searchFilters,

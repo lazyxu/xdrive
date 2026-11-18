@@ -187,6 +187,35 @@ test('P0: Browse Viewer returns to the exact verified visible row, never stale O
   assert.match(browser, /onChange\(of: login\.owner\)[\s\S]*?viewerReturnViewport = nil/)
 })
 
+test('P0: Search and Browse Viewer return the final verified Node without stale pixels', () => {
+  const open = browser.slice(browser.indexOf('private func openViewer('),
+    browser.indexOf('private func gridTile(', browser.indexOf('private func openViewer(')))
+  const modal = browser.slice(browser.indexOf('.fullScreenCover(item: $selectedFile, onDismiss: {'),
+    browser.indexOf('}) { initial in', browser.indexOf('.fullScreenCover(item: $selectedFile, onDismiss: {')))
+  const visible = browser.slice(browser.indexOf('private var filesList: some View'),
+    browser.indexOf('private var filesQuickFeedback:', browser.indexOf('private var filesList: some View')))
+  assert.match(visible, /!isHome, !selecting, model\.verifiedPage/)
+  assert.doesNotMatch(visible, /!isHome, !isGlobalSearch, !selecting, model\.verifiedPage/)
+  assert.match(open, /if !isHome, let folderID = parentID/)
+  assert.match(open, /viewerOpeningNode = entry\.node/)
+  assert.match(open, /pendingViewerNavigationReturn = nil/)
+  assert.match(modal, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\)/)
+  assert.match(modal, /target != opened/)
+  assert.match(modal, /model\.entries\.contains\(where: \{ \$0\.node == target \}\)/)
+  assert.match(modal, /pendingViewerNavigationReturn = target/)
+  assert.match(modal, /reanchorReturnedViewer\(target\)/)
+  const restore = browser.slice(browser.indexOf('private func restoreVerifiedViewerNavigationReturn('),
+    browser.indexOf('private func filesForegroundLifecycle('))
+  assert.match(restore, /model\.canResume\(/)
+  assert.match(restore, /model\.entries\.contains\(where: \{ \$0\.node == target \}\)/)
+  assert.match(restore, /filesViewVisible, phase == \.active/)
+  assert.match(restore, /pendingViewerNavigationReturn == target/)
+  assert.match(restore, /transaction\.disablesAnimations = true/)
+  assert.match(restore, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/)
+  assert.match(browser, /onChange\(of: pendingViewerNavigationReturn\)/)
+  assert.match(browser, /viewerOpeningNode = nil\s*pendingViewerNavigationReturn = nil\s*viewerReturnViewport = nil/)
+})
+
 test('P0: one physically reserved native bottom bar and real direct Files Home editing', () => {
   const shell = source('ios/XDriveIOS/NativePhotosDashboard.swift')
   const xctest = source('ios/UITests/XDriveIOSNavigationRuntimeUITests.swift')
