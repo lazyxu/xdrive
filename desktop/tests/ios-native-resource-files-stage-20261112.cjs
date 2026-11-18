@@ -14,7 +14,14 @@ test('native Files AX staging does not tap a previously selected Browse route', 
   const stage = source.slice(start, stop)
   assert.match(stage, /control\.waitForExistence\(timeout: 15\)/)
   assert.match(stage, /if \(control\.value as\? String\) != "已选择" \{[\s\S]*?tap\(id, app\)/)
-  assert.match(stage, /XCTAssertEqual\(control\.value as\? String, "已选择"/)
+  // SwiftUI may update AX selection one run loop after the tap. Require
+  // an observed selected state on the re-queried native element, not an
+  // immediate value assertion against the original (potentially stale) element.
+  assert.match(stage, /let selected = item\(id, app\)/)
+  assert.match(stage, /let selectedValue = NSPredicate\(format: "value == %@", "已选择"\)/)
+  assert.match(stage, /XCTNSPredicateExpectation\([\s\S]*?predicate: selectedValue, object: selected\)/)
+  assert.match(stage, /XCTAssertEqual\(XCTWaiter\.wait\(for: \[selectedExpectation\], timeout: 5\),\s*\.completed/)
+  assert.match(stage, /XCTAssertEqual\(selected\.value as\? String, "已选择"/)
   assert.match(stage, /XCTAssertEqual\(app\.state, \.runningForeground\)/)
 })
 test('staging enters the true Files destination before resource measurement starts', () => {
