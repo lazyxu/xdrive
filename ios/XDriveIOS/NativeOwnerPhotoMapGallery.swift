@@ -113,7 +113,21 @@ struct XDriveIOSNativePhotoMapsScreen: View {
         let ownerSelection = XDriveIOSNativeOwnerMapSelection(
             mediaFilter: mediaFilter, filenameTerm: filenameTerm)
         let cloudAllowed = cloudSourceAllowed && ownerSelection.valid
-        return Group {
+        // Animate only a user-authorized source change. The outgoing MapKit
+        // stays composited until the new view has entered, while each source
+        // still uses its own scoped PhotoKit/Owner reader and camera lease.
+        // No hidden simultaneous 100k scanner or inactive Owner session.
+        let animatedSource = Binding<XDriveIOSNativePhotoMapSource>(
+            get: { source },
+            set: { next in
+                guard next != source, next != .cloud || cloudAllowed else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    onFocusChange?(true)
+                    source = next
+                }
+            }
+        )
+        return ZStack {
             switch source {
             case .local:
                 XDriveIOSNativeLocalPhotoMapScreen(
@@ -137,16 +151,17 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                         localMapCamera = next
                     },
                     onFocusChange: onFocusChange,
-                    mapSource: $source, canSelectCloudMap: cloudAllowed,
+                    mapSource: animatedSource, canSelectCloudMap: cloudAllowed,
                     mediaFilter: mediaFilter,
                     filenameTerm: filenameTerm,
                     inheritedCaptureRange: inheritedCaptureRange
                 )
+                .transition(.opacity)
             case .cloud:
                 if cloudAllowed {
                     XDriveIOSNativeOwnerPhotoMapScreen(
                     login: login, onFocusChange: onFocusChange,
-                    mapSource: $source, canSelectCloudMap: cloudAllowed,
+                    mapSource: animatedSource, canSelectCloudMap: cloudAllowed,
                     cameraReturn: cloudMapCamera,
                     onCameraChange: { next in
                         guard source == .cloud, let expectedOwner,
@@ -157,12 +172,16 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                     },
                     inheritedCaptureRange: inheritedCaptureRange,
                     mapSelection: ownerSelection)
+                    .transition(.opacity)
                 } else {
                     Text("当前筛选条件未被 Owner 地图可信 Range 支持，请切回本机地图。")
                         .accessibilityIdentifier("native-ios-map-cloud-filter-unavailable")
+                        .transition(.opacity)
                 }
             }
         }
+        .background(Color(uiColor: .systemBackground))
+        .animation(.easeInOut(duration: 0.22), value: source)
         .toolbar {
             // Local MapKit supplies its own Done item. The cloud Owner map
             // shares this route and receives the same native dismissal action.
