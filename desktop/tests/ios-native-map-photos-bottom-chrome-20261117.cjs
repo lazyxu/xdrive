@@ -16,6 +16,15 @@ test('iOS 26 Photos map has the same one Photos bar as Library and Collections',
   assert.match(focus, /if tab == "gallery" && gallerySource == "map" \{ return true \}/)
   assert.match(dashboard, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
   assert.match(dashboard, /private var nativePhotosBottomBar: some View/)
+  // Regression for the observed simulator AX tree: parent .accessibilityIdentifier
+  // on a bare HStack overrides the individual Library / Collections / Search IDs.
+  const bar = dashboard.slice(dashboard.indexOf('private var nativePhotosBottomBar: some View'),
+    dashboard.indexOf('private var galleryBackupStatus'))
+  assert.match(bar, /native-ios-photos-library-tab/)
+  assert.match(bar, /native-ios-photos-collections-tab/)
+  assert.match(bar, /native-ios-photos-search/)
+  assert.match(bar, /\.accessibilityElement\(children: \.contain\)\s*\.accessibilityIdentifier\("native-ios-photos-bottom-bar"\)/)
+  assert.match(runtime, /matching\(identifier: "native-ios-photos-collections-tab"\)/)
   for (const id of ['native-ios-photos-library-tab','native-ios-photos-collections-tab',
                     'native-ios-photos-search','native-ios-photos-bottom-bar']) {
     assert.ok(dashboard.includes(id), id)

@@ -680,7 +680,11 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app)
             .waitForExistence(timeout: 15),
             "The actual Gallery must render its single Photos bottom bar")
-        let collections = element("native-ios-photos-collections-tab", in: app)
+        // The bar is a container, NOT the identity of each actionable tab.
+        // A real Simulator AX snapshot previously showed every child with
+        // id native-ios-photos-bottom-bar; fail if the children are aliased.
+        let collections = app.buttons
+            .matching(identifier: "native-ios-photos-collections-tab").firstMatch
         if !collections.waitForExistence(timeout: 8) {
             // On genuine iOS 26 Photos, Years/Months/All temporarily
             // replaces the tab pill while scrolled. Use its visible

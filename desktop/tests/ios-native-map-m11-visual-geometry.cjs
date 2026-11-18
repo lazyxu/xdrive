@@ -30,7 +30,9 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
   assert.match(local, /XDriveIOSNativeMapMarkerVisualPolicy\.badgeText\(count: count\)/)
   assert.match(local, /isAccessibilityElement = !provisional/)
   assert.match(cloud, /isAccessibilityElement = enabled/)
-  assert.doesNotMatch(layout, /PHAsset|Owner|URLSession|upload|requestAuthorization/)
+  // Authorization must never be performed by this presentation-only helper.
+  // Natural-language comments mentioning Owner/PhotoKit are not code access.
+  assert.doesNotMatch(layout, /\bPHAsset\b|\bXDriveNativeOwnerRoot\b|\bURLSession\b|\bUploadSession\b|\.requestAuthorization\(/)
 })
 
 test('M11 exact layout assertions explicitly prohibit inconsistent photo pin numerical frames', () => {

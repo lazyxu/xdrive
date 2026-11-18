@@ -1035,6 +1035,10 @@ struct XDriveIOSNativePhotosDashboard: View {
         .padding(.horizontal, 14)
         .padding(.top, 6)
         .padding(.bottom, 4)
+        // SwiftUI propagates a container identifier to each child unless
+        // this is a real accessibility group. Keep three distinct native
+        // Library / Collections / Search button IDs and an identifiable bar.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("native-ios-photos-bottom-bar")
     }
 

@@ -6,7 +6,12 @@ import XCTest
 /// Never use invisible view IDs or coordinate taps as a substitute for real UX.
 enum XDriveIOSNativePhotosTestNavigator {
     private static func found(_ id: String, in app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: id).firstMatch
+        // A SwiftUI Menu may expose both an outer Other and a real Button
+        // with the same identifier. Tapping the Other was observed to leave
+        // the menu closed while the test incorrectly believed it had tapped.
+        let button = app.buttons.matching(identifier: id).firstMatch
+        if button.exists { return button }
+        return app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
     static func visible(_ id: String, in app: XCUIApplication) -> XCUIElement {

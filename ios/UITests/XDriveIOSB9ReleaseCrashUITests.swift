@@ -48,11 +48,54 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
     }
 
     private func tap(_ id: String, in app: XCUIApplication) {
-        // Both the archived b9 five-slot baseline and the candidate Photos
-        // two-tab shell must follow a REAL visible route, not a hidden ID.
-        if !XDriveIOSNativePhotosTestNavigator.tap(id, in: app) {
-            entry(id, in: app).tap()
+        // This file is compiled against BOTH archived b9 sources and
+        // candidate sources. The archived source lacks the newer shared
+        // navigator class, so keep its real visible navigation self-contained.
+        let direct = app.buttons.matching(identifier: id).firstMatch
+        if direct.exists && direct.isHittable {
+            direct.tap()
+            alive(app, "tap-\(id)")
+            return
         }
+        let legacyTitles = [
+            "native-ios-tab-files": "文件",
+            "native-ios-tab-gallery": "图库",
+        ]
+        if let title = legacyTitles[id] {
+            let old = app.buttons.matching(identifier: "native-ios-five-slot-bar")
+                .matching(NSPredicate(format: "label == %@", title)).firstMatch
+            if old.exists && old.isHittable {
+                old.tap()
+                alive(app, "tap-\(id)")
+                return
+            }
+        }
+        // Candidate Gallery hides xDrive's other five positions by design.
+        // Follow its visible real More menu; never tap an invisible TabView.
+        let menu = app.buttons.matching(identifier: "native-ios-gallery-more-menu")
+            .firstMatch
+        if menu.exists && menu.isHittable,
+           let title = legacyTitles[id] {
+            if id == "native-ios-tab-gallery" {
+                let library = app.buttons
+                    .matching(identifier: "native-ios-photos-library-tab").firstMatch
+                if library.exists && library.isHittable {
+                    library.tap()
+                    alive(app, "tap-\(id)")
+                    return
+                }
+            }
+            menu.tap()
+            let item = app.buttons[title].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 12) && item.isHittable,
+                          "Actual Gallery More menu missing native route \(title)")
+            item.tap()
+            alive(app, "tap-\(id)")
+            return
+        }
+        // No fallback success: the actual archive/candidate native route must
+        // exist or this test remains red with the real AX hierarchy attached.
+        entry(id, in: app).tap()
         alive(app, "tap-\(id)")
     }
 
