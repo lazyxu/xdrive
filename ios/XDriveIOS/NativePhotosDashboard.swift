@@ -553,6 +553,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     // Calendar dates are transient inherited photo membership filters, not
     // persisted map coordinates or independently authorized photo IDs.
     @State private var galleryMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
+    // Exact on-device day+GPS member proof. Never persist or send to Owner.
+    // It belongs to one Collections → Map presentation and expires on close.
+    @State private var selectedLocalCollectionTrip: XDriveIOSNativeLocalTripScope?
     // The default merged Gallery owns its own filter/wall state. Presenting
     // the existing native map over it keeps its loaded pages, zoom density
     // and Viewer return anchor alive instead of switching Gallery sources.
@@ -1324,7 +1327,34 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .albums:
                     XDriveIOSNativePhotosCollectionsScreen(
                         login: login, savedAlbumOffset: $localAlbumDirectoryOffset,
-                        onOpenMap: { openGallery(.map) }
+                        onOpenMap: {
+                            selectedLocalCollectionTrip = nil
+                            galleryMapCaptureRange = nil
+                            mapSource = .local
+                            localMapScope = .library
+                            openGallery(.map)
+                        },
+                        onOpenLocalDayMap: { day in
+                            guard phase == .active,
+                                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                            else { return }
+                            selectedLocalCollectionTrip = nil
+                            galleryMapCaptureRange = XDriveIOSNativePhotoMapCaptureRange.day(day)
+                            mapSource = .local
+                            localMapScope = .library
+                            openGallery(.map)
+                        },
+                        onOpenLocalTripMap: { trip in
+                            guard phase == .active, trip.valid,
+                                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                                  XDriveIOSNativePhotoFingerprintIndex.isCurrent(trip.libraryEpoch)
+                            else { return }
+                            selectedLocalCollectionTrip = trip
+                            galleryMapCaptureRange = trip.captureRange
+                            mapSource = .local
+                            localMapScope = .library
+                            openGallery(.map)
+                        }
                     )
                 case .cloud:
                     XDriveIOSNativeServerMediaWall(
@@ -1358,7 +1388,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                         },
                         onClose: { closeGalleryMap() },
                         mediaFilter: localGalleryMediaFilter,
-                        inheritedCaptureRange: galleryMapCaptureRange
+                        inheritedCaptureRange: galleryMapCaptureRange,
+                        inheritedTripScope: selectedLocalCollectionTrip
                     )
                 }
         }
@@ -1683,6 +1714,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         // The signed-out local PhotoKit map still remembers a Collections
         // entry without inventing an Owner return lease.
         openGallery(mapOpenedFromCollections ? .albums : (prior ?? fallback))
+        selectedLocalCollectionTrip = nil
     }
 
     private func openDynamic(_ feature: XDriveIOSNativeDynamicFeature) {
@@ -1750,6 +1782,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         localMapPageOffset = 0
         localMapJump = nil
         galleryMapCaptureRange = nil
+        selectedLocalCollectionTrip = nil
         presentingUnifiedMap = false
         pendingUnifiedMapDestination = nil
         pendingUnifiedMapSearch = false
