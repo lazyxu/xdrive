@@ -254,7 +254,10 @@ test('real Files Home and Launcher UI tests scroll only their owned AX list', ()
   const stability = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
   const scope = (src, from, to) => src.slice(src.indexOf(from), src.indexOf(to, src.indexOf(from) + 1))
   const home = scope(runtime, 'private func filesHomeEntry(', 'func testSyntheticOwnerSavedSearchesRepeatedSheetReturn()')
-  assert.match(home, /find\("native-ios-files-home-list", in: app\)/)
+  // Require a pinned AX identity, not the first retained collection view.
+  // The newer navigation fixture locates this same native Home List with
+  // descendants(matching: .any).matching(identifier: ...).firstMatch.
+  assert.match(home, /\.matching\(identifier: "native-ios-files-home-list"\)\.firstMatch/)
   assert.match(home, /list\.swipeUp\(\)/)
   assert.match(home, /list\.swipeDown\(\)/)
   assert.doesNotMatch(home, /app\.(?:collectionViews|tables|scrollViews)\.firstMatch/)

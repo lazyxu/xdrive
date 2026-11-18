@@ -163,7 +163,9 @@ test('F11 real H264 recorder has pre-tap video for all six native cases', () => 
   // A real 138.5-second XCUITest previously exceeded the 120-second clip cutoff.
   // Retain a finite 210-second recording limit and reject absent tap/frames.
   assert.match(video, /MAX_CLIP_SECONDS = 210/)
-  assert.match(video, /MAX_TIMELINE_STARTUP_SECONDS = 20/)
+  // Real 2026-11-18 Simulator MP4 startup was 21.973s; keep the
+  // evidence-based finite bound (24s) and all pre/post-tap-frame rejection.
+  assert.match(video, /MAX_TIMELINE_STARTUP_SECONDS = 24/)
   assert.match(video, /missing_pre_tap_frames/)
   for (const src of [stability, transitions]) {
     assert.match(src, /Thread\.sleep\(forTimeInterval: 24\)/)
