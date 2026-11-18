@@ -107,6 +107,7 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     var filenameTerm: String = ""
     var cloudSourceAllowed = true
     var inheritedCaptureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
+    var inheritedTripScope: XDriveIOSNativeLocalTripScope? = nil
 
     var body: some View {
         let expectedOwner = login.owner
@@ -154,7 +155,8 @@ struct XDriveIOSNativePhotoMapsScreen: View {
                     mapSource: animatedSource, canSelectCloudMap: cloudAllowed,
                     mediaFilter: mediaFilter,
                     filenameTerm: filenameTerm,
-                    inheritedCaptureRange: inheritedCaptureRange
+                    inheritedCaptureRange: inheritedCaptureRange,
+                    inheritedTripScope: inheritedTripScope
                 )
                 .transition(.opacity)
             case .cloud:
