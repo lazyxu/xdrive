@@ -177,6 +177,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         XCTAssertEqual(afterAttempt.writes, 0)
     }
 
+    @MainActor
     private func rejectedRevoke(_ user: String) async throws {
         let app = signIn(user)
         openClipboard(app)
@@ -211,6 +212,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         try await rejectedRevoke("ui_revoke404")
     }
 
+    @MainActor
     private func putTwoPixelPNGOnSystemClipboard() {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
         let image = renderer.image { context in
@@ -222,6 +224,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         XCTAssertEqual(UIPasteboard.general.data(forPasteboardType: "public.png"), data)
     }
 
+    @MainActor
     private func importOSPNG(_ user: String) -> XCUIApplication {
         let app = signIn(user)
         openClipboard(app)
