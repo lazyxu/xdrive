@@ -4658,10 +4658,10 @@ function registerIPCHandlers() {
           mediaQuery,
           signal,
         )
-        rangeOutcome = signal.aborted ? 'cancelled' : 'ok'
+        rangeOutcome = signal?.aborted ? 'cancelled' : 'ok'
         return page
       } catch (error) {
-        rangeOutcome = signal.aborted ? 'cancelled' : 'error'
+        rangeOutcome = signal?.aborted ? 'cancelled' : 'error'
         throw error
       } finally {
         if (offset === 0) {
