@@ -249,7 +249,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testRepeatedFilterDismissalRestoresSameGallery() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         for _ in 0..<3 {
             select("native-ios-gallery-open-filters", in: app)
             let cancel = app.buttons["取消"].firstMatch
@@ -263,7 +265,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         checkGallery(app)
         select("native-ios-gallery-open-filters", in: app)
         let open = target("native-ios-unified-gallery-show-map", in: app)
@@ -289,7 +293,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         checkGallery(app)
         select("native-ios-gallery-source-both", in: app)
         select("native-ios-gallery-open-filters", in: app)
@@ -385,7 +391,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testGalleryFilterCancelAfterTabAndSourceRoundTrips() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         for _ in 0..<3 {
             select("native-ios-gallery-source-albums", in: app)
             select("native-ios-gallery-source-unified", in: app)
@@ -418,7 +426,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testGalleryUnchangedForegroundRetainsVerifiedWallGeneration() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let gallery = target("native-ios-unified-photo-gallery", in: app)
         XCTAssertTrue(gallery.waitForExistence(timeout: 15),
                       "Unified Gallery did not mount before foreground transition")
@@ -469,7 +479,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testGalleryDismissedFilterThenForegroundDoesNotRebuildWall() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         select("native-ios-gallery-open-filters", in: app)
         let cancel = app.buttons["取消"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 15))
@@ -1027,7 +1039,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         select("native-ios-tab-files", in: app)
         let search = app.searchFields["搜索全部文件"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 15))
@@ -1057,7 +1071,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     // Independent real Simulator routes on the *same unchanged* Gallery
     // source. No fake cloud token, seeded private photos, or FPS claims.
     func testUnifiedWallGenerationPersistsThroughSixFilesTabRoundTrips() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let before = verifiedUnifiedGeneration(app)
         for cycle in 0..<6 {
             select("native-ios-tab-files", in: app)
@@ -1080,7 +1096,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedWallGenerationPersistsAfterFilterCancelAndFilesReturn() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let before = verifiedUnifiedGeneration(app)
         select("native-ios-gallery-open-filters", in: app)
         let cancel = app.buttons["取消"].firstMatch
@@ -1109,7 +1127,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedWallGenerationPersistsAfterBackgroundAndFilesReturn() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let before = verifiedUnifiedGeneration(app)
         for cycle in 0..<3 {
             XCUIDevice.shared.press(.home)
@@ -1124,7 +1144,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedWallGenerationPersistsAfterFilesSearchSubmitAndReturn() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let before = verifiedUnifiedGeneration(app)
         select("native-ios-tab-files", in: app)
         let search = app.searchFields["搜索全部文件"].firstMatch

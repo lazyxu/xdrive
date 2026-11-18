@@ -35,25 +35,21 @@ test('only a completed native modal dismissal can apply an exact Owner-scoped re
   assert.match(modal, /NavigationStack \{[\s\S]*?XDriveIOSNativePhotoMapsScreen\([\s\S]*?\.safeAreaInset\(edge: \.bottom, spacing: 0\) \{\s*nativePhotosBottomBar/)
 })
 
-test('native Simulator actually follows Gallery filter to modal MapKit and then Collections', () => {
-  const runtime = fs.readFileSync(
-    path.resolve(__dirname, '../../ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'), 'utf8'
-  )
-  const journey = runtime.slice(
-    runtime.indexOf('func testUnifiedMapModalCollectionsExitUsesNativePhotosBar()'),
-    runtime.indexOf('// The fixture pair must produce an EXACT two-member location Cell')
-  )
-  assert.ok(journey.length > 500)
-  assert.match(journey, /openNativeLauncher\(in: app\)/)
-  assert.match(journey, /native-ios-photos-search/)
-  assert.match(journey, /native-ios-unified-gallery-show-map/)
-  assert.match(journey, /native-ios-full-library-gps-map/)
-  assert.match(journey, /native-ios-photos-collections-tab/)
-  assert.match(journey, /native-ios-photos-collections/)
-  assert.match(journey, /XCTAssertFalse\(map\.exists/)
-  assert.match(journey, /native-ios-five-slot-bar/)
-  assert.match(journey, /XCTAttachment\(screenshot: app\.screenshot\(\)\)/)
-  assert.doesNotMatch(journey, /coordinate\(withNormalizedOffset:|testOnly|fakePhotoKit|syntheticOwner/)
+test('signed-out PhotoKit gallery uses actual map and returns to Collections', () => {
+  const runtime = fs.readFileSync(path.resolve(
+    __dirname,'../../ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'),'utf8')
+  const begin = runtime.indexOf('func testSignedOutLocalPhotoWallMapReturnsToCollectionsWithoutBlank()')
+  const end = runtime.indexOf('// The fixture pair must produce an EXACT two-member location Cell', begin)
+  assert.ok(begin > 0 && end > begin)
+  const journey = runtime.slice(begin,end)
+  assert.match(journey,/let app = openLocalMap\(\)/)
+  assert.match(journey,/native-ios-map-dismiss[\s\S]*?native-ios-local-gallery-media-filter/)
+  assert.match(journey,/NSPredicate\(format: "label == %@", "查看照片"\)/)
+  assert.match(journey,/native-ios-local-wall-show-map[\s\S]*?native-ios-full-library-gps-map/)
+  assert.match(journey,/native-ios-photos-collections-tab/)
+  assert.match(journey,/XCTAssertFalse\(map\.exists\)/)
+  assert.match(journey,/XCTAttachment\(screenshot: app\.screenshot\(\)\)/)
+  assert.doesNotMatch(journey,/coordinate\(withNormalizedOffset:|syntheticOwner|testOnly|simctl privacy grant/)
 })
 
 test('logout, changed Owner and background retire all pending routes without touching media identity', () => {

@@ -720,66 +720,56 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
-    /// A real UI journey rather than a source-only transition assertion:
-    /// Photos Library → Search/Filter → modal MapKit → Collections.
-    /// The Gallery wall must not be replaced during UIKit's dismissal.
-    func testUnifiedMapModalCollectionsExitUsesNativePhotosBar() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
-        app.launch()
-        handleInitialPhotoLibraryPromptIfPresent()
-        openNativeLauncher(in: app)
-        let gallery = element("native-ios-tab-gallery", in: app)
-        XCTAssertTrue(gallery.waitForExistence(timeout: 15))
-        XCTAssertTrue(gallery.isHittable)
-        gallery.tap()
-
-        let more = element("native-ios-gallery-more-menu", in: app)
-        XCTAssertTrue(more.waitForExistence(timeout: 15))
-        more.tap()
-        let allPhotos = app.buttons["全部照片"].firstMatch
-        XCTAssertTrue(allPhotos.waitForExistence(timeout: 10))
-        allPhotos.tap()
-
-        let search = element("native-ios-photos-search", in: app)
-        XCTAssertTrue(search.waitForExistence(timeout: 15))
-        print("IOS_NATIVE_MAP_MODAL_TAP phase=open-gallery-search")
-        search.tap()
-        let showMap = element("native-ios-unified-gallery-show-map", in: app)
-        if !showMap.waitForExistence(timeout: 20) {
-            diagnose("Actual Gallery search sheet lacks Show Map", in: app)
+    /// Real signed-out PhotoKit → local filter → MapKit → Collections.
+    /// The separately gated Owner unified modal keeps its own source tests.
+    func testSignedOutLocalPhotoWallMapReturnsToCollectionsWithoutBlank() {
+        let app = openLocalMap()
+        let initialDone = element("native-ios-map-dismiss", in: app)
+        XCTAssertTrue(initialDone.waitForExistence(timeout: 15))
+        initialDone.tap()
+        let filter = element("native-ios-local-gallery-media-filter", in: app)
+        if !filter.waitForExistence(timeout: 20) {
+            diagnose("Signed-out Gallery did not mount actual PhotoKit", in: app)
         }
-        XCTAssertTrue(showMap.exists && showMap.isEnabled)
-        print("IOS_NATIVE_MAP_MODAL_TAP phase=show-filtered-map")
-        showMap.tap()
+        XCTAssertTrue(filter.exists && filter.isHittable)
+        let photo = app.buttons.matching(
+            NSPredicate(format: "label == %@", "查看照片")).firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 30) && photo.isHittable,
+                      "Signed-out Gallery must show seeded, genuine PhotoKit tiles")
+        filter.tap()
+        let show = element("native-ios-local-wall-show-map", in: app)
+        XCTAssertTrue(show.waitForExistence(timeout: 15) &&
+                      show.isEnabled && show.isHittable)
+        show.tap()
         let map = element("native-ios-full-library-gps-map", in: app)
         if !map.waitForExistence(timeout: 60) {
-            diagnose("Actual filtered Gallery did not present native MapKit", in: app)
+            diagnose("Local PhotoKit filter failed to present real MapKit", in: app)
         }
         XCTAssertTrue(map.exists)
-        let mapScreenshot = XCTAttachment(screenshot: app.screenshot())
-        mapScreenshot.name = "native-photos-modal-map-before-collections"
-        mapScreenshot.lifetime = .keepAlways
-        add(mapScreenshot)
-
+        let before = XCTAttachment(screenshot: app.screenshot())
+        before.name = "signed-out-local-map-before-return"
+        before.lifetime = .keepAlways
+        add(before)
         XCTAssertFalse(element("native-ios-five-slot-bar", in: app).exists)
-        let collections = element("native-ios-photos-collections-tab", in: app)
-        XCTAssertTrue(collections.waitForExistence(timeout: 15))
-        XCTAssertTrue(collections.isHittable)
-        print("IOS_NATIVE_MAP_MODAL_TAP phase=close-map-to-collections")
+        let done = element("native-ios-map-dismiss", in: app)
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        XCTAssertTrue(filter.waitForExistence(timeout: 20))
+        XCTAssertTrue(photo.waitForExistence(timeout: 30) && photo.isHittable,
+                      "Real PhotoKit tile disappeared on native MapKit return")
+        let collections = app.buttons.matching(
+            identifier: "native-ios-photos-collections-tab").firstMatch
+        XCTAssertTrue(collections.waitForExistence(timeout: 15) && collections.isHittable)
         collections.tap()
-        let collectionsPage = element("native-ios-photos-collections", in: app)
-        if !collectionsPage.waitForExistence(timeout: 30) {
-            diagnose("Collections did not appear after modal map dismissal", in: app)
-        }
-        XCTAssertTrue(collectionsPage.exists)
-        XCTAssertFalse(map.exists, "Dismissed MapKit cannot remain above Collections")
+        let page = element("native-ios-photos-collections", in: app)
+        XCTAssertTrue(page.waitForExistence(timeout: 30))
+        XCTAssertFalse(map.exists)
         XCTAssertFalse(element("native-ios-five-slot-bar", in: app).exists)
         XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app).exists)
-        let afterScreenshot = XCTAttachment(screenshot: app.screenshot())
-        afterScreenshot.name = "native-photos-modal-map-after-collections"
-        afterScreenshot.lifetime = .keepAlways
-        add(afterScreenshot)
+        let after = XCTAttachment(screenshot: app.screenshot())
+        after.name = "signed-out-local-map-after-collections"
+        after.lifetime = .keepAlways
+        add(after)
         XCTAssertEqual(app.state, .runningForeground)
     }
 
