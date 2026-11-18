@@ -378,7 +378,7 @@ test('verified native Viewer GPS opens the existing Gallery local map and nearby
   assert.match(dashboard, /ownerScopeKey == expectedRouteOwnerKey[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?openGallery\(\.map\)\s+localMapJump = jump\s+localMapCamera = jump\.camera\s+localMapScope = \.library\s+mapSource = \.local/)
   // A Viewer GPS jump must never inherit a pending, Owner-scoped map
   // dismissal destination from an older tab or stale UIKit callback.
-  assert.match(dashboard, /localMapJump = nil\s+galleryMapCaptureRange = nil\s+presentingUnifiedMap = false\s+pendingUnifiedMapDestination = nil\s+pendingUnifiedMapSearch = false\s+pendingUnifiedMapOwnerScope = nil\s+unifiedMapCaptureRange = nil\s+unifiedMapMediaFilter = \.all\s+unifiedMapFilenameTerm = ""\s+mapSource = \.local/);
+  assert.match(dashboard, /localMapJump = nil\s+galleryMapCaptureRange = nil\s+selectedLocalCollectionTrip = nil\s+presentingUnifiedMap = false\s+pendingUnifiedMapDestination = nil\s+pendingUnifiedMapSearch = false\s+pendingUnifiedMapOwnerScope = nil\s+unifiedMapCaptureRange = nil\s+unifiedMapMediaFilter = \.all\s+unifiedMapFilenameTerm = ""\s+mapSource = \.local/);
   assert.doesNotMatch(map, /WKWebView|URLSession\(|UploadSession|UserDefaults/)
 })
 
@@ -392,7 +392,7 @@ test('PhotoKit full-library map is photo-first after scan, with only recovery re
   assert.match(fullLibrary, /XDriveIOSMapKitPhotoPage\([\s\S]*?\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/)
   assert.match(fullLibrary, /if !globalComplete && !busy \{\s*Button\(album == nil \? "扫描已授权图库位置" : "扫描此相册位置"\)/)
   assert.doesNotMatch(fullLibrary, /Button\("重新扫描已授权图库位置"\)|Button\("细化当前视窗的定位照片"\)|Button\("还原已授权全库概览"\)/)
-  assert.match(localMap, /\.toolbar \{[\s\S]*?Menu \{[\s\S]*?if mapScope == \.library && globalComplete \{\s*Button\("重新加载位置封面"\)/)
+  assert.match(localMap, /\.overlay\(alignment: \.bottomLeading\) \{[\s\S]*?Menu \{[\s\S]*?if mapScope == \.library && globalComplete \{\s*Button\("重新加载位置封面"\)/)
   assert.match(localMap, /Button\(album == nil \? "重新扫描已授权图库位置" : "重新扫描此相册位置"\) \{\s*scanFullLibrary\(\)\s*\}[\s\S]*?\.disabled\(busy\)/)
   assert.doesNotMatch(localMap, /细化当前视窗的定位照片|还原已授权全库概览/)
   assert.match(localMap, /Label\("地图操作", systemImage: "ellipsis.circle"\)/)
@@ -521,7 +521,8 @@ test('native local Gallery opens the full-library map from its filter menu witho
   assert.match(dashboard, /onClose: \{ closeGalleryMap\(\) \}/)
   assert.match(mapGallery, /var onClose: \(\(\) -> Void\)\? = nil/)
   assert.match(mapGallery, /if source == \.cloud[\s\S]*?accessibilityIdentifier\("native-ios-map-close"\)/)
-  assert.match(mapGallery, /mapSource: \$source, canSelectCloudMap: cloudAllowed/)
+  assert.match(mapGallery, /mapSource: animatedSource, canSelectCloudMap: cloudAllowed/)
+   assert.match(mapGallery, /guard next != source, next != \.cloud \|\| cloudAllowed/)
   assert.match(mapGallery, /Picker\("地图照片来源", selection: mapSource\)/)
   assert.match(map, /Picker\("地图照片来源", selection: mapSource\)/)
 })
