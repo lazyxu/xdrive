@@ -227,6 +227,23 @@ async function measureRealDesktopMediaProgress(sample) {
   }
 }
 
+// Read only fixed-schema timings from the existing private Desktop lifecycle
+// log. Never put auth/session fields or complete log lines into the benchmark.
+function galleryFirstRangeTimings(logDir) {
+  const filename = path.join(logDir, 'desktop.log')
+  if (!fs.existsSync(filename)) return []
+  return fs.readFileSync(filename, 'utf8').split('\n').filter(Boolean)
+    .map(line => { try { return JSON.parse(line) } catch { return null } })
+    .filter(entry => entry?.event === 'gallery_first_range_timing')
+    .map(entry => ({
+      result: entry.result,
+      total_ms: entry.total_ms,
+      agent_ready_ms: entry.agent_ready_ms,
+      pre_http_ms: entry.pre_http_ms,
+      http_ms: entry.http_ms,
+    }))
+}
+
 let attached = false
 async function run(win) {
   try {
@@ -272,12 +289,23 @@ async function run(win) {
     const beforeResp = await fetch(fixture + '/__perf/stats')
     if (!beforeResp.ok) throw new Error('before CAS counters missing')
     const beforeCAS = await beforeResp.json()
+    const beforeRangeRows = galleryFirstRangeTimings(app.getPath('logs')).length
     const armed = await win.webContents.executeJavaScript('(' + activateGalleryAndMeasure.toString() + ')()')
     if (!armed?.started) throw new Error('production Gallery navigation unavailable')
     const result = await until(
       () => win.webContents.executeJavaScript('window.__xdriveDesktopRealColdResult || null'),
       60000, '12 actual Gallery JPEG decodes and two animation frames',
     )
+    const firstRangeTimings = galleryFirstRangeTimings(app.getPath('logs'))
+      .slice(beforeRangeRows)
+    if (!firstRangeTimings.some(row => row.result === 'ok' &&
+        Number.isFinite(row.total_ms) &&
+        Number.isFinite(row.agent_ready_ms) &&
+        Number.isFinite(row.http_ms) &&
+        row.total_ms >= row.http_ms)) {
+      throw new Error('real Desktop Gallery first Range stage timing missing: ' +
+        JSON.stringify(firstRangeTimings))
+    }
     const afterResp = await fetch(fixture + '/__perf/stats')
     if (!afterResp.ok) throw new Error('after CAS counters missing')
     const afterCAS = await afterResp.json()
@@ -337,6 +365,7 @@ async function run(win) {
       sample: Number(process.env.XD_GALLERY_DESKTOP_REAL_SAMPLE),
       realProductionDesktop: true,
       renderer: result,
+      firstRangeTimings,
       beforeCAS, afterCAS,
       sourceExactMediaProgress,
       sourceProgressResources,
