@@ -213,8 +213,16 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         for _ in 0..<8 {
             select("native-ios-tab-files", in: app)
             checkFilesHome(app)
+            XCTAssertFalse(app.tabBars.firstMatch.exists,
+                           "System TabBar must not cover Files quick rail or xDrive navigation")
+            XCTAssertTrue(target("native-ios-five-slot-bar", in: app).exists,
+                          "Files must keep its own usable xDrive bar")
             select("native-ios-tab-gallery", in: app)
             checkGallery(app)
+            XCTAssertFalse(app.tabBars.firstMatch.exists,
+                           "System TabBar must not reappear over Photos on return")
+            XCTAssertFalse(target("native-ios-five-slot-bar", in: app).exists,
+                           "Photos must not stack a second xDrive bar")
         }
     }
 
