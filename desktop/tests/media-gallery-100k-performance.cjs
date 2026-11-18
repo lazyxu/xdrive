@@ -282,14 +282,17 @@ test('Gallery 100k first-open UI baseline', () => {
   const loadFirstPageEnd = galleryPageSource.indexOf('const loadMemories = useCallback', loadFirstPageStart)
   assert.ok(loadFirstPageStart >= 0 && loadFirstPageEnd > loadFirstPageStart)
   const loadFirstPageSource = galleryPageSource.slice(loadFirstPageStart, loadFirstPageEnd)
-  const facetsStartIndex = loadFirstPageSource.indexOf('const facetsPromise = Promise.all([')
+  const facetsDeclarationIndex = loadFirstPageSource.indexOf('const loadSecondaryFacets = () => Promise.all([')
+  const facetsStartIndex = loadFirstPageSource.indexOf('const facetsPromise = mobileGalleryViewport ? loadSecondaryFacets() : null')
   const rangeAwaitIndex = loadFirstPageSource.indexOf('const range = await rangePromise')
   const firstItemsCommitIndex = loadFirstPageSource.indexOf('setItems([...range.items])')
-  const facetsCommitIndex = loadFirstPageSource.indexOf('void facetsPromise.then')
-  assert.ok(facetsStartIndex >= 0, 'library bootstrap should start secondary facets concurrently')
-  assert.ok(rangeAwaitIndex > facetsStartIndex, 'first range should run concurrently with secondary facets')
-  assert.ok(firstItemsCommitIndex > rangeAwaitIndex, 'first item commit should follow only the first range')
-  assert.ok(facetsCommitIndex > firstItemsCommitIndex, 'secondary facets must not gate the first item commit')
+  const facetsCommitIndex = loadFirstPageSource.indexOf('void (facetsPromise ?? loadSecondaryFacets()).then')
+  assert.ok(facetsDeclarationIndex >= 0 && facetsStartIndex > facetsDeclarationIndex,
+    'secondary facets retain their original Owner-scoped request inputs')
+  assert.ok(rangeAwaitIndex > facetsStartIndex, 'mobile Gallery retains eager index loading')
+  assert.ok(firstItemsCommitIndex > rangeAwaitIndex, 'first item commit must follow the first range')
+  assert.ok(facetsCommitIndex > firstItemsCommitIndex,
+    'Desktop/Web starts secondary queries only after the counted first Range commits')
   for (const dependency of [
     'rangePromise',
     'source.listAlbums()',
