@@ -217,8 +217,11 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         tap("native-ios-gallery-source-originals", app: app)
         assertCloudOriginalsChild(app)
         XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
+                      "Cloud Originals process stopped while backgrounded")
         app.activate()
-        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                      "Cloud Originals failed to return to foreground")
         assertCloudOriginalsChild(app)
         tap("native-ios-tab-files", app: app)
         assertFiles(app)
@@ -322,8 +325,11 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         XCTAssertTrue(target("native-ios-files-operation-history-page", app: app)
             .waitForExistence(timeout: 15))
         XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
+                      "Files History process stopped while backgrounded")
         app.activate()
-        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                      "Files History failed to return to foreground")
         let done = target("native-ios-files-operation-history-done", app: app)
         XCTAssertTrue(done.waitForExistence(timeout: 15))
         done.tap()
@@ -332,6 +338,69 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         tap("native-ios-tab-gallery", app: app)
         assertGallery(app)
         assertVisiblePixels(app, route: "Gallery after operations foreground")
+    }
+
+    /// Regression kept from the older #4298 crash matrix: two distinct
+    /// History -> background/foreground -> Files -> Gallery transitions.
+    /// Guard the actual process before activation; an AX timeout is not an
+    /// app-process crash unless the independently audited report proves it.
+    func testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage() {
+        let app = launch(syntheticOwner: true)
+        for cycle in 0..<2 {
+            tap("native-ios-tab-files", app: app)
+            openFilesOperationHistoryFromBrowse(app)
+            let sheet = target("native-ios-files-operation-history-page", app: app)
+            XCTAssertTrue(sheet.waitForExistence(timeout: 15))
+            XCUIDevice.shared.press(.home)
+            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
+                          "Files History process stopped in background cycle \\(cycle)")
+            app.activate()
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                          "Files History failed foreground recovery cycle \\(cycle)")
+            XCTAssertTrue(sheet.waitForExistence(timeout: 15),
+                          "Files History sheet disappeared after foreground cycle \\(cycle)")
+            tap("native-ios-files-operation-history-done", app: app)
+            let retired = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"), object: sheet)
+            XCTAssertEqual(XCTWaiter.wait(for: [retired], timeout: 12), .completed,
+                           "Files History modal remained after Done in cycle \\(cycle)")
+            assertFiles(app)
+            tap("native-ios-tab-gallery", app: app)
+            assertGallery(app)
+            assertVisiblePixels(app, route: "Gallery after History foreground cycle \\(cycle)")
+        }
+    }
+
+    /// A disposable synthetic Owner with no bearer must never survive a
+    /// signed-out cold relaunch, even after Albums and Files Favorites.
+    func testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope() {
+        let app = launch(syntheticOwner: true)
+        tap("native-ios-gallery-source-albums", app: app)
+        assertGallery(app)
+        tap("native-ios-tab-files", app: app)
+        tap("native-ios-files-section-favorites", app: app)
+        assertFiles(app)
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
+                      "Synthetic Owner Files process stopped in background")
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                      "Synthetic Owner Files did not foreground")
+        assertFiles(app)
+        app.terminate()
+        XCTAssertEqual(app.state, .notRunning)
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        tap("native-ios-tab-files", app: app)
+        assertFiles(app)
+        XCTAssertFalse(target("native-ios-files-open-root-location", app: app).exists,
+                       "Signed-out cold relaunch retained a private Owner folder")
+        XCTAssertFalse(target("native-ios-files-grid", app: app).exists,
+                       "Signed-out cold relaunch exposed prior Owner rows")
+        tap("native-ios-tab-gallery", app: app)
+        assertGallery(app)
+        assertVisiblePixels(app, route: "Gallery after signed-out Owner cold relaunch")
     }
 
     func testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels() {

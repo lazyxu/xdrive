@@ -30,6 +30,22 @@ test("Files More shows the real organizer action before large picker menus", () 
   assert.equal((menu.match(/native-ios-files-toolbar-organize-home/g) || []).length, 1)
 })
 
+test("two distinct Files History and cold-relaunch Owner crash journeys are executed", () => {
+  // These run as actual XCUITests in candidate-gallery-files. Do not call
+  // their settled screenshot checks H264 or signed-device 60/120Hz evidence.
+  const names = [
+    "testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage",
+    "testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope",
+  ]
+  for (const name of names) {
+    assert.match(navigation, new RegExp("func " + name + "\\(\\)"))
+  }
+  assert.match(navigation, /app\.wait\(for: \.runningBackground, timeout: 12\)/)
+  assert.match(navigation, /app\.wait\(for: \.runningForeground, timeout: 18\)/)
+  assert.match(navigation, /Signed-out cold relaunch exposed prior Owner rows/)
+  assert.match(navigation, /Files History modal remained after Done in cycle/)
+})
+
 test("six new native Gallery/Files child paths are executed and video-audited", () => {
   const names = [
     "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
