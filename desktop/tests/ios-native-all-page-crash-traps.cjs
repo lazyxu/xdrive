@@ -133,3 +133,20 @@ test('shared still-image Viewer zoom VoiceOver never converts invalid CGFloat to
   assert.match(workflow, /NativeZoomAccessibilityPolicyChecks\.swift/);
   assert.match(workflow, /xdrive-ios-zoom-accessibility-bounds/);
 });
+
+test('native Viewer quality sheet safely handles CIImage-only UIImage pixel metadata', () => {
+  const panel = read('ios/XDriveIOS/NativeFilesViewerQualityPanel.swift');
+  const policy = read('ios/XDriveIOS/NativeViewerPixelDimensionPolicy.swift');
+  const checks = read('ios/tests/NativeViewerPixelDimensionPolicyChecks.swift');
+  assert.equal(
+    (panel.match(/XDriveIOSNativeViewerPixelDimensionPolicy\.pixels\(/g) || []).length, 2,
+    'both width and height fallback must use the checked shared conversion');
+  assert.doesNotMatch(panel, /Int\s*\(\s*image\.size\.(?:width|height)\s*\*\s*image\.scale\s*\)/,
+    'untrusted floating UIImage dimensions must never trap a metadata sheet');
+  assert.match(panel, /guard let pixelWidth, let pixelHeight else \{ return "尺寸未知" \}/);
+  assert.match(panel, /LabeledContent\("解码分辨率", value: resolutionLabel\)/);
+  assert.match(policy, /product\.isFinite, product >= 1/);
+  for (const bad of ['.nan', '.infinity', 'Double.greatestFiniteMagnitude', 'Double(Int.max)']) {
+    assert.ok(checks.includes(bad), 'missing executable Swift bounds test: ' + bad);
+  }
+});
