@@ -215,6 +215,9 @@ export interface XDriveLocalBackupRecoveryReview {
   current_node_metadata_match_files: number
   current_node_metadata_mismatch_files: number
   pending_original_files: number
+  /** Local original Operation journal paths not present in this verified scan; NOT failed uploads. */
+  absent_original_paths?: number
+  journal_checked?: boolean
   next_after_file: number
   page_epoch: string
   has_more: boolean

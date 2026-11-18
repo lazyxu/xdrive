@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -250,4 +251,22 @@ func TestLocalPushAutoFairOrderAcrossSourcesAndRevisions(t *testing.T) {
 	attempts[prefix+"4\x00invalid"] = now.Add(4 * time.Minute)
 	attempts[prefix+"4\x009\x00junk"] = now.Add(5 * time.Minute)
 	assertOrder([]uint64{4, 11, 9})
+}
+
+func TestLocalPushAutoStartFailureLoggingNeverLeaksBackendError(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{context.Canceled, "scheduler_cancelled"},
+		{context.DeadlineExceeded, "scheduler_deadline"},
+		{errors.New("token=private path=/home/owner/secret.txt"), "owning_runner_rejected"},
+	}
+	for _, tc := range cases {
+		got := localPushAutoStartErrorCode(tc.err)
+		if got != tc.want || strings.Contains(got, "private") ||
+			strings.Contains(got, "home") || strings.Contains(got, "token") {
+			t.Fatalf("unredacted automatic start error code: %q", got)
+		}
+	}
 }

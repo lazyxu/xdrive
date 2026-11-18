@@ -39,6 +39,12 @@ export function safeRecoveryReviewPage(
   value: XDriveLocalBackupRecoveryReview, sourceID: number,
   after: number, expectedEpoch: string,
 ): boolean {
+  if (value?.journal_checked !== undefined || value?.absent_original_paths !== undefined) {
+    if (value.journal_checked !== true ||
+      typeof value.absent_original_paths !== 'number' ||
+      !Number.isSafeInteger(value.absent_original_paths) ||
+      value.absent_original_paths < 0 || value.absent_original_paths > 1_000_000) return false
+  }
   if (!value || value.source_id !== sourceID ||
     !Number.isSafeInteger(value.revision) || value.revision <= 0 ||
     !['partial', 'uncertain', 'paused', 'cancelled'].includes(value.run_state) ||
@@ -358,6 +364,17 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
                   <Typography variant="caption" color="text.secondary">
                     已忽略 {reviewPage.ignored_files} · 暂不支持 {reviewPage.unsupported_files}
                   </Typography>
+                  {reviewPage.journal_checked === true ? (
+                    <Alert severity={(reviewPage.absent_original_paths ?? 0) > 0 ? 'warning' : 'info'}>
+                      版本化原始 Operation 日志中有 {reviewPage.absent_original_paths} 个历史文件路径未出现在本次已验证清单中。
+                      这可能包括已删除、移动或被忽略的文件；不表示这些上传仍待确认，也不是当前云端 CAS 完整性证明。
+                      历史路径不参与本页按现有文件进行的 SQL 回执核查。
+                    </Alert>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      此 Agent 尚未提供当前清单以外的历史 Operation 路径统计。
+                    </Typography>
+                  )}
                   <Alert severity="warning">
                     历史提交记录不能当作当前 CAS 物理完整性证明；跨页结果也不是同一时点的数据库快照。
                     待确认的 Operation 不允许自动重发。
@@ -394,6 +411,12 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
                 </Typography>
               </Stack>
             ))}
+            {history.some((item) => item.state === 'uncertain') ? (
+              <Alert severity="warning">
+                最近本机历史存在曾经不确定的运行记录。后续清单遍历完成不代表当时所有原始 Operation 都已核对；
+                旧文件路径若已消失，请使用高级故障诊断查看历史日志路径统计。
+              </Alert>
+            ) : null}
             {history.length === 0 && !historyError ? (
               <Typography variant="caption" color="text.secondary">暂无已记录的本机运行历史</Typography>
             ) : null}

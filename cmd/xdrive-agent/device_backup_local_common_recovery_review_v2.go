@@ -137,6 +137,7 @@ func (c *agentController) CloudLocalBoundBackupCommonRecoveryReview(
 		SourceID: sourceID, Revision: source.Revision,
 		RunState: checkpoint.State, Authoritative: false,
 	}
+	presentOriginalPaths := make(map[string]struct{})
 	var fileIndex uint64
 	lastSelected := afterFile
 	snapshot, err := localpush.StreamVerifiedInventoryJournal(readCtx, dir, grant,
@@ -144,6 +145,10 @@ func (c *agentController) CloudLocalBoundBackupCommonRecoveryReview(
 			for _, item := range items {
 				if item.Kind != "file" {
 					continue
+				}
+				presentOriginalPaths[item.Path] = struct{}{}
+				if len(presentOriginalPaths) > localCommonRecoveryReviewMaxAfter {
+					return errLocalBackupCommonBatchUnavailable
 				}
 				fileIndex++
 				if fileIndex <= afterFile {
@@ -223,6 +228,14 @@ func (c *agentController) CloudLocalBoundBackupCommonRecoveryReview(
 	if err != nil || readCtx.Err() != nil || fileIndex < afterFile {
 		return zero, errLocalBackupCommonBatchUnavailable
 	}
+	// An independent bounded, read-only check reveals old original paths
+	// absent from the current-file receipt review above.
+	absent, err := localpush.CountAbsentVerifiedCommonUploadVersionedPaths(
+		readCtx, dir, grant, account.SessionID, presentOriginalPaths)
+	if err != nil {
+		return zero, errLocalBackupCommonBatchUnavailable
+	}
+	page.AbsentPaths, page.JournalChecked = absent, true
 	rulesNow, err := api.LocalBoundRules(readCtx, sourceID, proof)
 	if err != nil || rulesNow.SourceID != sourceID ||
 		rulesNow.Revision != source.Revision ||
