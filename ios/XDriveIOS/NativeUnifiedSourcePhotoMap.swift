@@ -329,7 +329,10 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 .accessibilityLabel("关闭地图")
                 .accessibilityIdentifier("native-ios-unified-source-map-close")
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+        }
+        // Source-filtered map keeps Close as the sole primary top action.
+        // Its bounded date and refresh tools live in secondary map chrome.
+        .overlay(alignment: .bottomLeading) {
                 Menu {
                     Menu {
                         Button("恢复图库日期范围") {
@@ -353,10 +356,14 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                         .disabled(busy || phase != .active)
                 } label: {
                     Label("地图操作", systemImage: "ellipsis.circle")
-                        .frame(minWidth: 44, minHeight: 44)
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
+                        .background(.regularMaterial, in: Circle())
+                        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
                 }
                 .accessibilityIdentifier("native-ios-unified-source-map-actions")
-            }
+            .padding(.leading, 12)
+            .padding(.bottom, 62)
         }
         .sheet(isPresented: $datePickerOpen) {
             NavigationStack {
