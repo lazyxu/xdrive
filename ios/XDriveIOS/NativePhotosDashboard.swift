@@ -224,40 +224,46 @@ private struct XDriveIOSNativePhotosCollectionCover: View {
 /// The native Collections surface is intentionally a presentation layer over
 /// existing authorized readers. Entries never manufacture Memories or Trips.
 private enum XDriveIOSNativePhotosCollectionDestination: String, CaseIterable, Identifiable {
-    case recentDays, people, albums, videos, livePhotos, trips
+    case recentDays, memories, people, albums, videos, livePhotos, trips, cloudTrips
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .recentDays: return "最近的日子"
+        case .memories: return "回忆候选"
         case .people: return "人物与宠物"
         case .albums: return "相簿"
         case .videos: return "视频"
         case .livePhotos: return "实况照片"
-        case .trips: return "旅行"
+        case .trips: return "本机旅行"
+        case .cloudTrips: return "云端旅行"
         }
     }
 
     var symbol: String {
         switch self {
         case .recentDays: return "calendar"
+        case .memories: return "sparkles"
         case .people: return "person.2.crop.square.stack"
         case .albums: return "rectangle.stack"
         case .videos: return "video"
         case .livePhotos: return "livephoto"
         case .trips: return "map"
+        case .cloudTrips: return "icloud"
         }
     }
 
     var accessibilityID: String {
         switch self {
         case .recentDays: return "native-ios-collections-recent-days"
+        case .memories: return "native-ios-collections-memories"
         case .people: return "native-ios-collections-people"
         case .albums: return "native-ios-collections-albums"
         case .videos: return "native-ios-collections-videos"
         case .livePhotos: return "native-ios-collections-live"
         case .trips: return "native-ios-collections-trips"
+        case .cloudTrips: return "native-ios-collections-cloud-trips"
         }
     }
 }
@@ -270,6 +276,8 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
     @Binding var savedAlbumOffset: Int
     // Same proven MapKit route used by the main Photo Library, no new reader.
     let onOpenMap: () -> Void
+    var onOpenLocalDayMap: ((Date) -> Void)? = nil
+    var onOpenLocalTripMap: ((XDriveIOSNativeLocalTripScope) -> Void)? = nil
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("xdrive.native.photos.pinned-collection-routes.v1")
     private var pinnedRoutesRaw = "recentDays,people,albums"
@@ -288,7 +296,10 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
         let requested = pinnedRoutesRaw.split(separator: ",")
             .compactMap { XDriveIOSNativePhotosCollectionDestination(rawValue: String($0)) }
         var visited = Set<XDriveIOSNativePhotosCollectionDestination>()
-        return requested.filter { visited.insert($0).inserted }
+        return requested.filter {
+            ($0 != .cloudTrips || login.owner != nil) &&
+                visited.insert($0).inserted
+        }
     }
 
     private func togglePin(_ route: XDriveIOSNativePhotosCollectionDestination) {
@@ -305,6 +316,12 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
             XDriveIOSNativeLocalPhotoTimelineContainer(
                 savedOffset: $recentOffset, mediaFilter: $recentFilter
             )
+        case .memories:
+            XDriveIOSNativeLocalRecentDaysAndTrips(
+                chooseDay: { onOpenLocalDayMap?($0) },
+                chooseTrip: { onOpenLocalTripMap?($0) },
+                mode: .memories
+            )
         case .people:
             XDriveIOSNativeGalleryPeople(login: login)
         case .albums:
@@ -318,8 +335,15 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
                 savedOffset: $liveOffset, mediaFilter: $liveFilter
             )
         case .trips:
-            // The existing screen admits only current, server-verified Owner
-            // GPS-calendar trip members. There is no inferred local "trip".
+            // Local, explicitly labelled GPS trip candidates: verified
+            // day+cell membership, never a date-only Gallery guess.
+            XDriveIOSNativeLocalRecentDaysAndTrips(
+                chooseDay: { onOpenLocalDayMap?($0) },
+                chooseTrip: { onOpenLocalTripMap?($0) },
+                mode: .trips
+            )
+        case .cloudTrips:
+            // Preserve the server-signed exact Owner trip reader separately.
             XDriveIOSNativeExactTripsScreen(login: login)
         }
     }
@@ -333,7 +357,7 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
             XDriveIOSNativePhotosCollectionCover(kind: .videos)
         case .livePhotos:
             XDriveIOSNativePhotosCollectionCover(kind: .livePhotos)
-        case .people, .albums, .trips:
+        case .people, .albums, .trips, .cloudTrips, .memories:
             ZStack(alignment: .bottomLeading) {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color(uiColor: .secondarySystemGroupedBackground))
@@ -393,7 +417,9 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
                 Spacer(minLength: 0)
                 if isPinned {
                     Menu {
-                        ForEach(XDriveIOSNativePhotosCollectionDestination.allCases) { route in
+                        ForEach(XDriveIOSNativePhotosCollectionDestination.allCases.filter {
+                            $0 != .cloudTrips || login.owner != nil
+                        }) { route in
                             Button {
                                 togglePin(route)
                             } label: {
@@ -473,10 +499,12 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 collectionSection("最近的日子", routes: [.recentDays])
+                collectionSection("回忆", routes: [.memories])
                 collectionSection("人物与宠物", routes: [.people])
                 collectionSection("固定精选集", routes: pinnedRoutes, isPinned: true)
                 collectionSection("相簿", routes: [.albums])
-                collectionSection("旅行", routes: [.trips])
+                collectionSection("旅行", routes: login.owner == nil
+                    ? [.trips] : [.trips, .cloudTrips])
                 collectionSection("媒体类型", routes: [.videos, .livePhotos])
                 mapUtilitySection
             }
