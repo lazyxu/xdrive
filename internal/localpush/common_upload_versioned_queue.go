@@ -158,36 +158,39 @@ func commonUploadVersionedPathHash(relativePath string) string {
 
 const maxCommonOriginalJournalPathEntries = 1000064
 
-// CountAbsentVerifiedCommonUploadVersionedPaths reports distinct, authenticated
-// versioned original-journal paths absent from the caller's fully traversed
-// VERIFIED inventory. It is diagnostic only: a missing path is NOT a pending
-// SQL receipt, a deleted source file, a CAS claim or permission to replay.
-// The input map and decoded paths remain entirely inside the owning Agent.
-func CountAbsentVerifiedCommonUploadVersionedPaths(
+// ListAbsentVerifiedCommonUploadVersionedPlanPage selects a bounded number
+// of ORIGINAL private operation groups whose path is absent from a completely
+// verified inventory. The ordinal is based on sorted SHA-256 directory names,
+// never an untrusted Renderer path. The grouped plans never leave the Agent.
+// Receipt status MUST be read separately using current Owner/Root/Source proof;
+// path absence alone is neither a failed upload nor evidence for deletion.
+func ListAbsentVerifiedCommonUploadVersionedPlanPage(
 	ctx context.Context, configDir string, grant RootGrant, ownerSession string,
-	presentPaths map[string]struct{},
-) (uint64, error) {
+	presentPaths map[string]struct{}, after uint64, limit int,
+) ([][]localpushcommon.Plan, uint64, error) {
 	deny := ErrCommonUploadPlanQuarantined
 	if ctx == nil || ctx.Err() != nil || ownerSession == "" ||
-		!grant.StrongIdentity || presentPaths == nil {
-		return 0, deny
+		!grant.StrongIdentity || presentPaths == nil ||
+		after > maxCommonOriginalJournalPathEntries || limit < 0 || limit > 16 {
+		return nil, 0, deny
 	}
 	stored, err := LoadRootGrant(configDir, grant.Server, grant.Account, grant.RootID)
 	if err != nil || !sameLocalIdentityRoot(stored, grant) {
-		return 0, deny
+		return nil, 0, deny
 	}
 	dir, err := commonUploadPlanJournalDir(configDir, grant)
 	if err != nil {
-		return 0, deny
+		return nil, 0, deny
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) > maxCommonOriginalJournalPathEntries {
-		return 0, deny
+		return nil, 0, deny
 	}
+	groups := make([][]localpushcommon.Plan, 0, limit)
 	var absent uint64
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return 0, err
+			return nil, 0, err
 		}
 		if !strings.HasPrefix(entry.Name(), "path-") {
 			// Private checkpoint, run-history, cooldown and legacy non-versioned
@@ -199,15 +202,15 @@ func CountAbsentVerifiedCommonUploadVersionedPaths(
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
 			(runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) ||
 			len(entry.Name()) != len("path-")+64 {
-			return 0, deny
+			return nil, 0, deny
 		}
 		slots, err := os.ReadDir(subdir)
 		if err != nil || len(slots) == 0 ||
 			len(slots) > maxCommonUploadVersionedPlansPerPath {
-			return 0, deny
+			return nil, 0, deny
 		}
 		if slots[0].IsDir() {
-			return 0, deny
+			return nil, 0, deny
 		}
 		_, first, err := readCommonUploadPlanSlot(
 			filepath.Join(subdir, slots[0].Name()), ownerSession)
@@ -217,18 +220,35 @@ func CountAbsentVerifiedCommonUploadVersionedPaths(
 			first.RootFingerprint != grant.Fingerprint ||
 			!validCommonUploadVersionedRelativePath(first.RelativePath) ||
 			entry.Name() != "path-"+commonUploadVersionedPathHash(first.RelativePath) {
-			return 0, deny
+			return nil, 0, deny
 		}
 		// Validate EVERY original record (including pending ones) before
 		// counting this path. No Server request or write occurs in this audit.
 		plans, err := ListVerifiedCommonUploadVersionedPlans(
 			configDir, grant, ownerSession, first.RelativePath)
 		if err != nil || len(plans) != len(slots) {
-			return 0, deny
+			return nil, 0, deny
 		}
 		if _, found := presentPaths[first.RelativePath]; !found {
 			absent++
+			if absent > after && len(groups) < limit {
+				groups = append(groups, plans)
+			}
 		}
 	}
-	return absent, nil
+	if after > absent {
+		return nil, 0, deny
+	}
+	return groups, absent, nil
+}
+
+// CountAbsentVerifiedCommonUploadVersionedPaths returns only the number of
+// authenticated journal paths not in this inventory, without SQL readback.
+func CountAbsentVerifiedCommonUploadVersionedPaths(
+	ctx context.Context, configDir string, grant RootGrant, ownerSession string,
+	presentPaths map[string]struct{},
+) (uint64, error) {
+	_, total, err := ListAbsentVerifiedCommonUploadVersionedPlanPage(
+		ctx, configDir, grant, ownerSession, presentPaths, 0, 0)
+	return total, err
 }

@@ -4122,13 +4122,16 @@ function registerIPCHandlers() {
   const localRecoveryReviewRequests = new Map<string, AbortController>()
   ipcMain.handle('agent:get-device-backup-local-recovery-review', (
     event, sourceID: unknown, afterFile: unknown, pageEpoch: unknown, requestID: unknown,
+    afterAbsent: unknown = 0,
   ) => {
     const key = `${event.sender.id}:${String(requestID)}`
     if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
       typeof afterFile !== 'number' || !Number.isSafeInteger(afterFile) ||
       afterFile < 0 || afterFile > 1000000 ||
+      typeof afterAbsent !== 'number' || !Number.isSafeInteger(afterAbsent) ||
+      afterAbsent < 0 || afterAbsent > 1000000 ||
       typeof pageEpoch !== 'string' ||
-      (afterFile === 0 ? pageEpoch !== '' : !/^[0-9a-f]{64}$/.test(pageEpoch)) ||
+      (afterFile === 0 && afterAbsent === 0 ? pageEpoch !== '' : !/^[0-9a-f]{64}$/.test(pageEpoch)) ||
       !validLocalPreviewID(requestID) || localRecoveryReviewRequests.has(key)) {
       return runAgentAction<AgentLocalBackupRecoveryReview>(async () => {
         throw new AgentIPCError('invalid_input', 0, 'Invalid private recovery review request.')
@@ -4143,7 +4146,7 @@ function registerIPCHandlers() {
         throw new AgentIPCError('aborted', 0, 'Local recovery review was cancelled.')
       }
       return requireAgentClient().localBoundBackupRecoveryReview(
-        sourceID, afterFile, pageEpoch, controller.signal)
+        sourceID, afterFile, pageEpoch, controller.signal, afterAbsent)
     }, false).finally(() => {
       if (localRecoveryReviewRequests.get(key) === controller) localRecoveryReviewRequests.delete(key)
       controller.abort()

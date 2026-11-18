@@ -218,6 +218,12 @@ export interface XDriveLocalBackupRecoveryReview {
   /** Local original Operation journal paths not present in this verified scan; NOT failed uploads. */
   absent_original_paths?: number
   journal_checked?: boolean
+  // Historical SQL receipt counts only; never current CAS proof or resumption authority.
+  absent_receipts_reviewed?: number
+  absent_receipts_committed?: number
+  absent_receipts_pending?: number
+  absent_receipts_has_more?: boolean
+  next_after_absent?: number
   next_after_file: number
   page_epoch: string
   has_more: boolean

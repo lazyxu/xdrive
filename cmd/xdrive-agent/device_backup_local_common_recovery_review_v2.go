@@ -82,11 +82,13 @@ func localCommonRecoveryReviewEpoch(
 // readbacks; this cannot Admit, Bind, Chunk, Finalize, delete or retry writes.
 func (c *agentController) CloudLocalBoundBackupCommonRecoveryReview(
 	ctx context.Context, sourceID, afterFile uint64, requestedEpoch string,
+	afterAbsent uint64,
 ) (localCommonRecoveryReviewPage, error) {
 	var zero localCommonRecoveryReviewPage
 	if c == nil || ctx == nil || ctx.Err() != nil || c.ctx == nil ||
 		c.ctx.Err() != nil || sourceID == 0 ||
 		afterFile > localCommonRecoveryReviewMaxAfter ||
+		afterAbsent > localCommonRecoveryReviewMaxAfter ||
 		!c.localFolderGrantMu.TryLock() {
 		return zero, errLocalBackupCommonBatchUnavailable
 	}
@@ -230,12 +232,47 @@ func (c *agentController) CloudLocalBoundBackupCommonRecoveryReview(
 	}
 	// An independent bounded, read-only check reveals old original paths
 	// absent from the current-file receipt review above.
-	absent, err := localpush.CountAbsentVerifiedCommonUploadVersionedPaths(
-		readCtx, dir, grant, account.SessionID, presentOriginalPaths)
-	if err != nil {
+	// A missing path's immutable ORIGINAL SQL receipt is checked
+	// separately in a bounded page. Old cross-revision pending results and
+	// unverifiable responses fail closed, never enabling replacement uploads.
+	absentGroups, absentTotal, err := localpush.ListAbsentVerifiedCommonUploadVersionedPlanPage(
+		readCtx, dir, grant, account.SessionID, presentOriginalPaths,
+		afterAbsent, localCommonRecoveryReviewPageSize)
+	if err != nil || (absentTotal > 0 && afterAbsent >= absentTotal) {
 		return zero, errLocalBackupCommonBatchUnavailable
 	}
-	page.AbsentPaths, page.JournalChecked = absent, true
+	page.AbsentPaths, page.JournalChecked = absentTotal, true
+	var receiptsChecked int
+	for _, plans := range absentGroups {
+		// A path may have thousands of revisions. This optional diagnostic
+		// deliberately reads at most 128 receipts in a single request.
+		if len(plans) == 0 || len(plans) > 32 || receiptsChecked+len(plans) > 128 {
+			return zero, errLocalBackupCommonBatchUnavailable
+		}
+		receiptsChecked += len(plans)
+		originals, readErr := localpushcommon.ReadVerifiedOriginalFileReceipts(
+			readCtx, api, proof, sourceID, source.Revision, plans)
+		if readErr != nil {
+			return zero, errLocalBackupCommonBatchUnavailable
+		}
+		category, valid := classifyLocalCommonReadOnlyOriginals(originals)
+		if !valid {
+			return zero, errLocalBackupCommonBatchUnavailable
+		}
+		switch category {
+		case "pending":
+			page.AbsentPending++
+		case "historical_committed":
+			page.AbsentCommitted++
+		default:
+			return zero, errLocalBackupCommonBatchUnavailable
+		}
+		page.AbsentReviewed++
+	}
+	if afterAbsent+page.AbsentReviewed < absentTotal {
+		page.AbsentHasMore = true
+		page.NextAfterAbsent = afterAbsent + page.AbsentReviewed
+	}
 	rulesNow, err := api.LocalBoundRules(readCtx, sourceID, proof)
 	if err != nil || rulesNow.SourceID != sourceID ||
 		rulesNow.Revision != source.Revision ||
@@ -259,7 +296,7 @@ func (c *agentController) CloudLocalBoundBackupCommonRecoveryReview(
 	}
 	epoch := localCommonRecoveryReviewEpoch(account.SessionID, grant,
 		source.Revision, *source.TargetNodeID, snapshot, checkpoint, rules.IgnoreRules)
-	if epoch == "" || (afterFile != 0 && !hmac.Equal(
+	if epoch == "" || ((afterFile != 0 || afterAbsent != 0) && !hmac.Equal(
 		[]byte(epoch), []byte(requestedEpoch))) {
 		return zero, errLocalBackupCommonBatchUnavailable
 	}
