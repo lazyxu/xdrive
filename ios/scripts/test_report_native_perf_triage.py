@@ -83,7 +83,7 @@ class NativePerfTriageTests(unittest.TestCase):
                 if route == "child.0" and trial == 2:
                     recorded.append("App animations complete notification not received, will attempt to continue.")
                 recorded.append(f"IOS_NATIVE_SUBPAGE_PERF_MS route={route} trial={trial} value={value}")
-        report = mod.summarize(root, child, "\\n".join(recorded))
+        report = mod.summarize(root, child, "\n".join(recorded))
         self.assertEqual(report["idle_timeout_samples"], 1)
         self.assertEqual(report["idle_timeout_affected_routes"], ["child.0"])
         flagged = [row for row in report["rows"] if row["kind"] == "child" and row["route"] == "child.0"]
@@ -94,7 +94,7 @@ class NativePerfTriageTests(unittest.TestCase):
         # No measured entry may be inferred from an unaudited Xcode idle wait.
         recorded[-1] = recorded[-1].replace("value=30", "value=31")
         with self.assertRaisesRegex(ValueError, "mismatched"):
-            mod.summarize(root, child, "\\n".join(recorded))
+            mod.summarize(root, child, "\n".join(recorded))
 
     def test_missing_original_xcodebuild_log_cannot_certify_idle_attribution(self):
         root, child = fixtures()

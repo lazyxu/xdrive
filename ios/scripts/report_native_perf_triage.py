@@ -38,8 +38,8 @@ def check(row, key, values, p95=None):
 # waiting for a native app to become animation-idle after 60 seconds.
 # It is not a user-facing first pixel, rendering or FPS measurement.
 IDLE_TIMEOUT = "App animations complete notification not received"
-ITERATION = re.compile(r"IOS_NATIVE_SUBPAGE_ITERATION route=([a-z0-9.-]+) index=(\\d+)")
-AX_TIMING = re.compile(r"IOS_NATIVE_SUBPAGE_PERF_MS route=([a-z0-9.-]+) trial=(\\d+) value=(\\d+)")
+ITERATION = re.compile(r"IOS_NATIVE_SUBPAGE_ITERATION route=([a-z0-9.-]+) index=(\d+)")
+AX_TIMING = re.compile(r"IOS_NATIVE_SUBPAGE_PERF_MS route=([a-z0-9.-]+) trial=(\d+) value=(\d+)")
 
 
 def correlate_xctest_idle(log, children):
