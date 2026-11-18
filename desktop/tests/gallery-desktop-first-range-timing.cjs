@@ -76,7 +76,7 @@ test('production Main traces actual offset-zero viewport Range without changing 
     'viewportRequests.run(event.sender, requestID',
     'requireAgentLifecycle().ensureRunning()',
     'requireAgentClient().mediaItemRange(',
-    "rangeOutcome = signal.aborted ? 'cancelled' : 'ok'",
+    "rangeOutcome = signal?.aborted ? 'cancelled' : 'ok'",
     'throw error',
   ]) assert.ok(handler.includes(key), 'missing actual owner-safe Gallery trace: ' + key)
   assert.ok(handler.includes('if (offset === 0)'), 'ignore non-first-page gallery range logs')
