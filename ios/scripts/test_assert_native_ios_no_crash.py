@@ -138,6 +138,49 @@ class NativeCrashAuditTests(unittest.TestCase):
         self.assertEqual(result['app_connection_lost_count'], 1)
         self.assertIn('xctest_app_disconnected_without_crash_report', result['scan_errors'])
 
+    def test_wrapped_native_xctest_app_disconnect_is_inconclusive_not_pass(self):
+        # Regression: real Xcode may wrap a long XCT error onto an indented
+        # next line. The old single-line scan silently reported zero losses.
+        log = self.make_log(
+            '/tmp/XDriveIOSFilesSessionRecoveryUITests.swift:401: error: '
+            '-[xDriveIOSNavigationUITests.XDriveIOSFilesSessionRecoveryUITests '
+            'testFilesViewerReturn] : Failed to get matching snapshots:\n'
+            '    Lost connection to the application (pid 44901).\n'
+        )
+        result = audit(self.marker, [self.sim], xcodebuild_log=log)
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['app_connection_lost_count'], 1)
+        self.assertIn('xctest_app_disconnected_without_crash_report', result['scan_errors'])
+
+    def test_two_native_xctest_disconnections_are_counted_once_each(self):
+        head = (
+            '/tmp/XDriveIOSFilesSessionRecoveryUITests.swift:401: error: '
+            '-[xDriveIOSNavigationUITests.XDriveIOSFilesSessionRecoveryUITests '
+            'testFilesViewerReturn] : '
+        )
+        log = self.make_log(
+            head + 'Failed to get matching snapshots:\n'
+            '    Lost connection to the application (pid 44901).\n'
+            + head + 'Lost connection to the application (pid 44902).\n'
+        )
+        result = audit(self.marker, [self.sim], xcodebuild_log=log)
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['app_connection_lost_count'], 2)
+
+    def test_unrelated_or_noncontinued_xctest_loss_words_do_not_fake_app_disconnect(self):
+        log = self.make_log(
+            '/tmp/Other.swift:1: error: -[OtherUITests.OtherTests testThing] :\n'
+            '    Lost connection to the application (pid 42).\n'
+            '/tmp/XDriveIOSFilesSessionRecoveryUITests.swift:402: error: '
+            '-[xDriveIOSNavigationUITests.XDriveIOSFilesSessionRecoveryUITests '
+            'testFilesViewerReturn] : XCTAssertTrue failed\n'
+            'Another test started\n'
+            '    Lost connection to the application (pid 50000).\n'
+        )
+        result = audit(self.marker, [self.sim], xcodebuild_log=log)
+        self.assertEqual(result['status'], 'pass')
+        self.assertEqual(result['app_connection_lost_count'], 0)
+
     def test_xctest_disconnection_with_real_app_ips_remains_confirmed_failure(self):
         log = self.make_log("/Users/runner/work/xdrive/xdrive/ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift:193: error: -[xDriveIOSNavigationUITests.XDriveIOSMapNavigationRuntimeUITests testZP0ExternallyRevokedPhotosRejectOldMapAndRecover] : Failed to get matching snapshots: Lost connection to the application (pid 51223). (Underlying Error: Couldn’t communicate with a helper application.)" + '\n')
         self.make_report('xDriveIOS-incident.ips', '{}')

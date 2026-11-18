@@ -22,10 +22,16 @@ MAX_HEADER_BYTES = 64 * 1024
 # Only real XCTest failure lines from the xDrive iOS app UI test target are
 # evidence of losing the target process. A generic "lost connection" warning
 # in unrelated system tests or a source code comment is not enough.
-APP_XCTEST_CONNECTION_LOST = re.compile(
-    r'(?m)^.*?\.swift:\d+:\s+error:\s+-\[xDriveIOSNavigationUITests\.[^\]\n]+\]'
-    r'\s*:\s*[^\n]*Lost connection to the application \(pid \d+\)'
+# Xcode sometimes wraps an XCTest app-disconnect diagnostic across lines.
+# Recognize only a real native XCTest error plus at most two indented
+# continuation lines. Standalone console strings do not prove a crash.
+APP_XCTEST_ERROR_START = re.compile(
+    r'(?m)^.*?\.swift:\d+:\s+error:\s+-\[xDriveIOSNavigationUITests\.[^\]\n]+\]\s*:'
 )
+APP_XCTEST_CONNECTION_LOST = re.compile(
+    r'Lost connection to the application \(pid \d+\)'
+)
+MAX_APP_ERROR_CONTINUATION_LINES = 2
 
 
 def _app_disconnections(log_path, since_ns, scan_errors):
@@ -42,7 +48,24 @@ def _app_disconnections(log_path, since_ns, scan_errors):
         # Read the existing local xcodebuild log; only metadata counts are
         # exported. This is not a replacement for checking original .ips files.
         with path.open('r', encoding='utf-8', errors='replace') as stream:
-            return sum(bool(APP_XCTEST_CONNECTION_LOST.search(line)) for line in stream)
+            count = 0
+            event = ''
+            continued = 0
+            for line in stream:
+                if APP_XCTEST_ERROR_START.search(line):
+                    event = line.rstrip('\r\n')
+                    continued = 0
+                elif event and continued < MAX_APP_ERROR_CONTINUATION_LINES and line[:1] in (' ', '\t'):
+                    event += ' ' + line.strip()
+                    continued += 1
+                else:
+                    event = ''
+                    continued = 0
+                if event and APP_XCTEST_CONNECTION_LOST.search(event):
+                    count += 1
+                    event = ''
+                    continued = 0
+            return count
     except OSError as exc:
         scan_errors.append('xcodebuild_log_' + type(exc).__name__)
         return 0
