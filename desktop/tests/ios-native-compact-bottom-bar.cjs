@@ -19,9 +19,29 @@ test('five stable native bottom positions own the same feature-local TabView sta
   assert.ok(at.every((i, n) => i >= 0 && (n === 0 || i > at[n - 1])));
   assert.match(ui, /TabView\(selection: \$tab\)/);
   assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)/);
-  assert.match(ui, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)\s*\{\s*if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
+  // A dedicated VStack row must reserve physical space for the global bar.
+  // A TabView.safeAreaInset previously let Files' own quick rail overlap it.
+  assert.match(ui, /return VStack\(spacing: 0\) \{/);
+  assert.match(ui, /TabView\(selection: \$tab\)/);
+  assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/);
+  assert.match(ui, /\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)\s*if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
+  assert.doesNotMatch(ui, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/);
   assert.match(ui, /nativeBottomBar\s*\}\s*\}\s*\.id\(ownerScopeKey\)/);
   assert.match(ui, /\.id\(ownerScopeKey\)/);
+});
+
+test('Launcher search stays above the changing scroll results and keeps keyboard focus', () => {
+  const start = ui.indexOf('private var launcher: some View {');
+  const end = ui.indexOf('private var dynamicPage', start);
+  assert.ok(start >= 0 && end > start);
+  const launcher = ui.slice(start, end);
+  const editor = launcher.indexOf('TextField("搜索功能", text: $launcherQuery)');
+  const scroll = launcher.indexOf('ScrollView {');
+  assert.ok(editor >= 0 && scroll > editor, 'Search editor must precede results ScrollView');
+  assert.match(launcher, /VStack\(alignment: \.leading, spacing: 0\)/);
+  assert.match(launcher, /\.autocorrectionDisabled\(\)/);
+  assert.match(launcher, /\.scrollDismissesKeyboard\(\.never\)/);
+  assert.match(launcher, /\.accessibilityIdentifier\("native-ios-launcher-scroll"\)/);
 });
 
 test('landscape is compact horizontal icon-and-label and target is at least 44pt', () => {

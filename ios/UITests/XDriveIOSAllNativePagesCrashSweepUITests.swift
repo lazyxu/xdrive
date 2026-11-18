@@ -724,7 +724,13 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 15))
         print("IOS_NATIVE_NAV_TAP_START route=native-ios-launcher-search")
         search.tap()
+        // A keyboard that never appeared is an interaction failure, not
+        // evidence that SwiftUI discarded the text. Keep this strict.
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 12),
+                      "Launcher search did not retain native keyboard focus")
         search.typeText("no-route-123")
+        let observed = search.value as? String ?? "<no text value>"
+        print("IOS_NATIVE_LAUNCHER_SEARCH_TYPED value=\(observed)")
         // Assert the full asynchronous SwiftUI value rather than an
         // intermediate keyboard update. Truncation still fails the test.
         let expected = XCTNSPredicateExpectation(

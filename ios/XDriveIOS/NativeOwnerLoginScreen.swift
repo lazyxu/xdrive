@@ -212,6 +212,13 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 backup.cancel()
             }
         }
+        // SwiftUI can mount the login/Dashboard branch before the
+        // asynchronous restoreFinished flip becomes visible. Re-arm through
+        // the existing scene/Owner gate rather than leaving startup stuck at
+        // mountingWorkspace after an ordinary cold launch.
+        .onChange(of: restoreFinished) { finished in
+            if finished { armReadinessAfterMount() }
+        }
         .onChange(of: model.owner) { _ in
             backup.cancel()
             backup.refresh(owner: model.owner)

@@ -115,10 +115,18 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
                                "Files view graph terminated at \(round):\(section)")
             }
             XCUIDevice.shared.press(.home)
+            // State 3 is a live background process, not a crash. Do not
+            // conflate asynchronous foreground activation with termination;
+            // assert survival BEFORE activate() can relaunch a dead process.
+            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
+                          "Files process exited while backgrounded on round \(round)")
             app.activate()
-            XCTAssertEqual(app.state, .runningForeground,
-                           "Files foreground rebuild exited on round \(round)")
-            XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                          "Files failed to restore foreground on round \(round)")
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+                .waitForExistence(timeout: 15),
+                "Files Browse failed to repaint after foreground on round \(round)")
+            XCTAssertEqual(app.state, .runningForeground)
             select("native-ios-tab-gallery", in: app)
             select("native-ios-tab-files", in: app)
         }

@@ -912,19 +912,20 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var launcher: some View {
-        ScrollView {
-            // Launcher has only a small bounded set of destinations. Keep its
-            // focused TextField eagerly mounted while each keystroke filters
-            // the buttons; a lazy stack can recycle the editor during keyboard
-            // inset/scroll changes and truncate the input mid-typing.
-            VStack(alignment: .leading, spacing: 18) {
-                TextField("搜索功能", text: $launcherQuery)
-                    .textFieldStyle(.roundedBorder)
-                    // Search is a literal route filter, not prose entry:
-                    // iOS keyboard replacement must never alter typed routes.
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("native-ios-launcher-search")
+        VStack(alignment: .leading, spacing: 0) {
+            // The results grid changes height with every keystroke. Keep
+            // the editor OUTSIDE that ScrollView so the keyboard's focused
+            // element cannot be recycled when the last match disappears.
+            TextField("搜索功能", text: $launcherQuery)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("native-ios-launcher-search")
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
                 if !recentDynamic.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("最近使用").font(.headline)
@@ -981,11 +982,13 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
                 Text("服务器管理员入口只在真实验证 Server 管理员角色后开放；当前原生会话未建立管理权限。")
                     .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(14)
             }
-            .padding(14)
+            .scrollDismissesKeyboard(.never)
+            // Explicit host prevents tests from scrolling a retained Gallery.
+            .accessibilityIdentifier("native-ios-launcher-scroll")
         }
-        // Explicit host prevents UI tests from scrolling an offscreen retained Gallery.
-        .accessibilityIdentifier("native-ios-launcher-scroll")
     }
 
     @ViewBuilder
