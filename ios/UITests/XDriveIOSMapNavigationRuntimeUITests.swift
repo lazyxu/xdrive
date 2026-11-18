@@ -841,6 +841,46 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    /// The actual PhotoKit photo information route must expose a writable
+    /// location editor only for the currently authorized local asset. Cancel
+    /// is deliberately non-mutating; no synthetic PHAsset/Owner fixture.
+    func testLocalMapViewerAdjustLocationOpensAndCancelsWithoutChangingPhoto() {
+        let app = openLocalMap()
+        XCTAssertNotNil(verifiedLocalMapSummary(in: app, timeout: 90))
+        let marker = app.descendants(matching: .any)
+            .matching(NSPredicate(
+                format: "label CONTAINS %@", "已扫描图库区域有2张带定位照片"))
+            .firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 30),
+                      "Real imported two-photo GPS cell must be visible")
+        marker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let tile = element("native-ios-map-photo-wall-tile", in: app)
+        XCTAssertTrue(tile.waitForExistence(timeout: 45))
+        tile.tap()
+        let actions = element("native-ios-local-viewer-photo-actions", in: app)
+        XCTAssertTrue(actions.waitForExistence(timeout: 30) && actions.isHittable)
+        actions.tap()
+        let adjust = app.buttons["调整照片位置"].firstMatch
+        XCTAssertTrue(adjust.waitForExistence(timeout: 15),
+                      "Current local Viewer must expose native adjust-location action")
+        adjust.tap()
+        let query = element("native-ios-local-location-query", in: app)
+        XCTAssertTrue(query.waitForExistence(timeout: 20),
+                      "Actual MapKit location search sheet was not presented")
+        XCTAssertTrue(element("native-ios-local-location-confirm", in: app).exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "native-photos-location-editor-from-real-gps-photo"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        let cancel = app.buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.exists && cancel.isHittable)
+        cancel.tap()
+        XCTAssertTrue(element("native-ios-local-viewer-back", in: app)
+            .waitForExistence(timeout: 20),
+            "Cancelling location adjustment must restore the original Viewer")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     /// Real Simulator screenshot evidence for the shared presentation, using
     /// the SAME imported GPS fixture as the existing Owner-free MapKit journey.
     /// Attachments are evidence to compare, not fabricated pixel-perfect pass.
