@@ -1,4 +1,5 @@
 import Combine
+import CoreLocation
 import MapKit
 import Photos
 import SwiftUI
@@ -810,6 +811,53 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @State private var visibleWindowRevision = UUID()
     @State private var windowNumber = 0
     @State private var error: String?
+    // A single, currently authorized PhotoKit GPS representative is only
+    // used for a temporary display label. Reverse geocoding never changes
+    // the Cell member set, authorizes Viewer access or stores private GPS.
+    @State private var placeName: String?
+    @State private var placeNameTask: Task<Void, Never>?
+    @State private var placeGeocoder = CLGeocoder()
+
+    private func resolvePlaceName() {
+        guard !isNearbyExpansion, album == nil,
+              selection.cells.count == 1,
+              let cell = selection.cells.first,
+              placeName == nil, placeNameTask == nil,
+              phase == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+              XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                  latitude: cell.latitude, longitude: cell.longitude)
+        else { return }
+        let ticket = generation
+        let geocoder = placeGeocoder
+        placeNameTask = Task { @MainActor in
+            defer { if generation == ticket { placeNameTask = nil } }
+            do {
+                let places = try await geocoder.reverseGeocodeLocation(
+                    CLLocation(latitude: cell.latitude, longitude: cell.longitude)
+                )
+                guard !Task.isCancelled, generation == ticket, phase == .active,
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      let place = places.first else { return }
+                let components = [place.locality, place.subLocality,
+                                  place.administrativeArea]
+                    .compactMap { $0 }.filter { !$0.isEmpty }
+                if !components.isEmpty {
+                    placeName = components.prefix(2).joined(separator: " · ")
+                }
+            } catch is CancellationError {
+            } catch {
+                // A failed geocoder must not block the real location album.
+            }
+        }
+    }
+
+    private func cancelPlaceName() {
+        placeNameTask?.cancel()
+        placeNameTask = nil
+        placeGeocoder.cancelGeocode()
+        placeName = nil
+    }
 
     private struct WindowRead {
         let items: [XDrivePhotoKitScanCandidate]
@@ -902,7 +950,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 XDriveIOSNativePhotoMapPlaceHeader(
                     title: isNearbyExpansion ? "附近照片" :
                         (album?.name ?? (selection.cells.count > 1
-                            ? "多个地点的照片" : "此地点的照片")),
+                            ? "多个地点的照片" : (placeName ?? "此地点的照片"))),
                     count: isNearbyExpansion ? nil : selectedPhotoCount,
                     detail: isNearbyExpansion ? "按位置浏览" :
                         (selection.cells.count > 1
@@ -1036,12 +1084,14 @@ private struct XDriveIOSMapSpatialAlbum: View {
             }
             .onAppear {
                 changes.start()
+                resolvePlaceName()
                 if !started {
                     started = true
                     loadInitial()
                 }
             }
             .onChange(of: changes.revision) { _ in
+                cancelPlaceName()
                 retire()
                 viewerReturnID = nil
                 viewerItems = []
@@ -1053,6 +1103,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
             }
             .onChange(of: phase) { state in
                 if state != .active {
+                    cancelPlaceName()
                     retire()
                     viewerReturnID = nil
                     viewerItems = []
@@ -1068,6 +1119,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 XDriveIOSMapRealPerformanceProbe.shared.endFrameWindow("place_wall_scroll")
 #endif
                 if viewer == nil {
+                    cancelPlaceName()
                     retire()
                     viewerReturnID = nil
                     viewerItems = []
