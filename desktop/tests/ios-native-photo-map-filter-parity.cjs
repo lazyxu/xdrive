@@ -19,7 +19,7 @@ test('local Gallery filter travels through both native map entry paths', () => {
   assert.match(maps, /var mediaFilter: XDriveIOSNativePhotoMediaFilter = \.all/)
   const route = maps.slice(maps.indexOf('struct XDriveIOSNativePhotoMapsScreen'),
     maps.indexOf('private final class XDriveIOSOwnerPlaceAnnotation'))
-  assert.match(route, /case \.local:[\s\S]*?onFocusChange: onFocusChange,\s*mapSource: \$source, canSelectCloudMap: cloudAllowed,\s*mediaFilter: mediaFilter/)
+  assert.match(route, /case \.local:[\s\S]*?onFocusChange: onFocusChange,\s*mapSource: animatedSource, canSelectCloudMap: cloudAllowed,\s*mediaFilter: mediaFilter/)
   assert.doesNotMatch(route.slice(route.indexOf('case .cloud:')), /XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?mediaFilter:/)
 })
 
