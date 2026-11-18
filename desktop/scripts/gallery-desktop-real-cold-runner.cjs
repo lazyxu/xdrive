@@ -179,6 +179,11 @@ async function main() {
         assert(result.logicalItems === 100000 && result.physicalNodes === 115000 &&
           result.renderer.decodedImages >= 12 &&
           result.renderer.mountedTiles < 1000, 'real Desktop 100k result incorrect')
+        assert(Array.isArray(result.firstRangeTimings) &&
+          result.firstRangeTimings.some(row => row.result === 'ok' &&
+            Number.isFinite(row.agent_ready_ms) &&
+            Number.isFinite(row.http_ms) && row.http_ms >= 0),
+          'real Desktop did not observe a successful Agent/HTTP first Range trace')
         if (process.env.XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE === '1') {
           const probe = result.sourceExactMediaProgress
           assert(probe && probe.sourceCount === 100000 &&
@@ -240,6 +245,12 @@ async function main() {
       progressPairCount: probeEnabled ? samples.reduce(
         (sum, row) => sum + row.sourceExactMediaProgress.pairs.length, 0) : 0,
       medianClickToFirstDecodedPaintMs: median(samples.map(x => x.renderer.firstImageTwoRAFMs)),
+      medianFirstRangeAgentReadyMs: median(samples.map(x =>
+        x.firstRangeTimings.find(row => row.result === 'ok').agent_ready_ms)),
+      medianFirstRangeHttpMs: median(samples.map(x =>
+        x.firstRangeTimings.find(row => row.result === 'ok').http_ms)),
+      medianFirstRangeTotalMs: median(samples.map(x =>
+        x.firstRangeTimings.find(row => row.result === 'ok').total_ms)),
       medianClickToFirst12DecodedMs: median(samples.map(x => x.renderer.first12DecodedTwoRAFMs)),
       worstLongTaskMs: Math.max(...samples.map(x => x.renderer.longestLongTaskMs)),
       scope: 'Real Electron Desktop App (Main/preload/Renderer) to Agent IPC, Gin/PostgreSQL/CAS and HTMLImageElement.decode. Browser activation, not complete process cold launch.',
