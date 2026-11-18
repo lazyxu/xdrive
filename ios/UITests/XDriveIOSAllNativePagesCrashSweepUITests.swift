@@ -187,7 +187,8 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
         if id == "native-ios-files-open-favorites" { ensureFavoritesExpanded(app) }
         if id == "native-ios-files-home-manage-tags" { ensureTagsExpanded(app) }
-        if id == "native-ios-files-home-edit-inline" { ensureMoreExpanded(app) }
+        // The editor now has its own direct Home action; do not navigate
+        // through the old collapsed More AX wrapper to reach it.
         let target = element(id, app)
         for _ in 0..<10 {
             if target.exists && target.isHittable { break }

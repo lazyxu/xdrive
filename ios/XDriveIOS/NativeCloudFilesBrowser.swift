@@ -1740,18 +1740,24 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .accessibilityIdentifier("native-ios-files-home-tags-disclosure")
                     .accessibilityValue(homeTagsExpanded ? "已展开" : "已折叠")
             }
+            // Real direct Home editing: a collapsed DisclosureGroup wrapper
+            // previously consumed the actual Button AX value after the tap.
+            // Keep one visible 44pt action and its explicit VoiceOver state.
+            Button { isHomeEditing.toggle() } label: {
+                Label(isHomeEditing ? "完成首页整理" : "直接编辑浏览首页",
+                      systemImage: isHomeEditing ? "checkmark" : "pencil")
+                    .frame(minHeight: XDriveIOSNativeFilesUIStyle.tapHeight)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(isHomeEditing ? "完成首页整理" : "直接编辑浏览首页")
+            .accessibilityValue(isHomeEditing ? "已开启" : "已关闭")
+            .accessibilityIdentifier("native-ios-files-home-edit-inline")
             DisclosureGroup(isExpanded: $homeMoreExpanded) {
                 if isHomeEditing {
                     Label("可直接调整固定文件夹顺序并取消固定",
                           systemImage: "hand.draw")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                Button { isHomeEditing.toggle() } label: {
-                    Label(isHomeEditing ? "完成首页整理" : "直接编辑浏览首页",
-                          systemImage: isHomeEditing ? "checkmark" : "pencil")
-                }
-                .accessibilityIdentifier("native-ios-files-home-edit-inline")
-                .accessibilityValue(isHomeEditing ? "已开启" : "已关闭")
                 Button { presentOrganizeHome() } label: {
                     Label("整理浏览首页", systemImage: "square.grid.2x2")
                 }

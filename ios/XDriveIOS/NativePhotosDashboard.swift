@@ -213,7 +213,11 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     var body: some View {
         let expectedRouteOwnerKey = ownerScopeKey
-        return TabView(selection: $tab) {
+        return VStack(spacing: 0) {
+            // Allocate REAL layout space for exactly one bottom nav bar.
+            // The prior TabView.safeAreaInset left the Files quick rail at
+            // y=852 while the app nav began at y=763 in real Simulator tests.
+            TabView(selection: $tab) {
             NavigationStack {
                 launcher
                     .navigationTitle("全部")
@@ -269,12 +273,11 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tabItem { Label("我的", systemImage: "person.crop.circle") }
             .tag(XDriveIOSNativeBottomTab.mine)
         }
-        // SwiftUI's TabView keeps native feature-local NavigationStacks, but
-        // the system tab strip is hidden in favor of an explicit 5-slot bar.
-        // This guarantees a compact horizontal label in iPhone landscape and
-        // gives the dynamic slot a real long-press/context-menu surface.
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // Each selected feature retains its own NavigationStack and
+            // search state. The system tab bar stays hidden; the one native
+            // five-slot bar is a sibling BELOW TabView, never an overlay.
+            .toolbar(.hidden, for: .tabBar)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
                 tab: tab.rawValue,
                 gallerySource: gallerySource.rawValue,

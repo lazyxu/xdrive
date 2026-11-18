@@ -187,6 +187,23 @@ test('P0: Browse Viewer returns to the exact verified visible row, never stale O
   assert.match(browser, /onChange\(of: login\.owner\)[\s\S]*?viewerReturnViewport = nil/)
 })
 
+test('P0: one physically reserved native bottom bar and real direct Files Home editing', () => {
+  const shell = source('ios/XDriveIOS/NativePhotosDashboard.swift')
+  const xctest = source('ios/UITests/XDriveIOSNavigationRuntimeUITests.swift')
+  const crash = source('ios/UITests/XDriveIOSAllNativePagesCrashSweepUITests.swift')
+  assert.match(shell, /return VStack\(spacing: 0\) \{/)
+  assert.match(shell, /TabView\(selection: \$tab\)/)
+  assert.match(shell, /\.toolbar\(\.hidden, for: \.tabBar\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/)
+  assert.doesNotMatch(shell, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/)
+  assert.match(xctest, /testFilesQuickRailAndFiveTabBarDoNotOverlapInPortraitOrLandscape/)
+  assert.match(browser, /Button \{ isHomeEditing\.toggle\(\) \} label: \{/)
+  assert.match(browser, /\.accessibilityElement\(children: \.ignore\)\s*\.accessibilityLabel\(isHomeEditing \?/)
+  assert.match(browser, /\.accessibilityValue\(isHomeEditing \? "已开启" : "已关闭"\)/)
+  assert.match(crash, /Files Home editing did not enter its accessible state/)
+  assert.match(shell, /\.textInputAutocapitalization\(\.never\)/)
+  assert.match(shell, /\.autocorrectionDisabled\(\)/)
+})
+
 test('P0: the prior stack-overflow safety fix and native Viewer remain intact', () => {
   assert.match(browser, /private var filesModalsPrimary: some View/)
   assert.match(browser, /AnyView\(filesModalsSecondary\)/)
