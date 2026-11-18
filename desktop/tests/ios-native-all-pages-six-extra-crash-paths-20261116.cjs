@@ -228,9 +228,11 @@ test("iOS 26.5 Files fatal-crash repro is a mandatory, exact-source native Simul
     "testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit",
     "testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner",
     "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
+    "testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage",
+    "testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope",
   ];
   assert.equal((block.match(/-only-testing:xDriveIOSNavigationUITests\//g)||[]).length,
-    selected.length, "all ten targeted real iOS 26 XCTest journeys stay mandatory");
+    selected.length, "all twelve targeted real iOS 26 XCTest journeys stay mandatory");
   for (const name of selected) {
     assert.ok(block.includes("/"+name+'"'), "iOS 26 native crash route missing: " + name);
   }

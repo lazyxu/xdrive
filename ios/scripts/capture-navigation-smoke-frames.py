@@ -293,6 +293,13 @@ MINIMAL_TARGETS.update({
     "testLauncherPhotoPagesFilesColdRelaunchSurviveNoCrash",
     "testLauncherToolPagesFilesColdRelaunchSurviveNoCrash",
 })
+# Real iOS 26.5 Files History and Owner cold-relaunch regressions
+# recovered from #4298. Capture genuine tap-adjacent Simulator frames;
+# do not mislabel these stills as H.264 or signed-device FPS evidence.
+MINIMAL_TARGETS.update({
+    "testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage",
+    "testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope",
+})
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
 TARGETS.update({

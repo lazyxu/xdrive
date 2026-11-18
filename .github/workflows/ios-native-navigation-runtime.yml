@@ -333,7 +333,13 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner")
-              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesSixSubpageUITests/testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay") ;;
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesSixSubpageUITests/testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay")
+              # Two real subpage lifecycle journeys recovered from #4298:
+              # repeated History/foreground and signed-out Owner cold relaunch.
+              # Both must execute under the iOS 26.5 Simulator, not only
+              # compile or pass a source-string contract.
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests/testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests/testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope") ;;
             *) echo "Unsupported UI suite" >&2; exit 2 ;;
           esac
           touch "$RUNNER_TEMP/native-navigation-results/xcodebuild-start.marker"
