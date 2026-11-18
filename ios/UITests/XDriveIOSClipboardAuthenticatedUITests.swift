@@ -54,14 +54,35 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         let secret = app.secureTextFields.firstMatch
         fill(secret, with: "fixture-password")
 
-        // Tests must not store a refresh credential in device Keychain.
-        let keep = app.switches["保持登录"].firstMatch
-        for _ in 0..<6 {
-            if keep.exists && keep.isHittable { break }
-            app.scrollViews.firstMatch.swipeUp()
+        // Compact native Login deliberately collapses credential preferences.
+        // Expand the real user-facing section instead of assuming a switch
+        // exists in the default form or injecting an artificial Owner state.
+        let preferences = node("native-ios-login-preferences", in: app)
+        let form = app.scrollViews.firstMatch
+        for _ in 0..<8 {
+            if preferences.exists && preferences.isHittable { break }
+            if form.exists { form.swipeUp() }
         }
-        XCTAssertTrue(keep.exists && keep.isHittable)
+        XCTAssertTrue(preferences.exists && preferences.isHittable,
+                      "Real Login Preferences must remain accessible")
+        preferences.tap()
+
+        // Never retain the fixture's credential in the device Keychain.
+        let keep = node("native-ios-keep-signed-in", in: app)
+        let remember = node("native-ios-remember-password", in: app)
+        for _ in 0..<6 {
+            if keep.exists && keep.isHittable &&
+                remember.exists && remember.isHittable { break }
+            if form.exists { form.swipeUp() }
+        }
+        XCTAssertTrue(keep.exists && keep.isHittable,
+                      "Keep Signed In is not reachable in expanded Login Preferences")
+        XCTAssertTrue(remember.exists && remember.isHittable,
+                      "Remember Password is not reachable in expanded Login Preferences")
         if (keep.value as? String) == "1" { keep.tap() }
+        if (remember.value as? String) == "1" { remember.tap() }
+        XCTAssertEqual(keep.value as? String, "0")
+        XCTAssertEqual(remember.value as? String, "0")
 
         let submit = node("native-ios-login-submit", in: app)
         XCTAssertTrue(submit.waitForExistence(timeout: 15))
