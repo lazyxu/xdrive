@@ -97,9 +97,15 @@ test('real Simulator journeys use visible Photos or xDrive actions and keep star
   assert.match(nav, /let menu = found\("native-ios-gallery-more-menu", in: app\)/);
   assert.match(nav, /"native-ios-tab-files": "文件"/);
   assert.match(nav, /"native-ios-gallery-source-albums": "native-ios-photos-collections-tab"/);
-  for (const suite of [nav, b9, files, frames]) {
+  for (const suite of [nav, files, frames]) {
     assert.match(suite, /XDriveIOSNativePhotosTestNavigator\.tap\(/);
   }
+  // The b9 workflow compiles this test file against the archived b9 source.
+  // That old published source does not contain the candidate-only navigator.
+  // Keep a self-contained visible five-slot/More menu route in this suite.
+  assert.doesNotMatch(b9, /XDriveIOSNativePhotosTestNavigator\.tap\(/);
+  assert.match(b9, /app\.buttons\.matching\(identifier: "native-ios-five-slot-bar"\)/);
+  assert.match(b9, /app\.buttons\.matching\(identifier: "native-ios-gallery-more-menu"\)/);
   assert.match(login, /\.onChange\(of: restoreFinished\) \{ finished in/);
   assert.match(login, /\.onChange\(of: workspaceVisible\) \{ visible in/);
   assert.match(b9, /XCTNSPredicateExpectation\([\s\S]*?"ready"/);
