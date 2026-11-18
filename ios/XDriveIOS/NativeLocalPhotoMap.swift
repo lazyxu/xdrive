@@ -1954,8 +1954,13 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         album != nil ? "native-ios-album-map-dismiss" : "native-ios-map-dismiss")
                 }
             }
-            // Locate and basemap controls are in the map's floating group.
-            ToolbarItem(placement: .navigationBarTrailing) {
+            // The primary Photos map toolbar retains only the native Close.
+        }
+        // xDrive-only date/source/retry actions remain discoverable but are
+        // secondary canvas chrome, not a third top-right system control.
+        // Keep the same accessible menu paths used by runtime navigation.
+        .overlay(alignment: .bottomLeading) {
+            if authorization == .authorized || mapSource != nil {
                 Menu {
                     if let mapSource {
                         // SwiftUI can flatten a Picker directly within an
@@ -2066,9 +2071,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     // unrelated five-slot bar over the system Photos layout.
                 } label: {
                     Label("地图操作", systemImage: "ellipsis.circle")
-                        .frame(minWidth: 44, minHeight: 44)
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
+                        .background(.regularMaterial, in: Circle())
+                        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
                 }
                 .accessibilityIdentifier("native-ios-local-map-actions")
+                .padding(.leading, 12)
+                .padding(.bottom, 62)
             }
         }
         .sheet(isPresented: $datePickerOpen) {
