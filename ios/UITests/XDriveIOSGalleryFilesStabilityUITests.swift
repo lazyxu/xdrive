@@ -156,6 +156,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         XCTAssertTrue(photosBar.waitForExistence(timeout: 15))
         XCTAssertFalse(target("native-ios-five-slot-bar", in: app).exists,
                        "iOS Photos and xDrive navigation must not stack")
+        XCTAssertFalse(app.tabBars.firstMatch.exists,
+                       "Native TabView must not overlay the Photos floating bar")
         let library = XCTAttachment(screenshot: app.screenshot())
         library.name = "native-photos-26-library-initial"
         library.lifetime = .keepAlways

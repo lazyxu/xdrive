@@ -613,6 +613,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             NavigationStack {
                 launcher
                     .navigationTitle("全部")
+                    .toolbar(.hidden, for: .tabBar)
             }
             .tabItem { Label("全部", systemImage: "square.grid.2x2") }
             .tag(XDriveIOSNativeBottomTab.launcher)
@@ -629,6 +630,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                             }
                         }
                     }
+                    .toolbar(.hidden, for: .tabBar)
             }
             .tabItem {
                 Label(dynamicSlotTitle,
@@ -651,6 +653,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                             galleryMoreMenu
                         }
                     }
+                    .toolbar(.hidden, for: .tabBar)
             }
             .tabItem { Label("图库", systemImage: "photo.on.rectangle") }
             .tag(XDriveIOSNativeBottomTab.gallery)
@@ -658,6 +661,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             NavigationStack {
                 files
                     .navigationTitle("文件")
+                    .toolbar(.hidden, for: .tabBar)
             }
             .tabItem { Label("文件", systemImage: "folder") }
             .tag(XDriveIOSNativeBottomTab.files)
@@ -665,14 +669,17 @@ struct XDriveIOSNativePhotosDashboard: View {
             NavigationStack {
                 mine
                     .navigationTitle("我的")
+                    .toolbar(.hidden, for: .tabBar)
             }
             .tabItem { Label("我的", systemImage: "person.crop.circle") }
             .tag(XDriveIOSNativeBottomTab.mine)
         }
-        // SwiftUI's TabView keeps native feature-local NavigationStacks, but
-        // the system tab strip is hidden in favor of an explicit 5-slot bar.
-        // This guarantees a compact horizontal label in iPhone landscape and
-        // gives the dynamic slot a real long-press/context-menu surface.
+        // iOS 18 SwiftUI reads tabBar visibility from the *selected tab's
+        // content*, not reliably from the TabView wrapper alone. Keep this
+        // additional container preference for older iOS, with the five
+        // content-level hidden modifiers above as the effective source.
+        // The only interactive bars are nativePhotosBottomBar (in Gallery)
+        // and nativeBottomBar (in other modules); never stack system tabs.
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
