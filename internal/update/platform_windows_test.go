@@ -4,9 +4,9 @@ package update
 
 import (
 	"crypto/sha256"
-	"os/exec"
 	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,21 +24,21 @@ func TestHiddenWindowsUpgradeCommand(t *testing.T) {
 }
 
 func TestHiddenWindowsUpgradeCommandRunsWithoutConsole(t *testing.T) {
-    // Check the real Windows process, not only the startup flags. This tests
-    // Go Agent -> Windows PowerShell as launched by the update transaction.
-    script := `
+	// Check the real Windows process, not only the startup flags. This tests
+	// Go Agent -> Windows PowerShell as launched by the update transaction.
+	script := `
 $ErrorActionPreference = "Stop"
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class XDriveConsoleProbe {
-    [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+	[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
 }
 '@
 if ([XDriveConsoleProbe]::GetConsoleWindow() -ne [IntPtr]::Zero) {
-    throw "Windows updater PowerShell acquired a console"
+	throw "Windows updater PowerShell acquired a console"
 }
-`
+	`
     path := filepath.Join(t.TempDir(), "console-probe.ps1")
     if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
         t.Fatal(err)
