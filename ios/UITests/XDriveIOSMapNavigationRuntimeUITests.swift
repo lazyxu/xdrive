@@ -1112,6 +1112,23 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(element("native-ios-photos-bottom-bar", in: app)
             .waitForExistence(timeout: 15))
         XCTAssertTrue(element("native-ios-gallery-more-menu", in: app).exists)
+        // This real test starts with NO Server Owner, but imports genuine
+        // EXIF-GPS PhotoKit photos and has a verified Full Access map.
+        // Previously the "unified" route rendered zero pages because its
+        // Photo wall required login.owner, leaving 95 solid-white 30Hz
+        // movie frames after Map Done despite all Viewer cycles passing.
+        let photo = app.buttons.matching(
+            NSPredicate(format: "label == %@", "查看照片")
+        ).firstMatch
+        if !photo.waitForExistence(timeout: 35) {
+            diagnose("Signed-out Photos Library blank after MapKit Done", in: app)
+        }
+        XCTAssertTrue(photo.exists && photo.isHittable,
+                      "Native Library must show real authorized local PhotoKit tiles without a cloud Owner")
+        let afterDone = XCTAttachment(screenshot: app.screenshot())
+        afterDone.name = "p0-map-done-signed-out-photokit-library-not-blank"
+        afterDone.lifetime = .keepAlways
+        add(afterDone)
         XCTAssertEqual(app.state, .runningForeground)
     }
 

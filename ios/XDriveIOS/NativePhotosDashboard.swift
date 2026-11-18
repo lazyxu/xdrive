@@ -945,7 +945,19 @@ struct XDriveIOSNativePhotosDashboard: View {
             return
         }
         if gallerySource != destination { openGallery(destination) }
-        if search { requestUnifiedPhotoSearch = true }
+        if search { openPhotoSearchForCurrentScope() }
+    }
+
+    private func openPhotoSearchForCurrentScope() {
+        // The unified editor needs a verified Owner. Signed-out photos use
+        // the existing native PhotoKit search (no cloud read or synthetic
+        // account). This also serves a deferred modal-map search exit.
+        if login.owner == nil {
+            requestUnifiedPhotoSearch = false
+            showingLocalPhotoSearch = true
+        } else {
+            requestUnifiedPhotoSearch = true
+        }
     }
 
     private var nativePhotosBottomBar: some View {
@@ -1220,7 +1232,20 @@ struct XDriveIOSNativePhotosDashboard: View {
         return Group {
             switch gallerySource {
                 case .unified:
-                    XDriveIOSNativeUnifiedPhotoGallery(
+                    if login.owner == nil {
+                        // Local PhotoKit remains usable without a cloud Owner.
+                        // The Owner-scoped unified wall admits NO pages while
+                        // signed out; rendering it here left a pure-white
+                        // Gallery after closing the genuine local GPS map.
+                        // Reuse the existing bounded local PhotoKit wall,
+                        // not a new reader or a forged Owner credential.
+                        XDriveIOSNativeLocalPhotoTimelineContainer(
+                            savedOffset: $localGalleryPageOffset,
+                            mediaFilter: $localGalleryMediaFilter,
+                            onMapDateScope: { galleryMapCaptureRange = $0 }
+                        )
+                    } else {
+                        XDriveIOSNativeUnifiedPhotoGallery(
                         login: login, openBackup: { openBackup(.overview) },
                         requestSearch: $requestUnifiedPhotoSearch,
                         wallTimeScale: $galleryTimeScale,
@@ -1249,7 +1274,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                             mapSource = .local
                             presentingUnifiedMap = true
                         }
-                    )
+                        )
+                    }
                 case .local:
                     XDriveIOSNativeLocalPhotoTimelineContainer(
                         savedOffset: $localGalleryPageOffset,
@@ -1323,7 +1349,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             guard let destination, requestScope == ownerScopeKey,
                   phase == .active, tab == .gallery else { return }
             if gallerySource != destination { openGallery(destination) }
-            if wantedSearch { requestUnifiedPhotoSearch = true }
+            if wantedSearch { openPhotoSearchForCurrentScope() }
         }) {
             // This is the SAME native local/cloud MapKit component used by
             // Gallery's normal Map source, not a second map or media reader.
@@ -1686,6 +1712,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         galleryFocused = false
         galleryTimelineExpanded = false
         galleryTimeScale = .all
+        requestUnifiedPhotoSearch = false
         mapNavigationExplicitlyShown = false
         mapOpenedFromCollections = false
         mapReturnGallerySource = nil
