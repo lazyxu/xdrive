@@ -450,23 +450,36 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     // Never swipe a retained Gallery List or assume an offscreen Lazy row
     // proves Home disappeared after a child-view return.
     private func filesHomeEntry(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
-        let list = find("native-ios-files-home-list", in: app)
-        XCTAssertTrue(list.waitForExistence(timeout: 12),
-                      "Native Files Home List is not mounted")
-        let button = app.buttons.matching(identifier: identifier).firstMatch
-        for _ in 0..<8 {
-            if button.exists && button.isHittable { break }
+        // The Files-specific quick rail may restore Recent/Favorites. Always
+        // open the real Browse route before seeking controls inside its List.
+        let browse = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-section-browse").firstMatch
+        XCTAssertTrue(browse.waitForExistence(timeout: 15), "Files Browse rail is missing")
+        if (browse.value as? String) != "已选择" {
+            XCTAssertTrue(browse.isHittable, "Files Browse rail is obstructed")
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-section-browse")
+            browse.tap()
+        }
+        let list = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-home-list").firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 15),
+                      "Files Browse Home list did not mount")
+        let button = app.descendants(matching: .any)
+            .matching(identifier: identifier).firstMatch
+        // Native List virtualizes deep management rows. Scroll the *actual*
+        // Home List, not an unrelated collection left mounted by TabView.
+        for _ in 0..<12 {
+            if button.exists && button.isHittable { return button }
             list.swipeUp()
         }
         if !(button.exists && button.isHittable) {
-            for _ in 0..<8 {
-                if button.exists && button.isHittable { break }
+            for _ in 0..<12 {
+                if button.exists && button.isHittable { return button }
                 list.swipeDown()
             }
         }
-        XCTAssertTrue(button.waitForExistence(timeout: 8),
-                      "Scrolled genuine Files Home but no matching entry: \(identifier)")
-        XCTAssertTrue(button.isHittable, "Files Home entry exists but is not visible")
+        XCTAssertTrue(button.exists && button.isHittable,
+                      "Verified Files Browse Home lacks actionable entry: \(identifier)")
         return button
     }
 
@@ -682,10 +695,31 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     func testFilesSearchKeyboardMineCacheReturnKeepsFiles() {
         let app = launch(syntheticOwner: true)
         observedSelect("native-ios-tab-files", in: app)
-        let search = app.searchFields["搜索全部文件"].firstMatch
+        let browse = find("native-ios-files-section-browse", in: app)
+        if (browse.value as? String) != "已选择" {
+            observedSelect("native-ios-files-section-browse", in: app)
+        }
+        // A synthetic Owner is not an authenticated native session: the
+        // protected Server search must remain disabled, not fabricate rows.
+        let deniedSearch = find("native-ios-files-home-search", in: app)
+        XCTAssertTrue(deniedSearch.waitForExistence(timeout: 15))
+        XCTAssertFalse(deniedSearch.isEnabled,
+                       "No-session Files search must not expose private results")
+        // Exercise a real public keyboard editor across Files / Launcher /
+        // Mine / Files without granting a fake authenticated Owner.
+        observedSelect("native-ios-tab-launcher", in: app)
+        let search = find("native-ios-launcher-search", in: app)
         XCTAssertTrue(search.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-launcher-search")
         search.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 12),
+                      "Launcher search keyboard is not focused")
         search.typeText("cross-page")
+        print("IOS_NATIVE_LAUNCHER_CROSS_PAGE value=\(String(describing: search.value))")
+        let typed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "cross-page"), object: search)
+        XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: 8), .completed,
+                       "Launcher keyboard lost typed route across native pages")
         observedSelect("native-ios-tab-mine", in: app)
         let cacheButton = app.buttons["缩略图缓存"].firstMatch
         if cacheButton.waitForExistence(timeout: 8) {
@@ -696,13 +730,15 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
             cacheLabel.tap()
         }
         assertChildAndCapture("native-ios-gallery-thumbnail-cache", in: app,
-                              label: "mine-cache-after-files-keyboard")
+                              label: "mine-cache-after-launcher-keyboard")
         let back = app.navigationBars["缩略图缓存"].buttons.element(boundBy: 0)
         XCTAssertTrue(back.waitForExistence(timeout: 15))
         back.tap()
         observedSelect("native-ios-tab-files", in: app)
         assertChildAndCapture("native-ios-files-section-browse", in: app,
                               label: "files-after-mine-cache")
+        XCTAssertFalse(find("native-ios-files-grid", in: app).exists,
+                       "Synthetic Owner cannot surface private Files rows")
     }
 
     func testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent() {
