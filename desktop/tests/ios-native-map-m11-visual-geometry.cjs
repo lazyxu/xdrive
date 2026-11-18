@@ -36,12 +36,29 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
 })
 
 test('M11 exact layout assertions explicitly prohibit inconsistent photo pin numerical frames', () => {
-  assert.match(layout, /frame = CGRect\(x: 0, y: 0, width: 68, height: 68\)/)
+  assert.match(layout, /frame = CGRect\(x: 0, y: 0, width: 68, height: 78\)/)
   assert.match(layout, /badgeFrame = CGRect\(x: 8, y: 44, width: 56, height: 18\)/)
   assert.match(layout, /imageFrame = CGRect\(x: 2, y: 2, width: 64, height: 64\)/)
   assert.match(layout, /badgeText\(count: Int\).*?\{/s)
   assert.doesNotMatch(local, /badge\.frame = CGRect/)
   assert.doesNotMatch(cloud, /badge\.frame = CGRect/)
+})
+
+test('M11 native photo map pins have a single white GPS pointer with the tip at the coordinate', () => {
+  // The card stays 68pt wide, with its 64pt poster and inset count unchanged.
+  // 78/2 + (-39) = 0: the bottom tip, not the middle, is the GPS anchor.
+  assert.match(layout, /frame = CGRect\(x: 0, y: 0, width: 68, height: 78\)/)
+  assert.match(layout, /centerOffset = CGPoint\(x: 0, y: -39\)/)
+  assert.match(layout, /pointer\.name = "xdrive-native-photo-pin-pointer"/)
+  assert.match(layout, /view\.layer\.sublayers\?\.contains\(where:/)
+  assert.match(layout, /path\.move\(to: CGPoint\(x: 27, y: 64\)\)/)
+  assert.match(layout, /path\.addLine\(to: CGPoint\(x: 34, y: 77\)\)/)
+  assert.match(layout, /pointer\.fillColor = UIColor\.white\.cgColor/)
+  assert.match(layout, /view\.layer\.insertSublayer\(pointer, at: 0\)/)
+  for (const map of [local, cloud, unified]) {
+    assert.match(map, /XDriveIOSNativeMapMarkerVisualPolicy\.decorate\(self\)/)
+    assert.match(map, /XDriveIOSNativeMapMarkerVisualPolicy\.centerOffset/)
+  }
 })
 
 test('M11 system Photos count inset keeps actual counts and revokes stale source badges', () => {

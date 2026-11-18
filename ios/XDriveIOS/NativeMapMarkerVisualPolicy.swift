@@ -4,8 +4,10 @@ import MapKit
 /// One owner-independent native MapKit marker geometry. All visible photo
 /// pin states use this presentation policy; it never grants photo access.
 enum XDriveIOSNativeMapMarkerVisualPolicy {
-    static let frame = CGRect(x: 0, y: 0, width: 68, height: 68)
-    static let centerOffset = CGPoint(x: 0, y: -16)
+    // Photo cover stays 68pt square. The white pointer beneath it aligns
+    // the tip with MapKit's precise GPS anchor instead of offsetting the pin.
+    static let frame = CGRect(x: 0, y: 0, width: 68, height: 78)
+    static let centerOffset = CGPoint(x: 0, y: -39)
     static let imageFrame = CGRect(x: 2, y: 2, width: 64, height: 64)
     static let placeholderFrame = CGRect(x: 20, y: 20, width: 28, height: 28)
     // Match the inset badge in the system Photos map rather than a floating bubble.
@@ -25,6 +27,23 @@ enum XDriveIOSNativeMapMarkerVisualPolicy {
         view.layer.shadowOpacity = 0.22
         view.layer.shadowRadius = 5
         view.layer.shadowOffset = CGSize(width: 0, height: 3)
+        // Shared presentation for PhotoKit, Owner and reconciled-source pins.
+        // One white callout tip per reusable annotation; it never grants
+        // media access and does not intercept hit-testing.
+        if view.layer.sublayers?.contains(where: {
+            $0.name == "xdrive-native-photo-pin-pointer"
+        }) != true {
+            let pointer = CAShapeLayer()
+            pointer.name = "xdrive-native-photo-pin-pointer"
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: 27, y: 64))
+            path.addLine(to: CGPoint(x: 34, y: 77))
+            path.addLine(to: CGPoint(x: 41, y: 64))
+            path.close()
+            pointer.path = path.cgPath
+            pointer.fillColor = UIColor.white.cgColor
+            view.layer.insertSublayer(pointer, at: 0)
+        }
     }
 
     /// Selected marker scale/animation follows Reduce Motion.
