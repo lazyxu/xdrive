@@ -69,6 +69,15 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
                 alive(app, "tap-\(id)")
                 return
             }
+            // Published b9 exposes UITabBar buttons identified by SF Symbols
+            // (e.g. "folder"), but they have exact visible titles.
+            let systemTab = app.tabBars.buttons
+                .matching(NSPredicate(format: "label == %@", title)).firstMatch
+            if systemTab.exists && systemTab.isHittable {
+                systemTab.tap()
+                alive(app, "tap-\(id)")
+                return
+            }
         }
         // Candidate Gallery hides xDrive's other five positions by design.
         // Follow its visible real More menu; never tap an invisible TabView.

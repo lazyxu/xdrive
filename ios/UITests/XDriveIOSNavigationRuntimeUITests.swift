@@ -61,6 +61,12 @@ enum XDriveIOSNativePhotosTestNavigator {
             let old = app.buttons.matching(identifier: "native-ios-five-slot-bar")
                 .matching(NSPredicate(format: "label == %@", title)).firstMatch
             if old.exists && old.isHittable { old.tap(); return true }
+            // Archived b9/c83 use a real UIKit TabBar with SF Symbol IDs.
+            // Follow only that exact visible tab, never a hidden candidate
+            // TabView destination or synthetic navigation.
+            let system = app.tabBars.buttons
+                .matching(NSPredicate(format: "label == %@", title)).firstMatch
+            if system.exists && system.isHittable { system.tap(); return true }
         }
 
         let idToGalleryTab: [String: String] = [
@@ -153,6 +159,32 @@ enum XDriveIOSNativePhotosTestNavigator {
 /// Dashboard and Files/Gallery screens, but has no authenticated Server Owner.
 final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+
+    /// The iOS Photos UI must not show the system five-slot TabBar below
+    /// Library / Collections / Search. Test actual Simulator hit-testing.
+    func testGalleryPhotosBarDoesNotStackSystemTabBar() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        let bar = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-photos-bottom-bar").firstMatch
+        XCTAssertTrue(bar.waitForExistence(timeout: 20),
+                      "Native Photos bottom bar did not mount")
+        for id in ["native-ios-photos-library-tab",
+                   "native-ios-photos-collections-tab",
+                   "native-ios-photos-search"] {
+            let button = app.buttons.matching(identifier: id).firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 10) && button.isHittable,
+                          "Missing distinct native Photos control: \(id)")
+        }
+        for title in ["全部", "地图", "图库", "文件", "我的"] {
+            let systemTab = app.tabBars.buttons.matching(
+                NSPredicate(format: "label == %@", title)).firstMatch
+            XCTAssertFalse(systemTab.exists && systemTab.isHittable,
+                           "System UITabBar overlaps Photos chrome: \(title)")
+        }
+    }
     private func launch(syntheticOwner: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
