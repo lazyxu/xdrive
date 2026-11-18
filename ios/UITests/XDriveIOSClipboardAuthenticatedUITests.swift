@@ -49,19 +49,20 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         let server = node("native-ios-login-server", in: app)
         XCTAssertTrue(server.waitForExistence(timeout: 30),
                       "Normal native login must mount for isolated HTTPS Owner")
-        fill(server, with: origin)
-        fill(node("native-ios-login-username", in: app), with: user)
-        let secret = app.secureTextFields.firstMatch
-        fill(secret, with: "fixture-password")
-
         // Compact native Login deliberately collapses credential preferences.
         // Expand the real user-facing section instead of assuming a switch
         // exists in the default form or injecting an artificial Owner state.
+        // Navigate before raising the password keyboard: the keyboard can
+        // cover the bottom preference rows. Pick the real full-height form
+        // ScrollView rather than an unrelated 45-point nested scroll area.
         let preferences = node("native-ios-login-preferences", in: app)
-        let form = app.scrollViews.firstMatch
+        let form = app.scrollViews.allElementsBoundByIndex.max {
+            $0.frame.height < $1.frame.height
+        }
+        XCTAssertNotNil(form, "Native login must own a scrollable form")
         for _ in 0..<8 {
             if preferences.exists && preferences.isHittable { break }
-            if form.exists { form.swipeUp() }
+            if let form, form.exists { form.swipeUp() }
         }
         XCTAssertTrue(preferences.exists && preferences.isHittable,
                       "Real Login Preferences must remain accessible")
@@ -73,7 +74,7 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         for _ in 0..<6 {
             if keep.exists && keep.isHittable &&
                 remember.exists && remember.isHittable { break }
-            if form.exists { form.swipeUp() }
+            if let form, form.exists { form.swipeUp() }
         }
         XCTAssertTrue(keep.exists && keep.isHittable,
                       "Keep Signed In is not reachable in expanded Login Preferences")
@@ -83,6 +84,14 @@ final class XDriveIOSClipboardAuthenticatedUITests: XCTestCase {
         if (remember.value as? String) == "1" { remember.tap() }
         XCTAssertEqual(keep.value as? String, "0")
         XCTAssertEqual(remember.value as? String, "0")
+
+        // Fill the real form only after preference controls are verified and
+        // credential persistence is disabled. XCUI brings scrolled fields into
+        // view; none of the Owner/authentication checks are bypassed.
+        fill(server, with: origin)
+        fill(node("native-ios-login-username", in: app), with: user)
+        let secret = app.secureTextFields.firstMatch
+        fill(secret, with: "fixture-password")
 
         let submit = node("native-ios-login-submit", in: app)
         XCTAssertTrue(submit.waitForExistence(timeout: 15))
