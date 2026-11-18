@@ -51,8 +51,16 @@ def summarize(root, child):
     rr, cr = root.get("rows"), child.get("rows")
     if not isinstance(rr, list) or len(rr) != 25 or not isinstance(cr, list) or len(cr) != 50:
         raise ValueError("Missing audited per-route observations")
-    names = [r.get("route") for r in rr + cr]
-    if any(not isinstance(n, str) or not n for n in names) or len(set(names)) != 75:
+    # Root page names can legitimately equal child entry names, because a
+    # different navigation journey into the same view has separate metrics.
+    # Disallow duplicate routes *within* either measured family, not across it.
+    named_routes = [
+        (kind, row.get("route"))
+        for kind, rows in (("root", rr), ("child", cr))
+        for row in rows
+    ]
+    if (any(not isinstance(route, str) or not route for _, route in named_routes)
+            or len(set(named_routes)) != 75):
         raise ValueError("Duplicate or missing root/child routes")
     result, review = [], []
     for kind, source_rows in (("root", rr), ("child", cr)):

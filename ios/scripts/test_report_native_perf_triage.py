@@ -45,6 +45,23 @@ class NativePerfTriageTests(unittest.TestCase):
         self.assertEqual(report["rows"][-1]["web_parity"], "not_verified")
         self.assertFalse(report["first_composited_frame_measured"])
 
+    def test_same_route_name_in_root_and_child_is_valid(self):
+        root, child = fixtures()
+        # Genuine native entry points can share a name with a root route,
+        # while their CPU/RSS and AX measurements remain separate records.
+        child["rows"][0]["route"] = "root.0"
+        result = mod.summarize(root, child)
+        matched = [r for r in result["rows"] if r["route"] == "root.0"]
+        self.assertEqual(len(matched), 2)
+        self.assertEqual({r["kind"] for r in matched}, {"root", "child"})
+        self.assertEqual(len({(r["kind"], r["route"]) for r in result["rows"]}), 75)
+
+    def test_duplicate_within_root_is_rejected(self):
+        root, child = fixtures()
+        root["rows"][1]["route"] = root["rows"][2]["route"]
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            mod.summarize(root, child)
+
     def test_diagnostic_never_claims_ui_stall(self):
         root, child = fixtures()
         row = child["rows"][0]
