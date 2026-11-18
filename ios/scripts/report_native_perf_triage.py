@@ -11,7 +11,8 @@ from pathlib import Path
 FIELDS = ("source_commit", "kind", "route", "stage_p50_ms",
           "entry_ax_p50_ms", "entry_ax_p95_ms", "return_ax_p50_ms",
           "return_ax_p95_ms", "cpu_p50_s", "rss_p95_mib", "launch_p50_s",
-          "first_frame", "fps", "owner", "web_parity")
+          "first_frame", "fps", "owner", "web_parity",
+          "xctest_animation_idle_timeout_count")
 
 
 def samples(row, key, positive=False):
@@ -33,7 +34,60 @@ def check(row, key, values, p95=None):
     return p50
 
 
-def summarize(root, child):
+# This token is emitted by the actual Xcode XCTest runner when it stops
+# waiting for a native app to become animation-idle after 60 seconds.
+# It is not a user-facing first pixel, rendering or FPS measurement.
+IDLE_TIMEOUT = "App animations complete notification not received"
+ITERATION = re.compile(r"IOS_NATIVE_SUBPAGE_ITERATION route=([a-z0-9.-]+) index=(\\d+)")
+AX_TIMING = re.compile(r"IOS_NATIVE_SUBPAGE_PERF_MS route=([a-z0-9.-]+) trial=(\\d+) value=(\\d+)")
+
+
+def correlate_xctest_idle(log, children):
+    """Join *real* raw XCTest idle events with each of the 150 retained AX trials.
+
+    Fail closed on missing, duplicated, out-of-order or mismatched measurements.
+    Never classify a 60s test-framework wait as an application render stall.
+    """
+    if not isinstance(log, str) or not log:
+        raise ValueError("Missing original native XCTest trace")
+    expected = {row["route"]: row["ax_ready_trial_ms"] for row in children}
+    if len(expected) != 50 or any(len(values) != 3 for values in expected.values()):
+        raise ValueError("Missing 50 independently audited child routes")
+    observed = {route: {} for route in expected}
+    current = None
+    for line in log.splitlines():
+        start = ITERATION.search(line)
+        if start:
+            if current is not None and current["iteration"] > 1:
+                raise ValueError("Unfinished child AX timing before next trial")
+            route, index = start.group(1), int(start.group(2))
+            if route not in expected or index not in (1, 2, 3, 4):
+                raise ValueError("Unexpected child route or XCTest iteration")
+            current = {"route": route, "iteration": index, "idle": 0}
+            continue
+        if current is not None and IDLE_TIMEOUT in line:
+            current["idle"] += 1
+        match = AX_TIMING.search(line)
+        if not match:
+            continue
+        route, trial, value = match.group(1), int(match.group(2)), int(match.group(3))
+        if (current is None or current["route"] != route
+                or current["iteration"] != trial + 1
+                or trial not in (1, 2, 3)
+                or value != expected[route][trial - 1]
+                or trial in observed[route]):
+            raise ValueError("Orphan, duplicate or mismatched real child AX trial")
+        observed[route][trial] = current["idle"]
+        current = None
+    if current is not None and current["iteration"] > 1:
+        raise ValueError("Last child AX trial was not completed")
+    if any(set(trials) != {1, 2, 3} for trials in observed.values()):
+        raise ValueError("Missing real 150 route/trial AX metrics")
+    return {route: [trials[i] for i in (1, 2, 3)]
+            for route, trials in observed.items()}
+
+
+def summarize(root, child, original_xctest_log=None):
     sha = root.get("exact_commit")
     if (not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha)
             or child.get("source_commit") != sha):
@@ -62,6 +116,8 @@ def summarize(root, child):
     if (any(not isinstance(route, str) or not route for _, route in named_routes)
             or len(set(named_routes)) != 75):
         raise ValueError("Duplicate or missing root/child routes")
+    idle_by_route = (correlate_xctest_idle(original_xctest_log, cr)
+                     if original_xctest_log is not None else {})
     result, review = [], []
     for kind, source_rows in (("root", rr), ("child", cr)):
         for r in source_rows:
@@ -92,6 +148,8 @@ def summarize(root, child):
                 v["entry_ax_p95_ms"] = max(enter)
                 v["return_ax_p50_ms"] = check(r, "return_ax_ready_p50_ms", back, "return_ax_ready_p95_ms")
                 v["return_ax_p95_ms"] = max(back)
+                if idle_by_route:
+                    v["xctest_animation_idle_timeout_count"] = sum(idle_by_route[r["route"]])
                 v["cpu_p50_s"] = check(r, "app_cpu_time_p50_s", cpu)
                 v["rss_p95_mib"] = max(mem) / 1024
                 if abs(r.get("app_peak_memory_p95_mib", -1) - v["rss_p95_mib"]) > 0.001:
@@ -101,7 +159,12 @@ def summarize(root, child):
                     if p50 >= 30000 or (p95 >= 30000 and p95 / max(p50, 1) >= 3):
                         review.append(dict(route=r["route"], phase=phase,
                             original_ms=trial, p50_ms=p50, p95_ms=p95,
-                            evidence="investigate_xctest_idling_vs_ui_not_proven_stall"))
+                            evidence=("xctest_animation_idle_timeout_observed_not_ui_stall"
+                                      if phase == "entry_ax" and
+                                      sum(idle_by_route.get(r["route"], [])) > 0
+                                      else "investigate_xctest_idling_vs_ui_not_proven_stall"),
+                            xctest_idle_timeout_trials=idle_by_route.get(r["route"],
+                                                                        "not_measured")))
             result.append(v)
     ranked = {}
     for metric in ("entry_ax", "return_ax"):
@@ -114,15 +177,21 @@ def summarize(root, child):
         runtime="ios_simulator_no_session", metrics_include_xctest_idling=True,
         first_composited_frame_measured=False, physical_fps_measured=False,
         web_equivalence_verified=False, slowest_child=ranked,
+        idle_timeout_samples=(sum(map(sum, idle_by_route.values()))
+                              if idle_by_route else "not_measured"),
+        idle_timeout_affected_routes=(sorted(r for r, values in idle_by_route.items()
+                                              if any(values)) if idle_by_route
+                                      else "not_measured"),
         diagnostics=sorted(review, key=lambda x: (-x["p95_ms"], x["route"])),
         rows=result)
 
 
 def main():
-    if len(sys.argv) != 4:
-        raise SystemExit("usage: report_native_perf_triage.py ROOT_JSON CHILD_JSON OUTPUT_JSON")
+    if len(sys.argv) != 5:
+        raise SystemExit("usage: report_native_perf_triage.py ROOT_JSON CHILD_JSON OUTPUT_JSON XCODEBUILD_LOG")
     report = summarize(json.loads(Path(sys.argv[1]).read_text()),
-                       json.loads(Path(sys.argv[2]).read_text()))
+                       json.loads(Path(sys.argv[2]).read_text()),
+                       Path(sys.argv[4]).read_text(encoding="utf-8", errors="replace"))
     destination = Path(sys.argv[3])
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
@@ -131,6 +200,9 @@ def main():
         writer.writeheader()
         writer.writerows(report["rows"])
     print("IOS_NATIVE_PERF_TRIAGE roots=25 children=50 source_sha=" + report["source_commit"])
+    print("IOS_NATIVE_XCTEST_IDLE_TIMEOUT retained_trials=150 wait_events=" +
+          str(report["idle_timeout_samples"]) + " affected_routes=" +
+          str(report["idle_timeout_affected_routes"]))
     for row in report["diagnostics"]:
         print("IOS_NATIVE_PERF_REVIEW route={route} phase={phase} p50_ms={p50_ms}"
               " p95_ms={p95_ms} actual_visible_stall=not_verified".format(**row))

@@ -72,6 +72,36 @@ class NativePerfTriageTests(unittest.TestCase):
         self.assertEqual(review[0]["p95_ms"], 67000)
         self.assertIn("not_proven_stall", review[0]["evidence"])
 
+    def test_actual_xctest_animation_idle_wait_is_attributed_to_exact_ax_trial(self):
+        root, child = fixtures()
+        recorded = []
+        for item in child["rows"]:
+            route = item["route"]
+            recorded.append(f"IOS_NATIVE_SUBPAGE_ITERATION route={route} index=1")
+            for trial, value in enumerate(item["ax_ready_trial_ms"], start=1):
+                recorded.append(f"IOS_NATIVE_SUBPAGE_ITERATION route={route} index={trial+1}")
+                if route == "child.0" and trial == 2:
+                    recorded.append("App animations complete notification not received, will attempt to continue.")
+                recorded.append(f"IOS_NATIVE_SUBPAGE_PERF_MS route={route} trial={trial} value={value}")
+        report = mod.summarize(root, child, "\\n".join(recorded))
+        self.assertEqual(report["idle_timeout_samples"], 1)
+        self.assertEqual(report["idle_timeout_affected_routes"], ["child.0"])
+        flagged = [row for row in report["rows"] if row["kind"] == "child" and row["route"] == "child.0"]
+        self.assertEqual(flagged[0]["xctest_animation_idle_timeout_count"], 1)
+        self.assertFalse(report["first_composited_frame_measured"])
+        self.assertEqual(report["rows"][-1]["fps"], "not_measured")
+
+        # No measured entry may be inferred from an unaudited Xcode idle wait.
+        recorded[-1] = recorded[-1].replace("value=30", "value=31")
+        with self.assertRaisesRegex(ValueError, "mismatched"):
+            mod.summarize(root, child, "\\n".join(recorded))
+
+    def test_missing_original_xcodebuild_log_cannot_certify_idle_attribution(self):
+        root, child = fixtures()
+        with self.assertRaisesRegex(ValueError, "Missing original"):
+            mod.summarize(root, child, "")
+        self.assertEqual(mod.summarize(root, child)["idle_timeout_samples"], "not_measured")
+
     def test_rejects_missing_or_fake_metrics(self):
         root, child = fixtures()
         child["source_commit"] = "b" * 40

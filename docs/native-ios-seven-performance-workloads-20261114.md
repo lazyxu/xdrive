@@ -116,3 +116,22 @@ On source 5e573c5, Gallery wall density entry AX had [5236, 66766, 65133]ms,
 Files kind filter entry AX [75098, 13728, 10227]ms, and Gallery framing
 return AX [5180, 5485, 65237]ms: these include XCTest animation/idling
 and are **not proof of real UI stalls**.
+
+## 2026-11-18 — measured XCTest animation-idle attribution
+
+The exact-HEAD iOS 18.5 Simulator run at `9452711f7bffb969b61f359933d162c5a5c022c2`
+passed **25 root + 50 child original XCTest measurements and the combined 75-route
+report**. The full CI and root CPU/RSS were green, while independent navigation
+and IPA gates must always be checked for their own exact commit.
+
+The original xcodebuild log had **6 emitted** `App animations complete
+notification not received` events **inside the 150 measured child AX-entry
+trials**: 2 date-filter, 2 kind-filter, 1 size-filter and 1 Gallery-wall-density.
+These are observed XCTest animation-idle timeout signals, not app first-pixel,
+Core Animation frame timing, or proof of UI freeze. The combined triage now
+cross-checks each original `IOS_NATIVE_SUBPAGE_ITERATION` and
+`IOS_NATIVE_SUBPAGE_PERF_MS` trial against the independently audited n=3 values
+before attributing actual Xcode waits, marks the affected routes in the same
+75-route CSV/JSON and rejects missing/duplicated/mismatched raw trials. No
+existing CPU/RSS/AX or Web-equivalence gate is relaxed. More native instrumentation
+is still needed for real frame cadence, first media present and signed Owner.
