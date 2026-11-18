@@ -14,7 +14,7 @@ test('only one native L1 bar: scoped Gallery L2 hides the custom bar, not a syst
   // Focus policy still controls exactly one custom L1 bar; its sibling
   // layout must reserve space instead of obscuring Files' own quick rail.
   assert.match(shell, /return VStack\(spacing: 0\) \{\s*TabView\(selection: \$tab\)/);
-  assert.match(shell, /\.toolbar\(\.hidden, for: \.tabBar\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/);
+  assert.match(shell, /\.toolbar\(\.hidden, for: \.tabBar\)\s*(?:\/\/[^\n]*\n\s*)*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/);
   assert.doesNotMatch(shell, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/);
   assert.match(shell, /if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
   assert.match(shell, /gallerySource: gallerySource\.rawValue/);
