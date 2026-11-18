@@ -13,7 +13,9 @@ test('Collections Utilities Map uses the existing Gallery MapKit route, never a 
   assert.match(dash, /Button\(action: onOpenMap\)/)
   assert.match(dash, /accessibilityIdentifier\("native-ios-collections-map"\)/)
   assert.match(dash, /collectionSection\("媒体类型", routes: \[\.videos, \.livePhotos\]\)\s*mapUtilitySection/)
-  assert.match(dash, /login: login, savedAlbumOffset: \$localAlbumDirectoryOffset,\s*onOpenMap: \{ openGallery\(\.map\) \}/)
+  assert.match(dash, /login: login, savedAlbumOffset: \$localAlbumDirectoryOffset,\s*onOpenMap: \{[\s\S]*?selectedLocalCollectionTrip = nil[\s\S]*?openGallery\(\.map\)/)
+  assert.match(dash, /onOpenLocalDayMap: \{ day in[\s\S]*?XDriveIOSNativePhotoMapCaptureRange\.day\(day\)[\s\S]*?openGallery\(\.map\)/)
+  assert.match(dash, /onOpenLocalTripMap: \{ trip in[\s\S]*?XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(trip\.libraryEpoch\)[\s\S]*?openGallery\(\.map\)/)
   const utility = dash.slice(dash.indexOf('private var mapUtilitySection: some View'),
     dash.indexOf('var body: some View', dash.indexOf('private var mapUtilitySection')))
   assert.doesNotMatch(utility, /PHAsset|PHPhotoLibrary|URLSession|GPS|OwnerScope|mapOverview|fetchAssets/)
