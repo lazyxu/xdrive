@@ -803,6 +803,10 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         // A DisclosureGroup change may replace the original AX element.
         // Check the actual editing value AND dynamic control label.
         let editing = element("native-ios-files-home-edit-inline", app)
+        // Distinguish an action that did not toggle from an iOS AX value
+        // update that lagged, went stale, or lost its DisclosureGroup row.
+        // Do not loosen the assertion: preserve a failing reproducible gate.
+        print("IOS_FILES_HOME_EDIT_AFTER_TAP label=\(editing.label) value=\(String(describing: editing.value)) exists=\(editing.exists)")
         let started = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value == %@", "已开启"), object: editing)
         XCTAssertEqual(XCTWaiter.wait(for: [started], timeout: 8), .completed,

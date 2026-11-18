@@ -917,6 +917,10 @@ struct XDriveIOSNativePhotosDashboard: View {
             VStack(alignment: .leading, spacing: 18) {
                 TextField("搜索功能", text: $launcherQuery)
                     .textFieldStyle(.roundedBorder)
+                    // Search is a literal route filter, not prose entry:
+                    // iOS keyboard replacement must never alter typed routes.
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
                     .accessibilityIdentifier("native-ios-launcher-search")
                 if !recentDynamic.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {

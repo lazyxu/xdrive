@@ -90,11 +90,16 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         }
         XCTAssertTrue(rendered, "Unable to sample actual screen after " + route)
         guard rendered else { return }
-        let colors = Set(stride(from: 0, to: rgba.count, by: 4).map { index in
-            (Int(rgba[index]) << 16) |
-            (Int(rgba[index + 1]) << 8) |
-            Int(rgba[index + 2])
-        })
+        // Build the sampled color set imperatively: Xcode 26.6 Swift's
+        // expression solver times out on nested stride/map/Set/bitwise inference.
+        // This preserves the same real-pixel diversity gate.
+        var colors = Set<UInt32>()
+        for index in stride(from: 0, to: rgba.count, by: 4) {
+            let red = UInt32(rgba[index]) << 16
+            let green = UInt32(rgba[index + 1]) << 8
+            let blue = UInt32(rgba[index + 2])
+            colors.insert(red | green | blue)
+        }
         XCTAssertGreaterThan(colors.count, 8,
                              "Native recovery page was visually uniform after " + route)
     }
