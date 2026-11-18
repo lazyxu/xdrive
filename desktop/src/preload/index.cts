@@ -649,8 +649,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-device-backup-local-common-batch', sourceID),
   getDeviceBackupLocalCommonBatchHistory: (sourceID: number) =>
     ipcRenderer.invoke('agent:get-device-backup-local-common-batch-history', sourceID),
-  getDeviceBackupLocalRecoveryReview: (sourceID: number, afterFile: number, pageEpoch: string, requestID: string) =>
-    ipcRenderer.invoke('agent:get-device-backup-local-recovery-review', sourceID, afterFile, pageEpoch, requestID),
+  getDeviceBackupLocalRecoveryReview: (sourceID: number, afterFile: number, pageEpoch: string, requestID: string, afterAbsent = 0) =>
+    ipcRenderer.invoke('agent:get-device-backup-local-recovery-review', sourceID, afterFile, pageEpoch, requestID, afterAbsent),
   cancelDeviceBackupLocalRecoveryReview: (requestID: string) =>
     ipcRenderer.invoke('agent:cancel-device-backup-local-recovery-review', requestID),
   controlDeviceBackupLocalCommonBatch: (sourceID: number, action: 'pause' | 'cancel') =>

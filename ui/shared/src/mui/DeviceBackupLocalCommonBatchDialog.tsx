@@ -11,7 +11,8 @@ export interface XDriveLocalBackupCommonBatchActions {
   inspect(sourceID: number): Promise<XDriveLocalBackupCommonBatch>
   history(sourceID: number): Promise<XDriveLocalBackupCommonBatchHistoryPage>
   // Optional owning-Agent-only, read-only historical SQL receipt review.
-  review?(sourceID: number, afterFile: number, pageEpoch: string, requestID: string): Promise<XDriveLocalBackupRecoveryReview>
+  review?(sourceID: number, afterFile: number, pageEpoch: string, requestID: string,
+    afterAbsent?: number): Promise<XDriveLocalBackupRecoveryReview>
   cancelReview?(requestID: string): Promise<void>
   control(sourceID: number, action: 'pause' | 'cancel'): Promise<XDriveLocalBackupCommonBatch>
 }
@@ -37,7 +38,7 @@ function safeBatchStatus(value: XDriveLocalBackupCommonBatch, sourceID: number):
 // observation, never a current CAS proof or permission to resume upload.
 export function safeRecoveryReviewPage(
   value: XDriveLocalBackupRecoveryReview, sourceID: number,
-  after: number, expectedEpoch: string,
+  after: number, expectedEpoch: string, afterAbsent = 0,
 ): boolean {
   if (value?.journal_checked !== undefined || value?.absent_original_paths !== undefined) {
     if (value.journal_checked !== true ||
@@ -45,12 +46,37 @@ export function safeRecoveryReviewPage(
       !Number.isSafeInteger(value.absent_original_paths) ||
       value.absent_original_paths < 0 || value.absent_original_paths > 1_000_000) return false
   }
+  const missingFields = value && [
+    value.absent_receipts_reviewed, value.absent_receipts_committed,
+    value.absent_receipts_pending, value.absent_receipts_has_more,
+    value.next_after_absent,
+  ]
+  if (missingFields && missingFields.some((v) => v !== undefined)) {
+    const reviewed = value.absent_receipts_reviewed
+    const committed = value.absent_receipts_committed
+    const pending = value.absent_receipts_pending
+    const next = value.next_after_absent
+    const more = value.absent_receipts_has_more
+    if (value.journal_checked !== true ||
+      typeof reviewed !== 'number' || !Number.isSafeInteger(reviewed) ||
+      typeof committed !== 'number' || !Number.isSafeInteger(committed) ||
+      typeof pending !== 'number' || !Number.isSafeInteger(pending) ||
+      typeof next !== 'number' || !Number.isSafeInteger(next) ||
+      typeof more !== 'boolean' ||
+      reviewed < 0 || reviewed > 16 || committed < 0 || pending < 0 ||
+      next < 0 || reviewed !== committed + pending ||
+      reviewed + afterAbsent > (value.absent_original_paths ?? 0) ||
+      (more && (reviewed !== 16 || next !== reviewed + afterAbsent ||
+        next >= (value.absent_original_paths ?? 0))) ||
+      (!more && (next !== 0 ||
+        reviewed + afterAbsent !== value.absent_original_paths))) return false
+  }
   if (!value || value.source_id !== sourceID ||
     !Number.isSafeInteger(value.revision) || value.revision <= 0 ||
     !['partial', 'uncertain', 'paused', 'cancelled'].includes(value.run_state) ||
     value.authoritative !== false || typeof value.has_more !== 'boolean' ||
     typeof value.page_epoch !== 'string' || !/^[0-9a-f]{64}$/.test(value.page_epoch) ||
-    (after > 0 && value.page_epoch !== expectedEpoch)) return false
+    ((after > 0 || afterAbsent > 0) && value.page_epoch !== expectedEpoch)) return false
   const counts = [value.reviewed_files, value.ignored_files, value.unsupported_files,
     value.unrecorded_files, value.historical_committed_files, value.pending_original_files,
     value.current_node_metadata_match_files, value.current_node_metadata_mismatch_files,
@@ -238,24 +264,26 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
     }
   }
 
-  const loadReview = async (continuePage: boolean) => {
+  const loadReview = async (continuePage: boolean, continueAbsent = false) => {
     if (!actions.review || !actions.cancelReview || reviewLoading || pending ||
-      status?.running || (continuePage && !reviewPage?.has_more)) return
+      status?.running || (continuePage && !reviewPage?.has_more) ||
+      (continueAbsent && !reviewPage?.absent_receipts_has_more)) return
     const earlier = reviewPage
     const after = continuePage && earlier ? earlier.next_after_file : 0
-    const pageEpoch = after > 0 && earlier ? earlier.page_epoch : ''
+    const afterAbsent = continueAbsent && earlier ? (earlier.next_after_absent ?? 0) : 0
+    const pageEpoch = (after > 0 || afterAbsent > 0) && earlier ? earlier.page_epoch : ''
     const ticket = epoch.current
     const generation = ++reviewGeneration.current
     const requestID = crypto.randomUUID()
     activeReviewID.current = requestID
     setReviewLoading(true)
     setReviewError('')
-    if (!continuePage) setReviewPage(null)
+    if (!continuePage && !continueAbsent) setReviewPage(null)
     try {
-      const next = await actions.review(sourceID, after, pageEpoch, requestID)
+      const next = await actions.review(sourceID, after, pageEpoch, requestID, afterAbsent)
       if (epoch.current !== ticket || reviewGeneration.current !== generation) return
-      if (!safeRecoveryReviewPage(next, sourceID, after, pageEpoch) ||
-        (continuePage && earlier &&
+      if (!safeRecoveryReviewPage(next, sourceID, after, pageEpoch, afterAbsent) ||
+        ((continuePage || continueAbsent) && earlier &&
           (next.revision !== earlier.revision || next.run_state !== earlier.run_state))) {
         throw new Error('untrusted recovery page')
       }
@@ -265,7 +293,7 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
     } catch {
       if (epoch.current !== ticket || reviewGeneration.current !== generation) return
       setReviewPage(null)
-      setReviewError('原始回执只读核查失败或清单代际已变化。请重新从第一页核对，不要重试不确定的上传。')
+      setReviewError('原始回执无法可靠核实（可能是旧版待提交记录、权限变化、网络失败或清单代际变化）。请从第一页重新核对；禁止盲目重传或删除。')
     } finally {
       if (activeReviewID.current === requestID) activeReviewID.current = ''
       if (epoch.current === ticket && reviewGeneration.current === generation) setReviewLoading(false)
@@ -365,11 +393,35 @@ export function XDriveDeviceBackupLocalCommonBatchDialog({ sourceID, actions, on
                     已忽略 {reviewPage.ignored_files} · 暂不支持 {reviewPage.unsupported_files}
                   </Typography>
                   {reviewPage.journal_checked === true ? (
-                    <Alert severity={(reviewPage.absent_original_paths ?? 0) > 0 ? 'warning' : 'info'}>
-                      版本化原始 Operation 日志中有 {reviewPage.absent_original_paths} 个历史文件路径未出现在本次已验证清单中。
-                      这可能包括已删除、移动或被忽略的文件；不表示这些上传仍待确认，也不是当前云端 CAS 完整性证明。
-                      历史路径不参与本页按现有文件进行的 SQL 回执核查。
-                    </Alert>
+                    <Stack spacing={0.5}>
+                      <Alert severity={(reviewPage.absent_original_paths ?? 0) > 0 ? 'warning' : 'info'}>
+                        版本化原始 Operation 日志中有 {reviewPage.absent_original_paths} 个历史路径未出现在本次已验证清单中。
+                        这些文件可能已删除、移动或被忽略；仅凭路径缺失不能判断上传失败或远端 CAS 状态。
+                      </Alert>
+                      {reviewPage.absent_receipts_reviewed !== undefined ? (
+                        <>
+                          <Typography variant="body2">
+                            本页消失路径原始 SQL 回执：已核查 {reviewPage.absent_receipts_reviewed} ·
+                            历史已提交 {reviewPage.absent_receipts_committed} ·
+                            仍待确认 {reviewPage.absent_receipts_pending}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            这里只读核查当前有效授权下的原始回执，不推断文件仍在云端、当前 CAS 完整或可自动恢复。
+                            下一页读取另外最多 16 个历史路径，不是同一时点的数据库快照。
+                          </Typography>
+                          {reviewPage.absent_receipts_has_more ? (
+                            <Button size="small" variant="text" disabled={reviewLoading || Boolean(status?.running)}
+                              onClick={() => void loadReview(false, true)}>
+                              核查下一页消失路径的 SQL 回执（只读）
+                            </Button>
+                          ) : null}
+                        </>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">
+                          当前 Agent 未提供消失路径的原始 SQL 回执分页核查。
+                        </Typography>
+                      )}
+                    </Stack>
                   ) : (
                     <Typography variant="caption" color="text.secondary">
                       此 Agent 尚未提供当前清单以外的历史 Operation 路径统计。

@@ -126,3 +126,41 @@ func TestLocalCommonRecoveryReviewRejectsForgedControllerPages(t *testing.T) {
 		t.Fatal("non-authoritative final page was rejected")
 	}
 }
+
+func TestLocalCommonAbsentSQLReceiptPageUsesNumericPrivateEpoch(t *testing.T) {
+	const epoch = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	good := httptest.NewRequest(http.MethodGet,
+		"http://localhost/v1/device-backups/local-common-batch/recovery-review?source_id=42&after_absent=16&page_epoch="+epoch, nil)
+	sourceID, fileAfter, absentAfter, gotEpoch, ok := validLocalCommonRecoveryReviewRequestWithAbsent(good)
+	if !ok || sourceID != 42 || fileAfter != 0 || absentAfter != 16 || gotEpoch != epoch {
+		t.Fatal("validated absent-Original SQL ordinal was not accepted")
+	}
+	for _, q := range []string{
+		"source_id=42&after_absent=16",
+		"source_id=42&after_absent=-1&page_epoch=" + epoch,
+		"source_id=42&after_absent=01&page_epoch=" + epoch,
+		"source_id=42&after_absent=1000001&page_epoch=" + epoch,
+		"source_id=42&after_absent=16&after_absent=17&page_epoch=" + epoch,
+		"source_id=42&after_absent=/private/path&page_epoch=" + epoch,
+		"source_id=42&after_absent=0&page_epoch=" + epoch,
+	} {
+		req := httptest.NewRequest(http.MethodGet,
+			"http://localhost/v1/device-backups/local-common-batch/recovery-review?"+q, nil)
+		if _, _, _, _, ok := validLocalCommonRecoveryReviewRequestWithAbsent(req); ok {
+			t.Fatalf("untrusted missing Original selector accepted: %s", q)
+		}
+	}
+	page := localCommonRecoveryReviewPage{
+		SourceID: 42, Revision: 7, RunState: "uncertain", PageEpoch: epoch,
+		JournalChecked: true, AbsentPaths: 20,
+		AbsentReviewed: 16, AbsentCommitted: 10, AbsentPending: 6,
+		AbsentHasMore: true, NextAfterAbsent: 16,
+	}
+	if !validLocalCommonRecoveryReviewPage(page, 42, 0, "", 0) {
+		t.Fatal("verified first missing-Original SQL page was rejected")
+	}
+	page.AbsentCommitted++
+	if validLocalCommonRecoveryReviewPage(page, 42, 0, "", 0) {
+		t.Fatal("fabricated missing Original SQL committed count accepted")
+	}
+}

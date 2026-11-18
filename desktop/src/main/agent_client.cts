@@ -660,6 +660,12 @@ export type AgentLocalBackupRecoveryReview = {
   // Owning-Agent diagnostic only: absent local journal paths, not failed uploads.
   absent_original_paths?: number
   journal_checked?: boolean
+  // Historical SQL receipt counts only; never current CAS proof or resumption authority.
+  absent_receipts_reviewed?: number
+  absent_receipts_committed?: number
+  absent_receipts_pending?: number
+  absent_receipts_has_more?: boolean
+  next_after_absent?: number
   next_after_file: number
   page_epoch: string
   has_more: boolean
@@ -4058,12 +4064,11 @@ export class AgentIPCClient {
   // A bounded, strictly read-only original SQL recovery view. Continuation
   // needs the Agent-issued private generation fence, never an OS path or ID.
   localBoundBackupRecoveryReview(sourceID: number, afterFile: number,
-    pageEpoch: string, signal?: AbortSignal) {
+    pageEpoch: string, signal?: AbortSignal, afterAbsent = 0) {
     const query = new URLSearchParams({ source_id: String(sourceID) })
-    if (afterFile > 0) {
-      query.set('after_file', String(afterFile))
-      query.set('page_epoch', pageEpoch)
-    }
+    if (afterFile > 0) query.set('after_file', String(afterFile))
+    if (afterAbsent > 0) query.set('after_absent', String(afterAbsent))
+    if (afterFile > 0 || afterAbsent > 0) query.set('page_epoch', pageEpoch)
     return this.request<AgentLocalBackupRecoveryReview>(
       'GET', `/v1/device-backups/local-common-batch/recovery-review?${query.toString()}`,
       undefined, 75_000, signal,

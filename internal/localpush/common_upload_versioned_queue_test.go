@@ -146,3 +146,43 @@ func TestCountAbsentVerifiedCommonVersionedPathsIsReadOnlyAndOwnerScoped(t *test
 		t.Fatalf("corrupt original journal was treated as trustworthy: %v", err)
 	}
 }
+
+func TestAbsentVersionedOriginalPageUsesOrdinalAndNeverExposesPrivatePaths(t *testing.T) {
+	f := makeCommonPlanFixture(t)
+	if _, err := prepareVersionedFixture(f, "alpha.txt", f.target); err != nil {
+		t.Fatal(err)
+	}
+	bravo := localpushcommon.Target{ParentID: f.target.ParentID, Name: "bravo.txt"}
+	if _, err := prepareVersionedFixture(f, "bravo.txt", bravo); err != nil {
+		t.Fatal(err)
+	}
+	present := map[string]struct{}{}
+	page := func(after uint64, limit int) ([][]localpushcommon.Plan, uint64, error) {
+		return ListAbsentVerifiedCommonUploadVersionedPlanPage(
+			context.Background(), f.config, f.grant, f.secret, present, after, limit)
+	}
+	first, total, err := page(0, 1)
+	if err != nil || total != 2 || len(first) != 1 || len(first[0]) != 1 {
+		t.Fatalf("first bounded absent page invalid: %d %v %+v", total, err, first)
+	}
+	second, total, err := page(1, 1)
+	if err != nil || total != 2 || len(second) != 1 || len(second[0]) != 1 ||
+		second[0][0].RelativePath == first[0][0].RelativePath {
+		t.Fatalf("ordinal did not advance distinct private plans: %d %v %+v", total, err, second)
+	}
+	if pages, total, err := page(0, 0); err != nil || total != 2 || len(pages) != 0 {
+		t.Fatalf("count-only query exposed private plans: %d %v %+v", total, err, pages)
+	}
+	if _, _, err := page(3, 1); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("out of range private original ordinal accepted: %v", err)
+	}
+	if _, _, err := page(0, 17); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("unbounded historical SQL page accepted: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := ListAbsentVerifiedCommonUploadVersionedPlanPage(
+		ctx, f.config, f.grant, f.secret, present, 0, 1); err == nil {
+		t.Fatal("cancelled private original journal request allowed")
+	}
+}
