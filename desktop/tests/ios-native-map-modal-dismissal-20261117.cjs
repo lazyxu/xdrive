@@ -27,7 +27,11 @@ test('only a completed native modal dismissal can apply an exact Owner-scoped re
   assert.match(modal, /onDismiss: \{[\s\S]*?let destination = pendingUnifiedMapDestination[\s\S]*?let requestScope = pendingUnifiedMapOwnerScope/)
   assert.match(modal, /pendingUnifiedMapDestination = nil[\s\S]*?pendingUnifiedMapOwnerScope = nil/)
   assert.match(modal, /guard let destination, requestScope == ownerScopeKey,[\s\S]*?phase == \.active, tab == \.gallery else \{ return \}/)
-  assert.match(modal, /if gallerySource != destination \{ openGallery\(destination\) \}[\s\S]*?if wantedSearch \{ requestUnifiedPhotoSearch = true \}/)
+  // Complete UIKit dismissal before changing source; then route search
+  // to PhotoKit when signed out or the Owner-scoped unified editor otherwise.
+  assert.match(modal, /if gallerySource != destination \{ openGallery\(destination\) \}[\s\S]*?if wantedSearch \{ openPhotoSearchForCurrentScope\(\) \}/)
+  assert.match(src, /private func openPhotoSearchForCurrentScope\(\) \{[\s\S]*?if login\.owner == nil \{[\s\S]*?requestUnifiedPhotoSearch = false[\s\S]*?showingLocalPhotoSearch = true[\s\S]*?\} else \{[\s\S]*?requestUnifiedPhotoSearch = true/)
+  assert.doesNotMatch(modal, /if wantedSearch \{ requestUnifiedPhotoSearch = true \}/)
   assert.match(modal, /NavigationStack \{[\s\S]*?XDriveIOSNativePhotoMapsScreen\([\s\S]*?\.safeAreaInset\(edge: \.bottom, spacing: 0\) \{\s*nativePhotosBottomBar/)
 })
 

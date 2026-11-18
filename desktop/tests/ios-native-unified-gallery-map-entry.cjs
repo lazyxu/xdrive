@@ -16,7 +16,9 @@ test('default unified Gallery filter sheet exposes actual existing native map en
   assert.match(gallery, /Section\("地图"\)/)
   assert.match(gallery, /Label\("显示地图", systemImage: "map"\)/)
   assert.match(gallery, /native-ios-unified-gallery-show-map/)
-  assert.match(dashboard, /case \.unified:\s*XDriveIOSNativeUnifiedPhotoGallery\(/)
+  // Signed-out Gallery must render a genuine local PhotoKit wall; an
+  // Owner-verified wall is only allowed behind the exact Owner gate.
+  assert.match(dashboard, /case \.unified:\s*if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\([\s\S]*?\}\s*else\s*\{\s*XDriveIOSNativeUnifiedPhotoGallery\(/)
   assert.match(dashboard, /onShowMap: \{ range, media, filename in/)
 })
 
@@ -81,7 +83,9 @@ test('unified Gallery wall density, query and return anchor survive modal map br
   assert.match(dashboard, /presentingUnifiedMap = true/)
   assert.match(dashboard, /localMapScope = \.library\s*localMapJump = nil\s*mapSource = \.local\s*presentingUnifiedMap = true/)
   assert.match(dashboard, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap/)
-  assert.match(dashboard, /case \.unified:\s*XDriveIOSNativeUnifiedPhotoGallery\([\s\S]*?case \.map:/)
+  // The verified unified wall persists under a modal MapKit cover,
+  // while the no-Owner path remains the independent native PhotoKit wall.
+  assert.match(dashboard, /case \.unified:\s*if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\([\s\S]*?\}\s*else\s*\{\s*XDriveIOSNativeUnifiedPhotoGallery\([\s\S]*?case \.map:/)
 })
 
 test('late map requests are rejected after source change, Owner switch or scene loss', () => {
