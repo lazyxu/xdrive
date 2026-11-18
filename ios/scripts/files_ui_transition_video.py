@@ -87,7 +87,16 @@ STAT = re.compile(r"lavfi\.signalstats\.(YMIN|YMAX|YAVG)=([0-9.]+)")
 # a strict finite deadline; neither a timed-out recording nor missing tap/
 # decoded frames can ever pass the audit.
 MAX_CLIP_SECONDS = 210
-MAX_TIMELINE_STARTUP_SECONDS = 20
+# 2026-11-18 actual macOS run 44214388579: 73.006s from watcher spawn
+# to stop, but only 51.033s of genuine decoded 30Hz MP4 frames. That is a
+# measured 21.973s asynchronous recordVideo startup, not a missing testcase,
+# missing tap, or a compositor flash. The first of 10 native taps occurs at
+# 36.765s (14.792s into the video); all have >=7 pre-tap and 43 post-tap
+# frames, independently decoded with the unchanged white/black/neutral gate.
+# Allow that measured startup with a <2.1s margin; still reject missing
+# pre-/post-tap frames, recorder failures, incomplete clips and >24s drift.
+# This is an evidence-clock bound, NOT a longer XCTest timeout or a skip.
+MAX_TIMELINE_STARTUP_SECONDS = 24
 MIN_TAP_WINDOW_SECONDS = 0.55
 
 

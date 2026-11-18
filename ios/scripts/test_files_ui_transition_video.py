@@ -445,6 +445,80 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         self.assertTrue(accepted, report)
         self.assertGreater(report["clips"][0]["estimated_recording_startup_seconds"], 2)
 
+    def test_recorded_22_second_macos_startup_requires_all_ten_real_tap_windows(self):
+        # Actual 2026-11-18 Gallery/Files CI log, run 44214388579:
+        # elapsed=73.006, 1532 decoded 30Hz frames (last PTS 51.033333),
+        # first tap 36.765s; all ten pre-/post-tap windows were present.
+        # These generated frames are a time-alignment regression fixture,
+        # NOT a substitute for the required live H.264 frame audit.
+        frames = [
+            {"time": i / 30, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(1532)
+        ]
+        routes = [
+            ("native-ios-gallery-source-albums", 36.7645645),
+            ("native-ios-tab-files", 43.866912417),
+            ("native-ios-files-section-recent", 48.037306792),
+            ("native-ios-files-section-favorites", 51.651266417),
+            ("native-ios-files-section-browse", 54.9138765),
+            ("native-ios-tab-gallery", 57.991403167),
+            ("native-ios-gallery-source-originals", 60.893339625),
+            ("native-ios-tab-files", 64.556443708),
+            ("native-ios-tab-gallery", 67.531463292),
+            ("native-ios-gallery-source-unified", 70.711240375),
+        ]
+        accepted, report = self._audit_sample(
+            frames=frames, elapsed=73.006,
+            tap_markers=[{"route": route, "at": at} for route, at in routes],
+        )
+        self.assertTrue(accepted, report)
+        self.assertEqual(report["clips"][0]["taps"], 10)
+        self.assertGreater(report["clips"][0]["estimated_recording_startup_seconds"], 21.9)
+        self.assertLess(report["clips"][0]["estimated_recording_startup_seconds"], 24)
+
+    def test_recorded_22_second_startup_cannot_hide_real_white_pulse(self):
+        frames = [
+            {"time": i / 30, "ymin": 235 if i in (448, 449) else 12,
+             "ymax": 235 if i in (448, 449) else 246,
+             "yavg": 235 if i in (448, 449) else 175}
+            for i in range(1532)
+        ]
+        accepted, report = self._audit_sample(
+            frames=frames, elapsed=73.006,
+            tap_markers=[{"route": "native-ios-gallery-source-albums",
+                          "at": 36.7645645}],
+        )
+        self.assertFalse(accepted)
+        self.assertIn("suspected_solid_white_transition",
+                      report["clips"][0]["failures"])
+
+    def test_recorded_22_second_startup_rejects_unfilmed_early_tap(self):
+        frames = [
+            {"time": i / 30, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(1532)
+        ]
+        accepted, report = self._audit_sample(
+            frames=frames, elapsed=73.006,
+            tap_markers=[{"route": "native-ios-gallery-source-albums",
+                          "at": 22.0}],
+        )
+        self.assertFalse(accepted)
+        self.assertIn("missing_pre_tap_frames", report["clips"][0]["failures"])
+
+    def test_still_rejects_unexplained_over_24_second_video_clock_drift(self):
+        frames = [
+            {"time": i / 30, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(1532)
+        ]
+        accepted, report = self._audit_sample(
+            frames=frames, elapsed=77.0,
+            tap_markers=[{"route": "native-ios-gallery-source-albums",
+                          "at": 36.7645645}],
+        )
+        self.assertFalse(accepted)
+        self.assertIn("unreliable_recording_clock_alignment",
+                      report["clips"][0]["failures"])
+
     def test_negative_recorder_clock_offset_fails_closed(self):
         accepted, report = self._audit_sample(elapsed=1.0)
         self.assertFalse(accepted)
