@@ -44,6 +44,25 @@ test('Launcher search stays above the changing scroll results and keeps keyboard
   assert.match(launcher, /\.accessibilityIdentifier\("native-ios-launcher-scroll"\)/);
 });
 
+test('Files navigation geometry covers two real independent no-overlay journeys', () => {
+  const nav = fs.readFileSync(
+    path.resolve(__dirname, '../../ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'), 'utf8'
+  );
+  const watcher = fs.readFileSync(
+    path.resolve(__dirname, '../../ios/scripts/capture-navigation-smoke-frames.py'), 'utf8'
+  );
+  for (const name of [
+    'testFilesQuickRailNoOverlappingGlobalBarThroughSixNativeTransitions',
+    'testFilesRailNoOverlapAfterBackgroundAndGalleryReentry'
+  ]) {
+    assert.ok(nav.includes('func ' + name + '()'), 'missing real XCTest ' + name);
+    assert.ok(watcher.includes('"' + name + '"'), 'missing live frame target ' + name);
+  }
+  assert.match(nav, /rail\.frame\.maxY, globalBar\.frame\.minY \+ 1/);
+  assert.match(nav, /app\.wait\(for: \.runningBackground, timeout: 12\)/);
+  assert.match(nav, /app\.wait\(for: \.runningForeground, timeout: 18\)/);
+});
+
 test('landscape is compact horizontal icon-and-label and target is at least 44pt', () => {
   assert.match(ui, /@Environment\(\\\.verticalSizeClass\) private var verticalSizeClass/);
   assert.match(ui, /verticalSizeClass == \.compact \? 48 : 56/);

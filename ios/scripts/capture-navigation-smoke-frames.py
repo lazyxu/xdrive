@@ -230,6 +230,13 @@ MINIMAL_TARGETS.update({
     "testGalleryOriginalsFilesCloudErrorSourceReturnKeepsSurface",
     "testLocalPhotoDateRotateFilesHistoryReturnsRealPhotoKit",
 })
+# Consolidated real navigation-geometry journeys from superseded #4377.
+# These are actual XCUITests; the bounded watcher keeps tap-adjacent
+# diagnostics without claiming signed-iPhone 60/120Hz evidence.
+MINIMAL_TARGETS.update({
+    "testFilesQuickRailNoOverlappingGlobalBarThroughSixNativeTransitions",
+    "testFilesRailNoOverlapAfterBackgroundAndGalleryReentry",
+})
 # Additional native all-pages/subpage crash journeys: real controls only.
 MINIMAL_TARGETS.update({
     "testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner",

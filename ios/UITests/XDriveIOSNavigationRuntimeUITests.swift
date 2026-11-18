@@ -84,6 +84,7 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     private func select(_ identifier: String, in app: XCUIApplication) {
         let control = find(identifier, in: app)
         XCTAssertTrue(control.exists, "Missing \(identifier)")
+        print("IOS_NATIVE_NAV_TAP_START route=\(identifier)")
         control.tap()
         XCTAssertEqual(app.state, .runningForeground, "App exited at \(identifier)")
     }
@@ -172,6 +173,78 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         capture.name = "files-rail-five-tab-geometry-portrait-landscape"
         capture.lifetime = .keepAlways
         add(capture)
+    }
+
+    /// Real simulator regression for Files/Home category and global navigation
+    /// overlapping. The previous layout produced rail.maxY=852 and
+    /// globalBar.minY=763 on iOS 26.x; finding both IDs alone was a false PASS.
+    private func assertFilesNavigationRowsAreSeparate(
+        _ app: XCUIApplication, context: String
+    ) {
+        let rail = find("native-ios-files-quick-rail", in: app)
+        let globalBar = find("native-ios-five-slot-bar", in: app)
+        XCTAssertTrue(rail.waitForExistence(timeout: 15), "Files rail missing: " + context)
+        XCTAssertTrue(globalBar.waitForExistence(timeout: 15), "Five-slot bar missing: " + context)
+        XCTAssertGreaterThan(rail.frame.height, 20, "Collapsed Files rail: " + context)
+        XCTAssertGreaterThan(globalBar.frame.height, 20, "Collapsed global bar: " + context)
+        XCTAssertLessThanOrEqual(
+            rail.frame.maxY, globalBar.frame.minY + 1,
+            "Files rail overlays the global tabs during " + context
+        )
+        for section in ["recent", "browse", "favorites"] {
+            XCTAssertTrue(find("native-ios-files-section-" + section, in: app).isHittable,
+                          "Files control is covered: " + section + " during " + context)
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testFilesQuickRailNoOverlappingGlobalBarThroughSixNativeTransitions() {
+        let app = launch(syntheticOwner: true)
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+
+        // First open, Recent, Browse, Favorites, Browse, tab round-trip:
+        // six actual routes with a geometry assertion after every change.
+        select("native-ios-tab-files", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "first Files open")
+        for section in ["recent", "browse", "favorites", "browse"] {
+            select("native-ios-files-section-" + section, in: app)
+            assertFilesNavigationRowsAreSeparate(app, context: "Files " + section)
+        }
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(find("native-ios-unified-photo-gallery", in: app).exists,
+                      "Gallery disappeared during Files navigation")
+        select("native-ios-tab-files", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "Gallery to Files")
+
+        device.orientation = .landscapeLeft
+        assertFilesNavigationRowsAreSeparate(app, context: "landscape rotation")
+        select("native-ios-files-section-recent", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "landscape Recent")
+        device.orientation = .portrait
+        assertFilesNavigationRowsAreSeparate(app, context: "portrait restored")
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "files-rail-global-bar-portrait-landscape-six-routes"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testFilesRailNoOverlapAfterBackgroundAndGalleryReentry() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "before background")
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
+                      "Files terminated while backgrounded")
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                      "Files did not return to foreground")
+        assertFilesNavigationRowsAreSeparate(app, context: "foreground restored")
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(find("native-ios-unified-photo-gallery", in: app).exists)
+        select("native-ios-tab-files", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "second Files visit")
     }
 
     func testFilesRecentBrowseFavoritesRepeatedWithoutCrash() {
