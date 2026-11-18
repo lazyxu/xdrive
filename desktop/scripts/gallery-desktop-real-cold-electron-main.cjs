@@ -232,7 +232,7 @@ async function measureRealDesktopMediaProgress(sample) {
 function galleryFirstRangeTimings(logDir) {
   const filename = path.join(logDir, 'desktop.log')
   if (!fs.existsSync(filename)) return []
-  return fs.readFileSync(filename, 'utf8').split('\\n').filter(Boolean)
+  return fs.readFileSync(filename, 'utf8').split('\n').filter(Boolean)
     .map(line => { try { return JSON.parse(line) } catch { return null } })
     .filter(entry => entry?.event === 'gallery_first_range_timing')
     .map(entry => ({
