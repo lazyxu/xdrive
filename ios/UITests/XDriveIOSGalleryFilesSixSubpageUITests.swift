@@ -567,6 +567,11 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         app.activate()
         XCTAssertTrue(control("native-ios-files-operation-history-page", app)
             .waitForExistence(timeout: 15))
+        // No-session Owner must show a painted, truthful middle-of-page
+        // recovery state instead of a flat gray child that H.264 rejects.
+        XCTAssertTrue(control("native-ios-files-operation-history-no-access", app)
+            .waitForExistence(timeout: 15),
+            "History denied read left a blank native viewport")
         dismissFilesSheet("native-ios-files-operation-history-done",
                           pageID: "native-ios-files-operation-history-page", app)
         tap("native-ios-tab-gallery", app)

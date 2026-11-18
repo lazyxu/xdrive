@@ -204,6 +204,20 @@ test('P0: one physically reserved native bottom bar and real direct Files Home e
   assert.match(shell, /\.autocorrectionDisabled\(\)/)
 })
 
+test('P0: denied Files History never paints an empty neutral child viewport', () => {
+  const history = source('ios/XDriveIOS/NativeFilesOperationHistory.swift')
+  const navigation = source('ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift')
+  assert.match(history, /!model\.matches\(login\.owner\)/)
+  assert.match(history, /native-ios-files-operation-history-no-access/)
+  assert.match(history, /native-ios-files-operation-history-empty-state/)
+  assert.match(history, /无法验证操作历史/)
+  assert.match(history, /当前账户尚未通过验证/)
+  assert.match(history, /\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/)
+  assert.match(history, /\.allowsHitTesting\(false\)/)
+  assert.match(navigation, /History denied read left a blank native viewport/)
+  assert.match(navigation, /testFilesHistoryForegroundGalleryPeopleBackRetiresSheet/)
+})
+
 test('P0: the prior stack-overflow safety fix and native Viewer remain intact', () => {
   assert.match(browser, /private var filesModalsPrimary: some View/)
   assert.match(browser, /AnyView\(filesModalsSecondary\)/)
