@@ -584,12 +584,14 @@ test('native Map Done works without cloud login while restored Owner Gallery sou
 })
 
 test('native MapKit date picker precedes long PhotoKit year menu in real accessibility order', () => {
-  const start = map.indexOf('Button("全部日期")')
-  const picker = map.indexOf('Button("按指定日期")', start)
-  const years = map.indexOf('Section("按年份")', start)
-  const end = map.indexOf('.accessibilityIdentifier("native-ios-local-map-capture-menu")', start)
-  assert.ok(start >= 0 && picker > start && years > picker && end > years,
-    'date chooser must stay ahead of unbounded year options on a real iOS Menu')
+  // The direct calendar action intentionally precedes the nested date/year submenu.
+  // Starting the search at "全部日期" encoded the retired menu order.
+  const picker = map.indexOf('Button("按指定日期")')
+  const years = map.indexOf('Section("按年份")', picker)
+  const dateMenu = map.indexOf('Label("地图日期", systemImage: "calendar")', picker)
+  const end = map.indexOf('.accessibilityIdentifier("native-ios-local-map-capture-menu")', picker)
+  assert.ok(picker >= 0 && years > picker && dateMenu > years && end > dateMenu,
+    'direct date chooser must precede nested year options')
   assert.match(map.slice(picker, years),
     /Button\("按指定日期"\) \{ datePickerOpen = true \}[\s\S]*?\.accessibilityIdentifier\("native-ios-local-map-select-date"\)/)
   assert.match(map.slice(years, end), /ForEach\(recentMapYears/)
