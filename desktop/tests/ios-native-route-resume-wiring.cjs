@@ -83,7 +83,8 @@ test('mounted native map source picker borrows parent route hints for local MapK
   assert.match(wrapper, /guard source == \.cloud, let expectedOwner,/);
   assert.match(wrapper, /let cloudAllowed = cloudSourceAllowed && ownerSelection\.valid/);
   assert.match(wrapper, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
-  assert.match(wrapper, /mapSource: \$source, canSelectCloudMap: cloudAllowed/);
+  assert.match(wrapper, /mapSource: animatedSource, canSelectCloudMap: cloudAllowed/);
+  assert.match(wrapper, /guard next != source, next != \.cloud \|\| cloudAllowed/);
   assert.match(wrapper, /Picker\("地图照片来源", selection: mapSource\)/);
   assert.match(wrapper, /if canSelectCloudMap \{[\s\S]*?tag\(XDriveIOSNativePhotoMapSource\.cloud\)/);
   assert.match(wrapper, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/);

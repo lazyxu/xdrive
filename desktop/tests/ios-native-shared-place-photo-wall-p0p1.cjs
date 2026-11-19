@@ -54,7 +54,16 @@ test('P0: date-picker action toolbar must close before the native Owner map tool
   assert.match(region, /\.navigationTitle\("选择云端地图日期"\)\s*\.toolbar \{\s*ToolbarItem\(placement: \.confirmationAction\)/)
   assert.match(region, /Button\("显示当天"\)[\s\S]*?XDriveIOSNativePhotoMapCaptureRange\.day\([\s\S]*?datePickerOpen = false/)
   assert.match(region, /ToolbarItem\(placement: \.cancellationAction\)[\s\S]*?Button\("取消"\) \{ datePickerOpen = false \}/)
-  assert.match(region, /\n        \}\n        \.toolbar \{[\s\S]*?ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?native-ios-owner-map-actions/)
+  // Date picker keeps its own confirmation toolbar. The secondary Owner
+  // actions are in map overlay, not nested inside the date picker.
+  const screen = owner.slice(owner.indexOf('struct XDriveIOSNativeOwnerPhotoMapScreen: View'))
+  const chromeAt = screen.indexOf('.overlay(alignment: .bottomLeading)')
+  const pickerAt = screen.indexOf('.sheet(isPresented: $datePickerOpen)')
+  assert.ok(chromeAt >= 0 && pickerAt > chromeAt)
+  const secondary = screen.slice(chromeAt, pickerAt)
+  assert.match(secondary, /Label\("地图操作", systemImage: "ellipsis.circle"\)/)
+  assert.match(secondary, /native-ios-owner-map-actions/)
+  assert.doesNotMatch(region, /native-ios-owner-map-actions/)
   assert.match(owner, /if XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, place\.owner\)[\s\S]*?placeDisplayName: place\.name/)
 })
 

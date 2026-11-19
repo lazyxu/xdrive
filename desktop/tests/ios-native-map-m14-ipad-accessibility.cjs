@@ -26,7 +26,7 @@ test('M14 native map touch actions and year chips are at least 44pt',()=>{
   assert.match(trips,/frame\(minHeight: CGFloat\(XDriveIOSNativePhotoMapPolicy\.minimumInteractiveTarget\)\)/)
   // Page actions moved to the 44pt native More menu; a hidden inline footer is not a touch target.
   assert.match(local,/Button\("刷新当前页"\)/)
-  assert.match(local,/Label\("地图操作", systemImage: "ellipsis.circle"\)[\s\S]*?frame\(minWidth: 44, minHeight: 44\)/)
+  assert.match(local,/Label\("地图操作", systemImage: "ellipsis.circle"\)[\s\S]*?\.labelStyle\(\.iconOnly\)[\s\S]*?frame\(width: 44, height: 44\)/)
   assert.match(chrome,/struct XDriveIOSNativePhotoMapGridAction: View[\s\S]*?frame\(width: 44, height: 44\)/)
   assert.match(local,/verifiedSummary: globalComplete && refinedViewportIsCurrent/)
   assert.match(chrome,/\.accessibilityValue\(verifiedSummary \?\? ""\)/)

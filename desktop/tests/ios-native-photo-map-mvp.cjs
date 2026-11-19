@@ -101,7 +101,7 @@ test('native GPS find-next skips only a bounded PhotoKit snapshot, not 100k asse
   assert.match(map, /\.disabled\(busy \|\| page\?\.page\.finished != false\)/)
   // The unchanged bounded scan lives in the accessible native More section, not a footer.
   assert.match(map, /Section\("当前页 · [\s\S]*?Button\("查找下一批有定位照片"\)[\s\S]*?refresh\(at: page\.page\.nextOffset, findNextGPS: true\)[\s\S]*?\.disabled\(busy \|\| page\?\.page\.finished != false\)/)
-  assert.match(map, /Label\("地图操作", systemImage: "ellipsis.circle"\)[\s\S]*?\.frame\(minWidth: 44, minHeight: 44\)/)
+  assert.match(map, /Label\("地图操作", systemImage: "ellipsis.circle"\)[\s\S]*?\.labelStyle\(\.iconOnly\)[\s\S]*?\.frame\(width: 44, height: 44\)/)
   assert.match(map, /var next = try await worker\.nextLocatedPage\(\)/)
   assert.match(map, /var pagesRead = 1/)
   assert.match(map, /while findNextGPS && XDriveIOSNativePhotoMapPolicy\.shouldSeekNextGPSPage\(/)
@@ -459,7 +459,7 @@ test('GPS cell album automatically advances as its lazy-grid sentinel enters the
   assert.match(spatialAlbum, /loadedWindow\(containing: item\.id\)/);
   assert.match(spatialAlbum, /if result\.scannerFinished[\s\S]*?result\.pendingIndex >= result\.pending\.count[\s\S]*?scanner\.reset\(\)/);
   assert.match(spatialAlbum, /changes\.revision[\s\S]*?retire\(\)[\s\S]*?dismiss\(\)/);
-  assert.match(spatialAlbum, /\.onDisappear \{\s*#if DEBUG\s*XDriveIOSMapRealPerformanceProbe\.shared\.endFrameWindow\("place_wall_scroll"\)\s*#endif\s*if viewer == nil \{\s*retire\(\)[\s\S]*?changes\.stop\(\)[\s\S]*?Keep its PhotoKit cursor/);
+  assert.match(spatialAlbum, /\.onDisappear \{\s*#if DEBUG\s*XDriveIOSMapRealPerformanceProbe\.shared\.endFrameWindow\("place_wall_scroll"\)\s*#endif\s*if viewer == nil \{\s*cancelPlaceName\(\)\s*retire\(\)[\s\S]*?changes\.stop\(\)[\s\S]*?Keep its PhotoKit cursor/);
   const loadNext = spatialAlbum.slice(spatialAlbum.indexOf('private func loadNext()'),
     spatialAlbum.indexOf('private func retire()'));
   assert.match(loadNext, /readWindow\(\s*scanner: scanner,\s*pending: pendingLocated/);

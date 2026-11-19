@@ -214,7 +214,7 @@ test('single native Gallery map entry exposes local and Owner cloud sources with
   assert.match(map, /struct XDriveIOSNativePhotoMapsScreen: View \{[\s\S]*?@ObservedObject var login: XDriveIOSNativeOwnerLoginModel[\s\S]*?@Binding var localMapScope: XDriveIOSNativeLocalMapScope[\s\S]*?@Binding var localMapPageOffset: Int/)
   assert.match(map, /Picker\("地图照片来源", selection: mapSource\)/)
   assert.match(map, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/)
-  assert.match(map, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange,\s*mapSource: \$source, canSelectCloudMap: cloudAllowed,\s*cameraReturn: cloudMapCamera,\s*onCameraChange: \{ next in[\s\S]*?cloudMapCamera = next/);
+  assert.match(map, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange,\s*mapSource: animatedSource, canSelectCloudMap: cloudAllowed,\s*cameraReturn: cloudMapCamera,\s*onCameraChange: \{ next in[\s\S]*?cloudMapCamera = next/);
   assert.match(map, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/)
   assert.doesNotMatch(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
   assert.doesNotMatch(map, /@State private var localMapScope|@State private var localMapPageOffset/)
@@ -314,10 +314,10 @@ test('single exact Owner map place opens L3 after fresh Owner-scoped Range, not 
 test('native map source is an authenticated choice inside the same advanced MapKit menu', () => {
   const root = map.slice(map.indexOf('struct XDriveIOSNativePhotoMapsScreen: View'),
                          map.indexOf('private final class XDriveIOSOwnerPlaceAnnotation:'))
-  assert.match(root, /return Group \{\s*switch source \{/)
+  assert.match(root, /return ZStack \{\s*switch source \{/)
   assert.doesNotMatch(root, /return VStack\(spacing: 4\)|\.pickerStyle\(\.segmented\)/)
   assert.match(root, /if source == \.cloud[\s\S]*?ToolbarItem\(placement: \.navigationBarTrailing\)/)
-  assert.match(root, /mapSource: \$source, canSelectCloudMap: cloudAllowed/)
+  assert.match(root, /mapSource: animatedSource, canSelectCloudMap: cloudAllowed/)
   assert.doesNotMatch(root, /Label\("照片来源", systemImage: "square\.stack\.3d\.up"\)/)
   assert.match(map, /Picker\("地图照片来源", selection: mapSource\)/)
   assert.match(map, /if canSelectCloudMap \{[\s\S]*?tag\(XDriveIOSNativePhotoMapSource.cloud\)/)

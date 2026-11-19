@@ -37,7 +37,7 @@ test('manual overview, PhotoKit lease changes, scene background and Owner change
   assert.match(dash, /localMapJump = nil\s*localMapCamera = nil\s*return/)
   // Reset must also revoke pending post-dismissal map destinations so an
   // asynchronous UIKit completion cannot reintroduce an old Owner/camera.
-  assert.match(dash, /localMapJump = nil\s*galleryMapCaptureRange = nil\s*presentingUnifiedMap = false\s*pendingUnifiedMapDestination = nil\s*pendingUnifiedMapSearch = false\s*pendingUnifiedMapOwnerScope = nil\s*unifiedMapCaptureRange = nil\s*unifiedMapMediaFilter = \.all\s*unifiedMapFilenameTerm = ""\s*mapSource = \.local\s*cloudMapCamera = nil\s*localMapCamera = nil/);
+  assert.match(dash, /localMapJump = nil\s*galleryMapCaptureRange = nil\s*selectedLocalCollectionTrip = nil\s*presentingUnifiedMap = false\s*pendingUnifiedMapDestination = nil\s*pendingUnifiedMapSearch = false\s*pendingUnifiedMapOwnerScope = nil\s*unifiedMapCaptureRange = nil\s*unifiedMapMediaFilter = \.all\s*unifiedMapFilenameTerm = ""\s*mapSource = \.local\s*cloudMapCamera = nil\s*localMapCamera = nil/);
   assert.match(dash, /localMapJump = jump\s*localMapCamera = jump\.camera\s*localMapScope = \.library/)
   assert.doesNotMatch(dash, /UserDefaults\.set\(localMapCamera|navigationRouteStore\.save\([^)]*localMapCamera/)
   assert.doesNotMatch(owner, /@State private var localMapCamera/)

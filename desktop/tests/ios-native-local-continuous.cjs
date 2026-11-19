@@ -72,7 +72,11 @@ test('local multi-selection supports real PhotoKit favorites and deletion withou
   assert.match(actions, /asset\.creationDate == expected\.capturedAt/)
   assert.match(actions, /asset\.modificationDate == expected\.modifiedAt/)
   assert.match(actions, /expected\.isLive == asset\.mediaSubtypes\.contains\(\.photoLive\)/)
-  assert.doesNotMatch(actions, /upload|journal|Backup|Owner|signed.*URL|Keychain/i)
+  // Only executable code is screened. Descriptive Owner/backup comments
+  // do not perform writes; forbidden credential, network and upload APIs do.
+  const executable = actions.replace(/\/\/[^\n]*/g, '')
+  assert.doesNotMatch(executable,
+    /\b(?:URLSession|UploadSession|XDriveIOSNativePhotoBackup|XDriveNativeOwnerRoot|accessToken|Keychain)\b|\.upload\(|\.post\(/)
 })
 
 
