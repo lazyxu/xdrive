@@ -14,6 +14,36 @@ enum XDriveIOSNativePhotosTestNavigator {
         return app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
+    /// Normal Gallery/Files UI tests need a genuine user-visible Photos
+    /// decision before tapping More. A first-run system sheet covers the
+    /// native toolbar, making an otherwise valid route non-hittable.
+    /// Dedicated PhotoKit denied/Limited/Settings tests NEVER call this.
+    static func acceptInitialFullPhotosForNavigation(in app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let systemAlert = springboard.alerts.firstMatch
+        let alert = systemAlert.waitForExistence(timeout: 5)
+            ? systemAlert : app.alerts.firstMatch
+        guard alert.exists else { return }
+        let title = alert.label
+        guard title.localizedCaseInsensitiveContains("Photo Library") ||
+              title.contains("照片") || title.contains("相簿") else {
+            XCTFail("Unexpected system prompt blocks Gallery navigation: " + title)
+            return
+        }
+        for label in ["Allow Full Access", "Allow Access to All Photos",
+                      "Allow Access to All Photos and Videos", "Full Access",
+                      "允许完全访问", "允许访问所有照片", "允许访问全部照片"] {
+            let button = alert.buttons[label].firstMatch
+            if button.exists && button.isHittable {
+                button.tap()
+                print("IOS_NATIVE_REAL_FULL_PHOTOKIT_PROMPT_ACCEPTED")
+                return
+            }
+        }
+        XCTFail("Real iOS Photos permission has no Full Access action: "
+            + alert.debugDescription)
+    }
+
     static func visible(_ id: String, in app: XCUIApplication) -> XCUIElement {
         switch id {
         case "native-ios-tab-gallery", "native-ios-gallery-source-unified":

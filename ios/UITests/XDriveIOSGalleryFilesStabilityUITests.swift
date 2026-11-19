@@ -37,6 +37,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             app.launchArguments.append("-xdrive-ui-navigation-synthetic-owner")
         }
         app.launch()
+        XDriveIOSNativePhotosTestNavigator.acceptInitialFullPhotosForNavigation(in: app)
         XCTAssertEqual(app.state, .runningForeground, "Native app exited during launch")
         return app
     }

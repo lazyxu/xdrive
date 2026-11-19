@@ -14,6 +14,7 @@ final class XDriveIOSPagePerformanceUITests: XCTestCase {
             app.launchArguments.append("-xdrive-ui-navigation-synthetic-owner")
         }
         app.launch()
+        XDriveIOSNativePhotosTestNavigator.acceptInitialFullPhotosForNavigation(in: app)
         XCTAssertEqual(app.state, .runningForeground)
         return app
     }
