@@ -85,7 +85,7 @@ for (const id of accepted) {
         assert.equal(check.pattern,
           'source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]')
         assert.match(source,
-          /source:\s*\[release-c83,\s*candidate-navigation,\s*candidate-gallery-files,\s*candidate-no-session(?:,\s*candidate-mapkit)?(?:,\s*candidate-performance)?\s*\]/,
+          /source:\s*\[release-c83,\s*candidate-navigation,\s*candidate-gallery-files,\s*candidate-no-session(?:,\s*candidate-mapkit)?(?:,\s*candidate-performance)?(?:,\s*candidate-clipboard-owner)?\s*\]/,
           'historical '+id+' requires all original native UI shards')
         assert.match(source,
           /candidate-no-session\)[\s\S]*?XDriveIOSFilesSessionRecoveryUITests/,
@@ -96,6 +96,20 @@ for (const id of accepted) {
             'the new performance shard must run actual native XCTest routes')
           assert.match(source, /--require-page-performance/,
             'all performance routes must produce real n>=3 samples')
+        }
+        if (source.includes('candidate-clipboard-owner')) {
+          assert.match(source,
+            /candidate-clipboard-owner\)[\s\S]*?XDriveIOSClipboardAuthenticatedUITests/,
+            'the authenticated Clipboard shard must execute its native XCTest class')
+          // The secure CA install is executed through subprocess.run using
+          // explicit argument tokens, not a shell string. Verify the real
+          // simctl call and fail-closed condition without weakening trust.
+          assert.match(source,
+            /args\s*=\s*\["xcrun",\s*"simctl",\s*"keychain",\s*sim,\s*"add-root-cert",\s*ca\]/,
+            'authenticated Clipboard must install a real Simulator TLS root')
+          assert.match(source,
+            /raise SystemExit\("Refusing Clipboard XCTest without genuine iOS Simulator CA trust"\)/,
+            'Clipboard XCTest must fail closed if the CA cannot be installed')
         }
         if (source.includes('candidate-mapkit')) {
           assert.match(source,

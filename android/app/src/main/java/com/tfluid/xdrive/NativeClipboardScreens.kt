@@ -6,12 +6,16 @@ import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
@@ -49,6 +53,8 @@ internal fun NativeClipboardScreen(
         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     }
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val epoch = state.nativeUiSessionId
     val actionFence = remember(epoch) { XDriveClipboardSessionFence() }
     var draft by remember(epoch) { mutableStateOf("") }
@@ -234,7 +240,12 @@ internal fun NativeClipboardScreen(
             }
         }
     }
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // Keep all action controls reachable above the five-slot bottom bar on narrow screens.
+    // The former unscrollable Column collapsed directed-send/CAS controls to 0px.
+    Column(
+        Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Text("剪贴板", style = MaterialTheme.typography.headlineSmall)
         Text("剪贴板不加密，Server 明文保存最多 24 小时；请勿发送密码或验证码。系统剪贴板只在点击后读取或写入。",
             style = MaterialTheme.typography.bodySmall)
@@ -280,7 +291,9 @@ internal fun NativeClipboardScreen(
             // Target selection is explicit. A directed v2 message must never
             // be passed to the v1 broadcast send branch.
             Box {
-                OutlinedButton(onClick={targetMenu=true},enabled=!busy) {
+                OutlinedButton(onClick={targetMenu=true},
+                    modifier=Modifier.testTag("native-clipboard-target-selector"),
+                    enabled=!busy) {
                     Text(if (targetID.isEmpty()) "发送范围：当前账号广播" else
                         "定向发送：" + (devices.firstOrNull { it.deviceID == targetID }?.name ?: "设备已失效"))
                 }
@@ -387,7 +400,8 @@ internal fun NativeClipboardScreen(
                 }
             }
             OutlinedTextField(value=draft,onValueChange={ draft=it; requireAbandon=false },
-                modifier=Modifier.fillMaxWidth().heightIn(min=100.dp),
+                modifier=Modifier.fillMaxWidth().heightIn(min=100.dp)
+                    .testTag("native-clipboard-draft"),
                 label={Text("文字或链接")},maxLines=7)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick={
@@ -471,6 +485,11 @@ internal fun NativeClipboardScreen(
                         message="广播消息回执未确认；请先核对或放弃，不能切换到定向发送。"
                         return@Button
                     }
+                    // A directed-send tap ends editing so the IME cannot conceal the
+                    // real recipient selector when a Server ACK is uncertain.
+                    // The pending wire, verified target, and retry guards stay intact.
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
                     busy = true
                     scope.launch {
                         try {
@@ -509,7 +528,8 @@ internal fun NativeClipboardScreen(
                             if (stillSession(snapshot)) busy=false
                         }
                     }
-                },enabled=!busy && devices.any { it.deviceID==targetID }) {
+                },modifier=Modifier.testTag("native-clipboard-directed-send"),
+                    enabled=!busy && devices.any { it.deviceID==targetID }) {
                     Text("定向发送")
                 }
             }
@@ -536,7 +556,11 @@ internal fun NativeClipboardScreen(
                     Text("清空")
                 }
             }
-            LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            // A nested lazy history must remain bounded inside the scrollable form.
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 items(list,key={it.first.id}) { (item,plain) ->
                     ElevatedCard(modifier=Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
