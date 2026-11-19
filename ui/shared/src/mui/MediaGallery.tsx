@@ -1399,7 +1399,7 @@ export function XDriveMediaGalleryPage({
         placePageRequestID.current += 1
         setPlacesPagePending(false)
         setPlacesPageError('')
-        const facetsPromise = Promise.all([
+        const loadSecondaryFacets = () => Promise.all([
           source.listAlbums(),
           // The ordinary Gallery preview must not wait for a grouped COUNT
           // across potentially 100k GPS cells; count only inside Places.
@@ -1424,6 +1424,10 @@ export function XDriveMediaGalleryPage({
           (error: unknown) => ({ values: null, error }),
         )
 
+        // Desktop/Web first render must not contend with secondary facets:
+        // those requests can start additional full-owner stale-index probes
+        // on large libraries. Mobile's existing eager index flow is unchanged.
+        const facetsPromise = mobileGalleryViewport ? loadSecondaryFacets() : null
         const range = await rangePromise
         if (
           firstRangeController.signal.aborted || request !== requestID.current ||
@@ -1453,7 +1457,7 @@ export function XDriveMediaGalleryPage({
         })
         onCommitted?.()
 
-        void facetsPromise.then((result) => {
+        void (facetsPromise ?? loadSecondaryFacets()).then((result) => {
           if (
             firstRangeController.signal.aborted || request !== requestID.current ||
             (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
