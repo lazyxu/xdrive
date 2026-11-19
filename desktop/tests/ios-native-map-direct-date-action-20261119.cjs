@@ -10,8 +10,9 @@ const ui = read('ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift')
 
 test('local/Owner real Map actions provide a direct date picker before the years menu', () => {
   for (const [s,id] of [[local,'native-ios-local-map-select-date'],[owner,'native-ios-owner-map-select-date']]) {
-    const actions=s.slice(s.indexOf('.overlay(alignment: .bottomLeading)'),
-                          s.indexOf('.sheet(isPresented: $datePickerOpen)',s.indexOf('.overlay(alignment: .bottomLeading)')))
+    // Both map screens have earlier unrelated overlays. The last overlay
+    // is the actual bottom-leading native Map actions Menu.
+    const actions=s.slice(s.lastIndexOf('.overlay(alignment: .bottomLeading)'))
     const item='Button("按指定日期") { datePickerOpen = true }'
     const pos=actions.indexOf(item)
     const next=actions.indexOf('Menu {\n                        Button("全部日期")')
