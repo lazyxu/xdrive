@@ -48,10 +48,10 @@ func TestGalleryStaleExistenceProbeMatchesOrderedOwnerQuery(t *testing.T) {
 			md := meta.MediaMetadata{
 				NodeID: node.ID, OwnerID: ownerID, NodeRevision: 1, SHA256: shaA,
 				MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
-				IndexState: meta.MediaIndexStateReady,
+				IndexState:              meta.MediaIndexStateReady,
 				RelationEvidenceVersion: mediapkg.RelationEvidenceVersion,
 				DerivedResourceVersion:  mediapkg.LIVPDerivedResourceVersion,
-				ContainerKind: "ready",
+				ContainerKind:           "ready",
 			}
 			if err := db.Create(&md).Error; err != nil {
 				t.Fatal(err)
