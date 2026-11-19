@@ -183,9 +183,19 @@ enum XDriveIOSNativePhotosTestNavigator {
             for attempt in 0..<2 {
                 guard menu.exists && menu.isHittable else { return false }
                 menu.tap()
-                let action = app.buttons[title].firstMatch
-                if action.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
-                   action.isHittable {
+                // SwiftUI Menu children are exposed as menuItems on
+                // some iOS/Xcode combinations and as buttons on others.
+                // Resolve only the exact visible, hittable menu command.
+                let menuItem = app.menuItems.matching(
+                    NSPredicate(format: "label == %@", title)).firstMatch
+                if menuItem.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
+                   menuItem.isHittable {
+                    menuItem.tap()
+                    return true
+                }
+                let action = app.buttons.matching(
+                    NSPredicate(format: "label == %@", title)).firstMatch
+                if action.exists && action.isHittable {
                     action.tap()
                     return true
                 }
