@@ -50,7 +50,7 @@ func TestGalleryStaleExistenceProbeMatchesOrderedOwnerQuery(t *testing.T) {
 				MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
 				IndexState: meta.MediaIndexStateReady,
 				RelationEvidenceVersion: mediapkg.RelationEvidenceVersion,
-				DerivedResourceVersion: mediapkg.LIVPDerivedResourceVersion,
+				DerivedResourceVersion:  mediapkg.LIVPDerivedResourceVersion,
 				ContainerKind: "ready",
 			}
 			if err := db.Create(&md).Error; err != nil {
