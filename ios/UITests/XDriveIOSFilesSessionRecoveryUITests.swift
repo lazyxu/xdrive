@@ -6,12 +6,42 @@ import UIKit
 final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    /// Actual first-run PhotoKit permission can obscure Gallery's More menu.
+    /// Files no-session tests explicitly DENY this real OS alert, never
+    /// mock a grant, bypass Owner checks, or navigate through hidden tabs.
+    private func denyRealFirstRunPhotoAlertIfPresent(_ app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for alert in [springboard.alerts.firstMatch, app.alerts.firstMatch] {
+            guard alert.exists else { continue }
+            let label = alert.label
+            guard label.localizedCaseInsensitiveContains("Photo Library") ||
+                  label.contains("照片") || label.contains("相簿") else {
+                XCTFail("Unexpected system alert blocked Files navigation: \(label)")
+                return
+            }
+            let choices = ["Don’t Allow", "Don't Allow", "不允许", "不允许访问"]
+            guard let denial = choices.map({ alert.buttons[$0].firstMatch })
+                .first(where: { $0.exists && $0.isHittable }) else {
+                XCTFail("PhotoKit alert lacks a hittable actual denial control")
+                return
+            }
+            print("IOS_NATIVE_NO_SESSION_REAL_PHOTOKIT_DENIAL")
+            denial.tap()
+            let gone = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"), object: alert)
+            XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 8), .completed,
+                           "PhotoKit prompt must actually close")
+            return
+        }
+    }
+
     private func launch(owner: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
         if owner { app.launchArguments.append("-xdrive-ui-navigation-synthetic-owner") }
         app.launch()
         XCTAssertEqual(app.state, .runningForeground)
+        denyRealFirstRunPhotoAlertIfPresent(app)
         return app
     }
 
@@ -22,10 +52,21 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     private func tap(_ id: String, _ app: XCUIApplication) {
         print("IOS_NATIVE_NAV_TAP_START route=\(id)")
         if !XDriveIOSNativePhotosTestNavigator.tap(id, in: app) {
-            let control = element(id, app)
-            XCTAssertTrue(control.waitForExistence(timeout: 15) && control.isHittable,
-                          "Missing visible native route: \(id)")
-            control.tap()
+            // PhotoKit can present its real TCC prompt after initial launch.
+            // Dismiss only that genuine OS alert, then retry the SAME route.
+            denyRealFirstRunPhotoAlertIfPresent(app)
+            if !XDriveIOSNativePhotosTestNavigator.tap(id, in: app) {
+                let control = element(id, app)
+                if !(control.waitForExistence(timeout: 15) && control.isHittable) {
+                    let evidence = XCTAttachment(screenshot: app.screenshot())
+                    evidence.name = "missing-visible-route-\(id)"
+                    evidence.lifetime = .keepAlways
+                    add(evidence)
+                    XCTFail("Missing visible native route: \(id)")
+                    return
+                }
+                control.tap()
+            }
         }
         XCTAssertEqual(app.state, .runningForeground)
     }
