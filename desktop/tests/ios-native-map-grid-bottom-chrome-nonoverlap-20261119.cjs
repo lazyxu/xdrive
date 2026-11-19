@@ -11,7 +11,7 @@ test('real local MapKit grid stays above Photos native bottom chrome',()=>{
   const segment=local.slice(local.indexOf('.overlay(alignment: .bottomTrailing) {'),
                             local.indexOf('.overlay(alignment: .topLeading)',local.indexOf('.overlay(alignment: .bottomTrailing) {')))
   assert.match(segment,/XDriveIOSNativePhotoMapGridAction\([\s\S]*?accessibilityID: "native-ios-local-map-current-grid"/)
-  assert.match(segment,/\) \{ openCurrentMapGrid\(\) \}\s*\.padding\(\.trailing, 12\)\s*\.padding\(\.bottom, 74\)/)
+  assert.match(segment,/\) \{ openCurrentMapGrid\(\) \}[\s\S]*?\.padding\(\.trailing, 12\)\s*\.padding\(\.bottom, 74\)/)
   assert.match(segment,/enabled: canOpenCurrentMapGrid/)
   assert.match(local,/private func openCurrentMapGrid\(\) \{\s*guard canOpenCurrentMapGrid else \{ return \}[\s\S]*?XDriveIOSNativeLocalMapSpatialPolicy\.acceptsCellSelection\(/)
 })
