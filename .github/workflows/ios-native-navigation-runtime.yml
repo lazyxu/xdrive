@@ -352,7 +352,10 @@ jobs:
               # Both must execute under the iOS 26.5 Simulator, not only
               # compile or pass a source-string contract.
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests/testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage")
-              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests/testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope") ;;
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests/testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope")
+              # Mount the actual Files L3 Viewer graph for five media kinds,
+              # with no bearer, through a DEBUG-only Simulator-only route.
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesViewerFiveMediaKindsNoSessionForegroundAndDismissNoCrash") ;;
             *) echo "Unsupported UI suite" >&2; exit 2 ;;
           esac
           touch "$RUNNER_TEMP/native-navigation-results/xcodebuild-start.marker"

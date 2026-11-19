@@ -299,6 +299,7 @@ MINIMAL_TARGETS.update({
 MINIMAL_TARGETS.update({
     "testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage",
     "testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope",
+    "testFilesViewerFiveMediaKindsNoSessionForegroundAndDismissNoCrash",
 })
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)

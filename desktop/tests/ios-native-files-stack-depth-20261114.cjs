@@ -298,3 +298,29 @@ test('iOS 26.5 Files crash reproduction waits for real first-boot migration befo
   assert.ok(workflow.includes('assert_native_ios_no_crash.py'))
   assert.ok(workflow.includes('-only-testing:xDriveIOSNavigationUITests/'))
 })
+
+test('P0 native Files Viewer no-session crash smoke mounts the real L3 graph without credentials', () => {
+  const harness = fs.readFileSync(path.join(root,
+    'ios/scripts/prepare-navigation-runtime-smoke.py'), 'utf8')
+  const runtime = fs.readFileSync(path.join(root,
+    'ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'), 'utf8')
+  const workflow = fs.readFileSync(path.join(root,
+    '.github/workflows/ios-native-navigation-runtime.yml'), 'utf8')
+  const watcher = fs.readFileSync(path.join(root,
+    'ios/scripts/capture-navigation-smoke-frames.py'), 'utf8')
+  const testName = 'testFilesViewerFiveMediaKindsNoSessionForegroundAndDismissNoCrash'
+  assert.match(harness, /#if DEBUG/)
+  assert.match(harness, /-xdrive-ui-files-viewer-no-session/)
+  assert.match(harness, /XDriveIOSNativeFilesViewerNoSessionSmoke/)
+  assert.match(harness, /XDriveIOSNativeFilesViewer\(/)
+  assert.match(harness, /XDriveIOSNativeFilesNode\(/)
+  assert.match(harness, /openedOwner: owner, login: login/)
+  assert.match(harness, /onNavigate: \{ _ in false \}/)
+  assert.doesNotMatch(harness, /Bearer /)
+  assert.match(runtime, new RegExp('func ' + testName + '\\(\\)'))
+  assert.match(runtime, /native-ios-files-viewer-error-scroll/)
+  assert.match(runtime, /XCUIDevice\.shared\.press\(\.home\)/)
+  assert.match(runtime, /app\.wait\(for: \.runningForeground, timeout: 18\)/)
+  assert.match(workflow, new RegExp('candidate-ios26-files\\)[\\s\\S]*?' + testName))
+  assert.ok(watcher.includes('"' + testName + '"'))
+})

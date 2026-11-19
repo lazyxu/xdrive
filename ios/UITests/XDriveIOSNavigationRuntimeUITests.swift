@@ -741,6 +741,61 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
                        "Synthetic Owner cannot surface private Files rows")
     }
 
+    /// Directly mounts the REAL native Viewer through the DEBUG-only
+    /// navigation harness. Five media kinds, two foreground cycles and
+    /// repeated dismissal must not crash. No bearer or private file data:
+    /// successful decoded-media playback is intentionally NOT claimed.
+    func testFilesViewerFiveMediaKindsNoSessionForegroundAndDismissNoCrash() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-xdrive-ui-navigation-smoke",
+            "-xdrive-ui-navigation-synthetic-owner",
+            "-xdrive-ui-files-viewer-no-session"
+        ]
+        app.launch()
+        let root = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-viewer-smoke-root").firstMatch
+        XCTAssertTrue(root.waitForExistence(timeout: 20),
+                      "Debug-only file Viewer fixture did not mount")
+        for kind in ["image", "video", "pdf", "audio", "text"] {
+            let open = app.buttons["native-ios-files-viewer-smoke-" + kind].firstMatch
+            XCTAssertTrue(open.waitForExistence(timeout: 15),
+                          "Missing real Viewer launcher for " + kind)
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-viewer-smoke-" + kind)
+            open.tap()
+            let error = app.descendants(matching: .any)
+                .matching(identifier: "native-ios-files-viewer-error-scroll").firstMatch
+            XCTAssertTrue(error.waitForExistence(timeout: 20),
+                          "No-Session Viewer did not fail closed for " + kind)
+            XCTAssertEqual(app.state, .runningForeground,
+                           "File Viewer lost the foreground process at " + kind)
+            if kind == "video" || kind == "pdf" {
+                XCUIDevice.shared.press(.home)
+                XCTAssertNotEqual(app.state, .notRunning,
+                                  "File Viewer process terminated in background at " + kind)
+                app.activate()
+                XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                              "File Viewer did not restore foreground at " + kind)
+                XCTAssertTrue(error.waitForExistence(timeout: 20),
+                              "File Viewer failed to repaint no-session state at " + kind)
+            }
+            let done = app.navigationBars.buttons["完成"].firstMatch
+            XCTAssertTrue(done.waitForExistence(timeout: 15),
+                          "File Viewer lost its Done escape at " + kind)
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-viewer-smoke-done")
+            done.tap()
+            XCTAssertTrue(root.waitForExistence(timeout: 15),
+                          "File Viewer modal did not return to its root at " + kind)
+            XCTAssertTrue(open.waitForExistence(timeout: 15),
+                          "File Viewer changed its root launcher after " + kind)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        let proof = XCTAttachment(screenshot: app.screenshot())
+        proof.name = "files-viewer-five-no-session-types-foreground-dismiss"
+        proof.lifetime = .keepAlways
+        add(proof)
+    }
+
     func testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent() {
         let app = launch(syntheticOwner: true)
         let device = XCUIDevice.shared
