@@ -169,7 +169,7 @@ test("native Gallery-Files bottom tabs use real on-screen frames on AX scroll fa
   assert.match(body, /XCTAssertFalse\(tabFrame\.isEmpty/)
   assert.match(body, /XCTAssertTrue\(windowFrame\.contains\(midpoint\)/)
   assert.match(body, /XCTAssertGreaterThan\(midpoint\.y,/)
-  assert.match(body, /window\.coordinate\(/[\s\S]*?withOffset\(CGVector\(/)
+  assert.match(body, /window\.coordinate\([\s\S]*?withOffset\(CGVector\(/)
   assert.match(body, /navigationTap\.tap\(\)/)
   assert.match(body, /\} else \{\s*element\.tap\(\)/)
   assert.match(body, /XCTAssertEqual\(app\.state, \.runningForeground/)
