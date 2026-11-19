@@ -57,13 +57,16 @@ test('P0: date-picker action toolbar must close before the native Owner map tool
   // Date picker keeps its own confirmation toolbar. The secondary Owner
   // actions are in map overlay, not nested inside the date picker.
   const screen = owner.slice(owner.indexOf('struct XDriveIOSNativeOwnerPhotoMapScreen: View'))
-  const chromeAt = screen.indexOf('.overlay(alignment: .bottomLeading)')
   const pickerAt = screen.indexOf('.sheet(isPresented: $datePickerOpen)')
-  assert.ok(chromeAt >= 0 && pickerAt > chromeAt)
-  const secondary = screen.slice(chromeAt, pickerAt)
+  const chromeAt = screen.indexOf('.overlay(alignment: .bottomLeading)', pickerAt)
+  const selectedAt = screen.indexOf('.sheet(item: $selected, onDismiss:', chromeAt)
+  assert.ok(pickerAt >= 0 && chromeAt > pickerAt && selectedAt > chromeAt)
+  const dateSheet = screen.slice(pickerAt, chromeAt)
+  const secondary = screen.slice(chromeAt, selectedAt)
+  assert.match(dateSheet, /ToolbarItem\(placement: \.confirmationAction\)/)
+  assert.doesNotMatch(dateSheet, /native-ios-owner-map-actions/)
   assert.match(secondary, /Label\("地图操作", systemImage: "ellipsis.circle"\)/)
   assert.match(secondary, /native-ios-owner-map-actions/)
-  assert.doesNotMatch(region, /native-ios-owner-map-actions/)
   assert.match(owner, /if XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, place\.owner\)[\s\S]*?placeDisplayName: place\.name/)
 })
 
