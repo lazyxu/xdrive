@@ -925,6 +925,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                         }
                         .accessibilityIdentifier("native-ios-map-source-selector")
                     }
+                    // The explicit calendar action must survive iOS 18.5
+                    // nested Menu AX flattening even with many year options.
+                    Button("按指定日期") { datePickerOpen = true }
+                        .accessibilityIdentifier("native-ios-owner-map-select-date")
                     Menu {
                         Button("全部日期") { setCaptureRange(nil) }
                         Button("最近 7 天") {
@@ -933,7 +937,6 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                         Button("最近 30 天") {
                             setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
                         }
-                        Button("按指定日期") { datePickerOpen = true }
                         Section("按年份") {
                             ForEach(recentMapYears, id: \.self) { year in
                                 Button("\(year) 年") {

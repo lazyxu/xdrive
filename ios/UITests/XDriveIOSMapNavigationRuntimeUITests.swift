@@ -598,12 +598,13 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(sourceControl.exists || sourceLabel.exists,
                       "Map source selection must stay in the advanced actions menu")
         let dateMenu = element("native-ios-local-map-capture-menu", in: app)
-        XCTAssertTrue(dateMenu.waitForExistence(timeout: 6))
+        XCTAssertTrue(dateMenu.waitForExistence(timeout: 6),
+                      "The date presets must remain discoverable under Map actions")
+        // iOS 18.5 exposed only year rows after tapping the former nested
+        // menu. The explicit date picker is now in this SAME visible top
+        // actions menu, while presets stay in the date submenu.
+        // Choose the actual visible item; never tap a hidden AX node.
         // UI date → month selection must preserve verified PhotoKit scope.
-        dateMenu.tap()
-        // SwiftUI Menu children are menuItems on some iOS 18.5 builds,
-        // not XCUIElementTypeButton. Query the real app's stable item ID,
-        // then its label across AX types; never pretend a missing menu passed.
         let byID = element("native-ios-local-map-select-date", in: app)
         let byLabel = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == %@", "按指定日期")).firstMatch

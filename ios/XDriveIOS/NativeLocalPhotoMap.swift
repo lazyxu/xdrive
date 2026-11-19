@@ -1983,6 +1983,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         }
                         .accessibilityIdentifier("native-ios-map-source-selector")
                     }
+                    // iOS 18.5 may flatten the next nested Menu into an
+                    // AX list containing only year buttons. Keep the exact
+                    // date picker a directly actionable item in Map actions,
+                    // independent of the long year sub-menu.
+                    Button("按指定日期") { datePickerOpen = true }
+                        .accessibilityIdentifier("native-ios-local-map-select-date")
                     Menu {
                         Button("全部日期") { setCaptureRange(nil) }
                         Button("最近的日子与旅行") {
@@ -1995,8 +2001,6 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         Button("最近 30 天") {
                             setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
                         }
-                        Button("按指定日期") { datePickerOpen = true }
-                            .accessibilityIdentifier("native-ios-local-map-select-date")
                         Section("按年份") {
                             ForEach(recentMapYears, id: \.self) { year in
                                 Button("\(year) 年") {
