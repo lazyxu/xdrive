@@ -152,3 +152,29 @@ test("PhotoKit date-sheet foreground uses stable real close ID, not unrelated na
   assert.match(body, /XCTAssertTrue\(done\.exists,/)
   assert.match(body, /done\.tap\(\)/)
 })
+
+
+// The genuine iOS 18.5 Simulator failure was AXScrollToVisibleAction on
+// an already visible bottom tab (real frame x=231.9, y=764.5), not a
+// missing gallery/file destination. Require strict on-window frame checks
+// and a real coordinate tap, not test-only navigation injection.
+test("native Gallery-Files bottom tabs use real on-screen frames on AX scroll failure", () => {
+  const start = navigation.indexOf("private func tap(_ id: String, app: XCUIApplication)")
+  const end = navigation.indexOf("private func assertGallery(", start)
+  assert.ok(start >= 0 && end > start)
+  const body = navigation.slice(start, end)
+  assert.match(body, /element\.waitForExistence\(timeout: 15\)/)
+  assert.match(body, /\["native-ios-tab-files", "native-ios-tab-gallery"\]\.contains\(id\)/)
+  assert.match(body, /XCTAssertTrue\(window\.exists/)
+  assert.match(body, /XCTAssertFalse\(tabFrame\.isEmpty/)
+  assert.match(body, /XCTAssertTrue\(windowFrame\.contains\(midpoint\)/)
+  assert.match(body, /XCTAssertGreaterThan\(midpoint\.y,/)
+  assert.match(body, /window\.coordinate\(/[\s\S]*?withOffset\(CGVector\(/)
+  assert.match(body, /navigationTap\.tap\(\)/)
+  assert.match(body, /\} else \{\s*element\.tap\(\)/)
+  assert.match(body, /XCTAssertEqual\(app\.state, \.runningForeground/)
+  // Keep downstream real destination/screenshot assertions in the tests.
+  assert.match(navigation, /func testGallerySourceFilterAndOriginalsRepeatedFilesReturn\(\)/)
+  assert.match(navigation, /assertFiles\(app\)/)
+  assert.match(navigation, /assertGallery\(app\)/)
+})

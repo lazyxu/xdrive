@@ -40,7 +40,32 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         let element = target(id, app: app)
         XCTAssertTrue(element.waitForExistence(timeout: 15), "No native control: \(id)")
         print("IOS_NATIVE_NAV_TAP_START route=\(id)")
-        element.tap()
+        if ["native-ios-tab-files", "native-ios-tab-gallery"].contains(id) {
+            // On iOS 18.5 an already visible bottom tab can fail XCTest's
+            // AXScrollToVisibleAction with (-1,-1) even though its true frame
+            // is inside the window. Hit the real tab's physical midpoint,
+            // NEVER an invented destination or hard-coded screen coordinate.
+            let window = app.windows.firstMatch
+            XCTAssertTrue(window.exists, "Native tab has no real host window")
+            let windowFrame = window.frame
+            let tabFrame = element.frame
+            let midpoint = CGPoint(x: tabFrame.midX, y: tabFrame.midY)
+            XCTAssertFalse(tabFrame.isEmpty, "Native tab must have a real frame")
+            XCTAssertTrue(windowFrame.contains(midpoint),
+                          "Native tab is offscreen or outside the active window: \(id)")
+            XCTAssertGreaterThan(midpoint.y,
+                windowFrame.minY + windowFrame.height * 0.65,
+                "Native tab is not in the bottom navigation: \(id)")
+            let navigationTap = window.coordinate(
+                withNormalizedOffset: CGVector(dx: 0, dy: 0)
+            ).withOffset(CGVector(
+                dx: midpoint.x - windowFrame.minX,
+                dy: midpoint.y - windowFrame.minY
+            ))
+            navigationTap.tap()
+        } else {
+            element.tap()
+        }
         XCTAssertEqual(app.state, .runningForeground, "Native process exited at \(id)")
     }
 

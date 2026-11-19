@@ -135,3 +135,19 @@ before attributing actual Xcode waits, marks the affected routes in the same
 75-route CSV/JSON and rejects missing/duplicated/mismatched raw trials. No
 existing CPU/RSS/AX or Web-equivalence gate is relaxed. More native instrumentation
 is still needed for real frame cadence, first media present and signed Owner.
+
+## 2026-11-19 — native Gallery-to-Files actual tab navigation regression
+
+The iOS 18.5 candidate-gallery-files run on prior source `9452711f` executed
+94 real native XCTest methods (93 PASS, 1 FAIL); `testGallerySourceFilterAndOriginalsRepeatedFilesReturn`
+failed on `kAXErrorCannotComplete` from `AXScrollToVisibleAction` for the
+**real visible** bottom Files tab frame at x≈231.9, y≈764.5. The app did not
+show a verified crash in this failure. The test helper now validates the actual
+Files/Gallery AX identifier, existing host window, nonempty on-screen tab frame
+and bottom-bar geometry before tapping the actual physical frame midpoint via
+XCTest coordinates. It still requires the real destination and screenshot
+assertions after the tap; other controls retain normal `XCUIElement.tap()`.
+This is an XCUITest navigation fix, NOT a bypass of app functionality, nor
+proof that UIKit/SwiftUI physical 60/120Hz frame performance has passed.
+Retain MapKit basemap AX failure until the real floating control in #4362
+is validated; do not waive that independent functional gate.
