@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1973,16 +1974,38 @@ func (s *Server) indexMediaNode(
 	return out, nil
 }
 
+// Gallery's first read needs only to know whether any current Owner file has
+// stale MediaMetadata. Unlike the worker batch, no newest-first ordering,
+// full Node materialization, or File preload is needed here. A matching row
+// still invokes the unchanged bounded, ordered refresh/reconciliation path.
+// Never cache a negative result: each Gallery read must probe the live Owner.
+func (s *Server) galleryHasStaleMedia(ctx context.Context, uid uint64) (bool, error) {
+	var nodeID uint64
+	err := s.staleMediaQuery(ctx).
+		Where("n.owner_id = ?", uid).
+		Select("n.id").
+		Limit(1).
+		Row().
+		Scan(&nodeID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Server) refreshMediaIndexForGalleryRead(
 	ctx context.Context,
 	uid uint64,
 	limit int,
 ) error {
-	probe, err := s.staleMediaNodes(ctx, &uid, 1)
+	hasStale, err := s.galleryHasStaleMedia(ctx, uid)
 	if err != nil {
 		return err
 	}
-	if len(probe) == 0 {
+	if !hasStale {
 		return nil
 	}
 	return s.refreshMediaIndexForOwner(ctx, uid, limit)
