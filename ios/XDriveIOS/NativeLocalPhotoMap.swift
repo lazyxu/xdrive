@@ -1790,7 +1790,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                 ? "\(globalLocated) 张照片，\(globalCells.count) 个位置"
                                 : nil
                         ) { openCurrentMapGrid() }
-                        .padding(12)
+                        // The map canvas extends behind the Photos floating
+                        // Library/Collections/Search bar. Its 44pt grid
+                        // control used to overlap Search at x=329..379,
+                        // y=761..811 in real Simulator AX; taps were swallowed.
+                        // Reserve the same bottom zone as the left Map menu,
+                        // with extra separation above the Photos pill.
+                        .padding(.trailing, 12)
+                        .padding(.bottom, 74)
                     }
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 3) {

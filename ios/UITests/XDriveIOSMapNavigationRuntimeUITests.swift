@@ -1060,6 +1060,16 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         XCTAssertTrue(currentGrid.waitForExistence(timeout: 20))
         XCTAssertTrue(currentGrid.isEnabled,
                       "Verified map members must open their existing native photo wall")
+        // The previous real Simulator image placed the current-grid control
+        // at x=337,y=762 beneath the Photos Search pill at x=329,y=761.
+        // Accessibility existence was true yet the action could not open
+        // a place wall. Reject any overlapping control rectangles BEFORE tap.
+        let photosChrome = element("native-ios-photos-bottom-bar", in: app)
+        XCTAssertTrue(photosChrome.waitForExistence(timeout: 10))
+        XCTAssertFalse(currentGrid.frame.intersects(photosChrome.frame),
+                       "Map current-grid is blocked by the Photos floating bottom bar")
+        XCTAssertTrue(currentGrid.isHittable,
+                      "Grid needs a truly tappable 44pt target above Photos chrome")
         currentGrid.tap()
         XCTAssertTrue(element("native-ios-map-photo-wall-tile", in: app)
             .waitForExistence(timeout: 35),
