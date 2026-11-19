@@ -89,14 +89,16 @@ func TestGalleryStaleExistenceProbeMatchesOrderedOwnerQuery(t *testing.T) {
 	}
 	check(a, false)
 	check(b, true)
-	if err := db.Delete(&meta.Node{}, "id = ?", bNode).Error; err != nil {
+	if err := db.Model(&meta.Node{}).Where("id = ?", bNode).
+		Update("deleted_at", time.Now().UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
 	check(b, false) // deleted nodes are not eligible stale media
 
 	missing := create(a, "missing.jpg", false)
 	check(a, true)
-	if err := db.Delete(&meta.Node{}, "id = ?", missing).Error; err != nil {
+	if err := db.Model(&meta.Node{}).Where("id = ?", missing).
+		Update("deleted_at", time.Now().UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
 	check(a, false)
