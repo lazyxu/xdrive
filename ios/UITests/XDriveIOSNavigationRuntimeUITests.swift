@@ -6,9 +6,19 @@ import XCTest
 /// Never use invisible view IDs or coordinate taps as a substitute for real UX.
 enum XDriveIOSNativePhotosTestNavigator {
     private static func found(_ id: String, in app: XCUIApplication) -> XCUIElement {
-        // A SwiftUI Menu may expose both an outer Other and a real Button
-        // with the same identifier. Tapping the Other was observed to leave
-        // the menu closed while the test incorrectly believed it had tapped.
+        // SwiftUI Menu labels may be surfaced as an identifier-less Button
+        // even when the Menu's accessibilityIdentifier is attached to an
+        // enclosing Other. Prefer the actual hittable Button by its explicit
+        // user-facing accessibility label; never tap the non-hittable wrapper.
+        if id == "native-ios-gallery-more-menu" {
+            let identified = app.buttons.matching(identifier: id).firstMatch
+            if identified.exists && identified.isHittable { return identified }
+            let labelled = app.buttons.matching(
+                NSPredicate(format: "label == %@", "图库来源、备份与 xDrive")
+            ).firstMatch
+            if labelled.exists && labelled.isHittable { return labelled }
+            if identified.exists { return identified }
+        }
         let button = app.buttons.matching(identifier: id).firstMatch
         if button.exists { return button }
         return app.descendants(matching: .any).matching(identifier: id).firstMatch
@@ -161,7 +171,11 @@ enum XDriveIOSNativePhotosTestNavigator {
         ]
         if let title = sourceCommands[id] ?? globalCommands[id] {
             let menu = found("native-ios-gallery-more-menu", in: app)
-            guard menu.exists && menu.isHittable else { return false }
+            guard menu.exists && menu.isHittable else {
+                print("IOS_NATIVE_GALLERY_MORE_MENU_NOT_HITTABLE",
+                      menu.debugDescription)
+                return false
+            }
             // A real first-use Photos permission alert can interrupt this
             // menu tap. After XCTest has actually dismissed the system alert,
             // retry the SAME visible menu once, not an invisible tab or fake
