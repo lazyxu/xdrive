@@ -277,3 +277,24 @@ test('real Files Home and Launcher UI tests scroll only their owned AX list', ()
   assert.doesNotMatch(deep, /app\.collectionViews\.firstMatch/)
   assert.match(files, /accessibilityIdentifier\(isHome \? "native-ios-files-home-list" : "native-ios-files-folder-list"\)/)
 })
+
+test('iOS 26.5 Files crash reproduction waits for real first-boot migration before testing', () => {
+  const workflow = fs.readFileSync(
+    path.join(root, '.github/workflows/ios-native-navigation-runtime.yml'), 'utf8'
+  )
+  const boot = workflow.split('      - name: Boot available iPhone simulator')[1]
+    ?.split('      - name: Seed two independent real GPS PhotoKit samples')[0]
+  assert.ok(boot, 'real Simulator boot step must remain')
+  assert.ok(boot.includes('candidate-ios26-files'))
+  assert.match(boot, /timeout = 720 if newer else 240/)
+  assert.ok(boot.includes('subprocess.run(["xcrun","simctl","bootstatus"'))
+  assert.ok(boot.includes('timeout=timeout,check=True'))
+  assert.ok(boot.includes('except subprocess.TimeoutExpired:'))
+  assert.ok(boot.includes('CoreSimulator first-boot migration timeout'))
+  assert.ok(boot.includes('raise SystemExit(1)'))
+  // A boot timeout must never become an app-process PASS. Keep the exact-
+  // candidate XCTest marker and the independent crash-report audit required.
+  assert.ok(workflow.includes('xcodebuild-start.marker'))
+  assert.ok(workflow.includes('assert_native_ios_no_crash.py'))
+  assert.ok(workflow.includes('-only-testing:xDriveIOSNavigationUITests/'))
+})

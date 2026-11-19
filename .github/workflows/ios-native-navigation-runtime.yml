@@ -184,9 +184,22 @@ jobs:
           # Fail as infrastructure failure instead of waiting indefinitely
           # for an incompatible/failed CoreSimulator runtime.
           python3 - <<'PY'
-          import os,subprocess
-          subprocess.run(["xcrun","simctl","bootstatus",os.environ["SMOKE_SIM"],"-b"],
-                         timeout=240,check=True)
+          import os,subprocess,sys
+          # Real Xcode 26.6/iOS 26.5 runner spent >4m30 in Apple's
+          # first-boot data migrators, hitting the old 240s pre-XCTest cap.
+          # This is infrastructure, not evidence of a native app crash.
+          newer = os.environ.get("IOS26_FILES_REPRO") == "true"
+          timeout = 720 if newer else 240
+          print(f"IOS_SIMULATOR_BOOT_BUDGET_SECONDS={timeout} iOS26={newer}",flush=True)
+          try:
+              subprocess.run(["xcrun","simctl","bootstatus",os.environ["SMOKE_SIM"],"-b"],
+                             timeout=timeout,check=True)
+          except subprocess.TimeoutExpired:
+              print("::error title=CoreSimulator first-boot migration timeout::"
+                    "Simulator could not finish OS migration before XCTest; "
+                    "classify as infrastructure failure, not app crash",
+                    file=sys.stderr)
+              raise SystemExit(1)
           PY
       - name: Seed two independent real GPS PhotoKit samples
         if: matrix.source == 'candidate-mapkit'
