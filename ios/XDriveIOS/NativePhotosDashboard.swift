@@ -592,6 +592,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
     @State private var showingLocalPhotoSearch = false
+    // The native Gallery toolbar's SwiftUI Menu was visible but not hittable
+    // on real Simulator runs. Present one accessible options sheet instead;
+    // Photos keeps its original single bottom bar and unchanged source scope.
+    @State private var showingGalleryOptions = false
     // Native Photos bottom search opens the unified PhotoKit + Owner filter/search sheet.
     @State private var requestUnifiedPhotoSearch = false
     // iOS Photos changes its lower-left floating control to year/month/all
@@ -792,6 +796,9 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .sheet(isPresented: $showingLocalPhotoSearch) {
             XDriveIOSNativePhotoSearchScreen()
+        }
+        .sheet(isPresented: $showingGalleryOptions) {
+            galleryOptionsSheet
         }
         .sheet(isPresented: $showRecentPicker) {
             NavigationStack {
@@ -1115,48 +1122,96 @@ struct XDriveIOSNativePhotosDashboard: View {
         return nil
     }
 
+    // A real, single-tap toolbar Button is more reliable than a SwiftUI Menu
+    // on iOS 18/26 native navigation. The options List keeps sections and
+    // exposes every action as an independently hittable accessibility Button.
     private var galleryMoreMenu: some View {
-        Menu {
-            Section("图库来源") {
-                Button("全部照片") { openGallery(.unified) }
-                if gallerySource == .local || gallerySource == .albums {
-                    Button("搜索本机照片") { showingLocalPhotoSearch = true }
-                        .disabled(photoAuthorization != .authorized &&
-                                  photoAuthorization != .limited)
-                        .accessibilityIdentifier("native-ios-gallery-local-photo-search")
-                }
-                Button("本机照片") { openGallery(.local) }
-                Button("云端图库") { openGallery(.cloud) }
-                Button("备份原件") { openGallery(.originals) }
-                Button("地图") { openGallery(.map) }
-            }
-            // Keep actual app destinations above the long backup section.
-            // On compact iPhones a tall Menu can push later actions offscreen:
-            // Files must remain directly hittable without exposing a second
-            // permanent xDrive tab bar over the native Photos chrome.
-            Section("xDrive") {
-                Button("文件") { tab = .files }
-                    .accessibilityIdentifier("native-ios-gallery-route-files")
-                Button("全部功能") { tab = .launcher }
-                    .accessibilityIdentifier("native-ios-gallery-route-launcher")
-                Button("我的") { tab = .mine }
-                    .accessibilityIdentifier("native-ios-gallery-route-mine")
-            }
-            Section("备份与管理") {
-                if let status = galleryBackupStatus {
-                    Button(status) { openBackup(.overview) }
-                        .accessibilityIdentifier("native-ios-gallery-backup-status")
-                }
-                backupMenuItems
-            }
+        Button {
+            showingGalleryOptions = true
         } label: {
             Image(systemName: backup.schedule?.pausedForReview == true
                 ? "exclamationmark.circle" : "ellipsis.circle")
                 .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("图库来源、备份与 xDrive")
         .accessibilityValue(galleryBackupStatus ?? "备份设置")
         .accessibilityIdentifier("native-ios-gallery-more-menu")
+    }
+
+    private var galleryOptionsSheet: some View {
+        NavigationStack {
+            List {
+                Section("图库来源") {
+                    Button("全部照片") {
+                        showingGalleryOptions = false
+                        openGallery(.unified)
+                    }
+                    if gallerySource == .local || gallerySource == .albums {
+                        Button("搜索本机照片") {
+                            showingGalleryOptions = false
+                            showingLocalPhotoSearch = true
+                        }
+                        .disabled(photoAuthorization != .authorized &&
+                                  photoAuthorization != .limited)
+                        .accessibilityIdentifier("native-ios-gallery-local-photo-search")
+                    }
+                    Button("本机照片") {
+                        showingGalleryOptions = false
+                        openGallery(.local)
+                    }
+                    Button("云端图库") {
+                        showingGalleryOptions = false
+                        openGallery(.cloud)
+                    }
+                    Button("备份原件") {
+                        showingGalleryOptions = false
+                        openGallery(.originals)
+                    }
+                    Button("地图") {
+                        showingGalleryOptions = false
+                        openGallery(.map)
+                    }
+                }
+                // Preserve the xDrive destinations without stacking its
+                // five-slot navigation over the Photos-native bottom bar.
+                Section("xDrive") {
+                    Button("文件") {
+                        showingGalleryOptions = false
+                        tab = .files
+                    }
+                    .accessibilityIdentifier("native-ios-gallery-route-files")
+                    Button("全部功能") {
+                        showingGalleryOptions = false
+                        tab = .launcher
+                    }
+                    .accessibilityIdentifier("native-ios-gallery-route-launcher")
+                    Button("我的") {
+                        showingGalleryOptions = false
+                        tab = .mine
+                    }
+                    .accessibilityIdentifier("native-ios-gallery-route-mine")
+                }
+                Section("备份与管理") {
+                    if let status = galleryBackupStatus {
+                        Button(status) { openBackup(.overview) }
+                            .accessibilityIdentifier("native-ios-gallery-backup-status")
+                    }
+                    backupMenuItems
+                }
+            }
+            .navigationTitle("图库选项")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { showingGalleryOptions = false }
+                        .accessibilityIdentifier("native-ios-gallery-options-done")
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .accessibilityIdentifier("native-ios-gallery-options-sheet")
     }
 
     // L1 native bottom bar. The system safe-area inset remains managed by
