@@ -759,8 +759,15 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
                       "Debug-only file Viewer fixture did not mount")
         for kind in ["image", "video", "pdf", "audio", "text"] {
             let open = app.buttons["native-ios-files-viewer-smoke-" + kind].firstMatch
-            XCTAssertTrue(open.waitForExistence(timeout: 15),
-                          "Missing real Viewer launcher for " + kind)
+            if !open.waitForExistence(timeout: 15) {
+                print("IOS_VIEWER_SMOKE_MISSING kind=" + kind
+                      + " AX hierarchy:\n" + app.debugDescription)
+                let evidence = XCTAttachment(screenshot: app.screenshot())
+                evidence.name = "missing-real-viewer-launcher-" + kind
+                evidence.lifetime = .keepAlways
+                add(evidence)
+            }
+            XCTAssertTrue(open.exists, "Missing real Viewer launcher for " + kind)
             XCTAssertTrue(open.isHittable,
                           "Real Viewer launcher is present but not tappable for " + kind)
             print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-viewer-smoke-" + kind)
