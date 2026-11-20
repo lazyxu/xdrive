@@ -35,7 +35,11 @@ check('P0-02 floating map type and location are 44pt controls, dates remain in o
     assert.match(file, /Label\("地图日期", systemImage: "calendar"\)/)
   }
   assert.match(ui, /let actions = element\("native-ios-local-map-actions", in: app\)/)
-  assert.match(ui, /dateMenu\.tap\(\)/)
+  assert.match(ui, /actions\.tap\(\)/)
+  assert.match(ui, /let dateMenu = element\("native-ios-local-map-capture-menu", in: app\)/)
+  assert.match(ui, /dateMenu\.waitForExistence\(timeout: 6\)/)
+  assert.match(ui, /let chooseDate = byID\.exists \? byID : byLabel/)
+  assert.match(ui, /chooseDate\.tap\(\)/)
 })
 check('P0-03 technical source/Owner prose is not a normal photo-map count', () => {
   assert.doesNotMatch(owner, /Text\("当前 Server Owner 已索引/)
