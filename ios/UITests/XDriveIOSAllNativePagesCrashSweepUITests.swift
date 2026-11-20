@@ -24,7 +24,11 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
 
     private func ready(_ id: String, _ app: XCUIApplication) {
         let target = element(id, app)
-        if !target.waitForExistence(timeout: 18) { capture(app, "missing-" + id) }
+        if !target.waitForExistence(timeout: 18) {
+            print("ALL_NATIVE_MISSING " + id + " appState=" + String(app.state.rawValue))
+            print("ALL_NATIVE_HIERARCHY:\n" + app.debugDescription)
+            capture(app, "missing-" + id)
+        }
         XCTAssertTrue(target.exists, "Native destination missing: " + id)
         XCTAssertEqual(app.state, .runningForeground, "Native process exited at " + id)
     }
@@ -1358,6 +1362,10 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
     /// launch the unauthenticated Owner must not resurrect a stale cloud grid.
     func testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid() {
         let app = launch()
+        // A first-boot Simulator can expose the global bar before the actual
+        // Gallery workspace mounts. Wait for the real source page, not a sleep,
+        // before asserting the Files transition and denied private rows.
+        ready("native-ios-unified-photo-gallery", app)
         for cycle in 0..<2 {
             filesHomeChild("native-ios-files-open-root-location",
                            page: "native-ios-files-error-page", app)

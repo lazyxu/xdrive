@@ -122,6 +122,11 @@ private struct XDriveIOSNativeFilesViewerNoSessionSmoke: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
+                // Keep the root AX marker on a leaf: a VStack identifier
+                // can overwrite the individual child Button identifiers.
+                Text("无会话 Viewer 冒烟测试")
+                    .font(.caption)
+                    .accessibilityIdentifier("native-ios-files-viewer-smoke-root")
                 open("image", name: "smoke.jpg", nodeID: 1001)
                 open("video", name: "smoke.mp4", nodeID: 1002)
                 open("pdf", name: "smoke.pdf", nodeID: 1003)
@@ -130,7 +135,6 @@ private struct XDriveIOSNativeFilesViewerNoSessionSmoke: View {
             }
             .padding(24)
             .navigationTitle("文件 Viewer 回归")
-            .accessibilityIdentifier("native-ios-files-viewer-smoke-root")
         }
         .fullScreenCover(item: $selected) { node in
             XDriveIOSNativeFilesViewer(

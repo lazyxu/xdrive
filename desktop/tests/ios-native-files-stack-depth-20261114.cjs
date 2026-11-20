@@ -313,6 +313,10 @@ test('P0 native Files Viewer no-session crash smoke mounts the real L3 graph wit
   assert.match(harness, /-xdrive-ui-files-viewer-no-session/)
   assert.match(harness, /XDriveIOSNativeFilesViewerNoSessionSmoke/)
   assert.match(harness, /XDriveIOSNativeFilesViewer\(/)
+  // Root probe is a Text leaf; SwiftUI must not propagate a container AX ID
+  // over the five distinct, tappable real Viewer launch buttons.
+  assert.match(harness, /Text\("无会话 Viewer 冒烟测试"\)[\s\S]*?\.accessibilityIdentifier\("native-ios-files-viewer-smoke-root"\)/)
+  assert.doesNotMatch(harness, /\.navigationTitle\("文件 Viewer 回归"\)\s*\.accessibilityIdentifier\("native-ios-files-viewer-smoke-root"\)/)
   assert.match(harness, /XDriveIOSNativeFilesNode\(/)
   assert.match(harness, /openedOwner: owner, login: login/)
   assert.match(harness, /onNavigate: \{ _ in false \}/)

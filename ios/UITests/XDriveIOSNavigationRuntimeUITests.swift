@@ -761,6 +761,8 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
             let open = app.buttons["native-ios-files-viewer-smoke-" + kind].firstMatch
             XCTAssertTrue(open.waitForExistence(timeout: 15),
                           "Missing real Viewer launcher for " + kind)
+            XCTAssertTrue(open.isHittable,
+                          "Real Viewer launcher is present but not tappable for " + kind)
             print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-viewer-smoke-" + kind)
             open.tap()
             let error = app.descendants(matching: .any)

@@ -199,7 +199,14 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             let ready = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value == %@", "启动完成"),
                 object: readiness)
-            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed,
+            let result = XCTWaiter.wait(for: [ready], timeout: 20)
+            if result != .completed {
+                print("B9_STARTUP_NOT_READY value=" + String(describing: readiness.value)
+                      + " label=" + readiness.label
+                      + " appState=" + String(app.state.rawValue))
+                record(app, "startup-not-durable-ready")
+            }
+            XCTAssertEqual(result, .completed,
                            "Login mounted, but startup never reached durable ready")
         }
         alive(app, "startup-stabilized")
