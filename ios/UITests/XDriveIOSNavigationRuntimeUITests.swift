@@ -54,6 +54,27 @@ enum XDriveIOSNativePhotosTestNavigator {
             + alert.debugDescription)
     }
 
+    /// iOS 18.5 sometimes exposes the real SwiftUI toolbar Menu as a
+    /// non-hittable AX proxy despite a full-sized on-screen button. This is
+    /// NOT permission to tap an invisible destination: require the exact
+    /// labelled Menu, a genuine 44pt visible frame, a foreground app and no
+    /// system/application alert before sending a user-visible Menu tap.
+    private static func verifiedGalleryMoreFrame(
+        _ menu: XCUIElement, in app: XCUIApplication
+    ) -> Bool {
+        guard menu.exists, app.state == .runningForeground,
+              menu.label == "图库来源、备份与 xDrive",
+              !app.alerts.firstMatch.exists,
+              !XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                  .alerts.firstMatch.exists else { return false }
+        let frame = menu.frame
+        let screen = app.frame
+        return frame.width >= 44 && frame.height >= 44 &&
+            frame.intersects(screen) &&
+            frame.midX >= screen.minX && frame.midX <= screen.maxX &&
+            frame.midY >= screen.minY && frame.midY <= screen.maxY
+    }
+
     static func visible(_ id: String, in app: XCUIApplication) -> XCUIElement {
         switch id {
         case "native-ios-tab-gallery", "native-ios-gallery-source-unified":
@@ -171,17 +192,24 @@ enum XDriveIOSNativePhotosTestNavigator {
         ]
         if let title = sourceCommands[id] ?? globalCommands[id] {
             let menu = found("native-ios-gallery-more-menu", in: app)
-            guard menu.exists && menu.isHittable else {
-                print("IOS_NATIVE_GALLERY_MORE_MENU_NOT_HITTABLE",
+            let normalHit = menu.exists && menu.isHittable
+            guard normalHit || verifiedGalleryMoreFrame(menu, in: app) else {
+                print("IOS_NATIVE_GALLERY_MORE_MENU_NOT_VISIBLE",
                       menu.debugDescription)
                 return false
+            }
+            if !normalHit {
+                print("IOS_NATIVE_GALLERY_MORE_AX_PROXY_FRAME_VERIFIED")
             }
             // A real first-use Photos permission alert can interrupt this
             // menu tap. After XCTest has actually dismissed the system alert,
             // retry the SAME visible menu once, not an invisible tab or fake
             // navigation route. Keep every failed route a real XCTest failure.
             for attempt in 0..<2 {
-                guard menu.exists && menu.isHittable else { return false }
+                guard (menu.exists && menu.isHittable) ||
+                      verifiedGalleryMoreFrame(menu, in: app) else {
+                    return false
+                }
                 menu.tap()
                 // SwiftUI Menu children are exposed as menuItems on
                 // some iOS/Xcode combinations and as buttons on others.
