@@ -41,12 +41,45 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
         add(evidence)
     }
 
+
+    /// iOS 26.5 first launch can show Apple's genuine Photos permission
+    /// dialog DURING a Files tab tap (see original Simulator H.264/screenshot).
+    /// This no-session crash matrix deliberately DENIES that permission.
+    /// Never grant Photos, ignore an unknown system alert, or claim a popup
+    /// as a native xDriveIOS process crash.
+    private func denyFirstRunPhotoLibraryPromptIfPresent(_ app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let nativeAlert = springboard.alerts.firstMatch
+        let appAlert = app.alerts.firstMatch
+        let alert = nativeAlert.exists ? nativeAlert : appAlert
+        guard alert.exists else { return }
+        let isPhotoKit = alert.label.localizedCaseInsensitiveContains("Photo Library")
+            || alert.label.contains("照片") || alert.label.contains("相簿")
+            || alert.buttons["Allow Full Access"].exists
+        XCTAssertTrue(isPhotoKit, "Unexpected system alert over native Files")
+        guard isPhotoKit else { return }
+        let deny = alert.buttons.matching(
+            NSPredicate(format: "label IN %@",
+                        ["Don't Allow", "Don’t Allow", "不允许", "不允許"])
+        ).firstMatch
+        XCTAssertTrue(deny.waitForExistence(timeout: 8),
+                      "PhotoKit prompt has no real Don't Allow action")
+        guard deny.exists else { return }
+        print("IOS_NATIVE_PHOTOS_DENIED_NO_SESSION_FILES")
+        deny.tap()
+        XCTAssertFalse(alert.waitForExistence(timeout: 6),
+                       "PhotoKit permission alert still masks Files")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     private func tap(_ id: String, _ app: XCUIApplication) {
+        if id == "native-ios-tab-files" { denyFirstRunPhotoLibraryPromptIfPresent(app) }
         let target = element(id, app)
         if !target.waitForExistence(timeout: 15) { capture(app, "missing-action-" + id) }
         XCTAssertTrue(target.exists, "Native action missing: " + id)
         print("IOS_NATIVE_NAV_TAP_START route=" + id)
         target.tap()
+        if id == "native-ios-tab-files" { denyFirstRunPhotoLibraryPromptIfPresent(app) }
         XCTAssertEqual(app.state, .runningForeground, "Native process exited after " + id)
     }
 
