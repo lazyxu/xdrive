@@ -1333,6 +1333,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func openBackup(_ action: XDriveIOSNativePhotoBackupLaunch) {
+        showingGalleryOptions = false
         backupLaunchAction = action
         backupLaunchNonce = UUID()
         openDynamic(.backup)
