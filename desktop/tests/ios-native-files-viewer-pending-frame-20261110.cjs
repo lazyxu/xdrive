@@ -51,7 +51,7 @@ test('the pending state has a native AX marker and a video-dark canvas', () => {
 })
 test('retirement detaches the exact old player and discards the signed export before pending transition', () => {
   assert.match(retire, /exporter\.invalidate\(\)/)
-  assert.match(retire, /player\?\.pause\(\)\s*player\?\.replaceCurrentItem\(with: nil\)\s*player = nil\s*display = nil/)
+  assert.match(retire, /player\?\.pause\(\)\s*player\?\.replaceCurrentItem\(with: nil\)\s*player = nil\s*routedMediaLoader\?\.cancelAll\(\)\s*routedMediaLoader = nil\s*display = nil/)
 })
 test('late preview results cannot overwrite the new Node or a revoked Owner', () => {
   assert.match(preview, /let generation = attempt/)

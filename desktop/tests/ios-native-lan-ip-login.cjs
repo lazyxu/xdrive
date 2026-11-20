@@ -93,8 +93,12 @@ test('native login reuses chosen HTTPS origin for real login, Owner, refresh and
   const signIn = model.slice(model.indexOf('func signIn() async'), model.indexOf('func signOut() async'))
   assert.match(signIn, /let configuredOrigin = try ServerAddress\.parse\(serverInput\)/)
   assert.match(signIn, /let origin = try await XDriveIOSNativeLANLoginRoute\.selectOrigin/)
-  assert.ok(signIn.indexOf('selectOrigin(') < signIn.indexOf('AuthService(origin: origin).login('),
-    'anonymous probe must precede the only credential POST')
+  assert.ok(signIn.indexOf('selectOrigin(') < signIn.indexOf('XDriveIOSAutoRoute.shared.prepareRestore('),
+    'strict anonymous TLS selection precedes provisional route admission')
+  assert.ok(signIn.indexOf('XDriveIOSAutoRoute.shared.prepareRestore(') <
+    signIn.indexOf('AuthService(origin: origin).login('),
+    'Owner/root probes cannot bypass the verified provisional HTTPS route')
+  assert.match(signIn, /if active == nil \{ XDriveIOSAutoRoute\.shared\.clear\(\) \}/)
   assert.match(signIn, /lanIPText == lanInput/)
   assert.match(signIn, /XDriveNativeOwnerRootVerifier\(\s*origin: origin,/)
   assert.match(signIn, /active = Session\(\s*origin: origin/)
@@ -103,7 +107,7 @@ test('native login reuses chosen HTTPS origin for real login, Owner, refresh and
   assert.match(model, /AuthService\(origin: snapshot\.origin\)/)
   assert.match(model, /let origin = try ServerAddress\.parse\(saved\.origin\)/)
   assert.match(model, /AuthService\(origin: origin\)\.refresh\(/)
-  assert.match(model, /AuthService\(origin: previous\.origin\)\.logout\(/)
+  assert.match(model, /AuthService\(origin: logoutOrigin \?\? previous\.origin\)\.logout\(/)
   assert.doesNotMatch(signIn, /AuthService\(origin: configuredOrigin\)\.login\(/)
   assert.doesNotMatch(signIn, /login\(.+catch.+login\(/s)
 })
@@ -191,4 +195,12 @@ test('only user-requested pairing emits bounded TLS evidence, never changes trus
   assert.match(trust, /SecTrustSetNetworkFetchAllowed\(trust, false\)/)
   assert.doesNotMatch(trust, /print\(|NSLog\(|debugPrint\(|os_log\(/)
   assert.doesNotMatch(trust, /privateKey|SecKeyCopyExternalRepresentation|Authorization:|Cookie:|Bearer /)
+})
+
+test('iOS AuthService uses routed ephemeral transport while isolated macOS LAN policy test retains strict ephemeral TLS', () => {
+  const source = read('ios/XDriveIOS/AuthService.swift')
+  assert.match(source, /#if os\(iOS\)\s*let config = XDriveIOSAutoRoute\.ephemeralConfiguration\(\)\s*#else\s*let config = URLSessionConfiguration\.ephemeral\s*#endif/)
+  assert.match(source, /config\.httpShouldSetCookies = false\s*config\.httpCookieAcceptPolicy = \.never/)
+  assert.match(source, /config\.urlCache = nil/)
+  assert.match(source, /URLSession\(configuration: config, delegate: RejectRedirects\(\), delegateQueue: nil\)/)
 })

@@ -71,6 +71,7 @@ import {
 } from './desktop_shortcuts.cjs'
 import { trayStatusIconFile, trayStatusKind, type TrayStatusKind } from './tray_status.cjs'
 import { DesktopLifecycleLog, formatLifecycleError } from './lifecycle_log.cjs'
+import { createDesktopGalleryFirstRangeTiming, type DesktopGalleryFirstRangeOutcome } from './gallery_first_range_timing.cjs'
 import { DesktopFilePreviewProxy } from './file_preview_proxy.cjs'
 import {
   desktopNativeDragOutSupported,
@@ -4122,13 +4123,16 @@ function registerIPCHandlers() {
   const localRecoveryReviewRequests = new Map<string, AbortController>()
   ipcMain.handle('agent:get-device-backup-local-recovery-review', (
     event, sourceID: unknown, afterFile: unknown, pageEpoch: unknown, requestID: unknown,
+    afterAbsent: unknown = 0,
   ) => {
     const key = `${event.sender.id}:${String(requestID)}`
     if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
       typeof afterFile !== 'number' || !Number.isSafeInteger(afterFile) ||
       afterFile < 0 || afterFile > 1000000 ||
+      typeof afterAbsent !== 'number' || !Number.isSafeInteger(afterAbsent) ||
+      afterAbsent < 0 || afterAbsent > 1000000 ||
       typeof pageEpoch !== 'string' ||
-      (afterFile === 0 ? pageEpoch !== '' : !/^[0-9a-f]{64}$/.test(pageEpoch)) ||
+      (afterFile === 0 && afterAbsent === 0 ? pageEpoch !== '' : !/^[0-9a-f]{64}$/.test(pageEpoch)) ||
       !validLocalPreviewID(requestID) || localRecoveryReviewRequests.has(key)) {
       return runAgentAction<AgentLocalBackupRecoveryReview>(async () => {
         throw new AgentIPCError('invalid_input', 0, 'Invalid private recovery review request.')
@@ -4143,7 +4147,7 @@ function registerIPCHandlers() {
         throw new AgentIPCError('aborted', 0, 'Local recovery review was cancelled.')
       }
       return requireAgentClient().localBoundBackupRecoveryReview(
-        sourceID, afterFile, pageEpoch, controller.signal)
+        sourceID, afterFile, pageEpoch, controller.signal, afterAbsent)
     }, false).finally(() => {
       if (localRecoveryReviewRequests.get(key) === controller) localRecoveryReviewRequests.delete(key)
       controller.abort()
@@ -4626,26 +4630,45 @@ function registerIPCHandlers() {
     requestID: unknown = undefined,
   ) => runAgentAction<AgentMediaItemRange>(
     () => viewportRequests.run(event.sender, requestID, async (signal) => {
-      const hello = await requireAgentLifecycle().ensureRunning()
-      requireAgentCapability(hello, 'media-gallery')
-      if (
-        typeof kind !== 'string' ||
-        (kind.trim() && !['image', 'video'].includes(kind.trim()))
-      ) {
-        throw new AgentIPCError('invalid_input', 0, 'Media kind must be image or video.')
+      // A first Range can spend time awaiting Agent readiness OR the actual
+      // Owner-authorized HTTP query. Keep both distinct in local diagnostics.
+      // Do not log URLs, filters, account details, tokens or media identities.
+      const rangeTrace = createDesktopGalleryFirstRangeTiming()
+      let rangeOutcome: DesktopGalleryFirstRangeOutcome = 'error'
+      try {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        rangeTrace.markAgentReady()
+        requireAgentCapability(hello, 'media-gallery')
+        if (
+          typeof kind !== 'string' ||
+          (kind.trim() && !['image', 'video'].includes(kind.trim()))
+        ) {
+          throw new AgentIPCError('invalid_input', 0, 'Media kind must be image or video.')
+        }
+        const window = normalizeMediaRangeWindow(limit, offset)
+        const mediaQuery = normalizeMediaGalleryQueryForAgent(hello, query)
+        if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
+          requireAgentCapability(hello, 'media-timezone')
+        }
+        rangeTrace.markHttpStarted()
+        const page = await requireAgentClient().mediaItemRange(
+          kind.trim(),
+          window.limit,
+          window.offset,
+          mediaQuery,
+          signal,
+        )
+        rangeOutcome = signal?.aborted ? 'cancelled' : 'ok'
+        return page
+      } catch (error) {
+        rangeOutcome = signal?.aborted ? 'cancelled' : 'error'
+        throw error
+      } finally {
+        if (offset === 0) {
+          const timing = rangeTrace.finish(rangeOutcome)
+          if (timing) lifecycleLog?.record('gallery_first_range_timing', timing)
+        }
       }
-      const window = normalizeMediaRangeWindow(limit, offset)
-      const mediaQuery = normalizeMediaGalleryQueryForAgent(hello, query)
-      if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
-        requireAgentCapability(hello, 'media-timezone')
-      }
-      return requireAgentClient().mediaItemRange(
-        kind.trim(),
-        window.limit,
-        window.offset,
-        mediaQuery,
-        signal,
-      )
     }),
     false,
   ))

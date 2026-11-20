@@ -21,9 +21,17 @@ test('BG cursor remains restricted to authenticated approved Owner and native Ph
   assert.match(reserve, /state\.libraryAuthorizationRaw = epoch\.authorization/)
   assert.ok(reserve.indexOf('approved.matches(') < reserve.indexOf('XDriveIOSPhotoKitLibraryEpoch.capture()'))
   assert.ok(reserve.indexOf('state.libraryChangeEpoch = epoch.serialized') < reserve.indexOf('try store(state, owner: owner)'))
-  assert.match(scheduler, /\.proveInBackground\(\)/)
+  assert.match(scheduler, /XDriveIOSApprovedPhotoBGVault\.prove\(\s*savedGrant, at: route\.selected, direct: true\)/)
+  assert.match(scheduler, /let latestGrant = try await vault\.current\(\)/)
+  assert.match(scheduler, /XDriveIOSAutoRoute\.shared\.activateBackground\(/)
   assert.match(scheduler, /\.reserveDue\(owner: owner, approved: approved\)/)
-  assert.ok(scheduler.indexOf('.proveInBackground()') < scheduler.indexOf('reserveDue('))
+  assert.ok(scheduler.indexOf('XDriveIOSApprovedPhotoBGVault.prove(') <
+    scheduler.indexOf('let latestGrant = try await vault.current()') &&
+    scheduler.indexOf('let latestGrant = try await vault.current()') <
+    scheduler.indexOf('XDriveIOSAutoRoute.shared.activateBackground(') &&
+    scheduler.indexOf('XDriveIOSAutoRoute.shared.activateBackground(') <
+    scheduler.indexOf('reserveDue('),
+    'independent grant proof and Keychain recheck precede BG PhotoKit cursor reservation')
 })
 
 test('BG stage completion cannot persist a cursor for a changed photo library',()=>{

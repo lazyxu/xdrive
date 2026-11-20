@@ -79,7 +79,7 @@ struct XDriveIOSNativeCloudOriginalReader {
     let accessToken: String
 
     private func session() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -831,6 +831,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @State private var still: UIImage?
     @State private var stillIsThumbnailOnly = false
     @State private var player: AVPlayer?
+    @State private var routedMediaLoader: XDriveIOSRoutedMediaLoader?
     @State private var liveResources: XDriveIOSLivePreviewFiles?
     @State private var showingLiveMotion = false
     @State private var nativeLiveReady = false
@@ -962,6 +963,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             exporter.invalidate()
             player?.pause()
             player = nil
+            routedMediaLoader?.cancelAll()
+            routedMediaLoader = nil
             still = nil
             stillIsThumbnailOnly = false
             error = nil
@@ -983,6 +986,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         exporter.invalidate()
         player?.pause()
         player = nil
+        routedMediaLoader?.cancelAll()
+        routedMediaLoader = nil
         still = nil
         stillIsThumbnailOnly = false
         error = nil
@@ -1034,6 +1039,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         exporter.invalidate()
         player?.pause()
         player = nil
+        routedMediaLoader?.cancelAll()
+        routedMediaLoader = nil
         still = nil
         stillIsThumbnailOnly = false
         error = nil
@@ -1380,6 +1387,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     liveResources = live.files
                     still = live.image
                     stillIsThumbnailOnly = false
+                    routedMediaLoader?.cancelAll()
+                    routedMediaLoader = nil
                     player = AVPlayer(url: live.files.motionURL)
                     showingLiveMotion = false
                     nativeLiveReady = false
@@ -1397,7 +1406,10 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         still = media.image
                         stillIsThumbnailOnly = false
                         if let url = media.videoURL {
-                            player = AVPlayer(url: url)
+                            let loader = try XDriveIOSRoutedMediaLoader(ticketURL: url)
+                            routedMediaLoader?.cancelAll()
+                            routedMediaLoader = loader
+                            player = AVPlayer(playerItem: loader.playerItem())
                         }
                     } catch XDriveIOSNativeCloudStillFallback.unavailable {
                         // No silent low-res success for videos, Live, tickets,
@@ -1438,6 +1450,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             player?.pause()
             player?.replaceCurrentItem(with: nil)
             player = nil
+            routedMediaLoader?.cancelAll()
+            routedMediaLoader = nil
             showingLiveMotion = false
             error = "媒体播放失败，可重新读取当前云端原件。"
         }
@@ -1457,6 +1471,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 // request must independently re-verify native Owner/root.
                 player?.pause()
                 player = nil
+                routedMediaLoader?.cancelAll()
+                routedMediaLoader = nil
                 still = nil
                 stillIsThumbnailOnly = false
                 error = nil
@@ -1477,6 +1493,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             exporter.invalidate()
             player?.pause()
             player = nil
+            routedMediaLoader?.cancelAll()
+            routedMediaLoader = nil
             still = nil
             stillIsThumbnailOnly = false
             error = nil
@@ -1495,6 +1513,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             showingMediaInfo = false
             player?.pause()
             player = nil
+            routedMediaLoader?.cancelAll()
+            routedMediaLoader = nil
             still = nil
             stillIsThumbnailOnly = false
             liveResources?.discard()
@@ -1621,6 +1641,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         player = nil
+        routedMediaLoader?.cancelAll()
+        routedMediaLoader = nil
         showingLiveMotion = false
         error = "媒体播放失败，可重新读取当前云端原件。"
     }
@@ -1630,6 +1652,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         // Do not reuse an expired signed URL, previous player, or old pixels.
         player?.pause()
         player = nil
+        routedMediaLoader?.cancelAll()
+        routedMediaLoader = nil
         still = nil
         stillIsThumbnailOnly = false
         error = nil

@@ -128,7 +128,7 @@ struct XDriveIOSUploadResumeProofReader {
         guard let url = parts?.url else {
             throw XDriveIOSUploadReconcileError.invalidOwner
         }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil

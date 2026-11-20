@@ -37,6 +37,30 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Parse all iOS native Swift sources before expensive IPA build
+        run: swiftc -frontend -parse ios/XDriveIOS/*.swift
+
+      - name: Verify all iOS URLSession call sites adopt the runtime router
+        run: bash ios/tests/check-native-auto-route-coverage.sh
+
+      - name: Verify iOS auto LAN/WAN replay and Owner safety matrix
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
+            ios/XDriveIOS/NativeAutoRouteSafety.swift \
+            ios/tests/NativeAutoRouteSafetyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-auto-route-safety"
+          "$RUNNER_TEMP/xdrive-ios-auto-route-safety"
+
+      - name: Verify bounded streaming HTTP 206 Range, seek, EOF and malformed proof
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
+            ios/XDriveIOS/NativeRoutedHTTPRange.swift \
+            ios/tests/NativeRoutedHTTPRangeChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-streaming-range"
+          "$RUNNER_TEMP/xdrive-ios-streaming-range"
+
       - name: Test direct IPA publisher, SHA validation, and immutable release safety
         run: bash scripts/ci/test-ios-unsigned-release.sh
       - name: Verify independent NAS original readback checker rejects false physical proof

@@ -69,7 +69,7 @@ test('Owner, Node revision, exact MIME and ticket are checked before payload use
   assert.match(reader, /method: "POST", maximum: 32_768/);
   assert.match(reader, /validTicketType\(/);
   assert.match(reader, /validTicketPath\(value, nodeID: nodeID\)/);
-  assert.match(reader, /URLSessionConfiguration\.ephemeral/);
+  assert.match(reader, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/);
   assert.match(reader, /completionHandler\(nil\)/);
   assert.match(reader, /expectedMIME: ticket\.mime_type/);
   assert.match(reader, /kCGImageSourceThumbnailMaxPixelSize as String: 4096/);
@@ -282,7 +282,7 @@ test('Files Viewer reuses one authenticated request-scoped ephemeral connection 
   assert.equal((reader.match(/URLSession\(/g) || []).length, 1,
     'one shared transport, not a new TLS session for each Node proof/ticket/media read');
   assert.match(transport, /private static let session: URLSession/);
-  assert.match(transport, /URLSessionConfiguration\.ephemeral/);
+  assert.match(transport, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/);
   assert.match(transport, /config\.httpShouldSetCookies = false/);
   assert.match(transport, /config\.httpCookieAcceptPolicy = \.never/);
   assert.match(transport, /config\.urlCache = nil/);

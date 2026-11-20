@@ -45,7 +45,7 @@ test('Native operations transport refuses cross-Owner URLs, cookies and redirect
   assert.match(source, /let auth = try await login\.verifiedAuthorization\(\)/)
   assert.match(source, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
   assert.match(source, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
-  assert.match(source, /URLSessionConfiguration\.ephemeral/)
+  assert.match(source, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(source, /completionHandler\(nil\)/)
   assert.match(source, /config\.httpShouldSetCookies = false/)
   assert.match(source, /config\.urlCache = nil/)

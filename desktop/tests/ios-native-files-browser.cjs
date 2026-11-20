@@ -34,7 +34,7 @@ test('directory and full-library search use canonical counted Owner Range', () =
   assert.match(view, /\/api\/v1\/search/);
   assert.match(source, /listRange\([\s\S]*?children\?\$\{query\.toString\(\)\}/);
   assert.match(source, /searchRange\([\s\S]*?\/api\/v1\/search/);
-  assert.match(view, /URLSessionConfiguration\.ephemeral/);
+  assert.match(view, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/);
   assert.match(view, /completionHandler\(nil\)/);
   assert.match(view, /\.onDisappear \{ suspendVisibleRange\(\) \}/);
   assert.match(view, /private func suspendVisibleRange\(\) \{[\s\S]*?model\.suspendForNavigation\(\)/);

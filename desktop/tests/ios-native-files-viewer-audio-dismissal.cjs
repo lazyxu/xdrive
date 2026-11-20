@@ -74,7 +74,7 @@ test('existing selected node/revision, Owner and signed preview verification rem
   assert.match(viewer,/generation == attempt, viewed == current, authorized/)
 })
 test('retirement pauses and detaches actual AVPlayer before dropping old display',()=>{
-  assert.match(viewer,/player\?\.pause\(\)\s*player\?\.replaceCurrentItem\(with: nil\)\s*player = nil\s*display = nil/)
+  assert.match(viewer,/player\?\.pause\(\)\s*player\?\.replaceCurrentItem\(with: nil\)\s*player = nil\s*routedMediaLoader\?\.cancelAll\(\)\s*routedMediaLoader = nil\s*display = nil/)
   assert.match(viewer,/\.onDisappear \{ retire\(\) \}/)
 })
 test('Files preview remains read-only with no old WebView or upload path',()=>{

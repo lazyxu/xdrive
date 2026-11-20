@@ -49,7 +49,7 @@ struct XDriveIOSNativeFilesUploadReadback {
         guard let url = components.url else {
             throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
         }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil

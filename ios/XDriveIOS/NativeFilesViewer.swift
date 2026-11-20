@@ -124,6 +124,7 @@ struct XDriveIOSNativeFilesViewer: View {
     @State private var allowAudioAutoplay = true
     @State private var display: XDriveIOSNativeFilesPreviewPayload?
     @State private var player: AVPlayer?
+    @State private var routedMediaLoader: XDriveIOSRoutedMediaLoader?
     @State private var failure: String?
     @State private var loading = true
     // Reuse Files' existing verified, signed original-export model. This
@@ -747,7 +748,9 @@ struct XDriveIOSNativeFilesViewer: View {
                   !isClosing else { return }
             switch result {
             case .video(let url):
-                let item = AVPlayerItem(url: url)
+                let loader = try XDriveIOSRoutedMediaLoader(ticketURL: url)
+                let item = loader.playerItem()
+                routedMediaLoader = loader
                 // Avoid requiring a long forward buffer before attempting the
                 // first frame. The shared surface still exposes true buffering.
                 item.preferredForwardBufferDuration = 2
@@ -755,7 +758,9 @@ struct XDriveIOSNativeFilesViewer: View {
                 candidate.automaticallyWaitsToMinimizeStalling = false
                 player = candidate
             case .audio(let url):
-                player = AVPlayer(url: url)
+                let loader = try XDriveIOSRoutedMediaLoader(ticketURL: url, isAudio: true)
+                routedMediaLoader = loader
+                player = AVPlayer(playerItem: loader.playerItem())
             default: break
             }
             // A successful bounded thumbnail still needs a separate, explicit
@@ -893,6 +898,8 @@ struct XDriveIOSNativeFilesViewer: View {
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         player = nil
+        routedMediaLoader?.cancelAll()
+        routedMediaLoader = nil
         display = nil
         loading = false
     }

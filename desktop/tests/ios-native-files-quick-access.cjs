@@ -58,7 +58,7 @@ test('pinned folder transport is HTTPS no Cookie no redirects and guards Owner o
   assert.match(client, /let auth = try await login\.verifiedAuthorization\(\)/)
   assert.match(client, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
   assert.match(client, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
-  assert.match(client, /URLSessionConfiguration\.ephemeral/)
+  assert.match(client, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(client, /completionHandler\(nil\)/)
   assert.match(client, /config\.httpShouldSetCookies = false/)
   assert.match(client, /config\.urlCache = nil/)
