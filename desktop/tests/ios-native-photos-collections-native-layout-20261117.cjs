@@ -85,3 +85,13 @@ test('Collections album card uses only a real currently authorized and bounded a
   assert.match(cover, /No actual authorized album image: retain the honest icon/)
   assert.doesNotMatch(cover, /PHAsset\.fetchAssets\(in: album.*?\)\.lastObject/)
 })
+
+test('signed-out native Library count is only presented after PhotoKit scan succeeds',()=>{
+  const local = fs.readFileSync(path.resolve(
+    __dirname, '../../ios/XDriveIOS/NativeLocalContinuousGallery.swift'), 'utf8')
+  assert.match(local, /hasCompletedInitialRead\s*\?\s*\(mediaFilter\.isAll/)
+  assert.match(local, /native-ios-photos-local-photo-count/)
+  assert.match(local, /正在统计照片…/)
+  assert.match(local, /hasCompletedInitialRead = true/)
+  assert.doesNotMatch(local, /本机已授权\\\(mediaFilter\.title\) · 按日分组/)
+})

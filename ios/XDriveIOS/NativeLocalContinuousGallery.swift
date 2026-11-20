@@ -613,8 +613,18 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         }
                     } else {
                         HStack(spacing: 10) {
-                            Text("本机已授权\(mediaFilter.title) · 按日分组")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                            // Only report a PhotoKit count after its
+                            // authorization-scoped scan has actually finished.
+                            // A pending/failed first read must not show 0 as
+                            // an apparently verified whole-library total.
+                            Text(hasCompletedInitialRead
+                                 ? (mediaFilter.isAll
+                                    ? "\(total) 项照片与视频"
+                                    : "\(total) 项 · \(mediaFilter.title)")
+                                 : "正在统计照片…")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("native-ios-photos-local-photo-count")
                             Spacer(minLength: 6)
                             Menu {
                                 xdrivePhotoWallDensityButtons($density)
