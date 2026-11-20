@@ -47,7 +47,6 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                     }
                 )
                 .onAppear { workspaceAppeared() }
-                .onDisappear { workspaceDisappeared() }
             } else {
                 NavigationStack {
                     ScrollView {
@@ -156,17 +155,12 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                     .navigationBarTitleDisplayMode(.inline)
                 }
                 .onAppear { workspaceAppeared() }
-                .onDisappear { workspaceDisappeared() }
             }
         }
         .onDisappear {
-            // Group may report a transient disappearance while replacing
-            // the restored-account progress view with the native workspace.
-            // Cancelling readiness here races the newly mounted child's
-            // workspaceAppeared() and can leave the launch checkpoint stuck
-            // at mountingWorkspace forever despite a visible login page.
-            // The actual visible workspace owns readiness cancellation via
-            // workspaceDisappeared(); scene background revokes it below.
+            // Group can transiently disappear while replacing the
+            // restoration progress child. Never revoke startup readiness
+            // here; the scenePhase handler owns foreground cancellation.
             backup.stopLibraryChangeMonitoring()
         }
         .task {
@@ -204,12 +198,14 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                         backup.tickIfDue(login: model)
                     }
                 } else {
-                    armReadinessAfterMount()
+                    // Foreground resumption need not trigger another
+                    // NavigationStack .onAppear; re-arm the visible root.
+                    workspaceAppeared()
                 }
             } else {
-                readinessTicket = UUID()
-                readinessTask?.cancel()
-                readinessTask = nil
+                // Do not cancel readiness when SwiftUI merely swaps the
+                // login/Dashboard child. Only the actual scene exit revokes it.
+                workspaceDisappeared()
                 backup.stopLibraryChangeMonitoring()
                 backup.cancel()
             }
