@@ -852,7 +852,18 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
                       "地图", "文件", "全部功能", "我的"] {
             let item = app.buttons.matching(
                 NSPredicate(format: "label == %@", title)).firstMatch
-            XCTAssertTrue(item.exists, "Missing accessible Gallery option: \(title)")
+            // A native List may lazily expose the last rows only when scrolled.
+            // Actually reveal them instead of mistaking virtualization for
+            // an inaccessible command or claiming an invisible row is usable.
+            for _ in 0..<6 {
+                if item.exists && item.isHittable { break }
+                let list = app.collectionViews.firstMatch.exists
+                    ? app.collectionViews.firstMatch : app.scrollViews.firstMatch
+                guard list.exists else { break }
+                list.swipeUp()
+            }
+            XCTAssertTrue(item.exists && item.isHittable,
+                          "Inaccessible Gallery option: \(title)")
         }
         let close = app.buttons.matching(
             identifier: "native-ios-gallery-options-done").firstMatch
