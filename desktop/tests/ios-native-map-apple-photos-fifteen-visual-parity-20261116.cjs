@@ -5,6 +5,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
+const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 const local = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
 const owner = read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
 const unified = read('ios/XDriveIOS/NativeUnifiedSourcePhotoMap.swift')
@@ -145,4 +146,17 @@ check('13-map P0 overlays never access credentials or broaden grid membership', 
   assert.match(local, /\.navigationTitle\("地图"\)/)
   assert.match(owner, /\.navigationTitle\("地图"\)/)
   assert.match(unified, /\.navigationTitle\("地图"\)/)
+})
+
+check('P0-07 closing MapKit must retain the same bounded Gallery wall, not remount a white PhotoKit spinner', () => {
+  assert.match(dashboard, /@State private var keepUnifiedWallDuringMap = false/)
+  assert.match(dashboard, /if gallerySource == \.unified \|\|[\s\S]*?\(gallerySource == \.map && keepUnifiedWallDuringMap\)/)
+  assert.match(dashboard, /\.opacity\(gallerySource == \.map \? 0 : 1\)/)
+  assert.match(dashboard, /\.allowsHitTesting\(gallerySource != \.map\)/)
+  assert.match(dashboard, /\.accessibilityHidden\(gallerySource == \.map\)/)
+  assert.match(dashboard, /keepUnifiedWallDuringMap = gallerySource == \.unified/)
+  assert.match(dashboard, /keepUnifiedWallDuringMap = false/)
+  assert.match(dashboard, /case \.map:[\s\S]*?XDriveIOSNativePhotoMapsScreen\(/)
+  // Actual zero-white-frame acceptance remains the real H264 audit; this
+  // source contract only prevents a reintroduction of the remount cause.
 })
