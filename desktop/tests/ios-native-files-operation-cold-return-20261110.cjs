@@ -80,12 +80,29 @@ test('11 native foreground return under operation-history sheet is exercised wit
   assert.match(ui, /XCUIDevice.shared.press\(\.home\)[\s\S]*?app.activate\(\)/)
   assert.match(ui, /assertVisiblePixels\(app, route: "Gallery after operations foreground"\)/)
 })
-test('12 all 70 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
+test('12 all native Gallery/Files route tests have registered actual Simulator frame observers', () => {
   const a = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
   const names = [...a.matchAll(/func (test\w+)\(\)/g), ...ui.matchAll(/func (test\w+)\(\)/g)]
     .map(x => x[1])
   const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(x => x[1]))
-  assert.equal(names.length, 70)
+  // The six added Files size-filter H264 journeys increase 88 -> 94.
+  // Treat count as a floor; check every actual method for unique registration
+  // so future real additions cannot silently disappear or break CI just
+  // because a fixed-size test was left behind.
+  assert.ok(names.length >= 94, 'native Gallery/Files route coverage regressed')
+  assert.equal(new Set(names).size, names.length)
+  const sixRealChildRoutes = [
+    "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
+    "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
+    "testFilesCloudDenialThenQuickSectionsKeepNativeContent",
+    "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
+    "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
+    "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+  ]
+  for (const name of sixRealChildRoutes) {
+    assert.ok(names.includes(name), name + ' genuine XCTest missing')
+    assert.ok(registered.has(name), name + ' live screenshot registration missing')
+  }
   assert.deepEqual(names.filter(n => !registered.has(n)), [])
 })
 test('13 operation-history regression runs in the required unsigned IPA workflow', () => {
@@ -126,7 +143,8 @@ test('16 real Simulator failure: offscreen Files Home operation entry is brought
   assert.match(helper, /if table\.exists \{ list = table \}/)
   assert.match(helper, /else if collection\.exists \{ list = collection \}/)
   assert.match(helper, /else if scroll\.exists \{ list = scroll \}/)
-  assert.match(helper, /for _ in 0\.\.<8 \{\s*if action\.isHittable \{ break \}\s*list\.swipeUp\(\)/)
+  assert.match(helper, /for _ in 0\.\.<8 \{\s*if action\.exists && action\.isHittable \{ break \}\s*list\.swipeUp\(\)/)
+  assert.match(helper, /for _ in 0\.\.<8 \{\s*if action\.exists && action\.isHittable \{ break \}\s*list\.swipeDown\(\)/)
   assert.match(helper, /action\.waitForExistence\(timeout: 10\)/)
   assert.match(helper, /XCTAssertTrue\(action\.isHittable/)
   assert.match(helper, /action\.tap\(\)/)
@@ -134,4 +152,41 @@ test('16 real Simulator failure: offscreen Files Home operation entry is brought
     ui.indexOf('func testRapidGalleryFilesAlternationKeepsBothNativeShellsAndPixels()'))
   assert.equal((history.match(/openFilesOperationHistoryFromBrowse\(app\)/g) || []).length, 2)
   assert.doesNotMatch(history, /tap\("native-ios-files-open-operations", app: app\)/)
+})
+
+
+test('17 every real Gallery/Files route has one watcher and H264 recording is isolated', () => {
+  const wf = read('.github/workflows/ios-native-navigation-runtime.yml')
+  const video = read('ios/scripts/files_ui_transition_video.py')
+  const stability = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
+  const methods = [...stability.matchAll(/func (test\w+)\(\)/g),
+                   ...ui.matchAll(/func (test\w+)\(\)/g)].map(m => m[1])
+  const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(m => m[1]))
+  const targetBlock = video.slice(video.indexOf('TARGETS = frozenset({'),
+                                  video.indexOf('})', video.indexOf('TARGETS = frozenset({')))
+  const h264 = new Set([...targetBlock.matchAll(/"(test\w+)"/g)].map(m => m[1]))
+  assert.ok(methods.length >= 94, 'lost real native Gallery/Files coverage')
+  assert.equal(new Set(methods).size, methods.length, 'duplicate native XCTest route')
+  assert.ok(h264.size >= 18, 'lost genuine H264 source tests')
+  assert.deepEqual(methods.filter(n => !registered.has(n)), [],
+    'every real native route requires frame registration')
+  assert.deepEqual([...h264].filter(n => !methods.includes(n)), [],
+    'every real H264 target must be a genuine native XCTest')
+  assert.equal(methods.filter(n => registered.has(n) && !h264.has(n)).length,
+               methods.length - h264.size)
+  assert.match(watcher, /exclude_h264_targets = len\(sys\.argv\) == 5/)
+  assert.match(watcher, /from files_ui_transition_video import TARGETS as H264_TARGETS/)
+  assert.match(watcher, /TARGETS\.difference_update\(H264_TARGETS\)/)
+  assert.match(wf, /still_args\+=\(--exclude-h264-targets\)/)
+  assert.match(wf, /if \[\[ "\$\{\{ matrix\.source \}\}" != "release-c83" \]\]/)
+  assert.match(wf, /frame_watcher=\$!/)
+  assert.match(wf, /video_watcher=\$!/)
+  assert.match(wf, /trap cleanup_native_watchers EXIT/)
+  assert.doesNotMatch(wf, /!= "candidate-gallery-files" \]\]; then/)
+  const minClipGate = wf.match(/files_ui_transition_video\.py" audit[\s\S]*?--minimum (\d+)/)
+  assert.ok(minClipGate, 'real H264 audit must remain mandatory')
+  assert.ok(Number(minClipGate[1]) >= h264.size,
+    'real H264 audit must cover every actual XCUITest target')
+  assert.ok(wf.includes("timeout-minutes: ${{ matrix.source == 'candidate-gallery-files' && 100 || 60 }}"),
+    "Gallery/Files 88-suite must not use the former whole-job 60-minute timeout")
 })

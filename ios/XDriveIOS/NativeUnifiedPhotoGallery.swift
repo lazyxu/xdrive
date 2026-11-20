@@ -208,6 +208,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             draft = query
                             showFilters = true
                         }
+                        .accessibilityIdentifier("native-ios-gallery-sort-filter-open-filters")
                         Button {
                             showMapForAppliedQuery()
                         } label: {
@@ -231,6 +232,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     Image(systemName: "square.grid.3x3")
                 }
                 .accessibilityLabel("缩略图大小")
+                .accessibilityValue(wallDensity.title + " · " + wallFraming.title)
                 .accessibilityIdentifier("native-ios-unified-wall-density")
                 NavigationLink(isActive: $showingThumbnailCache) {
                     XDriveIOSNativePhotoThumbnailCacheScreen(login: login)

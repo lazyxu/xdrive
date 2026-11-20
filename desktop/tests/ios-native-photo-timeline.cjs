@@ -139,7 +139,7 @@ test('date navigation passes a transient exact photo slot into the canonical con
   assert.match(browser, /group: group, total: index\.totalSlots, filterValue: mediaFilter\.rawValue/)
   assert.match(browser, /exactDateTarget = nil\s*setMapDateScope\(nil\)\s*jump\(to: 0\)/)
   assert.match(browser, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?exactDateTarget = nil/)
-  assert.match(browser, /if state != \.active \{\s*model\.invalidate\(\)\s*exactDateTarget = nil/)
+  assert.match(browser, /\} else \{\s*model\.invalidate\(\)\s*exactDateTarget = nil\s*setMapDateScope\(nil\)/)
   assert.match(wall, /@Binding var exactDateTarget: XDriveIOSNativePhotoExactDateTarget\?/)
   assert.match(wall, /@Binding var calendarMapRange: XDriveIOSNativePhotoMapCaptureRange\?/)
   assert.match(browser, /calendarMapRange: \$mapCaptureRange/)
@@ -150,6 +150,19 @@ test('date navigation passes a transient exact photo slot into the canonical con
 
 test('date jump is retired when the PhotoKit date index becomes stale', () => {
   assert.match(browser, /\.onChange\(of: changes\.revision\) \{ _ in\s*exactDateTarget = nil\s*setMapDateScope\(nil\)\s*model\.invalidate\(\)/)
-  assert.match(browser, /if state != \.active \{\s*model\.invalidate\(\)\s*exactDateTarget = nil/)
+  assert.match(browser, /\} else \{\s*model\.invalidate\(\)\s*exactDateTarget = nil\s*setMapDateScope\(nil\)/)
   assert.match(browser, /if visible \{\s*selectedYearKey = nil\s*selectedMonthKey = nil\s*exactDateTarget = nil/)
+})
+
+
+test('foreground date navigator remains presented but discards stale PhotoKit index', () => {
+  const phaseChange = browser.match(/\.onChange\(of: phase\) \{ state in([\s\S]*?)\n        \}\n    \}/)
+  assert.ok(phaseChange, 'Native date navigator scenePhase handler must exist')
+  const handler = phaseChange[1]
+  assert.match(handler, /if state == \.active \{[\s\S]*?if showingDates \{\s*model\.load\(mediaFilter: mediaFilter\)/)
+  assert.match(handler, /\} else \{\s*model\.invalidate\(\)\s*exactDateTarget = nil\s*setMapDateScope\(nil\)/)
+  assert.doesNotMatch(handler, /showingDates\s*=\s*false/,
+    'Background/foreground must not silently dismiss date sheet')
+  assert.match(browser, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?showingDates = false/)
+  assert.match(browser, /Button\("完成"\) \{ showingDates = false \}/)
 })

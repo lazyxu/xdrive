@@ -485,6 +485,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button("完成") { showingDates = false }
+                            .accessibilityIdentifier("native-ios-local-timeline-done")
                     }
                 }
             }
@@ -526,11 +527,21 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer: View {
             }
         }
         .onChange(of: phase) { state in
-            if state != .active {
+            if state == .active {
+                // Keep the user's date sheet open after Home -> foreground.
+                // The inactive branch discarded its old PhotoKit index; a
+                // fresh authorized fetch must finish before any date rows
+                // can be shown again. Never reuse prior permission results.
+                if showingDates {
+                    model.load(mediaFilter: mediaFilter)
+                }
+            } else {
                 model.invalidate()
                 exactDateTarget = nil
                 setMapDateScope(nil)
-                showingDates = false
+                // Backgrounding is not an explicit dismissal. SwiftUI must
+                // restore this same sheet rather than silently losing it.
+                // Actual filter changes and the Done button still dismiss.
             }
         }
     }

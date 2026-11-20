@@ -403,11 +403,22 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let app = openLocalMap()
         let map = element("native-ios-full-library-gps-map", in: app)
         XCTAssertTrue(map.exists)
-        XCTAssertTrue(element("native-ios-local-map-basemap", in: app).exists)
-        XCTAssertTrue(element("native-ios-local-map-capture-menu", in: app).exists)
+        // MapKit tiles can finish before the NavigationStack toolbar attaches
+        // its accessibility elements. Wait for the actual controls; never
+        // infer a passing control from the visible MKMapView alone.
+        let basemap = element("native-ios-local-map-basemap", in: app)
+        if !basemap.waitForExistence(timeout: 15) {
+            diagnose("MapKit basemap control absent after native map mounted", in: app)
+        }
+        XCTAssertTrue(basemap.exists, "Real native basemap control missing")
+        let captureMenu = element("native-ios-local-map-capture-menu", in: app)
+        if !captureMenu.waitForExistence(timeout: 15) {
+            diagnose("MapKit date menu absent after native map mounted", in: app)
+        }
+        XCTAssertTrue(captureMenu.exists, "Real native capture menu missing")
         // UI date → month selection exists on the real MapKit route, and
         // cancelling it does not destroy the previously verified photo scope.
-        element("native-ios-local-map-capture-menu", in: app).tap()
+        captureMenu.tap()
         // SwiftUI Menu children are menuItems on some iOS 18.5 builds,
         // not XCUIElementTypeButton. Query the real app's stable item ID,
         // then its label across AX types; never pretend a missing menu passed.
