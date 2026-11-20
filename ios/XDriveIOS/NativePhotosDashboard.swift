@@ -113,11 +113,12 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
 /// Only the latest bounded candidates are read. No original bytes, persistent
 /// identifier, server Owner request or background backup operation is started.
 private enum XDriveIOSNativePhotosCollectionCoverKind {
-    case recent, videos, livePhotos
+    case recent, albums, videos, livePhotos
 
     var title: String {
         switch self {
         case .recent: return "最近的日子"
+        case .albums: return "相簿"
         case .videos: return "视频"
         case .livePhotos: return "实况照片"
         }
@@ -126,6 +127,7 @@ private enum XDriveIOSNativePhotosCollectionCoverKind {
     var symbol: String {
         switch self {
         case .recent: return "calendar"
+        case .albums: return "rectangle.stack"
         case .videos: return "video"
         case .livePhotos: return "livephoto"
         }
@@ -197,9 +199,31 @@ private struct XDriveIOSNativePhotosCollectionCover: View {
         options.fetchLimit = kind == .livePhotos ? 96 : 1
         let assets: PHFetchResult<PHAsset>
         switch kind {
-        case .recent: assets = PHAsset.fetchAssets(with: options)
-        case .videos: assets = PHAsset.fetchAssets(with: .video, options: options)
-        case .livePhotos: assets = PHAsset.fetchAssets(with: .image, options: options)
+        case .recent:
+            assets = PHAsset.fetchAssets(with: options)
+        case .albums:
+            // Use one genuine, currently authorized on-device album photo.
+            // Bound both the collection search and its per-album fetch; no
+            // private iOS Memories APIs, original bytes, or persisted IDs.
+            let userAlbums = PHAssetCollection.fetchAssetCollections(
+                with: .album, subtype: .any, options: nil
+            )
+            for index in 0..<min(userAlbums.count, 12) {
+                let album = userAlbums.object(at: index)
+                if let cover = PHAsset.fetchAssets(in: album, options: options).firstObject {
+                    loader.load(cover.localIdentifier,
+                                size: CGSize(width: 400, height: 400),
+                                contentMode: .aspectFill)
+                    return
+                }
+            }
+            // No actual authorized album image: retain the honest icon,
+            // not an unrelated Library item presented as an album cover.
+            return
+        case .videos:
+            assets = PHAsset.fetchAssets(with: .video, options: options)
+        case .livePhotos:
+            assets = PHAsset.fetchAssets(with: .image, options: options)
         }
         let coverID: String?
         if kind == .livePhotos {
@@ -353,11 +377,13 @@ struct XDriveIOSNativePhotosCollectionsScreen: View {
         switch route {
         case .recentDays:
             XDriveIOSNativePhotosCollectionCover(kind: .recent)
+        case .albums:
+            XDriveIOSNativePhotosCollectionCover(kind: .albums)
         case .videos:
             XDriveIOSNativePhotosCollectionCover(kind: .videos)
         case .livePhotos:
             XDriveIOSNativePhotosCollectionCover(kind: .livePhotos)
-        case .people, .albums, .trips, .cloudTrips, .memories:
+        case .people, .trips, .cloudTrips, .memories:
             ZStack(alignment: .bottomLeading) {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color(uiColor: .secondarySystemGroupedBackground))

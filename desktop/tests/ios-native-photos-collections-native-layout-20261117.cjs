@@ -71,3 +71,14 @@ test('real Collections MapKit journey enters Gallery using current visible navig
   assert.match(testBody, /native-ios-map-dismiss[\s\S]*?Closing a signed-out Collections Map must return to Collections/)
   assert.doesNotMatch(testBody, /-xdrive-ui-navigation-synthetic-owner|launchEnvironment\[|simctl privacy grant/)
 })
+
+test('Collections album card uses only a real currently authorized and bounded album thumbnail', () => {
+  assert.match(collections, /case \.albums:\s*XDriveIOSNativePhotosCollectionCover\(kind: \.albums\)/)
+  assert.match(cover, /case \.albums:\s*\/\/ Use one genuine/)
+  assert.match(cover, /PHAssetCollection\.fetchAssetCollections\(\s*with: \.album, subtype: \.any, options: nil/)
+  assert.match(cover, /for index in 0\.\.<min\(userAlbums\.count, 12\)/)
+  assert.match(cover, /PHAsset\.fetchAssets\(in: album, options: options\)\.firstObject/)
+  assert.match(cover, /loader\.load\(cover\.localIdentifier,/)
+  assert.match(cover, /No actual authorized album image: retain the honest icon/)
+  assert.doesNotMatch(cover, /PHAsset\.fetchAssets\(in: album.*?\)\.lastObject/)
+})
