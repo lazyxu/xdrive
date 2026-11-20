@@ -1210,8 +1210,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             }
         }
+        // Do not tag NavigationStack itself: container identifiers can
+        // replace the identifiers of real action Buttons in SwiftUI AX.
         .presentationDetents([.large])
-        .accessibilityIdentifier("native-ios-gallery-options-sheet")
     }
 
     // L1 native bottom bar. The system safe-area inset remains managed by
