@@ -215,20 +215,21 @@ enum XDriveIOSNativePhotosTestNavigator {
                     return false
                 }
                 menu.tap()
-                // SwiftUI Menu children are exposed as menuItems on
-                // some iOS/Xcode combinations and as buttons on others.
-                // Resolve only the exact visible, hittable menu command.
-                let menuItem = app.menuItems.matching(
-                    NSPredicate(format: "label == %@", title)).firstMatch
-                if menuItem.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
-                   menuItem.isHittable {
-                    menuItem.tap()
-                    return true
-                }
+                // New Gallery options are genuine Buttons inside a
+                // sectioned sheet. Legacy builds may still show MenuItems.
+                // Prefer the actionable sheet row, without waiting eight
+                // seconds for a MenuItem that cannot exist in this layout.
                 let action = app.buttons.matching(
                     NSPredicate(format: "label == %@", title)).firstMatch
-                if action.exists && action.isHittable {
+                if action.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
+                   action.isHittable {
                     action.tap()
+                    return true
+                }
+                let menuItem = app.menuItems.matching(
+                    NSPredicate(format: "label == %@", title)).firstMatch
+                if menuItem.exists && menuItem.isHittable {
+                    menuItem.tap()
                     return true
                 }
                 if app.alerts.firstMatch.exists ||
