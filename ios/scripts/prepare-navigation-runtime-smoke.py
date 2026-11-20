@@ -134,6 +134,10 @@ private struct XDriveIOSNativeFilesViewerNoSessionSmoke: View {
                 open("text", name: "smoke.txt", nodeID: 1005)
             }
             .padding(24)
+            // Explicitly retain the five independently identified Buttons.
+            // SwiftUI can otherwise collapse a generated test fixture's
+            // sibling accessibility nodes under its root marker.
+            .accessibilityElement(children: .contain)
             .navigationTitle("文件 Viewer 回归")
         }
         .fullScreenCover(item: $selected) { node in
