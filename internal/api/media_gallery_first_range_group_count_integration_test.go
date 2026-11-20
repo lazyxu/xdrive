@@ -47,6 +47,7 @@ func TestMediaGalleryFirstRangeGroupedCountMatchesIndependentCount(t *testing.T)
 	}
 	start := time.Date(2026, 3, 8, 1, 30, 0, 0, time.UTC)
 	ownerNodeIDs := make([]uint64, 0, 30)
+	ownerByNodeID := make(map[uint64]uint64, 56)
 	for ownerIndex, owner := range owners {
 		for i := 0; i < 28; i++ {
 			name := fmt.Sprintf("owner%d-photo-%02d.jpg", ownerIndex, i)
@@ -65,6 +66,7 @@ func TestMediaGalleryFirstRangeGroupedCountMatchesIndependentCount(t *testing.T)
 			if err := db.Create(&node).Error; err != nil {
 				t.Fatal(err)
 			}
+			ownerByNodeID[node.ID] = owner.ID
 			if ownerIndex == 0 {
 				ownerNodeIDs = append(ownerNodeIDs, node.ID)
 			}
@@ -184,8 +186,8 @@ func TestMediaGalleryFirstRangeGroupedCountMatchesIndependentCount(t *testing.T)
 				t.Fatalf("day groups sum=%d original DISTINCT=%d", sum, independent)
 			}
 			for _, item := range first.Items {
-				if item.Node.OwnerID != tc.owner {
-					t.Fatalf("foreign Owner node leaked: got=%d want=%d", item.Node.OwnerID, tc.owner)
+				if ownerByNodeID[item.Node.ID] != tc.owner {
+					t.Fatalf("foreign Owner node leaked: node=%d expected Owner=%d", item.Node.ID, tc.owner)
 				}
 			}
 			later, err := server.queryMediaItemRange(ctx, tc.owner, tc.options, tc.albumKey, limit, limit)
