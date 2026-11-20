@@ -1125,17 +1125,24 @@ struct XDriveIOSNativePhotosDashboard: View {
                 Button("备份原件") { openGallery(.originals) }
                 Button("地图") { openGallery(.map) }
             }
+            // Keep actual app destinations above the long backup section.
+            // On compact iPhones a tall Menu can push later actions offscreen:
+            // Files must remain directly hittable without exposing a second
+            // permanent xDrive tab bar over the native Photos chrome.
+            Section("xDrive") {
+                Button("文件") { tab = .files }
+                    .accessibilityIdentifier("native-ios-gallery-route-files")
+                Button("全部功能") { tab = .launcher }
+                    .accessibilityIdentifier("native-ios-gallery-route-launcher")
+                Button("我的") { tab = .mine }
+                    .accessibilityIdentifier("native-ios-gallery-route-mine")
+            }
             Section("备份与管理") {
                 if let status = galleryBackupStatus {
                     Button(status) { openBackup(.overview) }
                         .accessibilityIdentifier("native-ios-gallery-backup-status")
                 }
                 backupMenuItems
-            }
-            Section("xDrive") {
-                Button("全部功能") { tab = .launcher }
-                Button("文件") { tab = .files }
-                Button("我的") { tab = .mine }
             }
         } label: {
             Image(systemName: backup.schedule?.pausedForReview == true
