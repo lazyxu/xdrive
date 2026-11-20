@@ -36,15 +36,19 @@ test('native cloud tile has truly square aspect fill without extra filename labe
 })
 
 test('cloud grid shares bounded three-step native PhotoKit density menu and pinch', () => {
-  assert.match(wall, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
-  assert.match(wall, /xdrivePhotoWallDensityButtons\(\$wallDensity\)/)
+  assert.match(wall, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+  assert.match(wall, /private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
+  assert.match(wall, /XDriveIOSNativePhotoWallDisplayMenu\(/)
+  assert.match(shared, /xdrivePhotoWallDensityButtons\(\$density\)/)
   assert.match(wall, /native-ios-cloud-wall-density/)
-  assert.equal((virtual.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 2)
+  assert.equal((virtual.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 0)
+  assert.match(virtual, /XDriveIOSNativePhotoWallSkeletonGrid\(/)
+  assert.match(virtual, /XDriveIOSNativePhotoWallSectionList\(/)
   assert.match(shared, /minimum: density\.minimumCellWidth/)
   assert.match(shared, /maximum: density\.maximumCellWidth/)
   assert.match(shared, /struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier/)
   assert.match(shared, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)
-  assert.match(shared, /density = density\.applyingPinch\(scale\)/)
+  assert.match(shared, /let changed = density\.applyingPinch\(scale\)[\s\S]*?onDensityChange\?\(changed\)[\s\S]*?density = changed/)
   assert.match(wall, /\.xdrivePhotoWallPinch\(/)
   assert.match(wall, /density: \$wallDensity,/)
   assert.match(wall, /enabled: phase == \.active && selected == nil && !model\.busy &&/)
@@ -67,5 +71,5 @@ test('presentation-only density preserves exact Owner and Viewer/thumbnail gener
   // Persist only the public presentation enum, never Owner, Node, session,
   // credentials or Viewer anchors; cropping does not change thumbnail task ID.
   assert.match(wall, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
-  assert.doesNotMatch(wall, /UserDefaults|Keychain|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")/)
+  assert.doesNotMatch(wall, /UserDefaults|Keychain|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-(?:framing|density)\.v1")/)
 })

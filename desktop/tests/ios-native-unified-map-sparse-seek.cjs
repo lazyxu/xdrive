@@ -23,8 +23,9 @@ test('sparse GPS place walls traverse the same 10k-page bound as the verified so
 
 test('stale Owner or PhotoKit scope never renders old place-wall rows', () => {
   assert.match(source, /private var active: Bool \{[\s\S]*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)[\s\S]*PHPhotoLibrary\.authorizationStatus[\s\S]*XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(library\)/)
-  assert.match(source, /VStack\(spacing: 8\) \{\s*if active \{\s*Text\("当前来源 · 此区域/)
-  assert.match(source, /\}\s*else \{\s*Text\("当前 Owner 或照片访问已失效，请返回地图重新核对。"\)/)
-  assert.match(source, /guard active, !busy,\s*\(previous \+ current\)\.contains/)
+  assert.match(source, /VStack\(spacing: 8\) \{\s*if active \{\s*XDriveIOSNativePhotoMapPlaceHeader\(/)
+  assert.match(source, /\}\s*else \{\s*XDriveIOSNativePhotoWallStatusMessage\(\s*message: "Owner 或本机照片权限已变化，旧照片已隐藏。"/)
+  assert.match(source, /guard active, !busy, !opening, \(viewing == nil \|\| forViewer\) else \{ return \}/)
+  assert.match(source, /XDriveIOSNativePhotoFingerprintIndex\.isCurrent\(library\)/)
   assert.match(source, /\.onChange\(of: login\.owner\) \{ _ in invalidate\(\) \}/)
 })

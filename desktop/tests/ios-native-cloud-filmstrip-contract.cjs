@@ -29,7 +29,8 @@ test('cloud PhotoAsset filmstrip enforces an exact current Owner range and revis
 })
 
 test('visible-only cloud filmstrip thumbnails are authenticated and retired on scope change', () => {
-  assert.match(filmstrip, /LazyHStack/)
+  assert.match(filmstrip, /XDriveIOSNativePhotoWallViewerFilmstripScroll\s*\{/)
+  assert.match(read('ios/XDriveIOS/NativePhotoWallComponents.swift'), /LazyHStack\(alignment: \.center, spacing: 4\)/)
   assert.match(filmstrip, /login\.verifiedAuthorization\(\)/)
   assert.match(filmstrip, /XDriveIOSNativeMediaGalleryReader\(/)
   assert.match(filmstrip, /try await reader\.thumbnail\(item\)/)

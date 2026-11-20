@@ -167,8 +167,7 @@ struct XDriveIOSNativeLocalViewerFilmstrip: View {
     var body: some View {
         if admitted, loaded.count > 1 {
             ScrollViewReader { scroll in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .center, spacing: 4) {
+                XDriveIOSNativePhotoWallViewerFilmstripScroll {
                         ForEach(loaded) { item in
                             Button {
                                 guard !busy, phase == .active, authorized,
@@ -192,11 +191,7 @@ struct XDriveIOSNativeLocalViewerFilmstrip: View {
                             .accessibilityValue(item.id == current.id ? "当前照片" : "")
                             .accessibilityIdentifier("native-ios-viewer-filmstrip-tile")
                         }
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 5)
                 }
-                .frame(height: 72)
-                .background(.ultraThinMaterial)
                 // Horizontal drag scrubs the bounded page; a short tap keeps
                 // each tile's accessible Button action and native zoom intact.
                 .highPriorityGesture(

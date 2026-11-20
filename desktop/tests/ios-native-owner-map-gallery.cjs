@@ -28,7 +28,7 @@ test('only real canonical GPS places in the currently trusted map page open a fr
   assert.match(map, /XDriveIOSNativeOwnerMapSelectionPolicy\.canOpenPhotoRange\(point\.facet\)/)
   assert.match(map, /XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsSelectedPlace\(/)
   assert.match(map, /overview\.items\.contains\(where: \{/)
-  assert.match(map, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id,\s*captureRange: activeCaptureRange\)/)
+  assert.match(map, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id,\s*captureRange: activeCaptureRange,\s*placeDisplayName: place\.name\)/)
   assert.match(wall, /XDriveIOSNativeServerMediaPreview\(\s*item: initial, login: login,\s*loadedItems: viewerLoadedItems,\s*loadedRange: viewerLoadedRange,\s*openedOwner: viewerOpenedOwner,\s*onNavigate: \{ next in/)
   assert.match(wall, /pagePlaceID == placeID/)
   assert.match(wall, /self\?\.pagePlaceID = placeID/)
@@ -52,7 +52,8 @@ test('MapKit gesture revokes previous Owner camera before repaint but keeps iner
   assert.match(map, /let overview, let verifiedBounds,[\s\S]*?isSameViewport\([\s\S]*?currentlyVisibleIDs/)
   assert.match(map, /isSameViewport\(\s*bounds, current: currentBounds\(\)\)/)
   assert.match(map, /verifiedBounds = bounds/)
-  assert.match(map, /上次验证视窗有/)
+  assert.match(map, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/)
+  assert.doesNotMatch(map, /native-ios-owner-map-stale-count/)
   assert.match(policy, /return authorized == current/)
 })
 
@@ -124,7 +125,7 @@ test('cloud photo cover verifies exact Range before thumbnail and publishes only
 
 test('current exact Owner map place opens one draggable native Gallery album sheet, not a fixed photo strip', () => {
   assert.match(map, /\.sheet\(item: \$selected, onDismiss:/)
-  assert.match(map, /XDriveIOSNativeServerMediaWall\([\s\S]*?placeID: place\.id,\s*captureRange: activeCaptureRange\)[\s\S]*?\.presentationDetents\(\[\.medium, \.large\]\)/)
+  assert.match(map, /XDriveIOSNativeServerMediaWall\([\s\S]*?placeID: place\.id,\s*captureRange: activeCaptureRange,\s*placeDisplayName: place\.name\)[\s\S]*?\.presentationDetents\(\[\.medium, \.large\]\)/)
   assert.match(map, /\.presentationDragIndicator\(\.visible\)/)
   assert.doesNotMatch(map, /fixedBottomPhotoStrip|WKWebView/)
 })
@@ -190,13 +191,17 @@ test('short landscape Owner map retains verified camera, feedback, Sheet and acc
   assert.match(map, /GeometryReader \{ viewport in[\s\S]*?XDriveIOSNativePhotoMapPolicy\.compactViewport\(/);
   assert.match(map, /accessibilityText: dynamicTypeSize\.isAccessibilitySize/);
   assert.match(map, /VStack\(spacing: compactMap \? 4 : 8\)/);
-  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\("当前 Server Owner/);
-  assert.match(map, /if !compactMap && dynamicTypeSize\.isAccessibilitySize \{\s*Text\("选择真实地点后/);
+  assert.match(map, /XDriveIOSNativePhotoMapStatusPill\(/);
+  assert.match(map, /\.overlay\(alignment: \.bottomLeading\)/);
   assert.match(map, /\.alert\("云端照片地图说明", isPresented: \$showingMapHelp\)/);
   assert.match(map, /\.accessibilityIdentifier\("native-ios-owner-map-layout-help"\)/);
   assert.match(map, /Button\("刷新当前视窗"\)/);
-  assert.match(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
-  assert.match(map, /if let overview \{[\s\S]*?if verifiedBounds != nil[\s\S]*?上次验证视窗有/);
+  // The Photos map keeps native Library/Collections/Search; a second xDrive
+  // five-slot focus toggle must not be offered by its Owner menu.
+  assert.doesNotMatch(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
+  assert.match(map, /Label\("地图操作", systemImage: "ellipsis.circle"\)/);
+  assert.match(map, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/);
+  assert.match(map, /if busy \{[\s\S]*?ProgressView\("正在加载照片位置…"/);
   assert.match(map, /\.sheet\(item: \$selected, onDismiss:/);
   assert.doesNotMatch(map, /onChange\(of: compactMap\)|\.id\(compactMap\)/);
 });
@@ -207,10 +212,10 @@ test('single native Gallery map entry exposes local and Owner cloud sources with
   assert.match(dashboard, /localMapPageOffset = 0/);
   assert.doesNotMatch(dashboard, /snapshot\.mapScope|snapshot\.mapPageOffset/);
   assert.match(map, /struct XDriveIOSNativePhotoMapsScreen: View \{[\s\S]*?@ObservedObject var login: XDriveIOSNativeOwnerLoginModel[\s\S]*?@Binding var localMapScope: XDriveIOSNativeLocalMapScope[\s\S]*?@Binding var localMapPageOffset: Int/)
-  assert.match(map, /Picker\("地图照片来源", selection: \$source\)/)
+  assert.match(map, /Picker\("地图照片来源", selection: mapSource\)/)
   assert.match(map, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/)
-  assert.match(map, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange,\s*cameraReturn: cloudMapCamera,\s*onCameraChange: \{ next in[\s\S]*?cloudMapCamera = next/);
-  assert.match(map, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
+  assert.match(map, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange,\s*mapSource: animatedSource, canSelectCloudMap: cloudAllowed,\s*cameraReturn: cloudMapCamera,\s*onCameraChange: \{ next in[\s\S]*?cloudMapCamera = next/);
+  assert.match(map, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/)
   assert.doesNotMatch(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
   assert.doesNotMatch(map, /@State private var localMapScope|@State private var localMapPageOffset/)
 })
@@ -229,7 +234,7 @@ test('cloud MapKit restores the same-Owner camera and selected map source after 
   assert.match(make, /map\.setRegion\(initialCamera, animated: false\)[\s\S]*?map\.delegate = context\.coordinator/)
   assert.match(map, /initialCamera: cameraReturn \?\? camera/)
   assert.match(map, /onCamera: \{ next in\s*camera = next\s*onCameraChange\?\(next\)/)
-  assert.match(map, /\.onAppear \{\s*if let cameraReturn \{ camera = cameraReturn \}[\s\S]*?reload\(\)/)
+  assert.match(map, /\.onAppear \{\s*if onFocusChange != nil \{\s*focused = true\s*onFocusChange\?\(true\)\s*\}\s*if let cameraReturn \{ camera = cameraReturn \}\s*if overview == nil && !busy && phase == \.active \{ reload\(\) \}/)
   assert.match(dashboard, /mapSource = \.local\s*cloudMapCamera = nil/)
   assert.doesNotMatch(dashboard, /UserDefaults\.set\(cloudMapCamera|navigationRouteStore\.save\([^)]*cloudMapCamera/)
 })
@@ -301,29 +306,27 @@ test('single exact Owner map place opens L3 after fresh Owner-scoped Range, not 
   assert.match(map, /if selected == nil && selectedCluster == nil && singleViewer == nil/)
   assert.match(map, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
   assert.match(map, /if case \.response\(let status\) = failure,[\s\S]*?status == 401 \|\| status == 403/)
-  assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(id: facet\.id\)/)
+  assert.match(map, /selected = XDriveIOSOwnerMapChosenPlace\(\s*id: facet\.id, name: facet\.name, owner: expected\)/)
   assert.doesNotMatch(map, /UploadSession|isNetworkAccessAllowed = true|UserDefaults\.set\(single/)
 })
 
 
-test('native map source uses one navigation menu instead of a permanently stacked picker row', () => {
+test('native map source is an authenticated choice inside the same advanced MapKit menu', () => {
   const root = map.slice(map.indexOf('struct XDriveIOSNativePhotoMapsScreen: View'),
                          map.indexOf('private final class XDriveIOSOwnerPlaceAnnotation:'))
-  assert.match(root, /return Group \{\s*switch source \{/)
+  assert.match(root, /return ZStack \{\s*switch source \{/)
   assert.doesNotMatch(root, /return VStack\(spacing: 4\)|\.pickerStyle\(\.segmented\)/)
-  assert.match(root, /\.toolbar \{[\s\S]*?if source == \.cloud \{\s*ToolbarItem\(placement: \.navigationBarLeading\) \{\s*Button\("完成"\)/)
-  assert.match(root, /ToolbarItem\(placement: \.navigationBarTrailing\) \{\s*Menu \{/)
-  assert.match(root, /Menu \{\s*Picker\("地图照片来源", selection: \$source\) \{/)
-  assert.match(root, /ForEach\(XDriveIOSNativePhotoMapSource\.allCases\.filter \{\s*cloudAllowed \|\| \$0 == \.local\s*\}, id: \\.self\)/);
-  assert.match(root, /Label\(source\.label, systemImage: "square\.stack\.3d\.up"\)/)
-  assert.match(root, /\.accessibilityLabel\("地图照片来源：\\\(source\.label\)"\)/)
-  assert.match(root, /\.accessibilityIdentifier\("native-ios-map-source-selector"\)/)
+  assert.match(root, /if source == \.cloud[\s\S]*?ToolbarItem\(placement: \.navigationBarTrailing\)/)
+  assert.match(root, /mapSource: animatedSource, canSelectCloudMap: cloudAllowed/)
+  assert.doesNotMatch(root, /Label\("照片来源", systemImage: "square\.stack\.3d\.up"\)/)
+  assert.match(map, /Picker\("地图照片来源", selection: mapSource\)/)
+  assert.match(map, /if canSelectCloudMap \{[\s\S]*?tag\(XDriveIOSNativePhotoMapSource.cloud\)/)
+  assert.match(map, /\.accessibilityIdentifier\("native-ios-map-source-selector"\)/)
   assert.match(root, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\([\s\S]*?mapScope: \$localMapScope,[\s\S]*?offset: \$localMapPageOffset/)
-  assert.match(root, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?cameraReturn: cloudMapCamera/);
+  assert.match(root, /case \.cloud:\s*if cloudAllowed \{\s*XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?cameraReturn: cloudMapCamera/)
   assert.match(root, /guard source == \.cloud, let expectedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\([\s\S]*?cloudMapCamera = next/)
-  assert.match(root, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
+  assert.match(root, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/)
 })
-
 
 test('cloud Owner map album advances on visible sentinel without waiting for every cover', () => {
   assert.match(clusterAlbum, /\.onAppear \{\s*scrollFootVisible = true\s*advanceIfVisible\(\)/)

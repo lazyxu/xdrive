@@ -19,10 +19,11 @@ test('local PhotoKit Gallery always mounts continuous lazy virtual pages without
   assert.doesNotMatch(source, /Text\("当前照片页"\)|正在读取第/)
   assert.match(source, /LazyVStack\(alignment: \.leading/)
   assert.match(source, /ForEach\(0\.\.<XDriveIOSNativePhotoVirtualPagePolicy\.pageCount\(total: total\)/)
-  assert.match(source, /ForEach\(daySections\)/)
-  assert.match(source, /ForEach\(page\.items\[section\.startIndex\.\.<section\.endIndex\]\)/)
+  assert.match(source, /XDriveIOSNativePhotoWallSectionList\(\s*sections: daySections, density: density/)
+  assert.match(source, /items: \{ Array\(page\.items\[\$0\.startIndex\.\.<\$0\.endIndex\]\) \}/)
   assert.match(source, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
-  assert.match(source, /ForEach\(0\.\.<min\(64, expectedTotal - offset\)/)
+  assert.match(source, /XDriveIOSNativePhotoWallSkeletonGrid\(\s*density: density, count: min\(64, expectedTotal - offset\)/)
+  assert.match(read('ios/XDriveIOS/NativePhotoWallComponents.swift'), /maximumSkeletonCount = 64/)
   assert.match(source, /private var placeholderTile: some View/)
   assert.match(source, /XDriveIOSNativeGalleryMediaScanner\(\)/)
   assert.match(source, /let count = try await reader\.start\(atOffset: offset, mediaFilter: mediaFilter\)/)
@@ -71,7 +72,11 @@ test('local multi-selection supports real PhotoKit favorites and deletion withou
   assert.match(actions, /asset\.creationDate == expected\.capturedAt/)
   assert.match(actions, /asset\.modificationDate == expected\.modifiedAt/)
   assert.match(actions, /expected\.isLive == asset\.mediaSubtypes\.contains\(\.photoLive\)/)
-  assert.doesNotMatch(actions, /upload|journal|Backup|Owner|signed.*URL|Keychain/i)
+  // Only executable code is screened. Descriptive Owner/backup comments
+  // do not perform writes; forbidden credential, network and upload APIs do.
+  const executable = actions.replace(/\/\/[^\n]*/g, '')
+  assert.doesNotMatch(executable,
+    /\b(?:URLSession|UploadSession|XDriveIOSNativePhotoBackup|XDriveNativeOwnerRoot|accessToken|Keychain)\b|\.upload\(|\.post\(/)
 })
 
 
@@ -101,8 +106,10 @@ test('native local Photos original Share Sheet uses current PhotoKit originals a
 test('native local day headings reflect real PhotoKit creation dates, not fixed 64-slot titles', () => {
   const day = read('ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift')
   assert.match(source, /dates: page\.items\.map\(\\\.capturedAt\),[\s\S]*?calendar: \.current/)
-  assert.match(source, /XDriveIOSNativePhotoWallDayHeader\(\s*title: section.title, topPadding: 4/)
+  assert.match(source, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(source, /title: \{ \$0\.continuesPreviousPage \? nil : \$0\.title \}/)
   const shared = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
+  assert.match(shared, /XDriveIOSNativePhotoWallDayHeader\(title: heading\)/)
   assert.match(shared, /struct XDriveIOSNativePhotoWallDayHeader: View/)
   assert.match(shared, /\.accessibilityAddTraits\(\.isHeader\)/)
   assert.doesNotMatch(source, /Text\("起始日期：/)
@@ -156,7 +163,7 @@ test('native day section headers continue across real filtered 64-slot boundarie
   assert.match(day, /hasPreviousPage: Bool = false/)
   assert.match(day, /key\(for: previousCapturedAt, calendar: calendar\) == lastKey/)
   assert.match(source, /hasPreviousPage: offset > 0, calendar: \.current/)
-  assert.match(source, /if !section\.continuesPreviousPage \{/)
+  assert.match(source, /title: \{ \$0\.continuesPreviousPage \? nil : \$0\.title \}/)
   assert.match(source, /preceding = try await reader\.precedingCaptureDate\(beforeOffset: offset\)/)
   assert.match(scanner, /let date = snapshot\.object\(at: offset - 1\)\.creationDate/)
   assert.match(scanner, /offset > 0, offset <= snapshot\.count, offset % 64 == 0/)

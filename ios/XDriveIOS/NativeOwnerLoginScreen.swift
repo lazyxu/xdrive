@@ -47,7 +47,6 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                     }
                 )
                 .onAppear { workspaceAppeared() }
-                .onDisappear { workspaceDisappeared() }
             } else {
                 NavigationStack {
                     ScrollView {
@@ -156,13 +155,12 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                     .navigationBarTitleDisplayMode(.inline)
                 }
                 .onAppear { workspaceAppeared() }
-                .onDisappear { workspaceDisappeared() }
             }
         }
         .onDisappear {
-            readinessTicket = UUID()
-            readinessTask?.cancel()
-            readinessTask = nil
+            // Group can transiently disappear while replacing the
+            // restoration progress child. Never revoke startup readiness
+            // here; the scenePhase handler owns foreground cancellation.
             backup.stopLibraryChangeMonitoring()
         }
         .task {
@@ -200,15 +198,26 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                         backup.tickIfDue(login: model)
                     }
                 } else {
-                    armReadinessAfterMount()
+                    // Foreground resumption need not trigger another
+                    // NavigationStack .onAppear; re-arm the visible root.
+                    workspaceAppeared()
                 }
             } else {
-                readinessTicket = UUID()
-                readinessTask?.cancel()
-                readinessTask = nil
+                // Do not cancel readiness when SwiftUI merely swaps the
+                // login/Dashboard child. Only the actual scene exit revokes it.
+                workspaceDisappeared()
                 backup.stopLibraryChangeMonitoring()
                 backup.cancel()
             }
+        }
+        // Re-arm readiness when the actual post-restore workspace mounts.
+        // This never grants Owner access or starts automatic backup before
+        // its existing foreground + stabilized readiness gate succeeds.
+        .onChange(of: restoreFinished) { finished in
+            if finished { armReadinessAfterMount() }
+        }
+        .onChange(of: workspaceVisible) { visible in
+            if visible { armReadinessAfterMount() }
         }
         .onChange(of: model.owner) { _ in
             backup.cancel()
@@ -366,6 +375,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .buttonStyle(.borderedProminent)
             .disabled(model.busy)
             .accessibilityIdentifier("native-ios-login-submit")
+            .accessibilityValue(startupReady ? "ready" : "mounting")
 
             // Explicit native buttons give each collapsed section one
             // reliable 44-pt tap target and a visible, testable open state.

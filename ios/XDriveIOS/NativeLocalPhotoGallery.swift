@@ -404,6 +404,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     @State private var requestedICloudForCurrentItem = false
     @State private var showingPhotoInfo = false
     @State private var photoInfoDetails: XDriveIOSNativeViewerMediaDetails?
+    @State private var pendingLocationEditor = false
+    @State private var showingLocationEditor = false
     @Environment(\.xdriveOpenNativeLocalMap) private var openNativeLocalMap
     @Environment(\.xdriveNativePhotoPriorityAction) private var priorityAction
     @Environment(\.dismiss) private var dismiss
@@ -493,6 +495,17 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
         photoInfoDetails = details
         showingPhotoInfo = true
+    }
+
+    private func requestPhotoLocationEdit() {
+        guard currentPageAuthorized else {
+            photoActionMessage = "照片或 PhotoKit 写入权限已变化，请重新打开照片。"
+            return
+        }
+        // Dismiss UIKit's info sheet before opening another modal. Starting
+        // both sheets during the same transaction can leave a blank Viewer.
+        pendingLocationEditor = true
+        showingPhotoInfo = false
     }
 
     private func openPhotoLocationInMap() {
@@ -823,6 +836,11 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                         Button("照片信息") { showPhotoInfo() }
                             .accessibilityIdentifier("native-ios-local-viewer-info")
                             .accessibilityIdentifier("native-ios-local-viewer-location-info")
+                        Button("调整照片位置") {
+                            guard currentPageAuthorized else { return }
+                            showingLocationEditor = true
+                        }
+                        .accessibilityIdentifier("native-ios-local-viewer-adjust-location")
                         if let priorityAction {
                             Button("优先核验或备份此原件") {
                                 guard currentPageAuthorized else { return }
@@ -1054,13 +1072,28 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             }) { current in
                 XDriveIOSNativeLocalPhotoActivitySheet(fileURLs: current.fileURLs)
             }
-            .sheet(isPresented: $showingPhotoInfo) {
+            .sheet(isPresented: $showingPhotoInfo, onDismiss: {
+                if pendingLocationEditor {
+                    pendingLocationEditor = false
+                    if currentPageAuthorized { showingLocationEditor = true }
+                }
+            }) {
                 if currentPageAuthorized, let details = photoInfoDetails {
                     XDriveIOSNativeViewerInfoSheet(
                         details: details,
                         onOpenLocation: openNativeLocalMap == nil ||
                             PHPhotoLibrary.authorizationStatus(for: .readWrite) != .authorized
-                            ? nil : { openPhotoLocationInMap() }
+                            ? nil : { openPhotoLocationInMap() },
+                        onAdjustLocation: currentPageAuthorized
+                            ? requestPhotoLocationEdit : nil
+                    )
+                }
+            }
+            .sheet(isPresented: $showingLocationEditor) {
+                if currentPageAuthorized {
+                    XDriveIOSNativeLocalPhotoLocationEditor(
+                        candidate: viewed,
+                        onSaved: { photoInfoDetails = nil }
                     )
                 }
             }
@@ -1256,6 +1289,10 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     // Never persist PhotoKit local identifiers in a route snapshot.
     @AccessibilityFocusState private var accessibilityFocusedTileID: String?
     @State private var pageRenderRevision: UInt64 = 0
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     var body: some View {
@@ -1263,7 +1300,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         let compactGallery = viewport.size.width >= 680 &&
             viewport.size.height < 500 && !dynamicTypeSize.isAccessibilitySize
         ScrollViewReader { returnScroll in
-        ScrollView {
+        XDriveIOSNativePhotoWallScrollContainer {
             VStack(alignment: .leading, spacing: 16) {
                 // Always display the limited-access notice, even when short.
                 if authorization == .limited || !compactGallery {
@@ -1287,19 +1324,26 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 } else if let page {
                     Text("当前显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets)")
                         .font(.footnote).monospacedDigit()
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
-                        ForEach(page.items.filter { $0.kind != "unsupported" }) { candidate in
+                    // Reuse Gallery/Places layout without widening the authorized PhotoKit page.
+                    let visibleItems = page.items.filter { $0.kind != "unsupported" }
+                    let sections = xdriveIOSNativePhotoWallVisibleSections(
+                        visibleItems, scale: .day
+                    ) { XDriveIOSNativePhotoWallTimeScale.day.key(for: $0.capturedAt) }
+                    XDriveIOSNativePhotoWallSectionList(
+                        sections: sections, density: density,
+                        title: { XDriveIOSNativePhotoWallTimeScale.day.label(for: $0.key) },
+                        items: { $0.items }
+                    ) { candidate in
                             Button {
                                 viewerReturnID = candidate.id
                                 accessibilityFocusedTileID = nil
                                 selected = candidate
                             } label: {
-                                XDriveIOSLocalPhotoTile(candidate: candidate)
+                                XDriveIOSNativeSquarePhotoTile(candidate: candidate, framing: framing)
                             }
                             .buttonStyle(.plain)
                             .id(candidate.id)
                             .accessibilityFocused($accessibilityFocusedTileID, equals: candidate.id)
-                        }
                     }
                     HStack {
                         Button("上一页") { load(offset: max(0, page.startOffset - 64)) }
@@ -1313,8 +1357,11 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                     Button("重新读取本机相册") { refresh() }
                         .buttonStyle(.bordered)
                 }
-                if busy { ProgressView("读取本机相册…") }
-                if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
+                XDriveIOSNativePhotoWallFeedback(
+                    isLoading: busy, loadingMessage: "读取本机相册…",
+                    error: errorMessage, canRetry: !busy && phase == .active,
+                    buttonTitle: "重新读取本机相册"
+                ) { refresh() }
                 if !compactGallery {
                     Text("只读取当前授权子集；缩略图可按需从 iCloud 获取，不会自动下载完整原件。权限、相册或 App 状态变化时旧页立即废弃。")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -1525,5 +1572,212 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         selected = nil
         busy = false
         errorMessage = nil
+    }
+}
+
+
+// Local PhotoKit-only, explicitly confirmed location editing. This is not an
+// Owner/Gallery GPS reader; no query, GPS coordinate or PHAsset ID is persisted
+// or transmitted to an xDrive endpoint. The map search talks to MapKit only.
+private struct XDriveIOSNativeLocalPhotoLocationEditor: View {
+    let candidate: XDrivePhotoKitScanCandidate
+    let onSaved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
+    @State private var query = ""
+    @State private var matches: [MKMapItem] = []
+    @State private var selectedIndex: Int?
+    @State private var searchTask: Task<Void, Never>?
+    @State private var writeTask: Task<Void, Never>?
+    @State private var requestID = UUID()
+    @State private var searching = false
+    @State private var writing = false
+    @State private var showRemoveConfirmation = false
+    @State private var error: String?
+
+    private var authorized: Bool {
+        let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        return phase == .active && (permission == .authorized || permission == .limited)
+    }
+
+    private var currentPhotoHasLocation: Bool {
+        guard authorized, let asset = PHAsset.fetchAssets(
+            withLocalIdentifiers: [candidate.id], options: nil
+        ).firstObject else { return false }
+        return asset.location != nil
+    }
+
+    private func findLocations() {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard authorized, !writing, (2...120).contains(term.count) else {
+            error = "请输入 2 至 120 个字符的地点名称，或检查照片访问权限。"
+            return
+        }
+        searchTask?.cancel()
+        let ticket = UUID()
+        requestID = ticket
+        matches = []
+        selectedIndex = nil
+        searching = true
+        error = nil
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = term
+        searchTask = Task { @MainActor in
+            defer {
+                if requestID == ticket {
+                    searching = false
+                    searchTask = nil
+                }
+            }
+            do {
+                let result = try await MKLocalSearch(request: request).start()
+                guard !Task.isCancelled, requestID == ticket, authorized else { return }
+                matches = Array(result.mapItems.prefix(12))
+                if matches.isEmpty { error = "没有找到匹配的地点，请尝试更具体的名称。" }
+            } catch is CancellationError {
+            } catch {
+                if requestID == ticket && authorized {
+                    self.error = "地点搜索不可用，请检查网络后重试。"
+                }
+            }
+        }
+    }
+
+    private func save(_ location: CLLocation?) {
+        guard authorized, !writing,
+              location == nil || XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                latitude: location!.coordinate.latitude,
+                longitude: location!.coordinate.longitude)
+        else {
+            error = "照片访问权限或选中的位置已失效。"
+            return
+        }
+        searchTask?.cancel()
+        requestID = UUID()
+        searching = false
+        writing = true
+        error = nil
+        writeTask = Task { @MainActor in
+            defer {
+                writing = false
+                writeTask = nil
+            }
+            do {
+                try await XDriveIOSNativeLocalPhotoSelectionActions.setLocation(
+                    candidate, to: location
+                )
+                guard !Task.isCancelled else { return }
+                onSaved()
+                dismiss()
+            } catch is CancellationError {
+            } catch {
+                self.error = "无法修改照片位置，照片可能已变化或未允许写入。"
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("搜索地点") {
+                    HStack {
+                        TextField("城市、地址或地点", text: $query)
+                            .submitLabel(.search)
+                            .onSubmit { findLocations() }
+                            .accessibilityIdentifier("native-ios-local-location-query")
+                        Button("搜索") { findLocations() }
+                            .disabled(!authorized || searching || writing)
+                            .accessibilityIdentifier("native-ios-local-location-search")
+                    }
+                    if searching { ProgressView("正在查找地点…") }
+                }
+                if !matches.isEmpty {
+                    Section("地图搜索结果") {
+                        ForEach(matches.indices, id: \.self) { index in
+                            Button {
+                                selectedIndex = index
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(matches[index].name ?? "地图地点")
+                                            .foregroundStyle(.primary)
+                                        Text(matches[index].placemark.title ?? "")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if selectedIndex == index {
+                                        Image(systemName: "checkmark.circle.fill")
+                                    }
+                                }
+                                .frame(minHeight: 44)
+                            }
+                            .accessibilityIdentifier("native-ios-local-location-result")
+                        }
+                    }
+                }
+                if let error {
+                    Section {
+                        Text(error).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    Button("确认使用所选地点") {
+                        guard let index = selectedIndex, matches.indices.contains(index),
+                              let location = matches[index].placemark.location else {
+                            error = "请先选择一个具有有效坐标的地点。"
+                            return
+                        }
+                        save(location)
+                    }
+                    .disabled(!authorized || writing || searching || selectedIndex == nil)
+                    .accessibilityIdentifier("native-ios-local-location-confirm")
+                    if currentPhotoHasLocation {
+                        Button("移除照片位置", role: .destructive) {
+                            showRemoveConfirmation = true
+                        }
+                        .disabled(!authorized || writing)
+                        .accessibilityIdentifier("native-ios-local-location-remove")
+                    }
+                }
+                if writing {
+                    ProgressView("正在由 iOS 照片图库保存位置…")
+                }
+            }
+            .navigationTitle("调整位置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }.disabled(writing)
+                }
+            }
+            .confirmationDialog("移除这张照片的拍摄位置？",
+                                isPresented: $showRemoveConfirmation) {
+                Button("移除位置", role: .destructive) { save(nil) }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("只修改本机照片的位置信息，不会删除照片或修改云端备份。")
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(writing)
+        .onChange(of: phase) { state in
+            if state != .active {
+                requestID = UUID()
+                searchTask?.cancel()
+                searchTask = nil
+                matches = []
+                selectedIndex = nil
+                searching = false
+            }
+        }
+        .onDisappear {
+            requestID = UUID()
+            searchTask?.cancel()
+            searchTask = nil
+            writeTask?.cancel()
+            writeTask = nil
+        }
     }
 }

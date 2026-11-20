@@ -24,19 +24,23 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
             app.launchArguments.append("-xdrive-ui-navigation-synthetic-owner")
         }
         app.launch()
+        XDriveIOSNativePhotosTestNavigator.acceptInitialFullPhotosForNavigation(in: app)
         XCTAssertEqual(app.state, .runningForeground, "Native app exited at launch")
         return app
     }
 
     private func target(_ id: String, app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: id).firstMatch
+        XDriveIOSNativePhotosTestNavigator.visible(id, in: app)
     }
 
     private func tap(_ id: String, app: XCUIApplication) {
-        let element = target(id, app: app)
-        XCTAssertTrue(element.waitForExistence(timeout: 15), "No native control: \(id)")
         print("IOS_NATIVE_NAV_TAP_START route=\(id)")
-        element.tap()
+        if !XDriveIOSNativePhotosTestNavigator.tap(id, in: app) {
+            let element = target(id, app: app)
+            XCTAssertTrue(element.waitForExistence(timeout: 15) && element.isHittable,
+                          "No visible native control: \(id)")
+            element.tap()
+        }
         XCTAssertEqual(app.state, .runningForeground, "Native process exited at \(id)")
     }
 
@@ -85,7 +89,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         XCTAssertTrue(local.waitForExistence(timeout: 15),
                       "Native PhotoKit source was missing from the Gallery menu")
         local.tap()
-        XCTAssertTrue(target("native-ios-gallery-source-local", app: app)
+        XCTAssertTrue(app.navigationBars["本机照片"].firstMatch
             .waitForExistence(timeout: 15), "Local PhotoKit source did not mount")
     }
 

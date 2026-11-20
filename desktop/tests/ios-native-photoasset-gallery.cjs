@@ -126,7 +126,12 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(local, /savedOffset = next\.startOffset/)
   assert.match(local, /restoreAfterViewer\(\)/)
   assert.match(local, /refresh\(at: savedOffset\)/)
-  assert.match(local, /GridItem\(\.adaptive\(minimum: 95, maximum: 150\)/)
+  // The old 64-item local route is retained, but its fixed-width duplicate
+  // grid has been replaced with the same bounded SectionList/Tile as Places.
+  assert.match(local, /page\.items\.filter \{ \$0\.kind != "unsupported" \}/)
+  assert.match(local, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(local, /XDriveIOSNativeSquarePhotoTile\(candidate: candidate, framing: framing\)/)
+  assert.doesNotMatch(local, /GridItem\(\.adaptive\(minimum: 95, maximum: 150\)/)
   if (album.includes('XDriveIOSNativeAlbumVirtualPage(')) {
     // #3670 continuous album uses dynamic-density columns; keep the bound exact.
     assert.match(album, /XDriveIOSNativePhotoWallGrid\(density: density\)/)
@@ -231,13 +236,15 @@ test('cloud PhotoAsset Gallery short landscape recovers wall height without losi
   assert.match(wall, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/)
   assert.match(wall, /GeometryReader \{ viewport in/)
   assert.match(wall, /viewport\.size\.width >= 680 &&\s*viewport\.size\.height < 500 && !dynamicTypeSize\.isAccessibilitySize/)
-  assert.match(wall, /ScrollViewReader \{ returnScroll in\s*ScrollView \{/)
+  assert.match(wall, /ScrollViewReader \{ returnScroll in\s*XDriveIOSNativePhotoWallScrollContainer \{/)
   assert.match(wall, /if !compactGallery && placeID == nil \{\s*Text\(album == nil \?/)
   assert.match(wall, /if !compactGallery && placeID == nil \{\s*Text\("连续滚动只读取附近的 48 项验证范围/)
   assert.match(wall, /native-ios-cloud-gallery-layout-help/)
   assert.match(wall, /accessibilityLabel\("云端图库说明"\)/)
   assert.match(wall, /\.alert\("云端图库说明", isPresented: \$showingGalleryHelp\)/)
-  assert.match(wall, /if let page = model\.page \{/)
+  // A visible page must be current-Owner scoped, not merely cached in the model.
+  assert.match(wall, /if let page = model\.visiblePage\(for: login\.owner\) \{/)
+  assert.match(view, /func visiblePage\(for currentOwner: XDriveNativeOwnerRoot\?\) -> XDriveIOSNativeMediaRange\? \{[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(currentOwner, pageScope\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(currentReader\.owner, pageScope\)/)
   assert.match(wall, /if model\.busy \{\s*XDriveIOSNativePhotoWallLoadingMessage\(message: "读取云端图库/)
   assert.match(wall, /if let message = model\.error \{/)
   assert.match(wall, /Button\("搜索"\) \{ applySearch\(\) \}/)
@@ -278,7 +285,8 @@ test('cloud PhotoAsset wall loads verified 48-item virtual ranges continuously',
   assert.doesNotMatch(wall, /Button\("上一页"\)|Button\("下一页"\)|照片 \\?\(page\.offset/)
   assert.match(virtual, /@StateObject private var model = XDriveIOSNativeMediaWallModel\(\)/)
   assert.match(virtual, /model\.load\(login: login, albumID: albumID, placeID: placeID,\s*offset: offset, search: search,\s*captureRange: captureRange\)/)
-  assert.match(virtual, /ForEach\(0\.\.<min\(48, max\(0, expectedTotal - offset\)\)/)
+  assert.match(virtual, /XDriveIOSNativePhotoWallSkeletonGrid\(\s*density: density, count: min\(48, max\(0, expectedTotal - offset\)\)/)
+  assert.match(src('ios/XDriveIOS/NativePhotoWallComponents.swift'), /maximumSkeletonCount = 64/)
   assert.match(virtual, /\.onDisappear \{[\s\S]*?model\.invalidate\(\)/)
   assert.match(virtual, /page\.offset == offset, page\.total_count == expectedTotal/)
   assert.match(virtual, /XDriveIOSNativePhotoAssetRangeCursorPolicy\.validPage\(/)
@@ -304,7 +312,13 @@ test('continuous cloud wall adopts only currently authorized range for L3 and re
   assert.match(wall, /pendingReturnRevision = rememberedRevision/)
   assert.match(wall, /returnScroll\.scrollTo\("cloud-range:/)
   assert.match(wall, /range\.items\.contains\(where: \{[\s\S]*?\$0\.node\.revision == pendingReturnRevision/)
-  assert.match(wall, /scroll\.scrollTo\(target, anchor: \.center\)/)
+  // The authorized exact Node+revision check remains in this source; only
+  // scrolling/focus is delegated to the shared presentation helper.
+  assert.match(wall, /range\.items\.contains\(where: \{[\s\S]*?\$0\.id == target && \$0\.node\.revision == pendingReturnRevision/)
+  assert.match(wall, /xdrivePhotoWallFocusVerifiedTile\(\s*target, scroll: scroll, focus: \$accessibilityFocusedMediaID/)
+  const presentation = src('ios/XDriveIOS/NativePhotoWallComponents.swift')
+  assert.match(presentation, /func xdrivePhotoWallFocusVerifiedTile<ID: Hashable>/)
+  assert.match(presentation, /scroll\.scrollTo\(id, anchor: anchor\)/)
   assert.match(virtual, /returnFocusID: UInt64\?/)
   assert.match(virtual, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/)
   assert.match(wall, /for \(start, loaded\) in recentRangeIDs where[\s\S]*?isDisjoint\(with: Set\(loaded\)\)/)

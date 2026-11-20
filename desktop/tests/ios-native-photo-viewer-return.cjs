@@ -105,8 +105,8 @@ test('Gallery child NavigationLinks keep verified unified page checkpoints on re
     unified.indexOf('struct XDriveIOSNativeUnifiedPhotoGallery: View'),
     unified.indexOf('private var galleryContent:')
   )
-  assert.match(unified, /NavigationLink\(isActive: \$showingThumbnailCache\) \{\s*XDriveIOSNativePhotoThumbnailCacheScreen\(login: login\)/)
-  assert.match(unified, /NavigationLink\(isActive: \$showingPeople\) \{\s*XDriveIOSNativeGalleryPeople\(login: login\)/)
+  assert.match(unified, /\.navigationDestination\(isPresented: \$showingThumbnailCache\) \{\s*XDriveIOSNativePhotoThumbnailCacheScreen\(login: login\)/)
+  assert.match(unified, /\.navigationDestination\(isPresented: \$showingPeople\) \{\s*XDriveIOSNativeGalleryPeople\(login: login\)/)
   const disappeared = life.slice(
     life.indexOf('.onDisappear {'), life.indexOf('.onChange(of: photoObserver.change)')
   )

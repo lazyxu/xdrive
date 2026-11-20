@@ -41,7 +41,33 @@ test('P0-01: map sheets retain the camera and use the native medium/large photo 
   assert.match(owner, /\.sheet\(item: \$selected, onDismiss: \{[\s\S]*?reload\(\)/)
   assert.match(owner, /\.sheet\(item: \$selectedCluster, onDismiss: \{[\s\S]*?reload\(\)/)
   assert.match(owner, /cameraReturn/)
-  assert.match(owner, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id,\s*captureRange: activeCaptureRange\)/)
+  assert.match(owner, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id,\s*captureRange: activeCaptureRange,\s*placeDisplayName: place\.name\)/)
+})
+
+
+test('P0: date-picker action toolbar must close before the native Owner map toolbar', () => {
+  const { owner } = sources
+  const start = owner.indexOf('.sheet(isPresented: $datePickerOpen)')
+  const end = owner.indexOf('.sheet(item: $selected, onDismiss:')
+  assert.ok(start > 0 && end > start)
+  const region = owner.slice(start, end)
+  assert.match(region, /\.navigationTitle\("选择云端地图日期"\)\s*\.toolbar \{\s*ToolbarItem\(placement: \.confirmationAction\)/)
+  assert.match(region, /Button\("显示当天"\)[\s\S]*?XDriveIOSNativePhotoMapCaptureRange\.day\([\s\S]*?datePickerOpen = false/)
+  assert.match(region, /ToolbarItem\(placement: \.cancellationAction\)[\s\S]*?Button\("取消"\) \{ datePickerOpen = false \}/)
+  // Date picker keeps its own confirmation toolbar. The secondary Owner
+  // actions are in map overlay, not nested inside the date picker.
+  const screen = owner.slice(owner.indexOf('struct XDriveIOSNativeOwnerPhotoMapScreen: View'))
+  const pickerAt = screen.indexOf('.sheet(isPresented: $datePickerOpen)')
+  const chromeAt = screen.indexOf('.overlay(alignment: .bottomLeading)', pickerAt)
+  const selectedAt = screen.indexOf('.sheet(item: $selected, onDismiss:', chromeAt)
+  assert.ok(pickerAt >= 0 && chromeAt > pickerAt && selectedAt > chromeAt)
+  const dateSheet = screen.slice(pickerAt, chromeAt)
+  const secondary = screen.slice(chromeAt, selectedAt)
+  assert.match(dateSheet, /ToolbarItem\(placement: \.confirmationAction\)/)
+  assert.doesNotMatch(dateSheet, /native-ios-owner-map-actions/)
+  assert.match(secondary, /Label\("地图操作", systemImage: "ellipsis.circle"\)/)
+  assert.match(secondary, /native-ios-owner-map-actions/)
+  assert.match(owner, /if XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, place\.owner\)[\s\S]*?placeDisplayName: place\.name/)
 })
 
 test('P0-02: revoked, deleted, edited and wrong-kind local assets never inherit Viewer authority', () => {
@@ -116,17 +142,19 @@ test('P0-06: Viewer return restores exact visible tile, never stale PhotoKit or 
   const { map, cluster, album, cloud } = sources
   assert.match(map, /restoreViewerTile\(using: returnScroll\)/)
   assert.match(map, /XDriveIOSNativeMapViewerAdmission\.allows\(\s*target, in: loaded, sceneActive: phase == \.active/)
-  assert.match(map, /scroll\.scrollTo\(id, anchor: \.center\)/)
+  assert.match(map, /xdrivePhotoWallFocusVerifiedTile\(/)
+  assert.match(map, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
   assert.match(map, /viewerReturnID = nil/)
   assert.match(cluster, /sameVisibleRevision\(as: anchor\)/)
-  assert.match(cluster, /returnScroll\.scrollTo\(anchor\.id, anchor: \.center\)/)
+  assert.match(cluster, /xdrivePhotoWallFocusVerifiedTile\(\s*anchor\.id, scroll: returnScroll, focus: \$focusedTileID/)
   assert.match(cluster, /load\(cursor, history: earlier\)/)
   assert.match(cluster, /pendingViewerCross = nil/)
   assert.match(cloud, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.cloudTarget\(/)
   assert.match(album, /restoreAfterViewer\(\)/)
   assert.match(cluster, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)/)
   // Cosmetic framing is allowed; Owner identity, signed ranges and Viewer anchors are not stored.
-  assert.doesNotMatch(cluster, /UserDefaults\.set|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-framing\.v1")[^"]+"/)
+  assert.match(cluster, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+  assert.doesNotMatch(cluster, /UserDefaults\.set|@AppStorage\("(?!xdrive\.ios\.gallery\.photo-wall-(?:framing|density)\.v1")[^"]+"/)
 })
 
 test('P1-07: continuous scroll, reserved placeholders and request cancellation stay bounded', () => {
@@ -153,17 +181,21 @@ test('P1-08: shared adaptive densities, landscape and pinch never change data-so
   assert.match(density, /case compact, standard, large/)
   assert.match(density, /func applyingPinch\(/)
   for (const [name, source, expected] of [
-    ['local gallery', gallery, 2], ['local album', album, 2],
-    ['local location', map, 2], ['cloud gallery', cloud, 2],
-    ['cloud cluster', cluster, 1]
+    ['local gallery', gallery, 0], ['local album', album, 1],
+    ['local location', map, 0], ['cloud gallery', cloud, 0],
+    ['cloud cluster', cluster, 0]
   ]) {
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
       expected, name)
   }
+  assert.match(gallery, /XDriveIOSNativePhotoWallSectionList\(/)
   assert.equal((map.match(/\.xdrivePhotoWallPinch\(/g) || []).length, 2)
+  assert.equal((map.match(/XDriveIOSNativePhotoWallSectionList\(/g) || []).length, 2)
+  assert.match(album, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(cloud, /XDriveIOSNativePhotoWallSectionList\(/)
   assert.doesNotMatch(map, /MagnificationGesture\(minimumScaleDelta:/)
   assert.match(shared, /struct XDriveIOSNativePhotoWallPinchModifier: ViewModifier/)
-  assert.match(shared, /density = density\.applyingPinch\(scale\)/)
+  assert.match(shared, /let changed = density\.applyingPinch\(scale\)[\s\S]*?onDensityChange\?\(changed\)[\s\S]*?density = changed/)
   assert.match(cluster, /\.xdrivePhotoWallPinch\(/)
   assert.match(cluster, /density: \$wallDensity,/)
   assert.match(cluster, /enabled: activeOwner && !busy && viewing == nil/)
@@ -186,7 +218,7 @@ test('P1-09: videos, Live badges and date groups match Gallery; map cannot acqui
   assert.match(tile, /seconds: asset\.duration/)
   assert.match(shared, /else if isLive \{\s*Image\(systemName: "livephoto"\)/)
   assert.match(tile, /loader\.cancel\(\)/)
-  assert.equal((map.match(/XDriveIOSNativeSquarePhotoTile\(candidate: item, framing: wallFraming\)/g) || []).length, 2)
+  assert.equal((map.match(/XDriveIOSNativeSquarePhotoTile\(\s*candidate: item, framing: wallFraming\s*\)/g) || []).length, 2)
   assert.equal((map.match(/XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/g) || []).length, 2)
   assert.match(gallery, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
   assert.match(album, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)

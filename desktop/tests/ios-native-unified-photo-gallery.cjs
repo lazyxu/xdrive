@@ -13,7 +13,9 @@ test('unified gallery defaults to all sources and keeps unknown evidence distinc
   const wall = read('NativeUnifiedPhotoWall')
   const viewer = read('NativeUnifiedPhotoViewer')
   assert.match(dashboard, /gallerySource: XDriveIOSNativeGallerySource = \.unified/)
-  assert.match(dashboard, /case \.unified:\s*XDriveIOSNativeUnifiedPhotoGallery\(\s*login: login, openBackup:/)
+  // No verified Owner => keep local PhotoKit visible, rather than
+  // mounting the Owner-only unified wall as a blank Gallery.
+  assert.match(dashboard, /case \.unified:\s*if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\([\s\S]*?\}\s*else\s*\{\s*XDriveIOSNativeUnifiedPhotoGallery\(\s*login: login, openBackup:/)
   assert.match(ui, /filterButton\(nil, title: "全部"\)/)
   assert.match(timeline, /checkedLocal\?\.provesAbsence\(for: probe\.kind\) == true && ids\.isEmpty/)
   assert.match(timeline, /localIDs\[key\] == \[candidate\.id\]/)
@@ -104,18 +106,24 @@ test('unified Gallery uses the canonical adaptive photo grid and bounded density
   assert.match(shared, /minimum: density\.minimumCellWidth/)
   assert.match(shared, /maximum: density\.maximumCellWidth/)
   assert.match(density, /case compact, standard, large/)
-  assert.match(ui, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
-  assert.match(ui, /xdrivePhotoWallDensityButtons\(\$wallDensity\)/)
+  assert.match(ui, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+  assert.match(ui, /private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
+  assert.match(ui, /XDriveIOSNativePhotoWallDisplayMenu\([\s\S]*?density: \$wallDensity, framing: \$wallFraming/)
   assert.match(ui, /native-ios-unified-wall-density/)
   assert.match(ui, /\.xdrivePhotoWallPinch\(/)
   assert.match(ui, /density: \$wallDensity/)
   assert.match(ui, /enabled: selected == nil && phase == \.active && !showFilters && isTabActive/)
   assert.doesNotMatch(ui, /MagnificationGesture\(minimumScaleDelta:/)
-  assert.match(shared, /density = density\.applyingPinch\(scale\)/)
+  // Pinch now captures a verified visible-tile anchor before changing density.
+  // Preserve that hook instead of requiring the removed direct assignment.
+  assert.match(shared, /let changed = density\.applyingPinch\(scale\)/)
+  assert.match(shared, /guard changed != density else \{ return \}/)
+  assert.match(shared, /onDensityChange\?\(changed\)/)
+  assert.match(shared, /density = changed/)
   assert.match(ui, /filter: sourceFilter, query: query, density: wallDensity,[\s\S]*?displayActive: selected == nil && phase == \.active/)
   assert.match(wall, /let density: XDriveIOSNativePhotoWallDensity/)
-  assert.match(wall, /if timeScale != \.all \{\s*XDriveIOSNativePhotoWallDayHeader\(title: timeScale\.label\(for: day\)\)/)
-  assert.match(wall, /XDriveIOSNativePhotoWallGrid\(density: density\) \{[\s\S]*?ForEach\(groups\[day\] \?\? \[\]\)/)
+  assert.match(wall, /XDriveIOSNativePhotoWallSectionList\([\s\S]*?guard timeScale != \.all else \{ return nil \}/)
+  assert.match(wall, /xdriveIOSNativePhotoWallVisibleSections\([\s\S]*?sections: sections, density: density/)
   assert.doesNotMatch(wall, /LazyVGrid\(|GridItem\(/)
   // Other Gallery/places surfaces retain their own existing master contract tests.
   // A purely visual density change must not alter source cursors, Owner membership,
@@ -123,8 +131,18 @@ test('unified Gallery uses the canonical adaptive photo grid and bounded density
   assert.match(wall, /@State private var retry = UUID\(\)/)
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
   assert.match(wall, /\.onDisappear \{\s*visible = false\s*if !retainWhileCovered \{\s*acceptedGeneration = nil[\s\S]*?queueBadges = \[:\][\s\S]*?model\.reset\(\)/)
-  assert.match(ui, /scroll\.scrollTo\(anchor, anchor: \.center\)/)
-  assert.doesNotMatch(ui, /\.onChange\(of: wallDensity\)[\s\S]*?wall\.reset\(\)/)
+  // Verified Owner/48-row admission precedes presentation-only shared scrolling.
+  assert.match(ui, /if let target = XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\([\s\S]*?anchor, in: verifiedIDs, authorized: true[\s\S]*?\) \{[\s\S]*?if viewerOpeningPage != viewerReturnPage \|\|\s*viewerOpeningItemID != target \{[\s\S]*?let restored = viewerOpeningViewport\?\.alignment\([\s\S]*?for: target, window: viewerReturnPage,[\s\S]*?xdrivePhotoWallScrollVerifiedTile\(\s*target, scroll: scroll,\s*anchor: restored \?\? \.center\)/)
+  assert.match(shared, /func xdrivePhotoWallScrollVerifiedTile<ID: Hashable>\([\s\S]*?scroll\.scrollTo\(id, anchor: anchor\)/)
+  const densityChangedAt = ui.indexOf('.onChange(of: wallDensity) { _ in');
+  const densityNextAt = ui.indexOf('.onChange(of: selected?.id)', densityChangedAt);
+  assert.ok(densityChangedAt >= 0 && densityNextAt > densityChangedAt,
+    'bounded current density-change handler required');
+  const densityChangedHandler = ui.slice(densityChangedAt, densityNextAt);
+  assert.match(densityChangedHandler, /pinchGeneration == wall\.generation/);
+  assert.match(densityChangedHandler, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/);
+  assert.match(densityChangedHandler, /xdrivePhotoWallScrollVerifiedTile\(/);
+  assert.doesNotMatch(densityChangedHandler, /wall\.reset\(\)|resetWall\(\)/);
 })
 
 

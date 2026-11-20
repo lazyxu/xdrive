@@ -154,7 +154,9 @@ test('native cloud original list and preview clear stale media across Owner swit
 })
 
 test('native Photos exposes an Owner-bound backup status and cloud-originals route', () => {
-  assert.match(dashboard, /native-ios-gallery-backup-settings/)
+  assert.match(dashboard, /native-ios-gallery-more-menu/)
+  assert.match(dashboard, /native-ios-gallery-backup-status/)
+  assert.match(dashboard, /Button\(status\) \{ openBackup\(\.overview\) \}/)
   assert.match(dashboard, /backup\.schedule/)
   assert.match(dashboard, /backup\.busy/)
   assert.match(dashboard, /自动备份已暂停：需核对收据/)
@@ -258,13 +260,15 @@ test('native local and album photo walls free short landscape grid space while r
   const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
   const album = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
   const localWall = local.slice(local.indexOf('struct XDriveIOSNativeLocalGalleryScreen: View {'))
+  const sharedWall = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
+  assert.match(sharedWall, /struct XDriveIOSNativePhotoWallScrollContainer<Content: View>: View \{[\s\S]*?var body: some View \{\s*ScrollView \{\s*content/)
   const albumWall = album.slice(album.indexOf('struct XDriveIOSNativeAlbumContentsScreen: View {'),
     album.indexOf('/// Photos-first list of local smart/user albums.'))
   for (const [name, screen] of [['local', localWall], ['album', albumWall]]) {
     assert.match(screen, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/, name)
     assert.match(screen, /GeometryReader \{ viewport in/, name)
     assert.match(screen, /viewport\.size\.width >= 680 &&\s*viewport\.size\.height < 500 && !dynamicTypeSize\.isAccessibilitySize/, name)
-    assert.match(screen, /ScrollViewReader \{ returnScroll in\s*ScrollView \{/, name)
+    assert.match(screen, /ScrollViewReader \{ returnScroll in\s*XDriveIOSNativePhotoWallScrollContainer \{/, name)
     assert.match(screen, /if !compactGallery \{[\s\S]*?Text\(/, name)
     assert.match(screen, /@AccessibilityFocusState private var accessibilityFocusedTileID: String\?/, name)
     assert.match(screen, /\.onChange\(of: pageRenderRevision\)/, name)

@@ -60,3 +60,35 @@ test('compiler failures remain fatal with Kotlin plugin retry enabled', () => {
   assert.equal(r.status, 14)
   assert.equal(r.count, 1)
 })
+
+// Exact GitHub CI failure: Maven Central reset during Kotlin Gradle plugin
+// artifact download. This is not a Kotlin compiler or dependency-version error.
+const mavenReset = [
+  '> Could not resolve all artifacts for configuration \'classpath\'.',
+  '  > Could not download kotlin-gradle-plugin-2.1.20-gradle85.jar (org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20)',
+  "    > Could not get resource 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin/2.1.20/kotlin-gradle-plugin-2.1.20-gradle85.jar'.",
+  '      > Connection reset',
+].join('\n')
+
+test('Kotlin Maven Central jar transfer reset is retried and must eventually succeed', () => {
+  const r = runScenario(2, mavenReset)
+  assert.equal(r.status, 0)
+  assert.equal(r.count, 3)
+  assert.match(r.stderr, /Kotlin Maven Central jar connection reset, retry/)
+})
+test('persistent Kotlin Maven jar connection resets still fail required Android build', () => {
+  const r = runScenario(3, mavenReset)
+  assert.equal(r.status, 14)
+  assert.equal(r.count, 3)
+  assert.match(r.stderr, /transient download still unavailable/)
+})
+test('bare connection reset without exact Maven Kotlin jar transfer is terminal', () => {
+  const r = runScenario(3, "A problem occurred configuring project: java.net.SocketException: Connection reset")
+  assert.equal(r.status, 14)
+  assert.equal(r.count, 1)
+})
+test('Kotlin dependency resolution failure without external reset remains terminal', () => {
+  const r = runScenario(3, 'Could not download kotlin-gradle-plugin-2.1.20-gradle85.jar: artifact missing')
+  assert.equal(r.status, 14)
+  assert.equal(r.count, 1)
+})

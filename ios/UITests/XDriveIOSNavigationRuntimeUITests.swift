@@ -1,9 +1,277 @@
 import XCTest
 
+/// Test-only navigation through VISIBLE controls. The candidate Photos
+/// Library intentionally hides xDrive's other five tab controls instead of
+/// stacking two tab bars. Old published baselines still expose direct tabs.
+/// Never use invisible view IDs or coordinate taps as a substitute for real UX.
+enum XDriveIOSNativePhotosTestNavigator {
+    private static func found(_ id: String, in app: XCUIApplication) -> XCUIElement {
+        // SwiftUI Menu labels may be surfaced as an identifier-less Button
+        // even when the Menu's accessibilityIdentifier is attached to an
+        // enclosing Other. Prefer the actual hittable Button by its explicit
+        // user-facing accessibility label; never tap the non-hittable wrapper.
+        if id == "native-ios-gallery-more-menu" {
+            let identified = app.buttons.matching(identifier: id).firstMatch
+            if identified.exists && identified.isHittable { return identified }
+            let labelled = app.buttons.matching(
+                NSPredicate(format: "label == %@", "图库来源、备份与 xDrive")
+            ).firstMatch
+            if labelled.exists && labelled.isHittable { return labelled }
+            if identified.exists { return identified }
+        }
+        let button = app.buttons.matching(identifier: id).firstMatch
+        if button.exists { return button }
+        return app.descendants(matching: .any).matching(identifier: id).firstMatch
+    }
+
+    /// Normal Gallery/Files UI tests need a genuine user-visible Photos
+    /// decision before tapping More. A first-run system sheet covers the
+    /// native toolbar, making an otherwise valid route non-hittable.
+    /// Dedicated PhotoKit denied/Limited/Settings tests NEVER call this.
+    static func acceptInitialFullPhotosForNavigation(in app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let systemAlert = springboard.alerts.firstMatch
+        let alert = systemAlert.waitForExistence(timeout: 5)
+            ? systemAlert : app.alerts.firstMatch
+        guard alert.exists else { return }
+        let title = alert.label
+        guard title.localizedCaseInsensitiveContains("Photo Library") ||
+              title.contains("照片") || title.contains("相簿") else {
+            XCTFail("Unexpected system prompt blocks Gallery navigation: " + title)
+            return
+        }
+        for label in ["Allow Full Access", "Allow Access to All Photos",
+                      "Allow Access to All Photos and Videos", "Full Access",
+                      "允许完全访问", "允许访问所有照片", "允许访问全部照片"] {
+            let button = alert.buttons[label].firstMatch
+            if button.exists && button.isHittable {
+                button.tap()
+                print("IOS_NATIVE_REAL_FULL_PHOTOKIT_PROMPT_ACCEPTED")
+                return
+            }
+        }
+        XCTFail("Real iOS Photos permission has no Full Access action: "
+            + alert.debugDescription)
+    }
+
+    /// iOS 18.5 sometimes exposes the real SwiftUI toolbar Menu as a
+    /// non-hittable AX proxy despite a full-sized on-screen button. This is
+    /// NOT permission to tap an invisible destination: require the exact
+    /// labelled Menu, a genuine 44pt visible frame, a foreground app and no
+    /// system/application alert before sending a user-visible Menu tap.
+    private static func verifiedGalleryMoreFrame(
+        _ menu: XCUIElement, in app: XCUIApplication
+    ) -> Bool {
+        guard menu.exists, app.state == .runningForeground,
+              menu.label == "图库来源、备份与 xDrive",
+              !app.alerts.firstMatch.exists,
+              !XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                  .alerts.firstMatch.exists else { return false }
+        let frame = menu.frame
+        let screen = app.frame
+        return frame.width >= 44 && frame.height >= 44 &&
+            frame.intersects(screen) &&
+            frame.midX >= screen.minX && frame.midX <= screen.maxX &&
+            frame.midY >= screen.minY && frame.midY <= screen.maxY
+    }
+
+    static func visible(_ id: String, in app: XCUIApplication) -> XCUIElement {
+        switch id {
+        case "native-ios-tab-gallery", "native-ios-gallery-source-unified":
+            let library = found("native-ios-photos-library-tab", in: app)
+            return library.exists ? library : found(id, in: app)
+        case "native-ios-gallery-source-albums":
+            let collections = found("native-ios-photos-collections-tab", in: app)
+            return collections.exists ? collections : found(id, in: app)
+        case "native-ios-gallery-source-menu":
+            let menu = found("native-ios-gallery-more-menu", in: app)
+            return menu.exists ? menu : found(id, in: app)
+        case "native-ios-gallery-source-local":
+            let label = app.navigationBars["本机照片"].firstMatch
+            return label.exists ? label : found(id, in: app)
+        default:
+            return found(id, in: app)
+        }
+    }
+
+    @discardableResult
+    static func tap(_ id: String, in app: XCUIApplication) -> Bool {
+        // A Gallery filter button opens a Menu. A requested editor test must
+        // select the *visible* Search/Filter action as its second user tap.
+        if id == "native-ios-gallery-open-filters" {
+            let menu = found(id, in: app)
+            guard menu.exists && menu.isHittable else { return false }
+            menu.tap()
+            let action = app.buttons["搜索与筛选"].firstMatch
+            guard action.waitForExistence(timeout: 10) && action.isHittable
+            else { return false }
+            action.tap()
+            return true
+        }
+        let direct = found(id, in: app)
+        if direct.exists && direct.isHittable { direct.tap(); return true }
+        // The original c83/b9 toolbar remains a real usable baseline.
+        let legacy: [String: String] = [
+            "native-ios-tab-files": "文件",
+            "native-ios-tab-mine": "我的",
+            "native-ios-tab-launcher": "全部",
+            "native-ios-tab-gallery": "图库",
+            "native-ios-tab-dynamic": "地图"
+        ]
+        if let title = legacy[id] {
+            let old = app.buttons.matching(identifier: "native-ios-five-slot-bar")
+                .matching(NSPredicate(format: "label == %@", title)).firstMatch
+            if old.exists && old.isHittable { old.tap(); return true }
+            // Archived b9/c83 use a real UIKit TabBar with SF Symbol IDs.
+            // Follow only that exact visible tab, never a hidden candidate
+            // TabView destination or synthetic navigation.
+            let system = app.tabBars.buttons
+                .matching(NSPredicate(format: "label == %@", title)).firstMatch
+            if system.exists && system.isHittable { system.tap(); return true }
+        }
+
+        let idToGalleryTab: [String: String] = [
+            "native-ios-gallery-source-unified": "native-ios-photos-library-tab",
+            "native-ios-gallery-source-albums": "native-ios-photos-collections-tab",
+            "native-ios-tab-gallery": "native-ios-photos-library-tab"
+        ]
+        if let actual = idToGalleryTab[id] {
+            let action = found(actual, in: app)
+            if action.exists && action.isHittable { action.tap(); return true }
+        }
+        // The genuine Photos timeline can temporarily replace both tabs
+        // with Year/Month/All. Restore the real bar before navigating; never
+        // attempt to tap a hidden SwiftUI TabView destination.
+        if id == "native-ios-tab-gallery" ||
+           id == "native-ios-gallery-source-unified" ||
+           id == "native-ios-gallery-source-albums" {
+            let compact = found("native-ios-photos-return-tabs", in: app)
+            if compact.exists && compact.isHittable {
+                compact.tap()
+                let restoredID = id == "native-ios-gallery-source-albums"
+                    ? "native-ios-photos-collections-tab"
+                    : "native-ios-photos-library-tab"
+                let restored = found(restoredID, in: app)
+                guard restored.waitForExistence(timeout: 10) &&
+                      restored.isHittable else { return false }
+                restored.tap()
+                return true
+            }
+        }
+
+        // The source-specific people/search commands belong to the Gallery
+        // options Menu, not a hidden but programmatically tappable toolbar.
+        if id == "native-ios-gallery-open-filters" ||
+           id == "native-ios-gallery-people" {
+            let menu = found("native-ios-gallery-open-filters", in: app)
+            guard menu.exists && menu.isHittable else { return false }
+            menu.tap()
+            let title = id == "native-ios-gallery-people"
+                ? "人物与宠物" : "搜索与筛选"
+            let action = app.buttons[title].firstMatch
+            guard action.waitForExistence(timeout: 10) && action.isHittable
+            else { return false }
+            action.tap()
+            return true
+        }
+        if id == "native-ios-gallery-source-menu" {
+            let menu = found("native-ios-gallery-more-menu", in: app)
+            if (menu.exists && menu.isHittable) ||
+               verifiedGalleryMoreFrame(menu, in: app) {
+                menu.tap()
+                return true
+            }
+        }
+
+        let sourceCommands: [String: String] = [
+            "native-ios-gallery-source-originals": "备份原件",
+            "native-ios-gallery-source-cloud": "云端图库",
+            "native-ios-gallery-source-local": "本机照片"
+        ]
+        let globalCommands: [String: String] = [
+            "native-ios-tab-files": "文件",
+            "native-ios-tab-mine": "我的",
+            "native-ios-tab-launcher": "全部功能",
+            "native-ios-tab-dynamic": "地图"
+        ]
+        if let title = sourceCommands[id] ?? globalCommands[id] {
+            let menu = found("native-ios-gallery-more-menu", in: app)
+            let normalHit = menu.exists && menu.isHittable
+            guard normalHit || verifiedGalleryMoreFrame(menu, in: app) else {
+                print("IOS_NATIVE_GALLERY_MORE_MENU_NOT_VISIBLE",
+                      menu.debugDescription)
+                return false
+            }
+            if !normalHit {
+                print("IOS_NATIVE_GALLERY_MORE_AX_PROXY_FRAME_VERIFIED")
+            }
+            // A real first-use Photos permission alert can interrupt this
+            // menu tap. After XCTest has actually dismissed the system alert,
+            // retry the SAME visible menu once, not an invisible tab or fake
+            // navigation route. Keep every failed route a real XCTest failure.
+            for attempt in 0..<2 {
+                guard (menu.exists && menu.isHittable) ||
+                      verifiedGalleryMoreFrame(menu, in: app) else {
+                    return false
+                }
+                menu.tap()
+                // New Gallery options are genuine Buttons inside a
+                // sectioned sheet. Legacy builds may still show MenuItems.
+                // Prefer the actionable sheet row, without waiting eight
+                // seconds for a MenuItem that cannot exist in this layout.
+                let action = app.buttons.matching(
+                    NSPredicate(format: "label == %@", title)).firstMatch
+                if action.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
+                   action.isHittable {
+                    action.tap()
+                    return true
+                }
+                let menuItem = app.menuItems.matching(
+                    NSPredicate(format: "label == %@", title)).firstMatch
+                if menuItem.exists && menuItem.isHittable {
+                    menuItem.tap()
+                    return true
+                }
+                if app.alerts.firstMatch.exists ||
+                   XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                       .alerts.firstMatch.exists { return false }
+            }
+            return false
+        }
+        return false
+    }
+}
+
 /// Real simulator app-exit and native tab/rail UI checks. This uses the actual
 /// Dashboard and Files/Gallery screens, but has no authenticated Server Owner.
 final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+
+    /// The iOS Photos UI must not show the system five-slot TabBar below
+    /// Library / Collections / Search. Test actual Simulator hit-testing.
+    func testGalleryPhotosBarDoesNotStackSystemTabBar() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground)
+        let bar = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-photos-bottom-bar").firstMatch
+        XCTAssertTrue(bar.waitForExistence(timeout: 20),
+                      "Native Photos bottom bar did not mount")
+        for id in ["native-ios-photos-library-tab",
+                   "native-ios-photos-collections-tab",
+                   "native-ios-photos-search"] {
+            let button = app.buttons.matching(identifier: id).firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 10) && button.isHittable,
+                          "Missing distinct native Photos control: \(id)")
+        }
+        for title in ["全部", "地图", "图库", "文件", "我的"] {
+            let systemTab = app.tabBars.buttons.matching(
+                NSPredicate(format: "label == %@", title)).firstMatch
+            XCTAssertFalse(systemTab.exists && systemTab.isHittable,
+                           "System UITabBar overlaps Photos chrome: \(title)")
+        }
+    }
     private func launch(syntheticOwner: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
@@ -60,8 +328,8 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     }
 
     private func find(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
-        let exact = app.descendants(matching: .any)
-            .matching(identifier: identifier).firstMatch
+        let exact = XDriveIOSNativePhotosTestNavigator.visible(identifier, in: app)
+        if exact.exists && exact.isHittable { return exact }
         if exact.waitForExistence(timeout: 4) { return exact }
         // Baseline c83 UI hierarchy recorded actual labels and old container
         // IDs on the buttons. This is a real tap, not a source-only assertion.
@@ -81,9 +349,11 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         return exact
     }
     private func select(_ identifier: String, in app: XCUIApplication) {
-        let control = find(identifier, in: app)
-        XCTAssertTrue(control.exists, "Missing \(identifier)")
-        control.tap()
+        if !XDriveIOSNativePhotosTestNavigator.tap(identifier, in: app) {
+            let control = find(identifier, in: app)
+            XCTAssertTrue(control.exists && control.isHittable, "Missing actionable \(identifier)")
+            control.tap()
+        }
         XCTAssertEqual(app.state, .runningForeground, "App exited at \(identifier)")
     }
     func testFilesFirstOpenAndSixGalleryReturnsDoNotExit() {
@@ -161,27 +431,35 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     // even though the actual buttons were visible and the app stayed running.
     func testNativeFiveTabsHaveDistinctAccessibilityTargets() {
         let app = launch()
-        // The historic release uses one parent identifier on every actual
-        // button. Its baseline tests must tap those buttons, but should not
-        // pretend that the *new* distinct-ID accessibility contract existed.
-        let legacyTab = app.buttons.matching(
-            identifier: "native-ios-five-slot-bar"
-        ).matching(
-            NSPredicate(format: "label == %@", "文件")
-        ).firstMatch
-        if legacyTab.waitForExistence(timeout: 2) {
-            print("NAV_SMOKE old release: verifying real tap paths, not distinct IDs")
+        // Archived c83 displayed the five destinations directly; the
+        // candidate follows native Photos and must NEVER stack both bars.
+        let legacy = app.buttons.matching(identifier: "native-ios-five-slot-bar")
+            .matching(NSPredicate(format: "label == %@", "文件")).firstMatch
+        if legacy.exists && legacy.isHittable {
             XCTAssertEqual(app.state, .runningForeground)
             return
         }
-        for name in ["launcher", "dynamic", "gallery", "files", "mine"] {
-            let identifier = "native-ios-tab-\(name)"
-            let exact = app.descendants(matching: .any)
-                .matching(identifier: identifier).firstMatch
-            XCTAssertTrue(exact.waitForExistence(timeout: 20),
-                          "Candidate must expose exact unique tab ID: \(name)")
+        let photos = find("native-ios-photos-bottom-bar", in: app)
+        XCTAssertTrue(photos.waitForExistence(timeout: 15))
+        XCTAssertFalse(find("native-ios-five-slot-bar", in: app).exists,
+                       "Gallery must not show two bottom navigation bars")
+        for id in ["native-ios-photos-library-tab",
+                   "native-ios-photos-collections-tab", "native-ios-photos-search"] {
+            XCTAssertTrue(find(id, in: app).exists, "Missing native Photos action " + id)
         }
-        XCTAssertEqual(app.state, .runningForeground)
+        // All xDrive destinations remain reachable through real user taps
+        // and keep distinct AX IDs on their own five-slot screen.
+        select("native-ios-tab-files", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+        for name in ["launcher", "dynamic", "gallery", "files", "mine"] {
+            let id = "native-ios-tab-\(name)"
+            XCTAssertTrue(app.descendants(matching: .any)
+                .matching(identifier: id).firstMatch.exists,
+                "xDrive destination lost from non-Gallery bar: " + id)
+        }
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(find("native-ios-photos-bottom-bar", in: app).exists)
+        XCTAssertFalse(find("native-ios-five-slot-bar", in: app).exists)
     }
 
     func testFilesRailHasThreeIndependentNavigationTargets() {
@@ -358,10 +636,13 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     // navigation rather than treating a colored tab bar as a rendered page.
     // PNG samples diagnose candidate blanks; they are not 60/120-Hz proof.
     private func observedSelect(_ identifier: String, in app: XCUIApplication) {
-        let element = find(identifier, in: app)
-        XCTAssertTrue(element.exists, "Native route missing before tap: \(identifier)")
         print("IOS_NATIVE_NAV_TAP_START route=\(identifier)")
-        element.tap()
+        if !XDriveIOSNativePhotosTestNavigator.tap(identifier, in: app) {
+            let control = find(identifier, in: app)
+            XCTAssertTrue(control.exists && control.isHittable,
+                          "Native route missing before tap: \(identifier)")
+            control.tap()
+        }
         XCTAssertEqual(app.state, .runningForeground, "Exited after \(identifier)")
     }
 
@@ -509,6 +790,171 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         observedSelect("native-ios-tab-files", in: app)
         assertChildAndCapture("native-ios-files-section-browse", in: app,
                               label: "files-after-sheet-rotation")
+    }
+
+
+    // Regression: the old toolbar Menu could exist in the real Simulator
+    // AX hierarchy while failing hit testing, blocking every child route.
+    // All six cases below operate actual SwiftUI controls (not hidden tabs).
+    private func openReachableGalleryOptions(_ app: XCUIApplication) {
+        XDriveIOSNativePhotosTestNavigator.acceptInitialFullPhotosForNavigation(in: app)
+        let more = app.buttons.matching(
+            identifier: "native-ios-gallery-more-menu").firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 20) && more.isHittable,
+                      "Visible Gallery More button must be genuinely tappable")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-more-menu")
+        more.tap()
+        let done = app.buttons.matching(
+            identifier: "native-ios-gallery-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15) && done.isHittable,
+                      "Gallery options did not expose an actionable Done button")
+    }
+
+    private func chooseReachableGalleryOption(
+        _ label: String, in app: XCUIApplication
+    ) {
+        openReachableGalleryOptions(app)
+        let action = app.buttons.matching(
+            NSPredicate(format: "label == %@", label)).firstMatch
+        // The actual options List may need a swipe on compact iPhones.
+        for _ in 0..<5 {
+            if action.exists && action.isHittable { break }
+            let list = app.collectionViews.firstMatch.exists
+                ? app.collectionViews.firstMatch : app.scrollViews.firstMatch
+            guard list.exists else { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(action.waitForExistence(timeout: 12) && action.isHittable,
+                      "Gallery option is not reachable: \(label)")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-option-\(label)")
+        action.tap()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Gallery option exited the native app: \(label)")
+    }
+
+    private func assertSingleNativePhotosBar(_ app: XCUIApplication) {
+        let photosBar = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-photos-bottom-bar").firstMatch
+        XCTAssertTrue(photosBar.waitForExistence(timeout: 15),
+                      "Photos bottom bar disappeared")
+        for title in ["全部", "地图", "图库", "文件", "我的"] {
+            let system = app.tabBars.buttons.matching(
+                NSPredicate(format: "label == %@", title)).firstMatch
+            XCTAssertFalse(system.exists && system.isHittable,
+                           "Second native TabBar is hit-testable: \(title)")
+        }
+    }
+
+    func testGalleryOptionsMoreButtonIsTappableAndDismisses() {
+        let app = launch()
+        openReachableGalleryOptions(app)
+        for title in ["全部照片", "本机照片", "云端图库", "备份原件",
+                      "地图", "文件", "全部功能", "我的"] {
+            let item = app.buttons.matching(
+                NSPredicate(format: "label == %@", title)).firstMatch
+            // A native List may lazily expose the last rows only when scrolled.
+            // Actually reveal them instead of mistaking virtualization for
+            // an inaccessible command or claiming an invisible row is usable.
+            for _ in 0..<6 {
+                if item.exists && item.isHittable { break }
+                let list = app.collectionViews.firstMatch.exists
+                    ? app.collectionViews.firstMatch : app.scrollViews.firstMatch
+                guard list.exists else { break }
+                list.swipeUp()
+            }
+            XCTAssertTrue(item.exists && item.isHittable,
+                          "Inaccessible Gallery option: \(title)")
+        }
+        let close = app.buttons.matching(
+            identifier: "native-ios-gallery-options-done").firstMatch
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-options-done")
+        close.tap()
+        assertSingleNativePhotosBar(app)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testGalleryOptionsFilesRoundTripsWithoutDuplicateTabBar() {
+        let app = launch()
+        for cycle in 0..<3 {
+            chooseReachableGalleryOption("文件", in: app)
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+                .waitForExistence(timeout: 15), "Files did not mount: \(cycle)")
+            XCTAssertFalse(find("native-ios-photos-bottom-bar", in: app).exists,
+                           "Photos bar overlapped Files navigation")
+            select("native-ios-tab-gallery", in: app)
+            assertSingleNativePhotosBar(app)
+        }
+    }
+
+    func testGalleryOptionsLocalPhotosAndUnifiedSourceKeepNativeShell() {
+        let app = launch()
+        chooseReachableGalleryOption("本机照片", in: app)
+        XCTAssertTrue(find("native-ios-local-timeline-open", in: app)
+            .waitForExistence(timeout: 15), "Actual local PhotoKit page missing")
+        chooseReachableGalleryOption("全部照片", in: app)
+        XCTAssertTrue(find("native-ios-local-timeline-open", in: app)
+            .waitForExistence(timeout: 15), "Signed-out unified PhotoKit wall missing")
+        assertSingleNativePhotosBar(app)
+    }
+
+    func testGalleryOptionsOriginalsToFilesToGalleryRemainsNative() {
+        let app = launch(syntheticOwner: true)
+        chooseReachableGalleryOption("备份原件", in: app)
+        XCTAssertTrue(find("native-ios-cloud-original-layout-help", in: app)
+            .waitForExistence(timeout: 15), "Originals child shell was lost")
+        chooseReachableGalleryOption("文件", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+            .waitForExistence(timeout: 15), "Files shell lost after Originals")
+        select("native-ios-tab-gallery", in: app)
+        assertSingleNativePhotosBar(app)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testGalleryOptionsCollectionsFilesAndLibraryReturn() {
+        let app = launch()
+        select("native-ios-gallery-source-albums", in: app)
+        XCTAssertTrue(app.navigationBars["精选集"].firstMatch
+            .waitForExistence(timeout: 15), "Collections did not mount")
+        chooseReachableGalleryOption("文件", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+            .waitForExistence(timeout: 15), "Files did not mount from Collections")
+        select("native-ios-tab-gallery", in: app)
+        chooseReachableGalleryOption("全部照片", in: app)
+        assertSingleNativePhotosBar(app)
+    }
+
+    func testGalleryOptionsLauncherAndMineRoutesKeepFilesReachable() {
+        let app = launch()
+        chooseReachableGalleryOption("全部功能", in: app)
+        XCTAssertTrue(find("native-ios-launcher-search", in: app)
+            .waitForExistence(timeout: 15), "Launcher not mounted from Gallery")
+        select("native-ios-tab-gallery", in: app)
+        chooseReachableGalleryOption("我的", in: app)
+        XCTAssertTrue(find("native-ios-mine-server-account", in: app)
+            .waitForExistence(timeout: 15), "Mine not mounted from Gallery")
+        select("native-ios-tab-files", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+            .waitForExistence(timeout: 15), "Files not mounted after Mine")
+        select("native-ios-tab-gallery", in: app)
+        assertSingleNativePhotosBar(app)
+    }
+
+    func testGalleryOptionsForegroundDismissFilesReturnDoesNotLoseRoute() {
+        let app = launch()
+        openReachableGalleryOptions(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        let done = app.buttons.matching(
+            identifier: "native-ios-gallery-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15),
+                      "Options should not turn into a blank page on foreground")
+        done.tap()
+        chooseReachableGalleryOption("文件", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-tab-gallery", in: app)
+        assertSingleNativePhotosBar(app)
     }
 
 }

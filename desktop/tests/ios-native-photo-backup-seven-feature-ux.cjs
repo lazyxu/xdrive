@@ -25,7 +25,9 @@ test('1: gallery backup entry shares task, Focused, settings, audit and cache na
     '备份设置', '逐项核验当前云端原件', '释放本机缓存空间（不删除照片原件）']) {
     assert.ok(dashboard.includes('Button("' + label + '")'))
   }
-  assert.match(dashboard, /Menu \{ backupMenuItems \}/)
+  assert.match(dashboard, /Section\("备份与管理"\) \{[\s\S]*?backupMenuItems[\s\S]*?\}/)
+  assert.match(dashboard, /private var galleryBackupStatus: String\?/)
+  assert.match(dashboard, /native-ios-gallery-backup-status/)
   assert.match(dashboard, /native-ios-backup-cache-sheet-close/)
   assert.match(dashboard, /launchAction: backupLaunchAction, launchNonce: backupLaunchNonce/)
   assert.match(backup, /case \.focused: openDetails\(\.progress\)/)

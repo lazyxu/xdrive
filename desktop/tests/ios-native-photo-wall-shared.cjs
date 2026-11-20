@@ -20,11 +20,15 @@ test('one adaptive SwiftUI photo grid is wired into local, album, location and c
   assert.match(shared, /minimum: density\.minimumCellWidth/)
   assert.match(shared, /maximum: density\.maximumCellWidth/)
   assert.match(shared, /@ViewBuilder content: \(\) -> Content/)
-  for (const [source, count] of [[local, 2], [album, 2], [map, 2],
-    [cloud, 2], [cluster, 1]]) {
+  for (const [source, count] of [[local, 0], [album, 1], [map, 0],
+    [cloud, 0], [cluster, 0]]) {
     assert.equal((source.match(/XDriveIOSNativePhotoWallGrid\(density:/g) || []).length,
       count, 'each expected wall and its placeholder must use shared grid')
   }
+  assert.equal((map.match(/XDriveIOSNativePhotoWallSectionList\(/g) || []).length, 2)
+  assert.match(album, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(cloud, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(shared, /struct XDriveIOSNativePhotoWallSectionList<Section: Identifiable/)
   assert.doesNotMatch(shared, /PHAsset|URLSession|UploadSession|UserDefaults|fetchAssets|verifiedAuthorization|accessToken|PHPhotoLibrary/)
 })
 
@@ -34,7 +38,7 @@ test('one SwiftUI gesture policy handles Owner cloud Gallery and map clusters', 
   assert.match(shared, /let enabled: Bool/)
   assert.match(shared, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)
   assert.match(shared, /guard enabled else \{ return \}/)
-  assert.match(shared, /density = density\.applyingPinch\(scale\)/)
+  assert.match(shared, /let changed = density\.applyingPinch\(scale\)[\s\S]*?onDensityChange\?\(changed\)[\s\S]*?density = changed/)
   assert.match(shared, /func xdrivePhotoWallPinch\(/)
   assert.match(cluster, /\.xdrivePhotoWallPinch\(\s*density: \$wallDensity,\s*enabled: activeOwner && !busy && viewing == nil/)
   assert.match(cloud, /\.xdrivePhotoWallPinch\(\s*density: \$wallDensity,[\s\S]*?enabled: phase == \.active && selected == nil && !model\.busy &&\s*login\.owner != nil/)
@@ -54,13 +58,14 @@ test('local GPS photos reuse the canonical album square thumbnail without changi
   const spatial = map.slice(map.indexOf('private struct XDriveIOSMapSpatialAlbum: View'),
     map.indexOf('/// One native map route'))
   for (const source of [localPage, spatial]) {
-    assert.match(source, /XDriveIOSNativeSquarePhotoTile\(candidate: item, framing: wallFraming\)/)
-    assert.match(source, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
-    assert.match(source, /XDriveIOSNativePhotoWallGrid\(density: wallDensity\)/)
+    assert.match(source, /XDriveIOSNativeSquarePhotoTile\(\s*candidate: item, framing: wallFraming\s*\)/)
+    assert.match(source, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+    assert.match(source, /private var wallDensity: XDriveIOSNativePhotoWallDensity = \.standard/)
+    assert.match(source, /XDriveIOSNativePhotoWallSectionList\(/)
     assert.match(source, /\.xdrivePhotoWallPinch\(\s*density: \$wallDensity,/)
     assert.match(source, /XDriveIOSNativePhotoWallTimeScaleControls\(scale: \$wallTimeScale\)/)
     assert.match(source, /xdriveIOSNativePhotoWallVisibleSections\(/)
-    assert.match(source, /xdrivePhotoWallFramingButtons\(\$wallFraming\)/)
+    assert.match(source, /XDriveIOSNativePhotoWallDisplayMenu\(/)
     assert.doesNotMatch(source, /XDriveIOSLocalPhotoTile\(candidate: item\)/)
   }
   assert.match(map, /XDriveIOSMapCurrentPhotoKitAdmission\.allows\(/)
@@ -77,7 +82,7 @@ test('cloud single place reuses Owner wall and clusters still enforce signed ran
   assert.match(ownerMap, /XDriveIOSNativeOwnerMapClusterAlbum\(/)
   assert.match(cloud, /XDriveIOSNativeMediaGalleryReader\(/)
   assert.match(cloud, /pagePlaceID == placeID/)
-  assert.match(cluster, /XDriveIOSNativePhotoWallGrid\(density: wallDensity\)/)
+  assert.match(cluster, /XDriveIOSNativePhotoWallSectionList\([\s\S]*?sections: visibleSections, density: wallDensity/)
   assert.match(cluster, /XDriveIOSNativePhotoOwnerScope\.matches\(/)
   assert.match(cluster, /currentOldPage\.sameVisibleSnapshot\(as: departingPage\)/)
   assert.match(cluster, /Set\(fetched\.items\.map\(\\\.id\)\)\.count == fetched\.items\.count/)
@@ -91,7 +96,7 @@ test('location sheets keep exact paging, map camera, Viewer and visible sentinel
   assert.match(map, /if hasNext \{[\s\S]*?scrollFootVisible = true/)
   assert.match(cluster, /if activeOwner, let next \{[\s\S]*?scrollFootVisible = true/)
   assert.match(map, /restoreViewerTile\(using: returnScroll\)/)
-  assert.match(cluster, /returnScroll\.scrollTo\(anchor\.id, anchor: \.center\)/)
+  assert.match(cluster, /xdrivePhotoWallFocusVerifiedTile\(\s*anchor\.id, scroll: returnScroll, focus: \$focusedTileID/)
   assert.match(cluster, /\@State private var priorWindow: XDriveIOSNativeMediaRange\?/)
   assert.match(map, /\@State private var priorWindow: \[XDrivePhotoKitScanCandidate\] = \[\]/)
 })
@@ -105,27 +110,35 @@ test('local, album and cloud ranges share skeleton cells; only chronological pag
   assert.match(shared, /\.accessibilityHidden\(true\)/)
   assert.match(shared, /struct XDriveIOSNativePhotoWallDayHeader: View/)
   assert.match(shared, /\.accessibilityAddTraits\(\.isHeader\)/)
-  for (const source of [local, album, cloud]) {
-    assert.match(source, /XDriveIOSNativePhotoWallPlaceholderTile\(\)/)
-  }
-  assert.match(local, /XDriveIOSNativePhotoWallDayHeader\(\s*title: section.title, topPadding: 4/)
-  assert.match(album, /XDriveIOSNativePhotoWallDayHeader\(title: section.title\)/)
-  assert.match(map, /if wallTimeScale != \.all \{[\s\S]*?XDriveIOSNativePhotoWallDayHeader\(/)
+  assert.match(local, /XDriveIOSNativePhotoWallPlaceholderTile\(\)/)
+  assert.match(album, /XDriveIOSNativePhotoWallPlaceholderTile\(\)/)
+  assert.match(cloud, /XDriveIOSNativePhotoWallSkeletonGrid\(/)
+  assert.match(shared, /struct XDriveIOSNativePhotoWallSkeletonGrid: View/)
+  assert.match(local, /XDriveIOSNativePhotoWallSectionList\(\s*sections: daySections, density: density/)
+  assert.match(local, /title: \{ \$0\.continuesPreviousPage \? nil : \$0\.title \}/)
+  assert.match(album, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(album, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
+  assert.equal((map.match(/XDriveIOSNativePhotoWallSectionList\(/g) || []).length, 2)
+  assert.match(shared, /XDriveIOSNativePhotoWallDayHeader\(title: heading\)/)
   assert.match(map, /visibleItems, scale: wallTimeScale/)
   assert.doesNotMatch(map, /MagnificationGesture\(minimumScaleDelta:/)
   // Owner MapKit now uses headings only for verified visible windows; it never
   // claims that the sparse 48-item prefix is the entire location date index.
-  assert.match(cluster, /XDriveIOSNativePhotoWallDayHeader\(/)
-  assert.match(cluster, /仅对当前已授权、已加载的照片分组/)
-  assert.match(cluster, /if activeOwner \{\s*if wallTimeScale == \.all/)
+  assert.match(cluster, /XDriveIOSNativePhotoWallSectionList\(/)
+  assert.match(cluster, /private var visibleSections:[\s\S]*?priorWindow\.map[\s\S]*?page\.map/)
+  assert.match(cluster, /wallTimeScale\.key\(forISO8601: \$0\.item\.metadata\.captured_at\)/)
+  assert.match(cluster, /if activeOwner \{\s*XDriveIOSNativePhotoWallSectionList\(/)
 })
 
 test('all five Gallery/place surfaces use the same density options, retaining each source scope', () => {
   assert.match(shared, /func xdrivePhotoWallDensityButtons\(/)
+  assert.match(shared, /struct XDriveIOSNativePhotoWallDisplayMenu<Extra: View>/)
+  assert.match(shared, /xdrivePhotoWallDensityButtons\(\$density\)/)
+  assert.match(shared, /xdrivePhotoWallFramingButtons\(\$framing\)/)
   assert.match(shared, /density\.wrappedValue = option/)
   for (const [source, state, count] of [
-    [local, 'density', 1], [album, 'density', 1], [map, 'wallDensity', 2],
-    [cluster, 'wallDensity', 1], [cloud, 'wallDensity', 1]
+    [local, 'density', 1], [album, 'density', 0], [map, 'wallDensity', 0],
+    [cluster, 'wallDensity', 0], [cloud, 'wallDensity', 0]
   ]) {
     const calls = source.match(/xdrivePhotoWallDensityButtons\(\$\w+\)/g) || []
     assert.equal(calls.length, count)
@@ -144,8 +157,10 @@ test('shared retry feedback preserves the current scope and exact caller action'
   assert.match(shared, /\.disabled\(!canRetry\)/)
   assert.doesNotMatch(shared, /PHPhotoLibrary|URLSession|login\.owner|accessToken|loadNext\(\)|model\.load\(/)
   for (const surface of [map, cluster, cloud]) {
-    assert.match(surface, /XDriveIOSNativePhotoWallRetryMessage\(/)
+    assert.match(surface, /XDriveIOSNativePhotoWallFeedback\(/)
   }
+  assert.match(shared, /struct XDriveIOSNativePhotoWallFeedback: View/)
+  assert.match(shared, /XDriveIOSNativePhotoWallRetryMessage\(/)
   assert.match(map, /canRetry: !busy && phase == \.active/)
   assert.match(map, /if worker != nil \{ loadNext\(\) \} else \{ loadInitial\(\) \}/)
   assert.match(cluster, /canRetry: !busy && activeOwner && viewing == nil/)
@@ -161,9 +176,18 @@ test('busy and empty feedback are one inert SwiftUI presentation, with source-ow
   assert.match(shared, /ProgressView\(message\)/)
   assert.match(shared, /\.accessibilityIdentifier\(accessibilityID\)/)
   assert.match(shared, /\.frame\(maxWidth: \.infinity, minHeight: minHeight, alignment: \.leading\)/)
-  for (const surface of [local, album, map, cluster, cloud, unified]) {
+  // The local continuous wall intentionally composes loading and scoped
+  // retry in one Feedback host; source-specific readers remain outside it.
+  assert.match(local, /XDriveIOSNativePhotoWallFeedback\(/)
+  assert.match(local, /isLoading: loading && total == 0/)
+  assert.match(local, /loadingMessage: "正在读取已授权图库…"/)
+  for (const surface of [album, cloud, unified]) {
     assert.match(surface, /XDriveIOSNativePhotoWallLoadingMessage\(/)
   }
+  for (const surface of [map, cluster]) {
+    assert.match(surface, /XDriveIOSNativePhotoWallFeedback\(/)
+  }
+  assert.match(shared, /XDriveIOSNativePhotoWallLoadingMessage\(/)
   for (const surface of [local, map, unified]) {
     assert.match(surface, /XDriveIOSNativePhotoWallStatusMessage\(/)
   }
@@ -182,7 +206,10 @@ test('Gallery, album and cloud retry UI retains the original scoped callbacks an
   assert.match(unified, /if let message = model\.notice \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)
   assert.match(unified, /canRetry: visible && displayActive && wall\.failure == nil &&\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
   assert.match(unified, /\) \{ retry = UUID\(\) \}/)
-  assert.match(local, /if let failure \{\s*XDriveIOSNativePhotoWallRetryMessage\(/)
+  assert.match(local, /XDriveIOSNativePhotoWallFeedback\(/)
+  assert.match(local, /error: failure/)
+  assert.match(local, /buttonTitle: "重新读取"/)
+  assert.match(local, /\) \{ reload\(\) \}/)
   assert.match(local, /canRetry: authorized && phase == \.active && selected == nil &&\s*!actionBusy && !shareBusy/)
   assert.match(album, /canRetry: !loading && !albumActionBusy && !albumShareBusy &&\s*selected == nil && phase == \.active/)
   assert.match(album, /\) \{ savedOffset = 0; reload\(\) \}/)

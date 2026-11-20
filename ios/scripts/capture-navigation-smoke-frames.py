@@ -42,6 +42,7 @@ TAP_CAPTURE_NUMBERS = frozenset((1, 2, 4, 8, 12, 16))
 TARGETS = {
     # Tab/source/section/sheet/background: real production native SwiftUI.
     "testRapidGalleryFilesTabOscillationPreservesBothShells",
+    "testPhotosLibraryCollectionsSearchSelectionAndNoStackedTabBars",
     "testGalleryFilesAlternationRetainsNonBlankSettledFrames",
     "testFilesQuickRailAlternatingSectionsReturnsToBrowse",
     "testGallerySourcesAlternateWithoutLosingSourceRail",
@@ -97,6 +98,9 @@ TARGETS = {
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
+    # Real PhotoKit MapKit P0 route: the video gate supplies consecutive
+    # decoded frames; these named tap screenshots remain supplemental.
+    "testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted",
     "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",
     "testGalleryDismissedFilterThenForegroundDoesNotRebuildWall",
     "testGalleryPeopleBackThenForegroundKeepsVerifiedWall",

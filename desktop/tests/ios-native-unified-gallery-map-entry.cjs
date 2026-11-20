@@ -16,13 +16,15 @@ test('default unified Gallery filter sheet exposes actual existing native map en
   assert.match(gallery, /Section\("地图"\)/)
   assert.match(gallery, /Label\("显示地图", systemImage: "map"\)/)
   assert.match(gallery, /native-ios-unified-gallery-show-map/)
-  assert.match(dashboard, /case \.unified:\s*XDriveIOSNativeUnifiedPhotoGallery\(/)
+  // Signed-out Gallery must render a genuine local PhotoKit wall; an
+  // Owner-verified wall is only allowed behind the exact Owner gate.
+  assert.match(dashboard, /case \.unified:\s*if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\([\s\S]*?\}\s*else\s*\{\s*XDriveIOSNativeUnifiedPhotoGallery\(/)
   assert.match(dashboard, /onShowMap: \{ range, media, filename in/)
 })
 
 test('unsupported unified source, filenames and media predicates never silently show an unfiltered map', () => {
   assert.match(gallery, /private var mapUnavailableReason: String\?/)
-  assert.match(gallery, /if sourceFilter != nil \{/)
+  assert.match(gallery, /if let sourceFilter \{/)
   assert.match(gallery, /if !criteria\.isValid \{/)
   assert.match(gallery, /private var representableMapMediaFilter: XDriveIOSNativePhotoMediaFilter/)
   assert.match(gallery, /pendingMapFilenameTerm = draft\.term/)
@@ -50,7 +52,7 @@ test('filter sheet is fully dismissed before existing MapKit is presented', () =
   assert.match(gallery, /\.sheet\(isPresented: \$showFilters, onDismiss: \{/)
   assert.match(gallery, /guard openMapAfterFilterDismiss else \{ return \}/)
   assert.match(gallery, /onShowMap\?\(selectedRange, selectedMedia, selectedFilename\)/)
-  assert.match(gallery, /query = draft[\s\S]*?if sourceFilter != nil \{[\s\S]*?openSourceMapAfterFilterDismiss = true/)
+  assert.match(gallery, /query = draft[\s\S]*?if sourceFilter != nil &&[\s\S]*?openSourceMapAfterFilterDismiss = true/)
   assert.match(gallery, /pendingMapCaptureRange = representableMapCaptureRange\s*pendingMapMediaFilter = representableMapMediaFilter\s*pendingMapFilenameTerm = draft\.term\s*openMapAfterFilterDismiss = true/)
   assert.match(gallery, /if openSourceMapAfterFilterDismiss \{[\s\S]*?showingSourceFilteredMap = true/)
   assert.match(gallery, /showFilters = false/)
@@ -74,14 +76,16 @@ test('one shared native PhotoKit/Owner map, not a duplicate map or a second writ
 })
 
 test('unified Gallery wall density, query and return anchor survive modal map browsing', () => {
-  assert.match(gallery, /@State private var wallDensity: XDriveIOSNativePhotoWallDensity/)
+  assert.match(gallery, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)\s*private var wallDensity: XDriveIOSNativePhotoWallDensity/)
   assert.match(gallery, /@State private var query = XDriveIOSNativeUnifiedGalleryQuery\(\)/)
   assert.match(gallery, /@State private var viewerReturnAnchor: String\?/)
   assert.match(gallery, /\.onDisappear \{\s*photoObserver\.stop\(\)/)
   assert.match(dashboard, /presentingUnifiedMap = true/)
   assert.match(dashboard, /localMapScope = \.library\s*localMapJump = nil\s*mapSource = \.local\s*presentingUnifiedMap = true/)
   assert.match(dashboard, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap/)
-  assert.match(dashboard, /case \.unified:\s*XDriveIOSNativeUnifiedPhotoGallery\([\s\S]*?case \.map:/)
+  // The verified unified wall persists under a modal MapKit cover,
+  // while the no-Owner path remains the independent native PhotoKit wall.
+  assert.match(dashboard, /case \.unified:\s*if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\([\s\S]*?\}\s*else\s*\{\s*XDriveIOSNativeUnifiedPhotoGallery\([\s\S]*?case \.map:/)
 })
 
 test('late map requests are rejected after source change, Owner switch or scene loss', () => {
@@ -97,7 +101,7 @@ test('real Simulator Gallery↔Map route is covered without assuming synthetic P
   assert.match(nativeUITests, /func testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank\(/)
   assert.match(nativeUITests, /func testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership\(/)
   assert.match(nativeUITests, /target\("native-ios-unified-gallery-show-map", in: app\)/)
-  assert.match(nativeUITests, /target\("native-ios-map-source-selector", in: app\)/)
+  assert.match(nativeUITests, /target\("native-ios-local-map-actions", in: app\)/)
   assert.match(nativeUITests, /target\("native-ios-map-dismiss", in: app\)/)
   assert.match(nativeUITests, /assertNotSolidScreen\(app, "Unified Gallery after modal MapKit return"\)/)
   assert.match(nativeUITests, /XCTAssertFalse\(open\.isEnabled/)

@@ -31,7 +31,8 @@ test('Gallery owns local, albums, cloud and map subroutes; media uses native ful
   assert.match(ui, /\.onChange\(of: localGalleryPageOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
   assert.match(ui, /localGalleryPageOffset = 0\s*dynamicFeature = nil/);
   assert.doesNotMatch(ui, /XDriveIOSNativeLocalGalleryScreen\(\s*\)/);
-  assert.match(ui, /XDriveIOSNativePhotoAlbumsScreen\(\s*savedOffset: \$localAlbumDirectoryOffset\s*\)/);
+  assert.match(ui, /case \.albums:\s*XDriveIOSNativePhotosCollectionsScreen\(\s*login: login, savedAlbumOffset: \$localAlbumDirectoryOffset/)
+  assert.match(ui, /XDriveIOSNativePhotoAlbumsScreen\(savedOffset: \$savedAlbumOffset\)/);
   assert.match(ui, /XDriveIOSNativeCloudOriginalGallery\([\s\S]*?login: login,[\s\S]*?confirmedOriginalUpdate: backup\.confirmedOriginalUpdate/);
   assert.match(ui, /gallerySource = source\s+tab = \.gallery/);
   assert.match(ui, /case \.map:/);

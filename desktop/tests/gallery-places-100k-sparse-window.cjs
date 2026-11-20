@@ -279,7 +279,8 @@ test('trusted sparse Gallery wiring restores logical index, not 480 pages or old
   assert.ok(parent.includes('onVisibleAnchorChange={(index,viewportOffset,gridWidth) =>'))
   assert.ok(parent.includes('previous.gridWidth!==gridWidth'))
   assert.ok(parent.includes('if (presentation ||'))
-  assert.ok(sheet.includes('anchorPort.current?.(index,viewportOffset,gridWidth)'))
+  // The shared helper clamps numeric viewport intent before notifying Parent.
+  assert.match(sheet, /const safe = recordVisibleAnchor\(index, viewportOffset\)[\s\S]*?if \(!safe\) return[\s\S]*?anchorPort\.current\?\.\(safe\.index, safe\.viewportOffset, gridWidth\)/)
   assert.ok(shared.includes('currentHost.clientWidth,'))
   assert.match(returns,/anchorIndex\?: number/)
   assert.match(returns,/anchorViewportOffset\?: number/)
