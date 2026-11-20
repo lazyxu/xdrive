@@ -40,7 +40,9 @@ test('home pinned folder group is backed by verified Server Node ID, not stale l
   assert.match(view, /quickAccess\.load\(login: login\)/)
   assert.match(client, /static let shared = XDriveIOSNativeFilesQuickAccessModel\(\)/)
   assert.match(view, /quickAccess\.invalidate\(\)/)
-  assert.match(view, /DisclosureGroup\("收藏夹和常用收藏", isExpanded: \$favoriteFoldersExpanded\)/)
+  assert.match(view, /DisclosureGroup\(isExpanded: \$favoriteFoldersExpanded\) \{/)
+  assert.match(view, /Text\("收藏夹和常用收藏"\)\s*\.accessibilityIdentifier\("native-ios-files-favorites-disclosure"\)/)
+  assert.match(view, /\.accessibilityValue\(favoriteFoldersExpanded \? "已展开" : "已折叠"\)/)
 })
 
 test('real folder context menu toggles Server pinned state; no duplicate writer is created', () => {

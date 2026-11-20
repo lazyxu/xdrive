@@ -35,7 +35,12 @@ test('icon grid is unboxed while long-press still supports actions and location'
 })
 test('native selection starts in More menu, ends with Done, keeps guards and sorting', () => {
   assert.match(chrome, /if selecting \{\s*Button\("完成"\)/)
-  assert.match(chrome, /if !selecting \{\s*Menu \{\s*Button \{/)
+  assert.match(chrome, /if !selecting \{\s*Menu \{[\s\S]*?if isHome \{\s*Button \{ presentOrganizeHome\(\) \} label:/)
+  const moreStart = chrome.indexOf('if !selecting {')
+  const organizerAt = chrome.indexOf('native-ios-files-toolbar-organize-home', moreStart)
+  const selectAt = chrome.indexOf('Label("选择", systemImage: "checkmark.circle")', moreStart)
+  assert.ok(moreStart >= 0 && organizerAt > moreStart && selectAt > organizerAt,
+    'Home organizer must precede Select inside the real Files More menu')
   assert.match(chrome, /Label\("选择", systemImage: "checkmark\.circle"\)/)
   assert.match(chrome, /native-ios-files-multi-select|native-ios-files-selection-done/)
   assert.match(chrome, /Picker\("显示方式", selection: Binding\(/)

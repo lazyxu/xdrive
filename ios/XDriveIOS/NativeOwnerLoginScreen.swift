@@ -94,6 +94,8 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                             .foregroundStyle(.secondary)
                                             .textSelection(.enabled)
                                             .accessibilityIdentifier("native-ios-prelogin-build")
+                        // Retain the original startup-readiness accessibility signal.
+                        .accessibilityValue(startupReady ? "启动完成" : "正在启动")
                                         Button("复制诊断信息") {
                                             // humanMessage() already emits sanitized data;
                                             // never append username, password or credentials.
@@ -209,6 +211,13 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 backup.stopLibraryChangeMonitoring()
                 backup.cancel()
             }
+        }
+        // SwiftUI can mount the login/Dashboard branch before the
+        // asynchronous restoreFinished flip becomes visible. Re-arm through
+        // the existing scene/Owner gate rather than leaving startup stuck at
+        // mountingWorkspace after an ordinary cold launch.
+        .onChange(of: restoreFinished) { finished in
+            if finished { armReadinessAfterMount() }
         }
         .onChange(of: model.owner) { _ in
             backup.cancel()
@@ -494,6 +503,18 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .accessibilityIdentifier("native-ios-prelogin-build")
+                        // Retain the original startup-readiness accessibility signal.
+                        .accessibilityValue(startupReady ? "启动完成" : "正在启动")
+                        // Re-arm only when the actual expanded About leaf
+                        // appears. SwiftUI may retire the previous visible
+                        // login subtree after credential restoration; the
+                        // root readiness task can then be canceled. This is
+                        // a real mounted view, not an invented ready marker.
+                        .onAppear {
+                            if !startupReady && readinessTask == nil {
+                                workspaceAppeared()
+                            }
+                        }
                     Button("复制版本信息") {
                         UIPasteboard.general.string = XDriveIOSNativeBuildIdentity.label
                     }

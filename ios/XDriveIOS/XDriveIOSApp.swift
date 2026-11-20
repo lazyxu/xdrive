@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 @main
@@ -12,6 +13,9 @@ struct XDriveIOSApp: App {
         // previous process died during startup, the next launch must offer
         // an isolated UI instead of repeating the same automatic work.
         interruptedStage = XDriveIOSNativeLaunchCheckpoint.begin()
+        // MetricKit can deliver a prior crash report at a later launch;
+        // never attempt to catch/revive a corrupted process on the signal path.
+        XDriveIOSNativeCrashMetricCollector.shared.start()
         // BG task handlers still need registration before launch completes.
         XDriveIOSBackgroundPhotoTask.registerAtLaunch()
     }
@@ -29,6 +33,7 @@ private struct XDriveIOSNativeStartupRoot: View {
     let interruptedStage: XDriveIOSNativeLaunchCheckpoint.Phase?
     @State private var normalStartup: Bool
     @State private var safeStartup = false
+    @State private var systemCrashMetric = XDriveIOSNativeCrashMetricCollector.latestSummary
 
     init(interruptedStage: XDriveIOSNativeLaunchCheckpoint.Phase?) {
         self.interruptedStage = interruptedStage
@@ -50,6 +55,14 @@ private struct XDriveIOSNativeStartupRoot: View {
                             .font(.footnote.monospaced())
                             .textSelection(.enabled)
                             .accessibilityIdentifier("native-ios-startup-phase")
+                        if let systemCrashMetric {
+                            Text("系统崩溃诊断（可能来自更早一次运行）")
+                                .font(.subheadline.weight(.medium))
+                            Text(systemCrashMetric)
+                                .font(.footnote.monospaced())
+                                .textSelection(.enabled)
+                                .accessibilityIdentifier("native-ios-system-crash-diagnostic")
+                        }
                         Button("安全进入（不自动登录和备份）") {
                             // A broken saved-session restore or PhotoKit startup
                             // must not trap the user in the same crash loop.
@@ -81,6 +94,11 @@ private struct XDriveIOSNativeStartupRoot: View {
                     XDriveIOSNativeLaunchCheckpoint.mark(.recovery)
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: XDriveIOSNativeCrashMetricCollector.notification
+        )) { _ in
+            systemCrashMetric = XDriveIOSNativeCrashMetricCollector.latestSummary
         }
     }
 }

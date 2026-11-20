@@ -11,9 +11,10 @@ const source = read('web/src/api.ts');
 const web = read('web/src/WebFileExplorer.tsx');
 const server = read('internal/api/search.go');
 const management = read('ios/XDriveIOS/NativeFilesManagementPanel.swift');
+const filesStyle = read('ios/XDriveIOS/NativeFilesUIStyle.swift');
 
 test('native Files replaces its fixed-tab placeholder without returning to WebView', () => {
-  assert.match(dashboard, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
+  assert.match(dashboard, /private var files: some View \{[\s\S]*?XDriveIOSNativeFilesBrowser\(login: login, isRootTabActive: tab == \.files\)/);
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.files\)/);
   assert.match(dashboard, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.notes, \.clipboard, \.backup: return true/);
   assert.doesNotMatch(view, /import WebKit|WKWebView\s*\(|document\.cookie|evaluateJavaScript\s*\(/);
@@ -51,7 +52,14 @@ test('native Files decodes and displays Server modification timestamps in list a
   assert.match(page, /var updated_at: String\? = nil/)
   assert.match(page, /enum XDriveIOSNativeFilesDatePolicy/)
   assert.match(page, /fractionDigits\.utf8\.count <= 9/)
-  assert.equal((view.match(/XDriveIOSNativeFilesDatePolicy\.display\(modifiedDate\)/g) || []).length, 2)
+  // Grid now uses one compact metadata line; List and Owner-bound Properties
+  // retain the full modification date and version.
+  assert.match(view, /XDriveIOSNativeFilesUIStyle\.gridMetadata\(entry\.node, path: entry\.path\)/)
+  assert.match(filesStyle, /if let date = node\.modifiedDate/)
+  assert.match(view, /XDriveIOSNativeFilesUIStyle\.compactMetadata\(entry\.node, path: entry\.path\)/)
+  assert.match(filesStyle, /static func compactMetadata\(/)
+  assert.match(filesStyle, /if let date = node\.modifiedDate/)
+  assert.match(filesStyle, /XDriveIOSNativeFilesDatePolicy\.display\(date\)/)
   assert.match(management, /file\.modifiedDate/)
   assert.match(management, /directory\.modifiedDate/)
 })
@@ -274,3 +282,22 @@ test('Files Home Favorites cache call must pass explicit projection kind to comp
   assert.match(view, /guard isHome, favoriteShortcuts\.verified,\s*favoriteShortcuts\.matches\(login\.owner, kind: \.favorites\)/)
   assert.doesNotMatch(view, /favoriteShortcuts\.matches\(login\.owner\)/)
 })
+
+
+test('batch destination sheet fails closed on an empty or stale selection instead of subscripting an array', () => {
+  const start = view.indexOf('.sheet(item: $batchDestinationIntent)')
+  const end = view.indexOf('.confirmationDialog(', start)
+  assert.ok(start >= 0 && end > start, 'missing native batch destination sheet')
+  const batch = view.slice(start, end)
+  assert.match(batch, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, intent\.owner\),\s*let selected = intent\.items\.first/)
+  assert.match(batch, /selected: selected, selectedItems: intent\.items/)
+  assert.doesNotMatch(batch, /intent\.items\[0\]|intent\.items\.first!/)
+  assert.match(batch, /账户或选中项目已变化，请关闭后重新选择/)
+  const openStart = view.indexOf('private func openBatchDestination(')
+  const openEnd = view.indexOf('private func openVersionHistory(', openStart)
+  assert.ok(openStart >= 0 && openEnd > openStart, 'missing verified selection admission')
+  const admission = view.slice(openStart, openEnd)
+  assert.match(admission, /guard selecting, canSelectPage,[\s\S]*?!chosenItems\.isEmpty/)
+  assert.match(admission, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
+  assert.match(admission, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(/)
+});

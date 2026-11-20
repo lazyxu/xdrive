@@ -448,9 +448,17 @@ struct XDriveIOSNativeServerMediaPreview: View {
             $0.isFinite && $0 >= 0 ? $0 : nil
         }
         let width = image?.cgImage?.width ??
-            image.map { Int($0.size.width * $0.scale) }
+            image.flatMap {
+                XDriveIOSNativeViewerPixelDimensionPolicy.pixels(
+                    points: Double($0.size.width), scale: Double($0.scale)
+                )
+            }
         let height = image?.cgImage?.height ??
-            image.map { Int($0.size.height * $0.scale) }
+            image.flatMap {
+                XDriveIOSNativeViewerPixelDimensionPolicy.pixels(
+                    points: Double($0.size.height), scale: Double($0.scale)
+                )
+            }
         let format = liveResources.map {
             "\($0.stillURL.pathExtension.uppercased()) + \($0.motionURL.pathExtension.uppercased())"
         } ?? (extensionName.isEmpty ? nil : extensionName)
