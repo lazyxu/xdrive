@@ -73,7 +73,7 @@ func TestMediaGalleryFirstRangeGroupedCountMatchesIndependentCount(t *testing.T)
 			file := meta.File{
 				NodeID: node.ID, Size: 1024,
 				StorageKey: fmt.Sprintf("fixture/%d/%d", owner.ID, node.ID),
-				SHA256: fmt.Sprintf("%064x", node.ID),
+				SHA256:     fmt.Sprintf("%064x", node.ID),
 			}
 			if err := db.Create(&file).Error; err != nil {
 				t.Fatal(err)
