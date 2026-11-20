@@ -47,6 +47,27 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     private func select(_ id: String, in app: XCUIApplication) {
+        // SwiftUI's Gallery More exposes menuItems on iOS 18.5, not always
+        // Buttons. Share the same exact visible-menu route as Files recovery
+        // and frame-continuity UITests; never tap hidden TabView destinations.
+        let nativeMenuRoutes: Set<String> = [
+            "native-ios-tab-files", "native-ios-tab-mine",
+            "native-ios-tab-launcher", "native-ios-tab-gallery",
+            "native-ios-gallery-source-originals",
+            "native-ios-gallery-source-local",
+            "native-ios-gallery-source-cloud",
+            "native-ios-gallery-source-menu"
+        ]
+        if nativeMenuRoutes.contains(id) {
+            navigationStarted = Date()
+            navigationID = id
+            print("IOS_NATIVE_NAV_TAP_START route=\(id)")
+            XCTAssertTrue(XDriveIOSNativePhotosTestNavigator.tap(id, in: app),
+                          "Native Gallery More route was not genuinely tappable: \(id)")
+            XCTAssertEqual(app.state, .runningForeground,
+                           "App exited after \(id)")
+            return
+        }
         var control = target(id, in: app)
         // The Gallery now follows iOS 26 Photos: Library / Collections /
         // Search are visible; xDrive routes and sources live inside a menu.
