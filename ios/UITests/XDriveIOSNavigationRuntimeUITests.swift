@@ -176,7 +176,11 @@ enum XDriveIOSNativePhotosTestNavigator {
         }
         if id == "native-ios-gallery-source-menu" {
             let menu = found("native-ios-gallery-more-menu", in: app)
-            if menu.exists && menu.isHittable { menu.tap(); return true }
+            if (menu.exists && menu.isHittable) ||
+               verifiedGalleryMoreFrame(menu, in: app) {
+                menu.tap()
+                return true
+            }
         }
 
         let sourceCommands: [String: String] = [
