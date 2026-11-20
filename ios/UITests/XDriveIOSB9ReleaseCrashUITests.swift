@@ -47,6 +47,48 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         return control
     }
 
+    // This UITest is compiled against both the published b9 IPA and the
+    // candidate; it cannot import the candidate-only navigation helper.
+    // Deny only a genuine first-use OS Photo Library prompt for these
+    // no-session navigation checks. Never fabricate a grant or Owner token.
+    private func denyRealPhotosPromptIfPresent(_ app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for alert in [springboard.alerts.firstMatch, app.alerts.firstMatch] {
+            guard alert.exists else { continue }
+            let label = alert.label
+            guard label.localizedCaseInsensitiveContains("Photo Library") ||
+                  label.contains("照片") || label.contains("相簿") else {
+                XCTFail("Unexpected system alert blocks b9 navigation: " + label)
+                return
+            }
+            for title in ["Don’t Allow", "Don't Allow", "不允许", "不允许访问"] {
+                let deny = alert.buttons[title].firstMatch
+                if deny.exists && deny.isHittable {
+                    deny.tap()
+                    print("B9_REAL_PHOTOKIT_PERMISSION_DENIED_FOR_NAVIGATION")
+                    return
+                }
+            }
+            XCTFail("Genuine PhotoKit prompt lacks a visible denial button")
+            return
+        }
+    }
+
+    private func verifiedGalleryMenuFrame(
+        _ menu: XCUIElement, in app: XCUIApplication
+    ) -> Bool {
+        guard menu.exists, app.state == .runningForeground,
+              menu.label == "图库来源、备份与 xDrive",
+              !app.alerts.firstMatch.exists,
+              !XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                  .alerts.firstMatch.exists else { return false }
+        let rect = menu.frame, screen = app.frame
+        return rect.width >= 44 && rect.height >= 44 &&
+               rect.intersects(screen) &&
+               rect.midX >= screen.minX && rect.midX <= screen.maxX &&
+               rect.midY >= screen.minY && rect.midY <= screen.maxY
+    }
+
     private func tap(_ id: String, in app: XCUIApplication) {
         // This file is compiled against BOTH archived b9 sources and
         // candidate sources. The archived source lacks the newer shared
@@ -83,8 +125,7 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         // Follow its visible real More menu; never tap an invisible TabView.
         let menu = app.buttons.matching(identifier: "native-ios-gallery-more-menu")
             .firstMatch
-        if menu.exists && menu.isHittable,
-           let title = legacyTitles[id] {
+        if let title = legacyTitles[id] {
             if id == "native-ios-tab-gallery" {
                 let library = app.buttons
                     .matching(identifier: "native-ios-photos-library-tab").firstMatch
@@ -94,26 +135,38 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
                     return
                 }
             }
-            // First-use Photos access may interrupt and close the menu
-            // without selecting any xDrive action. Retry once through the
-            // real visible menu after the system interruption is gone.
-            let item = app.buttons[title].firstMatch
-            for attempt in 0..<2 {
-                guard menu.exists && menu.isHittable else { break }
-                menu.tap()
-                if item.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
-                   item.isHittable {
-                    item.tap()
-                    alive(app, "tap-\(id)")
-                    return
+            denyRealPhotosPromptIfPresent(app)
+            // A real SwiftUI toolbar Menu may expose a non-hittable AX
+            // proxy on iOS 18.5 despite its visible 52pt native frame.
+            // This exact labelled, unoccluded frame is the ONLY fallback.
+            let normalHit = menu.exists && menu.isHittable
+            if normalHit || verifiedGalleryMenuFrame(menu, in: app) {
+                let item = app.buttons.matching(
+                    NSPredicate(format: "label == %@", title)).firstMatch
+                for attempt in 0..<2 {
+                    denyRealPhotosPromptIfPresent(app)
+                    guard (menu.exists && menu.isHittable) ||
+                          verifiedGalleryMenuFrame(menu, in: app) else { break }
+                    menu.tap()
+                    let menuItem = app.menuItems.matching(
+                        NSPredicate(format: "label == %@", title)).firstMatch
+                    if menuItem.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
+                       menuItem.isHittable {
+                        menuItem.tap()
+                        alive(app, "tap-\(id)")
+                        return
+                    }
+                    if item.exists && item.isHittable {
+                        item.tap()
+                        alive(app, "tap-\(id)")
+                        return
+                    }
+                    denyRealPhotosPromptIfPresent(app)
                 }
-                if app.alerts.firstMatch.exists ||
-                   XCUIApplication(bundleIdentifier: "com.apple.springboard")
-                       .alerts.firstMatch.exists { break }
+                record(app, "missing-real-gallery-action-\(id)")
+                XCTFail("Actual Gallery More menu missing native route \(title)")
+                return
             }
-            record(app, "missing-real-gallery-action-\(id)")
-            XCTFail("Actual Gallery More menu missing native route \(title)")
-            return
         }
         // No fallback success: the actual archive/candidate native route must
         // exist or this test remains red with the real AX hierarchy attached.
