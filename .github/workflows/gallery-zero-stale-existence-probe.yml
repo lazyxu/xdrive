@@ -82,44 +82,8 @@ jobs:
           npm --prefix desktop run build
           mkdir -p desktop/gallery-desktop-first-load-bin
           go build -o desktop/gallery-desktop-first-load-bin/xdrive-agent ./cmd/xdrive-agent
-          go test -run '^(TestGalleryStaleExistenceProbeMatchesOrderedOwnerQuery|TestMediaGalleryFirstRangeGroupedCountMatchesIndependentCount)
-          node --test desktop/tests/media-gallery-100k-performance.cjs
-          node --check desktop/scripts/gallery-desktop-first-load-compare.cjs
-      - name: BEFORE - 3 fresh real 100k Electron/Agent/PostgreSQL/CAS sessions
-        shell: bash
-        run: |
-          set -euo pipefail
-          BEFORE="$RUNNER_TEMP/xdrive-gallery-before"
-          xvfb-run -a --server-args="-screen 0 1920x1200x24" node "$BEFORE/desktop/scripts/gallery-desktop-real-cold-runner.cjs"
-          mkdir -p desktop/gallery-zero-stale-probe-ab
-          cp "$BEFORE/desktop/gallery-desktop-real-cold-results/summary.json" desktop/gallery-zero-stale-probe-ab/before.json
-          cp "$BEFORE"/desktop/gallery-desktop-real-cold-results/server-*.log desktop/gallery-zero-stale-probe-ab/
-          test -s desktop/gallery-zero-stale-probe-ab/before.json
-      - name: AFTER - 3 independent real 100k sessions on same Runner
-        shell: bash
-        run: |
-          set -euo pipefail
-          xvfb-run -a --server-args="-screen 0 1920x1200x24" node desktop/scripts/gallery-desktop-real-cold-runner.cjs
-          cp desktop/gallery-desktop-real-cold-results/summary.json desktop/gallery-zero-stale-probe-ab/after.json
-          for n in 1 2 3; do cp "desktop/gallery-desktop-real-cold-results/server-$n.log" "desktop/gallery-zero-stale-probe-ab/candidate-server-$n.log"; done
-          test -s desktop/gallery-zero-stale-probe-ab/after.json
-      - name: Strict same-runner n3/n3 latency and integrity comparison
-        shell: bash
-        run: |
-          set -euo pipefail
-          node desktop/scripts/gallery-desktop-first-load-compare.cjs \
-            desktop/gallery-zero-stale-probe-ab/before.json \
-            desktop/gallery-zero-stale-probe-ab/after.json \
-            desktop/gallery-zero-stale-probe-ab/comparison.json
-          cat desktop/gallery-zero-stale-probe-ab/comparison.json
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: gallery-zero-stale-probe-ab
-          path: desktop/gallery-zero-stale-probe-ab/
-          if-no-files-found: warn
-          retention-days: 14
- -count=1 -v ./internal/api
+          go test -run '^TestGalleryStaleExistenceProbeMatchesOrderedOwnerQuery$' -count=1 -v ./internal/api
+          go test -run '^TestMediaGalleryFirstRangeGroupedCountMatchesIndependentCount$' -count=1 -v ./internal/api
           node --test desktop/tests/media-gallery-100k-performance.cjs
           node --check desktop/scripts/gallery-desktop-first-load-compare.cjs
       - name: BEFORE - 3 fresh real 100k Electron/Agent/PostgreSQL/CAS sessions
