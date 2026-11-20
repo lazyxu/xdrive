@@ -532,6 +532,11 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
     @State private var gallerySource: XDriveIOSNativeGallerySource = .unified
+    // Keep the exact bounded Library wall alive beneath the MapKit route.
+    // Without this, closing a signed-out GPS map remounts PhotoKit and
+    // produces a measured 18-frame / 0.6s white-content loading interval.
+    // The same Owner-scoped Gallery state survives map/Viewer roundtrips.
+    @State private var keepUnifiedWallDuringMap = false
     // Opening a Photos map should include every currently authorized GPS photo,
     // not just the current 64-slot Timeline page; the user can still select
     // the bounded Current Page mode explicitly.
@@ -1267,9 +1272,14 @@ struct XDriveIOSNativePhotosDashboard: View {
         // built; a disappearing view must not affect a later Owner's Gallery.
         let focusOwnerKey = ownerScopeKey
         let focusGeneration = galleryFocusGeneration
-        return Group {
-            switch gallerySource {
-                case .unified:
+        return ZStack {
+            // A stable identity across .unified -> .map -> .unified keeps
+            // loaded PhotoKit pages and the exact scroll/Viewer anchor.
+            // Hide the retained wall from touches and accessibility while
+            // MapKit is above it; do not expose an invisible route.
+            if gallerySource == .unified ||
+               (gallerySource == .map && keepUnifiedWallDuringMap) {
+                Group {
                     if login.owner == nil {
                         // Local PhotoKit remains usable without a cloud Owner.
                         // The Owner-scoped unified wall admits NO pages while
@@ -1314,6 +1324,15 @@ struct XDriveIOSNativePhotosDashboard: View {
                         }
                         )
                     }
+
+                }
+                .opacity(gallerySource == .map ? 0 : 1)
+                .allowsHitTesting(gallerySource != .map)
+                .accessibilityHidden(gallerySource == .map)
+            }
+            switch gallerySource {
+                case .unified:
+                    EmptyView()
                 case .local:
                     XDriveIOSNativeLocalPhotoTimelineContainer(
                         savedOffset: $localGalleryPageOffset,
@@ -1685,6 +1704,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     private func openGallery(_ source: XDriveIOSNativeGallerySource) {
         if source == .map {
             if gallerySource != .map {
+                keepUnifiedWallDuringMap = gallerySource == .unified
                 mapOpenedFromCollections = tab == .gallery && gallerySource == .albums
                 // Only an active, authenticated Gallery supplies return state.
                 // Launcher and dynamic shortcuts use the default.
@@ -1694,6 +1714,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                     ? ownerScopeKey : nil
             }
         } else {
+            keepUnifiedWallDuringMap = false
             mapOpenedFromCollections = false
             mapReturnGallerySource = nil
             mapReturnOwnerScopeKey = nil
