@@ -791,4 +791,158 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
                               label: "files-after-sheet-rotation")
     }
 
+
+    // Regression: the old toolbar Menu could exist in the real Simulator
+    // AX hierarchy while failing hit testing, blocking every child route.
+    // All six cases below operate actual SwiftUI controls (not hidden tabs).
+    private func openReachableGalleryOptions(_ app: XCUIApplication) {
+        XDriveIOSNativePhotosTestNavigator.acceptInitialFullPhotosForNavigation(in: app)
+        let more = app.buttons.matching(
+            identifier: "native-ios-gallery-more-menu").firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 20) && more.isHittable,
+                      "Visible Gallery More button must be genuinely tappable")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-more-menu")
+        more.tap()
+        let done = app.buttons.matching(
+            identifier: "native-ios-gallery-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15) && done.isHittable,
+                      "Gallery options did not expose an actionable Done button")
+    }
+
+    private func chooseReachableGalleryOption(
+        _ label: String, in app: XCUIApplication
+    ) {
+        openReachableGalleryOptions(app)
+        let action = app.buttons.matching(
+            NSPredicate(format: "label == %@", label)).firstMatch
+        // The actual options List may need a swipe on compact iPhones.
+        for _ in 0..<5 {
+            if action.exists && action.isHittable { break }
+            let list = app.collectionViews.firstMatch.exists
+                ? app.collectionViews.firstMatch : app.scrollViews.firstMatch
+            guard list.exists else { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(action.waitForExistence(timeout: 12) && action.isHittable,
+                      "Gallery option is not reachable: \(label)")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-option-\(label)")
+        action.tap()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Gallery option exited the native app: \(label)")
+    }
+
+    private func assertSingleNativePhotosBar(_ app: XCUIApplication) {
+        let photosBar = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-photos-bottom-bar").firstMatch
+        XCTAssertTrue(photosBar.waitForExistence(timeout: 15),
+                      "Photos bottom bar disappeared")
+        for title in ["全部", "地图", "图库", "文件", "我的"] {
+            let system = app.tabBars.buttons.matching(
+                NSPredicate(format: "label == %@", title)).firstMatch
+            XCTAssertFalse(system.exists && system.isHittable,
+                           "Second native TabBar is hit-testable: \(title)")
+        }
+    }
+
+    func testGalleryOptionsMoreButtonIsTappableAndDismisses() {
+        let app = launch()
+        openReachableGalleryOptions(app)
+        for title in ["全部照片", "本机照片", "云端图库", "备份原件",
+                      "地图", "文件", "全部功能", "我的"] {
+            let item = app.buttons.matching(
+                NSPredicate(format: "label == %@", title)).firstMatch
+            XCTAssertTrue(item.exists, "Missing accessible Gallery option: \(title)")
+        }
+        let close = app.buttons.matching(
+            identifier: "native-ios-gallery-options-done").firstMatch
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-options-done")
+        close.tap()
+        assertSingleNativePhotosBar(app)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testGalleryOptionsFilesRoundTripsWithoutDuplicateTabBar() {
+        let app = launch()
+        for cycle in 0..<3 {
+            chooseReachableGalleryOption("文件", in: app)
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+                .waitForExistence(timeout: 15), "Files did not mount: \(cycle)")
+            XCTAssertFalse(find("native-ios-photos-bottom-bar", in: app).exists,
+                           "Photos bar overlapped Files navigation")
+            select("native-ios-tab-gallery", in: app)
+            assertSingleNativePhotosBar(app)
+        }
+    }
+
+    func testGalleryOptionsLocalPhotosAndUnifiedSourceKeepNativeShell() {
+        let app = launch()
+        chooseReachableGalleryOption("本机照片", in: app)
+        XCTAssertTrue(find("native-ios-local-timeline-open", in: app)
+            .waitForExistence(timeout: 15), "Actual local PhotoKit page missing")
+        chooseReachableGalleryOption("全部照片", in: app)
+        XCTAssertTrue(find("native-ios-local-timeline-open", in: app)
+            .waitForExistence(timeout: 15), "Signed-out unified PhotoKit wall missing")
+        assertSingleNativePhotosBar(app)
+    }
+
+    func testGalleryOptionsOriginalsToFilesToGalleryRemainsNative() {
+        let app = launch(syntheticOwner: true)
+        chooseReachableGalleryOption("备份原件", in: app)
+        XCTAssertTrue(find("native-ios-cloud-original-layout-help", in: app)
+            .waitForExistence(timeout: 15), "Originals child shell was lost")
+        chooseReachableGalleryOption("文件", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+            .waitForExistence(timeout: 15), "Files shell lost after Originals")
+        select("native-ios-tab-gallery", in: app)
+        assertSingleNativePhotosBar(app)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testGalleryOptionsCollectionsFilesAndLibraryReturn() {
+        let app = launch()
+        select("native-ios-gallery-source-albums", in: app)
+        XCTAssertTrue(app.navigationBars["精选集"].firstMatch
+            .waitForExistence(timeout: 15), "Collections did not mount")
+        chooseReachableGalleryOption("文件", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+            .waitForExistence(timeout: 15), "Files did not mount from Collections")
+        select("native-ios-tab-gallery", in: app)
+        chooseReachableGalleryOption("全部照片", in: app)
+        assertSingleNativePhotosBar(app)
+    }
+
+    func testGalleryOptionsLauncherAndMineRoutesKeepFilesReachable() {
+        let app = launch()
+        chooseReachableGalleryOption("全部功能", in: app)
+        XCTAssertTrue(find("native-ios-launcher-search", in: app)
+            .waitForExistence(timeout: 15), "Launcher not mounted from Gallery")
+        select("native-ios-tab-gallery", in: app)
+        chooseReachableGalleryOption("我的", in: app)
+        XCTAssertTrue(find("native-ios-mine-server-account", in: app)
+            .waitForExistence(timeout: 15), "Mine not mounted from Gallery")
+        select("native-ios-tab-files", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+            .waitForExistence(timeout: 15), "Files not mounted after Mine")
+        select("native-ios-tab-gallery", in: app)
+        assertSingleNativePhotosBar(app)
+    }
+
+    func testGalleryOptionsForegroundDismissFilesReturnDoesNotLoseRoute() {
+        let app = launch()
+        openReachableGalleryOptions(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        let done = app.buttons.matching(
+            identifier: "native-ios-gallery-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15),
+                      "Options should not turn into a blank page on foreground")
+        done.tap()
+        chooseReachableGalleryOption("文件", in: app)
+        XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+            .waitForExistence(timeout: 15))
+        select("native-ios-tab-gallery", in: app)
+        assertSingleNativePhotosBar(app)
+    }
+
 }
