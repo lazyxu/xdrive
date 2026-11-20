@@ -53,7 +53,10 @@ test('Gallery still shows one bar and preserves real xDrive navigation routes', 
   assert.match(ui, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
   assert.match(ui, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap,[\s\S]*?\.safeAreaInset\(edge: \.bottom, spacing: 0\) \{\s*nativePhotosBottomBar/)
   assert.doesNotMatch(ui, /if tab == \.gallery && gallerySource != \.map/)
-  assert.match(ui, /Section\("xDrive"\) \{[\s\S]*?Button\("文件"\) \{ tab = \.files \}/)
+  assert.match(ui, /Section\("xDrive"\) \{[\s\S]*?Button\("文件"\) \{\s*showingGalleryOptions = false\s*tab = \.files\s*\}/)
+  assert.match(ui, /Button \{\s*showingGalleryOptions = true\s*\} label:/)
+  assert.match(ui, /\.sheet\(isPresented: \$showingGalleryOptions\) \{\s*galleryOptionsSheet\s*\}/)
+  assert.match(ui, /native-ios-gallery-options-done/)
 })
 
 test('real Collections MapKit journey enters Gallery using current visible navigation', () => {
