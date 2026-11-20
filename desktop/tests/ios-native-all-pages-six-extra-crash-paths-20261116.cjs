@@ -267,3 +267,23 @@ test("two recovered #4298 Files denial/return journeys remain executable and reg
   assert.match(method(recovered[1]), /native-ios-files-operation-history-page/);
   assert.match(method(recovered[1]), /Old Files child sheet survived after cycle/);
 });
+
+
+test("iOS 26 real PhotoKit alert cannot falsely fail Files crash", () => {
+  const key = "private func denyFirstRunPhotoLibraryPromptIfPresent(";
+  const start = crash.indexOf(key);
+  const end = crash.indexOf("private func tap(_ id:", start);
+  assert.ok(start >= 0 && end > start, "real XCTest prompt handler must exist");
+  const helper = crash.slice(start, end);
+  assert.match(helper, /com\.apple\.springboard/);
+  assert.match(helper, /localizedCaseInsensitiveContains\("Photo Library"\)/);
+  assert.match(helper, /XCTAssertTrue\(isPhotoKit/);
+  assert.match(helper, /Don't Allow/);
+  assert.match(helper, /XCTAssertFalse\(alert\.waitForExistence/);
+  assert.match(helper, /XCTAssertEqual\(app\.state, \.runningForeground/);
+  assert.doesNotMatch(helper, /Allow Full Access.*\.tap\(\)/);
+  const tap = crash.slice(crash.indexOf("private func tap(_ id:"), crash.indexOf("private func tapNamed("));
+  assert.equal((tap.match(/denyFirstRunPhotoLibraryPromptIfPresent\(app\)/g) || []).length, 2);
+  assert.match(tap, /target\.tap\(\)/);
+  assert.ok(watcher.includes('"testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid"'));
+});
