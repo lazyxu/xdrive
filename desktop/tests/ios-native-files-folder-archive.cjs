@@ -62,7 +62,7 @@ test('one current native Files folder can explicitly share Server ZIP after comp
   assert.match(panel, /native-ios-files-folder-zip-cancel/)
   assert.match(panel, /folderArchive\.invalidate\(\)/)
   assert.match(panel, /createBusy \|\| exporter\.busy \|\| folderArchive\.busy \|\| uploader\.busy/)
-  assert.match(transport, /URLSessionConfiguration\.ephemeral/)
+  assert.match(transport, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(transport, /FileProtectionType\.complete/)
   assert.match(transport, /prepared\?\.discard\(\)/)
   assert.match(transport, /archive\.discard\(\)/)

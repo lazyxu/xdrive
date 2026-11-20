@@ -26,7 +26,7 @@ private struct XDriveIOSNativeFilesDestinationWriter {
     }
 
     private func session() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil

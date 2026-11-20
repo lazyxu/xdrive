@@ -28,6 +28,13 @@ type localCommonRecoveryReviewPage struct {
 	CurrentNodeMatch    uint64 `json:"current_node_metadata_match_files"`
 	CurrentNodeMismatch uint64 `json:"current_node_metadata_mismatch_files"`
 	PendingFiles        uint64 `json:"pending_original_files"`
+	AbsentReviewed      uint64 `json:"absent_receipts_reviewed"`
+	AbsentCommitted     uint64 `json:"absent_receipts_committed"`
+	AbsentPending       uint64 `json:"absent_receipts_pending"`
+	AbsentHasMore       bool   `json:"absent_receipts_has_more"`
+	NextAfterAbsent     uint64 `json:"next_after_absent"`
+	AbsentPaths         uint64 `json:"absent_original_paths"`
+	JournalChecked      bool   `json:"journal_checked"`
 	NextAfterFile       uint64 `json:"next_after_file"`
 	PageEpoch           string `json:"page_epoch"`
 	HasMore             bool   `json:"has_more"`
@@ -35,57 +42,75 @@ type localCommonRecoveryReviewPage struct {
 }
 
 type desktopIPCLocalCommonRecoveryReviewer interface {
-	CloudLocalBoundBackupCommonRecoveryReview(context.Context, uint64, uint64, string) (localCommonRecoveryReviewPage, error)
+	CloudLocalBoundBackupCommonRecoveryReview(context.Context, uint64, uint64, string, uint64) (localCommonRecoveryReviewPage, error)
 }
 
 // Only bounded Source ID + file ordinal are accepted from owning Desktop.
 // Never accept file paths, private plan identities, tokens or SQL selectors.
 // After the first page, a private Owner-scoped opaque epoch is mandatory.
 // It is NOT a credential, raw snapshot SHA or permission to write anything.
+// Backwards-compatible selector used by existing owner-only Agent IPC tests.
 func validLocalCommonRecoveryReviewRequest(r *http.Request) (uint64, uint64, string, bool) {
+	source, afterFile, _, epoch, ok := validLocalCommonRecoveryReviewRequestWithAbsent(r)
+	return source, afterFile, epoch, ok
+}
+
+func validLocalCommonRecoveryReviewRequestWithAbsent(r *http.Request) (
+	uint64, uint64, uint64, string, bool,
+) {
 	if r == nil || r.Method != http.MethodGet || r.ContentLength != 0 {
-		return 0, 0, "", false
+		return 0, 0, 0, "", false
 	}
 	q, parseErr := url.ParseQuery(r.URL.RawQuery)
-	if parseErr != nil || len(q) < 1 || len(q) > 3 || len(q["source_id"]) != 1 {
-		return 0, 0, "", false
+	if parseErr != nil || len(q) < 1 || len(q) > 4 || len(q["source_id"]) != 1 {
+		return 0, 0, 0, "", false
 	}
 	for name := range q {
 		if name != "source_id" && name != "after_file" &&
-			name != "page_epoch" {
-			return 0, 0, "", false
+			name != "after_absent" && name != "page_epoch" {
+			return 0, 0, 0, "", false
 		}
 	}
 	sourceText := q.Get("source_id")
 	sourceID, err := strconv.ParseUint(sourceText, 10, 64)
 	if err != nil || sourceID == 0 || sourceID > desktopEvidenceMaxSafeID ||
 		strconv.FormatUint(sourceID, 10) != sourceText {
-		return 0, 0, "", false
+		return 0, 0, 0, "", false
 	}
-	var after uint64
-	if values, exists := q["after_file"]; exists {
+	parseOrdinal := func(field string) (uint64, bool) {
+		values, exists := q[field]
+		if !exists {
+			return 0, true
+		}
 		if len(values) != 1 {
-			return 0, 0, "", false
+			return 0, false
 		}
-		after, err = strconv.ParseUint(values[0], 10, 64)
-		if err != nil || after > localCommonRecoveryReviewMaxAfter ||
-			strconv.FormatUint(after, 10) != values[0] {
-			return 0, 0, "", false
-		}
+		value, err := strconv.ParseUint(values[0], 10, 64)
+		return value, err == nil && value <= localCommonRecoveryReviewMaxAfter &&
+			strconv.FormatUint(value, 10) == values[0]
+	}
+	afterFile, ok := parseOrdinal("after_file")
+	if !ok {
+		return 0, 0, 0, "", false
+	}
+	afterAbsent, ok := parseOrdinal("after_absent")
+	if !ok {
+		return 0, 0, 0, "", false
 	}
 	var epoch string
 	if values, exists := q["page_epoch"]; exists {
 		if len(values) != 1 {
-			return 0, 0, "", false
+			return 0, 0, 0, "", false
 		}
 		epoch = values[0]
 	}
 	_, hasEpoch := q["page_epoch"]
-	if (after == 0 && hasEpoch) ||
-		(after != 0 && !validLocalCommonRecoveryEpoch(epoch)) {
-		return 0, 0, "", false
+	if ((afterFile == 0 && afterAbsent == 0) && hasEpoch) ||
+		((afterFile != 0 || afterAbsent != 0) &&
+			!validLocalCommonRecoveryEpoch(epoch)) {
+		return 0, 0, 0, "", false
 	}
-	return sourceID, after, epoch, true
+	return sourceID, afterFile, afterAbsent, epoch, true
 }
 
 func validLocalCommonRecoveryEpoch(epoch string) bool {
@@ -102,10 +127,16 @@ func validLocalCommonRecoveryEpoch(epoch string) bool {
 // malformed page counts, or out-of-range continuation selectors.
 func validLocalCommonRecoveryReviewPage(
 	page localCommonRecoveryReviewPage, sourceID, after uint64, requestedEpoch string,
+	afterAbsent ...uint64,
 ) bool {
+	var absentAfter uint64
+	if len(afterAbsent) > 0 {
+		absentAfter = afterAbsent[0]
+	}
 	if page.SourceID != sourceID || page.Revision == 0 ||
 		page.Authoritative || !validLocalCommonRecoveryEpoch(page.PageEpoch) ||
-		(after != 0 && !hmac.Equal([]byte(requestedEpoch), []byte(page.PageEpoch))) ||
+		((after != 0 || absentAfter != 0) &&
+			!hmac.Equal([]byte(requestedEpoch), []byte(page.PageEpoch))) ||
 		page.ReviewedFiles > localCommonRecoveryReviewPageSize ||
 		page.ReviewedFiles != page.IgnoredFiles+page.UnsupportedFiles+
 			page.UnrecordedFiles+page.HistoricalCommitted+page.PendingFiles ||
@@ -115,7 +146,19 @@ func validLocalCommonRecoveryReviewPage(
 		(page.HasMore && (page.ReviewedFiles != localCommonRecoveryReviewPageSize ||
 			page.NextAfterFile != after+page.ReviewedFiles)) ||
 		(!page.HasMore && page.NextAfterFile != 0) ||
-		page.NextAfterFile > localCommonRecoveryReviewMaxAfter {
+		page.NextAfterFile > localCommonRecoveryReviewMaxAfter ||
+		page.AbsentPaths > localCommonRecoveryReviewMaxAfter ||
+		(!page.JournalChecked && (page.AbsentPaths != 0 ||
+			page.AbsentReviewed != 0 || page.AbsentCommitted != 0 ||
+			page.AbsentPending != 0 || page.AbsentHasMore || page.NextAfterAbsent != 0)) ||
+		(page.JournalChecked && (page.AbsentReviewed > localCommonRecoveryReviewPageSize ||
+			page.AbsentReviewed != page.AbsentCommitted+page.AbsentPending ||
+			page.AbsentReviewed+absentAfter > page.AbsentPaths ||
+			(page.AbsentHasMore && (page.AbsentReviewed != localCommonRecoveryReviewPageSize ||
+				page.NextAfterAbsent != absentAfter+page.AbsentReviewed ||
+				page.NextAfterAbsent >= page.AbsentPaths)) ||
+			(!page.AbsentHasMore && (page.NextAfterAbsent != 0 ||
+				page.AbsentReviewed+absentAfter != page.AbsentPaths)))) {
 		return false
 	}
 	return true
@@ -127,10 +170,10 @@ func (h *desktopIPCHandler) localBoundBackupCommonRecoveryReview(w http.Response
 			"local_common_recovery_platform_unavailable", "local recovery review unavailable")
 		return
 	}
-	sourceID, after, epoch, ok := validLocalCommonRecoveryReviewRequest(r)
+	sourceID, after, afterAbsent, epoch, ok := validLocalCommonRecoveryReviewRequestWithAbsent(r)
 	if !ok {
 		writeDesktopIPCError(w, http.StatusBadRequest,
-			"invalid_local_common_recovery_review", "source_id, numeric after_file and private page_epoch only")
+			"invalid_local_common_recovery_review", "source_id, numeric after_file/after_absent and private page_epoch only")
 		return
 	}
 	reader, ok := h.ctrl.(desktopIPCLocalCommonRecoveryReviewer)
@@ -139,12 +182,12 @@ func (h *desktopIPCHandler) localBoundBackupCommonRecoveryReview(w http.Response
 			"local_common_recovery_unavailable", "owning Agent unavailable")
 		return
 	}
-	page, err := reader.CloudLocalBoundBackupCommonRecoveryReview(r.Context(), sourceID, after, epoch)
+	page, err := reader.CloudLocalBoundBackupCommonRecoveryReview(r.Context(), sourceID, after, epoch, afterAbsent)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
-	if !validLocalCommonRecoveryReviewPage(page, sourceID, after, epoch) {
+	if !validLocalCommonRecoveryReviewPage(page, sourceID, after, epoch, afterAbsent) {
 		writeDesktopIPCError(w, http.StatusConflict,
 			"local_common_recovery_unverified", "local recovery review unavailable")
 		return

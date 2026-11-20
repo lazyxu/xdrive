@@ -265,7 +265,7 @@ final class XDriveIOSNativePhotoFreeSpaceModel: ObservableObject {
         let device = try await XDriveIOSDeviceEnrollment.shared
             .backgroundPhotoDeviceProof(owner: owner, accessToken: accessToken)
         guard let device else { throw XDriveIOSPhotoRetentionFailure.invalidScope }
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = XDriveIOSAutoRoute.ephemeralConfiguration()
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData

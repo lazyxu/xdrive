@@ -273,11 +273,17 @@ struct XDriveIOSNativeClipboardScreen: View {
             guard scenePhase == .active else { return }
             let generation = sessionGeneration
             var after: UInt64 = 0
+            let progress = XDriveIOSClipboardSSEProgress()
             while !Task.isCancelled && scenePhase == .active &&
                   sessionGeneration == generation {
                 do {
                     let client = try await authorizedClient(for: generation)
-                    after = try await client.watchChanges(after: after) {
+                    after = max(after, await progress.current())
+                    after = try await client.watchChanges(after: after, onCursor: { cursor in
+                        guard !Task.isCancelled, sessionGeneration == generation,
+                              ownerAtOpen == client.owner else { return }
+                        await progress.advance(cursor)
+                    }) {
                         guard !Task.isCancelled, scenePhase == .active,
                               sessionGeneration == generation,
                               ownerAtOpen == client.owner else { return }

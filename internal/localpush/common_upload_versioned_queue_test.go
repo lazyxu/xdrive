@@ -103,3 +103,86 @@ func TestCommonVersionedCorruptedOriginalBlocksReadback(t *testing.T) {
 		t.Fatalf("corrupted existing target revision replaced: %v", err)
 	}
 }
+
+func TestCountAbsentVerifiedCommonVersionedPathsIsReadOnlyAndOwnerScoped(t *testing.T) {
+	f := makeCommonPlanFixture(t)
+	if _, err := prepareVersionedFixture(f, "alpha.txt", f.target); err != nil {
+		t.Fatal(err)
+	}
+	bravo := localpushcommon.Target{ParentID: f.target.ParentID, Name: "bravo.txt"}
+	if _, err := prepareVersionedFixture(f, "bravo.txt", bravo); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	present := map[string]struct{}{"alpha.txt": {}, "bravo.txt": {}}
+	count := func(session string) (uint64, error) {
+		return CountAbsentVerifiedCommonUploadVersionedPaths(
+			ctx, f.config, f.grant, session, present)
+	}
+	if n, err := count(f.secret); err != nil || n != 0 {
+		t.Fatalf("all recorded paths remain in inventory: %d %v", n, err)
+	}
+	delete(present, "bravo.txt")
+	if n, err := count(f.secret); err != nil || n != 1 {
+		t.Fatalf("missing old path was not reported without writing: %d %v", n, err)
+	}
+	if _, err := count("different-owner-session"); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("foreign session read private original journal: %v", err)
+	}
+	// A corrupt old operation is not silently counted as a legitimate
+	// missing-path record; it requires the existing safe reconciliation.
+	dir, err := commonUploadPlanJournalDir(f.config, f.grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot, err := commonUploadVersionedSlot(dir, "bravo.txt", 7, bravo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(slot, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := count(f.secret); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("corrupt original journal was treated as trustworthy: %v", err)
+	}
+}
+
+func TestAbsentVersionedOriginalPageUsesOrdinalAndNeverExposesPrivatePaths(t *testing.T) {
+	f := makeCommonPlanFixture(t)
+	if _, err := prepareVersionedFixture(f, "alpha.txt", f.target); err != nil {
+		t.Fatal(err)
+	}
+	bravo := localpushcommon.Target{ParentID: f.target.ParentID, Name: "bravo.txt"}
+	if _, err := prepareVersionedFixture(f, "bravo.txt", bravo); err != nil {
+		t.Fatal(err)
+	}
+	present := map[string]struct{}{}
+	page := func(after uint64, limit int) ([][]localpushcommon.Plan, uint64, error) {
+		return ListAbsentVerifiedCommonUploadVersionedPlanPage(
+			context.Background(), f.config, f.grant, f.secret, present, after, limit)
+	}
+	first, total, err := page(0, 1)
+	if err != nil || total != 2 || len(first) != 1 || len(first[0]) != 1 {
+		t.Fatalf("first bounded absent page invalid: %d %v %+v", total, err, first)
+	}
+	second, total, err := page(1, 1)
+	if err != nil || total != 2 || len(second) != 1 || len(second[0]) != 1 ||
+		second[0][0].RelativePath == first[0][0].RelativePath {
+		t.Fatalf("ordinal did not advance distinct private plans: %d %v %+v", total, err, second)
+	}
+	if pages, total, err := page(0, 0); err != nil || total != 2 || len(pages) != 0 {
+		t.Fatalf("count-only query exposed private plans: %d %v %+v", total, err, pages)
+	}
+	if _, _, err := page(3, 1); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("out of range private original ordinal accepted: %v", err)
+	}
+	if _, _, err := page(0, 17); !errors.Is(err, ErrCommonUploadPlanQuarantined) {
+		t.Fatalf("unbounded historical SQL page accepted: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := ListAbsentVerifiedCommonUploadVersionedPlanPage(
+		ctx, f.config, f.grant, f.secret, present, 0, 1); err == nil {
+		t.Fatal("cancelled private original journal request allowed")
+	}
+}

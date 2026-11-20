@@ -128,7 +128,7 @@ struct XDriveIOSNativeFilesExportReader {
             size: node.size, availableFreeBytes: freeSpace?.int64Value
         ) else { throw XDriveIOSNativeFilesExportFailure.insufficientDiskSpace }
 
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData

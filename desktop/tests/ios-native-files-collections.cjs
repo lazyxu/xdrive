@@ -32,7 +32,7 @@ test('real Owner projections respect both server caps and do not use local guess
   assert.match(router, /authed\.GET\("\/file-favorites", s\.listFileFavorites\)/)
   assert.match(policy, /self == \.recent \? 50 : 256/)
   assert.match(policy, /Set\(items\.map\(\\\.id\)\)\.count == items\.count/)
-  assert.match(screen, /URLSessionConfiguration\.ephemeral/)
+  assert.match(screen, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(screen, /completionHandler\(nil\)/)
   assert.match(screen, /URLQueryItem\(name: "limit", value: String\(kind\.maximumItems\)\)/)
   assert.match(screen, /XDriveIOSNativeFilesCollectionsPolicy\.validItems/)

@@ -1,5 +1,14 @@
 import Foundation
 
+/// Per-foreground-SSE-task cursor. Advance on every *complete* frame so a
+/// network disconnect cannot roll back the next "after" request. The actor
+/// is never persisted or shared between Owner/session generations.
+actor XDriveIOSClipboardSSEProgress {
+    private var latest: UInt64 = 0
+    func current() -> UInt64 { latest }
+    func advance(_ next: UInt64) { latest = max(latest, next) }
+}
+
 /// Owner-scoped Clipboard SSE v1 decoder. Carries invalidation only, never
 /// plaintext, ciphertext, keys or OS pasteboard bytes. Cursor is in-memory.
 struct XDriveIOSClipboardSSECursor {

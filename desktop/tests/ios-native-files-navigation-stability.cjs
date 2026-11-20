@@ -70,7 +70,7 @@ test('thumbnail display is bound to the exact source revision and Owner', () => 
 test('thumbnail sessions are cookie-free, non-redirecting, and shared without caching', () => {
   assert.equal((tile.match(/URLSession\(/g) || []).length, 1)
   assert.match(tile, /private static let session: URLSession/)
-  assert.match(tile, /URLSessionConfiguration\.ephemeral/)
+  assert.match(tile, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(tile, /config\.httpShouldSetCookies = false/)
   assert.match(tile, /config\.urlCache = nil/)
   assert.match(tile, /completionHandler\(nil\)/)

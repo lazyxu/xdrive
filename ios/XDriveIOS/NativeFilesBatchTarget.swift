@@ -59,7 +59,7 @@ struct XDriveIOSNativeFilesBatchTargetWriter {
         guard let targetURL = base.url else {
             throw XDriveIOSNativeFilesBatchTargetError.invalidOwner
         }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil

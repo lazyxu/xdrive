@@ -46,7 +46,7 @@ struct XDriveIOSNativeFilesBatchTrashWriter {
         parts.query = nil
         parts.fragment = nil
         guard let url = parts.url else { throw XDriveIOSNativeFilesBatchTrashError.invalidOwner }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData

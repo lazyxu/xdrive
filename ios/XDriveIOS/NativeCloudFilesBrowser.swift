@@ -28,7 +28,7 @@ struct XDriveIOSNativeFilesReader {
     // Owner identity stays in the per-request bearer. The shared ephemeral
     // transport never stores cookies or file data and refuses redirects.
     private static let client: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = XDriveIOSAutoRoute.ephemeralConfiguration()
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
