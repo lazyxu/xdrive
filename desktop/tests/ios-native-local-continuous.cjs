@@ -150,7 +150,9 @@ test('native media selector queries the entire authorized PhotoKit snapshot', ()
 
 
 test('native Photos filter empty-state message reflects selected whole-library source', () => {
-  assert.match(source, /Text\("本机已授权\\\(mediaFilter\.title\) · 按日分组"\)/)
+  assert.match(source, /Text\(hasCompletedInitialRead\s*\?\s*\(mediaFilter\.isAll[\s\S]*?"\\\(total\) 项照片与视频"[\s\S]*?"\\\(total\) 项 · \\\(mediaFilter\.title\)"\)[\s\S]*?: "正在统计照片…"\)/)
+  assert.match(source, /\.accessibilityIdentifier\("native-ios-photos-local-photo-count"\)/)
+  assert.doesNotMatch(source, /Text\("本机已授权\\\(mediaFilter\.title\) · 按日分组"\)/)
   assert.match(source, /XDriveIOSNativePhotoWallStatusMessage\(message: mediaFilter\.emptyMessage\)/)
   assert.match(filterPolicy, /var emptyMessage: String/)
 })
