@@ -150,3 +150,10 @@ test('Owner place rejects stale Viewer anchor and retires its full transient sta
   assert.match(rejection, /sameVisibleRevision\(as: \$1\)/)
   assert.match(rejection, /else \{[\s\S]*?viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*return/)
 })
+
+
+test('Owner place paging and recoverable failures clear stale Viewer return geometry', () => {
+  assert.match(owner, /if autoAdvance \|\| target != cursor \{\s*viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*\}/)
+  assert.match(owner, /Do not promote an unverified next cursor[\s\S]*?viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*self\.error = "地点照片或 Owner 授权已变化/)
+  assert.match(owner, /case \.response\(let status\) where status == 401 \|\| status == 403:[\s\S]*?invalidate\(\)/)
+})
