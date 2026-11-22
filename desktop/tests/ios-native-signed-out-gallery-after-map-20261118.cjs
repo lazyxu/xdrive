@@ -12,8 +12,8 @@ const ownerWall = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeUnifiedPh
 test('default Photos Library uses real bounded local PhotoKit gallery while signed out', () => {
   const body = dashboard.slice(dashboard.indexOf('private var gallery: some View'),
                                dashboard.indexOf('/// L2 callbacks', dashboard.indexOf('private var gallery: some View')))
-  assert.match(body, /case \.unified:\s*if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\(\s*savedOffset: \$localGalleryPageOffset,\s*mediaFilter: \$localGalleryMediaFilter/)
-  assert.match(body, /\} else \{\s*XDriveIOSNativeUnifiedPhotoGallery\(/)
+  assert.match(body, /if gallerySource == \.unified \|\|\s*\(gallerySource == \.map && keepUnifiedWallDuringMap\) \{[\s\S]*?if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\([\s\S]*?\} else \{\s*XDriveIOSNativeUnifiedPhotoGallery\(/)
+  assert.match(body, /if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\([\s\S]*?\} else \{\s*XDriveIOSNativeUnifiedPhotoGallery\(/)
   assert.match(body, /case \.local:\s*XDriveIOSNativeLocalPhotoTimelineContainer\(/)
   assert.match(ownerWall, /if let owner = login.owner \{\s*ForEach\(wall.index.pages\)/)
   assert.match(localGallery, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
