@@ -48,6 +48,7 @@ test('focused backup is explicit, native, Owner-bound and not a hidden BG grant'
   const phaseChange = rootScreen.slice(rootScreen.indexOf('.onChange(of: phase)'),
     rootScreen.indexOf('.onChange(of: model.owner)'));
   assert.match(phaseChange, /else \{[\s\S]*?workspaceDisappeared\(\)[\s\S]*?backup\.stopLibraryChangeMonitoring\(\)[\s\S]*?backup\.cancel\(\)/);
+  assert.match(rootScreen, /private func workspaceDisappeared\(\) \{[\s\S]*?readinessTask\?\.cancel\(\)/);
   assert.match(rootScreen, /private func workspaceDisappeared\(\) \{[\s\S]*?readinessTicket = UUID\(\)[\s\S]*?readinessTask\?\.cancel\(\)/);
   const lifecycle = ui.slice(ui.indexOf('.onDisappear'), ui.indexOf('    // Native Form Sections'));
   assert.match(lifecycle, /showFocusedConsent = false/);
