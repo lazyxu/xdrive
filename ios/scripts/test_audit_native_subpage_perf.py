@@ -208,7 +208,13 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertIn('native-ios-mine-server-account', dashboard)
         self.assertIn('确认退出当前服务器和账户？', dashboard)
         self.assertIn('Button("停止本机自动备份并退出"', dashboard)
-        self.assertIn('Button("取消", role: .cancel)', dashboard)
+        # SwiftUI confirmationDialog supplies the native Cancel dismissal.
+        # Keep the real Owner-scoped destructive confirmation and its
+        # explicit pending-owner reset, without requiring a redundant button.
+        self.assertIn('isPresented: $showSignOutConsent', dashboard)
+        self.assertIn('titleVisibility: .visible', dashboard)
+        self.assertIn('native-ios-login-signout', dashboard)
+        self.assertIn('XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)', dashboard)
         self.assertIn('signOutConsentOwner = nil', dashboard)
         for route in ("backup.setup", "mine.signout.confirm"):
             self.assertIn(f'run("{route}")', native_test)
@@ -320,9 +326,13 @@ class NativeSubpageAuditTests(unittest.TestCase):
         self.assertIn("filesMoreOrganizer(app)", more_visit)
         self.assertNotIn("native-ios-files-organize-home", more_visit)
         # Distinguish the first real Menu entry from the collapsed Home row.
-        first_menu = files.split("// Keep Home Organizer visible in the first native", 1)[1]
-        self.assertLess(first_menu.index("native-ios-files-toolbar-organize-home"),
-                        first_menu.index('Picker("显示方式"'))
+        organize_id = files.index('native-ios-files-toolbar-organize-home')
+        containing_menu = files.rfind('Menu {', 0, organize_id)
+        display_picker = files.index('Picker("显示方式"', organize_id)
+        self.assertGreaterEqual(containing_menu, 0)
+        self.assertIn('if isHome {', files[containing_menu:organize_id])
+        self.assertLess(containing_menu, organize_id)
+        self.assertLess(organize_id, display_picker)
         self.assertIn('openFilesHomeDisclosure("更多管理"', suite)
         self.assertIn('openFilesHomeDisclosure("标签与分类"', suite)
 
