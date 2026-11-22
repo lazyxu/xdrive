@@ -167,12 +167,17 @@ enum XDriveIOSNativePhotosTestNavigator {
                     return cancel.waitForExistence(timeout: 10) && cancel.isHittable
                 }
             }
+            // Signed-out local PhotoKit exposes a native media Menu and a
+            // separate Photos search editor. Existing return/Cancel journeys
+            // must use a sheet with an actual Cancel action, not invent one
+            // for a system Menu. Independently test the Menu's real choices.
             let localMenu = found("native-ios-local-gallery-media-filter", in: app)
-            if localMenu.exists && localMenu.isHittable {
-                localMenu.tap()
-                return true
-            }
-            return false
+            guard localMenu.exists && localMenu.isHittable else { return false }
+            let localSearch = found("native-ios-photos-search", in: app)
+            guard localSearch.exists && localSearch.isHittable else { return false }
+            localSearch.tap()
+            let cancel = app.buttons["取消"].firstMatch
+            return cancel.waitForExistence(timeout: 10) && cancel.isHittable
         }
         let direct = found(id, in: app)
         if direct.exists && direct.isHittable { direct.tap(); return true }
@@ -361,6 +366,32 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
                            "System UITabBar overlaps Photos chrome: \(title)")
         }
     }
+    /// Local media-type Menu and search sheet are separate native Photos
+    /// controls; neither may silently disappear when the cloud Owner is nil.
+    func testSignedOutPhotoKitMediaFilterMenuRemainsReachable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-xdrive-ui-navigation-smoke"]
+        app.launch()
+        XDriveIOSNativePhotosTestNavigator.acceptInitialFullPhotosForNavigation(in: app)
+        let menu = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-local-gallery-media-filter").firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 20) && menu.isHittable,
+                      "Real local PhotoKit media filter must exist")
+        menu.tap()
+        let choices = ["照片", "视频", "收藏", "实况", "截屏"]
+        let visibleChoices = choices.filter { label in
+            let action = app.menuItems[label].firstMatch
+            let button = app.buttons[label].firstMatch
+            let toggle = app.switches[label].firstMatch
+            return (action.exists && action.isHittable) ||
+                   (button.exists && button.isHittable) ||
+                   (toggle.exists && toggle.isHittable)
+        }
+        XCTAssertGreaterThanOrEqual(visibleChoices.count, 2,
+                                    "Actual PhotoKit filter Menu exposes no usable media choices")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     private func launch(syntheticOwner: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-xdrive-ui-navigation-smoke"]
