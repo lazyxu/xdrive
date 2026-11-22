@@ -325,7 +325,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                           scopeActive: activeOwner,
                           matches: { $0.sameVisibleRevision(as: $1) }
                       ) else {
+                    // The old Owner Node/window is no longer admissible.
+                    // Retire all presentation-only Viewer geometry too.
                     viewerReturn = nil
+                    viewerOpeningItem = nil
+                    viewerOpeningCursor = nil
+                    viewerReturnViewport = nil
                     return
                 }
                 // Same-revision Viewer return must not re-center.

@@ -139,3 +139,14 @@ test('source place Viewer return retires its pixel anchor on every exit path', (
   assert.match(restore, /viewerReturnViewport\?\.alignment\(/)
   assert.match(source, /private func invalidate\(\) \{[\s\S]*?viewerReturnViewport = nil/)
 })
+
+
+test('Owner place rejects stale Viewer anchor and retires its full transient state', () => {
+  const begin = owner.indexOf('guard let anchor = viewerReturn, activeOwner,')
+  const end = owner.indexOf('// Same-revision Viewer return must not re-center.', begin)
+  assert.ok(begin >= 0 && end > begin, 'Owner-verified Viewer-return guard required')
+  const rejection = owner.slice(begin, end)
+  assert.match(rejection, /XDriveIOSNativePhotoWallWindowPolicy\.canRestore\(/)
+  assert.match(rejection, /sameVisibleRevision\(as: \$1\)/)
+  assert.match(rejection, /else \{[\s\S]*?viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*return/)
+})
