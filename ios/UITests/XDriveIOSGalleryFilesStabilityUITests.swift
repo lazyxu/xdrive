@@ -351,10 +351,22 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         checkGallery(app)
 
         select("native-ios-gallery-source-menu", in: app)
-        XCTAssertTrue(app.buttons["备份设置"].firstMatch.waitForExistence(timeout: 10),
-                      "Backup must remain available via one secondary menu")
-        // Dismiss without leaving the library.
-        app.swipeDown()
+        let backup = app.buttons["备份设置"].firstMatch
+        for _ in 0..<8 {
+            if backup.exists && backup.isHittable { break }
+            let list = app.collectionViews.firstMatch
+            guard list.exists else { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(backup.exists && backup.isHittable,
+                      "Native Gallery options did not retain the backup settings action")
+        // A large native sheet does not necessarily dismiss on a swipe of
+        // its inner List. Use the explicit, genuinely tappable Done action.
+        let done = app.buttons.matching(
+            identifier: "native-ios-gallery-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 12) && done.isHittable)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-options-done")
+        done.tap()
         checkGallery(app)
     }
 
