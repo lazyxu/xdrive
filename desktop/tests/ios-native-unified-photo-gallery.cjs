@@ -15,7 +15,8 @@ test('unified gallery defaults to all sources and keeps unknown evidence distinc
   assert.match(dashboard, /gallerySource: XDriveIOSNativeGallerySource = \.unified/)
   // No verified Owner => keep local PhotoKit visible, rather than
   // mounting the Owner-only unified wall as a blank Gallery.
-  assert.match(dashboard, /case \.unified:\s*if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\([\s\S]*?\}\s*else\s*\{\s*XDriveIOSNativeUnifiedPhotoGallery\(\s*login: login, openBackup:/)
+  assert.match(dashboard, /if gallerySource == \.unified \|\|\s*\(gallerySource == \.map && keepUnifiedWallDuringMap\) \{[\s\S]*?if login\.owner == nil \{[\s\S]*?XDriveIOSNativeLocalPhotoTimelineContainer\([\s\S]*?\} else \{\s*XDriveIOSNativeUnifiedPhotoGallery\(\s*login: login, openBackup:/)
+  assert.match(dashboard, /\.opacity\(gallerySource == \.map \? 0 : 1\)[\s\S]*?\.allowsHitTesting\(gallerySource != \.map\)[\s\S]*?\.accessibilityHidden\(gallerySource == \.map\)/)
   assert.match(ui, /filterButton\(nil, title: "全部"\)/)
   assert.match(timeline, /checkedLocal\?\.provesAbsence\(for: probe\.kind\) == true && ids\.isEmpty/)
   assert.match(timeline, /localIDs\[key\] == \[candidate\.id\]/)
