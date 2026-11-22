@@ -4,6 +4,11 @@ on:
     paths:
       - '.github/workflows/ios-native-subpage-performance.yml'
       - 'ios/UITests/XDriveIOSNativeSubpagePerformanceUITests.swift'
+      # Xcode compiles the entire native UITest target, including Gallery/Files
+      # cross-route suites; source edits there must rerun this real performance gate.
+      - 'ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift'
       - 'ios/scripts/audit_native_subpage_perf.py'
       - 'ios/scripts/test_audit_native_subpage_perf.py'
       - 'ios/scripts/report_native_perf_triage.py'
