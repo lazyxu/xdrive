@@ -865,7 +865,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         }
         // Ordinary pagination does not carry a stale Viewer anchor into a
         // different place or new 48-item Range. Dismissal reloads the SAME.
-        if autoAdvance || target != cursor { viewerReturn = nil }
+        if autoAdvance || target != cursor {
+            viewerReturn = nil
+            viewerOpeningItem = nil
+            viewerOpeningCursor = nil
+            viewerReturnViewport = nil
+        }
         autoScrollReturn = nil
         autoScrollReturnViewport = nil
         scrollFootVisible = false
@@ -1150,8 +1155,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     verifiedDatePlaceID = nil
                     verifiedDateTotal = 0
                 }
-                // Do not promote an unverified next cursor on failure.
+                // Do not promote an unverified next cursor or old Viewer
+                // geometry on a recoverable failure.
                 viewerReturn = nil
+                viewerOpeningItem = nil
+                viewerOpeningCursor = nil
+                viewerReturnViewport = nil
                 self.error = "地点照片或 Owner 授权已变化；可重试，必要时返回地图刷新。"
             }
         }
