@@ -70,6 +70,13 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
+    // Keep the native toolbar actionable on iOS 18/26. A SwiftUI Menu was
+    // present in the accessibility tree but could not be hit-tested.
+    @State private var showingUnifiedOptions = false
+    @State private var pendingUnifiedOption: UnifiedOption?
+    private enum UnifiedOption {
+        case search, people, thumbnailCache, map, originalAudit
+    }
     @State private var openMapAfterFilterDismiss = false
     @State private var openSourceMapAfterFilterDismiss = false
     @State private var showingSourceFilteredMap = false
@@ -99,6 +106,94 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var started = false
     @Environment(\.scenePhase) private var phase
 
+    private func chooseUnifiedOption(_ option: UnifiedOption) {
+        pendingUnifiedOption = option
+        showingUnifiedOptions = false
+    }
+
+    private func completeUnifiedOptionAfterDismiss() {
+        guard let option = pendingUnifiedOption else { return }
+        pendingUnifiedOption = nil
+        switch option {
+        case .search:
+            draft = query
+            showFilters = true
+        case .people:
+            showingPeople = true
+        case .thumbnailCache:
+            showingThumbnailCache = true
+        case .map:
+            showMapForAppliedQuery()
+        case .originalAudit:
+            requestOriginalAudit(retryUnavailable: false)
+        }
+    }
+
+    private var unifiedOptionsSheet: some View {
+        NavigationStack {
+            List {
+                Section("搜索与筛选") {
+                    Button {
+                        chooseUnifiedOption(.search)
+                    } label: {
+                        Label("搜索与筛选", systemImage: "magnifyingglass")
+                    }
+                    .accessibilityIdentifier("native-ios-unified-options-search")
+                    Menu("照片来源") {
+                        filterButton(nil, title: "全部")
+                        ForEach(XDriveIOSNativeGalleryPresence.allCases) { presence in
+                            filterButton(presence, title: presence.title)
+                        }
+                    }
+                    Menu("时间浏览") {
+                        ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
+                            Button {
+                                wallTimeScale = option
+                            } label: {
+                                Label(option.title, systemImage:
+                                    wallTimeScale == option ? "checkmark" : "calendar")
+                            }
+                        }
+                    }
+                    XDriveIOSNativePhotoWallDisplayMenu(
+                        density: $wallDensity, framing: $wallFraming,
+                        accessibilityID: "native-ios-unified-wall-density"
+                    ) { EmptyView() }
+                }
+                Section("地图") {
+                    if onShowMap != nil {
+                        Button {
+                            chooseUnifiedOption(.map)
+                        } label: {
+                            Label("显示地图", systemImage: "map")
+                        }
+                        .disabled(mapUnavailableReason(for: query) != nil)
+                        .accessibilityIdentifier("native-ios-gallery-sort-filter-show-map")
+                    }
+                }
+                Section("管理") {
+                    Button("人物与宠物") { chooseUnifiedOption(.people) }
+                        .accessibilityIdentifier("native-ios-unified-options-people")
+                    Button("管理缩略图缓存") {
+                        chooseUnifiedOption(.thumbnailCache)
+                    }
+                    Button("手动核对所有本机原件（耗时）") {
+                        chooseUnifiedOption(.originalAudit)
+                    }
+                }
+            }
+            .navigationTitle("排序、筛选与显示选项")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { showingUnifiedOptions = false }
+                        .accessibilityIdentifier("native-ios-unified-options-done")
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
     private func restoreMapCameraForCurrentOwner() {
         guard savedMapCamera == nil, login.hasLocalOwnerSession,
               let owner = login.owner,
@@ -112,52 +207,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
         galleryContent
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            draft = query
-                            showFilters = true
-                        } label: {
-                            Label("搜索与筛选", systemImage: "magnifyingglass")
-                        }
-                        Menu("照片来源") {
-                            filterButton(nil, title: "全部")
-                            ForEach(XDriveIOSNativeGalleryPresence.allCases) { presence in
-                                filterButton(presence, title: presence.title)
-                            }
-                        }
-                        Menu("时间浏览") {
-                            ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
-                                Button {
-                                    wallTimeScale = option
-                                } label: {
-                                    Label(option.title, systemImage:
-                                        wallTimeScale == option ? "checkmark" : "calendar")
-                                }
-                            }
-                        }
-                        // Reuse the shared, tested display menu inside the
-                        // native Photos filter menu, not a permanent toolbar row.
-                        XDriveIOSNativePhotoWallDisplayMenu(
-                            density: $wallDensity, framing: $wallFraming,
-                            accessibilityID: "native-ios-unified-wall-density"
-                        ) { EmptyView() }
-                        if onShowMap != nil {
-                            Button {
-                                showMapForAppliedQuery()
-                            } label: {
-                                Label("显示地图", systemImage: "map")
-                            }
-                            .disabled(mapUnavailableReason(for: query) != nil)
-                            .accessibilityIdentifier("native-ios-gallery-sort-filter-show-map")
-                        }
-                        Button("人物与宠物") { showingPeople = true }
-                        Button("管理缩略图缓存") { showingThumbnailCache = true }
-                        Button("手动核对所有本机原件（耗时）") {
-                            requestOriginalAudit(retryUnavailable: false)
-                        }
+                    Button {
+                        showingUnifiedOptions = true
                     } label: {
                         Image(systemName: "line.3.horizontal.decrease.circle")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel("排序、筛选与显示选项")
                     .accessibilityIdentifier("native-ios-gallery-open-filters")
                     Button(isSelecting ? "完成" : "选择") {
@@ -166,6 +223,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     }
                     .accessibilityIdentifier("native-ios-gallery-select")
                 }
+            }
+            .sheet(isPresented: $showingUnifiedOptions, onDismiss: {
+                completeUnifiedOptionAfterDismiss()
+            }) {
+                unifiedOptionsSheet
             }
             .navigationDestination(isPresented: $showingPeople) {
                 XDriveIOSNativeGalleryPeople(login: login)
