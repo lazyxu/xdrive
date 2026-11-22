@@ -202,8 +202,11 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         tap("native-ios-files-trash-error-return", app)
         tap("native-ios-tab-gallery", app)
         tap("native-ios-gallery-open-filters", app)
-        let cancel = app.buttons["取消"].firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        // Signed-out PhotoKit Search closes with Done; verified Owner
+        // source/filter editor closes with Cancel.
+        let cancel = app.buttons["取消"].firstMatch.exists
+            ? app.buttons["取消"].firstMatch : app.buttons["完成"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15) && cancel.isHittable)
         cancel.tap()
         expect("native-ios-gallery-source-unified", app)
     }
@@ -276,8 +279,11 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         tap("native-ios-files-error-return", app)
         tap("native-ios-tab-gallery", app)
         tap("native-ios-gallery-open-filters", app)
-        let cancel = app.buttons["取消"].firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
+        // Signed-out PhotoKit Search closes with Done; verified Owner
+        // source/filter editor closes with Cancel.
+        let cancel = app.buttons["取消"].firstMatch.exists
+            ? app.buttons["取消"].firstMatch : app.buttons["完成"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15) && cancel.isHittable)
         cancel.tap()
         tap("native-ios-tab-files", app)
         expect("native-ios-files-section-browse", app)
