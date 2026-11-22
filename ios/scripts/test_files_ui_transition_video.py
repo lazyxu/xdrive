@@ -16,7 +16,15 @@ from files_ui_transition_video import (
 
 class FilesUITransitionVideoTests(unittest.TestCase):
     def test_real_targets_are_distinct(self):
-        self.assertEqual(len(TARGETS), 6)
+        self.assertEqual(len(TARGETS), 9)
+        # Original six real tap-recorded journeys remain mandatory.
+        # The three new actionable Gallery filter/People/foreground routes
+        # must never be silently omitted from strict H.264 frame auditing.
+        self.assertTrue({
+            "testUnifiedOptionsSearchCancelThenFilesReturnKeepsWall",
+            "testUnifiedOptionsPeoplePushBackKeepsWallGeneration",
+            "testUnifiedOptionsForegroundDismissThenFilesReturn",
+        }.issubset(TARGETS))
 
     def test_empty_frame_samples_cannot_pass(self):
         self.assertEqual(classify_bright_blank([], 0.2),
