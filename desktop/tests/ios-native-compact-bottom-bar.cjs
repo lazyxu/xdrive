@@ -148,7 +148,9 @@ test('real Simulator journeys use visible Photos or xDrive actions and keep star
   assert.match(login, /\.onChange\(of: restoreFinished\) \{ finished in/);
   assert.match(login, /\.onChange\(of: workspaceVisible\) \{ visible in/);
   assert.match(b9, /XCTNSPredicateExpectation\([\s\S]*?"ready"/);
-  assert.match(b9, /Workspace stayed at mountingWorkspace/);
+  assert.match(b9, /Candidate remained at mountingWorkspace, do not mask failure/);
+  assert.match(b9, /XCTNSPredicateExpectation\([\s\S]*?"value == %@", "ready"/);
+  assert.match(b9, /archived\.label\.contains\("b9d5f9695826"\)/);
   assert.doesNotMatch(nav, /coordinate\(withNormalizedOffset:/);
 });
 

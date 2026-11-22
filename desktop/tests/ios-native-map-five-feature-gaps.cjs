@@ -141,7 +141,11 @@ test('M16: arbitrary multi-year exact range retains half-open boundary and nativ
 })
 
 test('M17: visible native Photos sort/filter map action uses committed query', () => {
-  assert.match(gallery, /Menu \{[\s\S]*?Label\("搜索与筛选", systemImage: "magnifyingglass"\)/)
+  // Native Photos uses a real option-sheet Button, not an inaccessible
+  // nested SwiftUI Menu; the applied query still gates the same map.
+  assert.match(gallery, /private var unifiedOptionsSheet: some View \{[\s\S]*?Section\("搜索与筛选"\) \{[\s\S]*?Label\("搜索与筛选", systemImage: "magnifyingglass"\)/)
+  assert.match(gallery, /chooseUnifiedOption\(\.map\)[\s\S]*?Label\("显示地图", systemImage: "map"\)/)
+  assert.match(gallery, /\.disabled\(mapUnavailableReason\(for: query\) != nil\)/)
   assert.match(gallery, /Label\("显示地图", systemImage: "map"\)/)
   assert.match(gallery, /native-ios-gallery-sort-filter-show-map/)
   assert.match(gallery, /native-ios-gallery-open-filters/)

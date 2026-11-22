@@ -755,29 +755,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tabItem { Label("我的", systemImage: "person.crop.circle") }
             .tag(XDriveIOSNativeBottomTab.mine)
         }
-        // iOS 18 SwiftUI reads tabBar visibility from the *selected tab's
-        // content*, not reliably from the TabView wrapper alone. Keep this
-        // additional container preference for older iOS, with the five
-        // content-level hidden modifiers above as the effective source.
-        // The only interactive bars are nativePhotosBottomBar (in Gallery)
-        // and nativeBottomBar (in other modules); never stack system tabs.
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
-                tab: tab.rawValue,
-                gallerySource: gallerySource.rawValue,
-                focused: galleryPresentationFocused,
-                ownerVerified: login.owner != nil
-            ) {
-                // One Photos-native bar throughout Library, Collections and Map.
-                // Never display the xDrive five-slot bar over a Photos map.
-                if tab == .gallery {
-                    nativePhotosBottomBar
-                } else {
-                    nativeBottomBar
-                }
-            }
-        }
+        // Keep the selected TabView's real five destinations mounted.
+        // The one Photos/xDrive native bar is a separate, measured row
+        // BELOW its content, never a safe-area overlay over Files' own rail.
         .id(ownerScopeKey)
         .environment(\.xdriveNativeTransfers, transfers)
         // Visible local/paired Gallery tiles only; no background writes.
@@ -1013,9 +993,22 @@ struct XDriveIOSNativePhotosDashboard: View {
             galleryFocused = gallerySource == .map
             mapNavigationExplicitlyShown = false
         }
-        // Close the actual VStack content, then the Dashboard body.
-        // Without this brace Swift parses every following private member
-        // as a nested declaration and the unsigned IPA parser fails.
+        .toolbar(.hidden, for: .tabBar)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Sibling placement reserves physical space. There is exactly one
+        // native bar: Photos chrome in Gallery, five-slot xDrive elsewhere.
+        if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
+            tab: tab.rawValue,
+            gallerySource: gallerySource.rawValue,
+            focused: galleryPresentationFocused,
+            ownerVerified: login.owner != nil
+        ) {
+            if tab == .gallery {
+                nativePhotosBottomBar
+            } else {
+                nativeBottomBar
+            }
+        }
         }
     }
 
@@ -1547,24 +1540,25 @@ struct XDriveIOSNativePhotosDashboard: View {
             // This is the SAME native local/cloud MapKit component used by
             // Gallery's normal Map source, not a second map or media reader.
             // Present it modally so the unified wall remains mounted below.
-            NavigationStack {
-                XDriveIOSNativePhotoMapsScreen(
-                    login: login,
-                    localMapScope: $localMapScope,
-                    localMapPageOffset: $localMapPageOffset,
-                    source: $mapSource,
-                    cloudMapCamera: $cloudMapCamera,
-                    localMapCamera: $localMapCamera,
-                    onClose: { presentingUnifiedMap = false },
-                    mediaFilter: unifiedMapMediaFilter,
-                    filenameTerm: unifiedMapFilenameTerm,
-                    cloudSourceAllowed: true,
-                    inheritedCaptureRange: unifiedMapCaptureRange
-                )
-            }
-            // A full-screen source-filtered map is above the Gallery TabView.
-            // Give it the SAME floating Photos bar, not a second xDrive tab.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                NavigationStack {
+                    XDriveIOSNativePhotoMapsScreen(
+                        login: login,
+                        localMapScope: $localMapScope,
+                        localMapPageOffset: $localMapPageOffset,
+                        source: $mapSource,
+                        cloudMapCamera: $cloudMapCamera,
+                        localMapCamera: $localMapCamera,
+                        onClose: { presentingUnifiedMap = false },
+                        mediaFilter: unifiedMapMediaFilter,
+                        filenameTerm: unifiedMapFilenameTerm,
+                        cloudSourceAllowed: true,
+                        inheritedCaptureRange: unifiedMapCaptureRange
+                    )
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // A full-screen source-filtered MapKit view also reserves
+                // the SAME single Photos control row outside its canvas.
                 nativePhotosBottomBar
             }
         }
