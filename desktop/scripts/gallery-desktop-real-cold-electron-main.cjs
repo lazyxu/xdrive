@@ -66,6 +66,12 @@ function activateGalleryAndMeasure() {
     longestLongTaskMs: 0,
     longTasks: [],
     longTaskSupported: Boolean(PerformanceObserver.supportedEntryTypes?.includes('longtask')),
+    // Observer diagnostic is test-only; never emitted by the production app.
+    mutationNotifications: 0,
+    coalescedScanFrames: 0,
+    gridScanCount: 0,
+    gridScanCpuMs: 0,
+    maxGridScanCpuMs: 0,
   }
   const twoFrames = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   let completed = false
@@ -100,34 +106,64 @@ function activateGalleryAndMeasure() {
     })
   }
   function scan() {
-    const grid = document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
-    if (!grid) return
-    if (data.firstVisibleTileMs === null && grid.querySelector('[role="button"]')) {
-      data.firstVisibleTileMs = elapsed()
-    }
-    const images = Array.from(grid.querySelectorAll('img[src]'))
-    if (data.firstImageElementMs === null && images.length > 0) {
-      data.firstImageElementMs = elapsed()
-    }
-    for (const img of images) {
-      const url = img.currentSrc || img.src
-      if (!url || visited.get(img) === url) continue
-      visited.set(img, url)
-      void img.decode().then(async () => {
-        if (!img.isConnected || (img.currentSrc || img.src) !== url || decoded.has(url)) return
-        decoded.add(url)
-        data.decodedImages = decoded.size
-        if (data.firstImageDecodedMs === null) {
-          data.firstImageDecodedMs = elapsed()
-          await twoFrames()
-          if (data.firstImageTwoRAFMs === null) data.firstImageTwoRAFMs = elapsed()
-        }
-        finalize()
-      }).catch(() => { data.decoderErrors++ })
+    const scanStarted = performance.now()
+    data.gridScanCount++
+    try {
+      const grid = document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+      if (!grid) return
+      if (data.firstVisibleTileMs === null && grid.querySelector('[role="button"]')) {
+        data.firstVisibleTileMs = elapsed()
+      }
+      const images = Array.from(grid.querySelectorAll('img[src]'))
+      if (data.firstImageElementMs === null && images.length > 0) {
+        data.firstImageElementMs = elapsed()
+      }
+      for (const img of images) {
+        const url = img.currentSrc || img.src
+        if (!url || visited.get(img) === url) continue
+        visited.set(img, url)
+        void img.decode().then(async () => {
+          if (!img.isConnected || (img.currentSrc || img.src) !== url || decoded.has(url)) return
+          decoded.add(url)
+          data.decodedImages = decoded.size
+          if (data.firstImageDecodedMs === null) {
+            data.firstImageDecodedMs = elapsed()
+            await twoFrames()
+            if (data.firstImageTwoRAFMs === null) data.firstImageTwoRAFMs = elapsed()
+          }
+          finalize()
+        }).catch(() => { data.decoderErrors++ })
+      }
+    } finally {
+      const cpu = performance.now() - scanStarted
+      data.gridScanCpuMs += cpu
+      data.maxGridScanCpuMs = Math.max(data.maxGridScanCpuMs, cpu)
     }
   }
-  observer = new MutationObserver(scan)
-  observer.observe(document.body, { subtree: true, attributes: true, childList: true })
+  // The previous real-Desktop benchmark rescanned the entire Gallery grid
+  // synchronously on every mutation anywhere in document.body (including
+  // unrelated attributes). Batch observations into at most one scan per frame
+  // and retain notifications needed for new tiles and changed image sources.
+  // This changes BENCHMARK observation only, not the production application.
+  let scanQueued = false
+  function scheduleScan() {
+    data.mutationNotifications++
+    if (scanQueued || completed) return
+    scanQueued = true
+    requestAnimationFrame(() => {
+      scanQueued = false
+      if (completed) return
+      data.coalescedScanFrames++
+      scan()
+    })
+  }
+  observer = new MutationObserver(scheduleScan)
+  observer.observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['src', 'srcset'],
+  })
   window.__xdriveDesktopRealColdProbe = data
   gallery.click()
   scan()
