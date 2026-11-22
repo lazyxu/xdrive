@@ -168,6 +168,133 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         assertNotSolidScreen(app, label)
     }
 
+    // Newly actionable unified filter sheet: actual Simulator hit targets,
+    // real selection/dismissal and unchanged Owner-scoped Gallery generation.
+    // These are no-session Owner fixture routes: protected media never passes.
+    private func openUnifiedOptions(_ app: XCUIApplication) {
+        let open = app.buttons.matching(
+            identifier: "native-ios-gallery-open-filters").firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 20) && open.isHittable,
+                      "Unified filter button did not mount as tappable")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-open-filters")
+        open.tap()
+        let done = app.buttons.matching(
+            identifier: "native-ios-unified-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15) && done.isHittable,
+                      "Native unified options sheet did not mount")
+    }
+
+    private func chooseUnifiedOption(_ id: String, in app: XCUIApplication) {
+        let row = app.buttons.matching(identifier: id).firstMatch
+        for _ in 0..<7 {
+            if row.exists && row.isHittable { break }
+            let list = app.collectionViews.firstMatch.exists
+                ? app.collectionViews.firstMatch : app.scrollViews.firstMatch
+            guard list.exists else { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(row.exists && row.isHittable,
+                      "Unified option cannot be tapped: " + id)
+        print("IOS_NATIVE_NAV_TAP_START route=" + id)
+        row.tap()
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    private func closeUnifiedOptions(_ app: XCUIApplication) {
+        let done = app.buttons.matching(
+            identifier: "native-ios-unified-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 12) && done.isHittable)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-unified-options-done")
+        done.tap()
+    }
+
+    func testUnifiedOptionsSearchCancelThenFilesReturnKeepsWall() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        let generation = verifiedUnifiedGeneration(app)
+        openUnifiedOptions(app)
+        chooseUnifiedOption("native-ios-unified-options-search", in: app)
+        let cancel = app.navigationBars["搜索与筛选"].buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15) && cancel.isHittable,
+                      "Search editor did not mount after options dismissal")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-unified-options-search-cancel")
+        cancel.tap()
+        assertUnchangedUnifiedWall(app, before: generation, label: "filter-cancel")
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        assertUnchangedUnifiedWall(app, before: generation, label: "filter-cancel-files-return")
+    }
+
+    func testUnifiedOptionsPeoplePushBackKeepsWallGeneration() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        let generation = verifiedUnifiedGeneration(app)
+        openUnifiedOptions(app)
+        chooseUnifiedOption("native-ios-unified-options-people", in: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
+            .waitForExistence(timeout: 15),
+                      "People child did not mount after options dismissal")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15) && back.isHittable,
+                      "People child lost native Back")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-people-back")
+        back.tap()
+        assertUnchangedUnifiedWall(app, before: generation, label: "people-child-return")
+    }
+
+    func testUnifiedOptionsForegroundDismissThenFilesReturn() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        let generation = verifiedUnifiedGeneration(app)
+        openUnifiedOptions(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        closeUnifiedOptions(app)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        assertUnchangedUnifiedWall(app, before: generation, label: "options-foreground-files-return")
+    }
+
+    func testUnifiedOptionsRepeatedOpenClosePreservesPhotosNavigation() {
+        let app = launch(syntheticOwner: true)
+        let generation = verifiedUnifiedGeneration(app)
+        for cycle in 0..<3 {
+            openUnifiedOptions(app)
+            closeUnifiedOptions(app)
+            assertUnchangedUnifiedWall(app, before: generation,
+                                       label: "options-dismiss-cycle-\(cycle)")
+            XCTAssertFalse(target("native-ios-five-slot-bar", in: app).exists,
+                           "xDrive five-slot bar appeared over native Photos")
+        }
+    }
+
+    func testUnifiedOptionsSourceMenuRemainsRealAndDismissible() {
+        let app = launch(syntheticOwner: true)
+        let generation = verifiedUnifiedGeneration(app)
+        openUnifiedOptions(app)
+        let source = app.buttons.matching(
+            NSPredicate(format: "label == %@", "照片来源")).firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 15) && source.isHittable,
+                      "Actual presence filter source Menu disappeared")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-unified-options-presence")
+        source.tap()
+        // iOS 18/26 expose Menu actions as either MenuItems or Buttons.
+        let menuItem = app.menuItems.matching(
+            NSPredicate(format: "label == %@", "全部")).firstMatch
+        let button = app.buttons.matching(
+            NSPredicate(format: "label == %@", "全部")).firstMatch
+        let all = menuItem.exists && menuItem.isHittable ? menuItem : button
+        XCTAssertTrue(all.waitForExistence(timeout: 12) && all.isHittable,
+                      "Native all-sources Menu action is not tappable")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-unified-options-presence-all")
+        all.tap()
+        closeUnifiedOptions(app)
+        assertUnchangedUnifiedWall(app, before: generation, label: "presence-all")
+    }
+
     /// iOS 26 Photos visual/navigation audit: use the *actual* native
     /// Library / Collections / Search controls. Screenshot attachments are
     /// comparison evidence, not fabricated proof of pixel-level parity.
