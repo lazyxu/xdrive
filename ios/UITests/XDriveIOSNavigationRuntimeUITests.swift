@@ -94,22 +94,78 @@ enum XDriveIOSNativePhotosTestNavigator {
         }
     }
 
+    // Files Home groups optional routes in genuine DisclosureGroups. An
+    // absent lazy child cannot be "found" by tapping a hidden element.
+    // Scroll the actual List first, then expand the real user-visible group.
+    private static func tapFilesHomeDisclosureRoute(
+        _ id: String, in app: XCUIApplication
+    ) -> Bool {
+        let list = app.collectionViews.firstMatch
+        guard list.waitForExistence(timeout: 12) else { return false }
+        let target = found(id, in: app)
+        func scanVisibleRows() -> Bool {
+            for _ in 0..<10 {
+                if target.exists && target.isHittable {
+                    target.tap()
+                    return true
+                }
+                list.swipeUp()
+            }
+            return false
+        }
+        if scanVisibleRows() { return true }
+        for _ in 0..<10 { list.swipeDown() }
+        let groupName = id == "native-ios-files-open-favorites"
+            ? "收藏夹和常用收藏" : "更多管理"
+        let disclosure = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", groupName)
+        ).firstMatch
+        for _ in 0..<10 {
+            if disclosure.exists && disclosure.isHittable { break }
+            list.swipeUp()
+        }
+        guard disclosure.exists && disclosure.isHittable else { return false }
+        // If the target is already mounted the user has expanded the group.
+        // Otherwise reveal it through the real DisclosureGroup button.
+        if target.exists && target.isHittable {
+            target.tap()
+            return true
+        }
+        disclosure.tap()
+        if target.exists && target.isHittable {
+            target.tap()
+            return true
+        }
+        return scanVisibleRows()
+    }
+
     @discardableResult
     static func tap(_ id: String, in app: XCUIApplication) -> Bool {
-        // A Gallery filter button opens a Menu. A requested editor test must
-        // select the *visible* Search/Filter action as its second user tap.
+        // Signed-out Photos uses the real PhotoKit media filter, not the
+        // Owner-only unified search sheet. Both paths must remain hittable.
         if id == "native-ios-gallery-open-filters" {
-            let menu = found(id, in: app)
-            guard menu.exists && menu.isHittable else { return false }
-            menu.tap()
-            let action = app.buttons["搜索与筛选"].firstMatch
-            guard action.waitForExistence(timeout: 10) && action.isHittable
-            else { return false }
-            action.tap()
-            return true
+            let ownerMenu = found(id, in: app)
+            if ownerMenu.exists && ownerMenu.isHittable {
+                ownerMenu.tap()
+                let action = app.buttons["搜索与筛选"].firstMatch
+                guard action.waitForExistence(timeout: 10) && action.isHittable
+                else { return false }
+                action.tap()
+                return true
+            }
+            let localMenu = found("native-ios-local-gallery-media-filter", in: app)
+            if localMenu.exists && localMenu.isHittable {
+                localMenu.tap()
+                return true
+            }
+            return false
         }
         let direct = found(id, in: app)
         if direct.exists && direct.isHittable { direct.tap(); return true }
+        if id == "native-ios-files-open-favorites" ||
+           id == "native-ios-files-open-operations" {
+            return tapFilesHomeDisclosureRoute(id, in: app)
+        }
         // The original c83/b9 toolbar remains a real usable baseline.
         let legacy: [String: String] = [
             "native-ios-tab-files": "文件",
@@ -159,20 +215,39 @@ enum XDriveIOSNativePhotosTestNavigator {
             }
         }
 
-        // The source-specific people/search commands belong to the Gallery
-        // options Menu, not a hidden but programmatically tappable toolbar.
-        if id == "native-ios-gallery-open-filters" ||
-           id == "native-ios-gallery-people" {
+        // People is available both in an authenticated unified Gallery
+        // menu and as the genuine Photos Collections destination. When
+        // signed out there is no Owner-only filter menu to tap.
+        if id == "native-ios-gallery-people" {
             let menu = found("native-ios-gallery-open-filters", in: app)
-            guard menu.exists && menu.isHittable else { return false }
-            menu.tap()
-            let title = id == "native-ios-gallery-people"
-                ? "人物与宠物" : "搜索与筛选"
-            let action = app.buttons[title].firstMatch
-            guard action.waitForExistence(timeout: 10) && action.isHittable
-            else { return false }
-            action.tap()
-            return true
+            if menu.exists && menu.isHittable {
+                menu.tap()
+                let action = app.buttons["人物与宠物"].firstMatch
+                guard action.waitForExistence(timeout: 10) && action.isHittable
+                else { return false }
+                action.tap()
+                return true
+            }
+            let collections = found("native-ios-photos-collections-tab", in: app)
+            guard collections.exists && collections.isHittable else { return false }
+            collections.tap()
+            let people = found("native-ios-collections-people", in: app)
+            if people.waitForExistence(timeout: 10) && people.isHittable {
+                people.tap()
+                return true
+            }
+            // Only scroll the real Collections sheet; an inaccessible
+            // destination still fails rather than injecting a child view.
+            let list = app.scrollViews.firstMatch
+            for _ in 0..<5 {
+                guard list.exists else { break }
+                list.swipeUp()
+                if people.exists && people.isHittable {
+                    people.tap()
+                    return true
+                }
+            }
+            return false
         }
         if id == "native-ios-gallery-source-menu" {
             let menu = found("native-ios-gallery-more-menu", in: app)
