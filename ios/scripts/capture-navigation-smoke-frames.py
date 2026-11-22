@@ -96,6 +96,11 @@ TARGETS = {
     "testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail",
     "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
+    "testUnifiedOptionsSearchCancelThenFilesReturnKeepsWall",
+    "testUnifiedOptionsPeoplePushBackKeepsWallGeneration",
+    "testUnifiedOptionsForegroundDismissThenFilesReturn",
+    "testUnifiedOptionsRepeatedOpenClosePreservesPhotosNavigation",
+    "testUnifiedOptionsSourceMenuRemainsRealAndDismissible",
 }
 NAV_TARGETS = {
     # Previously seven real-XCUITest-PASS toolbar-option journeys were not
