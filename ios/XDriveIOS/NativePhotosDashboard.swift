@@ -414,6 +414,10 @@ struct XDriveIOSNativePhotosDashboard: View {
                 onSignOut(expected)
             }
             .accessibilityIdentifier("native-ios-login-signout")
+            Button("取消", role: .cancel) {
+                showSignOutConsent = false
+                signOutConsentOwner = nil
+            }
         } message: {
             Text("退出会停止本机原件自动计划并尝试撤销后台授权；已备份的云端文件和不确定上传收据不会被删除。")
         }
