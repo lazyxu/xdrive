@@ -556,12 +556,19 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
             XCTAssertTrue(find("native-ios-tab-gallery", in: app).exists)
             XCTAssertEqual(app.state, .runningForeground)
         }
-        XCTAssertTrue(find("native-ios-gallery-open-filters", in: app).exists,
-                      "Unified Gallery must remount its filter controls on return")
+        // No authenticated Owner: the default unified source is the native
+        // PhotoKit wall, not the Owner-scoped cloud filter toolbar.
+        XCTAssertTrue(find("native-ios-local-timeline-open", in: app)
+            .waitForExistence(timeout: 15),
+                      "Signed-out PhotoKit wall disappeared after source return")
+        XCTAssertTrue(find("native-ios-gallery-more-menu", in: app).isHittable,
+                      "Gallery source options became inaccessible")
     }
 
     func testGalleryFilterCancelRestoresSameTab() {
-        let app = launch()
+        // The real unified filter editor is Owner-scoped. A synthetic Owner
+        // has no bearer or private media access in this XCTest.
+        let app = launch(syntheticOwner: true)
         select("native-ios-gallery-open-filters", in: app)
         let cancel = app.buttons["取消"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 15),
@@ -594,17 +601,30 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     // Deep '整理' rows do not exist in AX until the collection is scrolled.
     // Never guess a tap coordinate or silently treat absence as a pass.
     private func filesHomeEntry(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        // The actual operation row may be outside the first lazy Home window.
+        // Scan both directions, retain a screenshot if it stays unreachable.
         let list = app.collectionViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 12),
                       "Native Files Home collection is not mounted")
         let button = app.buttons.matching(identifier: identifier).firstMatch
-        for _ in 0..<5 {
+        for _ in 0..<12 {
             if button.exists && button.isHittable { return button }
             list.swipeUp()
         }
-        XCTAssertTrue(button.waitForExistence(timeout: 8),
-                      "Scrolled Files Home but no matching entry: \(identifier)")
-        XCTAssertTrue(button.isHittable, "Files Home entry exists but is not visible")
+        for _ in 0..<12 {
+            if button.exists && button.isHittable { return button }
+            list.swipeDown()
+        }
+        if !(button.exists && button.isHittable) {
+            print("FILES_HOME_UNREACHABLE " + identifier +
+                  " AX hierarchy:\n" + app.debugDescription)
+            let evidence = XCTAttachment(screenshot: app.screenshot())
+            evidence.name = "files-home-unreachable-" + identifier
+            evidence.lifetime = .keepAlways
+            add(evidence)
+        }
+        XCTAssertTrue(button.exists && button.isHittable,
+                      "Real Files Home entry remains unreachable: \(identifier)")
         return button
     }
 
