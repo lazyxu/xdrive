@@ -615,6 +615,26 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
             if button.exists && button.isHittable { return button }
             list.swipeDown()
         }
+        // Collapsed Files Home sections are not exposed in the lazy AX tree.
+        // Open the real, visible group before requesting its child route.
+        let sectionTitle: String? =
+            identifier == "native-ios-files-open-operations" ? "更多管理" :
+            identifier == "native-ios-files-open-favorites" ? "收藏夹和常用收藏" : nil
+        if let sectionTitle {
+            let disclosure = app.buttons.matching(
+                NSPredicate(format: "label CONTAINS %@", sectionTitle)
+            ).firstMatch
+            for _ in 0..<12 {
+                if disclosure.exists && disclosure.isHittable { break }
+                list.swipeUp()
+            }
+            if disclosure.exists && disclosure.isHittable &&
+               !(button.exists && button.isHittable) { disclosure.tap() }
+            for _ in 0..<12 {
+                if button.exists && button.isHittable { return button }
+                list.swipeUp()
+            }
+        }
         if !(button.exists && button.isHittable) {
             print("FILES_HOME_UNREACHABLE " + identifier +
                   " AX hierarchy:\n" + app.debugDescription)
