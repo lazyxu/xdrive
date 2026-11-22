@@ -569,7 +569,7 @@ test('native Map Done works without cloud login while restored Owner Gallery sou
   assert.match(routing, /if source == \.map \{[\s\S]*?if gallerySource != \.map \{/)
   assert.match(routing, /mapReturnGallerySource = tab == \.gallery && login\.owner != nil[\s\S]*?\? gallerySource : nil/)
   assert.match(routing, /mapReturnOwnerScopeKey = mapReturnGallerySource != nil[\s\S]*?\? ownerScopeKey : nil/)
-  assert.match(routing, /else \{\s*mapOpenedFromCollections = false\s*mapReturnGallerySource = nil\s*mapReturnOwnerScopeKey = nil/)
+  assert.match(routing, /else \{\s*keepUnifiedWallDuringMap = false\s*mapOpenedFromCollections = false\s*mapReturnGallerySource = nil\s*mapReturnOwnerScopeKey = nil/)
   const close = routing.slice(routing.indexOf('private func closeGalleryMap()'))
   assert.match(close, /guard gallerySource == \.map else \{ return \}/)
   assert.doesNotMatch(close, /guard gallerySource == \.map, login\.owner != nil/)

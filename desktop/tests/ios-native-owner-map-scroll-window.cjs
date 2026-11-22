@@ -85,7 +85,7 @@ test('cloud map album returns to last verified Viewer Node and never restores a 
   assert.match(album, /xdrivePhotoWallFocusVerifiedTile\(\s*anchor\.id, scroll: returnScroll,\s*focus: \$focusedTileID, anchor: \.top\s*\)/)
   assert.match(album, /load\(cursor, history: earlier\)/)
   assert.match(album, /page = fetched\s*visiblePageRevision = UUID\(\)/)
-  assert.match(album, /if autoAdvance \|\| target != cursor \{ viewerReturn = nil \}/)
+  assert.match(album, /if autoAdvance \|\| target != cursor \{\s*viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*\}/)
   assert.match(album, /private func invalidate\(\) \{[\s\S]*?viewerReturn = nil/)
   assert.match(album, /viewerReturn = nil\s*self\.error = "地点照片或 Owner 授权已变化/)
   assert.doesNotMatch(album, /UserDefaults\.set\(viewerReturn|localStorage|CacheSavedNodeID/)
@@ -140,7 +140,7 @@ test('verified cloud map auto-paging restores the retained last tile when the tw
   assert.match(album, /if autoAdvance, let departingPage,[\s\S]*?priorWindow = departingPage\s*priorWindowCursor = departingCursor\s*autoScrollReturn = departingPage\.items\.last/)
   assert.match(album, /autoScrollReturn = departingPage\.items\.last[\s\S]*?cursor = target\s*earlier = history\s*next = following\s*page = fetched\s*visiblePageRevision = UUID\(\)/)
   assert.match(album, /private func invalidate\(\) \{[\s\S]*?viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*autoScrollReturnViewport = nil[\s\S]*?focusedTileID = nil\s*autoScrollReturn = nil/)
-  assert.match(album, /if autoAdvance \|\| target != cursor \{ viewerReturn = nil \}\s*autoScrollReturn = nil/)
+  assert.match(album, /if autoAdvance \|\| target != cursor \{\s*viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*\}\s*autoScrollReturn = nil/)
   assert.match(album, /if !autoAdvance \{[\s\S]*?priorWindow = nil\s*priorWindowCursor = nil/)
   // Reverified SAME Owner+exact Node/revision may keep already painted covers
   // during a manual reload; changed page/Owner must still clear old pixels.
