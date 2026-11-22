@@ -180,10 +180,18 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         let list = app.collectionViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 12))
         let button = app.buttons.matching(identifier: id).firstMatch
-        for _ in 0..<7 {
+        for _ in 0..<14 {
             if button.exists && button.isHittable { return button }
             list.swipeUp()
             alive(app, "scroll-\(id)")
+        }
+        // Older published b9 and the candidate have different Home section
+        // heights. Search back from the bottom before reporting the entry as
+        // missing; still fail if no actual native Button becomes hittable.
+        for _ in 0..<14 {
+            if button.exists && button.isHittable { return button }
+            list.swipeDown()
+            alive(app, "scroll-reverse-\(id)")
         }
         record(app, "unreachable-\(id)")
         XCTAssertTrue(button.exists && button.isHittable,
