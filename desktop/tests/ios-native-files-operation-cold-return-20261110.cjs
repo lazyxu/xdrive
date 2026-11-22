@@ -185,6 +185,6 @@ test('17 every real Gallery/Files route has one watcher and H264 recording is is
   assert.ok(minClipGate, 'real H264 audit must remain mandatory')
   assert.ok(Number(minClipGate[1]) >= h264.size,
     'real H264 audit must cover every actual XCUITest target')
-  assert.ok(wf.includes("timeout-minutes: ${{ matrix.source == 'candidate-gallery-files' && 100 || 60 }}"),
+  assert.ok(wf.includes("timeout-minutes: ${{ (matrix.source == 'candidate-gallery-files' || matrix.source == 'candidate-navigation') && 100 || 60 }}"),
     "Gallery/Files 88-suite must not use the former whole-job 60-minute timeout")
 })
