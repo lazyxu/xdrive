@@ -144,6 +144,31 @@ class AuditTests(unittest.TestCase):
         self.assertIn('minimal and count == 1', watcher)
         self.assertIn('delays = (0.55,) if minimal else TAP_FRAME_OFFSETS_SECONDS', watcher)
 
+    def test_seven_gallery_options_navigation_paths_are_observed(self):
+        import re
+        repo = pathlib.Path(__file__).resolve().parents[2]
+        suite = (repo / "ios/UITests/XDriveIOSNavigationRuntimeUITests.swift").read_text()
+        watcher = (repo / "ios/scripts/capture-navigation-smoke-frames.py").read_text()
+        expected = {
+            "testGalleryOptionsMoreButtonIsTappableAndDismisses",
+            "testGalleryOptionsFilesRoundTripsWithoutDuplicateTabBar",
+            "testGalleryOptionsLocalPhotosAndUnifiedSourceKeepNativeShell",
+            "testGalleryOptionsOriginalsToFilesToGalleryRemainsNative",
+            "testGalleryOptionsCollectionsFilesAndLibraryReturn",
+            "testGalleryOptionsLauncherAndMineRoutesKeepFilesReachable",
+            "testGalleryOptionsForegroundDismissFilesReturnDoesNotLoseRoute",
+        }
+        declared = set(re.findall(r"\\bfunc (test\\w+)\\(\\)", suite))
+        captured = set(re.findall(r'"(test\\w+)"', watcher))
+        self.assertFalse(expected - declared, "missing real XCTest: " +
+                         repr(expected - declared))
+        self.assertFalse(expected - captured, "unobserved tap frames: " +
+                         repr(expected - captured))
+        self.assertIn("tap_start = re.compile(", watcher)
+        self.assertIn("TAP_CAPTURE_NUMBERS = frozenset(", watcher)
+        # PNG capture is diagnostic only, not continuous 60/120Hz proof.
+        self.assertIn("This improves diagnostic proximity, but simctl PNGs are NOT FPS video.", watcher)
+
     def test_missing_trace_is_explicit_even_without_any_frame(self):
         with tempfile.TemporaryDirectory() as tmp:
             report = analyze(pathlib.Path(tmp))
