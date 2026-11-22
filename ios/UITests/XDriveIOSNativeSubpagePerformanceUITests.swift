@@ -776,7 +776,18 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
         case "clipboard.target-scope":
             let option = view("native-ios-clipboard-broadcast-option", app: app)
             let fallback = app.buttons["当前 Owner 广播"].firstMatch
-            let choice = option.exists && option.isHittable ? option : fallback
+            var choice = option.exists && option.isHittable ? option : fallback
+            if !choice.isHittable {
+                // A real SwiftUI Menu may dismiss itself while Xcode samples
+                // CPU/RSS or captures accessibility state between the visit
+                // and cleanup phases. Reopen the *actual* scope picker and
+                // select the real broadcast row; do not synthesize a change.
+                let picker = view("native-ios-clipboard-target-picker", app: app)
+                XCTAssertTrue(picker.waitForExistence(timeout: 15) && picker.isHittable,
+                              "Clipboard scope picker could not be reopened")
+                picker.tap()
+                choice = option.exists && option.isHittable ? option : fallback
+            }
             XCTAssertTrue(choice.waitForExistence(timeout: 15) && choice.isHittable,
                           "Clipboard menu option was not selectable")
             choice.tap()
