@@ -74,6 +74,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     // present in the accessibility tree but could not be hit-tested.
     @State private var showingUnifiedOptions = false
     @State private var pendingUnifiedOption: UnifiedOption?
+    @State private var pendingUnifiedOptionOwner: XDriveNativeOwnerRoot?
     private enum UnifiedOption {
         case search, people, thumbnailCache, map, originalAudit
     }
@@ -107,13 +108,21 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @Environment(\.scenePhase) private var phase
 
     private func chooseUnifiedOption(_ option: UnifiedOption) {
+        pendingUnifiedOptionOwner = login.owner
         pendingUnifiedOption = option
         showingUnifiedOptions = false
     }
 
     private func completeUnifiedOptionAfterDismiss() {
         guard let option = pendingUnifiedOption else { return }
+        let expectedOwner = pendingUnifiedOptionOwner
         pendingUnifiedOption = nil
+        pendingUnifiedOptionOwner = nil
+        // An options sheet can finish dismissing after account revocation.
+        // Never dispatch a late map, audit or filter action to a new Owner.
+        guard expectedOwner.map({
+            XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+        }) ?? (login.owner == nil) else { return }
         switch option {
         case .search:
             draft = query
@@ -284,6 +293,9 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     XDriveIOSUnifiedMapCameraStore.clear(owner: prior)
                 }
                 showingPeople = false; showingThumbnailCache = false
+                showingUnifiedOptions = false
+                pendingUnifiedOption = nil
+                pendingUnifiedOptionOwner = nil
                 isSelecting = false; selectedIDs.removeAll()
                 requestSearch = false
                 sourceFilter = nil; query = .init(); draft = .init()
