@@ -125,6 +125,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     @Environment(\.scenePhase) private var phase
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
+    // iOS 26.6 crash isolation: do not construct the very large Files
+    // SwiftUI graph while the authenticated landing tab is Gallery.
+    // Latch after first selection so tab returns keep Files scroll/viewer state.
+    @State private var filesTabActivated = false
     @State private var gallerySource: XDriveIOSNativeGallerySource = .unified
     // Opening a Photos map should include every currently authorized GPS photo,
     // not just the current 64-slot Timeline page; the user can still select
@@ -209,7 +213,11 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     var body: some View {
         let expectedRouteOwnerKey = ownerScopeKey
-        return TabView(selection: $tab) {
+        return VStack(spacing: 0) {
+            // Allocate REAL layout space for exactly one bottom nav bar.
+            // The prior TabView.safeAreaInset left the Files quick rail at
+            // y=852 while the app nav began at y=763 in real Simulator tests.
+            TabView(selection: $tab) {
             NavigationStack {
                 launcher
                     .navigationTitle("全部")
@@ -240,20 +248,20 @@ struct XDriveIOSNativePhotosDashboard: View {
                 gallery
                     .navigationTitle("图库")
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            if !galleryFocused {
-                                galleryCompactBackupAction
-                            }
-                        }
-                    }
             }
             .tabItem { Label("图库", systemImage: "photo.on.rectangle") }
             .tag(XDriveIOSNativeBottomTab.gallery)
 
             NavigationStack {
-                files
-                    .navigationTitle("文件")
+                if tab == .files || filesTabActivated {
+                    // Do not eagerly evaluate the 5-layer Files lifecycle
+                    // when login publishes a verified Owner to TabView.
+                    files
+                        .navigationTitle("文件")
+                } else {
+                    Color.clear
+                        .accessibilityHidden(true)
+                }
             }
             .tabItem { Label("文件", systemImage: "folder") }
             .tag(XDriveIOSNativeBottomTab.files)
@@ -265,12 +273,11 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tabItem { Label("我的", systemImage: "person.crop.circle") }
             .tag(XDriveIOSNativeBottomTab.mine)
         }
-        // SwiftUI's TabView keeps native feature-local NavigationStacks, but
-        // the system tab strip is hidden in favor of an explicit 5-slot bar.
-        // This guarantees a compact horizontal label in iPhone landscape and
-        // gives the dynamic slot a real long-press/context-menu surface.
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // Each selected feature retains its own NavigationStack and
+            // search state. The system tab bar stays hidden; the one native
+            // five-slot bar is a sibling BELOW TabView, never an overlay.
+            .toolbar(.hidden, for: .tabBar)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
                 tab: tab.rawValue,
                 gallerySource: gallerySource.rawValue,
@@ -407,10 +414,6 @@ struct XDriveIOSNativePhotosDashboard: View {
                 onSignOut(expected)
             }
             .accessibilityIdentifier("native-ios-login-signout")
-            // Make the safe action explicit and testable; never tap sign-out.
-            Button("取消", role: .cancel) {
-                signOutConsentOwner = nil
-            }
         } message: {
             Text("退出会停止本机原件自动计划并尝试撤销后台授权；已备份的云端文件和不确定上传收据不会被删除。")
         }
@@ -435,6 +438,9 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .onChange(of: ownerScopeKey) { _ in
             transfers.selectOwner(login.owner)
+            // The original Owner transfer cleanup stays first; the hidden
+            // Files child never retains a previous Owner's navigation state.
+            filesTabActivated = false
             // TabView .id does not reset this parent's @State. Revoke the old
             // Owner's saved UI route even if switching A -> B -> A in one scene.
             routeRestoreScopeKey = nil
@@ -464,6 +470,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .onChange(of: tab) { _ in saveNavigationIfReady() }
+        .onChange(of: tab) { next in
+            if next == .files { filesTabActivated = true }
+        }
         .onChange(of: tab) { next in
             if next == .dynamic && emptyDynamicMapFallback {
                 openGallery(.map)
@@ -579,6 +588,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     // outside the branch so rotation does not remount Gallery/Viewer state.
     private var galleryStatusRow: some View {
                 HStack(spacing: 10) {
+                    // Keep the status in a compressible slot: long permission/receipt
+                    // text must not push the real backup Menu outside the hit area.
+                    VStack(alignment: .leading, spacing: 0) {
                     if backup.busy {
                         Label("正在检查相册备份", systemImage: "arrow.triangle.2.circlepath")
                     } else if let state = backup.schedule, state.enabled {
@@ -604,13 +616,27 @@ struct XDriveIOSNativePhotosDashboard: View {
                     } else {
                         Label("前台自动备份未开启", systemImage: "icloud.slash")
                     }
-                    Spacer(minLength: 4)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     if gallerySource == .local || gallerySource == .albums {
                         gallerySearchAction
                     }
-                    // Keep backup actions in the Gallery navigation toolbar:
-                    // the content-row Menu can have a full-height AX frame
-                    // but no tappable hit region on an actual iPhone Simulator.
+                    Menu { backupMenuItems } label: {
+                        Label("备份", systemImage: "icloud.and.arrow.up")
+                            .frame(minWidth: 60, minHeight: 44)
+                            .contentShape(Rectangle())
+                            // Native Menu may expose a non-tappable AX wrapper:
+                            // tag the real label surface independently.
+                            .accessibilityIdentifier("native-ios-gallery-backup-action")
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 60, minHeight: 44)
+                    .layoutPriority(2)
+                    .accessibilityLabel("备份")
+                    .accessibilityHint("打开备份任务、设置及原件核验菜单")
+                    .accessibilityIdentifier("native-ios-gallery-backup-settings")
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)
@@ -702,21 +728,20 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     private var galleryCompactBackupAction: some View {
         Menu { backupMenuItems } label: {
-            Label("备份", systemImage:
-                  backup.busy ? "arrow.triangle.2.circlepath" :
+            Image(systemName: backup.busy ? "arrow.triangle.2.circlepath" :
                   backup.schedule?.pausedForReview == true ? "exclamationmark.shield" :
                   (photoAuthorization != .authorized && photoAuthorization != .limited) ?
                       "exclamationmark.triangle" : "icloud.and.arrow.up")
-                .font(.subheadline)
-                .lineLimit(1)
-                .frame(minWidth: 64, minHeight: 44)
+                .font(.body)
+                .frame(width: 48, height: 44)
                 .contentShape(Rectangle())
+                .accessibilityIdentifier("native-ios-gallery-backup-action-compact")
         }
         .buttonStyle(.plain)
         .foregroundStyle(
             backup.schedule?.pausedForReview == true ? Color.orange : Color.accentColor
         )
-        .accessibilityLabel("备份操作")
+        .accessibilityLabel("备份设置")
         .accessibilityValue(
             backup.busy ? "正在检查备份" :
             backup.schedule?.pausedForReview == true ? "自动备份已暂停，需核对收据" :
@@ -725,7 +750,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             backup.schedule?.enabled == true ? "前台自动备份已开启" :
                 "前台自动备份未开启"
         )
-        .accessibilityIdentifier("native-ios-gallery-backup-settings")
+        .accessibilityIdentifier("native-ios-gallery-backup-settings-compact")
     }
 
     private var gallery: some View {
@@ -744,6 +769,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                             if gallerySource == .local || gallerySource == .albums {
                                 gallerySearchAction
                             }
+                            galleryCompactBackupAction
                         }
                         .frame(minHeight: 48)
                     } else {
@@ -886,11 +912,20 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var launcher: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                TextField("搜索功能", text: $launcherQuery)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("native-ios-launcher-search")
+        VStack(alignment: .leading, spacing: 0) {
+            // The results grid changes height with every keystroke. Keep
+            // the editor OUTSIDE that ScrollView so the keyboard's focused
+            // element cannot be recycled when the last match disappears.
+            TextField("搜索功能", text: $launcherQuery)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("native-ios-launcher-search")
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
                 if !recentDynamic.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("最近使用").font(.headline)
@@ -947,8 +982,12 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
                 Text("服务器管理员入口只在真实验证 Server 管理员角色后开放；当前原生会话未建立管理权限。")
                     .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(14)
             }
-            .padding(14)
+            .scrollDismissesKeyboard(.never)
+            // Explicit host prevents tests from scrolling a retained Gallery.
+            .accessibilityIdentifier("native-ios-launcher-scroll")
         }
     }
 
@@ -1003,7 +1042,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var files: some View {
-        XDriveIOSNativeFilesBrowser(login: login)
+        // Retain the Files view tree while switching tabs, but retire its
+        // native search overlay even when TabView skips onDisappear.
+        XDriveIOSNativeFilesBrowser(login: login, isRootTabActive: tab == .files)
     }
 
     private var mine: some View {
@@ -1166,6 +1207,13 @@ struct XDriveIOSNativePhotosDashboard: View {
             XDriveIOSNativeDynamicFeature(rawValue: $0)
         }
         tab = XDriveIOSNativeBottomTab(rawValue: snapshot.selectedTab) ?? .gallery
+        // A signed iPhone 26.6 once became trapped reopening the previously
+        // saved Files tab while its giant SwiftUI view graph overran the
+        // main-thread stack. Preserve the saved *folder* resume separately,
+        // but make a fresh post-login workspace start in Gallery. The user
+        // can still explicitly open Files without clearing its Owner-scoped
+        // folder/scroll anchor.
+        if tab == .files { tab = .gallery }
     }
 
     private func saveNavigationIfReady() {
@@ -1187,6 +1235,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     private func resetNavigation() {
         galleryFocusGeneration = UUID()
         galleryFocused = false
+        filesTabActivated = false
         mapReturnGallerySource = nil
         mapReturnOwnerScopeKey = nil
         gallerySource = .unified

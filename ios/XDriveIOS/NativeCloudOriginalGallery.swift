@@ -857,9 +857,17 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             $0.isFinite && $0 >= 0 ? $0 : nil
         }
         let width = still?.cgImage?.width ??
-            still.map { Int($0.size.width * $0.scale) }
+            still.flatMap {
+                XDriveIOSNativeViewerPixelDimensionPolicy.pixels(
+                    points: Double($0.size.width), scale: Double($0.scale)
+                )
+            }
         let height = still?.cgImage?.height ??
-            still.map { Int($0.size.height * $0.scale) }
+            still.flatMap {
+                XDriveIOSNativeViewerPixelDimensionPolicy.pixels(
+                    points: Double($0.size.height), scale: Double($0.scale)
+                )
+            }
         let format = liveResources.map {
             "\($0.stillURL.pathExtension.uppercased()) + \($0.motionURL.pathExtension.uppercased())"
         } ?? (viewed.isLiveArchive ? "ZIP（Live Photo 容器）" :

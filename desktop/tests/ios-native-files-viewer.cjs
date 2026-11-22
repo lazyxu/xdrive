@@ -51,7 +51,7 @@ test('native image/video/PDF/audio/text viewers share one read-only lifecycle', 
   assert.match(view, /try Task\.checkCancellation\(\)/);
   assert.match(view, /generation == attempt, viewed == current, authorized/);
   assert.match(view, /player\?\.pause\(\)[\s\S]*?player\?\.replaceCurrentItem\(with: nil\)/);
-  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in close\(\) \}/);
+  assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in\s*showingFileDetails = false\s*close\(\)\s*\}/);
   assert.match(view, /\.AVPlayerItemFailedToPlayToEndTime/);
   assert.match(view, /failed === current/);
   assert.match(view, /failure = "媒体播放失败，请重试当前文件。"/);
@@ -297,4 +297,14 @@ test('Files Viewer reuses one authenticated request-scoped ephemeral connection 
   assert.match(reader, /completionHandler\(nil\)/);
   assert.match(reader, /url, authenticated: false,/);
   assert.match(reader, /guard let absolute = url\.url, absolute\.scheme == "https"/);
+});
+
+test('iOS Files image and video detail labels never trap on malformed floating-point media geometry', () => {
+  assert.match(policy, /static func safePixelDimension\(_ value: Double\) -> Int\?/);
+  assert.match(policy, /value\.isFinite, value >= 1,/);
+  assert.match(view, /Double\(image\.size\.width\) \* Double\(image\.scale\)/);
+  assert.match(view, /Double\(image\.size\.height\) \* Double\(image\.scale\)/);
+  assert.match(view, /safePixelDimension\(\s*Double\(size\.width\)\)/);
+  assert.match(view, /safePixelDimension\(\s*Double\(size\.height\)\)/);
+  assert.doesNotMatch(view, /Int\(image\.size\.(?:width|height)|Int\(size\.(?:width|height)\)/);
 });

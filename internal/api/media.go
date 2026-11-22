@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1035,15 +1036,14 @@ func (s *Server) queryMediaItemRange(
 		return mediaItemRangeDTO{}, err
 	}
 	var totalCount int64
-	// At offset zero, trusted GeoNames hierarchy and signed BD09 Camera
-	// Gallery Ranges both load the SAME day-level timeline groups. One
-	// eligible Node belongs to exactly one captured/added day, and every
-	// group already COUNTs DISTINCT node_id. Its consecutive item counts
-	// are therefore the exact Owner-scoped TotalCount, avoiding a separate
-	// expensive full-viewport Count on the first map photo wall.
-	// Preserve the original independent Count for ordinary Gallery queries
-	// and ALL subsequent sparse map pages.
-	if offset != 0 || (options.PlaceHierarchy == nil && options.BaiduViewport == nil) {
+	// The first Range already requires exact date groups for the timeline.
+	// Each selected Node has precisely one captured/added day and each
+	// group COUNTs DISTINCT node_id. Sum those same Owner-filtered groups
+	// for the exact first-page count, including ordinary Gallery/Albums,
+	// Favorites, filtered views and signed map ranges. Do not run a second
+	// full-scope COUNT on that first read; later sparse pages retain their
+	// independent query/count contract.
+	if offset != 0 {
 		if err := query.
 			Session(&gorm.Session{}).
 			Distinct("xd_media_metadata.node_id").
@@ -1067,18 +1067,15 @@ func (s *Server) queryMediaItemRange(
 		}
 		timelineGroups = sets.Month
 		timelineGroupSets = &sets
-		if options.PlaceHierarchy != nil || options.BaiduViewport != nil {
-			// For both verified GeoNames and signed BD09 viewports the
-			// one-date-per-node invariant partitions the SAME Owner Range.
-			// Reject bad offsets/overflow rather than publish an invented
-			// total or expand a filtered Album/Camera collection.
-			for _, day := range sets.Day {
-				if day.ItemCount <= 0 || day.StartIndex != totalCount ||
-					day.ItemCount > int64(^uint64(0)>>1)-totalCount {
-					return mediaItemRangeDTO{}, fmt.Errorf("invalid place timeline group count")
-				}
-				totalCount += day.ItemCount
+		// Every first-page timeline must partition this *same* authenticated
+		// query. Validate offsets and overflow even on an empty collection;
+		// a broken grouping must fail closed rather than advertise a count.
+		for _, day := range sets.Day {
+			if day.ItemCount <= 0 || day.StartIndex != totalCount ||
+				day.ItemCount > int64(^uint64(0)>>1)-totalCount {
+				return mediaItemRangeDTO{}, fmt.Errorf("invalid gallery timeline group count")
 			}
+			totalCount += day.ItemCount
 		}
 	}
 
@@ -1973,16 +1970,38 @@ func (s *Server) indexMediaNode(
 	return out, nil
 }
 
+// Gallery's first read needs only to know whether any current Owner file has
+// stale MediaMetadata. Unlike the worker batch, no newest-first ordering,
+// full Node materialization, or File preload is needed here. A matching row
+// still invokes the unchanged bounded, ordered refresh/reconciliation path.
+// Never cache a negative result: each Gallery read must probe the live Owner.
+func (s *Server) galleryHasStaleMedia(ctx context.Context, uid uint64) (bool, error) {
+	var nodeID uint64
+	err := s.staleMediaQuery(ctx).
+		Where("n.owner_id = ?", uid).
+		Select("n.id").
+		Limit(1).
+		Row().
+		Scan(&nodeID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Server) refreshMediaIndexForGalleryRead(
 	ctx context.Context,
 	uid uint64,
 	limit int,
 ) error {
-	probe, err := s.staleMediaNodes(ctx, &uid, 1)
+	hasStale, err := s.galleryHasStaleMedia(ctx, uid)
 	if err != nil {
 		return err
 	}
-	if len(probe) == 0 {
+	if !hasStale {
 		return nil
 	}
 	return s.refreshMediaIndexForOwner(ctx, uid, limit)

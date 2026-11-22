@@ -47,6 +47,27 @@ MAX_CAPTURE_DURATION_SECONDS = 2.5
 # Bounded per test to avoid exhausting storage on rapid 16-cycle suites.
 TAP_CAPTURE_NUMBERS = frozenset((1, 2, 4, 8, 12, 16))
 TARGETS = {
+    "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
+    "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
+    "testFilesCloudDenialThenQuickSectionsKeepNativeContent",
+    "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
+    "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
+    "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+    # Repeated real native subpage, keyboard, source and foreground crash paths.
+    "testLauncherSearchKeyboardForegroundFilesReturnDoesNotExit",
+    "testDynamicRecentPickerTwiceFilesGalleryForegroundDoesNotExit",
+    "testFilesQuickRailNineSwitchesForegroundAndNoSessionDoesNotExit",
+    "testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit",
+    "testMineSignedOutCacheDisabledThroughRotationForegroundDoesNotExit",
+    "testRealSignedOutPasswordPreferenceToggleRestoresOriginalDoesNotExit",
+    "testFilesFourDeniedChildrenWithOrientationAndOwnerFenceDoNotExit",
+    "testFilesFavoriteDisclosureCollapseExpandAndReturnKeepsProcessAlive",
+    "testGalleryBackupSettingsQueueAndFilesReturnDoNotExit",
+    "testGalleryThumbnailCacheSheetForegroundDismissDoesNotExit",
+    "testNotesRecentFeaturePickerRotationAndTransfersDoNotExit",
+    "testRealSignedOutPasswordShowHideOrientationAndForegroundDoNotExit",
+    "testRealSignedOutLANHelpWithoutCertificatePairingDoesNotExit",
+    "testMinePhotoWallChildGalleryAndFilesKeepSignedOutFence",
     # Tab/source/section/sheet/background: real production native SwiftUI.
     "testRapidGalleryFilesTabOscillationPreservesBothShells",
     "testGalleryFilesAlternationRetainsNonBlankSettledFrames",
@@ -216,6 +237,108 @@ MINIMAL_TARGETS = {
     "testFilesHistoryRotationOriginalsForegroundPreservesChild",
     "testLocalPhotoDateThenTrashDenialRestoresPhotoKit",
 }
+# Register all eighteen H264 Gallery/Files journeys with the bounded native
+# screenshot observer as well. Video and screenshots remain separate evidence.
+MINIMAL_TARGETS.update({
+    "testOriginalsHelpHistoryReturnWithoutGhostAlert",
+    "testHistoryForegroundAlbumsReturnWithoutGhostSheet",
+    "testLocalPhotoFavoritesRecentDateAfterFilesReturn",
+    "testPeopleCloudDenialPeopleReentryKeepsContent",
+    "testSavedSearchFilterHistorySheetsStayIndependent",
+    "testAlbumsOriginalsFilesSectionRoundTripKeepsSource",
+    "testFilterPeopleDeniedCloudReturnKeepsVerifiedGalleryGeneration",
+    "testFilesHistorySavedSearchesAcrossOriginalsHaveNoGhostSheets",
+    "testOriginalsHelpTrashDeniedReturnDoesNotReopenAlert",
+    "testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild",
+    "testMapModalFilesCloudDenialDoesNotRemountUnifiedWall",
+    "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
+    # Six newer registered native journeys must also produce real frame evidence.
+    "testFilesMoreOrganizerGalleryReturnPreservesBrowseHome",
+    "testFilesQuickRailRotationPeopleReturnKeepsNativeShell",
+    "testGalleryFilterFilesHistoryForegroundKeepsWallGeneration",
+    "testLocalPhotoDateSheetFilesQuickSectionsThenReopen",
+    "testGalleryMapFilesSavedSearchesReturnKeepsGeneration",
+    "testGalleryPeopleFiltersFilesTrashDenialReturnWithoutGhost",
+    # Six latest native pages must also produce live still-frame evidence,
+    # alongside the strict per-test 30 Hz H.264 recorder.
+    "testFilesTrashDenialQuickRailBounceDoesNotReviveError",
+    "testFilesSavedSearchesForegroundGalleryReturnTwoCycles",
+    "testFilesHistoryForegroundGalleryPeopleBackRetiresSheet",
+    "testGalleryMapRotateFilesReturnPreservesWallGeneration",
+    "testGalleryOriginalsFilesCloudErrorSourceReturnKeepsSurface",
+    "testLocalPhotoDateRotateFilesHistoryReturnsRealPhotoKit",
+})
+# Consolidated real navigation-geometry journeys from superseded #4377.
+# These are actual XCUITests; the bounded watcher keeps tap-adjacent
+# diagnostics without claiming signed-iPhone 60/120Hz evidence.
+MINIMAL_TARGETS.update({
+    "testFilesQuickRailNoOverlappingGlobalBarThroughSixNativeTransitions",
+    "testFilesRailNoOverlapAfterBackgroundAndGalleryReentry",
+})
+# Additional native all-pages/subpage crash journeys: real controls only.
+MINIMAL_TARGETS.update({
+    "testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner",
+    "testInterruptedWorkspaceSafeEntryForegroundNoCrash",
+    "testInterruptedSessionFullRetryRendersLoginNoCrash",
+    "testTransfersFilesBackupRoundTripAndForegroundNoCrash",
+    "testBackupDetailsChildFilesReturnNoCrash",
+    "testGalleryFocusedBackupConsentDoesNotAutoUploadNoCrash",
+    "testNotesSourcesThreeRoundsClipboardFilesNoCrash",
+})
+# Preserve two additional distinct real Files child journeys from conflicted
+# #4298 without merging its stale app sources into this SwiftUI crash fix.
+MINIMAL_TARGETS.update({
+    "testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit",
+    "testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit",
+})
+# More independent cross-page lifecycle journeys from the older #4298 matrix.
+MINIMAL_TARGETS.update({
+    "testMapRecentDeniedBackupQueueMapForegroundDoesNotExit",
+    "testFilesTagSheetRotationMapReturnDoesNotExit",
+    "testOriginalsDeniedCloudNotesGalleryReturnDoesNotExit",
+    "testBackupAuditQueueDeniedFilesReturnDoesNotExit",
+    "testClipboardDeniedReceiverNotesFilesForegroundDoesNotExit",
+})
+# Additional distinct real child navigation/foreground crash paths.
+MINIMAL_TARGETS.update({
+    "testSignedOutLoginThreeFieldsKeyboardForegroundNoCrash",
+    "testUnavailableLauncherFourToolsRotationForegroundFilesNoCrash",
+    "testFilesRootDeniedThreeCyclesForegroundGalleryNoCrash",
+    "testGalleryBackupQueueCacheTwoRoundsFilesNoCrash",
+    "testFilesManagementThreeSheetsRotationGalleryNoCrash",
+})
+# One frame per all-native-page crash journey; original taps remain logged.
+# These are real native XCTest routes, not fabricated Owner/Viewer data.
+MINIMAL_TARGETS.update({
+    "testLauncherPhotoDestinationsAndMapAcrossFilesDoNotExit",
+    "testLauncherToolDestinationsReturnWithoutExit",
+    "testLauncherUnavailablePagesRemainExplicitAndSafe",
+    "testFilesDeniedCloudTrashAndBackgroundReturnDoNotExit",
+    "testFilesSavedHistoryAndTagSheetsRetireAcrossTabs",
+    "testGalleryPeopleFilterAndMapChildrenReturnDoNotExit",
+    "testNotesSourceSwitchAndClipboardFileTabsDoNotExit",
+    "testClipboardDeniedReceiverAndTransfersReturnDoNotExit",
+    "testBackupAuditQueueAndFilesReturnDoNotExit",
+    "testMineSignedOutControlsAndGalleryReturnDoNotExit",
+})
+
+# Distinct real process terminations/relaunches and Files sheet rebuilds.
+# Registered on the existing mandatory candidate-navigation Simulator shard.
+MINIMAL_TARGETS.update({
+    "testFilesDirectSyntheticOwnerColdRelaunchThreeTimesKeepsShellAlive",
+    "testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid",
+    "testFilesManagementSheetsAfterColdRelaunchDoNotRestoreStalePresentation",
+    "testLauncherPhotoPagesFilesColdRelaunchSurviveNoCrash",
+    "testLauncherToolPagesFilesColdRelaunchSurviveNoCrash",
+})
+# Real iOS 26.5 Files History and Owner cold-relaunch regressions
+# recovered from #4298. Capture genuine tap-adjacent Simulator frames;
+# do not mislabel these stills as H.264 or signed-device FPS evidence.
+MINIMAL_TARGETS.update({
+    "testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage",
+    "testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope",
+    "testFilesViewerFiveMediaKindsNoSessionForegroundAndDismissNoCrash",
+})
 TARGETS.update(NAV_TARGETS)
 TARGETS.update(MINIMAL_TARGETS)
 TARGETS.update({

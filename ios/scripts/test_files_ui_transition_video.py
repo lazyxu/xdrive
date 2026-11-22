@@ -16,7 +16,7 @@ from files_ui_transition_video import (
 
 class FilesUITransitionVideoTests(unittest.TestCase):
     def test_real_targets_are_distinct(self):
-        self.assertEqual(len(TARGETS), 18)
+        self.assertEqual(len(TARGETS), 62)
         self.assertTrue({
             "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
             "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
@@ -24,12 +24,78 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
             "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
             "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+        }.issubset(TARGETS))
+
+    def test_six_files_filter_video_routes_cannot_be_dropped(self):
+        self.assertTrue({
             "testFilesSizeFilterHorizontalGalleryReturn",
             "testFilesDateThenSizeFiltersKeepNoSessionGuard",
             "testFilesSizeFilterAfterQuickRailReentry",
             "testFilesSizeFilterAfterSavedSearchesDismiss",
             "testFilesSizeFilterAfterCloudDenialReturn",
             "testFilesSizeFilterAfterForegroundResume",
+        }.issubset(TARGETS))
+
+    def test_eight_existing_navigation_cases_now_require_real_video(self):
+        self.assertTrue({
+            "testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels",
+            "testCloudOriginalsFilesRapidReturnKeepsNativeChild",
+            "testCloudOriginalsHelpDismissFilesReturnKeepsChild",
+            "testFilesOperationHistoryBackgroundThenFilesGalleryReturn",
+            "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
+            "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
+            "testGalleryAlbumsOriginalsAndUnifiedRoundTripsKeepPixels",
+            "testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent",
+        }.issubset(TARGETS))
+
+    def test_six_cross_subpage_journeys_have_real_video_targets(self):
+        self.assertTrue({
+            "testFilterPeopleDeniedCloudReturnKeepsVerifiedGalleryGeneration",
+            "testFilesHistorySavedSearchesAcrossOriginalsHaveNoGhostSheets",
+            "testOriginalsHelpTrashDeniedReturnDoesNotReopenAlert",
+            "testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild",
+            "testMapModalFilesCloudDenialDoesNotRemountUnifiedWall",
+            "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
+        }.issubset(TARGETS))
+
+    def test_six_extra_return_and_rotation_journeys_have_real_video_targets(self):
+        self.assertTrue({
+            "testFilesHomeDeepScrollTabReturnKeepsQuickNavigation",
+            "testFilesSearchFocusThenGalleryReturnPreservesShell",
+            "testGalleryFilesRotateLandscapeAndReturnPortrait",
+            "testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank",
+            "testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes",
+            "testFilesHomeAfterRepeatedNativeGallerySourceChanges",
+        }.issubset(TARGETS))
+
+    def test_six_extra_native_gallery_files_video_routes_are_required(self):
+        self.assertTrue({
+            "testGallerySourcesAlternateWithoutLosingSourceRail",
+            "testRepeatedFilterDismissalRestoresSameGallery",
+            "testGalleryFilterCancelAfterTabAndSourceRoundTrips",
+            "testGalleryPeopleChildReturnRepeatsWithoutLosingGallerySource",
+            "testFilesBackgroundResumeKeepsQuickRailAndPixels",
+            "testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank",
+        }.issubset(TARGETS))
+
+    def test_six_new_real_child_transitions_are_recorded(self):
+        self.assertTrue({
+            "testFilesMoreOrganizerGalleryReturnPreservesBrowseHome",
+            "testFilesQuickRailRotationPeopleReturnKeepsNativeShell",
+            "testGalleryFilterFilesHistoryForegroundKeepsWallGeneration",
+            "testLocalPhotoDateSheetFilesQuickSectionsThenReopen",
+            "testGalleryMapFilesSavedSearchesReturnKeepsGeneration",
+            "testGalleryPeopleFiltersFilesTrashDenialReturnWithoutGhost",
+        }.issubset(TARGETS))
+
+    def test_six_additional_native_journeys_have_required_video_evidence(self):
+        self.assertTrue({
+            "testFilesTrashDenialQuickRailBounceDoesNotReviveError",
+            "testFilesSavedSearchesForegroundGalleryReturnTwoCycles",
+            "testFilesHistoryForegroundGalleryPeopleBackRetiresSheet",
+            "testGalleryMapRotateFilesReturnPreservesWallGeneration",
+            "testGalleryOriginalsFilesCloudErrorSourceReturnKeepsSurface",
+            "testLocalPhotoDateRotateFilesHistoryReturnsRealPhotoKit",
         }.issubset(TARGETS))
 
     def test_empty_frame_samples_cannot_pass(self):
@@ -61,14 +127,15 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         ]
         self.assertIsNone(classify_bright_blank(frames, 0.1))
 
-    def test_single_white_frame_does_not_claim_flicker(self):
+    def test_single_white_frame_must_fail_flash_audit(self):
         frames = [
             {"time": 0.35 + i * 0.1,
              "ymin": 251 if i == 3 else 12, "ymax": 253,
              "yavg": 252 if i == 3 else 181}
             for i in range(8)
         ]
-        self.assertIsNone(classify_bright_blank(frames, 0.1))
+        self.assertEqual(classify_bright_blank(frames, 0.1),
+                         "suspected_solid_white_transition")
 
     def test_immediate_post_tap_white_blink_is_not_skipped(self):
         # The old +0.12s cutoff lost the 0.2s frame after a 0.1s tap.
@@ -93,7 +160,7 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         self.assertEqual(classify_bright_blank(frames, 0.2),
                          "suspected_solid_black_transition")
 
-    def test_single_solid_black_frame_is_not_called_a_blackout(self):
+    def test_single_black_frame_must_fail_flash_audit(self):
         frames = [
             {"time": i / 10,
              "ymin": 16 if i == 4 else 12,
@@ -101,7 +168,8 @@ class FilesUITransitionVideoTests(unittest.TestCase):
              "yavg": 16 if i == 4 else 180}
             for i in range(20)
         ]
-        self.assertIsNone(classify_bright_blank(frames, 0.2))
+        self.assertEqual(classify_bright_blank(frames, 0.2),
+                         "suspected_solid_black_transition")
 
     def test_real_dark_textured_ui_is_not_mistaken_for_solid_black(self):
         frames = [
@@ -138,6 +206,105 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         accepted, report = self._audit_sample(frames=frames)
         self.assertFalse(accepted)
         self.assertIn("invalid_frame_signalstats", report["clips"][0]["failures"])
+
+    def test_single_30_hz_white_video_sample_is_not_silently_accepted(self):
+        frames = [
+            {"time": i / 30, "ymin": 235 if i == 13 else 12,
+             "ymax": 235 if i == 13 else 250,
+             "yavg": 235 if i == 13 else 175}
+            for i in range(60)
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.3),
+                         "suspected_solid_white_transition")
+
+    def test_single_30_hz_black_video_sample_is_not_silently_accepted(self):
+        frames = [
+            {"time": i / 30, "ymin": 16 if i == 14 else 12,
+             "ymax": 16 if i == 14 else 250,
+             "yavg": 16 if i == 14 else 175}
+            for i in range(60)
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.3),
+                         "suspected_solid_black_transition")
+
+    def test_textured_dark_30_hz_frames_remain_valid(self):
+        frames = [
+            {"time": i / 30, "ymin": 15, "ymax": 58, "yavg": 24}
+            for i in range(60)
+        ]
+        self.assertIsNone(classify_bright_blank(frames, 0.3))
+
+    # A valid, textured native page can briefly repaint its *content* to a
+    # flat neutral colour while the Photos/Files chrome remains unchanged.
+    # White/black-only classification missed this kind of real visible blink.
+    def _neutral_transition_frames(self, indices, y):
+        return [
+            {"time": i / 10,
+             "ymin": y if i in indices else 12,
+             "ymax": y + 2 if i in indices else 246,
+             "yavg": y + 1 if i in indices else 175}
+            for i in range(26)
+        ]
+
+    def test_one_mid_gray_content_frame_is_not_considered_smooth(self):
+        frames = self._neutral_transition_frames({10}, 125)
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "suspected_solid_neutral_transition")
+
+    def test_two_light_gray_content_frames_are_not_hidden_by_chrome(self):
+        frames = self._neutral_transition_frames({10, 11}, 218)
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "suspected_solid_neutral_transition")
+
+    def test_near_black_gray_content_pulse_is_not_a_valid_dark_page(self):
+        frames = self._neutral_transition_frames({11}, 36)
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "suspected_solid_neutral_transition")
+
+    def test_full_neutral_content_replacement_must_not_pass_transition(self):
+        frames = self._neutral_transition_frames(set(range(7, 26)), 119)
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "suspected_solid_neutral_transition")
+
+    def test_no_immediate_decoded_post_tap_frames_must_not_pass(self):
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26) if i not in {7, 8, 9, 10}
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "missing_immediate_post_tap_frames")
+
+    def test_missing_early_transition_frames_must_not_pass(self):
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26) if i not in {9, 10, 11}
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "sparse_early_transition_frames")
+
+    def test_single_early_frame_followed_by_late_gap_cannot_pass(self):
+        # A single +0.1s decoded frame, followed by 1.1s without any
+        # H264 samples, was falsely accepted by an early-only pair scan.
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26) if i not in set(range(8, 18))
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "sparse_early_transition_frames")
+
+    def test_neutral_frame_rejection_reaches_real_video_gate(self):
+        frames = self._neutral_transition_frames({10}, 131)
+        accepted, report = self._audit_sample(frames=frames)
+        self.assertFalse(accepted, report)
+        self.assertIn("suspected_solid_neutral_transition",
+                      report["clips"][0]["failures"])
+
+    def test_textured_30hz_content_remains_a_valid_navigation_surface(self):
+        frames = [
+            {"time": i / 30, "ymin": 15, "ymax": 58, "yavg": 25}
+            for i in range(70)
+        ]
+        self.assertIsNone(classify_bright_blank(frames, 0.6))
 
     def test_video_metadata_decode(self):
         sample = ("frame:0 pts:0 pts_time:0.1\n"
@@ -251,19 +418,17 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             self.assertIn("missing_real_recording", report.read_text())
 
 
-    def test_real_129_second_foreground_xctest_has_bounded_h264_margin(self):
-        # Run #44004882680: all 94 XCTest cases passed, including the genuine
-        # 129.575s foreground-resume route; the 120s recorder cap incorrectly
-        # produced test_not_passed/incomplete_test_recording for its video.
-        # Keep 24s recorder prelude plus a bounded post-test safety margin.
-        self.assertGreaterEqual(MAX_CLIP_SECONDS, 129.575 + 24)
-        self.assertLessEqual(MAX_CLIP_SECONDS, 180)
+    def test_real_139_second_xctest_is_not_truncated_at_old_120s_cap(self):
+        # Original macOS test PASSED after 138.545s, while its MP4 stopped
+        # at 120.067s. Timeouts remain fatal to the audit; the cap is sized
+        # to actual complete-test evidence, not a synthetic "pass" flag.
+        self.assertGreaterEqual(MAX_CLIP_SECONDS, 24 + 139 + 20)
+        self.assertLessEqual(MAX_CLIP_SECONDS, 240)
 
-    def test_recorder_prelude_plus_longest_xctest_fits_real_recording_cap(self):
-        # A genuine 60s XCTest animation-idle wait must not make the
-        # background recorder declare the *passing* real UI test incomplete.
-        # All clips/tap markers/frame audits remain strictly required.
-        self.assertGreaterEqual(MAX_CLIP_SECONDS, 24 + 130 + 20)
+    def test_recorder_prelude_plus_real_gallery_files_roundtrip_has_margin(self):
+        # Some real clips began after ~17s; tests intentionally pre-roll
+        # before native taps, and one confirmed XCTest lasted 138.545s.
+        self.assertGreaterEqual(MAX_CLIP_SECONDS, 24 + 139 + 20)
 
     def test_real_recorder_startup_is_aligned_before_white_frame_audit(self):
         # The MP4 PTS clock begins after recordVideo startup; using wall-clock
@@ -289,6 +454,80 @@ class FilesUITransitionVideoTests(unittest.TestCase):
         )
         self.assertTrue(accepted, report)
         self.assertGreater(report["clips"][0]["estimated_recording_startup_seconds"], 2)
+
+    def test_recorded_22_second_macos_startup_requires_all_ten_real_tap_windows(self):
+        # Actual 2026-11-18 Gallery/Files CI log, run 44214388579:
+        # elapsed=73.006, 1532 decoded 30Hz frames (last PTS 51.033333),
+        # first tap 36.765s; all ten pre-/post-tap windows were present.
+        # These generated frames are a time-alignment regression fixture,
+        # NOT a substitute for the required live H.264 frame audit.
+        frames = [
+            {"time": i / 30, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(1532)
+        ]
+        routes = [
+            ("native-ios-gallery-source-albums", 36.7645645),
+            ("native-ios-tab-files", 43.866912417),
+            ("native-ios-files-section-recent", 48.037306792),
+            ("native-ios-files-section-favorites", 51.651266417),
+            ("native-ios-files-section-browse", 54.9138765),
+            ("native-ios-tab-gallery", 57.991403167),
+            ("native-ios-gallery-source-originals", 60.893339625),
+            ("native-ios-tab-files", 64.556443708),
+            ("native-ios-tab-gallery", 67.531463292),
+            ("native-ios-gallery-source-unified", 70.711240375),
+        ]
+        accepted, report = self._audit_sample(
+            frames=frames, elapsed=73.006,
+            tap_markers=[{"route": route, "at": at} for route, at in routes],
+        )
+        self.assertTrue(accepted, report)
+        self.assertEqual(report["clips"][0]["taps"], 10)
+        self.assertGreater(report["clips"][0]["estimated_recording_startup_seconds"], 21.9)
+        self.assertLess(report["clips"][0]["estimated_recording_startup_seconds"], 24)
+
+    def test_recorded_22_second_startup_cannot_hide_real_white_pulse(self):
+        frames = [
+            {"time": i / 30, "ymin": 235 if i in (448, 449) else 12,
+             "ymax": 235 if i in (448, 449) else 246,
+             "yavg": 235 if i in (448, 449) else 175}
+            for i in range(1532)
+        ]
+        accepted, report = self._audit_sample(
+            frames=frames, elapsed=73.006,
+            tap_markers=[{"route": "native-ios-gallery-source-albums",
+                          "at": 36.7645645}],
+        )
+        self.assertFalse(accepted)
+        self.assertIn("suspected_solid_white_transition",
+                      report["clips"][0]["failures"])
+
+    def test_recorded_22_second_startup_rejects_unfilmed_early_tap(self):
+        frames = [
+            {"time": i / 30, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(1532)
+        ]
+        accepted, report = self._audit_sample(
+            frames=frames, elapsed=73.006,
+            tap_markers=[{"route": "native-ios-gallery-source-albums",
+                          "at": 22.0}],
+        )
+        self.assertFalse(accepted)
+        self.assertIn("missing_pre_tap_frames", report["clips"][0]["failures"])
+
+    def test_still_rejects_unexplained_over_24_second_video_clock_drift(self):
+        frames = [
+            {"time": i / 30, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(1532)
+        ]
+        accepted, report = self._audit_sample(
+            frames=frames, elapsed=77.0,
+            tap_markers=[{"route": "native-ios-gallery-source-albums",
+                          "at": 36.7645645}],
+        )
+        self.assertFalse(accepted)
+        self.assertIn("unreliable_recording_clock_alignment",
+                      report["clips"][0]["failures"])
 
     def test_negative_recorder_clock_offset_fails_closed(self):
         accepted, report = self._audit_sample(elapsed=1.0)
@@ -368,22 +607,41 @@ class FilesUIContentVideoCodecRegressionTests(unittest.TestCase):
         self.assertEqual(classify_bright_blank(frames, 1.0),
                          "suspected_solid_black_transition")
 
-    def test_alternating_white_black_flash_does_not_escape_two_frame_gate(self):
-        # Neither same-color streak alone reaches two frames.
+    def test_alternating_white_black_flash_reports_first_blank_frame(self):
+        # The first white frame is sufficient: no consecutive streak is required.
         frames = self._decoded_chrome_page(
             ("white", 1.05, 1.15), ("black", 1.15, 1.25)
         )
         self.assertEqual(classify_bright_blank(frames, 1.0),
-                         "suspected_alternating_blank_transition")
+                         "suspected_solid_white_transition")
 
-    def test_one_white_frame_is_diagnostic_not_a_false_flicker_verdict(self):
+    def test_one_brief_white_flash_with_stable_chrome_fails_gate(self):
         frames = self._decoded_chrome_page(("white", 1.05, 1.15))
-        self.assertIsNone(classify_bright_blank(frames, 1.0))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_white_transition")
 
     def test_later_content_only_flash_in_transition_window_is_detected(self):
         frames = self._decoded_chrome_page(("white", 1.85, 2.05))
         self.assertEqual(classify_bright_blank(frames, 1.0),
                          "suspected_solid_white_transition")
+
+    def test_h264_neutral_gray_child_flash_with_stable_chrome_is_detected(self):
+        # Run the actual ffmpeg/libx264 decoder, not only hand-built YUV values.
+        # The child has a gray repaint while native top/bottom chrome remains.
+        frames = self._decoded_chrome_page(("gray", 1.05, 1.35))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_neutral_transition")
+
+    def test_h264_single_gray_source_frame_is_not_mistaken_for_smooth(self):
+        # The H264->30Hz decoder can duplicate one 10Hz frame; the gate must
+        # still notice the real short child-only gray blink.
+        frames = self._decoded_chrome_page(("gray", 1.05, 1.15))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_neutral_transition")
+
+    def test_h264_gray_child_only_before_tap_is_not_misattributed(self):
+        frames = self._decoded_chrome_page(("gray", 0.25, 0.45))
+        self.assertIsNone(classify_bright_blank(frames, 1.0))
 
     def test_stable_native_chrome_and_textured_content_are_not_blank(self):
         frames = self._decoded_chrome_page()
@@ -394,11 +652,12 @@ class FilesUIContentVideoCodecRegressionTests(unittest.TestCase):
         frames = self._decoded_chrome_page(("white", 0.25, 0.45))
         self.assertIsNone(classify_bright_blank(frames, 1.0))
 
-    def test_two_disconnected_white_samples_are_not_called_continuous(self):
+    def test_two_separate_white_flashes_each_trigger_strict_gate(self):
         frames = self._decoded_chrome_page(
             ("white", 1.05, 1.15), ("white", 1.45, 1.55)
         )
-        self.assertIsNone(classify_bright_blank(frames, 1.0))
+        self.assertEqual(classify_bright_blank(frames, 1.0),
+                         "suspected_solid_white_transition")
 
 
 if __name__ == "__main__":

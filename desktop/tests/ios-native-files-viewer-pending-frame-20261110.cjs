@@ -31,7 +31,7 @@ test('repro: scene foreground restoration paints a pending preview before its as
   assert.match(phase, /else if !isClosing &&[\s\S]*?failure = nil\s*loading = true\s*attempt = UUID\(\)/)
 })
 test('foreground restoration cannot revive a stale pre-background playback failure', () => {
-  assert.match(phase, /if next != \.active \{\s*allowAudioAutoplay = false\s*retire\(\)/)
+  assert.match(phase, /if next != \.active \{\s*showingFileDetails = false\s*allowAudioAutoplay = false\s*retire\(\)/)
   assert.match(phase, /failure = nil\s*loading = true\s*attempt = UUID\(\)/)
 })
 test('direct, bounded-window and extended-range Next/Previous share the same guarded transition', () => {

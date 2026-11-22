@@ -31,6 +31,36 @@ struct XDriveIOSNativeFilesViewModeChecks {
                 active: denied != 5
             ), "reject stale ticket Owner range anchor mode inactive or hidden route")
         }
+        require(abs(P.relativeAlignment(rowTop: 60, rowHeight: 60,
+                                        viewportHeight: 600) - (60.0 / 540.0)) < 1e-9,
+                "viewport alignment")
+        require(P.relativeAlignment(rowTop: -15, rowHeight: 60,
+                                    viewportHeight: 600) < 0,
+                "partially visible top row")
+        require(P.relativeAlignment(rowTop: .nan, rowHeight: 60,
+                                    viewportHeight: 600) == 0,
+                "invalid source geometry")
+        require(P.relativeAlignment(rowTop: 20, rowHeight: 600,
+                                    viewportHeight: 600) == 0,
+                "invalid viewport size")
+        // Repro: evicted visible Node 111 falls back to Node 1. Its 75%
+        // viewport offset cannot be applied to the new fallback row.
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 1,
+                                   measured: 0.75) == nil, "evicted anchor loses geometry")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: 0.75) == 0.75, "same row keeps geometry")
+        require(P.matchedAlignment(visibleAnchor: nil, selectedAnchor: 1,
+                                   measured: 0.75) == nil, "no visible row")
+        require(P.matchedAlignment(visibleAnchor: 1, selectedAnchor: nil,
+                                   measured: 0.75) == nil, "no selected row")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: -0.25) == -0.25, "partially clipped row")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: .nan) == nil, "NaN rejected")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: .infinity) == nil, "infinite offset rejected")
+        require(P.matchedAlignment(visibleAnchor: 111, selectedAnchor: 111,
+                                   measured: 1.4) == nil, "out-of-range offset rejected")
         print("Files List/Grid anchor checks PASS")
     }
 }

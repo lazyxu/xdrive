@@ -7,8 +7,10 @@ on:
       - 'ios/UITests/XDriveIOSCompactLoginUITests.swift'
       - 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'
       - 'desktop/tests/ios-native-login-compact-16-items.cjs'
+      - 'ios/UITests/XDriveIOSAllNativePagesCrashSweepUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift'
       - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
       - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
       - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
@@ -17,6 +19,11 @@ on:
       - 'ios/XDriveIOS/NativeLocalPhotoMap.swift'
       - 'ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'
       - 'ios/XDriveIOS/NativeExactTripMap.swift'
+      # Every Files child route (including future destination/preview/selection
+      # files) must trigger real native process-crash navigation tests.
+      # Listing only selected subpages left other Files-only edits unchecked.
+      - 'ios/XDriveIOS/NativeFiles*.swift'
+      - 'ios/XDriveIOS/NativeCloudFiles*.swift'
       - 'ios/XDriveIOS/NativeFilesTrash.swift'
       - 'ios/XDriveIOS/NativeFilesSavedSearches.swift'
       - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
@@ -69,17 +76,19 @@ concurrency:
   cancel-in-progress: false
 jobs:
   simulator-navigation:
-    runs-on: macos-15
-    # Old 76-case gallery suite consumed ~44m of XCTest alone. This shard now
-    # runs 88 real native routes, 12 bounded H.264 pre-rolls plus build/audit.
-    # Keep other matrix shards at 60m, but never truncate gallery coverage.
-    timeout-minutes: ${{ matrix.source == 'candidate-gallery-files' && 100 || 60 }}
+    # The original 18.5 matrix remains intact; the dedicated Files crash
+    # repro uses modern iOS 26.5 Simulator with Xcode 26.6 on macos-26.
+    runs-on: ${{ matrix.source == 'candidate-ios26-files' && 'macos-26' || 'macos-15' }}
+    # Candidate navigation with all-page CrashSweep also exceeded 60 real
+    # minutes on 2026-11-17, cancelling the final native layout tests. Keep
+    # every XCTest and frame audit; only raise its finite runner deadline.
+    timeout-minutes: ${{ (matrix.source == 'candidate-gallery-files' || matrix.source == 'candidate-navigation') && 100 || 60 }}
     strategy:
       fail-fast: false
       matrix:
         # Keep published baseline separate and require both current native
         # suites; no unrelated older CI-success can waive this exact HEAD.
-        source: [release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session, candidate-mapkit, candidate-performance]
+        source: [release-c83, candidate-navigation, candidate-navigation-p0, candidate-gallery-files, candidate-no-session, candidate-mapkit, candidate-performance, candidate-ios26-files]
     continue-on-error: ${{ matrix.source == 'release-c83' }}
     steps:
       - uses: actions/checkout@v4
@@ -91,7 +100,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -d /Applications/Xcode_16.4.app ]]; then
+          if [[ "${{ matrix.source }}" == candidate-ios26-files ]]; then
+            test -d /Applications/Xcode_26.6.app/Contents/Developer ||
+              { echo "Xcode 26.6 unavailable on macos-26" >&2; exit 1; }
+            sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
+          elif [[ -d /Applications/Xcode_16.4.app ]]; then
             sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
           fi
           xcodebuild -version
@@ -111,6 +124,7 @@ jobs:
       - name: Boot available iPhone simulator
         env:
           MAPKIT_FRESH: ${{ matrix.source == 'candidate-mapkit' }}
+          IOS26_FILES_REPRO: ${{ matrix.source == 'candidate-ios26-files' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -121,13 +135,19 @@ jobs:
           candidates=[(runtime,d) for runtime,arr in rows.items() for d in arr
                       if d.get("isAvailable",True) and d.get("name","").startswith("iPhone")]
           if not candidates: raise SystemExit("No iPhone Simulator is installed")
-          # Keep Simulator runtime paired to selected Xcode 16.4 / SDK 18.5.
+          # iOS 26.5 is the closest hosted Simulator baseline to the user's
+          # iOS 26.6 STACK GUARD crash. It is NOT a signed-device iOS 26.6 pass.
+          newer=os.environ.get("IOS26_FILES_REPRO")=="true"
+          requested="iOS-26-5" if newer else "iOS-18-5"
           compatible=[(runtime,d) for runtime,d in candidates
-                      if runtime.endswith("iOS-18-5")]
+                      if runtime.endswith(requested)]
           if not compatible:
-              raise SystemExit("Xcode 16.4 requires installed iOS 18.5 simulator")
-          runtime,d=next(((r,x) for r,x in compatible if x["name"]=="iPhone 16"),
+              raise SystemExit("Required Simulator runtime unavailable: "+requested)
+          preferred="iPhone 17" if newer else "iPhone 16"
+          runtime,d=next(((r,x) for r,x in compatible if x["name"]==preferred),
                          compatible[0])
+          print("IOS_CRASH_REPRO_OS runtime=",runtime,"xcode26=",newer,
+                "signed_ios26_6_verified=false")
           sim_id=d["udid"]
           if os.environ.get("MAPKIT_FRESH") == "true":
               # A preinstalled iPhone may contain earlier UI-test media.
@@ -167,9 +187,22 @@ jobs:
           # Fail as infrastructure failure instead of waiting indefinitely
           # for an incompatible/failed CoreSimulator runtime.
           python3 - <<'PY'
-          import os,subprocess
-          subprocess.run(["xcrun","simctl","bootstatus",os.environ["SMOKE_SIM"],"-b"],
-                         timeout=240,check=True)
+          import os,subprocess,sys
+          # Real Xcode 26.6/iOS 26.5 runner spent >4m30 in Apple's
+          # first-boot data migrators, hitting the old 240s pre-XCTest cap.
+          # This is infrastructure, not evidence of a native app crash.
+          newer = os.environ.get("IOS26_FILES_REPRO") == "true"
+          timeout = 720 if newer else 240
+          print(f"IOS_SIMULATOR_BOOT_BUDGET_SECONDS={timeout} iOS26={newer}",flush=True)
+          try:
+              subprocess.run(["xcrun","simctl","bootstatus",os.environ["SMOKE_SIM"],"-b"],
+                             timeout=timeout,check=True)
+          except subprocess.TimeoutExpired:
+              print("::error title=CoreSimulator first-boot migration timeout::"
+                    "Simulator could not finish OS migration before XCTest; "
+                    "classify as infrastructure failure, not app crash",
+                    file=sys.stderr)
+              raise SystemExit(1)
           PY
       - name: Seed two independent real GPS PhotoKit samples
         if: matrix.source == 'candidate-mapkit'
@@ -235,6 +268,9 @@ jobs:
             -p 'test_assert_native_ios_no_crash.py' -v
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/ios/scripts" \
             -p 'test_files_ui_transition_video.py' -v
+          if [[ "${{ matrix.source }}" == "candidate-navigation" || "${{ matrix.source }}" == "candidate-navigation-p0" ]]; then
+            node --test "$GITHUB_WORKSPACE/desktop/tests/ios-native-all-pages-six-extra-crash-paths-20261116.cjs"
+          fi
           if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
             swiftc "$GITHUB_WORKSPACE/ios/XDriveIOS/NativeFilesViewModePolicy.swift" \
               "$GITHUB_WORKSPACE/ios/tests/NativeFilesViewModeChecks.swift" \
@@ -288,13 +324,26 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesFirstOpenAndSixGalleryReturnsDoNotExit") ;;
             candidate-navigation)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests")
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSB9ReleaseCrashUITests")
               # Actual product login shell under CI-only safe-startup,
               # not the synthetic Owner/Files/Gallery navigation fixture.
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSCompactLoginUITests") ;;
+            candidate-navigation-p0)
+              # Separately reproduce the five actual 2026-11-17 failures
+              # plus Files search/keyboard return BEFORE the full 46-case
+              # suite finishes. Both shards are required; do not skip or mock
+              # the existing all-pages test suite to make this one pass.
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testGalleryBackupQueueCacheTwoRoundsFilesNoCrash")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testGalleryBackupSettingsQueueAndFilesReturnDoNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testGalleryFocusedBackupConsentDoesNotAutoUploadNoCrash")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testGalleryThumbnailCacheSheetForegroundDismissDoesNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testLauncherSearchKeyboardForegroundFilesReturnDoesNotExit") ;;
             candidate-gallery-files)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesStabilityUITests")
-              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests") ;;
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesSixSubpageUITests") ;;
             candidate-no-session)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSFilesSessionRecoveryUITests") ;;
             candidate-mapkit)
@@ -303,6 +352,28 @@ jobs:
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSMapNavigationRuntimeUITests") ;;
             candidate-performance)
               native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSPagePerformanceUITests") ;;
+            candidate-ios26-files)
+              # Run actual Files SwiftUI lifetime and subpage navigation on
+              # iOS 26.5. No fake login or privileged Owner data is accessed.
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesDeepLifecycleViewStackSurvivesOwnerAndForegroundTransitions")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesFirstOpenAndSixGalleryReturnsDoNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesRecentBrowseFavoritesRepeatedWithoutCrash")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesHomeEditThenSavedHistorySheetsRetireDoesNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesDirectSyntheticOwnerColdRelaunchThreeTimesKeepsShellAlive")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesRecentDeniedAndSavedSearchesAcrossForegroundDoesNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testFilesHomeTwoSheetsRepeatAcrossGalleryFilesDoesNotExit")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSAllNativePagesCrashSweepUITests/testInterruptedStartupDisplaysPriorSystemCrashMetadataWithoutOwner")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesSixSubpageUITests/testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay")
+              # Two real subpage lifecycle journeys recovered from #4298:
+              # repeated History/foreground and signed-out Owner cold relaunch.
+              # Both must execute under the iOS 26.5 Simulator, not only
+              # compile or pass a source-string contract.
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests/testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage")
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSGalleryFilesFrameContinuityUITests/testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope")
+              # Mount the actual Files L3 Viewer graph for five media kinds,
+              # with no bearer, through a DEBUG-only Simulator-only route.
+              native_test_args+=("-only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesViewerFiveMediaKindsNoSessionForegroundAndDismissNoCrash") ;;
             *) echo "Unsupported UI suite" >&2; exit 2 ;;
           esac
           touch "$RUNNER_TEMP/native-navigation-results/xcodebuild-start.marker"
@@ -316,6 +387,22 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             "${native_test_args[@]}" \
             2>&1 | tee "$RUNNER_TEMP/native-navigation-results/xcodebuild.log"
+      - name: Verify native Files rails and hit targets in dark appearance
+        if: matrix.source == 'candidate-navigation'
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl ui "$SMOKE_SIM" appearance dark
+          xcodebuild test \
+            -project "$SMOKE_ROOT/ios/xDriveIOS.xcodeproj" \
+            -scheme xDriveIOS -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SMOKE_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/native-navigation-results/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/native-navigation-results/DarkFiles.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSNavigationRuntimeUITests/testFilesQuickRailAndFiveTabBarDoNotOverlapInPortraitOrLandscape \
+            test 2>&1 | tee "$RUNNER_TEMP/native-navigation-results/dark-files.log"
       - name: Verify native PhotoKit MapKit in dark mode
         if: matrix.source == 'candidate-mapkit'
         shell: bash
@@ -390,11 +477,11 @@ jobs:
             brew install ffmpeg
           fi
           ffmpeg -version | sed -n '1p'
-          # Require genuine clips from all eighteen named native journeys.
+          # Require genuine clips from all 62 named native Gallery/Files journeys.
           python3 "$GITHUB_WORKSPACE/ios/scripts/files_ui_transition_video.py" audit \
             "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video" \
             "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video-audit.json" \
-            --minimum 18
+            --minimum 62
       - name: Reject candidate xDriveIOS process crash reports
         if: ${{ always() && matrix.source != 'release-c83' }}
         shell: bash
@@ -403,6 +490,7 @@ jobs:
           sim_reports="$HOME/Library/Developer/CoreSimulator/Devices/${SMOKE_SIM:-unknown}/data/Library/Logs"
           python3 "$GITHUB_WORKSPACE/ios/scripts/assert_native_ios_no_crash.py" \
             --marker "$RUNNER_TEMP/native-navigation-results/xcodebuild-start.marker" \
+            --xcodebuild-log "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
             --output "$RUNNER_TEMP/native-navigation-results/diagnostics/app-process-crash-audit.json" \
             "$HOME/Library/Logs/DiagnosticReports" \
             "$sim_reports/CrashReporter" "$sim_reports/DiagnosticReports"

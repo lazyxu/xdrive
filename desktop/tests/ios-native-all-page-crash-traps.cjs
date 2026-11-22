@@ -42,3 +42,111 @@ test('unsigned IPA gate runs both executable Swift regressions and integration c
   assert.match(workflow, /NativeClipboardFolderBackPolicyChecks\.swift/);
   assert.match(workflow, /node --test desktop\/tests\/ios-native-all-page-crash-traps\.cjs/);
 });
+
+
+test('every native Files child rejects unconditional Swift fatal operations', () => {
+  // Not a replacement for the real Simulator/process-crash audit. This catches
+  // newly introduced unconditional fatal operations in Files subpage sources
+  // before a native IPA is produced; comments are excluded from the scan.
+  const dir = path.join(root, 'ios/XDriveIOS');
+  const filenames = fs.readdirSync(dir).filter(name =>
+    /^Native(?:Cloud)?Files.*\.swift$/.test(name)
+  );
+  assert.ok(filenames.length >= 45,
+    'all NativeFiles and NativeCloudFiles child modules must be audited');
+  const fatal = /\b(?:try\s*!|as\s*!|fatalError\s*\(|preconditionFailure\s*\(|unsafeBitCast\s*\()/;
+  for (const filename of filenames) {
+    const executable = fs.readFileSync(path.join(dir, filename), 'utf8')
+      .split('\n')
+      .filter(line => !/^\s*(?:\/\/|\*)/.test(line))
+      .map(line => line.replace(/\/\/.*$/, ''))
+      .join('\n');
+    assert.doesNotMatch(executable, fatal,
+      filename + ' has an unconditional Swift runtime trap');
+  }
+});
+
+test('native Files array indexing and sliding-window retirement stay guarded on every child route', () => {
+  const browser = read('ios/XDriveIOS/NativeCloudFilesBrowser.swift');
+  const picker = read('ios/XDriveIOS/NativeFilesDestinationPicker.swift');
+  const inline = read('ios/XDriveIOS/NativeFilesInlineFolders.swift');
+  const windowPolicy = read('ios/XDriveIOS/NativeFilesContinuousWindowPolicy.swift');
+  const windowChecks = read('ios/tests/NativeFilesContinuousWindowChecks.swift');
+  assert.match(browser,
+    /providers\.count == 1,\s*providers\[0\]\.hasItemConformingToTypeIdentifier/,
+    'foreign drag providers must be counted before subscripting');
+  assert.match(browser,
+    /if chosenItems\.count == 1 \{\s*return chosenItems\[0\]\.type/,
+    'single-selection direct download needs a verified count guard');
+  for (const [name, source] of [['browser', browser], ['destination picker', picker], ['inline folders', inline]]) {
+    assert.match(source, /XDriveIOSNativeFilesContinuousWindowPolicy\.mergePlan\(/,
+      name + ' must validate a server range before trimming');
+    assert.match(source, /if plan\.dropFromBack > 0 \{/,
+      name + ' must only trim a positive verified range');
+  }
+  assert.match(windowPolicy,
+    /drop <= currentIDs\.count else \{ return nil \}/,
+    'reverse-page drop cannot exceed the currently verified page');
+  assert.match(windowChecks, /oversized aligned next-page cursor fails without integer overflow/);
+  assert.match(windowChecks, /oversized aligned return cursor fails without integer overflow/);
+});
+
+
+test('both cloud media info Viewers reject unsafe UIImage dimensions before Int conversion', () => {
+  const policy = read('ios/XDriveIOS/NativeViewerPixelDimensionPolicy.swift');
+  const checks = read('ios/tests/NativeViewerPixelDimensionPolicyChecks.swift');
+  const workflow = read('.github/workflows/ios-unsigned-ipa.yml');
+  assert.match(policy, /points\.isFinite, points > 0, scale\.isFinite, scale > 0/);
+  assert.match(policy, /product\.isFinite, product >= 1/);
+  assert.match(policy, /product < Double\(Int\.max\)/);
+  for (const filename of ['NativeCloudOriginalGallery.swift', 'NativeServerMediaGallery.swift']) {
+    const viewer = read('ios/XDriveIOS/' + filename);
+    assert.equal((viewer.match(/XDriveIOSNativeViewerPixelDimensionPolicy\.pixels\(/g) || []).length, 2,
+      filename + ' must guard both fallback pixel dimensions');
+    assert.doesNotMatch(viewer, /Int\(\$0\.size\.(?:width|height) \* \$0\.scale\)/,
+      filename + ' must not reintroduce a Swift floating-to-Int trap');
+  }
+  for (const edge of ['.nan', '.infinity', 'Double.greatestFiniteMagnitude', 'Double(Int.max)']) {
+    assert.ok(checks.includes(edge), 'missing executable Swift boundary: ' + edge);
+  }
+  assert.match(workflow, /NativeViewerPixelDimensionPolicyChecks\.swift/);
+  assert.match(workflow, /xdrive-ios-viewer-pixel-bounds/);
+});
+
+
+test('shared still-image Viewer zoom VoiceOver never converts invalid CGFloat to Int', () => {
+  const zoom = read('ios/XDriveIOS/NativeZoomablePhotoView.swift');
+  const policy = read('ios/XDriveIOS/NativeZoomAccessibilityPolicy.swift');
+  const checks = read('ios/tests/NativeZoomAccessibilityPolicyChecks.swift');
+  const workflow = read('.github/workflows/ios-unsigned-ipa.yml');
+  assert.match(zoom, /XDriveIOSNativeZoomAccessibilityPolicy\.label\(\s*scale: Double\(scroll\.zoomScale\)/);
+  assert.doesNotMatch(zoom, /Int\(\(scroll\.zoomScale \* 100\)\.rounded\(\)\)/);
+  assert.match(zoom, /guard current\.isFinite, current > 0, factor\.isFinite, factor > 0,/);
+  assert.match(zoom, /guard target\.isFinite, target > 0,/);
+  assert.match(zoom, /guard visible\.width\.isFinite, visible\.height\.isFinite,/);
+  assert.match(policy, /scale\.isFinite, scale > 0, scale <= 100/);
+  assert.match(policy, /percent < Double\(Int\.max\)/);
+  assert.equal((checks.match(/precondition\(label\(/g) || []).length, 14);
+  for (const edge of ['.nan', '.infinity', 'Double.greatestFiniteMagnitude', 'Double(Int.max)']) {
+    assert.ok(checks.includes(edge), 'missing zoom executable edge: ' + edge);
+  }
+  assert.match(workflow, /NativeZoomAccessibilityPolicyChecks\.swift/);
+  assert.match(workflow, /xdrive-ios-zoom-accessibility-bounds/);
+});
+
+test('native Viewer quality sheet safely handles CIImage-only UIImage pixel metadata', () => {
+  const panel = read('ios/XDriveIOS/NativeFilesViewerQualityPanel.swift');
+  const policy = read('ios/XDriveIOS/NativeViewerPixelDimensionPolicy.swift');
+  const checks = read('ios/tests/NativeViewerPixelDimensionPolicyChecks.swift');
+  assert.equal(
+    (panel.match(/XDriveIOSNativeViewerPixelDimensionPolicy\.pixels\(/g) || []).length, 2,
+    'both width and height fallback must use the checked shared conversion');
+  assert.doesNotMatch(panel, /Int\s*\(\s*image\.size\.(?:width|height)\s*\*\s*image\.scale\s*\)/,
+    'untrusted floating UIImage dimensions must never trap a metadata sheet');
+  assert.match(panel, /guard let pixelWidth, let pixelHeight else \{ return "尺寸未知" \}/);
+  assert.match(panel, /LabeledContent\("解码分辨率", value: resolutionLabel\)/);
+  assert.match(policy, /product\.isFinite, product >= 1/);
+  for (const bad of ['.nan', '.infinity', 'Double.greatestFiniteMagnitude', 'Double(Int.max)']) {
+    assert.ok(checks.includes(bad), 'missing executable Swift bounds test: ' + bad);
+  }
+});

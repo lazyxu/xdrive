@@ -130,6 +130,10 @@ jobs:
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Unit tests, lint and exact debug APK
         working-directory: android
+        env:
+          # A verified Maven Central 429 needs a short cooldown; compiler
+          # failures still stop immediately, and all Gradle gates still run.
+          XDRIVE_CI_RETRY_DELAY_MS: '30000'
         run: node ../scripts/ci/retry-transient-download.mjs bash gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
       - name: Enable emulator acceleration
         run: |

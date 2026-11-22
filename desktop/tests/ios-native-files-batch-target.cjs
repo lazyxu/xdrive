@@ -28,7 +28,12 @@ test('one real Owner-verified native Files page supports bounded multi-copy and 
   assert.match(page, /XDriveIOSNativeFilesSelectionPolicy\.validItems\(\s*snapshots: selectedSnapshots, selectedIDs: selectedIDs,\s*parentID: sourceParentID/)
   assert.match(page, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
   assert.match(page, /selectedSnapshots\[selected\.id\] == selected/)
-  assert.match(page, /selected: intent\.items\[0\], selectedItems: intent\.items/)
+  // The producer admits only a verified non-empty selection, while the
+  // SwiftUI sheet must independently fail closed if that intent becomes stale.
+  assert.match(page, /\.sheet\(item: \$batchDestinationIntent\) \{ intent in[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, intent\.owner\),\s*let selected = intent\.items\.first/)
+  assert.match(page, /selected: selected, selectedItems: intent\.items/)
+  assert.doesNotMatch(page, /selected: intent\.items\[0\]|selected: intent\.items\.first!/)
+  assert.match(page, /账户或选中项目已变化，请关闭后重新选择/)
   assert.match(page, /batchTarget\.perform\(/)
   assert.match(page, /batchTarget\.invalidate\(\)/)
   assert.match(page, /batchTarget\.cancelCurrent\(\)/)

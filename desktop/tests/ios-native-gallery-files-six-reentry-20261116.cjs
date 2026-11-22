@@ -10,6 +10,10 @@ const navigation = fs.readFileSync(
   path.join(root, "ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift"), "utf8")
 const video = fs.readFileSync(
   path.join(root, "ios/scripts/files_ui_transition_video.py"), "utf8")
+const timeline = fs.readFileSync(
+  path.join(root, "ios/XDriveIOS/NativePhotoTimelineBrowser.swift"), "utf8")
+const sixSubpage = fs.readFileSync(
+  path.join(root, "ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift"), "utf8")
 
 test("Files More shows the real organizer action before large picker menus", () => {
   const menuStart = browser.indexOf(
@@ -24,6 +28,22 @@ test("Files More shows the real organizer action before large picker menus", () 
     "Home organizer must precede nested sort/view/group pickers")
   assert.match(menu, /Button \{ presentOrganizeHome\(\) \} label:/)
   assert.equal((menu.match(/native-ios-files-toolbar-organize-home/g) || []).length, 1)
+})
+
+test("two distinct Files History and cold-relaunch Owner crash journeys are executed", () => {
+  // These run as actual XCUITests in candidate-gallery-files. Do not call
+  // their settled screenshot checks H264 or signed-device 60/120Hz evidence.
+  const names = [
+    "testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage",
+    "testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope",
+  ]
+  for (const name of names) {
+    assert.match(navigation, new RegExp("func " + name + "\\(\\)"))
+  }
+  assert.match(navigation, /app\.wait\(for: \.runningBackground, timeout: 12\)/)
+  assert.match(navigation, /app\.wait\(for: \.runningForeground, timeout: 18\)/)
+  assert.match(navigation, /Signed-out cold relaunch exposed prior Owner rows/)
+  assert.match(navigation, /Files History modal remained after Done in cycle/)
 })
 
 test("six new native Gallery/Files child paths are executed and video-audited", () => {
@@ -54,7 +74,7 @@ test("six new native Gallery/Files child paths are executed and video-audited", 
   }
 })
 
-test("Both Files Home sheet helpers use the real Browse and target row, not an offscreen root", () => {
+test("Both Files Home sheet helpers use the retained Home List and bidirectional scroll", () => {
   const helpers = [
     ["openFilesOperationHistoryFromBrowse",
      "testFilesOperationHistorySheetDenialThenGalleryRetainsNativePages"],
@@ -64,117 +84,195 @@ test("Both Files Home sheet helpers use the real Browse and target row, not an o
   for (const [method, nextTest] of helpers) {
     const start = navigation.indexOf("private func " + method + "(")
     const end = navigation.indexOf("func " + nextTest + "()", start)
-    assert.ok(start >= 0 && end > start, method + " must exist")
+    assert.ok(start >= 0 && end > start)
     const body = navigation.slice(start, end)
     const browse = body.indexOf('tap("native-ios-files-section-browse", app: app)')
-    const row = body.indexOf('let action = target("native-ios-files-open-')
-    assert.ok(browse >= 0 && row > browse,
-              method + " must tap real Browse and locate a genuine Home action")
+    const home = body.indexOf('target("native-ios-files-home-list", app: app)')
+    const action = body.indexOf('let action = target("native-ios-files-open-')
+    assert.ok(browse >= 0 && home > browse && action > home)
+    assert.match(body, /value == %@/)
+    assert.match(body, /home\.waitForExistence\(timeout: 15\)/)
+    assert.match(body, /home\.swipeUp\(\)/)
+    assert.match(body, /home\.swipeDown\(\)/)
+    assert.match(body, /action\.isHittable/)
     assert.doesNotMatch(body, /target\("native-ios-files-open-root-location"/,
-                        "An unmounted Cloud root sibling is not proof of Browse navigation")
-    assert.match(body, /if action\.exists && action\.isHittable/)
-    assert.match(body, /\.swipeUp\(\)/)
-    assert.match(body, /\.swipeDown\(\)/)
-    assert.match(body, /XCTAssertTrue\(action\.isHittable/)
-    assert.match(body, /action\.tap\(\)/)
+      "the first Lazy List row is allowed to remain offscreen")
+    assert.doesNotMatch(body, /app\.(?:tables|collectionViews|scrollViews)\.firstMatch/,
+      "only the actual mounted Files Home List may be scrolled")
   }
-  assert.match(browser, /accessibilityIdentifier\("native-ios-files-open-root-location"\)/)
+  assert.match(browser, /accessibilityIdentifier\(isHome \? "native-ios-files-home-list" : "native-ios-files-folder-list"\)/)
 })
 
-test("six additional executable Gallery and Files child lifecycle journeys", () => {
-  const names = [
-    "testSavedSearchesAfterFavoritesRecentThenGallery",
-    "testOperationHistoryForegroundFromRecentKeepsSheet",
-    "testCloudDenialSavedSearchesReturnDoesNotResurrectError",
-    "testGalleryPeopleRotationFilesGalleryKeepsPage",
-    "testOriginalsHelpFilesHistoryThenOriginals",
-    "testLocalPhotoDateSheetForegroundFilesThenLocal",
-  ]
+
+test("six extra child-to-child native H264 journeys verify visible content", () => {
+  const names = ["testOriginalsHelpHistoryReturnWithoutGhostAlert","testHistoryForegroundAlbumsReturnWithoutGhostSheet","testLocalPhotoFavoritesRecentDateAfterFilesReturn","testPeopleCloudDenialPeopleReentryKeepsContent","testSavedSearchFilterHistorySheetsStayIndependent","testAlbumsOriginalsFilesSectionRoundTripKeepsSource"]
   for (const name of names) {
     const start = navigation.indexOf("func " + name + "()")
-    assert.ok(start > 0, name + " real XCTest missing")
-    const next = navigation.indexOf("\n    func test", start + 6)
+    assert.ok(start >= 0, "missing XCUITest: " + name)
+    const next = navigation.indexOf("\n    func test", start + 4)
     const body = navigation.slice(start, next < 0 ? undefined : next)
-    assert.match(body, /assertVisiblePixels\(app,/)
-    assert.match(body, /waitForExistence\(timeout: 15\)/)
+    assert.ok(body.includes("waitForRealH264RecordingPrelude()"), name + " has no real video prelude")
+    assert.ok(body.includes("assertVisiblePixels(app,"), name + " never inspects child pixels")
+    assert.ok(body.includes('tap("native-ios-tab-files"'), name + " never visits Files")
+    assert.ok(body.includes('tap("native-ios-tab-gallery"'), name + " never revisits Gallery")
+    assert.ok(video.includes('"' + name + '"'), name + " was not added to H264 recorder")
   }
-  const frame = navigation.slice(navigation.indexOf("private func assertVisiblePixels("),
-    navigation.indexOf("private func openLocalPhotoSource("))
-  assert.match(frame, /let width = 96, height = 64/)
-  assert.match(frame, /image\.cropping\(to: contentRegion\)/)
-  assert.match(frame, /context\.draw\(content,/)
-  assert.match(navigation, /XCUIDevice\.shared\.orientation = \.portrait/)
+  assert.ok(video.includes("fps=30,scale=64:64,crop=64:40"), "30 Hz source capture missing")
+  assert.ok(video.includes('"decoded_30hz_samples": len(frames)'), "30 Hz evidence count missing")
 })
 
 
-test("six additional Gallery Files error and lifecycle stress cases are executed", () => {
-  const names = [
-    "testCloudTrashDenialsAlbumsOriginalsUnifiedAreReadable",
-    "testSavedSearchHistoryForegroundAfterReverseSheetSequence",
-    "testPeopleLocalPhotoKitFilesQuickSectionsPreserveLocalWall",
-    "testGalleryFilterCancelThenCloudDenialKeepsNoGhostSheet",
-    "testFilesHistoryRotationOriginalsForegroundPreservesChild",
-    "testLocalPhotoDateThenTrashDenialRestoresPhotoKit",
+test("real Local PhotoKit date sheet closes by its own AX id and survives foreground", () => {
+  assert.match(timeline,
+    /Button\("完成"\) \{ showingDates = false \}\s*\.accessibilityIdentifier\("native-ios-local-timeline-done"\)/)
+  const methods = [
+    "testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent",
+    "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
+    "testLocalPhotoFavoritesRecentDateAfterFilesReturn",
   ]
-  const watcher = fs.readFileSync(
-    path.join(root, "ios/scripts/capture-navigation-smoke-frames.py"), "utf8")
-  for (const name of names) {
-    const pos = navigation.indexOf("func " + name + "()")
-    assert.ok(pos >= 0, name + " real XCTest missing")
-    const end = navigation.indexOf("\n    func test", pos + 5)
-    const body = navigation.slice(pos, end >= 0 ? end : undefined)
-    assert.match(body, /waitForExistence\(timeout: 15\)/)
-    assert.match(body, /assertVisiblePixels\(app,/)
-    assert.ok(watcher.includes('"' + name + '"'), name + " live recording registration missing")
+  for (const name of methods) {
+    const start = navigation.indexOf("func " + name + "()")
+    const next = navigation.indexOf("\n    func test", start + 5)
+    assert.ok(start >= 0, "native Local PhotoKit test missing: " + name)
+    const body = navigation.slice(start, next < 0 ? undefined : next)
+    assert.match(body, /target\("native-ios-local-timeline-done", app: app\)/)
+    assert.doesNotMatch(body, /app\.navigationBars\.buttons\["完成"\]/)
+    assert.match(body, /done\.tap\(\)/)
   }
-  const stability = fs.readFileSync(
-    path.join(root, "ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift"), "utf8")
-  const check = stability.slice(stability.indexOf("private func assertNotSolidScreen("),
-    stability.indexOf("func testGalleryFilesAlternationRetainsNonBlankSettledFrames"))
-  assert.match(check, /let width = 96, height = 64/)
-  assert.match(check, /image\.cropping\(to: contentRect\)/)
-  assert.match(check, /context\.draw\(content,/)
-  assert.match(stability, /XCUIDevice\.shared\.orientation = \.portrait/)
+  const foregroundStart = navigation.indexOf(
+    "func testLocalPhotoTimelineSheetRepeatedAfterFilesReturns()")
+  const foregroundEnd = navigation.indexOf("\n    func test", foregroundStart + 5)
+  const foreground = navigation.slice(foregroundStart, foregroundEnd < 0 ? undefined : foregroundEnd)
+  assert.match(foreground,
+    /XCUIDevice\.shared\.press\(\.home\)[\s\S]*?app\.activate\(\)[\s\S]*?done\.waitForExistence\(timeout: 15\)/)
+  assert.match(sixSubpage, /control\("native-ios-local-timeline-done", app\)/)
+  assert.match(sixSubpage, /testLocalPhotoDateAndFilesSavedSheetReturnKeepsPhotoKitChild/)
 })
 
-test("PhotoKit date-sheet foreground uses stable real close ID, not unrelated nav bar", () => {
-  const localTimeline = fs.readFileSync(
-    path.join(root, "ios/XDriveIOS/NativePhotoTimelineBrowser.swift"), "utf8")
-  assert.match(localTimeline,
-    /Button\("完成"\) \{ showingDates = false \}[\s\S]*?accessibilityIdentifier\("native-ios-local-timeline-done"\)/)
-  const start = navigation.indexOf("func testLocalPhotoDateSheetForegroundFilesThenLocal()")
-  const end = navigation.indexOf("\n    func test", start + 5)
-  const body = navigation.slice(start, end > start ? end : undefined)
-  assert.ok(start > 0 && end > start)
-  assert.match(body, /target\("native-ios-local-timeline-done", app: app\)/)
-  assert.match(body, /XCUIDevice\.shared\.press\(\.home\)/)
-  assert.match(body, /LOCAL_PHOTOKIT_DATE_FOREGROUND_MISSING/)
-  assert.match(body, /XCTAssertTrue\(done\.exists,/)
-  assert.match(body, /done\.tap\(\)/)
+test("eight established Gallery/Files child journeys now have genuine H264 continuity gates", () => {
+  const names = [
+  "testLocalPhotoGalleryFilesRoundTripsKeepRealNativePixels",
+  "testCloudOriginalsFilesRapidReturnKeepsNativeChild",
+  "testCloudOriginalsHelpDismissFilesReturnKeepsChild",
+  "testFilesOperationHistoryBackgroundThenFilesGalleryReturn",
+  "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
+  "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
+  "testGalleryAlbumsOriginalsAndUnifiedRoundTripsKeepPixels",
+  "testLocalPhotoTimelineDateSheetDismissThenFilesReturnKeepsContent"
+]
+  for (const name of names) {
+    const start = navigation.indexOf("func " + name + "()")
+    assert.ok(start >= 0, "missing genuine native child journey " + name)
+    const next = navigation.indexOf("\n    func test", start + 4)
+    const body = navigation.slice(start, next < 0 ? undefined : next)
+    assert.match(body, /waitForRealH264RecordingPrelude\(\)/,
+      name + " must begin after real simctl recorder startup")
+    assert.match(body, /assertVisiblePixels\(app,/,
+      name + " must inspect actual child content rather than tab bar")
+    assert.ok(video.includes('"' + name + '"'), "missing H264 target " + name)
+  }
+})
+
+const dashboard = fs.readFileSync(
+  path.join(root, "ios/XDriveIOS/NativePhotosDashboard.swift"), "utf8")
+
+// Real Simulator failures on 2026-11-16:
+// - PhotoKit sheet was explicitly auto-dismissed by scenePhase on Home.
+// - A retained Files searchable overlay masked the Home AX List after
+//   returning from Gallery People. Source contracts complement, not replace,
+//   the six actual XCTest journeys and 30-Hz H.264 frame audit.
+test("retains PhotoKit date sheet on nonactive scene without retaining index", () => {
+  const phase = timeline.slice(timeline.indexOf(".onChange(of: phase) { state in"))
+  const background = phase.slice(0, phase.indexOf("guard showingDates else"))
+  assert.match(background, /if state != \.active \{/)
+  assert.match(background, /model\.invalidate\(\)/)
+  assert.match(background, /exactDateTarget = nil/)
+  assert.doesNotMatch(background, /showingDates = false/,
+    "going Home must not explicitly close a current PhotoKit date sheet")
+})
+
+test("date sheet is revoked if Full, Limited or Denied permission changed", () => {
+  assert.match(timeline, /@State private var datesPermissionAtPresentation: PHAuthorizationStatus\?/)
+  assert.match(timeline,
+    /datesPermissionAtPresentation = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(timeline,
+    /guard permission == datesPermissionAtPresentation else \{[\s\S]*?showingDates = false/)
+  assert.match(timeline, /datesPermissionAtPresentation = nil/)
+})
+
+test("retained date sheet re-reads only authorized PhotoKit after foreground", () => {
+  const phase = timeline.slice(timeline.indexOf(".onChange(of: phase) { state in"))
+  assert.match(phase,
+    /if permission == \.authorized \|\| permission == \.limited \{\s*model\.load\(mediaFilter: mediaFilter\)/)
+  assert.match(timeline, /\.onChange\(of: mediaFilter\)[\s\S]*?showingDates = false/)
+  assert.match(timeline,
+    /Button\("完成"\) \{ showingDates = false \}/)
+})
+
+test("fixed Files tab forwards live selection without remounting its view", () => {
+  assert.match(dashboard,
+    /XDriveIOSNativeFilesBrowser\(login: login, isRootTabActive: tab == \.files\)/)
+  assert.match(dashboard, /if tab == \.files \|\| filesTabActivated \{/)
+  assert.doesNotMatch(dashboard, /\.id\(tab\)/,
+    "switching tabs must not rebuild the Files NavigationStack")
+})
+
+test("child Files folder navigation remains separate from root tab lifecycle", () => {
+  assert.match(browser, /private let isRootTabActive: Bool/)
+  assert.match(browser, /isRootTabActive: Bool = true/)
+  assert.ok((browser.match(/self\.isRootTabActive = true/g) || []).length >= 2,
+    "folder and folderID child constructors must retain independent lifecycle")
+})
+
+test("leaving Files dismisses native search without clearing verified results", () => {
+  const start = browser.indexOf(".onChange(of: isRootTabActive) { active in")
+  assert.ok(start > 0, "root tab visibility boundary absent")
+  const end = browser.indexOf(".onChange(of: login.owner)", start)
+  assert.ok(end > start)
+  const exit = browser.slice(start, end)
+  assert.match(exit, /guard !active else \{ return \}/)
+  assert.match(exit, /searchPresented = false/)
+  assert.match(exit, /dismissSearch\(\)/)
+  assert.doesNotMatch(exit, /activeQuery =|queryDraft =|model\.invalidate|quickSection =|offset =/,
+    "dismiss search presentation only; preserve Owner and current result window")
+  assert.match(sixSubpage, /func testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay\(\)/)
+  assert.match(sixSubpage, /native-ios-files-home-list/)
 })
 
 
-// The genuine iOS 18.5 Simulator failure was AXScrollToVisibleAction on
-// an already visible bottom tab (real frame x=231.9, y=764.5), not a
-// missing gallery/file destination. Require strict on-window frame checks
-// and a real coordinate tap, not test-only navigation injection.
-test("native Gallery-Files bottom tabs use real on-screen frames on AX scroll failure", () => {
-  const start = navigation.indexOf("private func tap(_ id: String, app: XCUIApplication)")
-  const end = navigation.indexOf("private func assertGallery(", start)
-  assert.ok(start >= 0 && end > start)
-  const body = navigation.slice(start, end)
-  assert.match(body, /element\.waitForExistence\(timeout: 15\)/)
-  assert.match(body, /\["native-ios-tab-files", "native-ios-tab-gallery"\]\.contains\(id\)/)
-  assert.match(body, /XCTAssertTrue\(window\.exists/)
-  assert.match(body, /XCTAssertFalse\(tabFrame\.isEmpty/)
-  assert.match(body, /XCTAssertTrue\(windowFrame\.contains\(midpoint\)/)
-  assert.match(body, /XCTAssertGreaterThan\(midpoint\.y,/)
-  assert.match(body, /window\.coordinate\([\s\S]*?withOffset\(CGVector\(/)
-  assert.match(body, /navigationTap\.tap\(\)/)
-  assert.match(body, /\} else \{\s*element\.tap\(\)/)
-  assert.match(body, /XCTAssertEqual\(app\.state, \.runningForeground/)
-  // Keep downstream real destination/screenshot assertions in the tests.
-  assert.match(navigation, /func testGallerySourceFilterAndOriginalsRepeatedFilesReturn\(\)/)
-  assert.match(navigation, /assertFiles\(app\)/)
-  assert.match(navigation, /assertGallery\(app\)/)
+test("six more real native Gallery/Files cross-child transitions retain H264 fail-closed audit", () => {
+  const names = ["testFilesMoreOrganizerGalleryReturnPreservesBrowseHome","testFilesQuickRailRotationPeopleReturnKeepsNativeShell","testGalleryFilterFilesHistoryForegroundKeepsWallGeneration","testLocalPhotoDateSheetFilesQuickSectionsThenReopen","testGalleryMapFilesSavedSearchesReturnKeepsGeneration","testGalleryPeopleFiltersFilesTrashDenialReturnWithoutGhost"]
+  for (const name of names) {
+    const start = sixSubpage.indexOf("func " + name + "()")
+    assert.ok(start >= 0, "missing XCUITest route: " + name)
+    const end = sixSubpage.indexOf("\n    func test", start + 4)
+    const body = sixSubpage.slice(start, end < 0 ? undefined : end)
+    assert.match(body, /waitForRealH264RecordingPrelude\(\)/,
+      "real simctl recorder must start before navigation: " + name)
+    assert.match(body, /assertVisibleContent\(app, label:/,
+      "missing actual child-viewport screenshot assertion: " + name)
+    assert.match(body, /native-ios-/,
+      "test must tap named live native controls: " + name)
+    assert.ok(video.includes('"' + name + '"'),
+      "missing strict real H264 target: " + name)
+  }
+  assert.match(browser, /native-ios-files-toolbar-organize-home/,
+    "organizer must be a live Files More menu action")
+  assert.match(browser, /onChange\(of: isRootTabActive\)/,
+    "Files root search overlay retirement must remain protected")
+  const workflow = fs.readFileSync(path.join(root,
+    ".github/workflows/ios-native-navigation-runtime.yml"), "utf8")
+  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 62/,
+    "all 62 distinct real video clips must remain mandatory")
+})
+
+test('six native Files date and size filters run as real XCTest and H264 targets', () => {
+  const native = read('ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift')
+  const recorder = read('ios/scripts/files_ui_transition_video.py')
+  const watcher = read('ios/scripts/capture-navigation-smoke-frames.py')
+  for (const name of ["testFilesSizeFilterHorizontalGalleryReturn","testFilesDateThenSizeFiltersKeepNoSessionGuard","testFilesSizeFilterAfterQuickRailReentry","testFilesSizeFilterAfterSavedSearchesDismiss","testFilesSizeFilterAfterCloudDenialReturn","testFilesSizeFilterAfterForegroundResume"]) {
+    assert.ok(native.includes('func ' + name + '()'), 'missing native XCTest ' + name)
+    assert.ok(recorder.includes('"' + name + '"'), 'missing genuine MP4 target ' + name)
+    assert.ok(watcher.includes('"' + name + '"'), 'missing native screenshot witness ' + name)
+  }
 })
