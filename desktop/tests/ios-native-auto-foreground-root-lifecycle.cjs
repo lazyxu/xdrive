@@ -21,7 +21,8 @@ test('one authenticated native root owns the foreground schedule across Photos n
   assert.match(login, /backup\.tickIfDue\(login: model\)/)
   const background = login.slice(login.indexOf('.onChange(of: phase)'),
     login.indexOf('.onChange(of: model.owner)'))
-  assert.match(background, /else \{[\s\S]*?readinessTask\?\.cancel\(\)[\s\S]*?backup\.stopLibraryChangeMonitoring\(\)[\s\S]*?backup\.cancel\(\)/)
+  assert.match(background, /else \{[\s\S]*?workspaceDisappeared\(\)[\s\S]*?backup\.stopLibraryChangeMonitoring\(\)[\s\S]*?backup\.cancel\(\)/)
+  assert.match(login, /private func workspaceDisappeared\(\) \{[\s\S]*?readinessTicket = UUID\(\)[\s\S]*?readinessTask\?\.cancel\(\)[\s\S]*?readinessTask = nil/)
   assert.match(login, /if model\.owner != nil \{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
   assert.doesNotMatch(login, /showingNativeWorkspace|verifiedAccount\(/)
   assert.match(dash, /@ObservedObject var backup: XDriveIOSNativePhotoBackupController/)
