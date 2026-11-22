@@ -276,6 +276,6 @@ test('every mandatory real H264 target belongs to exactly one executable XCTest 
     assert.ok(watcher.includes('"' + name + '"'),
       name + ' must have live Simulator frame sampling');
   }
-  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 56/,
+  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 62/,
     'all 62 distinct actual video clips must remain mandatory');
 });
