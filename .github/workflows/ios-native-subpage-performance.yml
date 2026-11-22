@@ -126,7 +126,7 @@ jobs:
           GITHUB_SHA="$XD_PERF_SOURCE_SHA" python3 ios/scripts/audit_native_resource_perf.py \
             "$out/xcodebuild.log" "$out/metrics.json" "$out/root-summary.json"
           python3 ios/scripts/report_native_perf_triage.py \
-            "$out/root-summary.json" "$out/subpage-summary.json" "$out/perf-triage.json" \\
+            "$out/root-summary.json" "$out/subpage-summary.json" "$out/perf-triage.json" \
             "$out/xcodebuild.log"
           test -s "$out/perf-triage.csv"
           test -s "$out/subpage-summary.csv"
