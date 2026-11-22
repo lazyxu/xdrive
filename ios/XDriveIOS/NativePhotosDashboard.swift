@@ -993,10 +993,10 @@ struct XDriveIOSNativePhotosDashboard: View {
             galleryFocused = gallerySource == .map
             mapNavigationExplicitlyShown = false
         }
-        .toolbar(.hidden, for: .tabBar)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Sibling placement reserves physical space. There is exactly one
         // native bar: Photos chrome in Gallery, five-slot xDrive elsewhere.
+        .toolbar(.hidden, for: .tabBar)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
             tab: tab.rawValue,
             gallerySource: gallerySource.rawValue,
