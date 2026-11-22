@@ -33,16 +33,24 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                                     "Gallery toolbar backup touch height collapsed")
         XCTAssertGreaterThanOrEqual(control.frame.width, 43,
                                     "Gallery toolbar backup touch width collapsed")
-        if !control.isHittable {
-            print("IOS_GALLERY_BACKUP_AX_BLOCKED frame=\(control.frame) AX=\(app.debugDescription)")
+        // SwiftUI Menu exposes a non-hittable outer AX Button on some
+        // Simulators. Its visible 60×44pt StaticText label is the actual
+        // user-tappable Menu surface; never tap an offscreen AX wrapper.
+        let visibleLabel = app.staticTexts.matching(
+            identifier: "native-ios-gallery-backup-action").firstMatch
+        let target = control.isHittable ? control : visibleLabel
+        if !target.isHittable {
+            print("IOS_GALLERY_BACKUP_AX_BLOCKED outer=\(control.frame) label=\(visibleLabel.frame) AX=\(app.debugDescription)")
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = "gallery-backup-toolbar-not-hittable"
             attachment.lifetime = .keepAlways
             add(attachment)
         }
-        XCTAssertTrue(control.isHittable,
-                      "Real Gallery toolbar backup button must be visible and hittable")
-        control.tap()
+        XCTAssertTrue(target.isHittable,
+                      "Real Gallery toolbar backup Menu surface must be visible and hittable")
+        XCTAssertGreaterThanOrEqual(target.frame.height, 43,
+                                    "Real Gallery backup Menu tappable height collapsed")
+        target.tap()
         XCTAssertEqual(app.state, .runningForeground)
     }
 
