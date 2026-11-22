@@ -43,7 +43,7 @@ test('Map no longer offers xDrive five-slot override; only native Photos chrome 
   assert.doesNotMatch(local, /Button\(focused \? "显示底部导航" : "专注地图"/)
   assert.doesNotMatch(wrapper, /Button\(focused \? "显示底部导航" : "专注地图"/)
   assert.match(dashboard, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
-  assert.match(dashboard, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap,[\s\S]*?\.safeAreaInset\(edge: \.bottom, spacing: 0\) \{\s*nativePhotosBottomBar/)
+  assert.match(dashboard, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap,[\s\S]*?VStack\(spacing: 0\) \{[\s\S]*?NavigationStack \{[\s\S]*?\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)[\s\S]*?nativePhotosBottomBar\s*\}/)
   assert.match(dashboard, /galleryFocused = gallerySource == \.map/)
 })
 

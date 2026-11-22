@@ -39,7 +39,7 @@ test('modal unified-source Map also gets one Photos bar, not an xDrive bar', () 
   const cover = dashboard.slice(dashboard.indexOf('.fullScreenCover(isPresented: $presentingUnifiedMap'),
     dashboard.indexOf('/// L2 callbacks'))
   assert.match(cover, /NavigationStack \{[\s\S]*?XDriveIOSNativePhotoMapsScreen\(/)
-  assert.match(cover, /\.safeAreaInset\(edge: \.bottom, spacing: 0\) \{\s*nativePhotosBottomBar/)
+  assert.match(cover, /VStack\(spacing: 0\) \{[\s\S]*?NavigationStack \{[\s\S]*?\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)[\s\S]*?nativePhotosBottomBar\s*\}/)
   assert.doesNotMatch(cover, /nativeBottomBar/)
   assert.match(dashboard, /navigatePhotosChrome\(to: \.unified\)/)
   assert.match(dashboard, /navigatePhotosChrome\(to: \.albums\)/)

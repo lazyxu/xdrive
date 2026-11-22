@@ -9,8 +9,10 @@ const runtime = read('ios/UITests/XDriveIOSNavigationRuntimeUITests.swift')
 const b9 = read('ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift')
 
 test('five selected child NavigationStacks each suppress their own system tab bar', () => {
-  const body = dashboard.slice(dashboard.indexOf('return TabView(selection: $tab) {'),
-    dashboard.indexOf('.safeAreaInset(edge: .bottom, spacing: 0)'))
+  const start = dashboard.indexOf('TabView(selection: $tab) {')
+  const end = dashboard.indexOf('.id(ownerScopeKey)', start)
+  assert.ok(start >= 0 && end > start, 'real five-tab body must stay mounted')
+  const body = dashboard.slice(start, end)
   const stacks = body.split('NavigationStack {').slice(1)
   assert.equal(stacks.length, 5)
   stacks.forEach((stack, i) => assert.ok(stack.includes('.toolbar(.hidden, for: .tabBar)'),

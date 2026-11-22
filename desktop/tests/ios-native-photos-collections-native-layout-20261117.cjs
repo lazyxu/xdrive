@@ -51,7 +51,7 @@ test('Gallery still shows one bar and preserves real xDrive navigation routes', 
   // One native Photos bar stays visible on Library, Collections and Map.
   // xDrive five-slot navigation only appears on non-Gallery modules.
   assert.match(ui, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/)
-  assert.match(ui, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap,[\s\S]*?VStack\(spacing: 0\) \{\s*NavigationStack \{[\s\S]*?XDriveIOSNativePhotoMapsScreen\([\s\S]*?\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)\s*nativePhotosBottomBar/)
+  assert.match(ui, /\.fullScreenCover\(isPresented: \$presentingUnifiedMap,[\s\S]*?VStack\(spacing: 0\) \{\s*NavigationStack \{[\s\S]*?XDriveIOSNativePhotoMapsScreen\([\s\S]*?\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)[\s\S]*?nativePhotosBottomBar/)
   assert.doesNotMatch(ui, /if tab == \.gallery && gallerySource != \.map/)
   assert.match(ui, /Section\("xDrive"\) \{[\s\S]*?Button\("文件"\) \{\s*showingGalleryOptions = false\s*tab = \.files\s*\}/)
   assert.match(ui, /Button \{\s*showingGalleryOptions = true\s*\} label:/)
