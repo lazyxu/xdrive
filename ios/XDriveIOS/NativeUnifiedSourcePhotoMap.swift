@@ -1290,9 +1290,13 @@ private struct XDriveIOSNativeUnifiedSourceMapCellWall: View {
                 guard restore else { return }
                 shouldRestoreViewerTile = false
                 defer {
+                    // A pixel anchor belongs only to this completed Viewer
+                    // session. Keep no old tile identity if restoration is
+                    // rejected by Owner/PhotoKit, window or revision checks.
                     viewerReturnID = nil
                     viewerOpeningID = nil
                     viewerOpeningWindow = -1
+                    viewerReturnViewport = nil
                 }
                 guard active, viewing == nil, let id = viewerReturnID,
                       (previous + current).filter({ $0.id == id }).count == 1,

@@ -126,3 +126,16 @@ test('legacy local Gallery is not dispatched by production native Dashboard', ()
     fs.readFileSync(path.join(dir, n), 'utf8').includes('XDriveIOSNativeLocalGalleryScreen('))
   assert.deepEqual(stale, [], 'legacy screen has regained a production call site')
 })
+
+
+test('source place Viewer return retires its pixel anchor on every exit path', () => {
+  const begin = source.indexOf('.onChange(of: shouldRestoreViewerTile)')
+  const end = source.indexOf('private func photoButton(', begin)
+  assert.ok(begin >= 0 && end > begin, 'actual bounded Viewer return handler required')
+  const restore = source.slice(begin, end)
+  assert.match(restore, /defer \{[\s\S]*?viewerReturnID = nil[\s\S]*?viewerOpeningWindow = -1\s*viewerReturnViewport = nil/)
+  assert.match(restore, /guard active, viewing == nil, let id = viewerReturnID/)
+  assert.match(restore, /XDriveIOSNativePhotoWallWindowPolicy\.canRestore\(/)
+  assert.match(restore, /viewerReturnViewport\?\.alignment\(/)
+  assert.match(source, /private func invalidate\(\) \{[\s\S]*?viewerReturnViewport = nil/)
+})
