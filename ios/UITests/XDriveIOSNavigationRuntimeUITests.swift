@@ -176,8 +176,11 @@ enum XDriveIOSNativePhotosTestNavigator {
             let localSearch = found("native-ios-photos-search", in: app)
             guard localSearch.exists && localSearch.isHittable else { return false }
             localSearch.tap()
-            let cancel = app.buttons["取消"].firstMatch
-            return cancel.waitForExistence(timeout: 10) && cancel.isHittable
+            // Native PhotoKit metadata search uses Done, whereas the
+            // authenticated Owner filter editor uses Cancel. Do not assert
+            // a control that does not exist in the real local screen.
+            let close = app.buttons["完成"].firstMatch
+            return close.waitForExistence(timeout: 10) && close.isHittable
         }
         let direct = found(id, in: app)
         if direct.exists && direct.isHittable { direct.tap(); return true }
@@ -615,7 +618,8 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         // has no bearer or private media access in this XCTest.
         let app = launch(syntheticOwner: true)
         select("native-ios-gallery-open-filters", in: app)
-        let cancel = app.buttons["取消"].firstMatch
+        let cancel = app.buttons["取消"].firstMatch.exists
+            ? app.buttons["取消"].firstMatch : app.buttons["完成"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 15),
                       "Native Gallery filter sheet did not present")
         cancel.tap()
@@ -873,7 +877,8 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         observedSelect("native-ios-files-trash-error-return", in: app)
         observedSelect("native-ios-tab-gallery", in: app)
         observedSelect("native-ios-gallery-open-filters", in: app)
-        let cancel = app.buttons["取消"].firstMatch
+        let cancel = app.buttons["取消"].firstMatch.exists
+            ? app.buttons["取消"].firstMatch : app.buttons["完成"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 15))
         cancel.tap()
         assertChildAndCapture("native-ios-gallery-open-filters", in: app,
