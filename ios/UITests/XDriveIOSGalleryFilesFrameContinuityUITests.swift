@@ -97,7 +97,7 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
                   ) else { return false }
             context.interpolationQuality = .low
-            context.draw(content, in: CGRect(x: 0, y: 0, width: width, height: height))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
         XCTAssertTrue(rendered, "Missing screenshot bitmap at \(route)")
@@ -362,10 +362,6 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
                 if action.exists && action.isHittable { break }
                 home.swipeDown()
             }
-        }
-        for _ in 0..<8 {
-            if action.exists && action.isHittable { break }
-            list.swipeDown()
         }
         XCTAssertTrue(action.waitForExistence(timeout: 10),
                       "Files History row was not loaded in real Browse List")

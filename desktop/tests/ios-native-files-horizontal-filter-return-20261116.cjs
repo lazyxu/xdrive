@@ -42,6 +42,6 @@ test('six independent native Gallery/Files filter journeys are captured by stric
   assert.match(swift, /let host: XCUIElement = table\.exists/)
   assert.match(swift, /host\.swipeDown\(\)/)
   assert.match(swift, /strip\.exists && strip\.isHittable/)
-  assert.match(workflow, /--minimum 18/)
+  assert.match(workflow, /--minimum 62/)
   assert.match(video, /physical_60_120_hz_verified": False/)
 })

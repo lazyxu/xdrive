@@ -254,7 +254,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
                   ) else { return false }
             context.interpolationQuality = .low
-            context.draw(content, in: CGRect(x: 0, y: 0, width: width, height: height))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
         XCTAssertTrue(rendered, "Screenshot could not be sampled after " + reason)

@@ -81,8 +81,8 @@ test('candidate-gallery-files must actually RUN all eighteen child tests in macO
   assert.match(workflow, /xcodebuild test/);
   assert.match(workflow, /resultBundlePath/);
   assert.match(workflow, /-parallel-testing-enabled NO/);
-  assert.match(workflow, /--minimum 56/,
-    'all 56 separate real navigation clips must be audited without opt-out');
+  assert.match(workflow, /--minimum 62/,
+    'all 62 separate real navigation clips must be audited without opt-out');
   for (const name of allJourneys) {
     assert.match(watcher, new RegExp('"' + name + '"'));
   }
@@ -158,7 +158,7 @@ test('six additional real Files/Gallery transitions are H.264-audited, including
     assert.match(body, /select\("native-ios-tab-/,
       name + ' must tap a real native Gallery or Files tab');
   }
-  assert.match(workflow, /--minimum 56/);
+  assert.match(workflow, /--minimum 62/);
 });
 
 test('both existing Gallery/Files native suites audit child viewport rather than colorful tab chrome', () => {
@@ -248,7 +248,7 @@ test('six additional high-risk Gallery/Files transitions require true H264 evide
       name + ' must check real native content pixels');
     assert.ok(h264.includes('"' + name + '"'), name + ' missing bounded real H264 watcher');
   }
-  assert.match(workflow, /--minimum 56/, 'all 56 clips must be real and audited');
+  assert.match(workflow, /--minimum 62/, 'all 62 clips must be real and audited');
   assert.match(h264, /MAX_CLIP_SECONDS = 210/,
     'long genuine XCTest must not be truncated by old 120-second clip limit');
 });
@@ -258,7 +258,7 @@ test('every mandatory real H264 target belongs to exactly one executable XCTest 
   // The active video gate grew from 44 to 50 actual journeys. Verify source
   // parity from the target registry, rather than hardcoding a stale count.
   const targets = [...h264.matchAll(/^\s*"(test\w+)",?$/gm)].map(m => m[1]);
-  assert.equal(targets.length, 56, 'never silently reduce the mandatory H.264 case set');
+  assert.equal(targets.length, 62, 'never silently reduce the mandatory H.264 case set');
   assert.equal(new Set(targets).size, targets.length, 'duplicate video targets are invalid');
   const suites = [stability, frameContinuity, native];
   const methods = suites.flatMap(code =>
@@ -277,5 +277,5 @@ test('every mandatory real H264 target belongs to exactly one executable XCTest 
       name + ' must have live Simulator frame sampling');
   }
   assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 56/,
-    'all 56 distinct actual video clips must remain mandatory');
+    'all 62 distinct actual video clips must remain mandatory');
 });

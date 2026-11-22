@@ -155,8 +155,10 @@ test('17 every real Gallery/Files route has one watcher and H264 recording is is
   const wf = read('.github/workflows/ios-native-navigation-runtime.yml')
   const video = read('ios/scripts/files_ui_transition_video.py')
   const stability = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
+  const sixSubpage = read('ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift')
   const methods = [...stability.matchAll(/func (test\w+)\(\)/g),
-                   ...ui.matchAll(/func (test\w+)\(\)/g)].map(m => m[1])
+                   ...ui.matchAll(/func (test\w+)\(\)/g),
+                   ...sixSubpage.matchAll(/func (test\w+)\(\)/g)].map(m => m[1])
   const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(m => m[1]))
   const targetBlock = video.slice(video.indexOf('TARGETS = frozenset({'),
                                   video.indexOf('})', video.indexOf('TARGETS = frozenset({')))
