@@ -36,6 +36,19 @@ def fixtures():
 
 
 class NativePerfTriageTests(unittest.TestCase):
+    def test_exact_workflow_cli_uses_one_shell_continuation_before_xcode_log(self):
+        # A doubled backslash previously sent a literal "\" as argv[4];
+        # the genuine 75-route xcresult had finished but triage crashed
+        # trying to open a file named "\". Never accept that as a pass.
+        workflow = (src.parents[2] / ".github/workflows/ios-native-subpage-performance.yml").read_text()
+        commands = workflow.splitlines()
+        i = next(i for i, line in enumerate(commands)
+                 if '"$out/perf-triage.json"' in line)
+        self.assertTrue(commands[i].endswith(" " + chr(92)))
+        self.assertFalse(commands[i].endswith(" " + chr(92) * 2))
+        self.assertEqual(commands[i + 1].strip(), '"$out/xcodebuild.log"')
+        self.assertIn("test -s \"$out/perf-triage.csv\"", workflow)
+
     def test_complete_75_routes_and_unmeasured_fields(self):
         root, child = fixtures()
         report = mod.summarize(root, child)
