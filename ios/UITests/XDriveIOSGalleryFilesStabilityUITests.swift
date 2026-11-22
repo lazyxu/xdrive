@@ -56,7 +56,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             "native-ios-gallery-source-originals",
             "native-ios-gallery-source-local",
             "native-ios-gallery-source-cloud",
-            "native-ios-gallery-source-menu"
+            "native-ios-gallery-source-menu",
+            "native-ios-gallery-open-filters",
+            "native-ios-gallery-people"
         ]
         if nativeMenuRoutes.contains(id) {
             navigationStarted = Date()
