@@ -38,7 +38,7 @@ test('audio progress never exceeds the native slider bound',()=>{
 })
 test('backgrounded Viewer refuses audio autoplay on reactivation',()=>{
   assert.match(viewer,/@State private var allowAudioAutoplay = true/)
-  assert.match(viewer,/if next != \.active \{\s*allowAudioAutoplay = false\s*retire\(\)/)
+  assert.match(viewer,/if next != \.active \{\s*showingFileDetails = false\s*allowAudioAutoplay = false\s*retire\(\)/)
 })
 test('audio surface is bound to actual per-viewer autoplay intent',()=>{
   assert.match(viewer,/XDriveIOSNativeFileAudioSurface\(player: player, autoplay: allowAudioAutoplay\)/)
@@ -74,7 +74,7 @@ test('existing selected node/revision, Owner and signed preview verification rem
   assert.match(viewer,/generation == attempt, viewed == current, authorized/)
 })
 test('retirement pauses and detaches actual AVPlayer before dropping old display',()=>{
-  assert.match(viewer,/player\?\.pause\(\)\s*player\?\.replaceCurrentItem\(with: nil\)\s*player = nil\s*display = nil/)
+  assert.match(viewer,/player\?\.pause\(\)\s*player\?\.replaceCurrentItem\(with: nil\)\s*player = nil\s*routedMediaLoader\?\.cancelAll\(\)\s*routedMediaLoader = nil\s*display = nil/)
   assert.match(viewer,/\.onDisappear \{ retire\(\) \}/)
 })
 test('Files preview remains read-only with no old WebView or upload path',()=>{

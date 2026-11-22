@@ -557,6 +557,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     @Environment(\.scenePhase) private var phase
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
+    // iOS 26.6 crash isolation: do not construct the very large Files
+    // SwiftUI graph while the authenticated landing tab is Gallery.
+    // Latch after first selection so tab returns keep Files scroll/viewer state.
+    @State private var filesTabActivated = false
     @State private var gallerySource: XDriveIOSNativeGallerySource = .unified
     // Keep the exact bounded Library wall alive beneath the MapKit route.
     // Without this, closing a signed-out GPS map remounts PhotoKit and
@@ -675,7 +679,11 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     var body: some View {
         let expectedRouteOwnerKey = ownerScopeKey
-        return TabView(selection: $tab) {
+        return VStack(spacing: 0) {
+            // Allocate REAL layout space for exactly one bottom nav bar.
+            // The prior TabView.safeAreaInset left the Files quick rail at
+            // y=852 while the app nav began at y=763 in real Simulator tests.
+            TabView(selection: $tab) {
             NavigationStack {
                 launcher
                     .navigationTitle("全部")
@@ -725,8 +733,15 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tag(XDriveIOSNativeBottomTab.gallery)
 
             NavigationStack {
-                files
-                    .navigationTitle("文件")
+                if tab == .files || filesTabActivated {
+                    // Do not eagerly evaluate the 5-layer Files lifecycle
+                    // when login publishes a verified Owner to TabView.
+                    files
+                        .navigationTitle("文件")
+                } else {
+                    Color.clear
+                        .accessibilityHidden(true)
+                }
                     .toolbar(.hidden, for: .tabBar)
             }
             .tabItem { Label("文件", systemImage: "folder") }
@@ -927,6 +942,9 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .onChange(of: ownerScopeKey) { _ in
             transfers.selectOwner(login.owner)
+            // The original Owner transfer cleanup stays first; the hidden
+            // Files child never retains a previous Owner's navigation state.
+            filesTabActivated = false
             // TabView .id does not reset this parent's @State. Revoke the old
             // Owner's saved UI route even if switching A -> B -> A in one scene.
             routeRestoreScopeKey = nil
@@ -956,6 +974,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .onChange(of: tab) { _ in saveNavigationIfReady() }
+        .onChange(of: tab) { next in
+            if next == .files { filesTabActivated = true }
+        }
         .onChange(of: tab) { next in
             if next == .dynamic && emptyDynamicMapFallback {
                 openGallery(.map)
@@ -1570,11 +1591,20 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var launcher: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                TextField("搜索功能", text: $launcherQuery)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("native-ios-launcher-search")
+        VStack(alignment: .leading, spacing: 0) {
+            // The results grid changes height with every keystroke. Keep
+            // the editor OUTSIDE that ScrollView so the keyboard's focused
+            // element cannot be recycled when the last match disappears.
+            TextField("搜索功能", text: $launcherQuery)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("native-ios-launcher-search")
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
                 if !recentDynamic.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("最近使用").font(.headline)
@@ -1631,8 +1661,12 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
                 Text("服务器管理员入口只在真实验证 Server 管理员角色后开放；当前原生会话未建立管理权限。")
                     .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(14)
             }
-            .padding(14)
+            .scrollDismissesKeyboard(.never)
+            // Explicit host prevents tests from scrolling a retained Gallery.
+            .accessibilityIdentifier("native-ios-launcher-scroll")
         }
     }
 
@@ -1687,7 +1721,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var files: some View {
-        XDriveIOSNativeFilesBrowser(login: login)
+        // Retain the Files view tree while switching tabs, but retire its
+        // native search overlay even when TabView skips onDisappear.
+        XDriveIOSNativeFilesBrowser(login: login, isRootTabActive: tab == .files)
     }
 
     private var mine: some View {
@@ -1860,6 +1896,13 @@ struct XDriveIOSNativePhotosDashboard: View {
             XDriveIOSNativeDynamicFeature(rawValue: $0)
         }
         tab = XDriveIOSNativeBottomTab(rawValue: snapshot.selectedTab) ?? .gallery
+        // A signed iPhone 26.6 once became trapped reopening the previously
+        // saved Files tab while its giant SwiftUI view graph overran the
+        // main-thread stack. Preserve the saved *folder* resume separately,
+        // but make a fresh post-login workspace start in Gallery. The user
+        // can still explicitly open Files without clearing its Owner-scoped
+        // folder/scroll anchor.
+        if tab == .files { tab = .gallery }
     }
 
     private func saveNavigationIfReady() {
@@ -1888,6 +1931,8 @@ struct XDriveIOSNativePhotosDashboard: View {
         mapOpenedFromCollections = false
         mapReturnGallerySource = nil
         mapReturnOwnerScopeKey = nil
+        // Reset Files mounting latch with the same Owner/navigation scope.
+        filesTabActivated = false
         gallerySource = .unified
         localMapScope = .library
         localMapPageOffset = 0

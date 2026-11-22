@@ -39,7 +39,7 @@ test('native historical ticket is strictly same origin and exact file/version pa
   assert.match(exportFile, /query\[0\]\.name == "ticket"/)
   assert.match(exportFile, /token\.utf8\.count <= 8_192/)
   assert.match(exportFile, /resolved\.percentEncodedQuery = parsed\.percentEncodedQuery/)
-  assert.match(exportFile, /URLSessionConfiguration\.ephemeral/)
+  assert.match(exportFile, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(exportFile, /completionHandler\(nil\)/)
   assert.match(exportFile, /completionHandler: @escaping \(URLRequest\?\) -> Void/)
   assert.match(exportFile, /settings\.httpShouldSetCookies = false|config\.httpShouldSetCookies = false/)

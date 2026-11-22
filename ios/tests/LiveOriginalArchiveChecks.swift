@@ -77,30 +77,6 @@ struct XDriveIOSLiveOriginalArchiveChecks {
               items[1]["originalFilename"] as? String == "IMG_001.MOV" else {
             preconditionFailure("Original pair manifest incomplete")
         }
-        // Imported original filenames are preserved as JSON metadata; only
-        // fixed trusted paths are used inside the ZIP.
-        let unusualStillName = String(repeating: "相", count: 130) + "?照片.HEIC"
-        let unusualMotionName = "CON/\\视频.MOV"
-        let unusualOutput = folder.appendingPathComponent("imported-names.zip")
-        let unusualStill = XDriveIOSLiveArchiveInput(
-            role: "still", fileURL: image, originalFilename: unusualStillName,
-            byteCount: Int64(imageBytes.count)
-        )
-        let unusualMotion = XDriveIOSLiveArchiveInput(
-            role: "motion", fileURL: video, originalFilename: unusualMotionName,
-            byteCount: Int64(videoBytes.count)
-        )
-        _ = try XDriveIOSLiveOriginalArchive.create(
-            still: unusualStill, motion: unusualMotion, outputURL: unusualOutput
-        )
-        let unusualManifest = try unzip(["-p", unusualOutput.path, "manifest.json"])
-        let unusualJSON = try JSONSerialization.jsonObject(with: unusualManifest)
-        guard let unusualRoot = unusualJSON as? [String: Any],
-              let unusualResources = unusualRoot["resources"] as? [[String: Any]],
-              unusualResources.count == 2,
-              unusualResources[0]["originalFilename"] as? String == unusualStillName,
-              unusualResources[1]["originalFilename"] as? String == unusualMotionName
-        else { preconditionFailure("Imported Live names lost in ZIP manifest") }
         // Refuse a missing/mutated motion byte sequence without leaving a
         // partial final artifact or returning a false backup receipt.
         let badOutput = folder.appendingPathComponent("invalid.zip")

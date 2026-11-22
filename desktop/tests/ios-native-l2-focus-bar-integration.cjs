@@ -11,7 +11,10 @@ const policy = source('ios/XDriveIOS/NativeFocusVisibilityPolicy.swift');
 
 test('only one native L1 bar: scoped Gallery L2 hides the custom bar, not a system tab strip', () => {
   assert.match(shell, /\.toolbar\(\.hidden, for: \.tabBar\)/);
-  assert.match(shell, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/);
+  assert.match(shell, /return VStack\(spacing: 0\) \{/);
+  assert.match(shell, /TabView\(selection: \$tab\)/);
+  assert.match(shell, /\.toolbar\(\.hidden, for: \.tabBar\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)\s*if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
+  assert.doesNotMatch(shell, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/);
   assert.match(shell, /if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
   assert.match(shell, /gallerySource: gallerySource\.rawValue/);
   assert.match(shell, /focused: galleryPresentationFocused/);
@@ -57,5 +60,5 @@ test('rotation changes only presentation, not source identity, L2, or L3 Viewer'
   assert.match(route, /if source == \.map \{[\s\S]*?mapReturnGallerySource/)
   assert.match(route, /mapReturnOwnerScopeKey = mapReturnGallerySource != nil/);
   assert.match(shell, /case \.files:\s*tab = \.files/);
-  assert.match(shell, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
+  assert.match(shell, /private var files: some View \{[\s\S]*?XDriveIOSNativeFilesBrowser\(login: login, isRootTabActive: tab == \.files\)/);
 });

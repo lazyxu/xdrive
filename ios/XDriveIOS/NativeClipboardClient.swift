@@ -128,7 +128,7 @@ struct XDriveIOSNativeClipboardClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = body
         }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
@@ -149,7 +149,10 @@ struct XDriveIOSNativeClipboardClient {
     /// content: each complete sync/change frame only triggers GET /items.
     /// A stream is bounded server-side to 20s; callers reverify the Owner
     /// bearer and run an authoritative GET on every reconnect.
-    func watchChanges(after: UInt64, onChange: () async -> Void) async throws -> UInt64 {
+    func watchChanges(
+        after: UInt64, onCursor: (UInt64) async -> Void = { _ in },
+        onChange: () async -> Void
+    ) async throws -> UInt64 {
         guard var url = URLComponents(url: owner.origin, resolvingAgainstBaseURL: false) else {
             throw XDriveIOSClipboardPolicy.Failure.invalidOwner
         }
@@ -170,7 +173,7 @@ struct XDriveIOSNativeClipboardClient {
         }
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
@@ -198,6 +201,9 @@ struct XDriveIOSNativeClipboardClient {
                 line.removeAll(keepingCapacity: true)
                 if try decoder.acceptLine(text) {
                     try Task.checkCancellation()
+                    // Persist the complete-frame cursor before the owner's
+                    // GET refresh; it survives transport errors on this stream.
+                    await onCursor(decoder.cursor)
                     await onChange()
                 }
             } else {
@@ -310,7 +316,7 @@ struct XDriveIOSNativeClipboardClient {
             request.setValue(deviceProof.secret, forHTTPHeaderField: "X-XDrive-Device-Token")
         }
         request.httpShouldHandleCookies = false
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         let session = URLSession(configuration: config, delegate: XDriveIOSClipboardRejectRedirects(),

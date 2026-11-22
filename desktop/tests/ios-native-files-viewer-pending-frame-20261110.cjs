@@ -31,7 +31,7 @@ test('repro: scene foreground restoration paints a pending preview before its as
   assert.match(phase, /else if !isClosing &&[\s\S]*?failure = nil\s*loading = true\s*attempt = UUID\(\)/)
 })
 test('foreground restoration cannot revive a stale pre-background playback failure', () => {
-  assert.match(phase, /if next != \.active \{\s*allowAudioAutoplay = false\s*retire\(\)/)
+  assert.match(phase, /if next != \.active \{\s*showingFileDetails = false\s*allowAudioAutoplay = false\s*retire\(\)/)
   assert.match(phase, /failure = nil\s*loading = true\s*attempt = UUID\(\)/)
 })
 test('direct, bounded-window and extended-range Next/Previous share the same guarded transition', () => {
@@ -51,7 +51,7 @@ test('the pending state has a native AX marker and a video-dark canvas', () => {
 })
 test('retirement detaches the exact old player and discards the signed export before pending transition', () => {
   assert.match(retire, /exporter\.invalidate\(\)/)
-  assert.match(retire, /player\?\.pause\(\)\s*player\?\.replaceCurrentItem\(with: nil\)\s*player = nil\s*display = nil/)
+  assert.match(retire, /player\?\.pause\(\)\s*player\?\.replaceCurrentItem\(with: nil\)\s*player = nil\s*routedMediaLoader\?\.cancelAll\(\)\s*routedMediaLoader = nil\s*display = nil/)
 })
 test('late preview results cannot overwrite the new Node or a revoked Owner', () => {
   assert.match(preview, /let generation = attempt/)

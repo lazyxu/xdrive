@@ -35,3 +35,16 @@ test('password and origin are not replayed, and LAN cert validation is still enf
   assert.match(policy, /default:\s*return false/)
   assert.doesNotMatch(policy, /refreshToken|accessToken|localizedDescription|print\(/)
 })
+
+
+test('Owner verifier uses routed requests on iOS while standalone macOS trust fixture is direct', () => {
+  const file = read('ios/XDriveIOS/OwnerRootVerifier.swift')
+  assert.match(file, /#if os\(iOS\)[\s\S]*?let configuration: URLSessionConfiguration = bypassAutoRoute\s*\? \.ephemeral : XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
+  assert.match(file, /#else\s*let configuration: URLSessionConfiguration = \.ephemeral\s*#endif/)
+  assert.match(file, /if bypassAutoRoute \{ configuration\.protocolClasses = \[\] \}/)
+  assert.match(file, /configuration\.httpShouldSetCookies = false/)
+  assert.match(file, /configuration\.httpCookieAcceptPolicy = \.never/)
+  assert.match(file, /completionHandler\(nil\)/)
+  assert.match(file, /"\/api\/v1\/me"/)
+  assert.match(file, /"\/api\/v1\/nodes\/root"/)
+})

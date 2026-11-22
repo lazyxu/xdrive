@@ -86,7 +86,7 @@ test('return is inside same Files feature and reuses the only native browser', (
 })
 
 test('native location refuses cookie redirects, cross-owner and stale responses', () => {
-  assert.match(location, /URLSessionConfiguration\.ephemeral/)
+  assert.match(location, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(location, /completionHandler\(nil\)/)
   assert.match(location, /httpCookieAcceptPolicy = \.never/)
   assert.match(location, /Task\.checkCancellation\(\)/)

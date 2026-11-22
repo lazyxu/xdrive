@@ -373,10 +373,20 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 )
             }
             .fullScreenCover(item: $selected) { selection in
-                XDriveIOSNativeUnifiedPhotoViewer(login: login, wall: wall, selection: selection,
-                    filter: sourceFilter, query: query,
-                    onViewed: { page, id in viewerReturnPage = page; viewerReturnAnchor = id },
-                    pairing: { _ in reset() })
+                // A delayed SwiftUI presentation must not construct a Viewer
+                // whose initial page/position is no longer a valid photo.
+                // The Viewer reads page.rows[position] during body evaluation.
+                if XDriveIOSNativePhotoOwnerScope.matches(login.owner, selection.owner),
+                   selection.page.rows.indices.contains(selection.position) {
+                    XDriveIOSNativeUnifiedPhotoViewer(login: login, wall: wall, selection: selection,
+                        filter: sourceFilter, query: query,
+                        onViewed: { page, id in viewerReturnPage = page; viewerReturnAnchor = id },
+                        pairing: { _ in reset() })
+                } else {
+                    Color.black
+                        .accessibilityIdentifier("native-ios-unified-viewer-stale-selection")
+                        .onAppear { selected = nil }
+                }
             }
             .fullScreenCover(isPresented: $showingSourceFilteredMap) {
                 if let presence = sourceFilter {

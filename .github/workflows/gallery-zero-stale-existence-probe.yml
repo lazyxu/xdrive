@@ -1,0 +1,122 @@
+name: Gallery 100k zero-stale existence probe SQL paired A/B
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'internal/api/media.go'
+      - 'internal/api/media_gallery_stale_probe_integration_test.go'
+      - 'internal/api/media_gallery_first_range_group_count_integration_test.go'
+      - '.github/workflows/gallery-zero-stale-existence-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-zero-stale-probe-ab:
+    if: github.head_ref == 'fix/gallery-zero-stale-existence-probe-20261119'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_AGENT_BINARY: ${{ github.workspace }}/desktop/gallery-desktop-first-load-bin/xdrive-agent
+      XD_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare immutable pre-change checkout on same Runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE="$RUNNER_TEMP/xdrive-gallery-before"
+          git fetch origin "$XD_BASE_SHA" --depth=1
+          git worktree add --detach "$BEFORE" "$XD_BASE_SHA"
+          test "$(git -C "$BEFORE" rev-parse HEAD)" = "$XD_BASE_SHA"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          # Only the first-read existence query and its targeted regression
+          # are allowed to modify the actual backend source in this experiment.
+          # Both arms retain identical Agent, Desktop, media/folder permissions,
+          # storage writer, PhotoAsset and schema implementations.
+          git diff --quiet "$XD_BASE_SHA" HEAD -- cmd desktop/src web/src ui/shared/src internal/meta internal/photoasset
+          if git diff --name-only "$XD_BASE_SHA" HEAD | grep -Ev '^(internal/api/media\.go|internal/api/media_gallery_stale_probe_integration_test\.go|internal/api/media_gallery_first_range_group_count_integration_test\.go|\.github/workflows/gallery-zero-stale-existence-probe\.yml|docs/performance-test-registry\.md)$'; then
+            echo "A/B branch changed unrelated files"; exit 1
+          fi
+      - name: Build both actual production Desktop+Web bundles and one unchanged Go Agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          BEFORE="$RUNNER_TEMP/xdrive-gallery-before"
+          (cd "$BEFORE/web" && npm install --no-audit --no-fund)
+          (cd "$BEFORE/desktop" && npm install --no-audit --no-fund)
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix "$BEFORE/web" run build -- --config vite.config.ts
+          npm --prefix "$BEFORE/desktop" run build
+          npm --prefix web run build -- --config vite.config.ts
+          npm --prefix desktop run build
+          mkdir -p desktop/gallery-desktop-first-load-bin
+          go build -o desktop/gallery-desktop-first-load-bin/xdrive-agent ./cmd/xdrive-agent
+          go test -run '^TestGalleryStaleExistenceProbeMatchesOrderedOwnerQuery$' -count=1 -v ./internal/api
+          go test -run '^TestMediaGalleryFirstRangeGroupedCountMatchesIndependentCount$' -count=1 -v ./internal/api
+          node --test desktop/tests/media-gallery-100k-performance.cjs
+          node --check desktop/scripts/gallery-desktop-first-load-compare.cjs
+      - name: BEFORE - 3 fresh real 100k Electron/Agent/PostgreSQL/CAS sessions
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE="$RUNNER_TEMP/xdrive-gallery-before"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" node "$BEFORE/desktop/scripts/gallery-desktop-real-cold-runner.cjs"
+          mkdir -p desktop/gallery-zero-stale-probe-ab
+          cp "$BEFORE/desktop/gallery-desktop-real-cold-results/summary.json" desktop/gallery-zero-stale-probe-ab/before.json
+          cp "$BEFORE"/desktop/gallery-desktop-real-cold-results/server-*.log desktop/gallery-zero-stale-probe-ab/
+          test -s desktop/gallery-zero-stale-probe-ab/before.json
+      - name: AFTER - 3 independent real 100k sessions on same Runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" node desktop/scripts/gallery-desktop-real-cold-runner.cjs
+          cp desktop/gallery-desktop-real-cold-results/summary.json desktop/gallery-zero-stale-probe-ab/after.json
+          for n in 1 2 3; do cp "desktop/gallery-desktop-real-cold-results/server-$n.log" "desktop/gallery-zero-stale-probe-ab/candidate-server-$n.log"; done
+          test -s desktop/gallery-zero-stale-probe-ab/after.json
+      - name: Strict same-runner n3/n3 latency and integrity comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          node desktop/scripts/gallery-desktop-first-load-compare.cjs \
+            desktop/gallery-zero-stale-probe-ab/before.json \
+            desktop/gallery-zero-stale-probe-ab/after.json \
+            desktop/gallery-zero-stale-probe-ab/comparison.json
+          cat desktop/gallery-zero-stale-probe-ab/comparison.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-zero-stale-probe-ab
+          path: desktop/gallery-zero-stale-probe-ab/
+          if-no-files-found: warn
+          retention-days: 14

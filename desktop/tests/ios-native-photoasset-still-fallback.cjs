@@ -55,7 +55,7 @@ test('Live pairing and native video failure paths remain separate from still thu
   assert.match(viewer, /if target\.isLive \{[\s\S]*?let live = try await reader\.livePreview\(target\)/)
   assert.match(viewer, /imageIsThumbnailOnly = true/)
   assert.match(viewer, /let media = try await XDriveIOSNativeMediaGalleryReader\([\s\S]*?\)\.preview\(target\)/)
-  assert.match(viewer, /if let url = media\.videoURL \{ player = AVPlayer\(url: url\) \}/)
+  assert.match(viewer, /if let url = media\.videoURL \{[\s\S]*?let loader = try XDriveIOSRoutedMediaLoader\(ticketURL: url\)[\s\S]*?player = AVPlayer\(playerItem: loader\.playerItem\(\)\)/)
   assert.match(viewer, /reader\.thumbnail\(target\)/)
   assert.match(viewer, /XDriveIOSNativeAVPlayerStatusObserver\(/)
   assert.match(viewer, /native-ios-photoasset-player-reload/)

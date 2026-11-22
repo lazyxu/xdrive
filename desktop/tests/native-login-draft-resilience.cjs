@@ -17,7 +17,7 @@ const androidApp = read('android/app/src/main/java/com/tfluid/xdrive/DriveApp.kt
 test('iOS keeps password editable on failed sign-in, not after verified success', () => {
   const signIn = ios.split('func signIn() async {')[1].split('func signOut() async -> Bool')[0]
   assert.ok(signIn.includes('XDriveIOSNativeLoginDraftStore.save('))
-  assert.match(signIn, /owner = verified\s+password = ""/)
+  assert.match(signIn, /owner = verified\s+XDriveIOSAutoRoute\.shared\.activate\([\s\S]*?\)\s+password = ""/)
   assert.doesNotMatch(signIn, /catch is CancellationError \{\s*password = ""/)
   assert.doesNotMatch(signIn, /\} catch \{\s*password = ""/)
   assert.ok(ios.includes('matchesRestoredEndpoint'))

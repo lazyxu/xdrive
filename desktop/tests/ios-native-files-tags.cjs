@@ -23,7 +23,7 @@ test('native tag transport is HTTPS, non-redirecting and cookie-free', () => {
   assert.match(source, /components\.scheme == "https"/)
   assert.match(source, /origin == owner\.origin/)
   assert.match(source, /completionHandler\(nil\)/)
-  assert.match(source, /URLSessionConfiguration\.ephemeral/)
+  assert.match(source, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(source, /config\.httpShouldSetCookies = false/)
   assert.match(source, /request\.httpShouldHandleCookies = false/)
   assert.match(source, /"Bearer " \+ accessToken/)

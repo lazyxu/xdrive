@@ -195,7 +195,7 @@ final class XDriveIOSPhotoSourceRunReporter {
         parts.fragment = nil
         guard let url = parts.url else { throw URLError(.badURL) }
 
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = XDriveIOSAutoRoute.ephemeralConfiguration()
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
         configuration.urlCache = nil

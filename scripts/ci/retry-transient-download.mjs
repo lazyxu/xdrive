@@ -13,6 +13,10 @@ const maxAttempts = 3
 const delayMs = Math.max(0, Math.min(60_000, Number(process.env.XDRIVE_CI_RETRY_DELAY_MS ?? 10_000) || 0))
 const maxCaptured = 128 * 1024
 const transientHTTP = /(?:response code:?\s*504|HTTP(?:\s+response\s+code:?)?\s*504|gateway time-?out)/i
+// Genuine 2026-11-17 Android CI failure: Maven Central returned 429 for
+// classpath POMs on a fresh runner. Restrict this retry to actual Gradle
+// classpath dependency resolution, never a compiler/test/lint failure.
+const transientMavenClasspath429 = /Could not GET 'https:\/\/repo\.maven\.apache\.org\/maven2\/[^'\s]+\.pom'\.\s*Received status code 429 from server: Too Many Requests/i
 // A specifically identified, externally downloaded Kotlin Gradle plugin jar
 // can fail with TCP "Connection reset" before any compilation starts. Retry
 // only this Maven Central artifact transfer, never unrelated Gradle errors.
@@ -48,11 +52,17 @@ function attempt() {
       const retryHTTP = transientHTTP.test(recent)
       const retryGradle = retryGradlePluginResolution && transientGradlePlugin.test(recent)
       const retryKotlinMaven = transientKotlinMavenReset.test(recent)
+      const retryMaven429 =
+        /Could not resolve all artifacts for configuration 'classpath'/.test(recent) &&
+        transientMavenClasspath429.test(recent)
       resolve({
         code: code ?? 1,
-        transient: !signal && (retryHTTP || retryGradle || retryKotlinMaven),
-        reason: retryKotlinMaven ? 'Kotlin Maven Central jar connection reset' :
-          retryGradle ? 'Kotlin Gradle plugin resolution' : 'HTTP 504 dependency download',
+        transient: !signal && (retryHTTP || retryGradle || retryMaven429 || retryKotlinMaven),
+        reason: retryKotlinMaven
+          ? 'Kotlin Maven Central jar connection reset'
+          : retryMaven429
+          ? 'Maven Central HTTP 429 Gradle classpath dependency download'
+          : retryGradle ? 'Kotlin Gradle plugin resolution' : 'HTTP 504 dependency download',
       })
     })
   })

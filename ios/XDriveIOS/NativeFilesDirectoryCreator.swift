@@ -44,7 +44,7 @@ struct XDriveIOSNativeFilesDirectoryCreator {
         }
         parts.path = "/api/v1/nodes/\(parentID)/directories"
         guard let url = parts.url else { throw XDriveIOSNativeFilesCreateError.invalidOwner }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData

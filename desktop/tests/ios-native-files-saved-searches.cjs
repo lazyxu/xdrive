@@ -24,7 +24,7 @@ test('Native Saved Searches use exact existing Web and Server routes and statuse
 })
 
 test('Saved Search network is nonredirecting, Owner-authenticated and readback verified', () => {
-  assert.match(native, /URLSessionConfiguration\.ephemeral/)
+  assert.match(native, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(native, /completionHandler\(nil\)/)
   assert.match(native, /config\.httpShouldSetCookies = false/)
   assert.match(native, /requestCachePolicy = \.reloadIgnoringLocalCacheData/)

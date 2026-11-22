@@ -107,7 +107,12 @@ test('settled no-Session Cloud/Trash and Recent/Favorites screens are sampled fo
   }
   assert.match(ui, /private func assertNonuniformFrame\(_ app: XCUIApplication, _ route: String\)/)
   assert.match(ui, /CGContext\([\s\S]*?context\.draw\(image, in: CGRect/)
-  assert.match(ui, /Set\(stride\(from: 0, to: rgba\.count, by: 4\)\.map/)
+  // The old nested Set(stride(...).map(...)) crashed the Xcode 26.6
+  // type checker. Keep the identical pixel-diversity gate in a typed loop.
+  assert.match(ui, /var colors = Set<UInt32>\(\)/)
+  assert.match(ui, /for index in stride\(from: 0, to: rgba\.count, by: 4\)/)
+  assert.match(ui, /colors\.insert\(red \| green \| blue\)/)
+  assert.doesNotMatch(ui, /Set\(stride\(from: 0, to: rgba\.count, by: 4\)\.map/)
   assert.match(ui, /XCTAssertGreaterThan\(colors\.count, 8,/)
 })
 

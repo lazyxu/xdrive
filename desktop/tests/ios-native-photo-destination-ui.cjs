@@ -43,7 +43,7 @@ test('config read never silently enrolls the iPhone or uses a JS/browser credent
   assert.match(model, /"X-XDrive-Device-ID"/);
   assert.match(model, /"X-XDrive-Device-Token"/);
   assert.match(model, /"Authorization"/);
-  assert.match(model, /URLSessionConfiguration\.ephemeral/);
+  assert.match(model, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/);
   assert.match(model, /willPerformHTTPRedirection/);
   assert.match(model, /completionHandler\(nil\)/);
   assert.doesNotMatch(model, /WKWebView|UserDefaults|localStorage|PHPicker|UploadSessionTransport/);

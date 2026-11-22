@@ -53,7 +53,7 @@ test('path reader reuses bounded HTTPS Owner transport with no redirects or cook
   assert.match(browser, /func namedDirectory\(parentID: UInt64, name: String\)[\s\S]*?endpoint\("\/api\/v1\/nodes\/\\\(parentID\)\/children"/)
   assert.match(browser, /request\.setValue\("Bearer " \+ accessToken/)
   assert.match(browser, /completionHandler\(nil\)/)
-  assert.match(browser, /URLSessionConfiguration\.ephemeral/)
+  assert.match(browser, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(browser, /configuration\.httpShouldSetCookies = false/)
   assert.match(browser, /try await Self\.client\.data\(for: request\)/)
   assert.match(policy, /maximumSegments = 32/)

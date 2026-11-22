@@ -167,7 +167,7 @@ struct XDriveIOSNativeNotesClient {
         if let ifMatch {
             request.setValue(String(ifMatch), forHTTPHeaderField: "If-Match")
         }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -353,7 +353,7 @@ struct XDriveIOSNativeNotesClient {
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
             request.httpBody = body
         }
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData

@@ -66,6 +66,12 @@ function activateGalleryAndMeasure() {
     longestLongTaskMs: 0,
     longTasks: [],
     longTaskSupported: Boolean(PerformanceObserver.supportedEntryTypes?.includes('longtask')),
+    // Observer diagnostic is test-only; never emitted by the production app.
+    mutationNotifications: 0,
+    coalescedScanFrames: 0,
+    gridScanCount: 0,
+    gridScanCpuMs: 0,
+    maxGridScanCpuMs: 0,
   }
   const twoFrames = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   let completed = false
@@ -100,34 +106,64 @@ function activateGalleryAndMeasure() {
     })
   }
   function scan() {
-    const grid = document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
-    if (!grid) return
-    if (data.firstVisibleTileMs === null && grid.querySelector('[role="button"]')) {
-      data.firstVisibleTileMs = elapsed()
-    }
-    const images = Array.from(grid.querySelectorAll('img[src]'))
-    if (data.firstImageElementMs === null && images.length > 0) {
-      data.firstImageElementMs = elapsed()
-    }
-    for (const img of images) {
-      const url = img.currentSrc || img.src
-      if (!url || visited.get(img) === url) continue
-      visited.set(img, url)
-      void img.decode().then(async () => {
-        if (!img.isConnected || (img.currentSrc || img.src) !== url || decoded.has(url)) return
-        decoded.add(url)
-        data.decodedImages = decoded.size
-        if (data.firstImageDecodedMs === null) {
-          data.firstImageDecodedMs = elapsed()
-          await twoFrames()
-          if (data.firstImageTwoRAFMs === null) data.firstImageTwoRAFMs = elapsed()
-        }
-        finalize()
-      }).catch(() => { data.decoderErrors++ })
+    const scanStarted = performance.now()
+    data.gridScanCount++
+    try {
+      const grid = document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+      if (!grid) return
+      if (data.firstVisibleTileMs === null && grid.querySelector('[role="button"]')) {
+        data.firstVisibleTileMs = elapsed()
+      }
+      const images = Array.from(grid.querySelectorAll('img[src]'))
+      if (data.firstImageElementMs === null && images.length > 0) {
+        data.firstImageElementMs = elapsed()
+      }
+      for (const img of images) {
+        const url = img.currentSrc || img.src
+        if (!url || visited.get(img) === url) continue
+        visited.set(img, url)
+        void img.decode().then(async () => {
+          if (!img.isConnected || (img.currentSrc || img.src) !== url || decoded.has(url)) return
+          decoded.add(url)
+          data.decodedImages = decoded.size
+          if (data.firstImageDecodedMs === null) {
+            data.firstImageDecodedMs = elapsed()
+            await twoFrames()
+            if (data.firstImageTwoRAFMs === null) data.firstImageTwoRAFMs = elapsed()
+          }
+          finalize()
+        }).catch(() => { data.decoderErrors++ })
+      }
+    } finally {
+      const cpu = performance.now() - scanStarted
+      data.gridScanCpuMs += cpu
+      data.maxGridScanCpuMs = Math.max(data.maxGridScanCpuMs, cpu)
     }
   }
-  observer = new MutationObserver(scan)
-  observer.observe(document.body, { subtree: true, attributes: true, childList: true })
+  // The previous real-Desktop benchmark rescanned the entire Gallery grid
+  // synchronously on every mutation anywhere in document.body (including
+  // unrelated attributes). Batch observations into at most one scan per frame
+  // and retain notifications needed for new tiles and changed image sources.
+  // This changes BENCHMARK observation only, not the production application.
+  let scanQueued = false
+  function scheduleScan() {
+    data.mutationNotifications++
+    if (scanQueued || completed) return
+    scanQueued = true
+    requestAnimationFrame(() => {
+      scanQueued = false
+      if (completed) return
+      data.coalescedScanFrames++
+      scan()
+    })
+  }
+  observer = new MutationObserver(scheduleScan)
+  observer.observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['src', 'srcset'],
+  })
   window.__xdriveDesktopRealColdProbe = data
   gallery.click()
   scan()
@@ -227,6 +263,23 @@ async function measureRealDesktopMediaProgress(sample) {
   }
 }
 
+// Read only fixed-schema timings from the existing private Desktop lifecycle
+// log. Never put auth/session fields or complete log lines into the benchmark.
+function galleryFirstRangeTimings(logDir) {
+  const filename = path.join(logDir, 'desktop.log')
+  if (!fs.existsSync(filename)) return []
+  return fs.readFileSync(filename, 'utf8').split('\n').filter(Boolean)
+    .map(line => { try { return JSON.parse(line) } catch { return null } })
+    .filter(entry => entry?.event === 'gallery_first_range_timing')
+    .map(entry => ({
+      result: entry.result,
+      total_ms: entry.total_ms,
+      agent_ready_ms: entry.agent_ready_ms,
+      pre_http_ms: entry.pre_http_ms,
+      http_ms: entry.http_ms,
+    }))
+}
+
 let attached = false
 async function run(win) {
   try {
@@ -272,12 +325,23 @@ async function run(win) {
     const beforeResp = await fetch(fixture + '/__perf/stats')
     if (!beforeResp.ok) throw new Error('before CAS counters missing')
     const beforeCAS = await beforeResp.json()
+    const beforeRangeRows = galleryFirstRangeTimings(app.getPath('logs')).length
     const armed = await win.webContents.executeJavaScript('(' + activateGalleryAndMeasure.toString() + ')()')
     if (!armed?.started) throw new Error('production Gallery navigation unavailable')
     const result = await until(
       () => win.webContents.executeJavaScript('window.__xdriveDesktopRealColdResult || null'),
       60000, '12 actual Gallery JPEG decodes and two animation frames',
     )
+    const firstRangeTimings = galleryFirstRangeTimings(app.getPath('logs'))
+      .slice(beforeRangeRows)
+    if (!firstRangeTimings.some(row => row.result === 'ok' &&
+        Number.isFinite(row.total_ms) &&
+        Number.isFinite(row.agent_ready_ms) &&
+        Number.isFinite(row.http_ms) &&
+        row.total_ms >= row.http_ms)) {
+      throw new Error('real Desktop Gallery first Range stage timing missing: ' +
+        JSON.stringify(firstRangeTimings))
+    }
     const afterResp = await fetch(fixture + '/__perf/stats')
     if (!afterResp.ok) throw new Error('after CAS counters missing')
     const afterCAS = await afterResp.json()
@@ -337,6 +401,7 @@ async function run(win) {
       sample: Number(process.env.XD_GALLERY_DESKTOP_REAL_SAMPLE),
       realProductionDesktop: true,
       renderer: result,
+      firstRangeTimings,
       beforeCAS, afterCAS,
       sourceExactMediaProgress,
       sourceProgressResources,

@@ -19,11 +19,50 @@ test('five stable native bottom positions own the same feature-local TabView sta
   assert.ok(at.every((i, n) => i >= 0 && (n === 0 || i > at[n - 1])));
   assert.match(ui, /TabView\(selection: \$tab\)/);
   assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)/);
-  assert.match(ui, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)\s*\{\s*if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
+  // A dedicated VStack row must reserve physical space for the global bar.
+  // A TabView.safeAreaInset previously let Files' own quick rail overlap it.
+  assert.match(ui, /return VStack\(spacing: 0\) \{/);
+  assert.match(ui, /TabView\(selection: \$tab\)/);
+  assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/);
+  assert.match(ui, /\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)\s*if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
+  assert.doesNotMatch(ui, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/);
   assert.match(ui, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/);
   assert.match(ui, /\.accessibilityIdentifier\("native-ios-photos-bottom-bar"\)/);
   assert.match(ui, /\.accessibilityIdentifier\("native-ios-five-slot-bar"\)/);
   assert.match(ui, /\.id\(ownerScopeKey\)/);
+});
+
+test('Launcher search stays above the changing scroll results and keeps keyboard focus', () => {
+  const start = ui.indexOf('private var launcher: some View {');
+  const end = ui.indexOf('private var dynamicPage', start);
+  assert.ok(start >= 0 && end > start);
+  const launcher = ui.slice(start, end);
+  const editor = launcher.indexOf('TextField("搜索功能", text: $launcherQuery)');
+  const scroll = launcher.indexOf('ScrollView {');
+  assert.ok(editor >= 0 && scroll > editor, 'Search editor must precede results ScrollView');
+  assert.match(launcher, /VStack\(alignment: \.leading, spacing: 0\)/);
+  assert.match(launcher, /\.autocorrectionDisabled\(\)/);
+  assert.match(launcher, /\.scrollDismissesKeyboard\(\.never\)/);
+  assert.match(launcher, /\.accessibilityIdentifier\("native-ios-launcher-scroll"\)/);
+});
+
+test('Files navigation geometry covers two real independent no-overlay journeys', () => {
+  const nav = fs.readFileSync(
+    path.resolve(__dirname, '../../ios/UITests/XDriveIOSNavigationRuntimeUITests.swift'), 'utf8'
+  );
+  const watcher = fs.readFileSync(
+    path.resolve(__dirname, '../../ios/scripts/capture-navigation-smoke-frames.py'), 'utf8'
+  );
+  for (const name of [
+    'testFilesQuickRailNoOverlappingGlobalBarThroughSixNativeTransitions',
+    'testFilesRailNoOverlapAfterBackgroundAndGalleryReentry'
+  ]) {
+    assert.ok(nav.includes('func ' + name + '()'), 'missing real XCTest ' + name);
+    assert.ok(watcher.includes('"' + name + '"'), 'missing live frame target ' + name);
+  }
+  assert.match(nav, /rail\.frame\.maxY, globalBar\.frame\.minY \+ 1/);
+  assert.match(nav, /app\.wait\(for: \.runningBackground, timeout: 12\)/);
+  assert.match(nav, /app\.wait\(for: \.runningForeground, timeout: 18\)/);
 });
 
 test('landscape is compact horizontal icon-and-label and target is at least 44pt', () => {

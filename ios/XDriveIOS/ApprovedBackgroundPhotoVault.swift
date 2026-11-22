@@ -192,20 +192,31 @@ actor XDriveIOSApprovedPhotoBGVault {
     /// current root and Server generation admits a BGTask. Redirects fail.
     /// No photo is read, uploaded, or counted here.
     func proveInBackground() async throws -> XDriveIOSApprovedPhotoBGCredential {
-        guard let item = try current(),
-              let owner = try? item.ownerScope(),
-              item.matches(owner),
-              item.hasManagedDestination else {
+        guard let item = try current() else { throw XDriveIOSPhotoBGVaultFailure.corrupt }
+        return try await Self.prove(item, at: ServerAddress.parse(item.origin), direct: false)
+    }
+
+    /// The same complete Owner/Device/Grant/Root/Server proof can be performed
+    /// at a candidate LAN/WAN route before *any* BG writer moves to it.
+    /// These checks must not be weakened to a version or TLS-only probe.
+    static func prove(_ item: XDriveIOSApprovedPhotoBGCredential,
+                      at route: URL, direct: Bool) async throws
+                      -> XDriveIOSApprovedPhotoBGCredential {
+        let owner = try item.ownerScope()
+        guard item.matches(owner), item.hasManagedDestination else {
             throw XDriveIOSPhotoBGVaultFailure.corrupt
         }
-        var parts = URLComponents(url: owner.origin, resolvingAgainstBaseURL: false)
+        let exactRoute = try ServerAddress.parse(route.absoluteString)
+        var parts = URLComponents(url: exactRoute, resolvingAgainstBaseURL: false)
         parts?.path = "/api/v1/ios/photos/background-grants/proof"
         parts?.query = nil
         parts?.fragment = nil
         guard let url = parts?.url else {
             throw XDriveIOSPhotoBGVaultFailure.corrupt
         }
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = direct ? URLSessionConfiguration.ephemeral
+            : XDriveIOSAutoRoute.ephemeralConfiguration()
+        if direct { configuration.protocolClasses = [] }
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
         configuration.urlCache = nil

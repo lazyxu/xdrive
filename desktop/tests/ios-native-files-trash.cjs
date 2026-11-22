@@ -28,7 +28,7 @@ test('real Owner-scoped bounded deleted-only Server page uses exact range metada
   }
   assert.match(screen, /login\.verifiedAuthorization\(\)/)
   assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches/)
-  assert.match(screen, /URLSessionConfiguration\.ephemeral/)
+  assert.match(screen, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(screen, /completionHandler\(nil\)/)
 })
 test('restore and permanent delete use version fences, correct HTTP receipts and no blind replay', () => {

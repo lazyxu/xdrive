@@ -317,19 +317,29 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         // its deliberate crash-recovery page a false positive. Read the
         // actual foreground UI's non-secret ready marker instead of a
         // guessed fixed sleep. A never-ready workspace still FAILS.
-        let readiness = app.buttons.matching(
-            identifier: "native-ios-login-submit"
-        ).firstMatch
-        XCTAssertTrue(readiness.waitForExistence(timeout: 20),
-                      "Signed-out workspace did not expose startup readiness")
-        let ready = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", "ready"),
-            object: readiness
-        )
-        let state = XCTWaiter.wait(for: [ready], timeout: 25)
-        if state != .completed { record(app, "startup-readiness-stuck") }
-        XCTAssertEqual(state, .completed,
-                       "Workspace stayed at mountingWorkspace; do not erase crash evidence")
+        // The candidate exposes a visible non-secret ready/mounting value.
+        // Archived b9 has no such API; recognize *only* the actual b9
+        // build marker before using its historical baseline delay.
+        let submit = app.buttons.matching(identifier: "native-ios-login-submit")
+            .firstMatch
+        if submit.waitForExistence(timeout: 5), submit.value != nil {
+            let ready = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "ready"),
+                object: submit
+            )
+            let state = XCTWaiter.wait(for: [ready], timeout: 25)
+            if state != .completed { record(app, "startup-readiness-stuck") }
+            XCTAssertEqual(state, .completed,
+                           "Candidate remained at mountingWorkspace, do not mask failure")
+        } else {
+            let archived = app.descendants(matching: .any)
+                .matching(identifier: "native-ios-prelogin-build").firstMatch
+            XCTAssertTrue(archived.waitForExistence(timeout: 10),
+                          "Neither candidate readiness nor published build marker exists")
+            XCTAssertTrue(archived.label.contains("b9d5f9695826"),
+                          "Only exact published b9 may use the legacy startup delay")
+            Thread.sleep(forTimeInterval: 4)
+        }
         alive(app, "startup-stabilized")
         app.terminate()
         app.launchArguments = []

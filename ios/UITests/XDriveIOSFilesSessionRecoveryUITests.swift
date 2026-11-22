@@ -49,6 +49,28 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         XDriveIOSNativePhotosTestNavigator.visible(id, in: app)
     }
 
+    /// A previously collapsed Favorites group is not an app crash.
+    /// Expand its real native disclosure before testing the no-Session route.
+    private func expandFavoritesIfNeeded(_ app: XCUIApplication) {
+        let home = element("native-ios-files-home-list", app)
+        XCTAssertTrue(home.waitForExistence(timeout: 15), "Files Home not mounted")
+        let disclosure = element("native-ios-files-favorites-disclosure", app)
+        for _ in 0..<10 {
+            if disclosure.exists && disclosure.isHittable { break }
+            home.swipeUp()
+        }
+        XCTAssertTrue(disclosure.exists && disclosure.isHittable,
+                      "Favorites disclosure is inaccessible")
+        if (disclosure.value as? String) == "已折叠" {
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-favorites-disclosure")
+            disclosure.tap()
+        }
+        let expanded = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已展开"), object: disclosure)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 8), .completed,
+                       "Favorites disclosure did not expand")
+    }
+
     private func tap(_ id: String, _ app: XCUIApplication) {
         print("IOS_NATIVE_NAV_TAP_START route=\(id)")
         if !XDriveIOSNativePhotosTestNavigator.tap(id, in: app) {
@@ -107,11 +129,16 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         }
         XCTAssertTrue(rendered, "Unable to sample actual screen after " + route)
         guard rendered else { return }
-        let colors = Set(stride(from: 0, to: rgba.count, by: 4).map { index in
-            (Int(rgba[index]) << 16) |
-            (Int(rgba[index + 1]) << 8) |
-            Int(rgba[index + 2])
-        })
+        // Build the sampled color set imperatively: Xcode 26.6 Swift's
+        // expression solver times out on nested stride/map/Set/bitwise inference.
+        // This preserves the same real-pixel diversity gate.
+        var colors = Set<UInt32>()
+        for index in stride(from: 0, to: rgba.count, by: 4) {
+            let red = UInt32(rgba[index]) << 16
+            let green = UInt32(rgba[index + 1]) << 8
+            let blue = UInt32(rgba[index + 2])
+            colors.insert(red | green | blue)
+        }
         XCTAssertGreaterThan(colors.count, 8,
                              "Native recovery page was visually uniform after " + route)
     }
@@ -339,20 +366,22 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     /// Search this Home List only; never force an unreadable child AX tree.
     private func openHomeShortcut(_ id: String, _ app: XCUIApplication) {
         let item = element(id, app)
-        if !item.exists {
-            // SwiftUI List is exposed as a table or collection depending
-            // on Simulator/iOS version; do not assume the AX container type.
-            let collection = app.collectionViews.firstMatch
-            let list = collection.exists ? collection : app.tables.firstMatch
-            if list.exists {
-                // A prior child can leave the Home list below Recent.
-                // Search in both directions with a bounded swipe budget.
-                for _ in 0..<5 {
-                    if item.exists { break }
-                    list.swipeUp()
-                }
+        if !item.exists || !item.isHittable {
+            // A retained Gallery grid or another scrollable child must
+            // never be mistaken for the Files Browse Home. This stable AX
+            // ID survives SwiftUI's UITableView/UICollectionView differences.
+            let list = element("native-ios-files-home-list", app)
+            XCTAssertTrue(list.waitForExistence(timeout: 15),
+                          "Real native Files Home List did not mount")
+            // A prior sheet may retain an offset below this Lazy row.
+            // Search in both directions; existence alone is not hit-testable.
+            for _ in 0..<5 {
+                if item.exists && item.isHittable { break }
+                list.swipeUp()
+            }
+            if !(item.exists && item.isHittable) {
                 for _ in 0..<10 {
-                    if item.exists { break }
+                    if item.exists && item.isHittable { break }
                     list.swipeDown()
                 }
             }

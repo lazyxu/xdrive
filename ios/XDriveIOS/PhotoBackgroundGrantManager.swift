@@ -582,7 +582,7 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         guard let url = components.url else {
             throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
         }
-        let cfg = URLSessionConfiguration.ephemeral
+        let cfg = XDriveIOSAutoRoute.ephemeralConfiguration()
         cfg.httpShouldSetCookies = false
         cfg.httpCookieAcceptPolicy = .never
         cfg.urlCache = nil
