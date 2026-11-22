@@ -403,14 +403,44 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         let app = openLocalMap()
         let map = element("native-ios-full-library-gps-map", in: app)
         XCTAssertTrue(map.exists)
-        // MapKit tiles can finish before the NavigationStack toolbar attaches
-        // its accessibility elements. Wait for the actual controls; never
-        // infer a passing control from the visible MKMapView alone.
+        // The genuine iOS 18.5 accessibility snapshot on iPhone 16
+        // (run 44648765645) places the trailing basemap Menu inside the
+        // system NavigationBar "More" overflow; the map and date Menu are
+        // mounted, but this basemap ID is not a top-level AX element.
+        // Enter the real system overflow and tap the real style control;
+        // never treat the presence of "More" alone as basemap acceptance.
         let basemap = element("native-ios-local-map-basemap", in: app)
-        if !basemap.waitForExistence(timeout: 15) {
-            diagnose("MapKit basemap control absent after native map mounted", in: app)
+        if !basemap.waitForExistence(timeout: 4) {
+            let overflow = app.navigationBars.firstMatch.buttons["More"].firstMatch
+            if !overflow.waitForExistence(timeout: 6) {
+                diagnose("MapKit style missing and no real NavigationBar overflow", in: app)
+            }
+            XCTAssertTrue(overflow.exists && overflow.isHittable,
+                          "Real native overflow must expose the basemap style")
+            overflow.tap()
+            let byStyleLabel = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == %@", "底图样式")).firstMatch
+            if !basemap.waitForExistence(timeout: 6) &&
+               !byStyleLabel.waitForExistence(timeout: 6) {
+                diagnose("System More opened but actual basemap control is absent", in: app)
+            }
+            let revealedBasemap = basemap.exists ? basemap : byStyleLabel
+            XCTAssertTrue(revealedBasemap.exists && revealedBasemap.isHittable,
+                          "Basemap menu must be reachable inside the real More overflow")
+            revealedBasemap.tap()
+            let standard = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == %@", "标准地图")).firstMatch
+            if !standard.waitForExistence(timeout: 8) {
+                diagnose("Real basemap submenu did not expose standard map", in: app)
+            }
+            XCTAssertTrue(standard.exists && standard.isHittable,
+                          "Real map-style selection must be interactive")
+            standard.tap()
+            XCTAssertTrue(map.exists, "Switching actual basemap style destroyed MapKit")
+        } else {
+            XCTAssertTrue(basemap.isHittable,
+                          "Top-level basemap control exists but is not tappable")
         }
-        XCTAssertTrue(basemap.exists, "Real native basemap control missing")
         let captureMenu = element("native-ios-local-map-capture-menu", in: app)
         if !captureMenu.waitForExistence(timeout: 15) {
             diagnose("MapKit date menu absent after native map mounted", in: app)

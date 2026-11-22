@@ -41,3 +41,15 @@ test('M11 exact layout assertions explicitly prohibit inconsistent photo pin num
   assert.doesNotMatch(local, /badge\.frame = CGRect/)
   assert.doesNotMatch(cloud, /badge\.frame = CGRect/)
 })
+
+test('MapKit iOS 18.5 toolbar overflow opens the real basemap control, not a fake AX success', () => {
+  const navigation = read('ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift')
+  assert.match(navigation, /let overflow = app\.navigationBars\.firstMatch\.buttons\["More"\]\.firstMatch/)
+  assert.match(navigation, /overflow\.tap\(\)/)
+  assert.match(navigation, /native-ios-local-map-basemap/)
+  assert.match(navigation, /byStyleLabel\.waitForExistence\(timeout: 6\)/)
+  assert.match(navigation, /revealedBasemap\.tap\(\)/)
+  assert.match(navigation, /standard\.tap\(\)/)
+  assert.match(navigation, /XCTAssertTrue\(map\.exists, "Switching actual basemap style destroyed MapKit"\)/)
+  assert.doesNotMatch(navigation, /XCTSkip\([^\n]*[Bb]asemap/)
+})
