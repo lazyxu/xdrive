@@ -193,6 +193,27 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             list.swipeDown()
             alive(app, "scroll-reverse-\(id)")
         }
+        // Candidate Home hides its operations link inside "更多管理".
+        // The published b9 may expose the older flat row; preserve both.
+        if id == "native-ios-files-open-operations" {
+            let disclosure = app.buttons.matching(
+                NSPredicate(format: "label CONTAINS %@", "更多管理")
+            ).firstMatch
+            for _ in 0..<14 {
+                if disclosure.exists && disclosure.isHittable { break }
+                list.swipeUp()
+                alive(app, "find-management-disclosure")
+            }
+            if disclosure.exists && disclosure.isHittable {
+                disclosure.tap()
+                alive(app, "expand-management-disclosure")
+                for _ in 0..<14 {
+                    if button.exists && button.isHittable { return button }
+                    list.swipeUp()
+                    alive(app, "find-expanded-operation-row")
+                }
+            }
+        }
         record(app, "unreachable-\(id)")
         XCTAssertTrue(button.exists && button.isHittable,
                       "Native Files Home entry missing: \(id)")
