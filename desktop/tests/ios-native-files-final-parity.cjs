@@ -53,7 +53,34 @@ test('retained-range loading feedback is delayed, cancellable, and never hides r
 })
 
 test('Viewer and read-only sheets return to verified list without forced first-range refetch', () => {
-  const modals = section('    private var filesModals: some View', '    private func rememberedPosition()')
+  // Real iOS 26.6 stack-guard overflow traversed all five Files lifecycle
+  // layers. Preserve the original 23 Owner-verified presentations and Viewer
+  // while requiring six bounded type-erasure boundaries, not a giant chain.
+  const modals = section('    private var filesModalsPrimaryBase: some View',
+    '    private func rememberedPosition()')
+  const expected = [
+    ['filesModalsPrimaryBase', 'filesMain'],
+    ['filesModalsPrimary', 'filesModalsPrimaryBase'],
+    ['filesModalsSecondaryBase', 'filesModalsPrimary'],
+    ['filesModalsSecondary', 'filesModalsSecondaryBase'],
+    ['filesModalsTertiaryBase', 'filesModalsSecondary'],
+    ['filesModals', 'filesModalsTertiaryBase'],
+  ]
+  let presentations = 0
+  for (let i = 0; i < expected.length; i++) {
+    const [name, inner] = expected[i]
+    const begin = modals.indexOf('private var ' + name + ': some View {')
+    const end = i + 1 < expected.length
+      ? modals.indexOf('private var ' + expected[i + 1][0] + ': some View {', begin + 5)
+      : modals.length
+    assert.ok(begin >= 0 && end > begin, 'Files Viewer/modals chain absent: ' + name)
+    const block = modals.slice(begin, end)
+    assert.ok(block.includes('AnyView(' + inner + ')'), name + ' lost graph type isolation')
+    const count = (block.match(/\.(?:sheet|alert|confirmationDialog|fullScreenCover)\(/g) || []).length
+    assert.ok(count <= 7, name + ' regressed into too many SwiftUI generic modifiers')
+    presentations += count
+  }
+  assert.equal(presentations, 23, 'all 23 real modal presentations must remain')
   assert.match(modals, /\.sheet\(item: \$locateIntent\) \{ intent in/)
   assert.match(modals, /\.sheet\(item: \$managementIntent, onDismiss: \{\s*if managementWriteConfirmed \{[\s\S]*?reload\(\)/)
   assert.match(modals, /managementWriteConfirmed = true\s*managementIntent = nil/)

@@ -8,10 +8,10 @@ const source = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeCloudFilesBr
 const nav = fs.readFileSync(path.join(root, 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'), 'utf8')
 const main = source.slice(source.indexOf('private var filesMain: some View {'), source.indexOf('private var filesModals: some View {'))
 
-test('Files quick rail remains above every child view across TabView returns', () => {
+test('Files quick rail stays thumb reachable below content across TabView returns', () => {
   assert.ok(main.includes('native-ios-files-quick-rail'))
-  assert.ok(main.indexOf('native-ios-files-quick-rail') < main.indexOf('switch quickSection'))
-  assert.doesNotMatch(main, /if !selecting\s*\{\s*HStack/)
+  assert.ok(main.indexOf('switch quickSection') < main.indexOf('native-ios-files-quick-rail'))
+  assert.match(main, /if !selecting \{[\s\S]*?native-ios-files-quick-rail/)
   assert.match(main, /guard !selecting, !batchTrash\.busy, !batchTarget\.busy/)
   assert.match(main, /\.disabled\(selecting\)/)
   assert.match(main, /\.frame\(maxWidth: \.infinity, minHeight: 44\)/)

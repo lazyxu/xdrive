@@ -131,8 +131,11 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         /// double-tap. These actions manipulate only the current UIScrollView:
         /// no new photo requests, Owner reads or media navigation.
         func refreshAccessibilityZoom(_ scroll: UIScrollView) {
-            let percent = Int((scroll.zoomScale * 100).rounded())
-            scroll.accessibilityValue = "缩放 \(percent)%"
+            // A malformed or transient UIKit zoom value must not terminate
+            // Gallery, cloud Originals, or Files Viewer accessibility.
+            scroll.accessibilityValue = XDriveIOSNativeZoomAccessibilityPolicy.label(
+                scale: Double(scroll.zoomScale)
+            )
         }
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
@@ -154,11 +157,19 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
 
         private func accessibilityZoom(by factor: CGFloat) -> Bool {
             guard let scroll, photo != nil,
+                  scroll.bounds.width.isFinite, scroll.bounds.height.isFinite,
                   scroll.bounds.width > 0, scroll.bounds.height > 0 else { return false }
             let current = scroll.zoomScale
+            // Do not divide a malformed current/target zoom into CGRect.
+            guard current.isFinite, current > 0, factor.isFinite, factor > 0,
+                  scroll.minimumZoomScale.isFinite, scroll.minimumZoomScale > 0,
+                  scroll.maximumZoomScale.isFinite,
+                  scroll.maximumZoomScale >= scroll.minimumZoomScale
+            else { return false }
             let target = min(scroll.maximumZoomScale,
                              max(scroll.minimumZoomScale, current * factor))
-            guard abs(target - current) > 0.01 else { return false }
+            guard target.isFinite, target > 0,
+                  abs(target - current) > 0.01 else { return false }
             // UIScrollView's contentOffset is in zoomed coordinates; the
             // requested zoom rect is in the unscaled image-view coordinates.
             let center = CGPoint(
@@ -204,10 +215,15 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
                 return
             }
             let target = min(3, scroll.maximumZoomScale)
+            guard target.isFinite, target > 0,
+                  scroll.bounds.width.isFinite, scroll.bounds.height.isFinite,
+                  scroll.bounds.width > 0, scroll.bounds.height > 0 else { return }
             let point = gesture.location(in: photo)
+            guard point.x.isFinite, point.y.isFinite else { return }
             let visible = CGSize(width: scroll.bounds.width / target,
                                  height: scroll.bounds.height / target)
-            guard visible.width > 0, visible.height > 0 else { return }
+            guard visible.width.isFinite, visible.height.isFinite,
+                  visible.width > 0, visible.height > 0 else { return }
             scroll.zoom(to: CGRect(x: point.x - visible.width / 2,
                                    y: point.y - visible.height / 2,
                                    width: visible.width, height: visible.height),

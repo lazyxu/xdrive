@@ -71,6 +71,15 @@ private struct XDriveIOSNativeNavigationSmokeRoot: View {
                     XDriveIOSNativeFilesBrowser(login: login)
                         .navigationTitle("文件")
                 }
+            } else if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-files-viewer-no-session") {
+                // Debug-only real Viewer graph, mounted with a synthetic Owner
+                // but deliberately no login Session, bearer, private rows, or
+                // media. This exercises UI lifetime, NOT authenticated preview.
+                if let owner = login.owner {
+                    XDriveIOSNativeFilesViewerNoSessionSmoke(login: login, owner: owner)
+                } else {
+                    ProgressView("正在准备无会话 Viewer 回归…")
+                }
             } else {
                 XDriveIOSNativePhotosDashboard(
                     login: login, backup: backup, signingOut: false,
@@ -88,6 +97,55 @@ private struct XDriveIOSNativeNavigationSmokeRoot: View {
                     username: "simulator", rootNodeID: 9, rootRevision: 1
                 )
             }
+        }
+    }
+}
+
+/// A CI-only fail-closed lifecycle fixture; never exists in release source.
+/// Nodes are synthetic metadata only and no bearer/Server is provisioned.
+@MainActor
+private struct XDriveIOSNativeFilesViewerNoSessionSmoke: View {
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let owner: XDriveNativeOwnerRoot
+    @State private var selected: XDriveIOSNativeFilesNode?
+
+    private func open(_ kind: String, name: String, nodeID: UInt64) -> some View {
+        Button("打开 " + kind + " 预览") {
+            selected = XDriveIOSNativeFilesNode(
+                id: nodeID, parent_id: owner.rootNodeID, name: name,
+                type: "file", size: 4096, revision: 1
+            )
+        }
+        .accessibilityIdentifier("native-ios-files-viewer-smoke-" + kind)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                // Keep the root AX marker on a leaf: a VStack identifier
+                // can overwrite the individual child Button identifiers.
+                Text("无会话 Viewer 冒烟测试")
+                    .font(.caption)
+                    .accessibilityIdentifier("native-ios-files-viewer-smoke-root")
+                open("image", name: "smoke.jpg", nodeID: 1001)
+                open("video", name: "smoke.mp4", nodeID: 1002)
+                open("pdf", name: "smoke.pdf", nodeID: 1003)
+                open("audio", name: "smoke.mp3", nodeID: 1004)
+                open("text", name: "smoke.txt", nodeID: 1005)
+            }
+            .padding(24)
+            // Explicitly retain the five independently identified Buttons.
+            // SwiftUI can otherwise collapse a generated test fixture's
+            // sibling accessibility nodes under its root marker.
+            .accessibilityElement(children: .contain)
+            .navigationTitle("文件 Viewer 回归")
+        }
+        .fullScreenCover(item: $selected) { node in
+            XDriveIOSNativeFilesViewer(
+                initial: node, loadedItems: [node],
+                openedOwner: owner, login: login,
+                onNavigate: { _ in false }
+            )
         }
     }
 }

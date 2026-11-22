@@ -139,7 +139,15 @@ test('date navigation passes a transient exact photo slot into the canonical con
   assert.match(browser, /group: group, total: index\.totalSlots, filterValue: mediaFilter\.rawValue/)
   assert.match(browser, /exactDateTarget = nil\s*setMapDateScope\(nil\)\s*jump\(to: 0\)/)
   assert.match(browser, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?exactDateTarget = nil/)
-  assert.match(browser, /if state != \.active \{\s*model\.invalidate\(\)\s*exactDateTarget = nil/)
+  assert.match(browser, /if state != \.active \{[\s\S]*?model\.invalidate\(\)\s*exactDateTarget = nil\s*setMapDateScope\(nil\)/)
+  // Backgrounding revokes stale date indices, not the visible sheet.
+  const phase = browser.slice(browser.indexOf('.onChange(of: phase) { state in'))
+  const inactive = phase.slice(0, phase.indexOf('guard showingDates else'))
+  assert.match(inactive, /model\.invalidate\(\)/)
+  assert.doesNotMatch(inactive, /showingDates = false/,
+    'ordinary app backgrounding must not auto-dismiss a valid date sheet')
+  assert.match(phase, /guard permission == datesPermissionAtPresentation else \{[\s\S]*?showingDates = false/,
+    'changing PhotoKit authorization must still dismiss a stale date sheet')
   assert.match(wall, /@Binding var exactDateTarget: XDriveIOSNativePhotoExactDateTarget\?/)
   assert.match(wall, /@Binding var calendarMapRange: XDriveIOSNativePhotoMapCaptureRange\?/)
   assert.match(browser, /calendarMapRange: \$mapCaptureRange/)
@@ -150,6 +158,14 @@ test('date navigation passes a transient exact photo slot into the canonical con
 
 test('date jump is retired when the PhotoKit date index becomes stale', () => {
   assert.match(browser, /\.onChange\(of: changes\.revision\) \{ _ in\s*exactDateTarget = nil\s*setMapDateScope\(nil\)\s*model\.invalidate\(\)/)
-  assert.match(browser, /if state != \.active \{\s*model\.invalidate\(\)\s*exactDateTarget = nil/)
+  assert.match(browser, /if state != \.active \{[\s\S]*?model\.invalidate\(\)\s*exactDateTarget = nil\s*setMapDateScope\(nil\)/)
+  // Backgrounding revokes stale date indices, not the visible sheet.
+  const phase = browser.slice(browser.indexOf('.onChange(of: phase) { state in'))
+  const inactive = phase.slice(0, phase.indexOf('guard showingDates else'))
+  assert.match(inactive, /model\.invalidate\(\)/)
+  assert.doesNotMatch(inactive, /showingDates = false/,
+    'ordinary app backgrounding must not auto-dismiss a valid date sheet')
+  assert.match(phase, /guard permission == datesPermissionAtPresentation else \{[\s\S]*?showingDates = false/,
+    'changing PhotoKit authorization must still dismiss a stale date sheet')
   assert.match(browser, /if visible \{\s*selectedYearKey = nil\s*selectedMonthKey = nil\s*exactDateTarget = nil/)
 })
