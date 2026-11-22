@@ -98,6 +98,16 @@ TARGETS = {
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
 }
 NAV_TARGETS = {
+    # Previously seven real-XCUITest-PASS toolbar-option journeys were not
+    # captured by the Simulator tap-neighbor PNG watcher. This captures every
+    # bounded actual tap (diagnostic screenshots, never 60/120Hz FPS).
+    "testGalleryOptionsMoreButtonIsTappableAndDismisses",
+    "testGalleryOptionsFilesRoundTripsWithoutDuplicateTabBar",
+    "testGalleryOptionsLocalPhotosAndUnifiedSourceKeepNativeShell",
+    "testGalleryOptionsOriginalsToFilesToGalleryRemainsNative",
+    "testGalleryOptionsCollectionsFilesAndLibraryReturn",
+    "testGalleryOptionsLauncherAndMineRoutesKeepFilesReachable",
+    "testGalleryOptionsForegroundDismissFilesReturnDoesNotLoseRoute",
     # Real PhotoKit MapKit P0 route: the video gate supplies consecutive
     # decoded frames; these named tap screenshots remain supplemental.
     "testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted",
