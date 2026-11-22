@@ -1013,6 +1013,10 @@ struct XDriveIOSNativePhotosDashboard: View {
             galleryFocused = gallerySource == .map
             mapNavigationExplicitlyShown = false
         }
+        // Close the actual VStack content, then the Dashboard body.
+        // Without this brace Swift parses every following private member
+        // as a nested declaration and the unsigned IPA parser fails.
+        }
     }
 
     // iOS 26 Photos-style Library / Collections / Search chrome while in the
