@@ -71,15 +71,17 @@ test('outer startup root cannot cancel readiness of a newly mounted signed-out w
   const login = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
   const root = login.slice(login.indexOf('    var body: some View {'),
     login.indexOf('        .task {', login.indexOf('    var body: some View {')))
-  assert.match(root, /\.onDisappear \{\s*\/\/ Group may report a transient disappearance/)
+  assert.match(root, /\.onDisappear \{\s*\/\/ Group can transiently disappear[\s\S]*?backup\.stopLibraryChangeMonitoring\(\)/)
   assert.doesNotMatch(root, /readinessTicket = UUID\(\)|readinessTask\?\.cancel\(\)/)
   assert.match(root, /backup\.stopLibraryChangeMonitoring\(\)/)
   // Both visible destinations keep their own lifecycle, so a real exit
   // still revokes the pending UI-ready checkpoint.
-  assert.equal((root.match(/\.onDisappear \{ workspaceDisappeared\(\) \}/g) || []).length, 2)
+  assert.equal((root.match(/\.onDisappear \{ workspaceDisappeared\(\) \}/g) || []).length, 0)
+  assert.match(root, /\.onAppear \{ workspaceAppeared\(\) \}/)
+  assert.match(login, /private func workspaceDisappeared\(\) \{[\s\S]*?readinessTask\?\.cancel\(\)/)
   const onPhase = login.slice(login.indexOf('        .onChange(of: phase)'),
     login.indexOf('        .onChange(of: restoreFinished)'))
-  assert.match(onPhase, /else \{\s*readinessTicket = UUID\(\)\s*readinessTask\?\.cancel\(\)\s*readinessTask = nil/)
+  assert.match(onPhase, /else \{[\s\S]*?workspaceDisappeared\(\)[\s\S]*?backup\.stopLibraryChangeMonitoring\(\)[\s\S]*?backup\.cancel\(\)/)
   const mounted = login.slice(login.indexOf('private func armReadinessAfterMount()'),
     login.indexOf('/// A compact default'))
   assert.match(mounted, /restoreComplete: restoreFinished, workspaceVisible: workspaceVisible,/)
