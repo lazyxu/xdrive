@@ -153,6 +153,20 @@ enum XDriveIOSNativePhotosTestNavigator {
                 action.tap()
                 return true
             }
+            // In authenticated Gallery, SwiftUI may not hoist the retained
+            // ZStack child's toolbar into the parent NavigationStack.
+            // Use the genuine Photos bottom Search control to reach the
+            // *same* verified Owner/PhotoKit filter editor. A signed-out
+            // gallery must not enter that Owner-only reader.
+            let unifiedWall = found("native-ios-unified-photo-gallery", in: app)
+            if unifiedWall.exists {
+                let nativeSearch = found("native-ios-photos-search", in: app)
+                if nativeSearch.exists && nativeSearch.isHittable {
+                    nativeSearch.tap()
+                    let cancel = app.buttons["取消"].firstMatch
+                    return cancel.waitForExistence(timeout: 10) && cancel.isHittable
+                }
+            }
             let localMenu = found("native-ios-local-gallery-media-filter", in: app)
             if localMenu.exists && localMenu.isHittable {
                 localMenu.tap()
