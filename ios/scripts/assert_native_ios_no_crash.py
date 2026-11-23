@@ -16,8 +16,11 @@ import re
 TARGET_PROCESS = 'xDriveIOS'
 REPORT_EXTENSIONS = {'.ips', '.crash'}
 PROCESS_FILENAME = re.compile(r'^xDriveIOS(?:[-_.]|$)', re.IGNORECASE)
-PROCESS_FIELD = re.compile(rb'"(?:procName|processName)"\s*:\s*"xDriveIOS"(?=\s*[,}])', re.IGNORECASE)
-PROCESS_HEADER = re.compile(rb'(?m)^Process:\s+xDriveIOS\s+\[\d+\]', re.IGNORECASE)
+# The OS-declared process overrides a similar-looking crash filename.
+# Capture the exact executable name; a helper named xDriveIOS-Helper is NOT
+# a confirmed xDriveIOS SIGSEGV. A contradictory filename/header is inconclusive.
+PROCESS_FIELD = re.compile(rb'"(?:procName|processName)"\s*:\s*"([^"\r\n]+)"(?=\s*[,}])', re.IGNORECASE)
+PROCESS_HEADER = re.compile(rb'(?m)^Process:\s+([^\s\[]+)\s+\[\d+\]', re.IGNORECASE)
 MAX_HEADER_BYTES = 64 * 1024
 # Only real XCTest failure lines from the xDrive iOS app UI test target are
 # evidence of losing the target process. A generic "lost connection" warning
@@ -71,14 +74,22 @@ def _app_disconnections(log_path, since_ns, scan_errors):
         return 0
 
 
-def _belongs_to_app(report):
-    if PROCESS_FILENAME.match(report.name):
-        return True
-    # Some OS report filenames use a generic prefix, but the report header
-    # still carries the exact executable. No substring/Owner/parent matching.
+def _belongs_to_app(report, scan_errors=None):
+    filename_matches = bool(PROCESS_FILENAME.match(report.name))
+    # Always read a bounded OS header: a filename that resembles xDriveIOS
+    # can belong to an extension or helper. Never confirm an app crash when
+    # the declared executable is different.
     with report.open('rb') as handle:
         header = handle.read(MAX_HEADER_BYTES)
-    return bool(PROCESS_FIELD.search(header) or PROCESS_HEADER.search(header))
+    declared = PROCESS_FIELD.search(header) or PROCESS_HEADER.search(header)
+    if declared is not None:
+        matches = declared.group(1).lower() == TARGET_PROCESS.lower().encode('ascii')
+        if filename_matches and not matches and scan_errors is not None:
+            # Do not call a contradictory report a clean run either.
+            scan_errors.append('report_process_identity_conflict')
+        return matches
+    # An xDriveIOS-prefixed but unreadable/truncated report still fails closed.
+    return filename_matches
 
 
 def audit(marker, roots, xcodebuild_log=None):
@@ -116,7 +127,7 @@ def audit(marker, roots, xcodebuild_log=None):
                     if not path.is_file() or path.stat().st_mtime_ns < since_ns:
                         continue
                     summary['reports_scanned_after_marker'] += 1
-                    if _belongs_to_app(path):
+                    if _belongs_to_app(path, summary['scan_errors']):
                         # Duplicate copies in host/Simulator folders do not
                         # imply two process crashes. The gate fails either way.
                         found.add(path.name)
