@@ -50,6 +50,8 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
                       "Real Gallery toolbar backup Menu surface must be visible and hittable")
         XCTAssertGreaterThanOrEqual(target.frame.height, 43,
                                     "Real Gallery backup Menu tappable height collapsed")
+        XCTAssertGreaterThanOrEqual(target.frame.width, 43,
+                                    "Real Gallery backup Menu tappable width collapsed")
         target.tap()
         XCTAssertEqual(app.state, .runningForeground)
     }
