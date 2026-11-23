@@ -31,8 +31,13 @@ test('real UI performance checks fail closed on a hidden or covered Menu', () =>
   assert.match(helper, /XCTAssertGreaterThanOrEqual\(control\.frame\.height, 43/)
   assert.match(helper, /XCTAssertGreaterThanOrEqual\(control\.frame\.width, 43/)
   assert.match(helper, /XCTAssertEqual\(controls\.count, 1/)
-  assert.match(helper, /XCTAssertTrue\(control\.isHittable/)
-  assert.match(helper, /control\.tap\(\)/)
+  // A SwiftUI Menu outer AX wrapper may be non-hittable. Require a
+  // real 60x44-point native label or a genuinely tappable wrapper.
+  assert.match(helper, /matching\(identifier: "native-ios-gallery-backup-action"\)/)
+  assert.match(helper, /let target = control\.isHittable \? control : visibleLabel/)
+  assert.match(helper, /XCTAssertTrue\(target\.isHittable/)
+  assert.match(helper, /XCTAssertGreaterThanOrEqual\(target\.frame\.height, 43/)
+  assert.match(helper, /target\.tap\(\)/)
   assert.doesNotMatch(helper, /XCTSkip|if !control\.isHittable[\s\S]*?return/)
 })
 

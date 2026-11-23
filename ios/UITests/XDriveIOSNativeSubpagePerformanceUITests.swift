@@ -502,10 +502,18 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             mine.tap()
             ready = view("native-ios-notes-source-picker", app: app)
         case "clipboard.target-scope":
+            // Measure complete native scope selection, not a transient
+            // popup left open for the screenshot/CPU metric collector.
             tap("native-ios-clipboard-target-picker", app: app)
             let option = view("native-ios-clipboard-broadcast-option", app: app)
             let visibleChoice = app.buttons["当前 Owner 广播"].firstMatch
-            ready = option.exists && option.isHittable ? option : visibleChoice
+            let choice = option.exists && option.isHittable ? option : visibleChoice
+            XCTAssertTrue(choice.waitForExistence(timeout: 15) && choice.isHittable,
+                          "Real Clipboard broadcast option must be selectable")
+            choice.tap()
+            ready = view("native-ios-clipboard-target-picker", app: app)
+            XCTAssertTrue(ready.waitForExistence(timeout: 15) && ready.isHittable,
+                          "Clipboard picker must remain usable after genuine selection")
         case "clipboard.history-scroll":
             let scroll = app.scrollViews.firstMatch
             XCTAssertTrue(scroll.waitForExistence(timeout: 15))
@@ -774,25 +782,11 @@ final class XDriveIOSNativeSubpagePerformanceUITests: XCTestCase {
             XCTAssertEqual(view("native-ios-notes-source-picker", app: app).value as? String,
                            "iOS 备份", "Notes source reverse transition failed")
         case "clipboard.target-scope":
-            let option = view("native-ios-clipboard-broadcast-option", app: app)
-            let fallback = app.buttons["当前 Owner 广播"].firstMatch
-            var choice = option.exists && option.isHittable ? option : fallback
-            if !choice.isHittable {
-                // A real SwiftUI Menu may dismiss itself while Xcode samples
-                // CPU/RSS or captures accessibility state between the visit
-                // and cleanup phases. Reopen the *actual* scope picker and
-                // select the real broadcast row; do not synthesize a change.
-                let picker = view("native-ios-clipboard-target-picker", app: app)
-                XCTAssertTrue(picker.waitForExistence(timeout: 15) && picker.isHittable,
-                              "Clipboard scope picker could not be reopened")
-                picker.tap()
-                choice = option.exists && option.isHittable ? option : fallback
-            }
-            XCTAssertTrue(choice.waitForExistence(timeout: 15) && choice.isHittable,
-                          "Clipboard menu option was not selectable")
-            choice.tap()
-            XCTAssertTrue(view("native-ios-clipboard-target-picker", app: app)
-                .waitForExistence(timeout: 15))
+            // The actual option was selected during the measured forward
+            // operation. Verify the picker/editor survive that full journey.
+            let picker = view("native-ios-clipboard-target-picker", app: app)
+            XCTAssertTrue(picker.waitForExistence(timeout: 15) && picker.isHittable,
+                          "Clipboard picker obstructed after choosing broadcast")
             XCTAssertTrue(view("ios-clipboard-draft", app: app)
                 .waitForExistence(timeout: 15),
                 "Clipboard original editor must survive target-picker dismiss")
