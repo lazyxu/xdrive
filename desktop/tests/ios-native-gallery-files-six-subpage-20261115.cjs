@@ -277,7 +277,7 @@ test('five Files Viewer media kinds each have an isolated real H264 transition j
     assert.match(body, /waitForRealH264RecordingPrelude\(\)/);
     assert.match(body, /exerciseFilesViewerSmoke\(/);
   }
-  assert.match(frameContinuity, /native-ios-files-viewer-no-session/);
+  assert.match(frameContinuity, /-xdrive-ui-files-viewer-no-session/);
   assert.match(frameContinuity, /native-ios-files-viewer-error-scroll/);
   assert.match(frameContinuity, /assertVisiblePixels\(app, route:/);
   assert.match(workflow, /--minimum 64/);
