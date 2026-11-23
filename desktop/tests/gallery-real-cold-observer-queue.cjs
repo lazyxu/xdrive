@@ -89,6 +89,8 @@ test('production sources remain unchanged by the observer-only experiment', () =
   assert.match(script, /attributeFilter: \['src', 'srcset'\]/)
   assert.match(script, /data\.coalescedScanFrames\+\+/)
   assert.match(script, /data\.gridScanCpuMs \+= cpu/)
-  assert.match(script, /const { app } = require\('electron'\)/)
+  // The real Desktop benchmark may import contentTracing for opt-in
+  // diagnostics while the production Electron Main entry stays unchanged.
+  assert.match(script, /const \{ app(?:, contentTracing)? \} = require\('electron'\)/)
   assert.match(script, /require\('\.\.\/dist\/main\/index\.cjs'\)/)
 })
