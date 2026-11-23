@@ -704,9 +704,6 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
     }
 
-
-    }
-
     private var dashboardLifecycleContent: some View {
         dashboardSceneLifecycleContent
         .onChange(of: login.owner) { owner in
