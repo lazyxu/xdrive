@@ -158,7 +158,7 @@ class AuditTests(unittest.TestCase):
             "testGalleryOptionsLauncherAndMineRoutesKeepFilesReachable",
             "testGalleryOptionsForegroundDismissFilesReturnDoesNotLoseRoute",
         }
-        declared = set(re.findall(r"\\bfunc (test\\w+)\\(\\)", suite))
+        declared = set(re.findall(r"(?m)^\s*func\s+(test\w+)\(\)", suite))
         captured = set(re.findall(r'"(test\\w+)"', watcher))
         self.assertFalse(expected - declared, "missing real XCTest: " +
                          repr(expected - declared))
