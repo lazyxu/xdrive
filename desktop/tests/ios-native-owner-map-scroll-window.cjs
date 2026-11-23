@@ -87,7 +87,7 @@ test('cloud map album returns to last verified Viewer Node and never restores a 
   assert.match(album, /page = fetched\s*visiblePageRevision = UUID\(\)/)
   assert.match(album, /if autoAdvance \|\| target != cursor \{\s*viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*\}/)
   assert.match(album, /private func invalidate\(\) \{[\s\S]*?viewerReturn = nil/)
-  assert.match(album, /viewerReturn = nil\s*self\.error = "地点照片或 Owner 授权已变化/)
+  assert.match(album, /viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*self\.error = "地点照片或 Owner 授权已变化/)
   assert.doesNotMatch(album, /UserDefaults\.set\(viewerReturn|localStorage|CacheSavedNodeID/)
 })
 

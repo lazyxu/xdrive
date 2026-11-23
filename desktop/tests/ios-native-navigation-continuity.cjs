@@ -87,7 +87,7 @@ const scenarios = [
     "checks": [
       {
         "file": "u",
-        "pattern": "showingPeople = false; showingThumbnailCache = false\\s*isSelecting = false; selectedIDs\\.removeAll\\(\\)\\s*requestSearch = false\\s*sourceFilter = nil",
+        "pattern": "showingPeople = false; showingThumbnailCache = false\\s*showingUnifiedOptions = false\\s*pendingUnifiedOption = nil\\s*pendingUnifiedOptionOwner = nil\\s*isSelecting = false; selectedIDs\\.removeAll\\(\\)\\s*requestSearch = false\\s*sourceFilter = nil",
         "flags": ""
       },
       {

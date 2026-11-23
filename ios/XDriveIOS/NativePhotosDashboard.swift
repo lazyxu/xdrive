@@ -677,122 +677,148 @@ struct XDriveIOSNativePhotosDashboard: View {
             .map { String(format: "%02x", $0) }.joined()
     }
 
+    // Each stage has an independent opaque SwiftUI View type. The former
+    // 300+-line VStack forced Swift 5's type checker to solve TabView, all
+    // sheet builders and dozens of onChange closures in one expression.
+    // The boundaries below preserve the exact modifier order and scope.
     var body: some View {
-        let expectedRouteOwnerKey = ownerScopeKey
-        return VStack(spacing: 0) {
-            // Allocate REAL layout space for exactly one bottom nav bar.
-            // The prior TabView.safeAreaInset left the Files quick rail at
-            // y=852 while the app nav began at y=763 in real Simulator tests.
-            TabView(selection: $tab) {
-            NavigationStack {
-                launcher
-                    .navigationTitle("全部")
-                    .toolbar(.hidden, for: .tabBar)
+        VStack(spacing: 0) {
+            // Files quick rail and app navigation occupy separate layout rows.
+            dashboardLifecycleContent
+        // Sibling placement reserves physical space. There is exactly one
+        // native bar: Photos chrome in Gallery, five-slot xDrive elsewhere.
+        .toolbar(.hidden, for: .tabBar)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
+            tab: tab.rawValue,
+            gallerySource: gallerySource.rawValue,
+            focused: galleryPresentationFocused,
+            ownerVerified: login.owner != nil
+        ) {
+            if tab == .gallery {
+                nativePhotosBottomBar
+            } else {
+                nativeBottomBar
             }
-            .tabItem { Label("全部", systemImage: "square.grid.2x2") }
-            .tag(XDriveIOSNativeBottomTab.launcher)
-
-            NavigationStack {
-                dynamicPage
-                    .navigationTitle(dynamicSlotTitle)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button {
-                                showRecentPicker = true
-                            } label: {
-                                Label("最近功能", systemImage: "clock.arrow.circlepath")
-                            }
-                        }
-                    }
-                    .toolbar(.hidden, for: .tabBar)
-            }
-            .tabItem {
-                Label(dynamicSlotTitle,
-                      systemImage: dynamicSlotSymbol)
-            }
-            .tag(XDriveIOSNativeBottomTab.dynamic)
-
-            NavigationStack {
-                gallery
-                    .navigationTitle(
-                        gallerySource == .albums ? "精选集" :
-                        gallerySource == .unified ? "图库" : gallerySource.title
-                    )
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        // The iOS Photos toolbar is primarily Gallery chrome.
-                        // xDrive-specific sources, backup and other app destinations
-                        // live behind ONE secondary menu, not permanent rows.
-                        ToolbarItem(placement: .topBarLeading) {
-                            galleryMoreMenu
-                        }
-                    }
-                    .toolbar(.hidden, for: .tabBar)
-            }
-            .tabItem { Label("图库", systemImage: "photo.on.rectangle") }
-            .tag(XDriveIOSNativeBottomTab.gallery)
-
-            NavigationStack {
-                if tab == .files || filesTabActivated {
-                    // Do not eagerly evaluate the 5-layer Files lifecycle
-                    // when login publishes a verified Owner to TabView.
-                    files
-                        .navigationTitle("文件")
-                } else {
-                    Color.clear
-                        .accessibilityHidden(true)
-                }
-                    .toolbar(.hidden, for: .tabBar)
-            }
-            .tabItem { Label("文件", systemImage: "folder") }
-            .tag(XDriveIOSNativeBottomTab.files)
-
-            NavigationStack {
-                mine
-                    .navigationTitle("我的")
-                    .toolbar(.hidden, for: .tabBar)
-            }
-            .tabItem { Label("我的", systemImage: "person.crop.circle") }
-            .tag(XDriveIOSNativeBottomTab.mine)
         }
-        // Keep the selected TabView's real five destinations mounted.
-        // The one Photos/xDrive native bar is a separate, measured row
-        // BELOW its content, never a safe-area overlay over Files' own rail.
-        .id(ownerScopeKey)
-        .environment(\.xdriveNativeTransfers, transfers)
-        // Visible local/paired Gallery tiles only; no background writes.
-        .environment(\.xdriveNativePhotoQueueBadgeOwner,
-                     backup.schedule?.enabled == true ? login.owner : nil)
-        .environment(\.xdriveNativePhotoProcessingID,
-                     backup.busy ? backup.progress?.activeLocalIdentifier : nil)
-        .environment(\.xdriveNativePhotoQueueBadgeRefresh,
-                     XDriveIOSNativePhotoQueueBadgeRefresh(
-                        busy: backup.busy,
-                        confirmedID: backup.confirmedOriginalUpdate?.id
-                     ))
-        .environment(\.xdriveNativePhotoOnlyNewSince,
-                     backup.schedule?.enabled == true &&
-                     backup.schedule?.backupStartRule == .onlyNew
-                        ? backup.schedule?.newOnlySince : nil)
-        .environment(\.xdriveNativePhotoPriorityAction, { id, failed in
-            requestPriorityBackup(id: id, failed: failed)
-        })
-        .environment(\.xdriveNativeLocalMapJump, localMapJump)
-        .environment(\.xdriveOpenNativeLocalMap, { jump in
-            guard ownerScopeKey == expectedRouteOwnerKey, login.owner != nil,
-                  phase == .active,
-                  [.authorized, .limited].contains(
-                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                  ) else { return }
-            // Reuse the existing Gallery map; never spawn another map stack.
-            // Capture the Gallery source before installing this verified jump.
-            openGallery(.map)
-            localMapJump = jump
-            localMapCamera = jump.camera
-            localMapScope = .library
-            mapSource = .local
-        })
-        .navigationBarBackButtonHidden(true)
+        }
+    }
+
+
+    }
+
+    private var dashboardLifecycleContent: some View {
+        dashboardSceneLifecycleContent
+        .onChange(of: login.owner) { owner in
+            // Revoke old-Owner map return before any delayed Done callback.
+            mapReturnGallerySource = nil
+            mapReturnOwnerScopeKey = nil
+            galleryMapCaptureRange = nil
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            // No push-route account card: parent root owns signed-out state.
+            showSignOutConsent = false
+            signOutConsentOwner = nil
+            showingLocalPhotoSearch = false
+            priorityItemID = nil
+            priorityItemOwner = nil
+            showPriorityConsent = false
+            showThumbnailCacheFromBackup = false
+            if owner == nil {
+                navigationRouteStore.clear()
+                resetNavigation()
+            }
+        }
+        .onChange(of: tab) { _ in saveNavigationIfReady() }
+        .onChange(of: tab) { next in
+            if next == .files { filesTabActivated = true }
+        }
+        .onChange(of: tab) { next in
+            if next == .dynamic && emptyDynamicMapFallback {
+                openGallery(.map)
+            }
+        }
+        .onChange(of: localGalleryMediaFilter) { _ in
+            // A changed PhotoKit predicate invalidates the old calendar GPS
+            // selection, including when switching between map sources.
+            galleryMapCaptureRange = nil
+        }
+        .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
+        .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
+        .onChange(of: recentDynamic) { _ in saveNavigationIfReady() }
+        .onChange(of: localMapScope) { _ in saveNavigationIfReady() }
+        .onChange(of: localMapPageOffset) { _ in saveNavigationIfReady() }
+        .onChange(of: localGalleryPageOffset) { _ in saveNavigationIfReady() }
+        .onChange(of: localAlbumDirectoryOffset) { _ in saveNavigationIfReady() }
+        // Rotation does not change focus; changing the owning route does.
+        .onChange(of: tab) { next in
+            galleryFocusGeneration = UUID()
+            if next != .gallery {
+                pendingUnifiedMapDestination = nil
+                pendingUnifiedMapSearch = false
+                pendingUnifiedMapOwnerScope = nil
+                galleryFocused = false
+                mapNavigationExplicitlyShown = false
+            }
+        }
+        .onChange(of: gallerySource) { _ in
+            galleryFocusGeneration = UUID()
+            // Ordinary photo walls retain the full dashboard chrome, but
+            // opening the native photo map must not sandwich the MapKit canvas
+            // between backup/source strips and the five-slot tab bar.
+            galleryFocused = gallerySource == .map
+            mapNavigationExplicitlyShown = false
+        }
+    }
+
+    private var dashboardSceneLifecycleContent: some View {
+        dashboardModalContent
+        .onAppear {
+            restoreNavigationIfNeeded()
+            transfers.selectOwner(login.owner)
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            backup.refresh(owner: login.owner)
+        }
+        .onChange(of: phase) { state in
+            guard state == .active else {
+                pendingUnifiedMapDestination = nil
+                pendingUnifiedMapSearch = false
+                pendingUnifiedMapOwnerScope = nil
+                galleryFocusGeneration = UUID()
+                galleryFocused = false
+                mapNavigationExplicitlyShown = false
+                localMapJump = nil
+                localMapCamera = nil
+                return
+            }
+            // Settings may revoke PhotoKit permission or a BGTask may pause
+            // the durable plan without changing the logged-in Owner.
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            backup.refresh(owner: login.owner)
+            // Native Photos map is immersive by default after foregrounding.
+            // The map's explicit "显示底部导航" action can still reveal chrome.
+            if tab == .gallery && gallerySource == .map {
+                galleryFocused = true
+                mapNavigationExplicitlyShown = false
+            }
+        }
+        .onChange(of: ownerScopeKey) { _ in
+            transfers.selectOwner(login.owner)
+            // The original Owner transfer cleanup stays first; the hidden
+            // Files child never retains a previous Owner's navigation state.
+            filesTabActivated = false
+            // TabView .id does not reset this parent's @State. Revoke the old
+            // Owner's saved UI route even if switching A -> B -> A in one scene.
+            routeRestoreScopeKey = nil
+            clipboardViewerIntent = nil
+            navigationRouteStore.clear()
+            if login.owner != nil { routeRestoreScopeKey = ownerScopeKey }
+            // The app-root durable original/receipt runner is never touched.
+            resetNavigation()
+        }
+    }
+
+    private var dashboardModalContent: some View {
+        dashboardEnvironmentContent
         .fullScreenCover(item: $clipboardViewerIntent) { selected in
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected.owner) {
                 XDriveIOSNativeFilesViewer(
@@ -891,124 +917,123 @@ struct XDriveIOSNativePhotosDashboard: View {
         } message: {
             Text("退出会停止本机原件自动计划并尝试撤销后台授权；已备份的云端文件和不确定上传收据不会被删除。")
         }
-        .onAppear {
-            restoreNavigationIfNeeded()
-            transfers.selectOwner(login.owner)
-            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-            backup.refresh(owner: login.owner)
-        }
-        .onChange(of: phase) { state in
-            guard state == .active else {
-                pendingUnifiedMapDestination = nil
-                pendingUnifiedMapSearch = false
-                pendingUnifiedMapOwnerScope = nil
-                galleryFocusGeneration = UUID()
-                galleryFocused = false
-                mapNavigationExplicitlyShown = false
-                localMapJump = nil
-                localMapCamera = nil
-                return
+    }
+
+    private var dashboardEnvironmentContent: some View {
+        let expectedRouteOwnerKey = ownerScopeKey
+        return dashboardTabContent
+        // Keep the selected TabView's real five destinations mounted.
+        // The one Photos/xDrive native bar is a separate, measured row
+        // BELOW its content, never a safe-area overlay over Files' own rail.
+        .id(ownerScopeKey)
+        .environment(\.xdriveNativeTransfers, transfers)
+        // Visible local/paired Gallery tiles only; no background writes.
+        .environment(\.xdriveNativePhotoQueueBadgeOwner,
+                     backup.schedule?.enabled == true ? login.owner : nil)
+        .environment(\.xdriveNativePhotoProcessingID,
+                     backup.busy ? backup.progress?.activeLocalIdentifier : nil)
+        .environment(\.xdriveNativePhotoQueueBadgeRefresh,
+                     XDriveIOSNativePhotoQueueBadgeRefresh(
+                        busy: backup.busy,
+                        confirmedID: backup.confirmedOriginalUpdate?.id
+                     ))
+        .environment(\.xdriveNativePhotoOnlyNewSince,
+                     backup.schedule?.enabled == true &&
+                     backup.schedule?.backupStartRule == .onlyNew
+                        ? backup.schedule?.newOnlySince : nil)
+        .environment(\.xdriveNativePhotoPriorityAction, { id, failed in
+            requestPriorityBackup(id: id, failed: failed)
+        })
+        .environment(\.xdriveNativeLocalMapJump, localMapJump)
+        .environment(\.xdriveOpenNativeLocalMap, { jump in
+            guard ownerScopeKey == expectedRouteOwnerKey, login.owner != nil,
+                  phase == .active,
+                  [.authorized, .limited].contains(
+                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                  ) else { return }
+            // Reuse the existing Gallery map; never spawn another map stack.
+            // Capture the Gallery source before installing this verified jump.
+            openGallery(.map)
+            localMapJump = jump
+            localMapCamera = jump.camera
+            localMapScope = .library
+            mapSource = .local
+        })
+        .navigationBarBackButtonHidden(true)
+    }
+
+    private var dashboardTabContent: some View {
+            TabView(selection: $tab) {
+            NavigationStack {
+                launcher
+                    .navigationTitle("全部")
+                    .toolbar(.hidden, for: .tabBar)
             }
-            // Settings may revoke PhotoKit permission or a BGTask may pause
-            // the durable plan without changing the logged-in Owner.
-            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-            backup.refresh(owner: login.owner)
-            // Native Photos map is immersive by default after foregrounding.
-            // The map's explicit "显示底部导航" action can still reveal chrome.
-            if tab == .gallery && gallerySource == .map {
-                galleryFocused = true
-                mapNavigationExplicitlyShown = false
+            .tabItem { Label("全部", systemImage: "square.grid.2x2") }
+            .tag(XDriveIOSNativeBottomTab.launcher)
+
+            NavigationStack {
+                dynamicPage
+                    .navigationTitle(dynamicSlotTitle)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button {
+                                showRecentPicker = true
+                            } label: {
+                                Label("最近功能", systemImage: "clock.arrow.circlepath")
+                            }
+                        }
+                    }
+                    .toolbar(.hidden, for: .tabBar)
             }
-        }
-        .onChange(of: ownerScopeKey) { _ in
-            transfers.selectOwner(login.owner)
-            // The original Owner transfer cleanup stays first; the hidden
-            // Files child never retains a previous Owner's navigation state.
-            filesTabActivated = false
-            // TabView .id does not reset this parent's @State. Revoke the old
-            // Owner's saved UI route even if switching A -> B -> A in one scene.
-            routeRestoreScopeKey = nil
-            clipboardViewerIntent = nil
-            navigationRouteStore.clear()
-            if login.owner != nil { routeRestoreScopeKey = ownerScopeKey }
-            // The app-root durable original/receipt runner is never touched.
-            resetNavigation()
-        }
-        .onChange(of: login.owner) { owner in
-            // Revoke old-Owner map return before any delayed Done callback.
-            mapReturnGallerySource = nil
-            mapReturnOwnerScopeKey = nil
-            galleryMapCaptureRange = nil
-            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-            // No push-route account card: parent root owns signed-out state.
-            showSignOutConsent = false
-            signOutConsentOwner = nil
-            showingLocalPhotoSearch = false
-            priorityItemID = nil
-            priorityItemOwner = nil
-            showPriorityConsent = false
-            showThumbnailCacheFromBackup = false
-            if owner == nil {
-                navigationRouteStore.clear()
-                resetNavigation()
+            .tabItem {
+                Label(dynamicSlotTitle,
+                      systemImage: dynamicSlotSymbol)
             }
-        }
-        .onChange(of: tab) { _ in saveNavigationIfReady() }
-        .onChange(of: tab) { next in
-            if next == .files { filesTabActivated = true }
-        }
-        .onChange(of: tab) { next in
-            if next == .dynamic && emptyDynamicMapFallback {
-                openGallery(.map)
+            .tag(XDriveIOSNativeBottomTab.dynamic)
+
+            NavigationStack {
+                gallery
+                    .navigationTitle(
+                        gallerySource == .albums ? "精选集" :
+                        gallerySource == .unified ? "图库" : gallerySource.title
+                    )
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        // The iOS Photos toolbar is primarily Gallery chrome.
+                        // xDrive-specific sources, backup and other app destinations
+                        // live behind ONE secondary menu, not permanent rows.
+                        ToolbarItem(placement: .topBarLeading) {
+                            galleryMoreMenu
+                        }
+                    }
+                    .toolbar(.hidden, for: .tabBar)
             }
-        }
-        .onChange(of: localGalleryMediaFilter) { _ in
-            // A changed PhotoKit predicate invalidates the old calendar GPS
-            // selection, including when switching between map sources.
-            galleryMapCaptureRange = nil
-        }
-        .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
-        .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
-        .onChange(of: recentDynamic) { _ in saveNavigationIfReady() }
-        .onChange(of: localMapScope) { _ in saveNavigationIfReady() }
-        .onChange(of: localMapPageOffset) { _ in saveNavigationIfReady() }
-        .onChange(of: localGalleryPageOffset) { _ in saveNavigationIfReady() }
-        .onChange(of: localAlbumDirectoryOffset) { _ in saveNavigationIfReady() }
-        // Rotation does not change focus; changing the owning route does.
-        .onChange(of: tab) { next in
-            galleryFocusGeneration = UUID()
-            if next != .gallery {
-                pendingUnifiedMapDestination = nil
-                pendingUnifiedMapSearch = false
-                pendingUnifiedMapOwnerScope = nil
-                galleryFocused = false
-                mapNavigationExplicitlyShown = false
+            .tabItem { Label("图库", systemImage: "photo.on.rectangle") }
+            .tag(XDriveIOSNativeBottomTab.gallery)
+
+            NavigationStack {
+                if tab == .files || filesTabActivated {
+                    // Do not eagerly evaluate the 5-layer Files lifecycle
+                    // when login publishes a verified Owner to TabView.
+                    files
+                        .navigationTitle("文件")
+                } else {
+                    Color.clear
+                        .accessibilityHidden(true)
+                }
+                    .toolbar(.hidden, for: .tabBar)
             }
-        }
-        .onChange(of: gallerySource) { _ in
-            galleryFocusGeneration = UUID()
-            // Ordinary photo walls retain the full dashboard chrome, but
-            // opening the native photo map must not sandwich the MapKit canvas
-            // between backup/source strips and the five-slot tab bar.
-            galleryFocused = gallerySource == .map
-            mapNavigationExplicitlyShown = false
-        }
-        // Sibling placement reserves physical space. There is exactly one
-        // native bar: Photos chrome in Gallery, five-slot xDrive elsewhere.
-        .toolbar(.hidden, for: .tabBar)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
-            tab: tab.rawValue,
-            gallerySource: gallerySource.rawValue,
-            focused: galleryPresentationFocused,
-            ownerVerified: login.owner != nil
-        ) {
-            if tab == .gallery {
-                nativePhotosBottomBar
-            } else {
-                nativeBottomBar
+            .tabItem { Label("文件", systemImage: "folder") }
+            .tag(XDriveIOSNativeBottomTab.files)
+
+            NavigationStack {
+                mine
+                    .navigationTitle("我的")
+                    .toolbar(.hidden, for: .tabBar)
             }
-        }
+            .tabItem { Label("我的", systemImage: "person.crop.circle") }
+            .tag(XDriveIOSNativeBottomTab.mine)
         }
     }
 
