@@ -121,6 +121,11 @@ async function oneSample(sample, ready, dir) {
     XD_DISABLE_SECRET_SERVICE: '1',
     XD_AGENT_PATH: agentBinary,
     XD_GALLERY_DESKTOP_REAL_SERVER_URL: ready.url,
+    // Diagnostic-only TraceEvent recording happens inside the production
+    // Electron Main process and is deleted before any artifacts are saved.
+    XD_GALLERY_DESKTOP_COLD_CHROME_TRACE:
+      process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1' ? '1' : '0',
+    XD_GALLERY_DESKTOP_TRACE_SCRATCH: dir,
   }
   const proc = launch(agentBinary, [], { ...process.env, ...env }, 'agent-' + sample)
   const discovery = path.join(configHome, 'xdrive', 'desktop-ipc.json')
@@ -179,6 +184,16 @@ async function main() {
         assert(result.logicalItems === 100000 && result.physicalNodes === 115000 &&
           result.renderer.decodedImages >= 12 &&
           result.renderer.mountedTiles < 1000, 'real Desktop 100k result incorrect')
+        if (process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1') {
+          const trace = result.chromiumTimeline
+          assert(trace?.rendererPIDMatched && trace.rendererEvents > 0 &&
+            trace.longTaskTraceCount > 0 &&
+            trace.rawTraceArgsOrURLsIncluded === false &&
+            trace.productionCodeModified === false,
+            'real RendererMain events not resolved to safe fixed-category metrics')
+          assert(!fs.existsSync(path.join(dir, 'real-desktop-gallery-' + sample + '.json')),
+            'raw trace must be deleted before reports or artifacts are exported')
+        }
         assert(Array.isArray(result.firstRangeTimings) &&
           result.firstRangeTimings.some(row => row.result === 'ok' &&
             Number.isFinite(row.agent_ready_ms) &&
@@ -241,6 +256,7 @@ async function main() {
         : 'measured-baseline-only-no-production-optimization',
       samples, n: samples.length,
       progressProbeEnabled: probeEnabled,
+      chromiumTraceProbeEnabled: process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1',
       progressMedians,
       progressPairCount: probeEnabled ? samples.reduce(
         (sum, row) => sum + row.sourceExactMediaProgress.pairs.length, 0) : 0,
