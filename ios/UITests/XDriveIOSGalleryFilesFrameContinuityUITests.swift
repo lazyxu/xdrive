@@ -90,6 +90,71 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         XCTAssertGreaterThan(unique.count, 8, "Uniform/blank child viewport at \(route)")
     }
 
+    private func launchFilesViewerSmoke() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-xdrive-ui-navigation-smoke",
+            "-xdrive-ui-navigation-synthetic-owner",
+            "-xdrive-ui-files-viewer-no-session"
+        ]
+        app.launch()
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Files Viewer smoke app exited at launch")
+        let root = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-viewer-smoke-root").firstMatch
+        XCTAssertTrue(root.waitForExistence(timeout: 20),
+                      "Debug-only Files Viewer fixture did not mount")
+        return app
+    }
+
+    private func exerciseFilesViewerSmoke(
+        _ kind: String, app: XCUIApplication, background: Bool
+    ) {
+        let root = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-viewer-smoke-root").firstMatch
+        let open = app.buttons["native-ios-files-viewer-smoke-" + kind].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 15),
+                      "Missing isolated Files Viewer launcher for " + kind)
+        XCTAssertTrue(open.isHittable,
+                      "Files Viewer launcher is not tappable for " + kind)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-viewer-smoke-" + kind)
+        open.tap()
+
+        let error = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-viewer-error-scroll").firstMatch
+        XCTAssertTrue(error.waitForExistence(timeout: 20),
+                      "No-session Files Viewer did not mount its recovery page for " + kind)
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Files Viewer lost the foreground process at " + kind)
+        assertVisiblePixels(app, route: "Files Viewer " + kind + " recovery page")
+
+        if background {
+            XCUIDevice.shared.press(.home)
+            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
+                          "Files Viewer process exited while backgrounded at " + kind)
+            app.activate()
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                          "Files Viewer failed to restore foreground at " + kind)
+            XCTAssertTrue(error.waitForExistence(timeout: 20),
+                          "Files Viewer recovery page failed to repaint at " + kind)
+            assertVisiblePixels(app, route: "Files Viewer " + kind + " after foreground")
+        }
+
+        let done = app.navigationBars.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15),
+                      "Files Viewer lost its Done escape at " + kind)
+        XCTAssertTrue(done.isHittable,
+                      "Files Viewer Done action is obscured at " + kind)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-viewer-smoke-done")
+        done.tap()
+        XCTAssertTrue(root.waitForExistence(timeout: 15),
+                      "Files Viewer did not return to its fixture root at " + kind)
+        XCTAssertTrue(open.waitForExistence(timeout: 15),
+                      "Files Viewer root changed after returning from " + kind)
+        XCTAssertEqual(app.state, .runningForeground)
+        assertVisiblePixels(app, route: "Files Viewer " + kind + " after Done")
+    }
+
     private func openLocalPhotoSource(_ app: XCUIApplication) {
         tap("native-ios-gallery-source-menu", app: app)
         let local = app.buttons["本机照片"].firstMatch
@@ -799,4 +864,38 @@ final class XDriveIOSGalleryFilesFrameContinuityUITests: XCTestCase {
         assertGallery(app)
         assertVisiblePixels(app, route: "Unified after Albums Originals Files")
     }
+
+    // Isolate each media type so one failing Viewer cannot hide the remaining
+    // routes. Every case is separately recorded and audited from real H.264.
+    func testFilesImageViewerEntryDismissHasReadableFrames() {
+        let app = launchFilesViewerSmoke()
+        waitForRealH264RecordingPrelude()
+        exerciseFilesViewerSmoke("image", app: app, background: false)
+    }
+
+    func testFilesVideoViewerForegroundDismissHasReadableFrames() {
+        let app = launchFilesViewerSmoke()
+        waitForRealH264RecordingPrelude()
+        exerciseFilesViewerSmoke("video", app: app, background: true)
+    }
+
+    func testFilesPDFViewerForegroundDismissHasReadableFrames() {
+        let app = launchFilesViewerSmoke()
+        waitForRealH264RecordingPrelude()
+        exerciseFilesViewerSmoke("pdf", app: app, background: true)
+    }
+
+    func testFilesAudioViewerEntryDismissHasReadableFrames() {
+        let app = launchFilesViewerSmoke()
+        waitForRealH264RecordingPrelude()
+        exerciseFilesViewerSmoke("audio", app: app, background: false)
+    }
+
+    func testFilesTextViewerEntryDismissHasReadableFrames() {
+        let app = launchFilesViewerSmoke()
+        waitForRealH264RecordingPrelude()
+        exerciseFilesViewerSmoke("text", app: app, background: false)
+    }
+
+
 }

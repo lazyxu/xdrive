@@ -81,8 +81,8 @@ test('candidate-gallery-files must actually RUN all eighteen child tests in macO
   assert.match(workflow, /xcodebuild test/);
   assert.match(workflow, /resultBundlePath/);
   assert.match(workflow, /-parallel-testing-enabled NO/);
-  assert.match(workflow, /--minimum 59/,
-    'all 59 separate real navigation clips must be audited without opt-out');
+  assert.match(workflow, /--minimum 64/,
+    'all 64 separate real navigation clips must be audited without opt-out');
   for (const name of allJourneys) {
     assert.match(watcher, new RegExp('"' + name + '"'));
   }
@@ -158,7 +158,7 @@ test('six additional real Files/Gallery transitions are H.264-audited, including
     assert.match(body, /select\("native-ios-tab-/,
       name + ' must tap a real native Gallery or Files tab');
   }
-  assert.match(workflow, /--minimum 59/);
+  assert.match(workflow, /--minimum 64/);
 });
 
 test('both existing Gallery/Files native suites audit child viewport rather than colorful tab chrome', () => {
@@ -248,17 +248,46 @@ test('six additional high-risk Gallery/Files transitions require true H264 evide
       name + ' must check real native content pixels');
     assert.ok(h264.includes('"' + name + '"'), name + ' missing bounded real H264 watcher');
   }
-  assert.match(workflow, /--minimum 59/, 'all 59 clips must be real and audited');
+  assert.match(workflow, /--minimum 64/, 'all 64 clips must be real and audited');
   assert.match(h264, /MAX_CLIP_SECONDS = 210/,
     'long genuine XCTest must not be truncated by old 120-second clip limit');
 });
 
 
+test('five Files Viewer media kinds each have an isolated real H264 transition journey', () => {
+  const viewerJourneys = [
+    'testFilesImageViewerEntryDismissHasReadableFrames',
+    'testFilesVideoViewerForegroundDismissHasReadableFrames',
+    'testFilesPDFViewerForegroundDismissHasReadableFrames',
+    'testFilesAudioViewerEntryDismissHasReadableFrames',
+    'testFilesTextViewerEntryDismissHasReadableFrames',
+  ];
+  assert.equal(new Set(viewerJourneys).size, 5);
+  for (const name of viewerJourneys) {
+    assert.equal(frameContinuity.split('func ' + name + '()').length, 2,
+      name + ' must be one separately executable native XCTest');
+    assert.match(watcher, new RegExp('"' + name + '"'),
+      name + ' must receive tap-adjacent Simulator screenshots');
+    assert.match(h264, new RegExp('"' + name + '"'),
+      name + ' must receive a real H.264 clip');
+    const start = frameContinuity.indexOf('func ' + name + '()');
+    const end = frameContinuity.indexOf('\\n    func test', start + 5);
+    const body = frameContinuity.slice(start, end >= 0 ? end : undefined);
+    assert.match(body, /launchFilesViewerSmoke\\(\\)/);
+    assert.match(body, /waitForRealH264RecordingPrelude\\(\\)/);
+    assert.match(body, /exerciseFilesViewerSmoke\\(/);
+  }
+  assert.match(frameContinuity, /native-ios-files-viewer-no-session/);
+  assert.match(frameContinuity, /native-ios-files-viewer-error-scroll/);
+  assert.match(frameContinuity, /assertVisiblePixels\\(app, route:/);
+  assert.match(workflow, /--minimum 64/);
+});
+
 test('every mandatory real H264 target belongs to exactly one executable XCTest and live frame watcher', () => {
   // The active video gate grew from 44 to 50 actual journeys. Verify source
   // parity from the target registry, rather than hardcoding a stale count.
   const targets = [...h264.matchAll(/^\s*"(test\w+)",?$/gm)].map(m => m[1]);
-  assert.equal(targets.length, 59, 'never silently reduce the mandatory H.264 case set');
+  assert.equal(targets.length, 64, 'never silently reduce the mandatory H.264 case set');
   assert.equal(new Set(targets).size, targets.length, 'duplicate video targets are invalid');
   const suites = [stability, frameContinuity, native];
   const methods = suites.flatMap(code =>
@@ -276,6 +305,6 @@ test('every mandatory real H264 target belongs to exactly one executable XCTest 
     assert.ok(watcher.includes('"' + name + '"'),
       name + ' must have live Simulator frame sampling');
   }
-  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 59/,
-    'all 59 distinct actual video clips must remain mandatory');
+  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 64/,
+    'all 64 distinct actual video clips must remain mandatory');
 });

@@ -16,7 +16,7 @@ from files_ui_transition_video import (
 
 class FilesUITransitionVideoTests(unittest.TestCase):
     def test_real_targets_are_distinct(self):
-        self.assertEqual(len(TARGETS), 59)
+        self.assertEqual(len(TARGETS), 64)
         self.assertTrue({
             "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
             "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
@@ -24,6 +24,14 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
             "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
             "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+        }.issubset(TARGETS))
+
+        self.assertTrue({
+            "testFilesImageViewerEntryDismissHasReadableFrames",
+            "testFilesVideoViewerForegroundDismissHasReadableFrames",
+            "testFilesPDFViewerForegroundDismissHasReadableFrames",
+            "testFilesAudioViewerEntryDismissHasReadableFrames",
+            "testFilesTextViewerEntryDismissHasReadableFrames",
         }.issubset(TARGETS))
 
         # The three real Owner Gallery options journeys remain mandatory.

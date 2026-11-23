@@ -122,6 +122,11 @@ TARGETS = {
     "testUnifiedOptionsForegroundDismissThenFilesReturn",
     "testUnifiedOptionsRepeatedOpenClosePreservesPhotosNavigation",
     "testUnifiedOptionsSourceMenuRemainsRealAndDismissible",
+    "testFilesImageViewerEntryDismissHasReadableFrames",
+    "testFilesVideoViewerForegroundDismissHasReadableFrames",
+    "testFilesPDFViewerForegroundDismissHasReadableFrames",
+    "testFilesAudioViewerEntryDismissHasReadableFrames",
+    "testFilesTextViewerEntryDismissHasReadableFrames",
 }
 NAV_TARGETS = {
     # Previously seven real-XCUITest-PASS toolbar-option journeys were not
