@@ -159,7 +159,7 @@ class AuditTests(unittest.TestCase):
             "testGalleryOptionsForegroundDismissFilesReturnDoesNotLoseRoute",
         }
         declared = set(re.findall(r"(?m)^\s*func\s+(test\w+)\(\)", suite))
-        captured = set(re.findall(r'"(test\\w+)"', watcher))
+        captured = set(re.findall(r'"(test\w+)"', watcher))
         self.assertFalse(expected - declared, "missing real XCTest: " +
                          repr(expected - declared))
         self.assertFalse(expected - captured, "unobserved tap frames: " +
