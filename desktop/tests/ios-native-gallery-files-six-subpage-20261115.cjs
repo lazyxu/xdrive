@@ -271,15 +271,15 @@ test('five Files Viewer media kinds each have an isolated real H264 transition j
     assert.match(h264, new RegExp('"' + name + '"'),
       name + ' must receive a real H.264 clip');
     const start = frameContinuity.indexOf('func ' + name + '()');
-    const end = frameContinuity.indexOf('\\n    func test', start + 5);
+    const end = frameContinuity.indexOf('\n    func test', start + 5);
     const body = frameContinuity.slice(start, end >= 0 ? end : undefined);
-    assert.match(body, /launchFilesViewerSmoke\\(\\)/);
-    assert.match(body, /waitForRealH264RecordingPrelude\\(\\)/);
-    assert.match(body, /exerciseFilesViewerSmoke\\(/);
+    assert.match(body, /launchFilesViewerSmoke\(\)/);
+    assert.match(body, /waitForRealH264RecordingPrelude\(\)/);
+    assert.match(body, /exerciseFilesViewerSmoke\(/);
   }
   assert.match(frameContinuity, /native-ios-files-viewer-no-session/);
   assert.match(frameContinuity, /native-ios-files-viewer-error-scroll/);
-  assert.match(frameContinuity, /assertVisiblePixels\\(app, route:/);
+  assert.match(frameContinuity, /assertVisiblePixels\(app, route:/);
   assert.match(workflow, /--minimum 64/);
 });
 
