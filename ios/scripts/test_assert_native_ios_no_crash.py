@@ -50,6 +50,27 @@ class NativeCrashAuditTests(unittest.TestCase):
         self.make_report('xDriveClipboardShare-2026.ips', '{"procName":"xDriveClipboardShare"}')
         self.assertEqual(audit(self.marker, [self.sim])['status'], 'pass')
 
+    def test_app_prefix_foreign_ips_identity_is_inconclusive_not_confirmed_crash(self):
+        # The filename alone cannot override an explicit OS process identity.
+        self.make_report('xDriveIOS-Helper-2026.ips',
+                         '{"procName":"xDriveClipboardShare", "note":"xDriveIOS"}')
+        result = audit(self.marker, [self.sim])
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['app_crash_report_count'], 0)
+        self.assertIn('report_process_identity_conflict', result['scan_errors'])
+
+    def test_app_prefix_foreign_crash_header_is_inconclusive_not_sigsegv(self):
+        self.make_report('xDriveIOS-Helper-2026.crash',
+                         'Process: xDriveHelper [42]\nIdentifier: com.example.helper\n')
+        result = audit(self.marker, [self.sim])
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['app_crash_report_count'], 0)
+        self.assertIn('report_process_identity_conflict', result['scan_errors'])
+
+    def test_app_prefix_matching_process_header_remains_confirmed_crash(self):
+        self.make_report('xDriveIOS-incident.ips', '{"processName":"xDriveIOS"}')
+        self.assertEqual(audit(self.marker, [self.sim])['status'], 'fail')
+
     def test_generic_ips_with_exact_procname_is_detected(self):
         self.make_report('incident-1234.ips', '{"procName" : "xDriveIOS", "exception":{}}')
         self.assertEqual(audit(self.marker, [self.sim])['status'], 'fail')
