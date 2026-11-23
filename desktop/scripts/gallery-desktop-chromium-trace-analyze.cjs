@@ -52,8 +52,12 @@ function summariseTrace(trace, rendererPid, reportedLongTasks = []) {
     threadSelection = 'event-based-fallback'
   }
   const events = target.filter(e => e.tid === chosenTID)
-  const startUS = Math.min(...events.map(e => e.ts))
-  const endUS = Math.max(...events.map(e => e.ts + e.dur))
+  let startUS = Infinity
+  let endUS = -Infinity
+  for (const e of events) {
+    startUS = Math.min(startUS, e.ts)
+    endUS = Math.max(endUS, e.ts + e.dur)
+  }
   const rawTasks = events.filter(e => eventKind(e.name) === 'task' && e.dur >= 50000)
     .sort((a, b) => (a.ts - b.ts) || (b.dur - a.dur))
   // Tracing can include nested Task events; a single main-thread long task
