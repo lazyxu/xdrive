@@ -19,7 +19,9 @@ test('Gallery status row exposes one bounded real backup Menu and AX hit surface
   assert.ok(status.includes('.fixedSize(horizontal: true, vertical: false)'))
   assert.ok(status.includes('.contentShape(Rectangle())'))
   assert.ok(status.includes('.accessibilityIdentifier("native-ios-gallery-backup-settings")'))
+  assert.ok(status.includes('.accessibilityIdentifier("native-ios-gallery-backup-action")'))
   assert.equal(ui.split('.accessibilityIdentifier("native-ios-gallery-backup-settings")').length - 1, 1)
+  assert.equal(ui.split('.accessibilityIdentifier("native-ios-gallery-backup-action")').length - 1, 1)
 })
 
 test('real UI performance checks fail closed on a hidden or covered Menu', () => {
@@ -33,8 +35,11 @@ test('real UI performance checks fail closed on a hidden or covered Menu', () =>
   assert.match(helper, /XCTAssertEqual\(controls\.count, 1/)
   // A SwiftUI Menu outer AX wrapper may be non-hittable. Require a
   // real 60x44-point native label or a genuinely tappable wrapper.
-  assert.match(helper, /matching\(identifier: "native-ios-gallery-backup-action"\)/)
+  // Swift formatting may wrap the argument onto the next line; assert
+  // the actual StaticText fallback rather than one exact source layout.
+  assert.match(helper, /app\.staticTexts\.matching\(\s*identifier:\s*"native-ios-gallery-backup-action"\s*\)\.firstMatch/)
   assert.match(helper, /let target = control\.isHittable \? control : visibleLabel/)
+  assert.match(helper, /XCTAssertGreaterThanOrEqual\(target\.frame\.width, 43/)
   assert.match(helper, /XCTAssertTrue\(target\.isHittable/)
   assert.match(helper, /XCTAssertGreaterThanOrEqual\(target\.frame\.height, 43/)
   assert.match(helper, /target\.tap\(\)/)
