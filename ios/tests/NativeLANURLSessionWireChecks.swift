@@ -8,6 +8,13 @@ struct NativeLANURLSessionWireChecks {
     private final class CapturingTrustDelegate: XDriveIOSServerTLSDelegate, @unchecked Sendable {
         private let lock = NSLock()
         private var lastVerdict: XDriveIOSLANTrustVerdict?
+        private var lastEvidence: XDriveIOSLANTrustEvidence?
+
+        var evidence: XDriveIOSLANTrustEvidence? {
+            lock.lock()
+            defer { lock.unlock() }
+            return lastEvidence
+        }
 
         var rejection: XDriveIOSLANTrustVerdict? {
             lock.lock()
@@ -18,6 +25,12 @@ struct NativeLANURLSessionWireChecks {
         override func observedTrustRejection(_ verdict: XDriveIOSLANTrustVerdict) {
             lock.lock()
             lastVerdict = verdict
+            lock.unlock()
+        }
+
+        override func observedPairingEvidence(_ value: XDriveIOSLANTrustEvidence) {
+            lock.lock()
+            lastEvidence = value
             lock.unlock()
         }
     }
@@ -51,7 +64,7 @@ struct NativeLANURLSessionWireChecks {
         request.timeoutInterval = 5
         do {
             let (data, response) = try await session.data(for: request)
-            guard expected == "trusted", delegate.rejection == nil,
+            guard expected == "trusted", delegate.rejection == nil, delegate.evidence == nil,
                   let http = response as? HTTPURLResponse, http.statusCode == 200,
                   let json = try JSONSerialization.jsonObject(with: data) as? [String: String],
                   json["version"] == "test" else {
@@ -64,11 +77,18 @@ struct NativeLANURLSessionWireChecks {
                     userInfo: [NSLocalizedDescriptionKey: "\(label): valid peer rejected by URLSession"])
             }
             let verdict = delegate.rejection
-            guard (expected == "identity" && verdict == .ipIdentityOrServerUsageMismatch) ||
-                  (expected == "chain" && verdict == .chainOrValidityMismatch) else {
+            let proof = delegate.evidence
+            guard (expected == "identity" && verdict == .ipIdentityOrServerUsageMismatch &&
+                   proof?.reason == .ipIdentity) ||
+                  (expected == "chain" && verdict == .chainOrValidityMismatch &&
+                   proof?.reason == .chainOrValidity) else {
                 throw NSError(domain: "xDriveAppleWireCheck", code: 2,
                     userInfo: [NSLocalizedDescriptionKey:
                         "\(label): expected \(expected), recorded \(String(describing: verdict))"])
+            }
+            guard proof?.rootSHA256 == XDriveIOSLANTrustEvidence.digest(root),
+                  proof?.leafSHA256?.count == 64 else {
+                fatalError("\(label): missing bounded SHA-256 evidence from real serverTrust")
             }
             print("\(label): Apple URLSession rejected expected category \(expected)")
         }

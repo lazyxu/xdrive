@@ -119,3 +119,71 @@ func TestMapOverviewDisplayOnlyBucketBoundsNeverWidenBeyondFitted(t *testing.T) 
 		}
 	}
 }
+
+func TestMediaExactTripCivilDayDeltaDSTAndTimezone(t *testing.T) {
+	// These midnight instants are 23/25 hours apart across New York DST,
+	// but calendar-neighbor travel days must still be adjacent.
+	zone, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dates := range [][2]string{
+		{"2026-03-08", "2026-03-09"},
+		{"2026-11-01", "2026-11-02"},
+		{"2026-12-31", "2027-01-01"},
+	} {
+		first, _ := time.ParseInLocation("2006-01-02", dates[0], zone)
+		second, _ := time.ParseInLocation("2006-01-02", dates[1], zone)
+		if first.Equal(second) {
+			t.Fatalf("test does not represent distinct days: %v", dates)
+		}
+		if delta := mediaExactTripCivilDayDelta(dates[1], dates[0]); delta != 1 {
+			t.Fatalf("forward adjacent dates %v yielded %d", dates, delta)
+		}
+		if delta := mediaExactTripCivilDayDelta(dates[0], dates[1]); delta != -1 {
+			t.Fatalf("backward adjacent dates %v yielded %d", dates, delta)
+		}
+	}
+	for _, pair := range [][2]string{
+		{"2026-03-10", "2026-03-08"}, {"2026-02-30", "2026-03-01"},
+		{"2026-03-08", "2026-03-08"}, {"2026-3-08", "2026-03-07"},
+	} {
+		if got := mediaExactTripCivilDayDelta(pair[0], pair[1]); got != 0 {
+			t.Fatalf("non-neighbor/invalid dates %v admitted: %d", pair, got)
+		}
+	}
+}
+
+func TestMediaExactTripPromotionUsesCivilDaysEvenWithDSTShift(t *testing.T) {
+	zone, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(date string, lat, lon, count int64) mediaMemoryTripDay {
+		value, parseErr := time.ParseInLocation("2006-01-02", date, zone)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		return mediaMemoryTripDay{
+			Date: value, DateKey: date,
+			LatitudeCell: lat, LongitudeCell: lon, ItemCount: count,
+		}
+	}
+	dominant := []mediaMemoryTripDay{
+		mk("2026-03-06", 5, 5, 4), mk("2026-03-07", 5, 5, 4),
+		mk("2026-03-08", 5, 5, 12),  // return with off-home GPS, true near home dominant
+		mk("2026-03-09", 30, 30, 5), // neighbor away across DST
+		mk("2026-03-10", 40, 40, 6),
+	}
+	candidates := []mediaMemoryTripDay{mk("2026-03-08", 20, 20, 2)}
+	chosen := mediaExactTripPromoteTransitDays(dominant, candidates, 5, 5)
+	if chosen[2].LatitudeCell != 20 {
+		t.Fatalf("genuine DST transition trip day was wrongly excluded: %+v", chosen)
+	}
+	// Home -> another genuine trip -> home must not merge on a shared day.
+	dominant[1] = mk("2026-03-07", 50, 50, 4)
+	chosen = mediaExactTripPromoteTransitDays(dominant, candidates, 5, 5)
+	if chosen[2].LatitudeCell != 5 {
+		t.Fatalf("home return and second departure must remain separate: %+v", chosen)
+	}
+}
