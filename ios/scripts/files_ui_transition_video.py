@@ -110,7 +110,7 @@ def classify_bright_blank(frames, tap_second):
     or signed-device 60/120-Hz hitch performance.
     """
     sample = [f for f in frames
-              if tap_second + 0.02 <= f["time"] <= tap_second + 1.45]
+              if tap_second <= f["time"] <= tap_second + 1.45]
     if len(sample) < 3:
         return "missing_post_tap_frames"
 
@@ -136,6 +136,13 @@ def classify_bright_blank(frames, tap_second):
     if any(b["time"] - a["time"] > 0.24
            for a, b in zip(sample, sample[1:])):
         return "sparse_early_transition_frames"
+    # Also check the right boundary: a decoder gap can extend beyond the
+    # window, leaving no adjacent in-window pair to expose the missing tail.
+    # A genuinely shorter clip still needs the minimum post-tap evidence.
+    expected_end = min(tap_second + 1.45, frames[-1]["time"])
+    if (sample[-1]["time"] - tap_second < MIN_TAP_WINDOW_SECONDS or
+            expected_end - sample[-1]["time"] > 0.24):
+        return "missing_transition_window_tail"
 
     def neutral(f):
         return (f["ymax"] - f["ymin"] <= 6
@@ -146,8 +153,8 @@ def classify_bright_blank(frames, tap_second):
     if all(neutral(f) for f in sample):
         return "suspected_solid_neutral_transition"
 
-    # A one- or two-frame flat pulse between textured page frames is equally
-    # visible. Require surrounding textured evidence (from the preceding
+    # A flat pulse between textured page frames is visible regardless of its
+    # duration. Require surrounding textured evidence (from the preceding
     # native page or the returning child) to avoid flagging a stationary
     # legitimate empty-state background as a transient flash.
     old_texture = any(
@@ -162,11 +169,9 @@ def classify_bright_blank(frames, tap_second):
         first = pos
         while pos < len(sample) and neutral(sample[pos]):
             pos += 1
-        last = pos - 1
         before = first > 0 and sample[first - 1]["ymax"] - sample[first - 1]["ymin"] > 12
         after = pos < len(sample) and sample[pos]["ymax"] - sample[pos]["ymin"] > 12
-        duration = sample[last]["time"] - sample[first]["time"]
-        if duration <= 0.35 and (before or old_texture) and after:
+        if (before or old_texture) and after:
             return "suspected_solid_neutral_transition"
         # A child that goes blank gray and never repaints is also a regression.
         if before and pos == len(sample) and len(sample) - first >= 3:
