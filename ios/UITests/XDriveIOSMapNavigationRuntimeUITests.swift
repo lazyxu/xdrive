@@ -246,35 +246,62 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
         }
     }
 
-    /// Apple's Photos TCC transition may *terminate* an app that was
-    /// backgrounded in Settings. This is distinct from a test-driven cold
-    /// restart of a still-running app. Reopen the real Dashboard/MapKit route
-    /// only for the observed system-stopped target, preserving the Full-only
-    /// PhotoKit admission and post-change Viewer/pin assertions.
+    /// Apple's Photos TCC transition can stop the app while Settings is
+    /// foreground. A stopped process can then legitimately enter xDrive's
+    /// fail-closed startup recovery. Exercise the REAL recovery control only
+    /// after this observed Settings transition, never suppressing a crash or
+    /// treating a recovery screen as a successful MapKit/PhotoKit read.
     @discardableResult
     private func resumeMapAfterSystemPhotosChange(
         _ app: XCUIApplication, stage: String
     ) -> Bool {
-        if app.state != .notRunning {
+        let wasStoppedBySystem = app.state == .notRunning
+        if wasStoppedBySystem {
+            print("MAP_PHOTOS_TCC_TERMINATED_APP stage=\(stage) action=relaunch-real-target")
+            app.launch()
+        } else {
             app.activate()
+        }
+        XCTAssertEqual(app.state, .runningForeground,
+                       "Real target must be foreground after Photos Settings")
+
+        let recovery = element("native-ios-startup-recovery", in: app)
+        var explicitlyRecovered = false
+        if recovery.waitForExistence(timeout: 3) {
+            // This path may run only after an actual Photos Settings change.
+            // The recovery UI remains an honest fail-closed product state;
+            // the test must use its visible retry action, not clear defaults.
+            let stageLabel = element("native-ios-startup-phase", in: app)
+            XCTAssertTrue(stageLabel.exists,
+                          "A startup recovery page must disclose its interrupted phase")
+            let phaseText = stageLabel.label
+            XCTAssertTrue([
+                "initializing", "mountingWorkspace", "restoringSession",
+                "retiringCredential"
+            ].contains(where: { phaseText.contains($0) }),
+                "Unexpected startup recovery phase after real Photos TCC: \(phaseText)")
+            let retry = element("native-ios-startup-retry", in: app)
+            XCTAssertTrue(retry.waitForExistence(timeout: 12) && retry.isHittable,
+                          "Real recovery must offer a visible full retry")
+            print("MAP_PHOTOS_TCC_STARTUP_RECOVERY stage=\(stage) phase=\(phaseText)")
+            retry.tap()
+            explicitlyRecovered = true
             XCTAssertEqual(app.state, .runningForeground,
-                           "The still-running app must resume immediately from Settings")
-            return false
+                           "Target exited after visible startup recovery action")
         }
 
-        print("MAP_PHOTOS_TCC_TERMINATED_APP stage=\(stage) action=relaunch-real-target")
-        app.launch()
-        XCTAssertEqual(app.state, .runningForeground,
-                       "System-stopped target must relaunch before PhotoKit is rechecked")
+        // If the app stayed alive and never entered recovery, do not restart
+        // or navigate it. The original live MapKit must itself update status.
+        guard wasStoppedBySystem || explicitlyRecovered else { return false }
         handleInitialPhotoLibraryPromptIfPresent()
         openNativeLauncher(in: app)
         let entry = element("native-ios-launcher-map", in: app)
-        XCTAssertTrue(entry.waitForExistence(timeout: 20),
-                      "Relaunched app must reopen MapKit through the genuine launcher")
+        XCTAssertTrue(entry.waitForExistence(timeout: 20) && entry.isHittable,
+                      "Relaunched app must expose a real, usable MapKit launcher")
         entry.tap()
         XCTAssertTrue(element("native-ios-local-map-actions", in: app)
             .waitForExistence(timeout: 20),
-            "Relaunched app must mount the genuine source-protected MapKit route")
+            "Recovered target must mount the genuine source-protected MapKit route")
         return true
     }
 

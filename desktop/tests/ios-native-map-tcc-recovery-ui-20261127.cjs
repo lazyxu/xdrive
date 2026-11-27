@@ -1,0 +1,40 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const source = fs.readFileSync(
+  path.join(__dirname, '../../ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'), 'utf8'
+)
+
+test('real TCC app termination uses only visible startup recovery and real MapKit route', () => {
+  const begin = source.indexOf('private func resumeMapAfterSystemPhotosChange(')
+  const end = source.indexOf('private func authorizeFullPhotosInSettings(', begin)
+  assert.ok(begin > 0 && end > begin, 'missing real TCC recovery handler')
+  const helper = source.slice(begin, end)
+  assert.match(helper, /let wasStoppedBySystem = app\.state == \.notRunning/)
+  assert.match(helper, /if wasStoppedBySystem \{[\s\S]*?app\.launch\(\)/)
+  assert.match(helper, /else \{[\s\S]*?app\.activate\(\)/)
+  assert.match(helper, /native-ios-startup-recovery/)
+  assert.match(helper, /native-ios-startup-phase/)
+  assert.match(helper, /native-ios-startup-retry/)
+  assert.match(helper, /retry\.waitForExistence\(timeout: 12\) && retry\.isHittable/)
+  assert.match(helper, /retry\.tap\(\)/)
+  assert.match(helper, /guard wasStoppedBySystem \|\| explicitlyRecovered else \{ return false \}/)
+  assert.match(helper, /handleInitialPhotoLibraryPromptIfPresent\(\)/)
+  assert.match(helper, /openNativeLauncher\(in: app\)/)
+  assert.match(helper, /entry\.waitForExistence\(timeout: 20\) && entry\.isHittable/)
+  assert.match(helper, /native-ios-local-map-actions/)
+  assert.doesNotMatch(helper, /simctl privacy grant|UserDefaults|launchEnvironment|XCTSkip|fakePhotoKit|\.onChange\(of: phase/)
+})
+
+test('real denied, Limited and restored Full Photos permissions remain checked after recovery', () => {
+  const journey = source.slice(source.indexOf('func testZP0ExternallyRevokedPhotosRejectOldMapAndRecover()'))
+  assert.match(journey, /XCTAssertTrue\(denied\.exists, "Denied Photos must fail closed"\)/)
+  assert.match(journey, /authorizeFullPhotosInSettings\(app\)/)
+  assert.match(journey, /resumeMapAfterSystemPhotosChange\(/)
+  assert.match(journey, /XCTAssertTrue\(limitedBlock\.exists\)/)
+  assert.match(journey, /readback\.label\.contains\("rw=4"\)/)
+  assert.match(journey, /XCTAssertFalse\(element\("native-ios-full-library-gps-map", in: app\)\.exists/)
+  assert.doesNotMatch(journey, /fakePhotoKit|simctl privacy grant|XCTSkip/)
+})
