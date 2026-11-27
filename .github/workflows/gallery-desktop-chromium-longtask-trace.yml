@@ -1,0 +1,127 @@
+name: Desktop Gallery real Chromium RendererMain trace (100k)
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'desktop/scripts/gallery-desktop-real-cold-electron-main.cjs'
+      - 'desktop/scripts/gallery-desktop-real-cold-runner.cjs'
+      - 'desktop/scripts/gallery-desktop-chromium-trace-analyze.cjs'
+      - 'desktop/tests/gallery-desktop-chromium-trace-analyze.cjs'
+      - 'desktop/tests/gallery-real-cold-observer-queue.cjs'
+      - '.github/workflows/gallery-desktop-chromium-longtask-trace.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-desktop-real-chromium-trace:
+    if: github.head_ref == 'test/desktop-gallery-chromium-trace-20261123'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_AGENT_BINARY: ${{ github.workspace }}/desktop/gallery-desktop-chromium-bin/xdrive-agent
+      XD_GALLERY_DESKTOP_COLD_CHROME_TRACE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify trace-only scoped source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          git fetch origin "$BASE" --depth=1
+          git diff --quiet "$BASE" HEAD -- ui/shared/src desktop/src internal cmd web/src
+          if git diff --name-only "$BASE" HEAD |
+            grep -Ev '^(desktop/scripts/gallery-desktop-real-cold-electron-main\.cjs|desktop/scripts/gallery-desktop-real-cold-runner\.cjs|desktop/scripts/gallery-desktop-chromium-trace-analyze\.cjs|desktop/tests/gallery-desktop-chromium-trace-analyze\.cjs|desktop/tests/gallery-real-cold-observer-queue\.cjs|\.github/workflows/gallery-desktop-chromium-longtask-trace\.yml|docs/performance-test-registry\.md)$'; then
+            echo "Chromium trace diagnostics must not modify production sources"
+            exit 1
+          fi
+      - name: Build actual Electron Main/preload/renderer, Web fixture and Go Agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build -- --config vite.config.ts
+          npm --prefix desktop run build
+          mkdir -p desktop/gallery-desktop-chromium-bin
+          go build -o desktop/gallery-desktop-chromium-bin/xdrive-agent ./cmd/xdrive-agent
+          node --test desktop/tests/gallery-desktop-chromium-trace-analyze.cjs
+          node --check desktop/scripts/gallery-desktop-real-cold-electron-main.cjs
+          node --check desktop/scripts/gallery-desktop-real-cold-runner.cjs
+      - name: Trace 3 independent real 100k Gallery Electron Main/Agent/Gin/CAS activations
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" node desktop/scripts/gallery-desktop-real-cold-runner.cjs
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+          const base = 'desktop/gallery-desktop-real-cold-results'
+          const report = JSON.parse(fs.readFileSync(path.join(base,'summary.json'),'utf8'))
+          if (report.n !== 3 || report.chromiumTraceProbeEnabled !== true ||
+              report.samples.length !== 3) throw new Error('three genuine traced Desktop samples required')
+          for (const sample of report.samples) {
+            if (!sample.realProductionDesktop || sample.logicalItems !== 100000 ||
+                sample.physicalNodes !== 115000 || sample.liveAssets !== 15000 ||
+                sample.renderer?.decodedImages < 12 || sample.renderer?.mountedTiles >= 1000 ||
+                sample.renderer?.decoderErrors !== 0) throw new Error('not a valid real Desktop 100k cold sample')
+            const trace = sample.chromiumTimeline
+            if (!trace?.rendererPIDMatched || trace.rendererEvents < 1 ||
+                trace.longTaskTraceCount < 1 ||
+                trace.rawTraceArgsOrURLsIncluded !== false ||
+                trace.productionCodeModified !== false)
+              throw new Error('no safe real Chromium RendererMain long-task attribution')
+          }
+          const dump = JSON.stringify(report)
+          if (dump.includes('traceEvents') || dump.includes('https://') || dump.includes('Authorization'))
+            throw new Error('raw/sensitive trace data leaked into report')
+          const raw = fs.readdirSync(base).filter(name => name.includes('real-desktop-gallery') && name.endsWith('.json'))
+          if (raw.length) throw new Error('raw trace must not appear in generated artifact')
+          console.log('GALLERY_REAL_CHROMIUM_TRACE_SUMMARY ' + JSON.stringify({
+            n:report.n,samples:report.samples.map(x=>({
+              rendererMainEvents:x.chromiumTimeline.rendererEvents,
+              taskCount:x.chromiumTimeline.longTaskTraceCount,
+              topTasks:x.chromiumTimeline.topTaskEnvelopes.slice(0,5),
+              browserObservedLongTasks:x.chromiumTimeline.browserObservedLongTasks,
+              firstPaintMs:x.renderer.firstImageTwoRAFMs,
+              first12Ms:x.renderer.first12DecodedTwoRAFMs
+            }))
+          }))
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-real-chromium-longtask-sanitized-100k-n3
+          # Strictly one sanitized summary: never upload server logs or raw
+          # Chromium traces, which may contain authorization or resource URLs.
+          path: desktop/gallery-desktop-real-cold-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14

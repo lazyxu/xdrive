@@ -2,7 +2,8 @@
 const { performance } = require('node:perf_hooks')
 const fs = require('node:fs')
 const path = require('node:path')
-const { app } = require('electron')
+const { app, contentTracing } = require('electron')
+const { readAndSummariseTrace } = require('./gallery-desktop-chromium-trace-analyze.cjs')
 
 const expectedAppRoot = path.resolve(__dirname, '..')
 const actualAppRoot = path.resolve(app.getAppPath())
@@ -282,6 +283,8 @@ function galleryFirstRangeTimings(logDir) {
 
 let attached = false
 async function run(win) {
+  let tracingStarted = false
+  let chromiumTracePath = null
   try {
     win.setContentSize(1440, 900)
     let lastRendererState = null
@@ -325,6 +328,30 @@ async function run(win) {
     const beforeResp = await fetch(fixture + '/__perf/stats')
     if (!beforeResp.ok) throw new Error('before CAS counters missing')
     const beforeCAS = await beforeResp.json()
+    // Only this opt-in *benchmark* enables the real Chromium RendererMain
+    // timeline. Raw traces stay in a temporary directory and are deleted
+    // before CI artifacts are uploaded: trace args may contain private URLs.
+    const traceEnabled = process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1'
+    if (traceEnabled) {
+      const scratch = process.env.XD_GALLERY_DESKTOP_TRACE_SCRATCH
+      if (!scratch || !fs.statSync(scratch, { throwIfNoEntry: false })?.isDirectory()) {
+        throw new Error('real desktop Chromium trace requires private scratch directory')
+      }
+      chromiumTracePath = path.join(scratch, 'real-desktop-gallery-' +
+        Number(process.env.XD_GALLERY_DESKTOP_REAL_SAMPLE) + '.json')
+      await contentTracing.startRecording({
+        recording_mode: 'record-until-full',
+        included_categories: [
+          'toplevel',
+          'blink',
+          'blink.user_timing',
+          'devtools.timeline',
+          'renderer.scheduler',
+          'v8.execute',
+        ],
+      })
+      tracingStarted = true
+    }
     const beforeRangeRows = galleryFirstRangeTimings(app.getPath('logs')).length
     const armed = await win.webContents.executeJavaScript('(' + activateGalleryAndMeasure.toString() + ')()')
     if (!armed?.started) throw new Error('production Gallery navigation unavailable')
@@ -332,6 +359,27 @@ async function run(win) {
       () => win.webContents.executeJavaScript('window.__xdriveDesktopRealColdResult || null'),
       60000, '12 actual Gallery JPEG decodes and two animation frames',
     )
+    let chromiumTimeline = null
+    if (tracingStarted) {
+      await contentTracing.stopRecording(chromiumTracePath)
+      tracingStarted = false
+      try {
+        chromiumTimeline = readAndSummariseTrace(
+          chromiumTracePath,
+          win.webContents.getOSProcessId(),
+          result.longTasks,
+        )
+        if (!chromiumTimeline.rendererPIDMatched ||
+            chromiumTimeline.rendererEvents < 1 ||
+            chromiumTimeline.longTaskTraceCount < 1) {
+          throw new Error('real renderer main-thread long tasks were not traced')
+        }
+      } finally {
+        // TraceEvent JSON can include headers, URLs and file paths. Never
+        // persist raw trace bytes in a benchmark artifact or console log.
+        fs.rmSync(chromiumTracePath, { force: true })
+      }
+    }
     const firstRangeTimings = galleryFirstRangeTimings(app.getPath('logs'))
       .slice(beforeRangeRows)
     if (!firstRangeTimings.some(row => row.result === 'ok' &&
@@ -402,6 +450,7 @@ async function run(win) {
       realProductionDesktop: true,
       renderer: result,
       firstRangeTimings,
+      chromiumTimeline,
       beforeCAS, afterCAS,
       sourceExactMediaProgress,
       sourceProgressResources,
@@ -412,6 +461,10 @@ async function run(win) {
     }))
     app.exit(0)
   } catch (error) {
+    if (tracingStarted) {
+      try { await contentTracing.stopRecording(chromiumTracePath) } catch {}
+    }
+    if (chromiumTracePath) fs.rmSync(chromiumTracePath, { force: true })
     console.error('GALLERY_REAL_DESKTOP_ELECTRON_ERROR ' + (error?.stack || String(error)))
     app.exit(1)
   }
