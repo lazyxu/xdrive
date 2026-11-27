@@ -600,8 +600,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
                 if viewMode == "grid" {
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
-                        spacing: 10
+                        columns: XDriveIOSNativeFilesUIStyle.gridColumns,
+                        spacing: XDriveIOSNativeFilesUIStyle.gridSpacing
                     ) {
                         ForEach(filteredItems) { item in
                             gridTile(item)
@@ -615,8 +615,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                                 }
                         }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, XDriveIOSNativeFilesUIStyle.gridHorizontalInset)
+                    .padding(.vertical, XDriveIOSNativeFilesUIStyle.gridVerticalInset)
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
                     // Keep grid entry AX identifiers independent of the container.
@@ -775,12 +775,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Picker("显示方式", selection: Binding(
+                        XDriveIOSNativeFilesViewModePicker(selection: Binding(
                             get: { viewMode }, set: { chooseCollectionViewMode($0) }
-                        )) {
-                            Label("列表", systemImage: "list.bullet").tag("list")
-                            Label("图标", systemImage: "square.grid.2x2").tag("grid")
-                        }
+                        ))
                         .accessibilityIdentifier("native-ios-files-collection-view-mode")
                         Divider()
                         if kind == .recent {
@@ -1268,26 +1265,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     }
 
     private func gridEntryLabel(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            XDriveIOSNativeFilesThumbnailTile(
-                node: item.node, login: login,
-                height: 72, viewerActive: selectedFile != nil
-            )
-            XDriveIOSNativeFilesUIStyle.tileName(item.node.name)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
-            HStack(spacing: 5) {
-                if !item.node.isDirectory {
-                    XDriveIOSNativeFilesUIStyle.typeBadge(item.node)
-                }
-                XDriveIOSNativeFilesUIStyle.metadata(
-                    XDriveIOSNativeFilesUIStyle.gridMetadata(item.node, path: item.path)
-                )
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
+        XDriveIOSNativeFilesGridContent(
+            node: item.node, path: item.path, login: login,
+            viewerActive: selectedFile != nil
+        )
     }
 
     /// Tapping a file or folder remains the primary row action; long-press
@@ -1317,20 +1298,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     }
 
     private func entryLabel(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
-        HStack(spacing: 12) {
-            XDriveIOSNativeFilesThumbnailTile(
-                node: item.node, login: login,
-                height: 40, width: 40, viewerActive: selectedFile != nil
-            )
-            VStack(alignment: .leading, spacing: 3) {
-                XDriveIOSNativeFilesUIStyle.rowName(item.node.name)
-                XDriveIOSNativeFilesUIStyle.metadata(
-                    XDriveIOSNativeFilesUIStyle.compactMetadata(item.node, path: item.path)
-                )
-            }
-            Spacer(minLength: 4)
-        }
-        .contentShape(Rectangle())
+        XDriveIOSNativeFilesRowContent(
+            node: item.node, path: item.path, login: login,
+            viewerActive: selectedFile != nil
+        )
     }
 
     private func neighboringFiles(
