@@ -259,10 +259,20 @@ class FilesUITransitionVideoTests(unittest.TestCase):
     def test_no_immediate_decoded_post_tap_frames_must_not_pass(self):
         frames = [
             {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
-            for i in range(26) if i not in {7, 8, 9, 10}
+            for i in range(26) if i not in {6, 7, 8, 9, 10}
         ]
         self.assertEqual(classify_bright_blank(frames, 0.6),
                          "missing_immediate_post_tap_frames")
+
+    def test_exact_tap_frame_followed_by_missing_frames_is_sparse(self):
+        # The tap-aligned frame is now intentionally included. It must not
+        # hide the following half-second decoding gap or yield a false PASS.
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26) if i not in {7, 8, 9, 10}
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "sparse_early_transition_frames")
 
     def test_missing_early_transition_frames_must_not_pass(self):
         frames = [
