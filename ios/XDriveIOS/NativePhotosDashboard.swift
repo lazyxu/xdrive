@@ -959,6 +959,24 @@ struct XDriveIOSNativePhotosDashboard: View {
         .navigationBarBackButtonHidden(true)
     }
 
+    // Explicit ToolbarContent disambiguates SwiftUI's View vs ToolbarContent
+    // toolbar overloads under Xcode 16/26. These controls are still real taps.
+    private var dynamicRecentToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button {
+                showRecentPicker = true
+            } label: {
+                Label("最近功能", systemImage: "clock.arrow.circlepath")
+            }
+        }
+    }
+
+    private var galleryOptionsToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            galleryMoreMenu
+        }
+    }
+
     private var dashboardTabContent: some View {
             TabView(selection: $tab) {
             NavigationStack {
@@ -972,15 +990,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             NavigationStack {
                 dynamicPage
                     .navigationTitle(dynamicSlotTitle)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button {
-                                showRecentPicker = true
-                            } label: {
-                                Label("最近功能", systemImage: "clock.arrow.circlepath")
-                            }
-                        }
-                    }
+                    .toolbar { dynamicRecentToolbar }
                     .toolbar(.hidden, for: .tabBar)
             }
             .tabItem {
@@ -996,30 +1006,27 @@ struct XDriveIOSNativePhotosDashboard: View {
                         gallerySource == .unified ? "图库" : gallerySource.title
                     )
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        // The iOS Photos toolbar is primarily Gallery chrome.
-                        // xDrive-specific sources, backup and other app destinations
-                        // live behind ONE secondary menu, not permanent rows.
-                        ToolbarItem(placement: .topBarLeading) {
-                            galleryMoreMenu
-                        }
-                    }
+                    // The iOS Photos toolbar keeps one genuine secondary menu.
+                    .toolbar { galleryOptionsToolbar }
                     .toolbar(.hidden, for: .tabBar)
             }
             .tabItem { Label("图库", systemImage: "photo.on.rectangle") }
             .tag(XDriveIOSNativeBottomTab.gallery)
 
             NavigationStack {
-                if tab == .files || filesTabActivated {
-                    // Do not eagerly evaluate the 5-layer Files lifecycle
-                    // when login publishes a verified Owner to TabView.
-                    files
-                        .navigationTitle("文件")
-                } else {
-                    Color.clear
-                        .accessibilityHidden(true)
+                Group {
+                    if tab == .files || filesTabActivated {
+                        // Do not eagerly evaluate the 5-layer Files lifecycle
+                        // when login publishes a verified Owner to TabView.
+                        files
+                            .navigationTitle("文件")
+                    } else {
+                        Color.clear
+                            .accessibilityHidden(true)
+                    }
                 }
-                    .toolbar(.hidden, for: .tabBar)
+                // Apply to the real Group, never to an if/else declaration.
+                .toolbar(.hidden, for: .tabBar)
             }
             .tabItem { Label("文件", systemImage: "folder") }
             .tag(XDriveIOSNativeBottomTab.files)
