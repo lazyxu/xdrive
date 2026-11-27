@@ -82,14 +82,21 @@ function lookupMappings(map, requestedLines) {
 }
 function sourceFamily(sourceName) {
   const s = String(sourceName).replaceAll('\\', '/')
+  // Vite's preserveSymlinks=true resolves the SAME first-party shared Gallery
+  // sources through node_modules/@xdrive/ui/ in production bundles. That
+  // workspace path must be classified before generic node_modules.
+  const firstPartyShared = s.includes('ui/shared/src/') ||
+    /(?:^|\/)node_modules\/@xdrive\/ui\//.test(s)
+  if (firstPartyShared) {
+    if (/(?:^|\/)MediaGallery\.tsx$/.test(s)) return 'shared-gallery-page'
+    if (/gallery|virtual|media|photo/i.test(s)) return 'shared-gallery-support'
+    return 'shared-ui-other'
+  }
+  if (s.includes('desktop/src/renderer/') || s.includes('/src/renderer/')) return 'desktop-shell'
   if (s.includes('node_modules/react-dom/') || s.includes('node_modules/react/')) return 'react-runtime'
   if (s.includes('node_modules/@mui/')) return 'mui-runtime'
   if (s.includes('node_modules/@emotion/')) return 'emotion-runtime'
   if (s.includes('node_modules/')) return 'third-party'
-  if (s.includes('ui/shared/src/mui/MediaGallery.tsx')) return 'shared-gallery-page'
-  if (s.includes('ui/shared/src/') && /gallery|virtual|media|photo/i.test(s)) return 'shared-gallery-support'
-  if (s.includes('ui/shared/src/')) return 'shared-ui-other'
-  if (s.includes('desktop/src/renderer/') || s.includes('/src/renderer/')) return 'desktop-shell'
   return 'unresolved-source'
 }
 function safeSymbol(name, family) {
@@ -169,13 +176,24 @@ function summariseCPUProfile(profile, sourceMapRoot) {
   const cpuUS = new Map()
   const sampleCount = new Map()
   let weightedUS = 0
+  let unattributedGapUS = 0
+  let longGapSamples = 0
   for (let i = 0; i < profile.samples.length; i++) {
     const id = profile.samples[i], delta = profile.timeDeltas[i]
-    if (!nodeByID.has(id) || !Number.isFinite(delta) || delta < 0 || delta > 3000000)
-      throw new Error('invalid actual V8 CPU sample')
-    cpuUS.set(id,(cpuUS.get(id)||0)+delta)
+    // CDP timeDeltas measure WALL gaps between samples, not exact CPU time.
+    // A paused/backgrounded renderer can produce a valid multi-second gap.
+    // Report its excess separately instead of falsely charging seconds of
+    // unobserved CPU to one minified JS function.
+    if (!nodeByID.has(id) || !Number.isFinite(delta) || delta < 0 ||
+        delta > 120000000) throw new Error('invalid actual V8 CPU sample')
+    const creditedUS = Math.min(delta, 100000)
+    if (delta > creditedUS) {
+      unattributedGapUS += delta - creditedUS
+      longGapSamples++
+    }
+    cpuUS.set(id,(cpuUS.get(id)||0)+creditedUS)
     sampleCount.set(id,(sampleCount.get(id)||0)+1)
-    weightedUS += delta
+    weightedUS += creditedUS
   }
   if (weightedUS <= 0) throw new Error('empty sampled V8 CPU time')
   const sampledNodes = [...cpuUS.keys()].map(id=>nodeByID.get(id))
@@ -223,12 +241,15 @@ function summariseCPUProfile(profile, sourceMapRoot) {
     uniqueSampledFrames:sampledNodes.length,
     profileWallMs:round((profile.endTime-profile.startTime)/1000),
     totalWeightedSampleMs:round(weightedUS/1000),
+    unobservedLongGapMs:round(unattributedGapUS/1000),
+    longGapSamples,
+    maxCreditedSampleIntervalMs:100,
     sourceMappedSampleFrames:mappedFrames,
     firstPartySampleCount:firstPartySamples,
     topSampledCallFrames:top.slice(0,15),
     topMappedSymbols:named,
     sourceFamilyTotals:familyTotals,
-    samplingQualification:'Sample timeDeltas estimate wall-time attribution, not exact CPU or inclusive JS stack time. Bundled sourcemap symbol may describe an expression rather than a function.',
+    samplingQualification:'TimeDeltas are wall gaps not exact CPU; gaps over 100ms are only partially credited and reported as unobserved. Symbol from sourcemap may describe an expression, not a function.',
     rawProfileArgsPathsOrURLsIncluded:false,
     rawSourceMapsIncluded:false,
     productionLogicModified:false,
