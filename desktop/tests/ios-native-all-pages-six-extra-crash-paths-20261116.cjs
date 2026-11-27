@@ -283,7 +283,12 @@ test("iOS 26 real PhotoKit alert cannot falsely fail Files crash", () => {
   assert.match(helper, /XCTAssertEqual\(app\.state, \.runningForeground/);
   assert.doesNotMatch(helper, /Allow Full Access.*\.tap\(\)/);
   const tap = crash.slice(crash.indexOf("private func tap(_ id:"), crash.indexOf("private func tapNamed("));
-  assert.equal((tap.match(/denyFirstRunPhotoLibraryPromptIfPresent\(app\)/g) || []).length, 2);
-  assert.match(tap, /target\.tap\(\)/);
+  // Photos-first navigation has a real navigator branch and the legacy
+  // direct AX action. Verify the ordering on the visible Files route,
+  // rather than counting identical calls across mutually exclusive paths.
+  assert.match(tap, /if id == "native-ios-tab-files" \{ denyFirstRunPhotoLibraryPromptIfPresent\(app\) \}[\s\S]*?if id\.hasPrefix\("native-ios-tab-"\) \{/);
+  assert.match(tap, /var reached = XDriveIOSNativePhotosTestNavigator\.tap\(id, in: app\)[\s\S]*?if !reached && id == "native-ios-tab-files" \{\s*denyFirstRunPhotoLibraryPromptIfPresent\(app\)\s*reached = XDriveIOSNativePhotosTestNavigator\.tap\(id, in: app\)/);
+  assert.match(tap, /XCTAssertTrue\(reached,[^\n]*\)\s*if id == "native-ios-tab-files" \{ denyFirstRunPhotoLibraryPromptIfPresent\(app\) \}\s*XCTAssertEqual\(app\.state, \.runningForeground/);
+  assert.match(tap, /target\.tap\(\)\s*if id == "native-ios-tab-files" \{ denyFirstRunPhotoLibraryPromptIfPresent\(app\) \}\s*XCTAssertEqual\(app\.state, \.runningForeground/);
   assert.ok(watcher.includes('"testFilesDeniedRootColdRelaunchDoesNotResurrectPrivateGrid"'));
 });
