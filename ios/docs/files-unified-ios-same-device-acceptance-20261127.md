@@ -79,7 +79,7 @@ hierarchy and usability, not a mandate for pixel-identical Web UI.
   **signed physical device**, set the UI-test runner environment variables:
   `XDRIVE_FILES_SIGNED_DEVICE_CAPTURE=1` and
   `XDRIVE_FILES_FIXTURE_FILE_NODE_ID=<real-root-file-node-id>`. Run
-  `XDriveIOSGalleryFilesSixSubpageUITests.testFilesSignedDevicePopulatedListGridAndViewerSnapshots`
+  `XDriveIOSFilesSignedParityUITests.testFilesSignedDevicePopulatedListGridAndViewerSnapshots`
   on the iPhone, NOT a Simulator. This is opt-in and requires the iPhone to have
   an existing genuine, authorized Owner session. The test must FAIL on missing
   real fixtures; it must never silently substitute synthetic data.
