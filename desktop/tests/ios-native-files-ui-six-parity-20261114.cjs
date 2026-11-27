@@ -163,11 +163,12 @@ test('F9 extension icons and metadata reuse existing bounded thumbnails', () => 
 
 test('F9b actual screenshot provenance is exported from the real XCTest session', () => {
   const screenshots = source('ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift')
+  const signed = source('ios/UITests/XDriveIOSFilesSignedParityUITests.swift')
   assert.match(screenshots, /testFilesUnifiedNativePresentationCapturesOneContinuousSequence/)
-  assert.match(screenshots, /testFilesSignedDevicePopulatedListGridAndViewerSnapshots/)
-  assert.match(screenshots, /XDRIVE_FILES_SIGNED_DEVICE_CAPTURE/)
+  assert.match(signed, /testFilesSignedDevicePopulatedListGridAndViewerSnapshots/)
+  assert.match(signed, /XDRIVE_FILES_SIGNED_DEVICE_CAPTURE/)
   assert.match(screenshots, /XCTAttachment\(screenshot: image\)/)
-  assert.match(screenshots, /auth: "signed-owner"/)
+  assert.match(signed, /auth: "signed-owner"/)
   assert.match(workflow, /xcresulttool export attachments/)
   assert.match(workflow, /ios-files-native-08-browse-restored/)
   assert.match(workflow, /test -s "\$out\/manifest\.json"/)
