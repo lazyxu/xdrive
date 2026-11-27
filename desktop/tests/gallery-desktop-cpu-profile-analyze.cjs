@@ -110,3 +110,31 @@ test('existing production entry is reused, with fully opt-in raw-free debugger c
   assert.match(runner,/actual Desktop CPU samples and private sourcemap attribution required/)
   assert.match(runner,/cpuProfileProbeEnabled/)
 })
+
+test('real Electron CPU probe failures are categorized without raw request paths', () => {
+  const vm = require('node:vm')
+  const main = fs.readFileSync(path.join(__dirname,'../scripts/gallery-desktop-real-cold-electron-main.cjs'),'utf8')
+  const begin = main.indexOf('function gallerySafeCpuFailure(error) {')
+  const end = main.indexOf('function nativeProcessMetrics(pid) {',begin)
+  assert.ok(begin > 0 && end > begin)
+  const context = {}
+  vm.runInNewContext(main.slice(begin,end) + '\nthis.classify = gallerySafeCpuFailure',context)
+  const cases = [
+    ['actual sampled V8 CPUProfile missing','v8_sample_count_missing'],
+    ['real first-party Renderer V8 sampled CPU attribution unavailable','first_party_sourcemap_unresolved'],
+    ['Protocol error -32601: Profiler.stop; private-path?q=secret','devtools_protocol_error'],
+    ['invalid local Vite sourcemap JSON: private-token','sourcemap_parse_invalid'],
+    ['timed out waiting for 12 decodes with bearer-token','gallery_decode_timeout'],
+    ['unrelated secret from private account','unclassified_test_error'],
+  ]
+  for (const [message,want] of cases) {
+    const label = context.classify(new Error(message))
+    assert.equal(label,want)
+    assert.equal(label.includes('private'),false)
+    assert.equal(label.includes('token'),false)
+    assert.equal(label.includes('bearer'),false)
+  }
+  const runner = fs.readFileSync(path.join(__dirname,'../scripts/gallery-desktop-real-cold-runner.cjs'),'utf8')
+  assert.match(runner,/safeReason: safeFailure/)
+  assert.match(runner,/GALLERY_REAL_DESKTOP_ELECTRON_SAFE_FAILURE/)
+})
