@@ -267,7 +267,7 @@ function summariseCPUProfile(profile, sourceMapRoot) {
     sampleCount:profile.samples.length,
     creditedSampleCount,
     negativeIntervalCount:timing.negativeSamples,
-    maxClockBackstepMs:round(timing.maxBackstepUS/1000),
+    maxClockBackstepMs:timing.maxBackstepUS/1000,
     uniqueSampledFrames:sampledNodes.length,
     profileWallMs:round((profile.endTime-profile.startTime)/1000),
     totalWeightedSampleMs:round(weightedUS/1000),
