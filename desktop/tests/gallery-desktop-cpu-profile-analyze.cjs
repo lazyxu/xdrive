@@ -110,6 +110,28 @@ test('genuine delayed V8 sampling is reported as unobserved gaps, not fake CPU',
   assert.equal(result.firstPartySampleCount,125)
   assert.equal(result.topMappedSymbols[0].mappedSymbol,'XDriveMediaGalleryPage')
 })
+test('one bounded V8 clock reversal is reported without double-counting the wall interval', t => {
+  const {root,profile} = makeFixture(t)
+  profile.timeDeltas[1] = -250
+  profile.timeDeltas[2] = 750
+  profile.endTime -= 1500
+  const result = summariseCPUProfile(profile,root)
+  assert.equal(result.sampleCount,137)
+  assert.equal(result.creditedSampleCount,136)
+  assert.equal(result.firstPartySampleCount,124)
+  assert.equal(result.negativeIntervalCount,1)
+  assert.equal(result.maxClockBackstepMs,0.25)
+  assert.equal(result.totalWeightedSampleMs,135.5)
+  assert.ok(result.totalWeightedSampleMs <= result.profileWallMs)
+})
+test('larger or repeated timestamp reversals fail closed', t => {
+  const {root,profile} = makeFixture(t)
+  profile.timeDeltas[1] = -1001
+  assert.throws(()=>summariseCPUProfile(profile,root),/non-monotonic clock exceeds bound/)
+  profile.timeDeltas[1] = -1
+  profile.timeDeltas[2] = -1
+  assert.throws(()=>summariseCPUProfile(profile,root),/non-monotonic clock exceeds bound/)
+})
 test('existing production entry is reused, with fully opt-in raw-free debugger capture', () => {
   const main = fs.readFileSync(path.join(__dirname,'../scripts/gallery-desktop-real-cold-electron-main.cjs'),'utf8')
   const runner = fs.readFileSync(path.join(__dirname,'../scripts/gallery-desktop-real-cold-runner.cjs'),'utf8')

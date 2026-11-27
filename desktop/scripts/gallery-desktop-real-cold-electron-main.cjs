@@ -61,6 +61,7 @@ function gallerySafeV8Shape(profile) {
     missingSampleNodeCount: samples.filter(id => !ids.has(id)).length,
     nonFiniteIntervalCount: intervals.filter(x => !Number.isFinite(x)).length,
     negativeIntervalCount: intervals.filter(x => Number.isFinite(x) && x < 0).length,
+    largestNegativeIntervalMs: intervals.reduce((a, x) => Number.isFinite(x) ? Math.max(a, -x/1000) : a, 0),
     longerThan120sIntervalCount: intervals.filter(x => Number.isFinite(x) && x > 120000000).length,
     longestIntervalMs: intervals.reduce((a, x) => Number.isFinite(x) ? Math.max(a, x/1000) : a, 0),
     clockValid: Number.isFinite(profile?.startTime) &&

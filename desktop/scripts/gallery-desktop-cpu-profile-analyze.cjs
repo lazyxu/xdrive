@@ -158,6 +158,29 @@ function mapFrameLocations(frames, sourceMapRoot) {
     }
   }
 }
+function monotonicSampleIntervals(deltas) {
+  // CDP timestamps may arrive slightly out of order. Only tolerate sparse
+  // reversals within one requested 1ms sampling interval. Keep the original
+  // cumulative clock, and never assign the same wall interval twice.
+  const MAX_BACKSTEP_US = 1000
+  const maxNegativeSamples = Math.max(1, Math.floor(deltas.length / 100))
+  let timestampUS = 0, highWaterUS = 0, negativeSamples = 0, maxBackstepUS = 0
+  const novelUS = []
+  for (const delta of deltas) {
+    if (!Number.isFinite(delta) || delta > 120000000)
+      throw new Error('invalid actual V8 CPU sample')
+    if (delta < 0) negativeSamples++
+    timestampUS += delta
+    const backstep = Math.max(0, highWaterUS - timestampUS)
+    maxBackstepUS = Math.max(maxBackstepUS, backstep)
+    if (negativeSamples > maxNegativeSamples || maxBackstepUS > MAX_BACKSTEP_US)
+      throw new Error('invalid actual V8 CPU sample: non-monotonic clock exceeds bound')
+    const uncoveredUS = Math.max(0, timestampUS - highWaterUS)
+    novelUS.push(uncoveredUS)
+    highWaterUS = Math.max(highWaterUS, timestampUS)
+  }
+  return {novelUS, negativeSamples, maxBackstepUS}
+}
 function summariseCPUProfile(profile, sourceMapRoot) {
   if (!profile || !Array.isArray(profile.nodes) ||
       !Array.isArray(profile.samples) || !Array.isArray(profile.timeDeltas) ||
@@ -178,14 +201,17 @@ function summariseCPUProfile(profile, sourceMapRoot) {
   let weightedUS = 0
   let unattributedGapUS = 0
   let longGapSamples = 0
+  let creditedSampleCount = 0
+  const timing = monotonicSampleIntervals(profile.timeDeltas)
   for (let i = 0; i < profile.samples.length; i++) {
-    const id = profile.samples[i], delta = profile.timeDeltas[i]
+    const id = profile.samples[i], delta = timing.novelUS[i]
     // CDP timeDeltas measure WALL gaps between samples, not exact CPU time.
     // A paused/backgrounded renderer can produce a valid multi-second gap.
     // Report its excess separately instead of falsely charging seconds of
     // unobserved CPU to one minified JS function.
-    if (!nodeByID.has(id) || !Number.isFinite(delta) || delta < 0 ||
-        delta > 120000000) throw new Error('invalid actual V8 CPU sample')
+    if (!nodeByID.has(id)) throw new Error('invalid actual V8 CPU sample')
+    if (delta <= 0) continue // No attributable time; retain raw sample count separately.
+    creditedSampleCount++
     const creditedUS = Math.min(delta, 100000)
     if (delta > creditedUS) {
       unattributedGapUS += delta - creditedUS
@@ -195,7 +221,8 @@ function summariseCPUProfile(profile, sourceMapRoot) {
     sampleCount.set(id,(sampleCount.get(id)||0)+1)
     weightedUS += creditedUS
   }
-  if (weightedUS <= 0) throw new Error('empty sampled V8 CPU time')
+  if (weightedUS <= 0 || creditedSampleCount < 100)
+    throw new Error('actual sampled V8 CPUProfile missing: fewer than 100 credited samples')
   const sampledNodes = [...cpuUS.keys()].map(id=>nodeByID.get(id))
   const locate = mapFrameLocations(sampledNodes.map(x=>x.callFrame), sourceMapRoot)
   const classified = new Map()
@@ -238,6 +265,9 @@ function summariseCPUProfile(profile, sourceMapRoot) {
   return {
     kind:'actual-production-electron-renderer-V8-CPU-sampling',
     sampleCount:profile.samples.length,
+    creditedSampleCount,
+    negativeIntervalCount:timing.negativeSamples,
+    maxClockBackstepMs:round(timing.maxBackstepUS/1000),
     uniqueSampledFrames:sampledNodes.length,
     profileWallMs:round((profile.endTime-profile.startTime)/1000),
     totalWeightedSampleMs:round(weightedUS/1000),
@@ -249,7 +279,7 @@ function summariseCPUProfile(profile, sourceMapRoot) {
     topSampledCallFrames:top.slice(0,15),
     topMappedSymbols:named,
     sourceFamilyTotals:familyTotals,
-    samplingQualification:'TimeDeltas are wall gaps not exact CPU; gaps over 100ms are only partially credited and reported as unobserved. Symbol from sourcemap may describe an expression, not a function.',
+    samplingQualification:'TimeDeltas are wall gaps not exact CPU; gaps over 100ms are only partially credited and reported as unobserved. Sparse <=1ms clock reversals receive no overlapping credit; counts and maximum backstep are disclosed. Symbol from sourcemap may describe an expression, not a function.',
     rawProfileArgsPathsOrURLsIncluded:false,
     rawSourceMapsIncluded:false,
     productionLogicModified:false,

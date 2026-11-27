@@ -122,6 +122,7 @@ async function electronSample(sample, env) {
           'nodeCount', 'sampleCount', 'intervalCount',
           'duplicateNodeCount', 'missingSampleNodeCount',
           'nonFiniteIntervalCount', 'negativeIntervalCount',
+          'largestNegativeIntervalMs',
           'longerThan120sIntervalCount', 'longestIntervalMs',
         ]) {
           if (typeof shape[key] === 'number' &&
