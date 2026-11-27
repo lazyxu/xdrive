@@ -16,7 +16,8 @@ from files_ui_transition_video import (
 
 class FilesUITransitionVideoTests(unittest.TestCase):
     def test_real_targets_are_distinct(self):
-        self.assertEqual(len(TARGETS), 56)
+        self.assertEqual(len(TARGETS), 57)
+        self.assertIn("testFilesUnifiedNativePresentationCapturesOneContinuousSequence", TARGETS)
         self.assertTrue({
             "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
             "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
@@ -259,10 +260,20 @@ class FilesUITransitionVideoTests(unittest.TestCase):
     def test_no_immediate_decoded_post_tap_frames_must_not_pass(self):
         frames = [
             {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
-            for i in range(26) if i not in {7, 8, 9, 10}
+            for i in range(26) if i not in {6, 7, 8, 9, 10}
         ]
         self.assertEqual(classify_bright_blank(frames, 0.6),
                          "missing_immediate_post_tap_frames")
+
+    def test_exact_tap_frame_followed_by_missing_frames_is_sparse(self):
+        # The tap-aligned frame is now intentionally included. It must not
+        # hide the following half-second decoding gap or yield a false PASS.
+        frames = [
+            {"time": i / 10, "ymin": 12, "ymax": 246, "yavg": 175}
+            for i in range(26) if i not in {7, 8, 9, 10}
+        ]
+        self.assertEqual(classify_bright_blank(frames, 0.6),
+                         "sparse_early_transition_frames")
 
     def test_missing_early_transition_frames_must_not_pass(self):
         frames = [
@@ -295,6 +306,59 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             for i in range(70)
         ]
         self.assertIsNone(classify_bright_blank(frames, 0.6))
+
+    def test_white_frame_in_first_20ms_is_not_skipped(self):
+        frames = self._boundary_transition_frames(235, {31})
+        self.assertEqual(classify_bright_blank(frames, 1.02),
+                         "suspected_solid_white_transition")
+
+    def test_black_frame_in_first_20ms_is_not_skipped(self):
+        frames = self._boundary_transition_frames(16, {31})
+        self.assertEqual(classify_bright_blank(frames, 1.02),
+                         "suspected_solid_black_transition")
+
+    def test_neutral_frame_in_first_20ms_is_not_skipped(self):
+        frames = self._boundary_transition_frames(125, {31})
+        self.assertEqual(classify_bright_blank(frames, 1.02),
+                         "suspected_solid_neutral_transition")
+
+    def test_half_second_neutral_repaint_is_not_a_smooth_transition(self):
+        frames = self._boundary_transition_frames(125, set(range(37, 54)))
+        self.assertEqual(classify_bright_blank(frames, 1.02),
+                         "suspected_solid_neutral_transition")
+
+    def test_missing_tail_inside_transition_window_is_not_accepted(self):
+        # The video resumes only after the audit window, so the original
+        # adjacent-frame scan saw no gap between in-window samples.
+        frames = self._boundary_transition_frames(125, set())
+        frames = [f for f in frames if not 1.8 < f["time"] < 2.5]
+        self.assertEqual(classify_bright_blank(frames, 1.02),
+                         "missing_transition_window_tail")
+
+    def test_short_post_tap_clip_cannot_prove_transition_continuity(self):
+        frames = self._boundary_transition_frames(125, set())
+        frames = [f for f in frames if f["time"] <= 1.4]
+        self.assertEqual(classify_bright_blank(frames, 1.02),
+                         "missing_transition_window_tail")
+
+    def test_frame_strictly_before_tap_is_not_misattributed(self):
+        for y in (16, 125, 235):
+            with self.subTest(y=y):
+                self.assertIsNone(classify_bright_blank(
+                    self._boundary_transition_frames(y, {30}), 1.02))
+
+    def test_valid_bounded_transition_can_end_before_full_window(self):
+        frames = self._boundary_transition_frames(125, set())
+        self.assertIsNone(classify_bright_blank(
+            [f for f in frames if f["time"] <= 1.9], 1.02))
+
+    def _boundary_transition_frames(self, y, indices):
+        return [
+            {"time": i / 30, "ymin": y if i in indices else 12,
+             "ymax": y if i in indices else 246,
+             "yavg": y if i in indices else 175}
+            for i in range(100)
+        ]
 
     def test_video_metadata_decode(self):
         sample = ("frame:0 pts:0 pts_time:0.1\n"

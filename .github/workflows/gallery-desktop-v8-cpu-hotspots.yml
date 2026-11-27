@@ -1,0 +1,144 @@
+name: Desktop Gallery real 100k V8 function CPU profile
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'desktop/scripts/gallery-desktop-real-cold-electron-main.cjs'
+      - 'desktop/scripts/gallery-desktop-real-cold-runner.cjs'
+      - 'desktop/scripts/gallery-desktop-cpu-profile-analyze.cjs'
+      - 'desktop/tests/gallery-desktop-cpu-profile-analyze.cjs'
+      - '.github/workflows/gallery-desktop-v8-cpu-hotspots.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-desktop-cpu-hotspots:
+    if: github.head_ref == 'test/desktop-gallery-cpu-hotspots-20261127'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_AGENT_BINARY: ${{ github.workspace }}/desktop/gallery-desktop-cpu-bin/xdrive-agent
+      XD_GALLERY_DESKTOP_COLD_CPU_PROFILE: '1'
+      XD_GALLERY_DESKTOP_COLD_CHROME_TRACE: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm immutable exact-head and strictly test-only changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          git fetch origin "$BASE" --depth=1
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          git diff --quiet "$BASE" HEAD -- ui/shared/src desktop/src internal cmd web/src
+          if git diff --name-only "$BASE" HEAD |
+            grep -Ev '^(desktop/scripts/gallery-desktop-real-cold-electron-main\.cjs|desktop/scripts/gallery-desktop-real-cold-runner\.cjs|desktop/scripts/gallery-desktop-cpu-profile-analyze\.cjs|desktop/tests/gallery-desktop-cpu-profile-analyze\.cjs|\.github/workflows/gallery-desktop-v8-cpu-hotspots\.yml|docs/performance-test-registry\.md)$'; then
+            echo "The V8 diagnostic may not modify any production source"
+            exit 1
+          fi
+      - name: Compile genuine Desktop/Main/preload and generate private source maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build -- --config vite.config.ts
+          npm --prefix desktop run build
+          # No Vite production source/config is changed. Only this diagnostic
+          # rebuilds the SAME renderer sources with optional source maps.
+          npm --prefix desktop run build:renderer -- --sourcemap
+          test -n "$(find desktop/dist/renderer/assets -maxdepth 1 -type f -name '*.js.map' -print -quit)"
+          node --test desktop/tests/gallery-desktop-cpu-profile-analyze.cjs
+          node --test desktop/tests/gallery-real-cold-observer-queue.cjs
+          node --check desktop/scripts/gallery-desktop-cpu-profile-analyze.cjs
+          node --check desktop/scripts/gallery-desktop-real-cold-electron-main.cjs
+          node --check desktop/scripts/gallery-desktop-real-cold-runner.cjs
+          mkdir -p desktop/gallery-desktop-cpu-bin
+          go build -o desktop/gallery-desktop-cpu-bin/xdrive-agent ./cmd/xdrive-agent
+      - name: Sample 3 independent real 100k Electron/Agent/PostgreSQL/CAS first opens
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" node desktop/scripts/gallery-desktop-real-cold-runner.cjs
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+          const dir = 'desktop/gallery-desktop-real-cold-results'
+          const report = JSON.parse(fs.readFileSync(path.join(dir,'summary.json'),'utf8'))
+          if (report.n !== 3 || report.cpuProfileProbeEnabled !== true ||
+              report.chromiumTraceProbeEnabled === true ||
+              report.samples?.length !== 3) throw new Error('genuine n3 CPU profiles required')
+          for (const sample of report.samples) {
+            if (!sample.realProductionDesktop || sample.logicalItems !== 100000 ||
+                sample.physicalNodes !== 115000 || sample.liveAssets !== 15000 ||
+                sample.renderer?.decodedImages < 12 ||
+                sample.renderer?.decoderErrors !== 0 ||
+                sample.renderer?.mountedTiles >= 1000) throw new Error('genuine 100k renderer verification failed')
+            const cpu = sample.cpuProfileSummary
+            if (cpu?.sampleCount < 100 || cpu.sourceMappedSampleFrames < 1 ||
+                cpu.firstPartySampleCount < 1 ||
+                !Array.isArray(cpu.sourceFamilyTotals) ||
+                cpu.rawProfileArgsPathsOrURLsIncluded !== false ||
+                cpu.rawSourceMapsIncluded !== false ||
+                cpu.productionLogicModified !== false)
+              throw new Error('no safe real V8 CPU attribution and source-map mapping')
+          }
+          // Uploaded output is strictly an already-sanitized fixed-schema
+          // numeric report, never CPUProfile, .cpuprofile, JS maps or URL data.
+          const data = JSON.stringify(report)
+          if (data.includes('file://') || data.includes('https://') ||
+              data.includes('sourcesContent') || data.includes('callFrame') ||
+              data.includes('Authorization') || data.includes('CPUProfile') ||
+              data.includes('passwordAccessToken'))
+            throw new Error('raw V8 CPUProfile source or URL leaked')
+          console.log('GALLERY_REAL_V8_CPU_HOTSPOTS ' + JSON.stringify({
+            n:report.n,
+            samples:report.samples.map(x=>({
+              firstPaintMs:x.renderer.firstImageTwoRAFMs,
+              first12Ms:x.renderer.first12DecodedTwoRAFMs,
+              maxLongTaskMs:x.renderer.longestLongTaskMs,
+              count:x.cpuProfileSummary.sampleCount,
+              sourceMapFrames:x.cpuProfileSummary.sourceMappedSampleFrames,
+              firstPartySamples:x.cpuProfileSummary.firstPartySampleCount,
+              hotspots:x.cpuProfileSummary.topMappedSymbols.slice(0,12),
+              families:x.cpuProfileSummary.sourceFamilyTotals,
+            })),
+          }))
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-desktop-100k-v8-hotspots-sanitized-n3
+          # Do not include compiled JS, sourcemaps, full V8 CPU profiles,
+          # raw Chromium traces, server logs or private filesystem paths.
+          path: desktop/gallery-desktop-real-cold-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14

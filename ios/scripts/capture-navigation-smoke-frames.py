@@ -215,6 +215,7 @@ MINIMAL_TARGETS.update({
     "testMapModalFilesCloudDenialDoesNotRemountUnifiedWall",
     "testFilesSearchKeyboardGalleryPeopleReturnHasNoGhostOverlay",
     # Six newer registered native journeys must also produce real frame evidence.
+    "testFilesUnifiedNativePresentationCapturesOneContinuousSequence",
     "testFilesMoreOrganizerGalleryReturnPreservesBrowseHome",
     "testFilesQuickRailRotationPeopleReturnKeepsNativeShell",
     "testGalleryFilterFilesHistoryForegroundKeepsWallGeneration",

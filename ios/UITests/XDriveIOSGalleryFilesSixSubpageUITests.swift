@@ -434,7 +434,10 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         tap("native-ios-files-error-return", app)
         XCTAssertTrue(control("native-ios-files-home-list", app)
             .waitForExistence(timeout: 15))
+        assertVisibleContent(app, label: "Restored Browse Home")
         attachFilesParityFrame(app, "08-browse-restored")
+        // Preserve a bounded genuine post-tap tail for the 30-Hz video gate.
+        Thread.sleep(forTimeInterval: 1.6)
     }
 
     func testFilesMoreOrganizerGalleryReturnPreservesBrowseHome() {

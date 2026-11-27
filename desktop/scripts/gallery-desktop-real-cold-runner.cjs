@@ -85,7 +85,10 @@ async function fixture(sample, dir) {
 }
 async function electronSample(sample, env) {
   let received = null
+  let safeFailure = null
+  let safeShape = null
   const label = 'GALLERY_REAL_DESKTOP_ELECTRON_SAMPLE '
+  const safeFailureLabel = 'GALLERY_REAL_DESKTOP_ELECTRON_SAFE_FAILURE '
   // Entry lives at the REAL Desktop package root, so Electron app.getAppPath()
   // resolves the same assets/tray icon locations as production packaging.
   const desktopRoot = path.join(root, 'desktop')
@@ -97,13 +100,49 @@ async function electronSample(sample, env) {
   }, 'electron-' + sample, line => {
     const pos = line.indexOf(label)
     if (pos >= 0) received = JSON.parse(line.slice(pos + label.length))
+    const safePos = line.indexOf(safeFailureLabel)
+    if (safePos >= 0) {
+      const diagnostic = JSON.parse(line.slice(safePos + safeFailureLabel.length))
+      const reason = diagnostic?.reason
+      const accepted = new Set([
+        'first_party_sourcemap_unresolved', 'v8_sample_count_missing',
+        'v8_profile_invalid', 'v8_profile_clock_invalid',
+        'v8_call_tree_invalid', 'v8_sample_reference_invalid',
+        'sourcemap_parse_invalid', 'devtools_protocol_error',
+        'gallery_decode_timeout', 'desktop_login_or_navigation',
+        'unclassified_test_error',
+      ])
+      safeFailure = accepted.has(reason) ? reason : 'unclassified_test_error'
+      // Never forward any keys/data from raw CDP profiles or arbitrary errors.
+      // Only the exact numeric-only fields produced by gallerySafeV8Shape.
+      const shape = diagnostic?.profileShape
+      if (shape && typeof shape === 'object') {
+        safeShape = {}
+        for (const key of [
+          'nodeCount', 'sampleCount', 'intervalCount',
+          'duplicateNodeCount', 'missingSampleNodeCount',
+          'nonFiniteIntervalCount', 'negativeIntervalCount',
+          'largestNegativeIntervalMs',
+          'longerThan120sIntervalCount', 'longestIntervalMs',
+        ]) {
+          if (typeof shape[key] === 'number' &&
+              Number.isFinite(shape[key]) && shape[key] >= 0) {
+            safeShape[key] = shape[key]
+          }
+        }
+        safeShape.clockValid = shape.clockValid === true
+      }
+    }
   }, desktopRoot)
   try {
     const end = await Promise.race([
       proc.exited, delay(100000).then(() => ({ code: 'timeout' })),
     ])
     assert(end.code === 0 && received?.realProductionDesktop,
-      'real Electron did not produce a valid decoded 100k result: ' + JSON.stringify(end))
+      'real Electron did not produce a valid decoded 100k result: ' +
+      JSON.stringify({ code: end.code, signal: end.signal || null,
+        safeReason: safeFailure || 'no_safe_reason_reported',
+        safeProfileShape: safeShape }))
     return received
   } finally {
     await stop(proc)
@@ -126,6 +165,8 @@ async function oneSample(sample, ready, dir) {
     XD_GALLERY_DESKTOP_COLD_CHROME_TRACE:
       process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1' ? '1' : '0',
     XD_GALLERY_DESKTOP_TRACE_SCRATCH: dir,
+    XD_GALLERY_DESKTOP_COLD_CPU_PROFILE:
+      process.env.XD_GALLERY_DESKTOP_COLD_CPU_PROFILE === '1' ? '1' : '0',
   }
   const proc = launch(agentBinary, [], { ...process.env, ...env }, 'agent-' + sample)
   const discovery = path.join(configHome, 'xdrive', 'desktop-ipc.json')
@@ -184,6 +225,16 @@ async function main() {
         assert(result.logicalItems === 100000 && result.physicalNodes === 115000 &&
           result.renderer.decodedImages >= 12 &&
           result.renderer.mountedTiles < 1000, 'real Desktop 100k result incorrect')
+        if (process.env.XD_GALLERY_DESKTOP_COLD_CPU_PROFILE === '1') {
+          const cpu = result.cpuProfileSummary
+          assert(cpu?.sampleCount >= 100 &&
+            cpu.sourceMappedSampleFrames >= 1 &&
+            cpu.firstPartySampleCount >= 1 &&
+            cpu.rawProfileArgsPathsOrURLsIncluded === false &&
+            cpu.rawSourceMapsIncluded === false &&
+            cpu.productionLogicModified === false,
+            'actual Desktop CPU samples and private sourcemap attribution required')
+        }
         if (process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1') {
           const trace = result.chromiumTimeline
           assert(trace?.rendererPIDMatched && trace.rendererEvents > 0 &&
@@ -257,6 +308,7 @@ async function main() {
       samples, n: samples.length,
       progressProbeEnabled: probeEnabled,
       chromiumTraceProbeEnabled: process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1',
+      cpuProfileProbeEnabled: process.env.XD_GALLERY_DESKTOP_COLD_CPU_PROFILE === '1',
       progressMedians,
       progressPairCount: probeEnabled ? samples.reduce(
         (sum, row) => sum + row.sourceExactMediaProgress.pairs.length, 0) : 0,
