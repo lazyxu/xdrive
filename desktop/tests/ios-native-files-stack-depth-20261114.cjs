@@ -204,29 +204,29 @@ test('all 14 Launcher destinations and at least 40 native all-page/child process
 
 
 
-test('published-b9 cold startup keeps the real compact About readiness without faking baseline', () => {
+test('published-b9 cold startup requires real candidate readiness or exact archived release marker', () => {
   const b9 = fs.readFileSync(
-    path.join(root, 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'), 'utf8')
+    path.join(root, 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'), 'utf8'
+  )
   const login = fs.readFileSync(
-    path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8')
+    path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8'
+  )
   const testStart = b9.indexOf('func testPublishedB9RealColdStartAndRestart()')
   const testEnd = b9.indexOf('\n    func test', testStart + 8)
   assert.ok(testStart >= 0 && testEnd > testStart)
   const body = b9.slice(testStart, testEnd)
-  assert.match(body, /matching\(identifier: "native-ios-login-about"\)/)
-  // A published b9 build shows its label. The current compact sign-in
-  // displays the same readiness proof inside About, after a real tap.
-  assert.match(body, /if !readiness\.waitForExistence\(timeout: 2\) \{/)
-  assert.match(body, /loginScroll\.swipeUp\(\)/)
-  assert.match(body, /about\.isHittable/)
-  assert.match(body, /about\.tap\(\)/)
-  assert.doesNotMatch(body, /compactAbout\.tap\(\)/)
-  assert.match(body, /matching\(identifier: "native-ios-prelogin-build"\)/)
+  // The candidate uses the actual Login submit readiness value. Only the
+  // published immutable b9 build is allowed to use its historical delay.
+  assert.match(body, /app\.buttons\.matching\(identifier: "native-ios-login-submit"\)/)
+  assert.match(body, /if submit\.waitForExistence\(timeout: 5\), submit\.value != nil \{/)
   assert.match(body, /XCTNSPredicateExpectation\(/)
   assert.match(body, /value == %@/)
-  assert.match(body, /readiness\.label\.contains\("b9d5f9695826"\)/)
-  assert.match(login, /accessibilityIdentifier\("native-ios-login-about"\)/)
-  assert.match(login, /accessibilityIdentifier\("native-ios-prelogin-build"\)[\s\S]*?accessibilityValue\(startupReady \? "启动完成" : "正在启动"\)/)
+  assert.match(body, /Candidate remained at mountingWorkspace, do not mask failure/)
+  assert.match(body, /matching\(identifier: "native-ios-prelogin-build"\)/)
+  assert.match(body, /archived\.label\.contains\("b9d5f9695826"\)/)
+  assert.match(body, /app\.terminate\(\)[\s\S]*?app\.launchArguments = \[\][\s\S]*?app\.launch\(\)/)
+  assert.match(login, /accessibilityIdentifier\("native-ios-login-submit"\)/)
+  assert.doesNotMatch(body, /XCTSkip|mockServerLogin|fakeReadiness/)
 })
 
 test('crash sweep targets the actual mounted Launcher and selected Files Home, never an arbitrary retained ScrollView', () => {
@@ -240,7 +240,15 @@ test('crash sweep targets the actual mounted Launcher and selected Files Home, n
   assert.match(sweep, /element\("native-ios-files-home-list", app\)/)
   assert.match(sweep, /tap\("native-ios-files-section-browse", app\)/)
   assert.match(sweep, /XCTNSPredicateExpectation\(/)
-  assert.doesNotMatch(sweep, /app\.(scrollViews|collectionViews)\.firstMatch/)
+  // Only the real Launcher/Files Home viewport is scrollable here.
+  // A different Gallery options sheet may legitimately use a collectionView.
+  const launcher = sweep.slice(sweep.indexOf('private func openLauncher('),
+    sweep.indexOf('private func ', sweep.indexOf('private func openLauncher(') + 5))
+  const favorites = sweep.slice(sweep.indexOf('private func favoritesDisclosure('),
+    sweep.indexOf('private func ensureFavoritesExpanded(', sweep.indexOf('private func favoritesDisclosure(')))
+  assert.match(launcher, /element\("native-ios-launcher-scroll", app\)/)
+  assert.match(favorites, /element\("native-ios-files-home-list", app\)/)
+  assert.doesNotMatch(launcher + favorites, /app\.(scrollViews|collectionViews)\.firstMatch/)
   assert.match(dashboard, /\.accessibilityIdentifier\("native-ios-launcher-scroll"\)/)
   assert.match(files, /\.accessibilityIdentifier\(isHome \? "native-ios-files-home-list" : "native-ios-files-folder-list"\)/)
 })
