@@ -23,7 +23,7 @@ private struct XDriveIOSNativeFilesOperationsClient {
     let accessToken: String
 
     private func session() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -401,6 +401,45 @@ struct XDriveIOSNativeFilesOperationHistoryScreen: View {
                         .disabled(!isVisible || phase != .active || model.busy || model.loading)
                     }
                 }
+            }
+        }
+        // A no-session Owner cannot fetch protected history. The old Form
+        // showed only its section header and an otherwise entirely blank gray
+        // viewport. One real 30Hz Simulator H.264 clip reproduced this during
+        // "操作历史 → 完成". Paint a truthful central no-access/empty state
+        // instead of silently showing an unpopulated page.
+        .overlay {
+            // Keep the visibly explanatory state until the actual modal
+            // leaves the screen. SwiftUI can call onDisappear at the BEGINNING
+            // of an animated Done dismissal; gating on isVisible blanked the
+            // outgoing sheet for >1 s in real Simulator H.264 evidence.
+            if phase == .active && !model.loading &&
+               (!model.matches(login.owner) ||
+                (model.verified && model.items.isEmpty)) {
+                VStack(spacing: 12) {
+                    Image(systemName: model.matches(login.owner)
+                          ? "clock.arrow.circlepath" : "lock.shield")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                    Text(model.matches(login.owner)
+                         ? "暂无操作历史" : "无法验证操作历史")
+                        .font(.headline)
+                    Text(model.matches(login.owner)
+                         ? "当前账户没有可显示的文件操作记录。"
+                         : "当前账户尚未通过验证，请检查登录或网络后刷新。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier(
+                    model.matches(login.owner)
+                        ? "native-ios-files-operation-history-empty-state"
+                        : "native-ios-files-operation-history-no-access"
+                )
             }
         }
         .navigationTitle("操作历史")

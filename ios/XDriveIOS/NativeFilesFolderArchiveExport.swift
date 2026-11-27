@@ -63,7 +63,7 @@ struct XDriveIOSNativeFilesFolderArchiveReader {
     }
 
     private func makeSession() -> URLSession {
-        let settings = URLSessionConfiguration.ephemeral
+        let settings = XDriveIOSAutoRoute.ephemeralConfiguration()
         settings.httpShouldSetCookies = false
         settings.httpCookieAcceptPolicy = .never
         settings.requestCachePolicy = .reloadIgnoringLocalCacheData

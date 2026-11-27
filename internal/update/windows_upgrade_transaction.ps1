@@ -161,13 +161,76 @@ function Stop-XDriveProcesses {
     Remove-Item -LiteralPath $discovery -Force -ErrorAction SilentlyContinue
 }
 
+# The updater PowerShell process is started with CREATE_NO_WINDOW. Its console
+# subprocesses must also be created without a console, not merely hidden after
+# launch. Only trusted, locally installed executable paths are used here.
+function Quote-WindowsNativeArgument([string]$Value) {
+    if ($Value -ne "" -and $Value -notmatch '[\s"]') {
+        return $Value
+    }
+    $quoted = '"'
+    $slashes = 0
+    $backslash = [string][char]92
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq [char]92) {
+            $slashes++
+            continue
+        }
+        if ($character -eq [char]34) {
+            $quoted += ($backslash * (2 * $slashes + 1)) + '"'
+        } else {
+            $quoted += ($backslash * $slashes) + $character
+        }
+        $slashes = 0
+    }
+    return $quoted + ($backslash * (2 * $slashes)) + '"'
+}
+
+function Invoke-HiddenNativeProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$ArgumentList = @()
+    )
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $FilePath
+    $startInfo.Arguments = (@($ArgumentList) | ForEach-Object { Quote-WindowsNativeArgument $_ }) -join ' '
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    if ($null -eq $process) {
+        throw "cannot start headless process: $FilePath"
+    }
+    try {
+        # Read stderr concurrently with stdout, avoiding pipe deadlock.
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $process.WaitForExit()
+        return [pscustomobject]@{
+            ExitCode = [int]$process.ExitCode
+            StdOut = $stdout
+            StdErr = $stderr
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
 function Mirror-Directory([string]$Source, [string]$Destination) {
     if (-not (Test-Path -LiteralPath $Source)) {
         return
     }
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-    & robocopy.exe $Source $Destination /MIR /COPY:DAT /DCOPY:DAT /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
-    $code = $LASTEXITCODE
+    $copy = Invoke-HiddenNativeProcess -FilePath "robocopy.exe" -ArgumentList @(
+        $Source, $Destination, "/MIR", "/COPY:DAT", "/DCOPY:DAT", "/R:1", "/W:1",
+        "/NFL", "/NDL", "/NJH", "/NJS", "/NP"
+    )
+    $code = $copy.ExitCode
     if ($code -gt 7) {
         throw "robocopy failed with exit code $code"
     }
@@ -196,19 +259,11 @@ function Remove-RegistryKeyIfPresent([string]$Key) {
 }
 
 function Invoke-RegExe([string[]]$Arguments, [string]$Description) {
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        # Windows PowerShell 5.1 can surface native stderr as ErrorRecord objects.
-        # reg.exe may emit a success message on that stream, so use the process exit
-        # code as the authoritative result instead of $ErrorActionPreference.
-        $ErrorActionPreference = "Continue"
-        & reg.exe @Arguments *> $null
-        $code = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-    if ($code -ne 0) {
-        throw "$Description failed with exit code $code"
+    # Capture native stderr as data; Windows PowerShell 5.1 must not turn
+    # incidental stderr into a false failure or create a transient console.
+    $run = Invoke-HiddenNativeProcess -FilePath "reg.exe" -ArgumentList $Arguments
+    if ($run.ExitCode -ne 0) {
+        throw "$Description failed with exit code $($run.ExitCode)"
     }
 }
 
@@ -472,15 +527,20 @@ try {
     if (-not (Test-Path -LiteralPath $desktop)) {
         throw "post-install health check failed: Electron Desktop is missing"
     }
-    $installedVersion = (& $xd version | Out-String).Trim()
+    $versionResult = Invoke-HiddenNativeProcess -FilePath $xd -ArgumentList @("version")
+    if ($versionResult.ExitCode -ne 0) {
+        throw "post-install health check failed: xd version exited with $($versionResult.ExitCode)"
+    }
+    $installedVersion = $versionResult.StdOut.Trim()
     if ($installedVersion -ne $TargetVersion) {
         throw "post-install health check failed: xd version=$installedVersion target=$TargetVersion"
     }
     if ($ExpectedCommit -ne "") {
-        $buildJSON = (& $xd version --json | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0) {
-            throw "post-install health check failed: xd version --json exited with $LASTEXITCODE"
+        $buildResult = Invoke-HiddenNativeProcess -FilePath $xd -ArgumentList @("version", "--json")
+        if ($buildResult.ExitCode -ne 0) {
+            throw "post-install health check failed: xd version --json exited with $($buildResult.ExitCode)"
         }
+        $buildJSON = $buildResult.StdOut.Trim()
         $build = $buildJSON | ConvertFrom-Json
         if ([string]$build.commit -cne $ExpectedCommit) {
             throw "post-install health check failed: xd source Commit=$($build.commit) target=$ExpectedCommit"
@@ -503,10 +563,9 @@ try {
 
     $cleanupWarning = ""
     try {
-        & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $LegacyCleanupScript -UnifiedAppDir $appDir
-        if ($LASTEXITCODE -ne 0) {
-            $cleanupWarning = "legacy Desktop cleanup exited with code $LASTEXITCODE"
-        }
+        # Reuse the already headless process; a nested powershell.exe could flash.
+        # A script error is caught below, independently of stale $LASTEXITCODE.
+        & $LegacyCleanupScript -UnifiedAppDir $appDir
     } catch {
         $cleanupWarning = "legacy Desktop cleanup failed: $($_.Exception.Message)"
     }

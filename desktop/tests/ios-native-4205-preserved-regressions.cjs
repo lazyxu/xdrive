@@ -34,11 +34,12 @@ for (const id of accepted) {
       'historical case identity must not drift')
     for (const check of item.checks) {
       const source = readSource(check.file)
-      // #4205 case 116 originally pinned the Files selector *below* the
-      // list. The real Simulator now proves that conditional bottom placement
-      // can lose the rail on Files -> Mine -> Gallery -> Files return.
-      // Preserve the untouched historical JSON, but require the stronger
-      // accessible 44pt top rail and stable geometry during selection.
+      // #4205 archived the Files selector's ordering, but its former
+      // fixed-top layout is intentionally superseded by the one-handed UI.
+      // Keep the historical JSON untouched. The current native switch stays
+      // below the verified content and above the app-wide five tabs, with a
+      // 44pt touch target; selection mode swaps to its own existing dock.
+      // Real Simulator tests still must verify Files/Gallery/Mine returns.
       if (id === 116 && check.file === 'f') {
         assert.match(check.pattern, /switch quickSection$/)
         const begin = source.indexOf('private var filesMain: some View {')
@@ -47,8 +48,8 @@ for (const id of accepted) {
         const main = source.slice(begin, end)
         const rail = main.indexOf('native-ios-files-quick-rail')
         const content = main.indexOf('switch quickSection')
-        assert.ok(rail >= 0 && content > rail,
-          'Files navigation rail must remain mounted above its content')
+        assert.ok(content >= 0 && rail > content,
+          'Files navigation rail must stay below content in the thumb zone')
         assert.match(main, /guard !selecting, !batchTrash\.busy/)
         assert.match(main, /\.disabled\(selecting\)/)
         assert.match(main, /\.frame\(maxWidth: \.infinity, minHeight: 44\)/)
@@ -56,7 +57,8 @@ for (const id of accepted) {
         assert.match(main, /case \.browse:\s*filesChrome/)
         assert.match(main, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.recent\)/)
         assert.match(main, /XDriveIOSNativeFilesCollectionScreen\(login: login, kind: \.favorites\)/)
-        assert.doesNotMatch(main, /if !selecting\s*\{\s*HStack/)
+        assert.match(main, /if !selecting\s*\{[\s\S]*?native-ios-files-quick-rail/,
+          'Files switch must yield to the verified selection toolbar')
         continue
       }
       // #4205 case 184 archived an obsolete "if count < 3" two-tap limit.
@@ -85,7 +87,7 @@ for (const id of accepted) {
         assert.equal(check.pattern,
           'source: \\[release-c83, candidate-navigation, candidate-gallery-files, candidate-no-session\\]')
         assert.match(source,
-          /source:\s*\[release-c83,\s*candidate-navigation,\s*candidate-gallery-files,\s*candidate-no-session(?:,\s*candidate-mapkit)?(?:,\s*candidate-performance)?(?:,\s*candidate-clipboard-owner)?\s*\]/,
+          /source:\s*\[release-c83,\s*candidate-navigation,\s*(?:candidate-navigation-p0,\s*)?candidate-gallery-files,\s*candidate-no-session(?:,\s*candidate-mapkit)?(?:,\s*candidate-performance)?(?:,\s*candidate-ios26-files)?\s*\]/,
           'historical '+id+' requires all original native UI shards')
         assert.match(source,
           /candidate-no-session\)[\s\S]*?XDriveIOSFilesSessionRecoveryUITests/,

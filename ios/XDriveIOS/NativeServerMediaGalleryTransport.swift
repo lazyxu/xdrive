@@ -343,7 +343,7 @@ struct XDriveIOSNativeMediaGalleryReader {
     var mapSelection: XDriveIOSNativeOwnerMapSelection? = nil
 
     private func session() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = XDriveIOSAutoRoute.ephemeralConfiguration()
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
         configuration.urlCache = nil

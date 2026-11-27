@@ -124,6 +124,7 @@ struct XDriveIOSNativeFilesViewer: View {
     @State private var allowAudioAutoplay = true
     @State private var display: XDriveIOSNativeFilesPreviewPayload?
     @State private var player: AVPlayer?
+    @State private var routedMediaLoader: XDriveIOSRoutedMediaLoader?
     @State private var failure: String?
     @State private var loading = true
     // Reuse Files' existing verified, signed original-export model. This
@@ -133,6 +134,7 @@ struct XDriveIOSNativeFilesViewer: View {
     @State private var exportFallbackEligible = false
     @State private var showImageChrome = true
     @State private var showVideoChrome = true
+    @State private var showingFileDetails = false
     // One measurement per exact player/Node. Do not confuse a signed URL or
     // AVPlayerItem.status == readyToPlay with a displayed video frame.
     @State private var previewRequestedAt: TimeInterval = 0
@@ -392,6 +394,13 @@ struct XDriveIOSNativeFilesViewer: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if authorized {
                         Menu {
+                            Button {
+                                showingFileDetails = true
+                            } label: {
+                                Label("文件与媒体详情", systemImage: "info.circle")
+                            }
+                            .accessibilityIdentifier("native-ios-files-viewer-details-action")
+                            Divider()
                             if let staged = exporter.prepared,
                                staged.nodeID == viewed.id,
                                staged.revision == viewed.revision {
@@ -460,6 +469,11 @@ struct XDriveIOSNativeFilesViewer: View {
                      (chromeVisible ? .visible : .hidden), for: .bottomBar)
         }
         .statusBarHidden(!chromeVisible)
+        .sheet(isPresented: $showingFileDetails) {
+            viewerDetails
+        }
+        .onChange(of: viewed.id) { _ in showingFileDetails = false }
+        .onChange(of: viewed.revision) { _ in showingFileDetails = false }
         .task(id: attempt) {
             guard !isClosing else { return }
             await openCurrent()
@@ -478,9 +492,13 @@ struct XDriveIOSNativeFilesViewer: View {
             exportFallbackEligible = true
             loading = false
         }
-        .onChange(of: login.owner) { _ in close() }
+        .onChange(of: login.owner) { _ in
+            showingFileDetails = false
+            close()
+        }
         .onChange(of: phase) { next in
             if next != .active {
+                showingFileDetails = false
                 allowAudioAutoplay = false
                 retire()
             } else if !isClosing &&
@@ -496,6 +514,97 @@ struct XDriveIOSNativeFilesViewer: View {
             }
         }
         .onDisappear { retire() }
+    }
+
+    /// The same exact, current-Owner Viewer owns file properties and
+    /// technical information from the currently decoded preview.
+    private var viewerDetails: some View {
+        NavigationStack {
+            List {
+                if authorized {
+                    Section {
+                        HStack(spacing: 12) {
+                            XDriveIOSNativeFilesFallbackIcon(node: viewed, size: 40)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(viewed.name).font(.headline).lineLimit(3)
+                                XDriveIOSNativeFilesUIStyle.typeBadge(viewed)
+                            }
+                        }
+                    }
+                    Section("文件属性") {
+                        LabeledContent("名称", value: viewed.name)
+                        LabeledContent("类型", value: XDriveIOSNativeFilesUIStyle.fileAppearance(viewed).label)
+                        LabeledContent("原件大小", value: ByteCountFormatter.string(
+                            fromByteCount: viewed.size, countStyle: .file))
+                        LabeledContent("版本", value: String(viewed.revision))
+                        if let created = viewed.createdDate {
+                            LabeledContent("创建时间", value: XDriveIOSNativeFilesDatePolicy.display(created))
+                        }
+                        if let changed = viewed.modifiedDate {
+                            LabeledContent("修改时间", value: XDriveIOSNativeFilesDatePolicy.display(changed))
+                        }
+                    }
+                    if let display {
+                        Section("当前预览") {
+                            switch display {
+                            case .image(let image), .imageThumbnail(let image):
+                                let w = image.cgImage?.width ??
+                                    XDriveIOSNativeFilesViewerPolicy.safePixelDimension(
+                                        Double(image.size.width) * Double(image.scale))
+                                let h = image.cgImage?.height ??
+                                    XDriveIOSNativeFilesViewerPolicy.safePixelDimension(
+                                        Double(image.size.height) * Double(image.scale))
+                                if let w, let h {
+                                    LabeledContent("解码分辨率", value: "\(w) × \(h)")
+                                }
+                                if case .imageThumbnail = display {
+                                    Text("当前为云端缩略图，非完整原件")
+                                        .foregroundStyle(.secondary)
+                                }
+                            case .video, .audio:
+                                if let item = player?.currentItem {
+                                    let seconds = item.duration.seconds
+                                    if seconds.isFinite && seconds > 0 {
+                                        LabeledContent("媒体时长",
+                                            value: XDriveIOSNativeFileAudioTimecodePolicy.label(seconds: seconds))
+                                    }
+                                    if case .video = display {
+                                        let size = item.presentationSize
+                                        if let width = XDriveIOSNativeFilesViewerPolicy.safePixelDimension(
+                                                Double(size.width)),
+                                           let height = XDriveIOSNativeFilesViewerPolicy.safePixelDimension(
+                                                Double(size.height)) {
+                                            LabeledContent("视频尺寸",
+                                                value: "\(width) × \(height)")
+                                        }
+                                    }
+                                }
+                            case .pdf(let doc):
+                                LabeledContent("PDF 页数", value: String(doc.pageCount))
+                            case .text(let content, let truncated):
+                                LabeledContent("已读取字符", value: String(content.count))
+                                if truncated {
+                                    Text("此处为截断预览，不代表完整原件")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text("账户或文件已变化，请关闭后重新打开。")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("文件与媒体详情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { showingFileDetails = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .accessibilityIdentifier("native-ios-files-viewer-details-sheet")
     }
 
     /// An unsupported/oversized/undecodable original is still a file; keep
@@ -639,7 +748,9 @@ struct XDriveIOSNativeFilesViewer: View {
                   !isClosing else { return }
             switch result {
             case .video(let url):
-                let item = AVPlayerItem(url: url)
+                let loader = try XDriveIOSRoutedMediaLoader(ticketURL: url)
+                let item = loader.playerItem()
+                routedMediaLoader = loader
                 // Avoid requiring a long forward buffer before attempting the
                 // first frame. The shared surface still exposes true buffering.
                 item.preferredForwardBufferDuration = 2
@@ -647,7 +758,9 @@ struct XDriveIOSNativeFilesViewer: View {
                 candidate.automaticallyWaitsToMinimizeStalling = false
                 player = candidate
             case .audio(let url):
-                player = AVPlayer(url: url)
+                let loader = try XDriveIOSRoutedMediaLoader(ticketURL: url, isAudio: true)
+                routedMediaLoader = loader
+                player = AVPlayer(playerItem: loader.playerItem())
             default: break
             }
             // A successful bounded thumbnail still needs a separate, explicit
@@ -785,6 +898,8 @@ struct XDriveIOSNativeFilesViewer: View {
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         player = nil
+        routedMediaLoader?.cancelAll()
+        routedMediaLoader = nil
         display = nil
         loading = false
     }

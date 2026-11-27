@@ -16,9 +16,11 @@ const policy = source('ios/XDriveIOS/NativeFilesViewModePolicy.swift')
 const workflow = source('.github/workflows/ios-native-navigation-runtime.yml')
 const video = source('ios/scripts/files_ui_transition_video.py')
 
-test('F1 Home has an overview and collapsed secondary tags', () => {
-  assert.match(browse, /native-ios-files-home-overview/)
-  assert.match(browse, /DisclosureGroup\("标签与分类", isExpanded: \$homeTagsExpanded\)/)
+test('F1 Home starts with real destinations and search, not redundant overview', () => {
+  assert.doesNotMatch(browse, /native-ios-files-home-overview|Text\("我的文件"\)/)
+  assert.match(browse, /native-ios-files-home-search/)
+  assert.match(browse, /DisclosureGroup\(isExpanded: \$homeTagsExpanded\)/)
+  assert.match(browse, /Text\("标签与分类"\)[\s\S]*?accessibilityIdentifier\("native-ios-files-home-tags-disclosure"\)/)
   assert.match(browse, /private var homeTagsExpanded = false/)
   for (const id of ['native-ios-files-open-root-location',
     'native-ios-files-open-trash', 'native-ios-files-open-recent',
@@ -72,12 +74,14 @@ test('F4 Viewer adds explicit checked export and retains native media', () => {
 test('F5 real video and decoded-frame audit, not screenshot-only', () => {
   assert.match(workflow, /files_ui_transition_video\.py" watch/)
   assert.match(workflow, /files_ui_transition_video\.py" audit/)
-  assert.match(workflow, /--minimum 4/)
+  // The real H.264 gate requires all 56 registered native journeys, not 50.
+  assert.match(workflow, /--minimum 56/)
+  assert.match(video, /1 <= minimum <= len\(TARGETS\)/)
   assert.match(video, /"xcrun", "simctl", "io", simulator, "recordVideo"/)
   // Decode the native page center rather than persistent tab/navigation chrome.
   // Keep real H.264 frame, tap-marker and blank-transition evidence mandatory.
-  assert.ok(video.includes('fps=10,scale=64:64,crop=64:40:0:12,signalstats,metadata=print:file=-'),
-    'the actual 10 Hz center-content ffmpeg signalstats filter must remain')
+  assert.ok(video.includes('fps=30,scale=64:64,crop=64:40:0:12,signalstats,metadata=print:file=-'),
+    'the actual 30 Hz center-content ffmpeg signalstats filter must remain')
   assert.ok(video.includes('central 62.5% of native page; top/bottom chrome excluded'))
   assert.match(video, /missing_real_tap_marker/)
   assert.match(video, /test_not_passed/)
@@ -116,9 +120,11 @@ test('F7 lightweight attributes do not replace verified mutation entry points', 
 })
 
 test('F8 compact Browse exposes smart folders, tags, search and verified path jump', () => {
-  assert.match(browse, /DisclosureGroup\("更多管理", isExpanded: \$homeMoreExpanded\)/)
+  assert.match(browse, /DisclosureGroup\(isExpanded: \$homeMoreExpanded\)/)
+  assert.match(browse, /Text\("更多管理"\)[\s\S]*?accessibilityIdentifier\("native-ios-files-home-more-disclosure"\)/)
   assert.match(browse, /native-ios-files-open-saved-searches/)
-  assert.match(browse, /DisclosureGroup\("标签与分类", isExpanded: \$homeTagsExpanded\)/)
+  assert.match(browse, /DisclosureGroup\(isExpanded: \$homeTagsExpanded\)/)
+  assert.match(browse, /Text\("标签与分类"\)[\s\S]*?accessibilityIdentifier\("native-ios-files-home-tags-disclosure"\)/)
   assert.match(browse, /native-ios-files-search-shortcut/)
   assert.match(browse, /Button \{ searchPresented = true \}/)
   assert.match(browse, /native-ios-files-path-shortcut/)
@@ -133,7 +139,10 @@ test('F9 extension icons and metadata reuse existing bounded thumbnails', () => 
   for (const format of ['pdf', 'docx', 'xlsx', 'pptx', 'heic', 'mp4', 'swift']) {
     assert.ok(tokens.includes('"' + format + '"'), format)
   }
-  assert.match(thumbnail, /XDriveIOSNativeFilesUIStyle\.fileAppearance\(node\)\.symbol/)
+  // The original symbol fallback is intentionally replaced by the PWA-aligned shared icon;
+  // real media thumbnails still pass the same Owner/revision and MIME gates.
+  assert.match(thumbnail, /XDriveIOSNativeFilesFallbackIcon/)
+  assert.match(tokens, /XDriveIOSNativeFilesUIStyle\.fileAppearance\(node\)\.label/)
   assert.match(browse, /XDriveIOSNativeFilesUIStyle\.typeBadge\(entry\.node\)/)
   assert.match(collection, /XDriveIOSNativeFilesUIStyle\.typeBadge\(item\.node\)/)
   assert.match(thumbnail, /XDriveIOSNativeFilesThumbnailPolicy\.canRequest\(node\)/)
@@ -151,7 +160,12 @@ test('F10 Viewer first displayed frame and all-file subroute gate remain explici
 test('F11 real H264 recorder has pre-tap video for all six native cases', () => {
   // Do not suppress missing_pre_tap_frames: instead start the recorder before
   // the six real test methods issue their first route transition.
-  assert.match(video, /MAX_CLIP_SECONDS = 120/)
+  // A real 138.5-second XCUITest previously exceeded the 120-second clip cutoff.
+  // Retain a finite 210-second recording limit and reject absent tap/frames.
+  assert.match(video, /MAX_CLIP_SECONDS = 210/)
+  // Real 2026-11-18 Simulator MP4 startup was 21.973s; keep the
+  // evidence-based finite bound (24s) and all pre/post-tap-frame rejection.
+  assert.match(video, /MAX_TIMELINE_STARTUP_SECONDS = 24/)
   assert.match(video, /missing_pre_tap_frames/)
   for (const src of [stability, transitions]) {
     assert.match(src, /Thread\.sleep\(forTimeInterval: 24\)/)

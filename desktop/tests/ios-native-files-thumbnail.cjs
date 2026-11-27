@@ -36,7 +36,7 @@ test('native thumbnail reads actual media derivative instead of original/Viewer 
   assert.match(policy, /static let maximumBytes = 2 \* 1_048_576/)
   assert.match(policy, /static let maximumConcurrent = 2/)
   assert.match(runtime, /URLQueryItem\(name: "revision", value: String\(node\.revision\)\)/)
-  assert.match(runtime, /URLSessionConfiguration\.ephemeral/)
+  assert.match(runtime, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(runtime, /completionHandler\(nil\)/)
   assert.match(runtime, /http\.statusCode == 200/)
   assert.match(runtime, /data\.count <= XDriveIOSNativeFilesThumbnailPolicy\.maximumBytes/)

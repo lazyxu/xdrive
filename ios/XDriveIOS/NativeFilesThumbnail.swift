@@ -29,7 +29,7 @@ struct XDriveIOSNativeFilesThumbnailReader {
     // Requests still carry a fresh Owner bearer and disable cookies/caching.
     // Reuse TCP/TLS instead of creating and destroying one URLSession per tile.
     private static let session: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -157,9 +157,9 @@ struct XDriveIOSNativeFilesThumbnailTile: View {
                     .frame(width: width, height: height)
                     .clipped()
             } else {
-                Image(systemName: XDriveIOSNativeFilesUIStyle.fileAppearance(node).symbol)
-                    .font(.system(size: min(32, max(18, height * 0.46))))
-                    .foregroundStyle(XDriveIOSNativeFilesUIStyle.fileAppearance(node).tint)
+                XDriveIOSNativeFilesFallbackIcon(
+                    node: node, size: min(38, max(22, height * 0.72))
+                )
             }
         }
         .frame(width: width, height: height)

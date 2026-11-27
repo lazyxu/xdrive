@@ -27,11 +27,22 @@ struct XDriveIOSNativeViewerQualityPanel: View {
             (archiveOriginal ? ext + "（实况容器）" : ext + "（文件扩展名）")
     }
 
-    private var pixelWidth: Int {
-        image.cgImage?.width ?? Int(image.size.width * image.scale)
+    // A UIImage backed only by CIImage may have no CGImage. Its floating-point
+    // geometry must not be passed directly to Int: NaN/Inf/out-of-range values
+    // trap Swift before the quality sheet can be dismissed.
+    private var pixelWidth: Int? {
+        image.cgImage?.width ??
+            XDriveIOSNativeViewerPixelDimensionPolicy.pixels(
+                points: Double(image.size.width), scale: Double(image.scale))
     }
-    private var pixelHeight: Int {
-        image.cgImage?.height ?? Int(image.size.height * image.scale)
+    private var pixelHeight: Int? {
+        image.cgImage?.height ??
+            XDriveIOSNativeViewerPixelDimensionPolicy.pixels(
+                points: Double(image.size.height), scale: Double(image.scale))
+    }
+    private var resolutionLabel: String {
+        guard let pixelWidth, let pixelHeight else { return "尺寸未知" }
+        return "\(pixelWidth) × \(pixelHeight)"
     }
     private func sizeLabel(_ count: Int64?) -> String {
         guard let count, count > 0 else { return "大小未知" }
@@ -73,8 +84,7 @@ struct XDriveIOSNativeViewerQualityPanel: View {
                 List {
                     Section("当前显示") {
                         LabeledContent("来源", value: source)
-                        LabeledContent("解码分辨率",
-                                       value: "\(pixelWidth) × \(pixelHeight)")
+                        LabeledContent("解码分辨率", value: resolutionLabel)
                         if showsLowResolutionWarning {
                             Text("当前仅显示低清预览，放大不能恢复未加载的原件细节。")
                                 .foregroundStyle(.secondary)

@@ -2,7 +2,8 @@
 const { performance } = require('node:perf_hooks')
 const fs = require('node:fs')
 const path = require('node:path')
-const { app } = require('electron')
+const { app, contentTracing } = require('electron')
+const { readAndSummariseTrace } = require('./gallery-desktop-chromium-trace-analyze.cjs')
 
 const expectedAppRoot = path.resolve(__dirname, '..')
 const actualAppRoot = path.resolve(app.getAppPath())
@@ -66,6 +67,12 @@ function activateGalleryAndMeasure() {
     longestLongTaskMs: 0,
     longTasks: [],
     longTaskSupported: Boolean(PerformanceObserver.supportedEntryTypes?.includes('longtask')),
+    // Observer diagnostic is test-only; never emitted by the production app.
+    mutationNotifications: 0,
+    coalescedScanFrames: 0,
+    gridScanCount: 0,
+    gridScanCpuMs: 0,
+    maxGridScanCpuMs: 0,
   }
   const twoFrames = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   let completed = false
@@ -100,34 +107,64 @@ function activateGalleryAndMeasure() {
     })
   }
   function scan() {
-    const grid = document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
-    if (!grid) return
-    if (data.firstVisibleTileMs === null && grid.querySelector('[role="button"]')) {
-      data.firstVisibleTileMs = elapsed()
-    }
-    const images = Array.from(grid.querySelectorAll('img[src]'))
-    if (data.firstImageElementMs === null && images.length > 0) {
-      data.firstImageElementMs = elapsed()
-    }
-    for (const img of images) {
-      const url = img.currentSrc || img.src
-      if (!url || visited.get(img) === url) continue
-      visited.set(img, url)
-      void img.decode().then(async () => {
-        if (!img.isConnected || (img.currentSrc || img.src) !== url || decoded.has(url)) return
-        decoded.add(url)
-        data.decodedImages = decoded.size
-        if (data.firstImageDecodedMs === null) {
-          data.firstImageDecodedMs = elapsed()
-          await twoFrames()
-          if (data.firstImageTwoRAFMs === null) data.firstImageTwoRAFMs = elapsed()
-        }
-        finalize()
-      }).catch(() => { data.decoderErrors++ })
+    const scanStarted = performance.now()
+    data.gridScanCount++
+    try {
+      const grid = document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+      if (!grid) return
+      if (data.firstVisibleTileMs === null && grid.querySelector('[role="button"]')) {
+        data.firstVisibleTileMs = elapsed()
+      }
+      const images = Array.from(grid.querySelectorAll('img[src]'))
+      if (data.firstImageElementMs === null && images.length > 0) {
+        data.firstImageElementMs = elapsed()
+      }
+      for (const img of images) {
+        const url = img.currentSrc || img.src
+        if (!url || visited.get(img) === url) continue
+        visited.set(img, url)
+        void img.decode().then(async () => {
+          if (!img.isConnected || (img.currentSrc || img.src) !== url || decoded.has(url)) return
+          decoded.add(url)
+          data.decodedImages = decoded.size
+          if (data.firstImageDecodedMs === null) {
+            data.firstImageDecodedMs = elapsed()
+            await twoFrames()
+            if (data.firstImageTwoRAFMs === null) data.firstImageTwoRAFMs = elapsed()
+          }
+          finalize()
+        }).catch(() => { data.decoderErrors++ })
+      }
+    } finally {
+      const cpu = performance.now() - scanStarted
+      data.gridScanCpuMs += cpu
+      data.maxGridScanCpuMs = Math.max(data.maxGridScanCpuMs, cpu)
     }
   }
-  observer = new MutationObserver(scan)
-  observer.observe(document.body, { subtree: true, attributes: true, childList: true })
+  // The previous real-Desktop benchmark rescanned the entire Gallery grid
+  // synchronously on every mutation anywhere in document.body (including
+  // unrelated attributes). Batch observations into at most one scan per frame
+  // and retain notifications needed for new tiles and changed image sources.
+  // This changes BENCHMARK observation only, not the production application.
+  let scanQueued = false
+  function scheduleScan() {
+    data.mutationNotifications++
+    if (scanQueued || completed) return
+    scanQueued = true
+    requestAnimationFrame(() => {
+      scanQueued = false
+      if (completed) return
+      data.coalescedScanFrames++
+      scan()
+    })
+  }
+  observer = new MutationObserver(scheduleScan)
+  observer.observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['src', 'srcset'],
+  })
   window.__xdriveDesktopRealColdProbe = data
   gallery.click()
   scan()
@@ -227,8 +264,27 @@ async function measureRealDesktopMediaProgress(sample) {
   }
 }
 
+// Read only fixed-schema timings from the existing private Desktop lifecycle
+// log. Never put auth/session fields or complete log lines into the benchmark.
+function galleryFirstRangeTimings(logDir) {
+  const filename = path.join(logDir, 'desktop.log')
+  if (!fs.existsSync(filename)) return []
+  return fs.readFileSync(filename, 'utf8').split('\n').filter(Boolean)
+    .map(line => { try { return JSON.parse(line) } catch { return null } })
+    .filter(entry => entry?.event === 'gallery_first_range_timing')
+    .map(entry => ({
+      result: entry.result,
+      total_ms: entry.total_ms,
+      agent_ready_ms: entry.agent_ready_ms,
+      pre_http_ms: entry.pre_http_ms,
+      http_ms: entry.http_ms,
+    }))
+}
+
 let attached = false
 async function run(win) {
+  let tracingStarted = false
+  let chromiumTracePath = null
   try {
     win.setContentSize(1440, 900)
     let lastRendererState = null
@@ -272,12 +328,68 @@ async function run(win) {
     const beforeResp = await fetch(fixture + '/__perf/stats')
     if (!beforeResp.ok) throw new Error('before CAS counters missing')
     const beforeCAS = await beforeResp.json()
+    // Only this opt-in *benchmark* enables the real Chromium RendererMain
+    // timeline. Raw traces stay in a temporary directory and are deleted
+    // before CI artifacts are uploaded: trace args may contain private URLs.
+    const traceEnabled = process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1'
+    if (traceEnabled) {
+      const scratch = process.env.XD_GALLERY_DESKTOP_TRACE_SCRATCH
+      if (!scratch || !fs.statSync(scratch, { throwIfNoEntry: false })?.isDirectory()) {
+        throw new Error('real desktop Chromium trace requires private scratch directory')
+      }
+      chromiumTracePath = path.join(scratch, 'real-desktop-gallery-' +
+        Number(process.env.XD_GALLERY_DESKTOP_REAL_SAMPLE) + '.json')
+      await contentTracing.startRecording({
+        recording_mode: 'record-until-full',
+        included_categories: [
+          'toplevel',
+          'blink',
+          'blink.user_timing',
+          'devtools.timeline',
+          'renderer.scheduler',
+          'v8.execute',
+        ],
+      })
+      tracingStarted = true
+    }
+    const beforeRangeRows = galleryFirstRangeTimings(app.getPath('logs')).length
     const armed = await win.webContents.executeJavaScript('(' + activateGalleryAndMeasure.toString() + ')()')
     if (!armed?.started) throw new Error('production Gallery navigation unavailable')
     const result = await until(
       () => win.webContents.executeJavaScript('window.__xdriveDesktopRealColdResult || null'),
       60000, '12 actual Gallery JPEG decodes and two animation frames',
     )
+    let chromiumTimeline = null
+    if (tracingStarted) {
+      await contentTracing.stopRecording(chromiumTracePath)
+      tracingStarted = false
+      try {
+        chromiumTimeline = readAndSummariseTrace(
+          chromiumTracePath,
+          win.webContents.getOSProcessId(),
+          result.longTasks,
+        )
+        if (!chromiumTimeline.rendererPIDMatched ||
+            chromiumTimeline.rendererEvents < 1 ||
+            chromiumTimeline.longTaskTraceCount < 1) {
+          throw new Error('real renderer main-thread long tasks were not traced')
+        }
+      } finally {
+        // TraceEvent JSON can include headers, URLs and file paths. Never
+        // persist raw trace bytes in a benchmark artifact or console log.
+        fs.rmSync(chromiumTracePath, { force: true })
+      }
+    }
+    const firstRangeTimings = galleryFirstRangeTimings(app.getPath('logs'))
+      .slice(beforeRangeRows)
+    if (!firstRangeTimings.some(row => row.result === 'ok' &&
+        Number.isFinite(row.total_ms) &&
+        Number.isFinite(row.agent_ready_ms) &&
+        Number.isFinite(row.http_ms) &&
+        row.total_ms >= row.http_ms)) {
+      throw new Error('real Desktop Gallery first Range stage timing missing: ' +
+        JSON.stringify(firstRangeTimings))
+    }
     const afterResp = await fetch(fixture + '/__perf/stats')
     if (!afterResp.ok) throw new Error('after CAS counters missing')
     const afterCAS = await afterResp.json()
@@ -337,6 +449,8 @@ async function run(win) {
       sample: Number(process.env.XD_GALLERY_DESKTOP_REAL_SAMPLE),
       realProductionDesktop: true,
       renderer: result,
+      firstRangeTimings,
+      chromiumTimeline,
       beforeCAS, afterCAS,
       sourceExactMediaProgress,
       sourceProgressResources,
@@ -347,6 +461,10 @@ async function run(win) {
     }))
     app.exit(0)
   } catch (error) {
+    if (tracingStarted) {
+      try { await contentTracing.stopRecording(chromiumTracePath) } catch {}
+    }
+    if (chromiumTracePath) fs.rmSync(chromiumTracePath, { force: true })
     console.error('GALLERY_REAL_DESKTOP_ELECTRON_ERROR ' + (error?.stack || String(error)))
     app.exit(1)
   }

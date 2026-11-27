@@ -237,3 +237,20 @@ test('optional matching failure cannot turn a readable cloud photo into cloud-un
   assert.match(ui, /guard explicitOriginalAudit, phase == \.active, selected == nil else \{ return \}/)
   assert.match(cloud, /func load\(login: XDriveIOSNativeOwnerLoginModel/)
 })
+
+
+test('invalid unified Viewer position cannot construct an out-of-range row', () => {
+  const gallery = read('NativeUnifiedPhotoGallery')
+  const viewer = read('NativeUnifiedPhotoViewer')
+  const presenterStart = gallery.indexOf('.fullScreenCover(item: $selected)')
+  const presenterEnd = gallery.indexOf('.fullScreenCover(isPresented: $showingSourceFilteredMap)', presenterStart)
+  assert.ok(presenterStart >= 0 && presenterEnd > presenterStart)
+  const presenter = gallery.slice(presenterStart, presenterEnd)
+  assert.match(presenter, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selection\.owner\),\s*selection\.page\.rows\.indices\.contains\(selection\.position\)/)
+  assert.match(presenter, /XDriveIOSNativeUnifiedPhotoViewer\(login: login, wall: wall, selection: selection/)
+  assert.match(presenter, /native-ios-unified-viewer-stale-selection/)
+  assert.match(presenter, /\.onAppear \{ selected = nil \}/)
+  assert.match(gallery, /open: \{ payload, position in\s*guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\),\s*payload\.rows\.indices\.contains\(position\)/)
+  assert.match(viewer, /private var row: XDriveIOSNativeUnifiedPhoto \{ page\.rows\[position\] \}/)
+  assert.match(viewer, /guard authorized, page\.rows\.indices\.contains\(index\)/)
+})

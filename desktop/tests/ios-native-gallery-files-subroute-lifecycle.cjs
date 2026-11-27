@@ -20,7 +20,11 @@ test('Files collection grid retains individual tile AX identities', () => {
   assert.match(collection, /accessibilityIdentifier\("native-ios-files-collection-open-\\\(item\.id\)"\)/);
 });
 test('Opening Files Viewer arms a single return refresh before presentation', () => {
-  assert.match(collection, /returnFile = item\.node\s*viewerRefreshPending = true\s*selectedFile = item/);
+  const openFile = between(collection, 'private func openFile(', 'private func gridTile(');
+  assert.match(openFile, /guard isVisible, phase == \.active, model\.verified, !model\.loading/);
+  assert.match(openFile, /model\.matches\(login\.owner, kind: kind\)/);
+  assert.match(openFile, /selectedOwner = owner\s*returnFile = item\.node/);
+  assert.match(openFile, /returnFile = item\.node[\s\S]*?viewerReturnViewport = nil[\s\S]*?XDriveIOSNativeFilesViewModePolicy\.matchedAlignment\([\s\S]*?viewerRefreshPending = true\s*selectedFile = item/);
 });
 test('Files Viewer dismissal performs a single foreground read', () => {
   const s = between(collection, '.fullScreenCover(item: $selectedFile, onDismiss:', 'onNavigate: { next in');
@@ -40,9 +44,12 @@ test('Foreground resume never refreshes behind the collection Viewer', () => {
   const s = between(collection, '.onChange(of: phase) { state in', '.onChange(of: kind)');
   assert.match(s, /selectedFile == nil && !viewerRefreshPending/);
 });
-test('Owner and collection kind changes revoke pending refresh hints', () => {
-  assert.match(collection, /\.onChange\(of: kind\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
-  assert.match(collection, /\.onChange\(of: login\.owner\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
+test('Owner and collection kind changes revoke pending refresh and stale List/Grid geometry', () => {
+  // Reset must keep every previously verified refresh fence AND retire the
+  // new visual offset/visible row state; relaxing the old test to a generic
+  // dot-all match could accidentally admit cross-Owner scroll restoration.
+  assert.match(collection, /\.onChange\(of: kind\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*pendingModeSwitchAlignment = nil\s*visibleModeAnchorID = nil\s*visibleModeAlignment = 0\s*visibleModeViewportHeight = 0\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
+  assert.match(collection, /\.onChange\(of: login\.owner\) \{ _ in\s*modeSwitchTicket = UUID\(\)\s*pendingModeSwitchAnchor = nil\s*pendingModeSwitchAlignment = nil\s*visibleModeAnchorID = nil\s*visibleModeAlignment = 0\s*visibleModeViewportHeight = 0\s*lastVisibleItemID = nil\s*viewerRefreshPending = false/);
 });
 test('PhotoKit revision keeps authorized album Viewer or Map mounted', () => {
   const s = between(album, '.onChange(of: libraryMonitor.revision) { _ in', '.onChange(of: phase) { state in');

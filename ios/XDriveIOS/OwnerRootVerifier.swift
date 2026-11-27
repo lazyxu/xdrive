@@ -26,6 +26,8 @@ struct XDriveNativeOwnerRootVerifier {
     let origin: URL
     let accessToken: String
     let expectedUsername: String
+    // Direct probes must bypass the router or could validate the old route.
+    var bypassAutoRoute: Bool = false
 
     func verify() async throws -> XDriveNativeOwnerRoot {
         let cleanOrigin = try ServerAddress.parse(origin.absoluteString)
@@ -33,7 +35,16 @@ struct XDriveNativeOwnerRootVerifier {
             throw XDriveNativeOwnerRootFailure.invalidSession
         }
 
-        let configuration = URLSessionConfiguration.ephemeral
+        // The iOS app has the central verified LAN/WAN router. Standalone
+        // macOS regression tests compile the Owner verifier without that
+        // application graph and must use direct, strictly verified HTTPS.
+        #if os(iOS)
+        let configuration: URLSessionConfiguration = bypassAutoRoute
+            ? .ephemeral : XDriveIOSAutoRoute.ephemeralConfiguration()
+        #else
+        let configuration: URLSessionConfiguration = .ephemeral
+        #endif
+        if bypassAutoRoute { configuration.protocolClasses = [] }
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
         configuration.urlCache = nil

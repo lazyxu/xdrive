@@ -27,7 +27,7 @@ struct XDriveIOSNativeFilesCollectionsTransport {
     let accessToken: String
 
     private func session() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -497,6 +497,16 @@ private struct XDriveIOSNativeFilesCollectionManageIntent: Identifiable {
     let quickAction: XDriveIOSNativeFilesQuickAction?
 }
 
+/// A purely visual, transient return lease. Only exact current Owner and Node
+/// snapshots may consume it; no persisted media identities or private paths.
+private struct XDriveIOSNativeFilesCollectionViewerViewport {
+    let opened: XDriveIOSNativeFilesNode
+    let anchor: XDriveIOSNativeFilesNode
+    let alignment: Double
+    let mode: String
+    let query: String
+}
+
 struct XDriveIOSNativeFilesCollectionScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let kind: XDriveIOSNativeFilesCollectionKind
@@ -510,6 +520,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var selectedFile: XDriveIOSNativeFilesCollectionItem?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnFile: XDriveIOSNativeFilesNode?
+    @State private var viewerReturnViewport: XDriveIOSNativeFilesCollectionViewerViewport?
     // Viewer may re-appear before dismissal finishes; refresh at most once.
     @State private var viewerRefreshPending = false
     @State private var locateIntent: XDriveIOSNativeFilesCollectionItem?
@@ -524,12 +535,24 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
     @State private var lastVisibleItemID: UInt64?
     @State private var pendingModeSwitchAnchor: UInt64?
+    @State private var pendingModeSwitchAlignment: Double?
+    @State private var visibleModeAnchorID: UInt64?
+    @State private var visibleModeAlignment = 0.0
+    @State private var visibleModeViewportHeight: CGFloat = 0
     @State private var modeSwitchTicket = UUID()
 
     private func chooseCollectionViewMode(_ next: String) {
         guard (next == "list" || next == "grid"), viewMode != next else { return }
-        pendingModeSwitchAnchor = XDriveIOSNativeFilesViewModePolicy.anchor(
-            preferred: lastVisibleItemID, loaded: filteredItems.map { $0.node.id }
+        let selectedAnchor = XDriveIOSNativeFilesViewModePolicy.anchor(
+            preferred: visibleModeAnchorID ?? lastVisibleItemID,
+            loaded: filteredItems.map { $0.node.id }
+        )
+        pendingModeSwitchAnchor = selectedAnchor
+        // A evicted/re-sorted row must never lend its visual offset to a new Node.
+        pendingModeSwitchAlignment = XDriveIOSNativeFilesViewModePolicy.matchedAlignment(
+            visibleAnchor: visibleModeAnchorID,
+            selectedAnchor: selectedAnchor,
+            measured: visibleModeAlignment
         )
         modeSwitchTicket = UUID()
         var transaction = Transaction()
@@ -584,6 +607,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                             gridTile(item)
                                 .id(item.node.id)
                                 .onAppear { lastVisibleItemID = item.node.id }
+                                .modifier(XDriveIOSNativeFilesRowFrameReporter(
+                                    nodeID: item.node.id, spaceName: "native-ios-files-collection-viewport"
+                                ))
                                 .contextMenu {
                                     collectionQuickActions(for: item)
                                 }
@@ -601,6 +627,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                         row(item)
                             .id(item.node.id)
                             .onAppear { lastVisibleItemID = item.node.id }
+                            .modifier(XDriveIOSNativeFilesRowFrameReporter(
+                                nodeID: item.node.id, spaceName: "native-ios-files-collection-viewport"
+                            ))
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if model.verified && !model.loading && !favorites.busy {
                                     Button {
@@ -650,6 +679,29 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             }
             .disabled(recentClear.busy)
             .listStyle(.plain)
+            .coordinateSpace(name: "native-ios-files-collection-viewport")
+            .background(GeometryReader { geometry in
+                Color.clear.preference(
+                    key: XDriveIOSNativeFilesViewportHeightKey.self,
+                    value: geometry.size.height
+                )
+            })
+            .onPreferenceChange(XDriveIOSNativeFilesViewportHeightKey.self) { height in
+                if height > 0 && height.isFinite { visibleModeViewportHeight = height }
+            }
+            .onPreferenceChange(XDriveIOSNativeFilesRowFramesKey.self) { frames in
+                guard isVisible, phase == .active, model.verified,
+                      model.matches(login.owner, kind: kind),
+                      let visible = XDriveIOSNativeFilesUIStyle.topVisibleAnchor(
+                        frames: frames, accepted: filteredItems.map { $0.node.id },
+                        viewportHeight: visibleModeViewportHeight
+                      ) else { return }
+                if visibleModeAnchorID != visible.nodeID ||
+                   abs(visibleModeAlignment - visible.alignment) > 0.01 {
+                    visibleModeAnchorID = visible.nodeID
+                    visibleModeAlignment = visible.alignment
+                }
+            }
             .searchable(
                 text: $filterQuery,
                 placement: .navigationBarDrawer(displayMode: .automatic),
@@ -661,11 +713,15 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 let ticket = modeSwitchTicket
                 let anchor = pendingModeSwitchAnchor ??
                     XDriveIOSNativeFilesViewModePolicy.anchor(
-                        preferred: lastVisibleItemID, loaded: filteredItems.map { $0.node.id }
+                        preferred: visibleModeAnchorID ?? lastVisibleItemID,
+                        loaded: filteredItems.map { $0.node.id }
                     )
+                let alignment = pendingModeSwitchAnchor == anchor ?
+                    pendingModeSwitchAlignment : nil
                 guard isVisible, model.verified, model.matches(login.owner, kind: kind),
                       let owner = login.owner, let anchor else {
                     pendingModeSwitchAnchor = nil
+                    pendingModeSwitchAlignment = nil
                     return
                 }
                 Task { @MainActor in
@@ -679,16 +735,24 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                         expectedMode: next, currentMode: viewMode,
                         active: phase == .active && isVisible
                     ) else {
-                        if ticket == modeSwitchTicket { pendingModeSwitchAnchor = nil }
+                        if ticket == modeSwitchTicket {
+                            pendingModeSwitchAnchor = nil
+                            pendingModeSwitchAlignment = nil
+                        }
                         return
                     }
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
-                        returnScroll.scrollTo(anchor, anchor: .center)
+                        if let alignment {
+                            returnScroll.scrollTo(anchor, anchor: UnitPoint(x: 0.5, y: alignment))
+                        } else {
+                            returnScroll.scrollTo(anchor, anchor: .center)
+                        }
                     }
                     lastVisibleItemID = anchor
                     pendingModeSwitchAnchor = nil
+                    pendingModeSwitchAlignment = nil
                 }
             }
             .confirmationDialog(
@@ -824,6 +888,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if shouldRefresh && isVisible && phase == .active &&
                    !model.loading && model.matches(login.owner, kind: kind) {
                     reload(preserveVerifiedRows: true)
+                } else {
+                    viewerReturnViewport = nil
+                    returnFile = nil
                 }
             }) { initial in
                 if let openedOwner = selectedOwner {
@@ -869,6 +936,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 isVisible = false
                 modeSwitchTicket = UUID()
                 pendingModeSwitchAnchor = nil
+                pendingModeSwitchAlignment = nil
                 if !viewerRefreshPending && selectedFile == nil &&
                     locateIntent == nil && managementIntent == nil &&
                     quickInfoIntent == nil && quickRenameIntent == nil {
@@ -903,6 +971,10 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             .onChange(of: kind) { _ in
                 modeSwitchTicket = UUID()
                 pendingModeSwitchAnchor = nil
+                pendingModeSwitchAlignment = nil
+                visibleModeAnchorID = nil
+                visibleModeAlignment = 0
+                visibleModeViewportHeight = 0
                 lastVisibleItemID = nil
                 viewerRefreshPending = false
                 // SwiftUI may reuse a StateObject when switching collection
@@ -910,6 +982,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 selectedFile = nil
                 selectedOwner = nil
                 returnFile = nil
+                viewerReturnViewport = nil
                 locateIntent = nil
                 locateOwner = nil
                 managementIntent = nil
@@ -928,11 +1001,16 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             .onChange(of: login.owner) { _ in
                 modeSwitchTicket = UUID()
                 pendingModeSwitchAnchor = nil
+                pendingModeSwitchAlignment = nil
+                visibleModeAnchorID = nil
+                visibleModeAlignment = 0
+                visibleModeViewportHeight = 0
                 lastVisibleItemID = nil
                 viewerRefreshPending = false
                 selectedFile = nil
                 selectedOwner = nil
                 returnFile = nil
+                viewerReturnViewport = nil
                 locateIntent = nil
                 locateOwner = nil
                 managementIntent = nil
@@ -957,8 +1035,43 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if isVisible && phase == .active && model.verified &&
                    model.matches(login.owner, kind: kind) &&
                    model.items.contains(where: { $0.node == target }) {
-                    returnScroll.scrollTo(target.id, anchor: .center)
+                    let snapshot = viewerReturnViewport
+                    let anchorCurrent = snapshot.map { saved in
+                        filteredItems.contains(where: { $0.node == saved.anchor })
+                    } ?? false
+                    let alignment = snapshot.flatMap { saved in
+                        XDriveIOSNativeFilesViewModePolicy.matchedAlignment(
+                            visibleAnchor: saved.anchor.id,
+                            selectedAnchor: saved.anchor.id,
+                            measured: saved.alignment
+                        )
+                    }
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        if let snapshot, let alignment,
+                           XDriveIOSNativeFilesViewModePolicy.canRestore(
+                             ticketCurrent: snapshot.opened == target &&
+                                 snapshot.query == filterQuery,
+                             ownerValid: model.matches(login.owner, kind: kind),
+                             pageValid: model.verified &&
+                                 model.items.contains(where: { $0.node == snapshot.anchor }),
+                             anchorVisible: anchorCurrent, screenVisible: isVisible,
+                             expectedMode: snapshot.mode, currentMode: viewMode,
+                             active: phase == .active
+                           ) {
+                            // Preserve the prior top visible row and measured
+                            // viewport fraction; do not center a read-only file.
+                            returnScroll.scrollTo(snapshot.anchor.id,
+                                anchor: UnitPoint(x: 0.5, y: alignment))
+                        } else {
+                            // Neighbor swipe, changed filter/version or missing
+                            // anchor: only navigate to the current verified file.
+                            returnScroll.scrollTo(target.id, anchor: .center)
+                        }
+                    }
                 }
+                viewerReturnViewport = nil
                 returnFile = nil
             }
         }
@@ -1105,6 +1218,20 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
               model.items.contains(item) else { return }
         selectedOwner = owner
         returnFile = item.node
+        // Capture geometry BEFORE the full-screen Viewer hides the collection.
+        // The resulting lease is scoped to the exact Node and current filter.
+        viewerReturnViewport = nil
+        if let anchorID = visibleModeAnchorID,
+           let anchorNode = filteredItems.first(where: { $0.node.id == anchorID })?.node,
+           let alignment = XDriveIOSNativeFilesViewModePolicy.matchedAlignment(
+             visibleAnchor: anchorID, selectedAnchor: anchorNode.id,
+             measured: visibleModeAlignment
+           ) {
+            viewerReturnViewport = .init(
+                opened: item.node, anchor: anchorNode, alignment: alignment,
+                mode: viewMode, query: filterQuery
+            )
+        }
         viewerRefreshPending = true
         selectedFile = item
     }
@@ -1141,7 +1268,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     }
 
     private func gridEntryLabel(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             XDriveIOSNativeFilesThumbnailTile(
                 node: item.node, login: login,
                 height: 72, viewerActive: selectedFile != nil
@@ -1152,10 +1279,13 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 if !item.node.isDirectory {
                     XDriveIOSNativeFilesUIStyle.typeBadge(item.node)
                 }
-                XDriveIOSNativeFilesUIStyle.metadata(item.path)
+                XDriveIOSNativeFilesUIStyle.metadata(
+                    XDriveIOSNativeFilesUIStyle.gridMetadata(item.node, path: item.path)
+                )
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -1194,12 +1324,9 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             )
             VStack(alignment: .leading, spacing: 3) {
                 XDriveIOSNativeFilesUIStyle.rowName(item.node.name)
-                HStack(spacing: 6) {
-                    if !item.node.isDirectory {
-                        XDriveIOSNativeFilesUIStyle.typeBadge(item.node)
-                    }
-                    XDriveIOSNativeFilesUIStyle.metadata(item.path)
-                }
+                XDriveIOSNativeFilesUIStyle.metadata(
+                    XDriveIOSNativeFilesUIStyle.compactMetadata(item.node, path: item.path)
+                )
             }
             Spacer(minLength: 4)
         }

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// Real simulator app-exit and native tab/rail UI checks. This uses the actual
 /// Dashboard and Files/Gallery screens, but has no authenticated Server Owner.
@@ -83,6 +84,7 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     private func select(_ identifier: String, in app: XCUIApplication) {
         let control = find(identifier, in: app)
         XCTAssertTrue(control.exists, "Missing \(identifier)")
+        print("IOS_NATIVE_NAV_TAP_START route=\(identifier)")
         control.tap()
         XCTAssertEqual(app.state, .runningForeground, "App exited at \(identifier)")
     }
@@ -100,6 +102,151 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         shot.lifetime = .keepAlways
         add(shot)
     }
+    /// iOS 26.6 physical-device SIGSEGV hit the Files deep SwiftUI
+    /// Foreground → Owner → Navigation → Arrangement → Loading view stack.
+    /// This UI test exercises the real sections and lifecycle repeatedly.
+    /// Synthetic Owner has no bearer session; protected reads still deny.
+    func testFilesDeepLifecycleViewStackSurvivesOwnerAndForegroundTransitions() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        for round in 0..<3 {
+            for section in ["browse", "recent", "browse", "favorites", "browse"] {
+                select("native-ios-files-section-\(section)", in: app)
+                XCTAssertEqual(app.state, .runningForeground,
+                               "Files view graph terminated at \(round):\(section)")
+            }
+            XCUIDevice.shared.press(.home)
+            // State 3 is a live background process, not a crash. Do not
+            // conflate asynchronous foreground activation with termination;
+            // assert survival BEFORE activate() can relaunch a dead process.
+            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
+                          "Files process exited while backgrounded on round \(round)")
+            app.activate()
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                          "Files failed to restore foreground on round \(round)")
+            XCTAssertTrue(find("native-ios-files-section-browse", in: app)
+                .waitForExistence(timeout: 15),
+                "Files Browse failed to repaint after foreground on round \(round)")
+            XCTAssertEqual(app.state, .runningForeground)
+            select("native-ios-tab-gallery", in: app)
+            select("native-ios-tab-files", in: app)
+        }
+        let captured = XCTAttachment(screenshot: app.screenshot())
+        captured.name = "files-stack-depth-owner-foreground-three-rounds"
+        captured.lifetime = .keepAlways
+        add(captured)
+    }
+
+    /// Real simulator geometry: the Files category row must stay above the
+    /// app-wide five slots in portrait AND landscape, without hit obstruction.
+    /// A source-only order assertion cannot detect an overlapping safe area.
+    func testFilesQuickRailAndFiveTabBarDoNotOverlapInPortraitOrLandscape() {
+        let device = XCUIDevice.shared
+        let app = launch(syntheticOwner: true)
+        defer { device.orientation = .portrait }
+        select("native-ios-tab-files", in: app)
+
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            device.orientation = orientation
+            let filesRail = find("native-ios-files-quick-rail", in: app)
+            let appBar = find("native-ios-five-slot-bar", in: app)
+            XCTAssertTrue(filesRail.waitForExistence(timeout: 15),
+                          "Files category row disappeared after rotation")
+            XCTAssertTrue(appBar.waitForExistence(timeout: 15),
+                          "Five global tabs disappeared after rotation")
+            XCTAssertGreaterThan(filesRail.frame.height, 20)
+            XCTAssertGreaterThan(appBar.frame.height, 20)
+            XCTAssertLessThanOrEqual(filesRail.frame.maxY, appBar.frame.minY + 1,
+                "Files category row overlaps global tabs in orientation \(orientation.rawValue)")
+
+            for section in ["recent", "browse", "favorites", "browse"] {
+                let control = find("native-ios-files-section-\(section)", in: app)
+                XCTAssertTrue(control.isHittable,
+                              "Files category is obscured: \(section)")
+                select("native-ios-files-section-\(section)", in: app)
+                XCTAssertLessThanOrEqual(filesRail.frame.maxY, appBar.frame.minY + 1,
+                    "Files category overlaps global tabs after \(section)")
+                XCTAssertEqual(app.state, .runningForeground)
+            }
+        }
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "files-rail-five-tab-geometry-portrait-landscape"
+        capture.lifetime = .keepAlways
+        add(capture)
+    }
+
+    /// Real simulator regression for Files/Home category and global navigation
+    /// overlapping. The previous layout produced rail.maxY=852 and
+    /// globalBar.minY=763 on iOS 26.x; finding both IDs alone was a false PASS.
+    private func assertFilesNavigationRowsAreSeparate(
+        _ app: XCUIApplication, context: String
+    ) {
+        let rail = find("native-ios-files-quick-rail", in: app)
+        let globalBar = find("native-ios-five-slot-bar", in: app)
+        XCTAssertTrue(rail.waitForExistence(timeout: 15), "Files rail missing: " + context)
+        XCTAssertTrue(globalBar.waitForExistence(timeout: 15), "Five-slot bar missing: " + context)
+        XCTAssertGreaterThan(rail.frame.height, 20, "Collapsed Files rail: " + context)
+        XCTAssertGreaterThan(globalBar.frame.height, 20, "Collapsed global bar: " + context)
+        XCTAssertLessThanOrEqual(
+            rail.frame.maxY, globalBar.frame.minY + 1,
+            "Files rail overlays the global tabs during " + context
+        )
+        for section in ["recent", "browse", "favorites"] {
+            XCTAssertTrue(find("native-ios-files-section-" + section, in: app).isHittable,
+                          "Files control is covered: " + section + " during " + context)
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    func testFilesQuickRailNoOverlappingGlobalBarThroughSixNativeTransitions() {
+        let app = launch(syntheticOwner: true)
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+
+        // First open, Recent, Browse, Favorites, Browse, tab round-trip:
+        // six actual routes with a geometry assertion after every change.
+        select("native-ios-tab-files", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "first Files open")
+        for section in ["recent", "browse", "favorites", "browse"] {
+            select("native-ios-files-section-" + section, in: app)
+            assertFilesNavigationRowsAreSeparate(app, context: "Files " + section)
+        }
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(find("native-ios-unified-photo-gallery", in: app).exists,
+                      "Gallery disappeared during Files navigation")
+        select("native-ios-tab-files", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "Gallery to Files")
+
+        device.orientation = .landscapeLeft
+        assertFilesNavigationRowsAreSeparate(app, context: "landscape rotation")
+        select("native-ios-files-section-recent", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "landscape Recent")
+        device.orientation = .portrait
+        assertFilesNavigationRowsAreSeparate(app, context: "portrait restored")
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "files-rail-global-bar-portrait-landscape-six-routes"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testFilesRailNoOverlapAfterBackgroundAndGalleryReentry() {
+        let app = launch(syntheticOwner: true)
+        select("native-ios-tab-files", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "before background")
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 12),
+                      "Files terminated while backgrounded")
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                      "Files did not return to foreground")
+        assertFilesNavigationRowsAreSeparate(app, context: "foreground restored")
+        select("native-ios-tab-gallery", in: app)
+        XCTAssertTrue(find("native-ios-unified-photo-gallery", in: app).exists)
+        select("native-ios-tab-files", in: app)
+        assertFilesNavigationRowsAreSeparate(app, context: "second Files visit")
+    }
+
     func testFilesRecentBrowseFavoritesRepeatedWithoutCrash() {
         let app = launch()
         select("native-ios-tab-files", in: app)
@@ -149,6 +296,67 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
             "Native Files root did not mount for synthetic Owner")
         XCTAssertEqual(app.state, .runningForeground)
     }
+    /// Traverse real native tools that are not covered by the Files/Gallery
+    /// deep-stack test. An offline synthetic Owner has no bearer Session;
+    /// mounting a tool never authorizes a Server read or upload.
+    /// Repeated launcher -> tool -> Files -> Gallery transitions also rebuild
+    /// the root SwiftUI view graph after foreground/background changes.
+    func testLauncherNativeToolsAndTabReturnsDoNotCrash() {
+        let app = launch(syntheticOwner: true)
+        let tools: [(route: String, pageID: String)] = [
+            ("notes", "native-ios-notes-page"),
+            ("clipboard", "ios-clipboard-draft"),
+            ("transfers", "native-ios-transfer-overview"),
+            ("backup", "native-ios-backup-overview")
+        ]
+        for cycle in 0..<2 {
+            for tool in tools {
+                select("native-ios-tab-launcher", in: app)
+                let target = "native-ios-launcher-\(tool.route)"
+                let button = app.descendants(matching: .any)
+                    .matching(identifier: target).firstMatch
+                if !(button.exists && button.isHittable) {
+                    let scroll = find("native-ios-launcher-scroll", in: app)
+                    XCTAssertTrue(scroll.waitForExistence(timeout: 12),
+                                  "Native Launcher scroll missing for \(target)")
+                    // Launcher may remember the last scroll position after
+                    // a tab round-trip. Find a real AX target, not a coordinate.
+                    for _ in 0..<6 {
+                        if button.exists && button.isHittable { break }
+                        scroll.swipeDown()
+                    }
+                    for _ in 0..<9 {
+                        if button.exists && button.isHittable { break }
+                        scroll.swipeUp()
+                    }
+                }
+                XCTAssertTrue(button.exists && button.isHittable,
+                              "Native launcher did not expose \(target)")
+                button.tap()
+                XCTAssertTrue(find(tool.pageID, in: app)
+                    .waitForExistence(timeout: 15),
+                    "Native tool \(tool.route) did not mount on cycle \(cycle)")
+                XCTAssertEqual(app.state, .runningForeground,
+                               "App exited after opening \(tool.route)")
+                select("native-ios-tab-files", in: app)
+                XCTAssertTrue(find("native-ios-files-section-browse", in: app).exists)
+                select("native-ios-tab-gallery", in: app)
+                XCTAssertTrue(find("native-ios-tab-gallery", in: app).exists)
+                XCTAssertEqual(app.state, .runningForeground)
+            }
+            select("native-ios-tab-mine", in: app)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertEqual(app.state, .runningForeground,
+                           "Native root exited after tool transitions on cycle \(cycle)")
+            XCTAssertTrue(find("native-ios-tab-mine", in: app).exists)
+        }
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = "native-tools-files-gallery-foreground-no-crash"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+    }
+
     func testFilesTopLevelNavigationRemainsResponsive() {
         let app = launch()
         for tab in ["files", "mine", "files", "launcher", "files", "gallery"] {
@@ -237,21 +445,41 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
-    // The Files Home is a genuine two-page, lazily rendered CollectionView.
-    // Deep '整理' rows do not exist in AX until the collection is scrolled.
-    // Never guess a tap coordinate or silently treat absence as a pass.
+    // This is the actual Files Browse List, regardless of whether SwiftUI
+    // exposes it as UITableView or UICollectionView on a given iOS release.
+    // Never swipe a retained Gallery List or assume an offscreen Lazy row
+    // proves Home disappeared after a child-view return.
     private func filesHomeEntry(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
-        let list = app.collectionViews.firstMatch
-        XCTAssertTrue(list.waitForExistence(timeout: 12),
-                      "Native Files Home collection is not mounted")
-        let button = app.buttons.matching(identifier: identifier).firstMatch
-        for _ in 0..<5 {
+        // The Files-specific quick rail may restore Recent/Favorites. Always
+        // open the real Browse route before seeking controls inside its List.
+        let browse = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-section-browse").firstMatch
+        XCTAssertTrue(browse.waitForExistence(timeout: 15), "Files Browse rail is missing")
+        if (browse.value as? String) != "已选择" {
+            XCTAssertTrue(browse.isHittable, "Files Browse rail is obstructed")
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-section-browse")
+            browse.tap()
+        }
+        let list = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-home-list").firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 15),
+                      "Files Browse Home list did not mount")
+        let button = app.descendants(matching: .any)
+            .matching(identifier: identifier).firstMatch
+        // Native List virtualizes deep management rows. Scroll the *actual*
+        // Home List, not an unrelated collection left mounted by TabView.
+        for _ in 0..<12 {
             if button.exists && button.isHittable { return button }
             list.swipeUp()
         }
-        XCTAssertTrue(button.waitForExistence(timeout: 8),
-                      "Scrolled Files Home but no matching entry: \(identifier)")
-        XCTAssertTrue(button.isHittable, "Files Home entry exists but is not visible")
+        if !(button.exists && button.isHittable) {
+            for _ in 0..<12 {
+                if button.exists && button.isHittable { return button }
+                list.swipeDown()
+            }
+        }
+        XCTAssertTrue(button.exists && button.isHittable,
+                      "Verified Files Browse Home lacks actionable entry: \(identifier)")
         return button
     }
 
@@ -467,10 +695,31 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
     func testFilesSearchKeyboardMineCacheReturnKeepsFiles() {
         let app = launch(syntheticOwner: true)
         observedSelect("native-ios-tab-files", in: app)
-        let search = app.searchFields["搜索全部文件"].firstMatch
+        let browse = find("native-ios-files-section-browse", in: app)
+        if (browse.value as? String) != "已选择" {
+            observedSelect("native-ios-files-section-browse", in: app)
+        }
+        // A synthetic Owner is not an authenticated native session: the
+        // protected Server search must remain disabled, not fabricate rows.
+        let deniedSearch = find("native-ios-files-home-search", in: app)
+        XCTAssertTrue(deniedSearch.waitForExistence(timeout: 15))
+        XCTAssertFalse(deniedSearch.isEnabled,
+                       "No-session Files search must not expose private results")
+        // Exercise a real public keyboard editor across Files / Launcher /
+        // Mine / Files without granting a fake authenticated Owner.
+        observedSelect("native-ios-tab-launcher", in: app)
+        let search = find("native-ios-launcher-search", in: app)
         XCTAssertTrue(search.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-launcher-search")
         search.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 12),
+                      "Launcher search keyboard is not focused")
         search.typeText("cross-page")
+        print("IOS_NATIVE_LAUNCHER_CROSS_PAGE value=\(String(describing: search.value))")
+        let typed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "cross-page"), object: search)
+        XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: 8), .completed,
+                       "Launcher keyboard lost typed route across native pages")
         observedSelect("native-ios-tab-mine", in: app)
         let cacheButton = app.buttons["缩略图缓存"].firstMatch
         if cacheButton.waitForExistence(timeout: 8) {
@@ -481,13 +730,79 @@ final class XDriveIOSNavigationRuntimeUITests: XCTestCase {
             cacheLabel.tap()
         }
         assertChildAndCapture("native-ios-gallery-thumbnail-cache", in: app,
-                              label: "mine-cache-after-files-keyboard")
+                              label: "mine-cache-after-launcher-keyboard")
         let back = app.navigationBars["缩略图缓存"].buttons.element(boundBy: 0)
         XCTAssertTrue(back.waitForExistence(timeout: 15))
         back.tap()
         observedSelect("native-ios-tab-files", in: app)
         assertChildAndCapture("native-ios-files-section-browse", in: app,
                               label: "files-after-mine-cache")
+        XCTAssertFalse(find("native-ios-files-grid", in: app).exists,
+                       "Synthetic Owner cannot surface private Files rows")
+    }
+
+    /// Directly mounts the REAL native Viewer through the DEBUG-only
+    /// navigation harness. Five media kinds, two foreground cycles and
+    /// repeated dismissal must not crash. No bearer or private file data:
+    /// successful decoded-media playback is intentionally NOT claimed.
+    func testFilesViewerFiveMediaKindsNoSessionForegroundAndDismissNoCrash() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-xdrive-ui-navigation-smoke",
+            "-xdrive-ui-navigation-synthetic-owner",
+            "-xdrive-ui-files-viewer-no-session"
+        ]
+        app.launch()
+        let root = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-viewer-smoke-root").firstMatch
+        XCTAssertTrue(root.waitForExistence(timeout: 20),
+                      "Debug-only file Viewer fixture did not mount")
+        for kind in ["image", "video", "pdf", "audio", "text"] {
+            let open = app.buttons["native-ios-files-viewer-smoke-" + kind].firstMatch
+            if !open.waitForExistence(timeout: 15) {
+                print("IOS_VIEWER_SMOKE_MISSING kind=" + kind
+                      + " AX hierarchy:\n" + app.debugDescription)
+                let evidence = XCTAttachment(screenshot: app.screenshot())
+                evidence.name = "missing-real-viewer-launcher-" + kind
+                evidence.lifetime = .keepAlways
+                add(evidence)
+            }
+            XCTAssertTrue(open.exists, "Missing real Viewer launcher for " + kind)
+            XCTAssertTrue(open.isHittable,
+                          "Real Viewer launcher is present but not tappable for " + kind)
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-viewer-smoke-" + kind)
+            open.tap()
+            let error = app.descendants(matching: .any)
+                .matching(identifier: "native-ios-files-viewer-error-scroll").firstMatch
+            XCTAssertTrue(error.waitForExistence(timeout: 20),
+                          "No-Session Viewer did not fail closed for " + kind)
+            XCTAssertEqual(app.state, .runningForeground,
+                           "File Viewer lost the foreground process at " + kind)
+            if kind == "video" || kind == "pdf" {
+                XCUIDevice.shared.press(.home)
+                XCTAssertNotEqual(app.state, .notRunning,
+                                  "File Viewer process terminated in background at " + kind)
+                app.activate()
+                XCTAssertTrue(app.wait(for: .runningForeground, timeout: 18),
+                              "File Viewer did not restore foreground at " + kind)
+                XCTAssertTrue(error.waitForExistence(timeout: 20),
+                              "File Viewer failed to repaint no-session state at " + kind)
+            }
+            let done = app.navigationBars.buttons["完成"].firstMatch
+            XCTAssertTrue(done.waitForExistence(timeout: 15),
+                          "File Viewer lost its Done escape at " + kind)
+            print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-viewer-smoke-done")
+            done.tap()
+            XCTAssertTrue(root.waitForExistence(timeout: 15),
+                          "File Viewer modal did not return to its root at " + kind)
+            XCTAssertTrue(open.waitForExistence(timeout: 15),
+                          "File Viewer changed its root launcher after " + kind)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        let proof = XCTAttachment(screenshot: app.screenshot())
+        proof.name = "files-viewer-five-no-session-types-foreground-dismiss"
+        proof.lifetime = .keepAlways
+        add(proof)
     }
 
     func testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent() {

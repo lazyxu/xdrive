@@ -45,7 +45,7 @@ struct XDriveIOSNativeFilesLocateReader {
     private func read<T: Decodable>(
         _ path: String, maximumBytes: Int, query: [URLQueryItem] = []
     ) async throws -> T {
-        let config = URLSessionConfiguration.ephemeral
+        let config = XDriveIOSAutoRoute.ephemeralConfiguration()
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData

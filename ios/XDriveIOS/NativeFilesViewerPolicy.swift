@@ -11,6 +11,15 @@ enum XDriveIOSNativeFilesViewerPolicy {
     static let maximumImageBytes: Int64 = 32 * 1_048_576
     static let maximumPDFBytes: Int64 = 64 * 1_048_576
 
+    /// Malformed image and AVPlayer dimensions may be NaN, infinite or too
+    /// large to fit an Int. Swift's unchecked floating-point -> Int cast
+    /// traps; invalid metadata must not terminate the Files Viewer.
+    static func safePixelDimension(_ value: Double) -> Int? {
+        guard value.isFinite, value >= 1,
+              value <= Double(Int32.max) else { return nil }
+        return Int(value)
+    }
+
     private static let images: Set<String> = [
         "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "tif", "tiff",
         "avif", "bmp"

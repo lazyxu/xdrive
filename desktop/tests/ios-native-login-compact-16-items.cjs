@@ -194,3 +194,16 @@ test('visible compact settings headers must be explicit tappable stateful button
   }
   assert.match(uiTest, /testAdvancedCanCloseAndReopenWithoutLeakingLANFields/)
 })
+
+
+test('startup readiness re-arms from the actual visible compact About leaf', () => {
+  const s = ui.slice(ui.indexOf('    private var aboutSection: some View {'),
+    ui.indexOf('    private func compactFeedback('));
+  assert.ok(s.length > 200);
+  assert.match(s, /Text\(XDriveIOSNativeBuildIdentity\.label\)/);
+  assert.match(s, /\.accessibilityValue\(startupReady \? "启动完成" : "正在启动"\)/);
+  assert.match(s, /\.onAppear \{\s*if !startupReady && readinessTask == nil \{\s*workspaceAppeared\(\)/);
+  assert.match(ui, /\.onChange\(of: restoreFinished\)/);
+  assert.match(ui, /restoreComplete: restoreFinished, workspaceVisible: workspaceVisible/);
+  assert.match(ui, /if !safeStartup \{\s*backup\.startLibraryChangeMonitoring\(login: model\)/);
+});

@@ -390,6 +390,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @State private var highResolutionLoaded = false
     @State private var highResolutionTask: Task<Void, Never>?
     @State private var player: AVPlayer?
+    @State private var routedMediaLoader: XDriveIOSRoutedMediaLoader?
     @State private var failure: String?
     // Paired originals belong to this single verified L3 Viewer, never the wall.
     @State private var liveResources: XDriveIOSLivePreviewFiles?
@@ -447,9 +448,17 @@ struct XDriveIOSNativeServerMediaPreview: View {
             $0.isFinite && $0 >= 0 ? $0 : nil
         }
         let width = image?.cgImage?.width ??
-            image.map { Int($0.size.width * $0.scale) }
+            image.flatMap {
+                XDriveIOSNativeViewerPixelDimensionPolicy.pixels(
+                    points: Double($0.size.width), scale: Double($0.scale)
+                )
+            }
         let height = image?.cgImage?.height ??
-            image.map { Int($0.size.height * $0.scale) }
+            image.flatMap {
+                XDriveIOSNativeViewerPixelDimensionPolicy.pixels(
+                    points: Double($0.size.height), scale: Double($0.scale)
+                )
+            }
         let format = liveResources.map {
             "\($0.stillURL.pathExtension.uppercased()) + \($0.motionURL.pathExtension.uppercased())"
         } ?? (extensionName.isEmpty ? nil : extensionName)
@@ -1064,6 +1073,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         liveOwner = expected
                         image = live.image
                         imageIsThumbnailOnly = false
+                        routedMediaLoader?.cancelAll()
+                        routedMediaLoader = nil
                         player = AVPlayer(url: live.files.motionURL)
                         failure = nil
                     } catch is CancellationError {
@@ -1105,7 +1116,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         else { return }
                         image = media.image
                         imageIsThumbnailOnly = false
-                        if let url = media.videoURL { player = AVPlayer(url: url) }
+                        if let url = media.videoURL {
+                            let loader = try XDriveIOSRoutedMediaLoader(ticketURL: url)
+                            routedMediaLoader?.cancelAll()
+                            routedMediaLoader = loader
+                            player = AVPlayer(playerItem: loader.playerItem())
+                        }
                     } catch XDriveIOSNativeMediaStillPreviewFallback.unavailable {
                         // Never hide access revocation or a failed video/Live
                         // behind a thumbnail. Only this already selected still
@@ -1144,6 +1160,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
             player?.pause()
             player?.replaceCurrentItem(with: nil)
             player = nil
+            routedMediaLoader?.cancelAll()
+            routedMediaLoader = nil
             showingLiveMotion = false
             failure = "媒体播放失败，请重试当前云端照片或视频。"
         }
@@ -1299,6 +1317,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         player = nil
+        routedMediaLoader?.cancelAll()
+        routedMediaLoader = nil
         showingLiveMotion = false
         failure = "媒体播放失败，请重试当前云端照片或视频。"
     }
@@ -1312,6 +1332,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
         previewRequestID = UUID()
         player?.pause()
         player = nil
+        routedMediaLoader?.cancelAll()
+        routedMediaLoader = nil
         image = nil
         imageIsThumbnailOnly = false
         failure = nil

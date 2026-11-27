@@ -104,6 +104,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             select("native-ios-tab-gallery", in: app)
             checkGallery(app)
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery after eight rapid Files/Gallery tab changes")
     }
 
     func testFilesQuickRailAlternatingSectionsReturnsToBrowse() {
@@ -116,20 +118,26 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
                 checkFilesHome(app)
             }
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Files Browse after repeated Recent and Favorites changes")
     }
 
     func testGallerySourcesAlternateWithoutLosingSourceRail() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for _ in 0..<2 {
             for source in ["albums", "unified", "originals", "unified"] {
                 select("native-ios-gallery-source-\(source)", in: app)
                 checkGallery(app)
             }
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery unified wall after Albums and Originals switching")
     }
 
     func testRepeatedFilterDismissalRestoresSameGallery() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for _ in 0..<3 {
             select("native-ios-gallery-open-filters", in: app)
             let cancel = app.buttons["取消"].firstMatch
@@ -140,6 +148,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             XCTAssertTrue(target("native-ios-gallery-open-filters", in: app)
                 .waitForExistence(timeout: 10))
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery after repeated filter dismissal")
     }
 
     func testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank() {
@@ -228,7 +238,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             XCTFail("No screenshot CGImage after " + reason)
             return
         }
-        let width = 24, height = 32
+        // The colorful native tab/navigation bars can hide an entirely blank
+        // child. Sample the live child viewport at 96x64, not the full shell.
+        let width = 96, height = 64
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let rendered = pixels.withUnsafeMutableBytes { buffer -> Bool in
             guard let base = buffer.baseAddress,
@@ -244,13 +256,19 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         }
         XCTAssertTrue(rendered, "Screenshot could not be sampled after " + reason)
         guard rendered else { return }
-        let unique = Set(stride(from: 0, to: pixels.count, by: 4).map { offset in
-            (Int(pixels[offset]) << 16) |
-            (Int(pixels[offset + 1]) << 8) |
-            Int(pixels[offset + 2])
-        })
+        // Restrict the test to the page body, excluding persistent system
+        // navigation and bottom bars. A full-screen color histogram could
+        // pass even when a retained Files/Gallery child had gone fully blank.
+        var unique = Set<Int>()
+        for y in (height / 5)..<(height * 4 / 5) {
+            for x in (width / 8)..<(width * 7 / 8) {
+                let offset = (y * width + x) * 4
+                unique.insert((Int(pixels[offset]) << 16) |
+                    (Int(pixels[offset + 1]) << 8) | Int(pixels[offset + 2]))
+            }
+        }
         XCTAssertGreaterThan(unique.count, 8,
-                             "Native page became visually uniform after " + reason)
+                             "Native child viewport became uniform after " + reason)
     }
 
     func testGalleryFilesAlternationRetainsNonBlankSettledFrames() {
@@ -272,6 +290,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testGalleryFilterCancelAfterTabAndSourceRoundTrips() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for _ in 0..<3 {
             select("native-ios-gallery-source-albums", in: app)
             select("native-ios-gallery-source-unified", in: app)
@@ -287,10 +306,13 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             XCTAssertTrue(target("native-ios-gallery-open-filters", in: app)
                 .waitForExistence(timeout: 10))
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery after filter cancellation and Files tab returns")
     }
 
     func testGalleryPeopleChildReturnRepeatsWithoutLosingGallerySource() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         for _ in 0..<3 {
             select("native-ios-gallery-people", in: app)
             XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
@@ -301,6 +323,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             back.tap()
             checkGallery(app)
         }
+        // Settled child pixels, not just the persistent Gallery/Files rail.
+        assertNotSolidScreen(app, "Gallery after repeated People child returns")
     }
 
     func testGalleryUnchangedForegroundRetainsVerifiedWallGeneration() {
@@ -445,6 +469,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesBackgroundResumeKeepsQuickRailAndPixels() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         checkFilesHome(app)
         XCUIDevice.shared.press(.home)
@@ -456,6 +481,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     func testGalleryFilesRotateLandscapeAndReturnPortrait() {
         let device = XCUIDevice.shared
         let app = launch()
+        waitForRealH264RecordingPrelude()
         defer { device.orientation = .portrait }
         select("native-ios-tab-files", in: app)
         checkFilesHome(app)
@@ -485,10 +511,12 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesHomeDeepScrollTabReturnKeepsQuickNavigation() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
-        let list = app.collectionViews.firstMatch
+        let list = app.descendants(matching: .any)
+            .matching(identifier: "native-ios-files-home-list").firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 12),
-                      "Files Home native collection missing")
+                      "Actual Files Home List is missing")
         list.swipeUp()
         list.swipeUp()
         select("native-ios-tab-gallery", in: app)
@@ -515,6 +543,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesSearchFocusThenGalleryReturnPreservesShell() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         let search = app.searchFields["搜索全部文件"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 15))
@@ -666,6 +695,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesHomeAfterRepeatedNativeGallerySourceChanges() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         for source in ["albums", "unified", "originals", "unified"] {
             select("native-ios-gallery-source-\(source)", in: app)
             checkGallery(app)
@@ -719,6 +749,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testGalleryPeopleAfterOfflineFilesErrorReturnHasNoSettledBlank() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         select("native-ios-files-open-root-location", in: app)
         XCTAssertTrue(target("native-ios-files-error-page", in: app)
@@ -914,6 +945,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
 
     func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes() {
         let app = launch()
+        waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         let search = app.searchFields["搜索全部文件"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 15))

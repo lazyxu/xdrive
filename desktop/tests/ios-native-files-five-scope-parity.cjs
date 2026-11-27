@@ -97,13 +97,14 @@ test('real Simulator smoke is triggered by Files/Gallery subroute edits, not onl
   assert.doesNotMatch(watched, /-\s*'ios\/\*\*'/,
     'Do not make unrelated iOS modules consume two expensive Simulator jobs')
   assert.match(workflow, /xcodebuild test/)
-  assert.match(workflow, /source:\s*\[release-c83,\s*candidate-navigation,\s*candidate-gallery-files,\s*candidate-no-session,\s*candidate-mapkit(?:,\s*candidate-performance)?(?:,\s*candidate-clipboard-owner)?\]/)
+  assert.ok(workflow.includes("source: [release-c83, candidate-navigation, candidate-navigation-p0, candidate-gallery-files, candidate-no-session, candidate-mapkit, candidate-performance, candidate-ios26-files]"), 'all eight real Simulator shards must remain enabled')
   // A real release baseline is informational; both candidate suites are hard
   // gates, never waived because a stale c83 build or older PR was green.
   assert.match(workflow, /candidate-navigation\)[\s\S]*?XDriveIOSNavigationRuntimeUITests/)
   assert.match(workflow, /candidate-gallery-files\)[\s\S]*?XDriveIOSGalleryFilesStabilityUITests/)
   assert.match(workflow, /candidate-mapkit\)[\s\S]*?XDriveIOSMapNavigationRuntimeUITests/)
   assert.match(workflow, /candidate-performance\)[\s\S]*?XDriveIOSPagePerformanceUITests/)
+  assert.match(workflow, /include:\s*\n\s*- source: candidate-clipboard-owner/)
   if (workflow.includes('candidate-clipboard-owner')) {
     assert.match(workflow,
       /candidate-clipboard-owner\)[\s\S]*?XDriveIOSClipboardAuthenticatedUITests/,

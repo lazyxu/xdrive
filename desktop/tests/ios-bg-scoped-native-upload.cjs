@@ -25,7 +25,7 @@ test('foreground bearer and approved iOS background grant reuse EXACTLY one nati
   assert.match(native, /credential\.grantSecret/)
   assert.match(native, /X-XDrive-Device-Token/)
   assert.match(native, /X-XDrive-IOS-Photo-Grant/)
-  assert.match(native, /URLSessionConfiguration\.ephemeral/)
+  assert.match(native, /XDriveIOSAutoRoute\.ephemeralConfiguration\(\)/)
   assert.match(native, /completionHandler\(nil\)/)
   assert.equal((native.match(/private func uploadInternally\(/g) || []).length, 1,
     'no second native chunk/finalize state machine')
