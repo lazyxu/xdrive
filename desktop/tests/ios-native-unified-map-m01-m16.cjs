@@ -15,7 +15,7 @@ const cameraStore = read('ios/XDriveIOS/NativeUnifiedMapCameraStore.swift')
 test('M01: current cloud source is periodically reverified and revoked on scope change', () => {
   assert.match(map, /remotePollTask = Task/)
   assert.match(map, /Task\.sleep\(nanoseconds: 30_000_000_000\)/)
-  assert.match(map, /selected == nil &&\s*!showingViewportGrid && !busy \{ reload\(\) \}/)
+  assert.match(map, /guard !Task\.isCancelled else \{ break \}\s*if phase == \.active && selected == nil &&\s*!showingViewportGrid && !busy && !datePickerOpen \{ reload\(\) \}/)
   assert.match(map, /remotePollTask\?\.cancel\(\)/)
   assert.match(map, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, provedOwner\)/)
 })

@@ -255,18 +255,23 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
     private func resumeMapAfterSystemPhotosChange(
         _ app: XCUIApplication, stage: String
     ) -> Bool {
-        let wasStoppedBySystem = app.state == .notRunning
-        if wasStoppedBySystem {
-            print("MAP_PHOTOS_TCC_TERMINATED_APP stage=\(stage) action=relaunch-real-target")
-            app.launch()
-        } else {
+        if app.state != .notRunning {
             app.activate()
+            XCTAssertEqual(app.state, .runningForeground,
+                           "The still-running app must resume immediately from Settings")
+            // A still-running app must revalidate the existing map. A visible
+            // recovery page alone is not proof that iOS stopped the process.
+            XCTAssertFalse(element("native-ios-startup-recovery", in: app).exists,
+                           "Unexpected startup recovery on live Photos Settings return")
+            return false
         }
+
+        print("MAP_PHOTOS_TCC_TERMINATED_APP stage=\(stage) action=relaunch-real-target")
+        app.launch()
         XCTAssertEqual(app.state, .runningForeground,
-                       "Real target must be foreground after Photos Settings")
+                       "System-stopped target must relaunch before PhotoKit is rechecked")
 
         let recovery = element("native-ios-startup-recovery", in: app)
-        var explicitlyRecovered = false
         if recovery.waitForExistence(timeout: 3) {
             // This path may run only after an actual Photos Settings change.
             // The recovery UI remains an honest fail-closed product state;
@@ -285,14 +290,10 @@ final class XDriveIOSMapNavigationRuntimeUITests: XCTestCase {
                           "Real recovery must offer a visible full retry")
             print("MAP_PHOTOS_TCC_STARTUP_RECOVERY stage=\(stage) phase=\(phaseText)")
             retry.tap()
-            explicitlyRecovered = true
             XCTAssertEqual(app.state, .runningForeground,
                            "Target exited after visible startup recovery action")
         }
 
-        // If the app stayed alive and never entered recovery, do not restart
-        // or navigate it. The original live MapKit must itself update status.
-        guard wasStoppedBySystem || explicitlyRecovered else { return false }
         handleInitialPhotoLibraryPromptIfPresent()
         openNativeLauncher(in: app)
         let entry = element("native-ios-launcher-map", in: app)
