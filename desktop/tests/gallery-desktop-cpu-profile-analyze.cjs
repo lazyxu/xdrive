@@ -107,6 +107,6 @@ test('existing production entry is reused, with fully opt-in raw-free debugger c
   assert.match(main,/win\.webContents\.debugger\.detach\(\)/)
   assert.match(main,/summariseCPUProfile\(profile,/)
   assert.match(main,/require\('\.\.\/dist\/main\/index\.cjs'\)/)
-  assert.match(runner,/real first-party 100k CPU samples/)
+  assert.match(runner,/actual Desktop CPU samples and private sourcemap attribution required/)
   assert.match(runner,/cpuProfileProbeEnabled/)
 })
