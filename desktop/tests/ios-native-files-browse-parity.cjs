@@ -43,7 +43,7 @@ test('native selection starts in More menu, ends with Done, keeps guards and sor
     'Home organizer must precede Select inside the real Files More menu')
   assert.match(chrome, /Label\("选择", systemImage: "checkmark\.circle"\)/)
   assert.match(chrome, /native-ios-files-multi-select|native-ios-files-selection-done/)
-  assert.match(chrome, /Picker\("显示方式", selection: Binding\(/)
+  assert.match(chrome, /XDriveIOSNativeFilesViewModePicker\(selection: Binding\(/)
   assert.match(chrome, /Picker\("排序", selection: \$sort\)/)
   assert.match(chrome, /Picker\("顺序", selection: \$order\)/)
   assert.match(browser, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage/)
