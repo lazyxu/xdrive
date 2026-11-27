@@ -10,6 +10,20 @@ enum XDriveIOSNativeFilesUIStyle {
     static let metadataFont: Font = .caption
     static let dockLabelFont: Font = .caption2.weight(.semibold)
 
+    // Browse, Recent and Favorites must never drift in row and tile geometry.
+    // These values change presentation only; they are not Server page limits.
+    static let listThumbnailEdge: CGFloat = 40
+    static let rowContentSpacing: CGFloat = 12
+    static let rowTextSpacing: CGFloat = 3
+    static let gridThumbnailHeight: CGFloat = 72
+    static let gridTileMinHeight: CGFloat = 112
+    static let gridSpacing: CGFloat = 10
+    static let gridHorizontalInset: CGFloat = 10
+    static let gridVerticalInset: CGFloat = 8
+    static let gridColumns = [
+        GridItem(.adaptive(minimum: 128, maximum: 184), spacing: gridSpacing)
+    ]
+
     static func rowName(_ value: String) -> some View {
         XDriveIOSNativeFilesAdaptiveText(value: value, isTitle: true)
     }
@@ -39,6 +53,93 @@ private struct XDriveIOSNativeFilesAdaptiveText: View {
     }
 }
 
+
+/// A single Files row renderer, shared by Browse and the Recent/Favorites
+/// projections. Interactions and access control stay owned by the caller.
+struct XDriveIOSNativeFilesRowContent: View {
+    let node: XDriveIOSNativeFilesNode
+    let path: String?
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let viewerActive: Bool
+
+    var body: some View {
+        HStack(spacing: XDriveIOSNativeFilesUIStyle.rowContentSpacing) {
+            XDriveIOSNativeFilesThumbnailTile(
+                node: node, login: login,
+                height: XDriveIOSNativeFilesUIStyle.listThumbnailEdge,
+                width: XDriveIOSNativeFilesUIStyle.listThumbnailEdge,
+                viewerActive: viewerActive
+            )
+            VStack(alignment: .leading, spacing: XDriveIOSNativeFilesUIStyle.rowTextSpacing) {
+                XDriveIOSNativeFilesUIStyle.rowName(node.name)
+                XDriveIOSNativeFilesUIStyle.metadata(
+                    XDriveIOSNativeFilesUIStyle.compactMetadata(node, path: path)
+                )
+            }
+            Spacer(minLength: 6)
+        }
+        .contentShape(Rectangle())
+        .frame(minHeight: XDriveIOSNativeFilesUIStyle.rowHeight)
+    }
+}
+
+/// A matching tile for Browse, Recent and Favorites. In selection mode only
+/// Browse supplies a Bool; Collections use nil and show no selection marker.
+/// The format/size detail belongs to the same second line on all three pages.
+struct XDriveIOSNativeFilesGridContent: View {
+    let node: XDriveIOSNativeFilesNode
+    let path: String?
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let viewerActive: Bool
+    var selected: Bool? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ZStack(alignment: .topTrailing) {
+                XDriveIOSNativeFilesThumbnailTile(
+                    node: node, login: login,
+                    height: XDriveIOSNativeFilesUIStyle.gridThumbnailHeight,
+                    viewerActive: viewerActive
+                )
+                if let selected {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(Color.accentColor)
+                        .padding(6)
+                        .accessibilityHidden(true)
+                }
+            }
+            XDriveIOSNativeFilesUIStyle.tileName(node.name)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
+            XDriveIOSNativeFilesUIStyle.metadata(
+                XDriveIOSNativeFilesUIStyle.gridMetadata(node, path: path)
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: XDriveIOSNativeFilesUIStyle.gridTileMinHeight,
+            alignment: .topLeading
+        )
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(
+            selected == nil ? "" : (selected == true ? "已选中" : "未选中")
+        )
+    }
+}
+
+/// One system menu presentation across Browse / Recent / Favorites. The
+/// caller owns persistence and verified-scroll reanchoring.
+struct XDriveIOSNativeFilesViewModePicker: View {
+    let selection: Binding<String>
+
+    var body: some View {
+        Picker("显示方式", selection: selection) {
+            Label("列表", systemImage: "list.bullet").tag("list")
+            Label("图标", systemImage: "square.grid.2x2").tag("grid")
+        }
+    }
+}
 
 /// The same server-backed filter state as Web/PWA: each visible chip removes
 /// only its own predicate. No local 64-row filtering or new network source.
