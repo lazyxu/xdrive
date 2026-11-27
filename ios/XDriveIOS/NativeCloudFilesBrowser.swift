@@ -5401,6 +5401,11 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func clearSearch() {
         submittedSearchRestoreQuery = nil
+        // The native searchable overlay can outlive its presentation
+        // binding on iOS 18/26 (including a denied search after tab return).
+        // Retire the real search presentation as well as its query state,
+        // exactly as keyboard submission does. No Owner or row is trusted.
+        dismissSearch()
         searchPresented = false
         guard !activeQuery.isEmpty || !queryDraft.isEmpty ||
               searchFilters.hasActiveFilters || searchReturnOffset != nil else { return }

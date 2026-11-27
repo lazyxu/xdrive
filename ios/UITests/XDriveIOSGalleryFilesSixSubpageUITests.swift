@@ -335,6 +335,13 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
             XCTAssertFalse(control("native-ios-files-grid", app).exists,
                            "Unverified Owner search exposed private file tiles")
             tap("native-ios-files-error-clear-search", app)
+            let retiredDenial = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"), object: denial
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [retiredDenial], timeout: 12), .completed,
+                           "Clearing the denied search did not retire its actual error surface")
+            XCTAssertFalse(app.keyboards.firstMatch.exists,
+                           "Clearing the denied search reopened the keyboard")
         } else {
             let clear = control("native-ios-files-clear-search", app)
             if clear.waitForExistence(timeout: 5) {
@@ -349,6 +356,13 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
                 tap("native-ios-files-clear-search", app)
             }
         }
+        // Distinguish a retained search/error surface from a missing Home AX
+        // identifier; keep the original strict Browse mount assertion below.
+        print("IOS_FILES_POST_CLEAR_STATE home=\(control("native-ios-files-home-list", app).exists) error=\(denial.exists) searchClear=\(control("native-ios-files-clear-search", app).exists) keyboard=\(app.keyboards.firstMatch.exists)")
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = "files-search-cleared-before-browse"
+        evidence.lifetime = .keepAlways
+        add(evidence)
         enterFilesBrowse(app)
         XCTAssertFalse(control("native-ios-gallery-people-page", app).exists)
         XCTAssertFalse(control("native-ios-files-operation-history-page", app).exists)
