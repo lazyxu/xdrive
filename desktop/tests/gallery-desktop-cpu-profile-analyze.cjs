@@ -45,7 +45,7 @@ test('VLQ state and V3 generated column mapping have correct zero-based alignmen
   assert.equal(lines.get(0)[0].originalLine,0)
   assert.equal(lines.get(0)[0].nameIndex,0)
   assert.throws(()=>decodeVLQ('%'),/VLQ/)
-  assert.throws(()=>lookupMappings({version:3,sources:[],mappings:'ABAA'},new Set([0])),/invalid sourcemap/)
+  assert.throws(()=>lookupMappings({version:3,sources:[],mappings:'AA'},new Set([0])),/invalid sourcemap/)
 })
 test('native Renderer V8 frames map to exact first-party Gallery symbols but never emit paths', t => {
   const {root,profile} = makeFixture(t)
