@@ -35,3 +35,25 @@ test('genuine Simulator checks the direct calendar item and the DatePicker sheet
   assert.match(b,/chooseDate\.tap\(\)/)
   assert.match(b,/native-ios-map-selected-month/)
 })
+
+test('unified source exposes the same direct calendar action without a duplicate nested item',()=>{
+  const source=read('ios/XDriveIOS/NativeUnifiedSourcePhotoMap.swift')
+  const actions=source.slice(source.indexOf('// Source-filtered map keeps Close'),source.indexOf('.sheet(isPresented: $datePickerOpen)'))
+  const direct='Button("按指定日期") { datePickerOpen = true }'
+  const presets=actions.indexOf('Menu {\n                        Button("恢复图库日期范围")')
+  assert.ok(actions.indexOf(direct)>=0 && presets>actions.indexOf(direct))
+  assert.equal(actions.split(direct).length-1,1)
+  assert.doesNotMatch(actions,/Button\("选择日期、月份或年份"\)/)
+  assert.match(actions,/native-ios-unified-source-map-select-date/)
+  assert.match(actions,/Label\("地图日期", systemImage: "calendar"\)/)
+})
+
+test('user date selection supersedes a busy source scan without weakening scope',()=>{
+  const source=read('ios/XDriveIOS/NativeUnifiedSourcePhotoMap.swift')
+  const setDate=source.slice(source.indexOf('private func setDateRange('),source.indexOf('private func startRemotePoll()'))
+  assert.doesNotMatch(setDate,/guard !busy/)
+  assert.match(setDate,/var updated = scopedQuery[\s\S]*?updated\.from = value\?\.from[\s\S]*?updated\.until = value\?\.to[\s\S]*?guard updated\.isValid else \{ return \}[\s\S]*?scopedQuery = updated[\s\S]*?reload\(\)/)
+  assert.match(source,/!showingViewportGrid && !busy && !datePickerOpen \{ reload\(\) \}/)
+  assert.match(source,/private func reload\(\) \{\s*invalidate\(\)\s*guard phase == \.active, scopedQuery\.isValid/)
+  assert.match(source,/private func invalidate\(keepCoordinates: Bool = false\) \{\s*generation = UUID\(\)\s*scanTask\?\.cancel\(\)/)
+})

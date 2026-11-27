@@ -167,7 +167,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
     }
 
     private func setDateRange(_ value: XDriveIOSNativePhotoMapCaptureRange?) {
-        guard !busy else { return }
+        // A user-selected date supersedes an in-flight refresh or scan.
+        // reload() invalidates its generation before reading the new query.
         var updated = scopedQuery
         updated.from = value?.from
         updated.until = value?.to
@@ -188,7 +189,7 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                 catch { break }
                 guard !Task.isCancelled else { break }
                 if phase == .active && selected == nil &&
-                    !showingViewportGrid && !busy { reload() }
+                    !showingViewportGrid && !busy && !datePickerOpen { reload() }
             }
         }
     }
@@ -282,7 +283,10 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                           pins.allSatisfy({ $0.count > 0 }) else { return }
                     showingViewportGrid = true
                 }
-                .padding(12)
+                // This source-filtered map is a full-screen cover, without
+                // the dashboard Photos bar. Align its grid with its own menu.
+                .padding(.trailing, 12)
+                .padding(.bottom, 62)
             }
             .overlay(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -334,6 +338,8 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
         // Its bounded date and refresh tools live in secondary map chrome.
         .overlay(alignment: .bottomLeading) {
                 Menu {
+                    Button("按指定日期") { datePickerOpen = true }
+                        .accessibilityIdentifier("native-ios-unified-source-map-select-date")
                     Menu {
                         Button("恢复图库日期范围") {
                             scopedQuery = query
@@ -346,7 +352,6 @@ struct XDriveIOSNativeUnifiedSourcePhotoMapScreen: View {
                         Button("最近 30 天") {
                             setDateRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
                         }
-                        Button("选择日期、月份或年份") { datePickerOpen = true }
                     } label: {
                         Label("地图日期", systemImage: "calendar")
                     }

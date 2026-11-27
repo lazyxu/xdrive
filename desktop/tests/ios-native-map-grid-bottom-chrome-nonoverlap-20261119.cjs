@@ -25,3 +25,22 @@ test('MapKit repeated real GPS Viewer journey rejects bottom-bar hit target over
   assert.match(run,/currentGrid\.tap\(\)/)
   assert.match(run,/native-ios-map-photo-wall-tile/)
 })
+
+test('Owner dashboard and full-screen unified source use the appropriate grid clearance',()=>{
+  const owner=fs.readFileSync(path.join(root,'ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'),'utf8')
+  const source=fs.readFileSync(path.join(root,'ios/XDriveIOS/NativeUnifiedSourcePhotoMap.swift'),'utf8')
+  for(const [code,id,bottom] of [
+    [owner,'native-ios-owner-map-current-grid',74],
+    [source,'native-ios-unified-source-map-current-grid',62]
+  ]){
+    const start=code.indexOf('.overlay(alignment: .bottomTrailing) {')
+    const end=code.indexOf('.overlay(alignment: .topLeading)',start)
+    assert.ok(start>=0 && end>start)
+    const grid=code.slice(start,end)
+    assert.ok(grid.includes('accessibilityID: "'+id+'"'))
+    assert.match(grid,/XDriveIOSNativePhotoMapGridAction\(/)
+    assert.match(grid,new RegExp('\\.padding\\(\\.trailing, 12\\)\\s*\\.padding\\(\\.bottom, '+bottom+'\\)'))
+  }
+  assert.match(owner,/private func openCurrentMapGrid\(\)[\s\S]*?acceptsSelectedCluster\(/)
+  assert.match(source,/guard currentProof, !pins\.isEmpty,[\s\S]*?pins\.allSatisfy\(\{ \$0\.count > 0 \}\)/)
+})

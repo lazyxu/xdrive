@@ -815,7 +815,10 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                         ? overview.map { "\($0.total_photo_count) 张照片" }
                         : nil
                 ) { openCurrentMapGrid() }
-                .padding(12)
+                // The Owner map shares the same Photos floating bottom bar
+                // as the local map. Keep its grid clear of the Search pill.
+                .padding(.trailing, 12)
+                .padding(.bottom, 74)
             }
             .overlay(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 3) {
