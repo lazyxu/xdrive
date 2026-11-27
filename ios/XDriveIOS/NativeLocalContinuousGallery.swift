@@ -258,14 +258,13 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     previousCapturedAt: precedingCapturedAt,
                     hasPreviousPage: offset > 0, calendar: .current
                 )
-                ForEach(daySections) { section in
-                    if !section.continuesPreviousPage {
-                        XDriveIOSNativePhotoWallDayHeader(
-                            title: section.title, topPadding: 4
-                        )
-                    }
-                    XDriveIOSNativePhotoWallGrid(density: density) {
-                        ForEach(page.items[section.startIndex..<section.endIndex]) { candidate in
+                // Reuse the one Gallery/Places renderer without changing the
+                // existing authorized 64-item PhotoKit reader, badge or actions.
+                XDriveIOSNativePhotoWallSectionList(
+                    sections: daySections, density: density,
+                    title: { $0.continuesPreviousPage ? nil : $0.title },
+                    items: { Array(page.items[$0.startIndex..<$0.endIndex]) }
+                ) { candidate in
                         if candidate.kind != "unsupported" {
                             Button { onSelect(candidate, page) } label: {
                                 ZStack(alignment: .topTrailing) {
@@ -348,8 +347,6 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                         } else {
                             placeholderTile.accessibilityHidden(true)
                         }
-                    }
-                    }
                 }
             } else {
                 ProgressView()
@@ -357,11 +354,9 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     .frame(maxWidth: .infinity)
                 // Match the number of real grid cells before PhotoKit finishes.
                 // A one-row spinner would shift the entire scroll offset later.
-                XDriveIOSNativePhotoWallGrid(density: density) {
-                    ForEach(0..<min(64, expectedTotal - offset), id: \.self) { _ in
-                        placeholderTile.accessibilityHidden(true)
-                    }
-                }
+                XDriveIOSNativePhotoWallSkeletonGrid(
+                    density: density, count: min(64, expectedTotal - offset)
+                )
             }
         }
         .padding(.horizontal, 12)
@@ -548,8 +543,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     // A successfully read empty library is still a completed first read.
     // Do not restart its PhotoKit scan after every foreground tab change.
     @State private var hasCompletedInitialRead = false
-    @State private var density: XDriveIOSNativePhotoWallDensity = .standard
-    @State private var framing: XDriveIOSNativePhotoWallFraming = .square
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var density: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
+    private var framing: XDriveIOSNativePhotoWallFraming = .square
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var failure: String?
@@ -598,7 +595,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
 
     var body: some View {
         ScrollViewReader { scroll in
-            ScrollView {
+            XDriveIOSNativePhotoWallScrollContainer {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if permission == .notDetermined {
                         Button("允许查看本机相册") {
@@ -616,8 +613,18 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         }
                     } else {
                         HStack(spacing: 10) {
-                            Text("本机已授权\(mediaFilter.title) · 按日分组")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                            // Only report a PhotoKit count after its
+                            // authorization-scoped scan has actually finished.
+                            // A pending/failed first read must not show 0 as
+                            // an apparently verified whole-library total.
+                            Text(hasCompletedInitialRead
+                                 ? (mediaFilter.isAll
+                                    ? "\(total) 项照片与视频"
+                                    : "\(total) 项 · \(mediaFilter.title)")
+                                 : "正在统计照片…")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("native-ios-photos-local-photo-count")
                             Spacer(minLength: 6)
                             Menu {
                                 xdrivePhotoWallDensityButtons($density)
@@ -823,21 +830,19 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 )
                                 .onAppear { savedOffset = offset }
                             }
-                        } else if loading {
-                            XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取已授权图库…")
-                                .frame(maxWidth: .infinity).padding()
-                        } else if failure == nil {
+                        } else if !loading && failure == nil {
                             XDriveIOSNativePhotoWallStatusMessage(message: mediaFilter.emptyMessage)
                                 .padding(12)
                         }
-                        if let failure {
-                            XDriveIOSNativePhotoWallRetryMessage(
-                                message: failure, buttonTitle: "重新读取",
-                                canRetry: authorized && phase == .active && selected == nil &&
-                                    !actionBusy && !shareBusy
-                            ) { reload() }
-                                .padding(12)
-                        }
+                        XDriveIOSNativePhotoWallFeedback(
+                            isLoading: loading && total == 0,
+                            loadingMessage: "正在读取已授权图库…",
+                            error: failure,
+                            canRetry: authorized && phase == .active && selected == nil &&
+                                !actionBusy && !shareBusy,
+                            buttonTitle: "重新读取"
+                        ) { reload() }
+                        .padding(12)
                     }
                 }
                 .padding(.vertical, 8)

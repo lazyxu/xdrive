@@ -14,6 +14,7 @@ final class XDriveIOSPagePerformanceUITests: XCTestCase {
             app.launchArguments.append("-xdrive-ui-navigation-synthetic-owner")
         }
         app.launch()
+        XDriveIOSNativePhotosTestNavigator.acceptInitialFullPhotosForNavigation(in: app)
         XCTAssertEqual(app.state, .runningForeground)
         return app
     }
@@ -23,8 +24,15 @@ final class XDriveIOSPagePerformanceUITests: XCTestCase {
     }
 
     private func tap(_ id: String, in app: XCUIApplication) {
+        // The native Gallery intentionally hides the five-slot TabView
+        // buttons; measure the genuine visible More-menu/Photos route.
+        // This preserves navigation + AX latency in the stopwatch.
+        if XDriveIOSNativePhotosTestNavigator.tap(id, in: app) {
+            XCTAssertEqual(app.state, .runningForeground)
+            return
+        }
         let control = view(id, in: app)
-        guard control.waitForExistence(timeout: 15) else {
+        guard control.waitForExistence(timeout: 15) && control.isHittable else {
             XCTFail("Missing real native action: \(id)")
             return
         }

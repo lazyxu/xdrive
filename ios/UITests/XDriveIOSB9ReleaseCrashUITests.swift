@@ -47,7 +47,129 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         return control
     }
 
+    // This UITest is compiled against both the published b9 IPA and the
+    // candidate; it cannot import the candidate-only navigation helper.
+    // Deny only a genuine first-use OS Photo Library prompt for these
+    // no-session navigation checks. Never fabricate a grant or Owner token.
+    private func denyRealPhotosPromptIfPresent(_ app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for alert in [springboard.alerts.firstMatch, app.alerts.firstMatch] {
+            guard alert.exists else { continue }
+            let label = alert.label
+            guard label.localizedCaseInsensitiveContains("Photo Library") ||
+                  label.contains("照片") || label.contains("相簿") else {
+                XCTFail("Unexpected system alert blocks b9 navigation: " + label)
+                return
+            }
+            for title in ["Don’t Allow", "Don't Allow", "不允许", "不允许访问"] {
+                let deny = alert.buttons[title].firstMatch
+                if deny.exists && deny.isHittable {
+                    deny.tap()
+                    print("B9_REAL_PHOTOKIT_PERMISSION_DENIED_FOR_NAVIGATION")
+                    return
+                }
+            }
+            XCTFail("Genuine PhotoKit prompt lacks a visible denial button")
+            return
+        }
+    }
+
+    private func verifiedGalleryMenuFrame(
+        _ menu: XCUIElement, in app: XCUIApplication
+    ) -> Bool {
+        guard menu.exists, app.state == .runningForeground,
+              menu.label == "图库来源、备份与 xDrive",
+              !app.alerts.firstMatch.exists,
+              !XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                  .alerts.firstMatch.exists else { return false }
+        let rect = menu.frame, screen = app.frame
+        return rect.width >= 44 && rect.height >= 44 &&
+               rect.intersects(screen) &&
+               rect.midX >= screen.minX && rect.midX <= screen.maxX &&
+               rect.midY >= screen.minY && rect.midY <= screen.maxY
+    }
+
     private func tap(_ id: String, in app: XCUIApplication) {
+        // This file is compiled against BOTH archived b9 sources and
+        // candidate sources. The archived source lacks the newer shared
+        // navigator class, so keep its real visible navigation self-contained.
+        let direct = app.buttons.matching(identifier: id).firstMatch
+        if direct.exists && direct.isHittable {
+            direct.tap()
+            alive(app, "tap-\(id)")
+            return
+        }
+        let legacyTitles = [
+            "native-ios-tab-files": "文件",
+            "native-ios-tab-gallery": "图库",
+        ]
+        if let title = legacyTitles[id] {
+            let old = app.buttons.matching(identifier: "native-ios-five-slot-bar")
+                .matching(NSPredicate(format: "label == %@", title)).firstMatch
+            if old.exists && old.isHittable {
+                old.tap()
+                alive(app, "tap-\(id)")
+                return
+            }
+            // Published b9 exposes UITabBar buttons identified by SF Symbols
+            // (e.g. "folder"), but they have exact visible titles.
+            let systemTab = app.tabBars.buttons
+                .matching(NSPredicate(format: "label == %@", title)).firstMatch
+            if systemTab.exists && systemTab.isHittable {
+                systemTab.tap()
+                alive(app, "tap-\(id)")
+                return
+            }
+        }
+        // Candidate Gallery hides xDrive's other five positions by design.
+        // Follow its visible real More menu; never tap an invisible TabView.
+        let menu = app.buttons.matching(identifier: "native-ios-gallery-more-menu")
+            .firstMatch
+        if let title = legacyTitles[id] {
+            if id == "native-ios-tab-gallery" {
+                let library = app.buttons
+                    .matching(identifier: "native-ios-photos-library-tab").firstMatch
+                if library.exists && library.isHittable {
+                    library.tap()
+                    alive(app, "tap-\(id)")
+                    return
+                }
+            }
+            denyRealPhotosPromptIfPresent(app)
+            // A real SwiftUI toolbar Menu may expose a non-hittable AX
+            // proxy on iOS 18.5 despite its visible 52pt native frame.
+            // This exact labelled, unoccluded frame is the ONLY fallback.
+            let normalHit = menu.exists && menu.isHittable
+            if normalHit || verifiedGalleryMenuFrame(menu, in: app) {
+                let item = app.buttons.matching(
+                    NSPredicate(format: "label == %@", title)).firstMatch
+                for attempt in 0..<2 {
+                    denyRealPhotosPromptIfPresent(app)
+                    guard (menu.exists && menu.isHittable) ||
+                          verifiedGalleryMenuFrame(menu, in: app) else { break }
+                    menu.tap()
+                    let menuItem = app.menuItems.matching(
+                        NSPredicate(format: "label == %@", title)).firstMatch
+                    if menuItem.waitForExistence(timeout: attempt == 0 ? 8 : 5) &&
+                       menuItem.isHittable {
+                        menuItem.tap()
+                        alive(app, "tap-\(id)")
+                        return
+                    }
+                    if item.exists && item.isHittable {
+                        item.tap()
+                        alive(app, "tap-\(id)")
+                        return
+                    }
+                    denyRealPhotosPromptIfPresent(app)
+                }
+                record(app, "missing-real-gallery-action-\(id)")
+                XCTFail("Actual Gallery More menu missing native route \(title)")
+                return
+            }
+        }
+        // No fallback success: the actual archive/candidate native route must
+        // exist or this test remains red with the real AX hierarchy attached.
         entry(id, in: app).tap()
         alive(app, "tap-\(id)")
     }
@@ -58,10 +180,39 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
         let list = app.collectionViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 12))
         let button = app.buttons.matching(identifier: id).firstMatch
-        for _ in 0..<7 {
+        for _ in 0..<14 {
             if button.exists && button.isHittable { return button }
             list.swipeUp()
             alive(app, "scroll-\(id)")
+        }
+        // Older published b9 and the candidate have different Home section
+        // heights. Search back from the bottom before reporting the entry as
+        // missing; still fail if no actual native Button becomes hittable.
+        for _ in 0..<14 {
+            if button.exists && button.isHittable { return button }
+            list.swipeDown()
+            alive(app, "scroll-reverse-\(id)")
+        }
+        // Candidate Home hides its operations link inside "更多管理".
+        // The published b9 may expose the older flat row; preserve both.
+        if id == "native-ios-files-open-operations" {
+            let disclosure = app.buttons.matching(
+                NSPredicate(format: "label CONTAINS %@", "更多管理")
+            ).firstMatch
+            for _ in 0..<14 {
+                if disclosure.exists && disclosure.isHittable { break }
+                list.swipeUp()
+                alive(app, "find-management-disclosure")
+            }
+            if disclosure.exists && disclosure.isHittable {
+                disclosure.tap()
+                alive(app, "expand-management-disclosure")
+                for _ in 0..<14 {
+                    if button.exists && button.isHittable { return button }
+                    list.swipeUp()
+                    alive(app, "find-expanded-operation-row")
+                }
+            }
         }
         record(app, "unreachable-\(id)")
         XCTAssertTrue(button.exists && button.isHittable,
@@ -162,52 +313,32 @@ final class XDriveIOSB9ReleaseCrashUITests: XCTestCase {
             .matching(identifier: "native-ios-login-server").firstMatch
         if !field.waitForExistence(timeout: 16) { record(app, "login-not-mounted") }
         XCTAssertTrue(field.exists)
-        // Wait for the real three-second durable startup gate before
-        // normal termination. A fixed sleep can race the SwiftUI mount.
-        let readiness = app.descendants(matching: .any)
-            .matching(identifier: "native-ios-prelogin-build").firstMatch
-        // Published b9 shows the build label directly. The current compact
-        // login intentionally hides diagnostics under its real About section.
-        // Reveal that section via native UI before asserting the same durable
-        // startup state; never treat a collapsed label as a process crash.
-        if !readiness.waitForExistence(timeout: 2) {
-            let about = app.descendants(matching: .any)
-                .matching(identifier: "native-ios-login-about").firstMatch
-            XCTAssertTrue(about.waitForExistence(timeout: 16),
-                          "Neither historical build label nor compact About exists")
-            let loginScroll = app.scrollViews.containing(
-                .any, identifier: "native-ios-login-server").firstMatch
-            XCTAssertTrue(loginScroll.waitForExistence(timeout: 12),
-                          "Real signed-out Login form scroll is unavailable")
-            for _ in 0..<8 {
-                if about.isHittable { break }
-                loginScroll.swipeUp()
-            }
-            XCTAssertTrue(about.isHittable, "Real compact About is not tappable")
-            about.tap()
-        }
-        XCTAssertTrue(readiness.waitForExistence(timeout: 16),
-                      "Startup checkpoint indicator missing after opening About")
-        if readiness.label.contains("b9d5f9695826") {
-            // The historical published binary has no readiness AX value.
-            // Preserve its original 4-second baseline, without claiming
-            // that comparator proves durable startup. CI treats it separately.
-            Thread.sleep(forTimeInterval: 4)
-        } else {
-            // Current candidate must expose and reach the actual .ready state.
-            // Do not silently fall back if its readiness signal is missing.
+        // Do not terminate a still-mounting workspace and then call
+        // its deliberate crash-recovery page a false positive. Read the
+        // actual foreground UI's non-secret ready marker instead of a
+        // guessed fixed sleep. A never-ready workspace still FAILS.
+        // The candidate exposes a visible non-secret ready/mounting value.
+        // Archived b9 has no such API; recognize *only* the actual b9
+        // build marker before using its historical baseline delay.
+        let submit = app.buttons.matching(identifier: "native-ios-login-submit")
+            .firstMatch
+        if submit.waitForExistence(timeout: 5), submit.value != nil {
             let ready = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "value == %@", "启动完成"),
-                object: readiness)
-            let result = XCTWaiter.wait(for: [ready], timeout: 20)
-            if result != .completed {
-                print("B9_STARTUP_NOT_READY value=" + String(describing: readiness.value)
-                      + " label=" + readiness.label
-                      + " appState=" + String(app.state.rawValue))
-                record(app, "startup-not-durable-ready")
-            }
-            XCTAssertEqual(result, .completed,
-                           "Login mounted, but startup never reached durable ready")
+                predicate: NSPredicate(format: "value == %@", "ready"),
+                object: submit
+            )
+            let state = XCTWaiter.wait(for: [ready], timeout: 25)
+            if state != .completed { record(app, "startup-readiness-stuck") }
+            XCTAssertEqual(state, .completed,
+                           "Candidate remained at mountingWorkspace, do not mask failure")
+        } else {
+            let archived = app.descendants(matching: .any)
+                .matching(identifier: "native-ios-prelogin-build").firstMatch
+            XCTAssertTrue(archived.waitForExistence(timeout: 10),
+                          "Neither candidate readiness nor published build marker exists")
+            XCTAssertTrue(archived.label.contains("b9d5f9695826"),
+                          "Only exact published b9 may use the legacy startup delay")
+            Thread.sleep(forTimeInterval: 4)
         }
         alive(app, "startup-stabilized")
         app.terminate()

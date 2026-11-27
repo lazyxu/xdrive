@@ -27,7 +27,8 @@ test('only one authorized bounded PhotoKit source may supply a filmstrip target'
 
 test('visible-only native filmstrip thumbs cannot request iCloud or retain retired pixels', () => {
   assert.match(view, /ScrollViewReader/)
-  assert.match(view, /LazyHStack/)
+  assert.match(view, /XDriveIOSNativePhotoWallViewerFilmstripScroll\s*\{/)
+  assert.match(read('ios/XDriveIOS/NativePhotoWallComponents.swift'), /LazyHStack\(alignment: \.center, spacing: 4\)/)
   assert.match(view, /scroll\.scrollTo\(current\.id, anchor: \.center\)/)
   assert.match(view, /options\.isNetworkAccessAllowed = false/)
   assert.match(view, /asset\.creationDate == item\.capturedAt/)

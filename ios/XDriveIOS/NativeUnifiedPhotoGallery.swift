@@ -1,7 +1,16 @@
 import Combine
+import MapKit
 import Photos
 import SwiftUI
 import UIKit
+
+/// Render-only scroll offset for the native iOS Photos floating date bar.
+private struct XDriveIOSNativePhotosTimelineScrollY: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
 
 final class XDriveIOSUnifiedPhotoObserver: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     @Published private(set) var change = UUID()
@@ -33,6 +42,10 @@ final class XDriveIOSUnifiedPhotoObserver: NSObject, ObservableObject, PHPhotoLi
 struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let openBackup: () -> Void
+    // Parent-owned one-shot request from the native Photos Search button.
+    @Binding var requestSearch: Bool
+    @Binding var wallTimeScale: XDriveIOSNativePhotoWallTimeScale
+    @Binding var showTimelineNavigator: Bool
     let priorityBackup: (String) -> Void
     let isTabActive: Bool
     // The parent presents the existing shared MapKit route as an overlay.
@@ -47,16 +60,29 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var showingPeople = false
     @State private var showingThumbnailCache = false
     @State private var sourceFilter: XDriveIOSNativeGalleryPresence?
-    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
-    @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .day
+    // Date scale is parent-owned presentation state; reader bounds unchanged.
+    @State private var isSelecting = false
+    @State private var selectedIDs: Set<String> = []
     @State private var query = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var draft = XDriveIOSNativeUnifiedGalleryQuery()
     @State private var showFilters = false
+    // Keep the native toolbar actionable on iOS 18/26. A SwiftUI Menu was
+    // present in the accessibility tree but could not be hit-tested.
+    @State private var showingUnifiedOptions = false
+    @State private var pendingUnifiedOption: UnifiedOption?
+    @State private var pendingUnifiedOptionOwner: XDriveNativeOwnerRoot?
+    private enum UnifiedOption {
+        case search, people, thumbnailCache, map, originalAudit
+    }
     @State private var openMapAfterFilterDismiss = false
     @State private var openSourceMapAfterFilterDismiss = false
     @State private var showingSourceFilteredMap = false
+    @State private var savedMapCamera: MKCoordinateRegion?
+    @State private var savedMapOwner: XDriveNativeOwnerRoot?
     @State private var pendingMapCaptureRange: XDriveIOSNativePhotoMapCaptureRange?
     @State private var pendingMapMediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var pendingMapFilenameTerm = ""
@@ -68,12 +94,156 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     @State private var viewerReturnPage = 0
     // Exact Owner-authorized page that opened Viewer; its first frame is retained.
     @State private var viewerOpeningPage: Int?
+    // Session-only identity; cross-item and cross-page returns must target
+    // an independently verified tile, while an unchanged one keeps pixels.
+    @State private var viewerOpeningItemID: String?
+    @State private var viewerOpeningViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var visibleTileFrames: [String: CGRect] = [:]
+    @State private var photoWallViewportHeight: CGFloat = 0
+    @State private var pinchReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var pinchOwner: XDriveNativeOwnerRoot?
+    @State private var pinchGeneration: UUID?
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var started = false
     @Environment(\.scenePhase) private var phase
 
+    private func chooseUnifiedOption(_ option: UnifiedOption) {
+        pendingUnifiedOptionOwner = login.owner
+        pendingUnifiedOption = option
+        showingUnifiedOptions = false
+    }
+
+    private func completeUnifiedOptionAfterDismiss() {
+        guard let option = pendingUnifiedOption else { return }
+        let expectedOwner = pendingUnifiedOptionOwner
+        pendingUnifiedOption = nil
+        pendingUnifiedOptionOwner = nil
+        // An options sheet can finish dismissing after account revocation.
+        // Never dispatch a late map, audit or filter action to a new Owner.
+        guard expectedOwner.map({
+            XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+        }) ?? (login.owner == nil) else { return }
+        switch option {
+        case .search:
+            draft = query
+            showFilters = true
+        case .people:
+            showingPeople = true
+        case .thumbnailCache:
+            showingThumbnailCache = true
+        case .map:
+            showMapForAppliedQuery()
+        case .originalAudit:
+            requestOriginalAudit(retryUnavailable: false)
+        }
+    }
+
+    private var unifiedOptionsSheet: some View {
+        NavigationStack {
+            List {
+                Section("搜索与筛选") {
+                    Button {
+                        chooseUnifiedOption(.search)
+                    } label: {
+                        Label("搜索与筛选", systemImage: "magnifyingglass")
+                    }
+                    .accessibilityIdentifier("native-ios-unified-options-search")
+                    Menu("照片来源") {
+                        filterButton(nil, title: "全部")
+                        ForEach(XDriveIOSNativeGalleryPresence.allCases) { presence in
+                            filterButton(presence, title: presence.title)
+                        }
+                    }
+                    Menu("时间浏览") {
+                        ForEach(XDriveIOSNativePhotoWallTimeScale.allCases) { option in
+                            Button {
+                                wallTimeScale = option
+                            } label: {
+                                Label(option.title, systemImage:
+                                    wallTimeScale == option ? "checkmark" : "calendar")
+                            }
+                        }
+                    }
+                    XDriveIOSNativePhotoWallDisplayMenu(
+                        density: $wallDensity, framing: $wallFraming,
+                        accessibilityID: "native-ios-unified-wall-density"
+                    ) { EmptyView() }
+                }
+                Section("地图") {
+                    if onShowMap != nil {
+                        Button {
+                            chooseUnifiedOption(.map)
+                        } label: {
+                            Label("显示地图", systemImage: "map")
+                        }
+                        .disabled(mapUnavailableReason(for: query) != nil)
+                        .accessibilityIdentifier("native-ios-gallery-sort-filter-show-map")
+                    }
+                }
+                Section("管理") {
+                    Button("人物与宠物") { chooseUnifiedOption(.people) }
+                        .accessibilityIdentifier("native-ios-unified-options-people")
+                    Button("管理缩略图缓存") {
+                        chooseUnifiedOption(.thumbnailCache)
+                    }
+                    Button("手动核对所有本机原件（耗时）") {
+                        chooseUnifiedOption(.originalAudit)
+                    }
+                }
+            }
+            .navigationTitle("排序、筛选与显示选项")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { showingUnifiedOptions = false }
+                        .accessibilityIdentifier("native-ios-unified-options-done")
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func restoreMapCameraForCurrentOwner() {
+        guard savedMapCamera == nil, login.hasLocalOwnerSession,
+              let owner = login.owner,
+              let stored = XDriveIOSUnifiedMapCameraStore.load(owner: owner)
+        else { return }
+        savedMapOwner = owner
+        savedMapCamera = stored
+    }
+
     var body: some View {
         galleryContent
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        showingUnifiedOptions = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("排序、筛选与显示选项")
+                    .accessibilityIdentifier("native-ios-gallery-open-filters")
+                    Button(isSelecting ? "完成" : "选择") {
+                        isSelecting.toggle()
+                        if !isSelecting { selectedIDs.removeAll() }
+                    }
+                    .accessibilityIdentifier("native-ios-gallery-select")
+                }
+            }
+            .sheet(isPresented: $showingUnifiedOptions, onDismiss: {
+                completeUnifiedOptionAfterDismiss()
+            }) {
+                unifiedOptionsSheet
+            }
+            .navigationDestination(isPresented: $showingPeople) {
+                XDriveIOSNativeGalleryPeople(login: login)
+            }
+            .navigationDestination(isPresented: $showingThumbnailCache) {
+                XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
+            }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("native-ios-unified-photo-gallery")
             .accessibilityValue(galleryWallGenerationDiagnostic)
@@ -87,12 +257,17 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             }
             .onAppear {
                 photoObserver.start()
+                restoreMapCameraForCurrentOwner()
                 if !started {
                     started = true
                     wall.reset()
                 } else {
                     validateForegroundWall()
                 }
+                openSearchIfRequested()
+            }
+            .onChange(of: requestSearch) { wanted in
+                if wanted { openSearchIfRequested() }
             }
             .onDisappear {
                 photoObserver.stop()
@@ -104,27 +279,50 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                 explicitOriginalAudit = false
                 indexRequest = UUID()
             }
-            .onChange(of: photoObserver.change) { _ in reset() }
+            .onChange(of: photoObserver.change) { _ in
+                if let owner = login.owner { XDriveIOSUnifiedMapCameraStore.clear(owner: owner) }
+                savedMapCamera = nil; savedMapOwner = nil
+                reset()
+            }
             .onChange(of: login.owner) { _ in
+                // A mutable Root revision is not an Owner identity switch.
+                // Preserve the same-account camera when a refreshed Owner
+                // object differs only in its revision; never reuse A in B.
+                if let prior = savedMapOwner,
+                   !XDriveIOSNativePhotoOwnerScope.matches(login.owner, prior) {
+                    XDriveIOSUnifiedMapCameraStore.clear(owner: prior)
+                }
                 showingPeople = false; showingThumbnailCache = false
+                showingUnifiedOptions = false
+                pendingUnifiedOption = nil
+                pendingUnifiedOptionOwner = nil
+                isSelecting = false; selectedIDs.removeAll()
+                requestSearch = false
                 sourceFilter = nil; query = .init(); draft = .init()
                 openMapAfterFilterDismiss = false
                 openSourceMapAfterFilterDismiss = false
                 showingSourceFilteredMap = false
+                savedMapCamera = nil; savedMapOwner = nil
                 pendingMapCaptureRange = nil
                 pendingMapMediaFilter = .all
                 pendingMapFilenameTerm = ""
                 reset()
+                // Session restoration may complete after Gallery onAppear.
+                restoreMapCameraForCurrentOwner()
             }
             .onChange(of: sourceFilter) { _ in
                 // A query/presence transition is not authority to reuse old
                 // map markers while a full-screen source map is visible.
                 showingSourceFilteredMap = false
                 openSourceMapAfterFilterDismiss = false
+                isSelecting = false; selectedIDs.removeAll()
+                savedMapCamera = nil; savedMapOwner = nil
                 resetWall()
+                restoreMapCameraForCurrentOwner()
             }
             .onChange(of: query) { _ in
                 showingSourceFilteredMap = false
+                isSelecting = false; selectedIDs.removeAll()
                 resetWall()
             }
             .onChange(of: timeline.indexRevision) { _ in resetWall() }
@@ -141,6 +339,7 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     validateForegroundWall()
                 } else {
                     explicitOriginalAudit = false
+                    isSelecting = false; selectedIDs.removeAll()
                     selected = nil
                     indexRequest = UUID()
                     // Keep the bounded verified page state for a same-grant
@@ -194,6 +393,17 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                     NavigationStack {
                         XDriveIOSNativeUnifiedSourcePhotoMapScreen(
                             login: login, presence: presence, query: query,
+                            restoredCamera: savedMapOwner.map {
+                                XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+                            } == true ? savedMapCamera : nil,
+                            onSaveCamera: { region in
+                                guard let owner = login.owner,
+                                      PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                                        == .authorized else { return }
+                                savedMapOwner = owner
+                                savedMapCamera = region
+                                XDriveIOSUnifiedMapCameraStore.save(region, owner: owner)
+                            },
                             onClose: { showingSourceFilteredMap = false })
                     }
                 } else {
@@ -205,71 +415,27 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
 
     private var galleryContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Button { draft = query; showFilters = true } label: {
-                    Label(query == .init() ? "搜索与筛选" : "已筛选", systemImage: "line.3.horizontal.decrease.circle")
-                }
-                .accessibilityIdentifier("native-ios-gallery-open-filters")
-                // The native Photos-style menu applies the *committed* filter.
-                // Unsubmitted sheet edits are never allowed to leak into it.
-                if onShowMap != nil {
-                    Menu {
-                        Button("排序和筛选") {
-                            draft = query
-                            showFilters = true
-                        }
-                        Button {
-                            showMapForAppliedQuery()
-                        } label: {
-                            Label("显示地图", systemImage: "map")
-                        }
-                        .disabled(mapUnavailableReason(for: query) != nil)
-                        .accessibilityIdentifier("native-ios-gallery-sort-filter-show-map")
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .accessibilityLabel("排序和筛选")
-                    .accessibilityIdentifier("native-ios-gallery-sort-filter-menu")
-                }
-                Spacer()
-                if query != .init() { Button("清除") { query = .init() } }
-                Menu {
-                    Section("照片大小") { xdrivePhotoWallDensityButtons($wallDensity) }
-                    Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
-                } label: {
-                    Image(systemName: "square.grid.3x3")
-                }
-                .accessibilityLabel("缩略图大小")
-                .accessibilityIdentifier("native-ios-unified-wall-density")
-                NavigationLink(isActive: $showingThumbnailCache) {
-                    XDriveIOSNativePhotoThumbnailCacheScreen(login: login)
-                } label: {
-                    Image(systemName: "internaldrive")
-                }.accessibilityLabel("管理缩略图缓存")
-                Menu {
-                    Button("手动核对所有本机原件（耗时）") {
-                        requestOriginalAudit(retryUnavailable: false)
-                    }
-                } label: {
-                    Image(systemName: "checkmark.shield")
-                }
-                .accessibilityLabel("手动核对本机原件")
-                .accessibilityIdentifier("native-ios-gallery-explicit-audit")
-            }.padding(.horizontal, 12).padding(.vertical, 4)
-            filters.padding(.horizontal, 12).padding(.vertical, 4)
-            XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
-                .padding(.horizontal, 12).padding(.vertical, 4)
-            Divider()
             ScrollViewReader { scroll in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                XDriveIOSNativePhotoWallScrollContainer {
+                    XDriveIOSNativePhotoWallCollectionStack {
                         galleryStatus.id("gallery-page-top")
+                        Color.clear.frame(height: 0)
+                            .background {
+                                GeometryReader { anchor in
+                                    Color.clear.preference(
+                                        key: XDriveIOSNativePhotosTimelineScrollY.self,
+                                        value: anchor.frame(
+                                            in: .named("xdrive-ios-unified-gallery-wall")
+                                        ).minY
+                                    )
+                                }
+                            }
                         if let owner = login.owner {
                             ForEach(wall.index.pages) { page in
                                 XDriveIOSNativeUnifiedPhotoWallPage(page: page, wall: wall, login: login, owner: owner,
                                     filter: sourceFilter, query: query, density: wallDensity,
                                     framing: wallFraming, timeScale: wallTimeScale,
+                                    selectionMode: isSelecting, selectedPhotoIDs: selectedIDs,
                                     displayActive: selected == nil && phase == .active && isTabActive,
                                      // A tab switch covers a loaded 48-row
                                      // window; ordinary off-screen scrolling
@@ -278,63 +444,175 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                                          showingPeople || showingThumbnailCache ||
                                          phase != .active || !isTabActive,
                                     open: { payload, position in
-                                        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
-                                              payload.rows.indices.contains(position) else { return }
+                                        guard !isSelecting,
+                                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                                              payload.rows.indices.contains(position),
+                                              payload.rows.filter({
+                                                  $0.id == payload.rows[position].id
+                                              }).count == 1
+                                        else { return }
                                         viewerOpeningPage = payload.number
-                                        selected = .init(owner: owner, page: payload, position: position)
-                                    }, loaded: {
-                                        if selected == nil, let anchor = viewerReturnAnchor, viewerReturnPage == page.id {
-                                            scroll.scrollTo(anchor, anchor: .center)
-                                            viewerReturnAnchor = nil
-                                            viewerOpeningPage = nil
+                                        viewerOpeningItemID = payload.rows[position].id
+                                        viewerOpeningViewport = visibleTileFrames[
+                                            payload.rows[position].id
+                                        ].map { frame in
+                                            XDriveIOSNativePhotoWallViewportAnchor(
+                                                itemID: payload.rows[position].id,
+                                                windowIndex: payload.number,
+                                                viewportOffset: frame.minY,
+                                                tileHeight: frame.height)
                                         }
+                                        selected = .init(owner: owner, page: payload, position: position)
+                                    }, onSelect: { id in
+                                        guard isSelecting, phase == .active,
+                                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+                                        else { return }
+                                        if !selectedIDs.insert(id).inserted {
+                                            selectedIDs.remove(id)
+                                        }
+                                    }, loaded: { verifiedIDs in
+                                        guard selected == nil, viewerReturnPage == page.id,
+                                              let anchor = viewerReturnAnchor,
+                                              phase == .active, isTabActive,
+                                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+                                        else { return }
+                                        // Only the *currently admitted* exact
+                                        // 48-row mixed page may restore a tile.
+                                        if let target = XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+                                            anchor, in: verifiedIDs, authorized: true
+                                        ) {
+                                            // An unchanged verified tile in the original page
+                                            // keeps its exact scroll pixels, rather than being
+                                            // unnecessarily moved to the viewport center.
+                                            // Filmstrip moves within a page and cross-page
+                                            // returns still scroll to the freshly admitted ID.
+                                            if viewerOpeningPage != viewerReturnPage ||
+                                                viewerOpeningItemID != target {
+                                                let restored = viewerOpeningViewport?.alignment(
+                                                    for: target, window: viewerReturnPage,
+                                                    viewportHeight: photoWallViewportHeight)
+                                                xdrivePhotoWallScrollVerifiedTile(
+                                                    target, scroll: scroll,
+                                                    anchor: restored ?? .center)
+                                            }
+                                        }
+                                        viewerReturnAnchor = nil
+                                        viewerOpeningPage = nil
+                                        viewerOpeningItemID = nil
+                                        viewerOpeningViewport = nil
                                     }, pairing: { pairing = $0 })
                                     .id("unified-page-\(page.id)")
                             }
                         }
                     }
                     .id(wall.generation)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .padding(.horizontal, XDriveIOSNativePhotoWallLayout.horizontalInset)
+                    .padding(.vertical, 8)
+                }
+                .coordinateSpace(name: "xdrive-ios-unified-gallery-wall")
+                .onPreferenceChange(XDriveIOSNativePhotosTimelineScrollY.self) { y in
+                    // iOS Photos changes the lower-left control after the
+                    // user scrolls through its photo timeline. The safe-area
+                    // bar keeps the same height to avoid a visible jump.
+                    guard isTabActive, phase == .active else { return }
+                    let visible = y < -48
+                    if showTimelineNavigator != visible {
+                        showTimelineNavigator = visible
+                    }
+                }
+                .background {
+                    GeometryReader { viewport in
+                        Color.clear
+                            .onAppear { photoWallViewportHeight = viewport.size.height }
+                            .onChange(of: viewport.size.height) {
+                                photoWallViewportHeight = $0
+                            }
+                    }
+                }
+                .onPreferenceChange(XDriveIOSNativePhotoWallTileFramesKey.self) { frames in
+                    if visibleTileFrames != frames { visibleTileFrames = frames }
                 }
                 .refreshable { reset() }
                 .xdrivePhotoWallPinch(
                     density: $wallDensity,
-                    enabled: selected == nil && phase == .active && !showFilters && isTabActive
+                    enabled: selected == nil && phase == .active && !showFilters && isTabActive,
+                    onDensityChange: { _ in
+                        pinchOwner = login.owner
+                        pinchGeneration = wall.generation
+                        pinchReturnViewport = visibleTileFrames
+                            .filter { !$0.key.isEmpty && $0.value.minY >= 0 &&
+                                      $0.value.maxY <= photoWallViewportHeight }
+                            .min(by: { $0.value.minY < $1.value.minY })
+                            .map { entry in
+                                XDriveIOSNativePhotoWallViewportAnchor(
+                                    itemID: entry.key, windowIndex: 0,
+                                    viewportOffset: entry.value.minY,
+                                    tileHeight: entry.value.height)
+                            }
+                    }
                 )
+                .onChange(of: wallDensity) { _ in
+                    defer {
+                        pinchReturnViewport = nil
+                        pinchOwner = nil
+                        pinchGeneration = nil
+                    }
+                    guard selected == nil, phase == .active, isTabActive,
+                          let owner = pinchOwner, pinchGeneration == wall.generation,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                          let anchor = pinchReturnViewport,
+                          visibleTileFrames[anchor.itemID] != nil,
+                          let alignment = anchor.alignment(
+                              for: anchor.itemID, window: 0,
+                              viewportHeight: photoWallViewportHeight)
+                    else { return }
+                    xdrivePhotoWallScrollVerifiedTile(
+                        anchor.itemID, scroll: scroll, anchor: alignment)
+                }
                 .onChange(of: selected?.id) { selection in
                     guard selection == nil, phase == .active, isTabActive,
                           let anchor = viewerReturnAnchor else { return }
-                    if viewerOpeningPage == viewerReturnPage {
-                        // Same retained verified page: restore the exact row directly
-                        // rather than flashing the page's top before final restoration.
-                        scroll.scrollTo(anchor, anchor: .center)
-                        // A retained page may not emit loaded() again. Consume once.
-                        viewerReturnAnchor = nil
-                        viewerOpeningPage = nil
-                    } else {
-                        // Filmstrip crossed a lazy page: materialize its signed page,
-                        // then let loaded() restore the exact authorized row.
-                        scroll.scrollTo("unified-page-\(viewerReturnPage)", anchor: .top)
+                    // A retained page remains in place without first
+                    // scrolling to its top. The child loaded callback performs
+                    // the final scope/unique-row verification after dismissal.
+                    if viewerOpeningPage != viewerReturnPage {
+                        xdrivePhotoWallScrollVerifiedTile(
+                            "unified-page-\(viewerReturnPage)",
+                            scroll: scroll, anchor: .top
+                        )
                     }
                 }
-                .onChange(of: wall.generation) { _ in scroll.scrollTo("gallery-page-top", anchor: .top) }
+                .onChange(of: wall.generation) { _ in
+                    pinchReturnViewport = nil
+                    pinchOwner = nil
+                    pinchGeneration = nil
+                    visibleTileFrames = [:]
+                    viewerOpeningViewport = nil
+                    showTimelineNavigator = false
+                    scroll.scrollTo("gallery-page-top", anchor: .top)
+                }
+            }
+            if isSelecting {
+                HStack {
+                    Text("已选择 \(selectedIDs.count) 项")
+                        .font(.subheadline)
+                    Spacer()
+                    Button("清除选择") { selectedIDs.removeAll() }
+                        .disabled(selectedIDs.isEmpty)
+                }
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .background(.regularMaterial)
+                .accessibilityIdentifier("native-ios-gallery-selection-summary")
             }
         }
     }
 
-    private var filters: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack {
-                NavigationLink(isActive: $showingPeople) {
-                    XDriveIOSNativeGalleryPeople(login: login)
-                } label: { Label("人物", systemImage: "person.2") }
-                .accessibilityIdentifier("native-ios-gallery-people")
-                filterButton(nil, title: "全部")
-                ForEach(XDriveIOSNativeGalleryPresence.allCases) { presence in filterButton(presence, title: presence.title) }
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("native-ios-unified-gallery-filters")
+    private func openSearchIfRequested() {
+        guard requestSearch else { return }
+        requestSearch = false
+        draft = query
+        showFilters = true
     }
 
     private func filterButton(_ value: XDriveIOSNativeGalleryPresence?, title: String) -> some View {
@@ -376,6 +654,11 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
             Text("“仅云端”仅显示已确认本机没有相同原件的照片；想浏览全部云端照片，请使用上方“单独浏览 → 云端图库”。")
                 .font(.footnote).foregroundStyle(.secondary)
         }
+        if sourceFilter == .localOnly && login.owner == nil {
+            Text("未登录时无法证明云端没有同一原件。“显示地图”将使用已授权的本机 PhotoKit 地图，不标记为已核验的“仅本机”。")
+                .font(.footnote).foregroundStyle(.secondary)
+                .accessibilityIdentifier("native-ios-unified-local-map-unverified-source")
+        }
         if query != .init() {
             Text("\(query.media.title)\(query.term.isEmpty ? "" : " · 文件名包含「\(query.term)」")")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -416,12 +699,14 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
                             // Gallery shown after MapKit has the same date
                             // criteria as the map that was just opened.
                             query = draft
-                            if sourceFilter != nil {
-                                // A source filter cannot borrow the ordinary
-                                // local/Owner map. Dismiss the editor before
-                                // presenting the exact reconciled source map.
+                            if sourceFilter != nil &&
+                               !(sourceFilter == .localOnly && login.owner == nil) {
+                                // Exact source identity remains Owner-bound.
                                 openSourceMapAfterFilterDismiss = true
                             } else {
+                                // With no Owner, "localOnly" cannot prove cloud
+                                // absence. Open the existing local-only MapKit
+                                // PhotoKit route, never invent a paired status.
                                 pendingMapCaptureRange = representableMapCaptureRange
                                 pendingMapMediaFilter = representableMapMediaFilter
                                 pendingMapFilenameTerm = draft.term
@@ -461,10 +746,16 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private func mapUnavailableReason(
         for criteria: XDriveIOSNativeUnifiedGalleryQuery
     ) -> String? {
-        if sourceFilter != nil {
-            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
-                  login.owner != nil else {
-                return "来源地图需完整本机照片权限与已登录的云端 Owner。"
+        if let sourceFilter {
+            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
+                return "来源地图需要完整的本机照片访问权限。"
+            }
+            if login.owner == nil {
+                // No cloud authority means "only local" is a browsing scope,
+                // never a positive claim that the same original is not remote.
+                guard sourceFilter == .localOnly, onShowMap != nil else {
+                    return "精确的来源配对地图需要已登录的云端 Owner。"
+                }
             }
         }
         if !criteria.isValid {
@@ -484,7 +775,8 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     private func showMapForAppliedQuery() {
         guard mapUnavailableReason(for: query) == nil,
               onShowMap != nil else { return }
-        if sourceFilter != nil {
+        if sourceFilter != nil &&
+           !(sourceFilter == .localOnly && login.owner == nil) {
             showingSourceFilteredMap = true
             return
         }
@@ -555,10 +847,18 @@ struct XDriveIOSNativeUnifiedPhotoGallery: View {
     }
 
     private func resetWall() {
+        isSelecting = false
+        selectedIDs.removeAll()
         selected = nil
         viewerReturnAnchor = nil
         viewerOpeningPage = nil
+        viewerOpeningItemID = nil
         wall.reset()
+        viewerOpeningViewport = nil
+        pinchReturnViewport = nil
+        pinchOwner = nil
+        pinchGeneration = nil
+        visibleTileFrames = [:]
     }
     private func requestOriginalAudit(retryUnavailable: Bool) {
         // An explicit diagnostic is independent from upload scheduling.

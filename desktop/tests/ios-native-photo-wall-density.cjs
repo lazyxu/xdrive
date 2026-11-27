@@ -24,7 +24,10 @@ test('native Photos wall offers three square thumbnail densities, no change to o
   }
   assert.match(page, /let density: XDriveIOSNativePhotoWallDensity/)
   assert.match(page, /XDriveIOSNativeSquarePhotoTile\(\s*candidate: candidate, framing: framing/)
-  assert.equal((page.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 2)
+  assert.equal((page.match(/XDriveIOSNativePhotoWallGrid\(density: density\)/g) || []).length, 0)
+  assert.match(page, /XDriveIOSNativePhotoWallSkeletonGrid\(/)
+  assert.match(shared, /maximumSkeletonCount = 64/)
+  assert.match(page, /XDriveIOSNativePhotoWallSectionList\(\s*sections: daySections, density: density/)
   assert.match(shared, /minimum: density\.minimumCellWidth/)
   assert.match(shared, /maximum: density\.maximumCellWidth/)
   assert.match(shared, /LazyVGrid\(columns:/)
@@ -38,7 +41,8 @@ test('native Photos wall offers three square thumbnail densities, no change to o
 })
 
 test('pinch and explicit density menu are bounded presentation-only controls', () => {
-  assert.match(screen, /@State private var density: XDriveIOSNativePhotoWallDensity = \.standard/)
+  assert.match(screen, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
+  assert.match(screen, /private var density: XDriveIOSNativePhotoWallDensity = \.standard/)
   assert.match(screen, /xdrivePhotoWallDensityButtons\(\$density\)/)
   assert.match(screen, /native-ios-local-wall-density/)
   assert.match(screen, /MagnificationGesture\(minimumScaleDelta: 0\.14\)\.onEnded/)
@@ -94,7 +98,10 @@ test('local wall complete-photo option fits the full image within stable square 
   const loader = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
   const checks = read('ios/tests/NativePhotoWallDensityPolicyChecks.swift')
   assert.match(density, /enum XDriveIOSNativePhotoWallFraming:/)
-  assert.match(screen, /@State private var framing: XDriveIOSNativePhotoWallFraming = \.square/)
+  // Appearance-only framing now follows the same key as Gallery/Places;
+  // the private PhotoKit page identity and 64-slot reader are untouched.
+  assert.match(screen, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-framing\.v1"\)\s*private var framing: XDriveIOSNativePhotoWallFraming = \.square/)
+  assert.match(screen, /@AppStorage\("xdrive\.ios\.gallery\.photo-wall-density\.v1"\)/)
   assert.match(screen, /ForEach\(XDriveIOSNativePhotoWallFraming\.allCases\)/)
   assert.match(screen, /native-ios-local-wall-framing/)
   assert.match(screen, /framing: framing, selectionMode: selectionMode/)

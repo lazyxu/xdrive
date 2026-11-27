@@ -67,6 +67,30 @@ test('mountingWorkspace rescue offers safe entry with no automatic Owner restore
   assert.doesNotMatch(boot, /clearSavedLogin\(\)|removePersistentDomain|XDriveIOSNativeOwnerSessionStore\.clear/)
 })
 
+test('outer startup root cannot cancel readiness of a newly mounted signed-out workspace', () => {
+  const login = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
+  const root = login.slice(login.indexOf('    var body: some View {'),
+    login.indexOf('        .task {', login.indexOf('    var body: some View {')))
+  assert.match(root, /\.onDisappear \{\s*\/\/ Group can transiently disappear[\s\S]*?backup\.stopLibraryChangeMonitoring\(\)/)
+  assert.doesNotMatch(root, /readinessTicket = UUID\(\)|readinessTask\?\.cancel\(\)/)
+  assert.match(root, /backup\.stopLibraryChangeMonitoring\(\)/)
+  // Both visible destinations keep their own lifecycle, so a real exit
+  // still revokes the pending UI-ready checkpoint.
+  assert.equal((root.match(/\.onDisappear \{ workspaceDisappeared\(\) \}/g) || []).length, 0)
+  assert.match(root, /\.onAppear \{ workspaceAppeared\(\) \}/)
+  assert.match(login, /private func workspaceDisappeared\(\) \{[\s\S]*?readinessTask\?\.cancel\(\)/)
+  const onPhase = login.slice(login.indexOf('        .onChange(of: phase)'),
+    login.indexOf('        .onChange(of: restoreFinished)'))
+  assert.match(onPhase, /else \{[\s\S]*?workspaceDisappeared\(\)[\s\S]*?backup\.stopLibraryChangeMonitoring\(\)[\s\S]*?backup\.cancel\(\)/)
+  const mounted = login.slice(login.indexOf('private func armReadinessAfterMount()'),
+    login.indexOf('/// A compact default'))
+  assert.match(mounted, /restoreComplete: restoreFinished, workspaceVisible: workspaceVisible,/)
+  assert.match(mounted, /try await Task\.sleep\(nanoseconds: 3_000_000_000\)/)
+  assert.match(mounted, /readinessTicket == ticket, !startupReady/)
+  assert.match(mounted, /XDriveIOSNativeLaunchCheckpoint\.mark\(\.ready\)/)
+  assert.match(mounted, /if !safeStartup \{\s*backup\.startLibraryChangeMonitoring\(login: model\)/)
+})
+
 test('BGTaskScheduler registers only once with validated bundled identifier', () => {
   const app = read('ios/XDriveIOS/XDriveIOSApp.swift')
   const task = read('ios/XDriveIOS/BackgroundPhotoTask.swift')

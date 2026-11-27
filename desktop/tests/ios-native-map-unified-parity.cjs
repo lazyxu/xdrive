@@ -21,7 +21,8 @@ test('100k local PhotoKit refinement reuses at most two exact checked camera win
   assert.match(spatial, /containsViewport\(/)
   assert.match(spatial, /!shouldRefine\(camera, scanned: cached\)/)
   assert.match(local, /@State private var recentVerifiedWindows: \[XDriveIOSNativeLocalMapCachedWindow\] = \[\]/)
-  assert.match(local, /if let cached = recentVerifiedWindows\.first\(where:/)
+  assert.match(local, /if !refinementFailureRequiresRefresh,\s*let cached = recentVerifiedWindows\.first\(where:/)
+  assert.match(local, /guard !refinementFailureRequiresRefresh else \{ return false \}/)
   assert.match(local, /XDriveIOSNativeLocalMapAutoRefinePolicy\.canReuse\(/)
   assert.match(local, /globalCells = cached\.cells/)
   assert.match(local, /globalViewport = cached\.viewport/)
@@ -100,12 +101,12 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(dashboard, /if next == \.dynamic && emptyDynamicMapFallback \{\s*openGallery\(\.map\)/)
   assert.match(simulator, /element\("native-ios-tab-launcher", in: app\)/)
   assert.match(simulator, /element\("native-ios-launcher-map", in: app\)/)
-  assert.match(simulator, /element\("native-ios-map-source-selector", in: app\)/)
+  assert.match(simulator, /element\("native-ios-local-map-actions", in: app\)/)
   assert.match(simulator, /MAP_ROUTE_DIAGNOSTIC/)
   assert.match(simulator, /app\.debugDescription/)
   assert.doesNotMatch(simulator, /app\.buttons\["打开地图"\]/)
   assert.match(dashboard, /private func closeGalleryMap\(\) \{[\s\S]*?guard gallerySource == \.map else \{ return \}/)
-  assert.match(local, /native-ios-map-verified-count/)
+  assert.match(local, /verifiedSummary: globalComplete && refinedViewportIsCurrent/)
   assert.match(local, /navigationBarTitleDisplayMode\(\.inline\)/)
   assert.match(local, /native-ios-map-retry-covers/)
   assert.match(local, /native-ios-map-selected-month/)
@@ -114,8 +115,11 @@ test('iOS native visual, accessibility, login-free dismiss and real simulator ro
   assert.match(local, /native-ios-map-place-dismiss/)
   assert.match(local, /\.presentationDetents\(\[\.medium, \.large\]\)/)
   assert.match(cloud, /badge\.isHidden = !enabled \|\| count <= 1/)
-  assert.match(cloud, /native-ios-owner-map-stale-count/)
-  assert.match(cloud, /fixedSize\(horizontal: false, vertical: true\)/)
+  // A camera/Owner refresh must not expose a stale *visible* counter.
+  // VoiceOver only receives the count after current viewport proof.
+  assert.match(cloud, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil/)
+  assert.doesNotMatch(cloud, /native-ios-owner-map-stale-count/)
+  assert.match(cloud, /if busy \{[\s\S]*?ProgressView\("正在加载照片位置…"/)
   assert.match(simulator, /func testMapCameraLayoutAndUnverifiedGestureNeverClosesTheApp\(/)
   assert.match(simulator, /func testAFirstTwoRealGPSPhotosOpenPlaceWallViewerAndReturnToSameMap\(/)
   assert.match(simulator, /map\.swipeLeft\(\)/)
@@ -189,8 +193,8 @@ test('Settings-return permission transition is live-revalidated and cold-start f
   assert.match(local, /for: UIApplication\.didBecomeActiveNotification/)
   assert.match(local, /let live = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
   assert.match(local, /IOS_MAP_PHOTO_AUTH_REENTRY cached=/)
-  assert.match(local, /guard phase == \.active, live != authorization else \{ return \}/)
-  assert.match(local, /authorization = live[\s\S]*?invalidate\(\)[\s\S]*?guard live == \.authorized else \{ return \}/)
+  assert.match(local, /guard phase == \.active else \{ return \}\s*if live == authorization \{\s*if live != \.authorized \{ recheckExplicitSettingsAuthorization\(\) \}\s*return\s*\}/)
+  assert.match(local, /authorization = live[\s\S]*?invalidate\(\)[\s\S]*?guard live == \.authorized else \{\s*recheckExplicitSettingsAuthorization\(\)\s*return\s*\}/)
   assert.match(local, /scanFullLibrary\(returningCamera: returningCamera\)/)
   assert.match(simulator, /MAP_PHOTOS_FULL_ACCESS_ROW_SELECTED/)
   assert.match(simulator, /MAP_PHOTOS_FULL_ACCESS_POST_TAP AX tree/)
@@ -199,12 +203,25 @@ test('Settings-return permission transition is live-revalidated and cold-start f
   assert.match(simulator, /MAP_PHOTOS_TARGET_AUTH_STAGE/)
   assert.match(local, /native-ios-map-photo-auth-readback/)
   assert.match(runtimeWorkflow, /candidate-mapkit\)/)
-  assert.match(simulator, /Full Access must mount real MapKit immediately after Settings return, without restart/)
+  // iOS may terminate the target on a Photos TCC change; only that
+  // observed OS-stop may reopen the real map route. A live app cannot
+  // satisfy Settings-return by a test-driven cold restart.
+  assert.match(simulator, /if app\.state != \.notRunning \{\s*app\.activate\(\)/)
+  assert.match(simulator, /The still-running app must resume immediately from Settings/)
+  assert.match(simulator, /MAP_PHOTOS_TCC_TERMINATED_APP/)
+  assert.match(simulator, /MAP_PHOTOS_FULL_ACCESS_REENTRY os_relaunch=/)
+  assert.match(simulator, /No restart may be accepted as a substitute/)
+  assert.match(simulator, /A still-running app must mount real MapKit immediately on Settings return/)
   const permissionTap = simulator.indexOf('full.tap()')
   const proof = simulator.indexOf('MAP_PHOTOS_FULL_ACCESS_POST_TAP')
-  const resume = simulator.indexOf('app.activate()')
-  const coldStart = simulator.indexOf('MAP_PHOTOS_COLD_START_PROBE')
-  assert.ok(permissionTap >= 0 && permissionTap < proof && proof < resume && resume < coldStart)
+  const resume = simulator.indexOf('var systemRelaunched = resumeMapAfterSystemPhotosChange(', proof)
+  const coldStart = simulator.indexOf('MAP_PHOTOS_COLD_START_PROBE', resume)
+  const mapRestored = simulator.indexOf('if mapRestored {', coldStart)
+  const liveReadback = simulator.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings-verified-map")', mapRestored)
+  assert.ok(permissionTap >= 0 && permissionTap < proof && proof < resume &&
+            resume < coldStart && coldStart < mapRestored && mapRestored < liveReadback)
+  assert.ok(simulator.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings")', resume) < 0,
+    'A TCC-stopped target must be checked only after a genuine reopened MapKit is verified')
 })
 
 test('real iOS first-use Photo Library system prompt cannot be default-denied by XCTest', () => {
@@ -223,10 +240,15 @@ test('real iOS first-use Photo Library system prompt cannot be default-denied by
   assert.match(simulator, /"Real initial Photos prompt must permit explicit Full Access"/)
   assert.match(simulator, /acceptPhotoLibraryFullAccess\(in: alert, stage: "interruption"\)/)
   const monitor = simulator.indexOf('addUIInterruptionMonitor(')
-  const openLocalMap = simulator.indexOf('private func openLocalMap()')
+  // Real launcher now has a no-argument wrapper, exactly one performance
+  // overload and a single appearance/performance core function. The prompt
+  // admission must precede that actual app.launch() and launcher interaction.
+  assert.match(simulator, /private func openLocalMap\(\) -> XCUIApplication \{\s*openLocalMap\(appearance: nil\)/)
+  assert.equal((simulator.match(/private func openLocalMap\(performance: Bool, stage: String = "scan"\)/g) || []).length, 1)
+  const openLocalMap = simulator.search(/private func openLocalMap\(\s*appearance: String\?, performance: Bool = false, stage: String = "scan"\s*\) -> XCUIApplication/)
   const launch = simulator.indexOf('app.launch()', openLocalMap)
   const proactive = simulator.indexOf('handleInitialPhotoLibraryPromptIfPresent()', launch)
-  const launcher = simulator.indexOf('let launcher = element("native-ios-tab-launcher", in: app)', launch)
+  const launcher = simulator.indexOf('openNativeLauncher(in: app)', launch)
   assert.ok(monitor >= 0 && monitor < openLocalMap && openLocalMap < launch &&
     proactive > launch && proactive < launcher,
     'Full Access handler must run before native launcher can trigger default denial')
@@ -263,7 +285,9 @@ test('candidate MapKit uses a newly created Simulator Photos library and checks 
   // The real global PhotoKit GPS count can include stock OS images.
   // Preserve numeric >=2 admission AND the exact fixture Cell membership;
   // never replace the two-fixture assertion with a global count >=2 alone.
-  assert.match(simulator, /verified\.label\.split\(separator: " "\)\.first/)
+  assert.match(simulator, /verifiedLocalMapSummary\(in: app, timeout: 90\)/)
+  assert.match(simulator, /let countText = \(verified \?\? ""\)\.split\(separator: " "\)\.first/)
+  assert.match(simulator, /XCTAssertNotNil\(count, "Real PhotoKit GPS count must be numeric"\)/)
   assert.match(simulator, /XCTAssertGreaterThanOrEqual\(count \?\? 0, 2,/)
   assert.match(simulator, /format: "label CONTAINS %@", "已扫描图库区域有2张带定位照片"/)
   assert.match(simulator, /XCTAssertTrue\(marker\.waitForExistence\(timeout: 30\)/)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import {
   XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
@@ -62,4 +62,53 @@ export function useXDriveMediaGalleryTimelineJump<
     dayInput, setDayInput, dayFeedback, setDayFeedback,
     clearDay, reset,
   }
+}
+
+/** UI-only viewport identity shared by Gallery and the trusted Places Drawer.
+ * Never carries a Node, Owner, URL, media bytes, or a read permission.
+ */
+export type XDriveMediaGalleryViewportAnchor = Readonly<{
+  index: number
+  viewportOffset: number
+}>
+
+export function xDriveMediaGallerySafeViewportAnchor(
+  index: number, viewportOffset: number,
+): XDriveMediaGalleryViewportAnchor | null {
+  if (!Number.isSafeInteger(index) || index < 0 ||
+      !Number.isFinite(viewportOffset)) return null
+  return {index, viewportOffset: Math.max(-10_000,
+    Math.min(10_000, Math.round(viewportOffset)))}
+}
+
+export function useXDriveMediaGalleryViewportAnchor() {
+  const anchor = useRef<XDriveMediaGalleryViewportAnchor | null>(null)
+  const record = useCallback((index: number, viewportOffset: number) => {
+    const candidate = xDriveMediaGallerySafeViewportAnchor(index, viewportOffset)
+    if (candidate) anchor.current = candidate
+    return candidate
+  }, [])
+  const clear = useCallback(() => { anchor.current = null }, [])
+  return {anchor, record, clear} as const
+}
+
+/** The only automatic-scroll preload condition for a bounded photo sheet.
+ * The caller owns the verified Owner Cell, signed range, aborts and retries.
+ * Explicit manual retry and sparse direct-range seeking bypass this gate.
+ */
+export function xDriveMediaGalleryShouldLoadVisibleTail({
+  phase, expanded, loading, failed, loaded, total, remaining,
+}: {
+  phase: 'loading' | 'ready' | 'error'
+  expanded: boolean
+  loading: boolean
+  failed: boolean
+  loaded: number
+  total: number
+  remaining: number
+}): boolean {
+  return phase === 'ready' && expanded && !loading && !failed &&
+    Number.isSafeInteger(loaded) && loaded >= 0 &&
+    Number.isSafeInteger(total) && total >= 0 &&
+    loaded < total && Number.isFinite(remaining) && remaining < 180
 }

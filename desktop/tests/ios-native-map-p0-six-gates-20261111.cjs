@@ -1,0 +1,261 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = f => fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf8')
+const local = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
+const cloud = read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
+const spatial = read('ios/XDriveIOS/NativeLocalPhotoMapSpatialPolicy.swift')
+const ui = read('ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift')
+const workflow = read('.github/workflows/ios-native-navigation-runtime.yml')
+const scale = read('.github/workflows/ios-mapkit-p0-real-gps-scale.yml')
+const script = read('ios/scripts/generate-mapkit-p0-gps-fixtures.py')
+
+test('P0-1 failed PhotoKit refinement retains inert old MapKit annotation and revokes Full Access loss', () => {
+  assert.match(local, /@State private var refinementFailureRequiresRefresh = false/)
+  assert.match(local, /if live != \.authorized \{[\s\S]*?authorization = live[\s\S]*?invalidate\(\)/)
+  assert.match(local, /if keepOldMap \{[\s\S]*?globalCameraMoving = true\s*refinementFailureRequiresRefresh = true/)
+  assert.match(local, /guard !refinementFailureRequiresRefresh else \{ return false \}/)
+  assert.match(local, /if !refinementFailureRequiresRefresh,\s*let cached = recentVerifiedWindows\.first/)
+  assert.match(local, /cover\.isAccessibilityElement = canSelectCells/)
+  assert.match(local, /cover\.accessibilityElementsHidden = !canSelectCells/)
+})
+
+test('P0-2 world-view or zoomed region disables stale aggregate before first camera callback', () => {
+  assert.match(local, /cameraBoundCells: mapScope == \.library/)
+  const coordinator = local.slice(local.indexOf('final class Coordinator: NSObject, MKMapViewDelegate'))
+  assert.match(coordinator, /func mapView\(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool\)/)
+  assert.match(coordinator, /if cameraBoundCells \{[\s\S]*?canSelectCells = false[\s\S]*?cover\.accessibilityElementsHidden = true/)
+  assert.match(local, /onCameraWillChange: \{[\s\S]*?globalCameraMoving = true/)
+  assert.match(local, /guard !XDriveIOSNativeLocalMapAutoRefinePolicy\.shouldRefine\(\s*visible, scanned: globalViewport/)
+  assert.match(spatial, /static let settleNanoseconds: UInt64 = 900_000_000/)
+})
+
+test('P0-3 real PhotoKit independent GPS inventory and exact import delta do not pretend synthetic 100k is real', () => {
+  assert.match(local, /private func runP0IndependentGPSAudit\(\)/)
+  assert.match(local, /PHAsset\.fetchAssets\(with: PHFetchOptions\(\)\)/)
+  assert.match(local, /let audit = Task\.detached\(priority: \.userInitiated\)[\s\S]*?PHAsset\.fetchAssets\(with: PHFetchOptions\(\)\)[\s\S]*?let asset = assets\.object\(at: index\)[\s\S]*?asset\.location\?\.coordinate[\s\S]*?located \+= 1/)
+  assert.match(local, /if Task\.isCancelled \{ return nil \}/)
+  assert.match(local, /guard generation == ticket else \{ return \}/)
+  assert.match(local, /guard let independentlyLocated = observed, phase == \.active,[\s\S]*?authorizationStatus\(for: \.readWrite\) == \.authorized/)
+  assert.match(local, /independentlyLocated == expected \? "一致" : "不一致"/)
+  assert.match(local, /native-ios-map-p0-independent-count/)
+  assert.match(ui, /func testP0RealPhotoKitIndependentGPSCountMatchesCurrentMap\(\)/)
+  assert.match(ui, /XCTAssertEqual\(real, indexed,/)
+  assert.match(script, /choices=\(1, 10, 65, 1000, 10000, 100000\)/)
+  assert.match(script, /exif_gps_segment\(latitude, longitude\)/)
+  assert.match(script, /b"xDrive-map-P0:"/)
+  assert.match(scale, /MAP_P0_GENUINE_PHOTOKIT_DELTA/)
+  assert.match(scale, /if after-before!=wanted: raise SystemExit/)
+  assert.match(scale, /workflow_dispatch:/)
+  assert.match(scale, /'100000'/)
+})
+
+test('P0-4 every published Owner map is bound to the exact verified Owner, and HTTP 401/403 clears authority', () => {
+  assert.match(cloud, /@State private var verifiedOverviewOwner: XDriveNativeOwnerRoot\?/)
+  assert.match(cloud, /XDriveIOSNativePhotoOwnerScope\.matches\(\s*login\.owner, verifiedOverviewOwner\)/)
+  const picked = cloud.slice(cloud.indexOf('onPlace: { item in'), cloud.indexOf('onAggregate: {'))
+  assert.equal((picked.match(/XDriveIOSNativePhotoOwnerScope\.matches\(\s*expected, verifiedOverviewOwner\)/g) || []).length, 2)
+  assert.match(cloud, /verifiedOverviewOwner = expected\s*displayedOverviewOwner = expected\s*verifiedBounds = bounds/)
+  assert.match(cloud, /private var displayedOverviewMatchesLogin: Bool \{[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(/)
+  assert.match(cloud, /overview:\s*displayedOverviewMatchesLogin \? overview : nil/)
+  // UIKit must clear old Owner coordinates even when a SwiftUI Owner switch
+  // reaches updateUIView before the onChange closure increments revision.
+  const ownerUIView = cloud.slice(cloud.indexOf('func updateUIView(_ map: MKMapView, context: Context)'),
+    cloud.indexOf('static func dismantleUIView(_ map: MKMapView'))
+  assert.ok(ownerUIView.indexOf('if overview == nil {') > -1)
+  assert.ok(ownerUIView.indexOf('map.removeAnnotations(map.annotations.filter') >
+    ownerUIView.indexOf('if overview == nil {'))
+  assert.ok(ownerUIView.indexOf('if overview == nil {') <
+    ownerUIView.indexOf('guard context.coordinator.revision != revision'))
+  assert.match(ownerUIView, /context\.coordinator\.revision = nil\s*return/)
+  assert.match(cloud, /coverImages:\s*displayedOverviewMatchesLogin \? coverImages : \[:\]/)
+  // The owner-gated MapKit surface and grid VoiceOver value must never use an unverified Owner's data.
+  assert.match(cloud, /overview:\s*displayedOverviewMatchesLogin \? overview : nil/)
+  assert.match(cloud, /verifiedSummary: mapMarkersEnabled && verifiedBounds != nil &&\s*displayedOverviewMatchesLogin\s*\? overview\.map \{/)
+  assert.doesNotMatch(cloud, /native-ios-owner-map-stale-count/)
+  assert.match(cloud, /displayedOverviewOwner = nil/)
+  assert.match(cloud, /verifiedOverviewOwner = nil[\s\S]*?verifiedBounds = nil/)
+  assert.match(cloud, /if case \.response\(let status\) = failure, status == 401 \|\| status == 403/)
+  assert.match(cloud, /case \.revoked:[\s\S]*?group\.cancelAll\(\)[\s\S]*?invalidate\(\)/)
+  assert.match(cloud, /guard epoch == ticket[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)
+})
+
+test('P0-5 real Full, externally revoked Denied and system Limited remain distinct; no synthetic authorization', () => {
+  assert.match(local, /authorization == \.limited \{/)
+  assert.match(local, /authorization == \.denied \|\| authorization == \.restricted/)
+  assert.match(local, /guard live == \.authorized else \{\s*recheckExplicitSettingsAuthorization\(\)\s*return\s*\}/)
+  assert.match(ui, /func testZP0ExternallyRevokedPhotosRejectOldMapAndRecover\(\)/)
+  assert.match(ui, /Limited Photos must be selectable on real Settings/)
+  assert.match(ui, /readback\.label\.contains\("rw=4"\)/)
+  assert.match(ui, /authorizeFullPhotosInSettings\(app\)/)
+  assert.match(workflow, /simctl privacy "\$SMOKE_SIM" revoke photos com\.lazyxu\.xdrive\.ios/)
+  assert.match(workflow, /-skip-testing:xDriveIOSNavigationUITests\/XDriveIOSMapNavigationRuntimeUITests\/testZP0ExternallyRevokedPhotosRejectOldMapAndRecover/)
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSMapNavigationRuntimeUITests\/testZP0ExternallyRevokedPhotosRejectOldMapAndRecover/)
+  assert.doesNotMatch(ui, /PHAuthorizationStatus\(rawValue:|fakeAuthorized|bypassFullAccess/)
+})
+
+test('P0-6 real MapKit → place photo wall → Viewer → map ×3 keeps screenshots, return and crash gate', () => {
+  assert.match(ui, /func testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted\(\)/)
+  assert.match(ui, /for pass in 0\.\.<3/)
+  assert.match(ui, /native-ios-map-photo-wall-tile/)
+  assert.match(ui, /native-ios-local-viewer-back/)
+  assert.match(ui, /native-ios-map-place-dismiss/)
+  assert.match(ui, /p0-map-after-viewer-return-/)
+  assert.match(ui, /map\.pinch\(withScale: 2\.5/)
+  assert.match(ui, /XCTAssertEqual\(app\.state, \.runningForeground\)/)
+  assert.match(workflow, /Reject candidate xDriveIOS process crash reports/)
+  assert.match(workflow, /candidate-mapkit/)
+})
+
+test('P0 real Settings return may re-request Full Photos only after an explicit tap and never trusts stale TCC state', () => {
+  assert.match(local, /@State private var explicitSettingsAuthorizationRecheck = false/)
+  assert.match(local, /private func openPhotoSettings\(\)[\s\S]*?explicitSettingsAuthorizationRecheck = true[\s\S]*?UIApplication\.shared\.open\(url\)/)
+  assert.match(local, /private func recheckExplicitSettingsAuthorization\(\)/)
+  assert.match(local, /guard explicitSettingsAuthorizationRecheck, phase == \.active else \{ return \}/)
+  assert.match(local, /guard status == \.denied \|\| status == \.notDetermined else \{ return \}/)
+  assert.match(local, /await PHPhotoLibrary\.requestAuthorization\(for: \.readWrite\)/)
+  assert.match(local, /guard phase == \.active, generation == ticket else \{ return \}/)
+  assert.match(local, /guard live == \.authorized else \{[\s\S]*?invalidate\(\)[\s\S]*?return/)
+  assert.match(local, /recheckExplicitSettingsAuthorization\(\)\s*return/)
+  // iOS can terminate the app during a real Settings/TCC permission change.
+  // A new Full-only prompt must be handled before the target app readback;
+  // only a genuinely OS-stopped process is allowed to relaunch its map route.
+  const selection = ui.indexOf('var systemRelaunched = resumeMapAfterSystemPhotosChange(')
+  const prompt = ui.indexOf('handleInitialPhotoLibraryPromptIfPresent()', selection)
+  const systemStop = ui.indexOf('if app.state == .notRunning {', prompt)
+  const secondResume = ui.indexOf('resumeMapAfterSystemPhotosChange(', systemStop)
+  // The OS may kill the target between Settings consent and the first AX
+  // lookup; a stale-PID readback before the map poll is unsafe. Keep the real
+  // permission readback strictly AFTER verified MapKit remount.
+  const deadline = ui.indexOf('let reentryDeadline = Date().addingTimeInterval(35)', secondResume)
+  const poll = ui.indexOf('while Date() < reentryDeadline {', deadline)
+  const lateStop = ui.indexOf('if app.state == .notRunning {', poll)
+  const lateResume = ui.indexOf('resumeMapAfterSystemPhotosChange(', lateStop)
+  const mapGate = ui.indexOf('element("native-ios-full-library-gps-map", in: app).exists', lateResume)
+  const admitted = ui.indexOf('mapRestored = true', mapGate)
+  const rejection = ui.indexOf('if !mapRestored {', admitted)
+  const failClosed = ui.indexOf('XCTFail(systemRelaunched', rejection)
+  const verifiedReadback = ui.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings-verified-map")', failClosed)
+  const diagnosticScope = ui.indexOf('if mapRestored {', failClosed)
+  assert.ok(selection >= 0 && selection < prompt && prompt < systemStop &&
+            systemStop < secondResume && secondResume < deadline &&
+            deadline < poll && poll < lateStop && lateStop < lateResume &&
+            lateResume < mapGate && mapGate < admitted && admitted < rejection &&
+            rejection < failClosed && failClosed < diagnosticScope &&
+            diagnosticScope < verifiedReadback)
+  assert.ok(ui.indexOf('recordActualPhotoKitReadback(app, stage: "after-settings")', secondResume) < 0,
+    'Do not query a possibly OS-terminated Photos target before real MapKit returns')
+  assert.match(ui, /if app\.state != \.notRunning \{\s*app\.activate\(\)/)
+  assert.match(ui, /The still-running app must resume immediately from Settings/)
+  assert.match(ui, /A still-running app must mount real MapKit immediately on Settings return/)
+  assert.match(ui, /No restart may be accepted as a substitute/)
+  assert.doesNotMatch(ui, /fakeAuthorized|skipFullAccess|forceGrantPhotoKit/)
+})
+
+
+test('system Photos TCC termination preserves real app recovery and crash evidence', () => {
+  const diagnoseStart = ui.indexOf('private func diagnose(')
+  const resumeStart = ui.indexOf('private func resumeMapAfterSystemPhotosChange(')
+  const settingsStart = ui.indexOf('private func authorizeFullPhotosInSettings(')
+  const mapStart = ui.search(/private func openLocalMap\(\) -> XCUIApplication \{\s*openLocalMap\(appearance: nil\)/)
+  assert.ok(diagnoseStart >= 0 && resumeStart > diagnoseStart &&
+            settingsStart > resumeStart && mapStart > settingsStart)
+  const diagnostic = ui.slice(diagnoseStart, ui.indexOf('private func xDriveSettingsDetailVisible(', diagnoseStart))
+  const resume = ui.slice(resumeStart, settingsStart)
+  const settings = ui.slice(settingsStart, mapStart)
+  // When TCC has terminated the app, XCTest screenshot() raises a second,
+  // misleading error. Preserve original failure and external crash reports.
+  assert.match(diagnostic, /if app\.state == \.runningForeground \{[\s\S]*?app\.screenshot\(\)/)
+  assert.match(diagnostic, /MAP_ROUTE_DIAGNOSTIC_TARGET_NOT_FOREGROUND/)
+  // An OS-terminated target is not the same as a live Settings return.
+  assert.match(resume, /if app\.state != \.notRunning \{[\s\S]*?app\.activate\(\)[\s\S]*?return false/)
+  assert.match(resume, /app\.launch\(\)[\s\S]*?native-ios-launcher-map[\s\S]*?native-ios-local-map-actions/)
+  assert.match(resume, /handleInitialPhotoLibraryPromptIfPresent\(\)/)
+  // Only actual Full Access may display MapKit. A live-app refresh failure
+  // remains a failing XCTest, not a silently accepted test-driven restart.
+  assert.match(settings, /var systemRelaunched = resumeMapAfterSystemPhotosChange\(/)
+  assert.match(settings, /if app\.state == \.notRunning \{[\s\S]*?resumeMapAfterSystemPhotosChange\(/)
+  assert.match(settings, /MAP_PHOTOS_FULL_ACCESS_REENTRY os_relaunch=/)
+  assert.match(settings, /XCTFail\(systemRelaunched/)
+  assert.match(settings, /native-ios-full-library-gps-map/)
+  assert.doesNotMatch(resume + settings, /fakePhotoKit|fakeAuthorized|skipFullAccess|forceGrantPhotoKit/)
+})
+
+test('real 100k MapKit XCTest has bound MapView and exact numeric target PhotoKit evidence', () => {
+  const zoomStart = ui.indexOf('func testP1Real100KPhotoKitMapZoomPerformance()')
+  assert.ok(zoomStart >= 0, 'real 100k zoom test must be registered')
+  const zoom = ui.slice(zoomStart)
+  const bind = zoom.indexOf('let map = element("native-ios-full-library-gps-map", in: app)')
+  const gesture = zoom.indexOf('map.pinch(withScale:')
+  assert.ok(bind >= 0 && gesture > bind,
+    'Real map view must be defined before the independent zoom method uses it')
+  assert.match(zoom, /performanceReadbackCount\("total", in: inventory\)/)
+  assert.match(zoom, /performanceReadbackCount\(key, in: inventory\)/)
+  assert.match(ui, /XCTAssertNotNil\(total,[\s\S]*?Missing actual numeric total=/)
+  assert.doesNotMatch(zoom, /fakePhotoKit|forceGrantPhotoKit|bypassAuthorization/)
+  assert.match(local, /\.accessibilityLabel\("total=/)
+  assert.match(local, /native-ios-map-perf-inventory/)
+})
+
+
+test('native map CI supersedes only obsolete PR Simulator/65-photo audits; never cancels real 100k evidence', () => {
+  assert.match(workflow, /group: native-ios-runtime-\$\{\{ github\.event\.pull_request\.number \|\| github\.run_id \}\}/)
+  assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/)
+  assert.ok(workflow.includes("runs-on: ${{ matrix.source == 'candidate-ios26-files' && 'macos-26' || 'macos-15' }}"))
+  // Explicit 100k PR labels and manually dispatched heavyweight runs retain
+  // their independent, uncancelled evidence, even as ordinary PR SHAs move.
+  assert.match(scale, /group: \$\{\{ \(\(github\.event_name == 'pull_request'[\s\S]*?ios-mapkit-p0-scale-\{0\}-small/)
+  assert.match(scale, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' && github\.event\.action != 'labeled' \}\}/)
+  assert.match(scale, /github\.event\.label\.name == 'real-photokit-100k-once'/)
+  assert.match(scale, /workflow_dispatch:/)
+  assert.match(scale, /options: \['1', '10', '65', '1000', '10000', '100000'\]/)
+  assert.match(scale, /MAP_P0_GENUINE_PHOTOKIT_DELTA/)
+})
+
+
+test('MapKit XCTest has one ordinary launcher and exactly one performance/stage overload', () => {
+  // Xcode builds the entire navigation UITest target even for one GPS test.
+  // Duplicate overloads block all six Simulator shards and genuine GPS audits.
+  assert.match(ui, /private func openLocalMap\(\) -> XCUIApplication \{\s*openLocalMap\(appearance: nil\)/)
+  assert.equal((ui.match(/private func openLocalMap\(performance: Bool, stage: String = "scan"\)/g) || []).length, 1)
+  assert.doesNotMatch(ui, /private func openLocalMap\(\s*performance: Bool = false/)
+  assert.match(ui, /appearance: String\?, performance: Bool = false, stage: String = "scan"/)
+  assert.match(ui, /if performance \{[\s\S]*?"-xdrive-map-100k-perf"/)
+  assert.match(ui, /if let appearance \{\s*app\.launchArguments \+= \["-uiuserinterfacestyle", appearance\]/)
+})
+
+
+test('P0 real MapKit audit CTA is top-visible and native transition-video regression suite actually exists', () => {
+  const video = read('ios/scripts/files_ui_transition_video.py')
+  const videoTests = read('ios/scripts/test_files_ui_transition_video.py')
+  // The previous MapKit overlay produced an AX control with an INVALID
+  // activation point even when the button existed. A fixed-size sibling is
+  // mounted before the flexible map and retains the 44pt real hit requirement.
+  const libraryStart = local.indexOf('} else if mapScope == .library {')
+  const mapStart = local.indexOf('XDriveIOSMapKitPhotoPage(', libraryStart)
+  const trigger = local.indexOf('native-ios-map-p0-audit-trigger', libraryStart)
+  assert.ok(libraryStart >= 0 && trigger > libraryStart && mapStart > trigger,
+    'real debug-only audit control must be a sibling BEFORE flexible MapKit')
+  const audit = local.slice(libraryStart, mapStart)
+  assert.match(audit, /#if DEBUG[\s\S]*?globalComplete && !busy/)
+  assert.match(audit, /\.frame\(minWidth: 190, minHeight: 44\)/)
+  assert.match(audit, /\.layoutPriority\(10\)/)
+  assert.match(audit, /\.disabled\(p0IndependentGPSAuditRunning\)[\s\S]*?native-ios-map-p0-audit-trigger/)
+  assert.doesNotMatch(local.slice(mapStart, mapStart + 6500),
+    /\.overlay\(alignment: \.topTrailing\) \{\s*#if DEBUG[\s\S]*?native-ios-map-p0-audit-trigger/)
+  assert.match(ui, /Native MapKit audit button must have a genuine visible hit target/)
+  assert.match(ui, /trigger\.isHittable && touchFrame\.width >= 44/)
+  assert.match(video, /def watch\(/)
+  assert.match(video, /def audit\(/)
+  assert.match(videoTests, /class FilesUITransitionVideoTests\(unittest\.TestCase\):/)
+  assert.match(videoTests, /from files_ui_transition_video import \(/)
+  // A missing Python test file produced "NO TESTS RAN" and stopped all
+  // six native Simulator shards before the real xcodebuild execution.
+  for (const name of [
+    'testRapidGalleryFilesTabOscillationPreservesBothShells',
+    'testGalleryFilesAlternationRetainsNonBlankSettledFrames',
+    'testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail'
+  ]) assert.ok(video.includes('"' + name + '"'), name)
+})

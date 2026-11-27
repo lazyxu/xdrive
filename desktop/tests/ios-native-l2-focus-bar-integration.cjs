@@ -11,17 +11,21 @@ const policy = source('ios/XDriveIOS/NativeFocusVisibilityPolicy.swift');
 
 test('only one native L1 bar: scoped Gallery L2 hides the custom bar, not a system tab strip', () => {
   assert.match(shell, /\.toolbar\(\.hidden, for: \.tabBar\)/);
-  assert.match(shell, /return VStack\(spacing: 0\) \{/);
+  assert.match(shell, /var body: some View \{\s*VStack\(spacing: 0\) \{/);
   assert.match(shell, /TabView\(selection: \$tab\)/);
   assert.match(shell, /\.toolbar\(\.hidden, for: \.tabBar\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)\s*if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
   assert.doesNotMatch(shell, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/);
   assert.match(shell, /if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
   assert.match(shell, /gallerySource: gallerySource\.rawValue/);
-  assert.match(shell, /focused: galleryFocused/);
+  assert.match(shell, /focused: galleryPresentationFocused/);
   assert.match(shell, /ownerVerified: login\.owner != nil/);
   assert.match(policy, /tab == "gallery"/);
   assert.match(policy, /gallerySource == "cloud"/);
+  assert.match(policy, /if tab == "gallery" && gallerySource == "map" \{ return true \}/);
+  assert.match(shell, /if tab == \.gallery \{\s*nativePhotosBottomBar\s*\} else \{\s*nativeBottomBar/);
   assert.match(policy, /ownerVerified/);
+  assert.match(shell, /gallerySource == \.map \? !mapNavigationExplicitlyShown : galleryFocused/);
+  assert.match(shell, /mapNavigationExplicitlyShown = !focused/);
   assert.doesNotMatch(wall, /\.toolbar\(focusedBrowsing \? \.hidden : \.visible, for: \.tabBar\)/);
 });
 
@@ -34,8 +38,10 @@ test('cloud and album Viewer return uses source-local L2 and explicit restore ac
   assert.match(wall, /if selected != nil \{\s*model\.suspendForViewer\(\)/);
   assert.match(wall, /focusedBrowsing = false\s*onFocusChange\?\(false\)\s*accessibilityFocusedMediaID = nil\s*model\.suspendForNavigation\(\)/);
   assert.match(shell, /private func resetNavigation\(\) \{\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
-  assert.match(shell, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
-  assert.match(shell, /\.onChange\(of: tab\) \{ next in\s*galleryFocusGeneration = UUID\(\)\s*if next != \.gallery \{ galleryFocused = false \}/);
+  assert.match(shell, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)[\s\S]*?galleryFocused = gallerySource == \.map/);
+  // Leaving Photos cancels pending post-dismissal destinations before it
+  // revokes L2 focus; a stale map callback must not reopen a Gallery route.
+  assert.match(shell, /\.onChange\(of: tab\) \{ next in\s*galleryFocusGeneration = UUID\(\)\s*if next != \.gallery \{\s*pendingUnifiedMapDestination = nil\s*pendingUnifiedMapSearch = false\s*pendingUnifiedMapOwnerScope = nil\s*galleryFocused = false\s*mapNavigationExplicitlyShown = false\s*\}/);
 });
 
 test('rotation changes only presentation, not source identity, L2, or L3 Viewer', () => {
@@ -50,7 +56,7 @@ test('rotation changes only presentation, not source identity, L2, or L3 Viewer'
   const end = shell.indexOf('private func closeGalleryMap(', start)
   assert.ok(start >= 0 && end > start)
   const route = shell.slice(start, end)
-  assert.match(route, /galleryFocusGeneration = UUID\(\)\s*galleryFocused = false\s*if source == \.map \|\| source == \.local \{ localMapJump = nil \}\s*gallerySource = source\s*tab = \.gallery/)
+  assert.match(route, /galleryFocusGeneration = UUID\(\)[\s\S]*?galleryFocused = source == \.map\s*mapNavigationExplicitlyShown = false\s*if source == \.map \|\| source == \.local \{ localMapJump = nil \}\s*gallerySource = source\s*tab = \.gallery/)
   assert.match(route, /if source == \.map \{[\s\S]*?mapReturnGallerySource/)
   assert.match(route, /mapReturnOwnerScopeKey = mapReturnGallerySource != nil/);
   assert.match(shell, /case \.files:\s*tab = \.files/);

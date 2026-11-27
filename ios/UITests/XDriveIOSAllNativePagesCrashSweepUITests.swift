@@ -74,6 +74,22 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
 
     private func tap(_ id: String, _ app: XCUIApplication) {
         if id == "native-ios-tab-files" { denyFirstRunPhotoLibraryPromptIfPresent(app) }
+        // The candidate Photos Library deliberately hides the old five-slot
+        // tabs. Reuse the visible Photos/More navigation rather than requiring
+        // a hidden legacy AX destination. Keep every child assertion intact.
+        if id.hasPrefix("native-ios-tab-") {
+            print("IOS_NATIVE_NAV_TAP_START route=" + id)
+            var reached = XDriveIOSNativePhotosTestNavigator.tap(id, in: app)
+            if !reached && id == "native-ios-tab-files" {
+                denyFirstRunPhotoLibraryPromptIfPresent(app)
+                reached = XDriveIOSNativePhotosTestNavigator.tap(id, in: app)
+            }
+            if !reached { capture(app, "missing-action-" + id) }
+            XCTAssertTrue(reached, "Visible native tab route missing: " + id)
+            if id == "native-ios-tab-files" { denyFirstRunPhotoLibraryPromptIfPresent(app) }
+            XCTAssertEqual(app.state, .runningForeground, "Native process exited after " + id)
+            return
+        }
         let target = element(id, app)
         if !target.waitForExistence(timeout: 15) { capture(app, "missing-action-" + id) }
         XCTAssertTrue(target.exists, "Native action missing: " + id)
@@ -482,40 +498,31 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
     }
 
 
-    /// Open the actual Gallery backup menu. Never start a backup or invent
-    /// an authenticated Owner in the synthetic-Owner test environment.
+    /// Open the actual Gallery options List, never retired backup toolbar buttons.
+    /// Never start an upload or invent an authenticated Owner in smoke tests.
     private func openGalleryBackup(_ child: String, _ app: XCUIApplication) {
         tap("native-ios-tab-gallery", app)
-        // Live Simulator screenshots show the Gallery backup Menu visible,
-        // but SwiftUI can expose its identifier on an AX wrapper which is
-        // not hittable. Require a *real* hittable Button or Menu label.
-        // SwiftUI Menu may present its actual tappable label below a
-        // non-hittable accessibility wrapper. Inspect every real matching
-        // element rather than firstMatch on a hidden outer wrapper.
+        let options = app.buttons.matching(
+            identifier: "native-ios-gallery-more-menu").firstMatch
+        XCTAssertTrue(options.waitForExistence(timeout: 15) && options.isHittable,
+                      "Real Gallery options button is not accessible")
+        options.tap()
+        XCTAssertTrue(app.navigationBars["图库选项"].firstMatch
+            .waitForExistence(timeout: 15), "Gallery options sheet did not open")
         func actualBackupControls() -> [XCUIElement] {
             var controls: [XCUIElement] = []
-            for identifier in [
-                "native-ios-gallery-backup-action",
-                "native-ios-gallery-backup-settings",
-                "native-ios-gallery-backup-action-compact",
-                "native-ios-gallery-backup-settings-compact"
-            ] {
-                controls += app.descendants(matching: .any)
-                    .matching(identifier: identifier).allElementsBoundByIndex
-            }
             controls += app.buttons.matching(
-                NSPredicate(format: "label == %@", "备份")
-            ).allElementsBoundByIndex
-            controls += app.buttons.matching(
-                NSPredicate(format: "label == %@", "备份设置")
+                NSPredicate(format: "label == %@", child)
             ).allElementsBoundByIndex
             return controls
         }
         var target: XCUIElement?
+        let list = app.collectionViews.firstMatch
         for _ in 0..<12 {
             target = actualBackupControls().first(where: { $0.exists && $0.isHittable })
             if target != nil { break }
-            Thread.sleep(forTimeInterval: 0.25)
+            guard list.exists else { break }
+            list.swipeUp()
         }
         guard let backup = target else {
             capture(app, "gallery-backup-menu-not-hittable")
@@ -524,10 +531,9 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
             XCTFail("No real Gallery backup Menu became hittable")
             return
         }
-        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-backup-settings")
+        print("IOS_NATIVE_NAV_TAP_START route=gallery-options-backup-\(child)")
         backup.tap()
         XCTAssertEqual(app.state, .runningForeground)
-        tapNamed(child, app)
     }
 
     /// Real unmodified sign-in screen, not the smoke Dashboard with a

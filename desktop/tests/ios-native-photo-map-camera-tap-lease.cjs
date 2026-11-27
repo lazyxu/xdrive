@@ -7,7 +7,7 @@ const map = fs.readFileSync(path.resolve(__dirname,'../../ios/XDriveIOS/NativeLo
 const cloud = fs.readFileSync(path.resolve(__dirname,'../../ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'),'utf8')
 test('viewport-filtered PhotoKit GPS cells lose MapKit and VoiceOver activation before SwiftUI repaint', () => {
   assert.match(map, /var cameraBoundCells = false/)
-  assert.match(map, /cameraBoundCells: globalViewport != nil/)
+  assert.match(map, /cameraBoundCells: mapScope == \.library/)
   assert.match(map, /context\.coordinator\.cameraBoundCells = cameraBoundCells/)
   const coordinator = map.slice(map.indexOf('final class Coordinator: NSObject, MKMapViewDelegate'))
   const onWill = coordinator.slice(coordinator.indexOf('func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool)'), coordinator.indexOf('func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool)'))
@@ -22,6 +22,11 @@ test('viewport-filtered PhotoKit GPS cells lose MapKit and VoiceOver activation 
   assert.ok(onWill.indexOf('canSelectCells = false') < onWill.indexOf('onCameraWillChange?()'))
   assert.match(onWill, /onCameraWillChange\?\(\)/)
   assert.match(coordinator, /guard canSelectCells else \{ return \}/)
+  // Even the initial worldwide overview loses its tap/VoiceOver lease at
+  // gesture start, not only a viewport-refined 64-Cell collection.
+  assert.match(map, /cameraBoundCells: mapScope == \.library/)
+  assert.match(map, /globalCameraMoving = true/)
+
   assert.doesNotMatch(map, /performSelector|DispatchQueue\.main\.asyncAfter/)
 })
 test('settled currently-scanned region restores valid covers; normal page and world overview stay interactive', () => {
@@ -36,7 +41,7 @@ test('settled currently-scanned region restores valid covers; normal page and wo
   assert.match(map, /canSelectCells: refinedViewportIsCurrent/)
   assert.match(map, /guard !globalCameraMoving, let current = globalCamera/)
   assert.match(map, /XDriveIOSNativeLocalMapSpatialPolicy\.containsViewport\(/)
-  assert.match(map, /if globalViewport != nil \{ globalCameraMoving = true \}/)
+  assert.match(map, /onCameraWillChange: \{[\s\S]*?globalCameraMoving = true/)
   assert.match(map, /onCamera: \{ current in[\s\S]*?globalCameraMoving = false[\s\S]*?scheduleAutomaticRefinement\(current\)/)
   assert.match(map, /items: page\.items, revision: mapRevision, mapType: mapType, cameraReturn: cameraReturn/)
   assert.match(map, /singleViewer = candidate/)

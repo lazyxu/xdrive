@@ -7,6 +7,7 @@ const read = p => fs.readFileSync(path.resolve(__dirname, '../..', p), 'utf8')
 
 const local = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
 const owner = read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
+const shared = read('ios/XDriveIOS/NativePhotoWallComponents.swift')
 
 for (const [name, source, screenIdentifier] of [
   ['PhotoKit local and album maps', local, 'native-ios-local-map-basemap'],
@@ -15,10 +16,15 @@ for (const [name, source, screenIdentifier] of [
   test(name + ' offers explicit native standard/satellite basemap selection', () => {
     assert.match(source, /@State private var mapType: MKMapType = \.standard/)
     assert.match(source, /let mapType: MKMapType/)
-    assert.match(source, /Picker\("底图样式", selection: \$mapType\)/)
-    assert.match(source, /Text\("标准地图"\)\.tag\(MKMapType\.standard\)/)
-    assert.match(source, /Text\("卫星地图"\)\.tag\(MKMapType\.satellite\)/)
-    assert.ok(source.includes('.accessibilityIdentifier("' + screenIdentifier + '")'))
+    assert.match(source, /XDriveIOSNativePhotoMapFloatingTools\(/)
+    assert.match(source, /satellite: mapType == \.satellite/)
+    assert.match(source, /mapType = mapType == \.satellite \? \.standard : \.satellite/)
+    assert.match(source, /onToggleStyle: \{/)
+    assert.match(shared, /struct XDriveIOSNativePhotoMapFloatingTools: View/)
+    assert.match(shared, /Button\(action: onToggleStyle\)/)
+    // The 44pt floating UIKit control owns this ID, not the old Menu.
+    assert.match(source, new RegExp('styleID: "' + screenIdentifier + '"'))
+    assert.match(shared, /\.accessibilityIdentifier\(styleID\)/)
   })
 
   test(name + ' changes MapKit layer without invalidating photo pins or the camera', () => {

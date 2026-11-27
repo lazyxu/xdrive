@@ -1,0 +1,47 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = name => fs.readFileSync(path.join(__dirname, '../..', name), 'utf8')
+const map = read('ios/XDriveIOS/NativeLocalPhotoMap.swift')
+const workflow = read('.github/workflows/ios-native-navigation-runtime.yml')
+const journey = read('ios/scripts/audit_native_map_journey.py')
+const audit = read('ios/scripts/audit_native_map_video.py')
+const ui = read('ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift')
+
+test('P0 real GPS count survives viewport refinement but resets on scope/PhotoKit revoke', () => {
+  const fn = map.slice(map.indexOf('private func runP0IndependentGPSAudit()'),
+                       map.indexOf('private func openPhotoSettings()'))
+  const library = map.slice(map.indexOf('private func scanFullLibrary('),
+                           map.indexOf('private func suspendForSheet()'))
+  assert.match(map, /@State private var p0WholeLibraryGPSCount: Int\?/)
+  assert.match(fn, /let expected = p0WholeLibraryGPSCount/)
+  assert.doesNotMatch(fn, /let expected = globalLocated|globalViewport == nil/)
+  assert.match(fn, /PHAsset\.fetchAssets\(with: PHFetchOptions\(\)\)/)
+  assert.match(fn, /independentlyLocated == expected/)
+  assert.match(fn, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == \.authorized/)
+  assert.match(library, /if viewport == nil \{ p0WholeLibraryGPSCount = index\.locatedCount \}/)
+  assert.match(map, /p0WholeLibraryGPSCount = nil/)
+  const siblings = map.slice(map.indexOf('A real PhotoKit audit must own finite'),
+                             map.indexOf('XDriveIOSMapKitPhotoPage(', map.indexOf('A real PhotoKit audit must own finite')))
+  assert.match(siblings, /p0WholeLibraryGPSCount != nil/)
+  assert.doesNotMatch(siblings, /globalViewport == nil/)
+  assert.match(siblings, /\.frame\(minWidth: 190, minHeight: 44\)/)
+  assert.match(ui, /trigger\.isHittable && touchFrame\.width >= 44/)
+  assert.match(ui, /XCTAssertEqual\(real, indexed/)
+})
+
+test('P0 real MapKit film audit covers genuine navigation while separately reporting XCTest launch', () => {
+  assert.match(workflow, /test_audit_native_map_journey\.py/)
+  assert.match(workflow, /audit_native_map_journey\.py/)
+  assert.match(workflow, /--xctest-log/)
+  assert.doesNotMatch(workflow, /--skip-first-seconds 8/)
+  assert.match(journey, /native-ios-launcher-map/)
+  assert.match(journey, /verified_route_taps/)
+  assert.match(journey, /testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted/)
+  assert.match(journey, /movie_creation_time/)
+  assert.match(audit, /"max_allowed_consecutive_flat_frames": 2/)
+  assert.match(audit, /"pre_journey_nearly_white_or_black_frames": pre_flat/)
+  assert.match(workflow, /-only-testing:xDriveIOSNavigationUITests\/XDriveIOSMapNavigationRuntimeUITests\/testP0RapidPlaceWallViewerReturnKeepsMapAndGalleryMounted/)
+})

@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import Photos
 
@@ -49,6 +50,23 @@ enum XDriveIOSNativeLocalPhotoSelectionActions {
             for asset in assets {
                 PHAssetChangeRequest(for: asset).isFavorite = value
             }
+        }
+    }
+
+    /// Change only the exact asset that the currently authorized Viewer opened.
+    /// A PhotoKit edit invalidates earlier GPS cells via the existing PHChange
+    /// observation. No local GPS coordinate or asset ID is sent to xDrive Owner.
+    static func setLocation(
+        _ candidate: XDrivePhotoKitScanCandidate, to location: CLLocation?
+    ) async throws {
+        guard location == nil || XDriveIOSNativePhotoMapPolicy.validCoordinate(
+            latitude: location!.coordinate.latitude,
+            longitude: location!.coordinate.longitude
+        ) else { throw XDriveIOSNativeLocalPhotoActionError.invalidSelection }
+        let assets = try verifiedAssets([candidate])
+        try Task.checkCancellation()
+        try await PHPhotoLibrary.shared().performChanges {
+            PHAssetChangeRequest(for: assets[0]).location = location
         }
     }
 

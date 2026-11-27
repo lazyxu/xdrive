@@ -206,9 +206,16 @@ private enum XDriveIOSNativeLocalTripDiscovery {
 /// Apple Photos does not publish the private "Trips" collection membership
 /// API. Here "旅行候选" is deliberately labelled as a local GPS heuristic;
 /// once selected, each asset is admitted with the exact day+cell predicate.
+enum XDriveIOSNativeCuratedCollectionMode {
+    case all, memories, trips
+}
+
+/// Dedicated Collections destinations share this one real PhotoKit GPS
+/// discovery; none substitutes an Apple-private Memories/Trips membership.
 struct XDriveIOSNativeLocalRecentDaysAndTrips: View {
     let chooseDay: (Date) -> Void
     let chooseTrip: (XDriveIOSNativeLocalTripScope) -> Void
+    var mode: XDriveIOSNativeCuratedCollectionMode = .all
 
     @Environment(\.scenePhase) private var phase
     @Environment(\.dismiss) private var dismiss
@@ -229,12 +236,21 @@ struct XDriveIOSNativeLocalRecentDaysAndTrips: View {
                         canRetry: !busy && phase == .active
                     ) { reload() }
                 }
-                Section("最近的日子 · 精确日期照片") {
-                    if days.isEmpty && !busy {
-                        Text("最近 90 天没有已授权的定位照片。")
+                if mode != .trips {
+                Section(mode == .memories ? "回忆候选 · 已核对日期与位置" :
+                        "最近的日子 · 精确日期照片") {
+                    if days.filter({ mode != .memories || $0.count >= 3 }).isEmpty && !busy {
+                        Text(mode == .memories ?
+                             "最近 90 天没有满足条件的回忆候选。" :
+                             "最近 90 天没有已授权的定位照片。")
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(days) { entry in
+                    if mode == .memories {
+                        Text("根据已授权 GPS 照片的日期生成回忆候选，"
+                             + "并非 Apple 私有的回忆精选；地图只显示当天匹配的位置成员。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    ForEach(days.filter { mode != .memories || $0.count >= 3 }) { entry in
                         Button {
                             chooseDay(entry.day)
                             dismiss()
@@ -248,6 +264,8 @@ struct XDriveIOSNativeLocalRecentDaysAndTrips: View {
                         .disabled(busy || phase != .active)
                     }
                 }
+                }
+                if mode != .memories {
                 Section("旅行候选 · GPS 精确成员") {
                     Text("根据实际 GPS 日历分组生成旅行候选，不是 Apple 的私有精选集。选择后仅显示匹配的日期和位置照片。")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -269,8 +287,10 @@ struct XDriveIOSNativeLocalRecentDaysAndTrips: View {
                         .disabled(busy || phase != .active)
                     }
                 }
+                }
             }
-            .navigationTitle("最近的日子与旅行")
+            .navigationTitle(mode == .memories ? "回忆候选" :
+                             mode == .trips ? "本机旅行" : "最近的日子与旅行")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }

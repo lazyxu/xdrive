@@ -17,6 +17,10 @@ const transientHTTP = /(?:response code:?\s*504|HTTP(?:\s+response\s+code:?)?\s*
 // classpath POMs on a fresh runner. Restrict this retry to actual Gradle
 // classpath dependency resolution, never a compiler/test/lint failure.
 const transientMavenClasspath429 = /Could not GET 'https:\/\/repo\.maven\.apache\.org\/maven2\/[^'\s]+\.pom'\.\s*Received status code 429 from server: Too Many Requests/i
+// A specifically identified, externally downloaded Kotlin Gradle plugin jar
+// can fail with TCP "Connection reset" before any compilation starts. Retry
+// only this Maven Central artifact transfer, never unrelated Gradle errors.
+const transientKotlinMavenReset = /Could not download kotlin-gradle-plugin-[^\s]+\.jar[\s\S]*?Could not get resource 'https:\/\/repo\.maven\.apache\.org\/maven2\/org\/jetbrains\/kotlin\/kotlin-gradle-plugin\/[^']+'[\s\S]*?Connection reset/i
 // A known-good Kotlin Gradle plugin occasionally cannot be resolved from
 // external repositories on a fresh GitHub runner. Only the standalone master
 // APK build opts into this narrow, bounded retry; compiler errors stay fatal.
@@ -47,13 +51,16 @@ function attempt() {
     child.on('close', (code, signal) => {
       const retryHTTP = transientHTTP.test(recent)
       const retryGradle = retryGradlePluginResolution && transientGradlePlugin.test(recent)
+      const retryKotlinMaven = transientKotlinMavenReset.test(recent)
       const retryMaven429 =
         /Could not resolve all artifacts for configuration 'classpath'/.test(recent) &&
         transientMavenClasspath429.test(recent)
       resolve({
         code: code ?? 1,
-        transient: !signal && (retryHTTP || retryGradle || retryMaven429),
-        reason: retryMaven429
+        transient: !signal && (retryHTTP || retryGradle || retryMaven429 || retryKotlinMaven),
+        reason: retryKotlinMaven
+          ? 'Kotlin Maven Central jar connection reset'
+          : retryMaven429
           ? 'Maven Central HTTP 429 Gradle classpath dependency download'
           : retryGradle ? 'Kotlin Gradle plugin resolution' : 'HTTP 504 dependency download',
       })

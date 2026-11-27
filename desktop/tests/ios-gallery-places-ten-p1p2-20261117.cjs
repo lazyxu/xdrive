@@ -1,0 +1,159 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const swift = n => fs.readFileSync(path.join(__dirname, '../../ios/XDriveIOS', n+'.swift'), 'utf8')
+const shared = swift('NativePhotoWallComponents')
+const owner = swift('NativeOwnerMapClusterAlbum')
+const source = swift('NativeUnifiedSourcePhotoMap')
+
+test('common signed wall shell and bounded first paint', () => {
+  for (const n of ['NativeOwnerMapClusterAlbum','NativeUnifiedSourcePhotoMap','NativeUnifiedPhotoGallery'])
+    assert.match(swift(n), /XDriveIOSNativePhotoWallCollectionStack\s*\{/)
+  assert.match(shared, /struct XDriveIOSNativePhotoWallSkeletonGrid: View/)
+  assert.match(swift('NativeLocalContinuousGallery'), /count: min\(64, expectedTotal - offset\)/)
+  assert.match(shared, /maximumSkeletonCount = 64/)
+  assert.doesNotMatch(shared, /PHAsset|URLSession|verifiedAuthorization|accessToken/)
+})
+test('Owner Viewer and auto-append retain measured pixels only for current signed range', () => {
+  assert.match(owner, /viewerOpeningCursor = cursor/)
+  assert.match(owner, /viewerReturnViewport = visibleTileFrames\[String\(item\.id\)\]/)
+  assert.match(owner, /sameVisibleRevision\(as: \$1\)/)
+  assert.match(owner, /viewerOpeningCursor != cursor/)
+  assert.match(owner, /viewerReturnViewport\?\.alignment\(/)
+  assert.match(owner, /autoScrollReturnViewport\?\.alignment\(/)
+  assert.match(owner, /priorWindowCursor\?\.offset/)
+  assert.match(owner, /XDriveIOSNativePhotoOwnerScope\.matches/)
+})
+test('shared pinch callback captures a currently visible, unique authorized tile', () => {
+  assert.match(shared, /onDensityChange\?\(changed\)[\s\S]*?density = changed/)
+  for (const n of [owner, source]) {
+    assert.match(n, /onDensityChange: \{ _ in/)
+    assert.match(n, /visibleTileFrames[\s\S]*?\.min\(by:/)
+    assert.match(n, /\.onChange\(of: (?:wallDensity|density)\)/)
+    assert.match(n, /filter\(\{ \$0\.id == id \}\)\.count == 1/)
+  }
+})
+
+test('unified-source pinch preserves the verified tile pixel anchor, not just its row', () => {
+  const start = source.indexOf('.xdrivePhotoWallPinch(')
+  const end = source.indexOf('.onChange(of: backfillAnchorID)', start)
+  assert.ok(start >= 0 && end > start, 'bounded pinch and return handlers must be present')
+  const pinch = source.slice(start, end)
+  assert.match(pinch, /pinchReturnViewport = visibleTileFrames/)
+  assert.match(pinch, /value\.minY >= 0[\s\S]*?value\.maxY <= photoWallViewportHeight/)
+  assert.match(pinch, /windowIndex: verifiedWindow/)
+  assert.match(pinch, /filter\(\{[\s\S]*?\$0\.id == anchor\.itemID[\s\S]*?\}\)\.count == 1/)
+  assert.match(pinch, /anchor\.alignment\([\s\S]*?window: verifiedWindow/)
+  assert.match(pinch, /xdrivePhotoWallScrollVerifiedTile\([\s\S]*?anchor: alignment/)
+  assert.doesNotMatch(pinch, /scroll\.scrollTo\(id, anchor: \.top\)/)
+  assert.match(pinch, /defer \{ pinchReturnViewport = nil \}/)
+})
+
+test('Owner place pinch preserves a signed pixel anchor without a stale page', () => {
+  const start = owner.indexOf('.onChange(of: wallDensity)')
+  const end = owner.indexOf('.onChange(of: visiblePageRevision)', start)
+  assert.ok(start >= 0 && end > start, 'Owner pinch requires its own bounded handler')
+  const restore = owner.slice(start, end)
+  assert.match(restore, /pinchReturnCursor == cursor/)
+  assert.match(restore, /pinchReturnRevision == visiblePageRevision/)
+  assert.match(restore, /filter\(\{ \$0\.id == id \}\)\.count == 1/)
+  assert.match(restore, /anchor\.alignment\([\s\S]*?window: cursor\.offset/)
+  assert.match(restore, /xdrivePhotoWallScrollVerifiedTile\([\s\S]*?anchor: alignment/)
+  assert.doesNotMatch(restore, /returnScroll\.scrollTo\(id, anchor: \.top\)/)
+  assert.match(owner, /pinchReturnViewport = visibleTileFrames[\s\S]*?value\.maxY <= photoWallViewportHeight/)
+  assert.doesNotMatch(owner, /pinchReturnID/)
+  assert.doesNotMatch(source, /pinchReturnID/)
+})
+
+test('local/cloud/source Viewer filmstrips share one inert scroll geometry', () => {
+  assert.match(shared, /struct XDriveIOSNativePhotoWallViewerFilmstripScroll<Content: View>/)
+  for (const n of ['NativeLocalPhotoViewerFilmstrip','NativeCloudPhotoAssetViewerFilmstrip','NativeUnifiedSourcePhotoMap'])
+    assert.match(swift(n), /XDriveIOSNativePhotoWallViewerFilmstripScroll/)
+  assert.match(swift('NativeLocalPhotoViewerFilmstrip'), /XDriveIOSNativeLocalFilmstripPolicy\.target/)
+  assert.match(swift('NativeCloudPhotoAssetViewerFilmstrip'), /XDriveIOSNativeCloudFilmstripPolicy\.target/)
+  assert.match(source, /private func admitViewerNeighbor\(/)
+})
+test('cloud PhotoAsset range retains bounded source-verified loading geometry', () => {
+  const cloud = swift('NativeServerMediaGallery')
+  assert.match(cloud, /count: min\(48, max\(0, expectedTotal - offset\)\)/)
+  assert.match(cloud, /XDriveIOSNativePhotoWallSkeletonGrid\(/)
+})
+
+test('unified Gallery pinch and Viewer use transient verified tile geometry', () => {
+  const main = swift('NativeUnifiedPhotoGallery')
+  const tile = swift('NativeUnifiedPhotoWall')
+  assert.match(tile, /\.xdrivePhotoWallMeasureTile\(/)
+  assert.match(main, /viewerOpeningViewport = visibleTileFrames\[/)
+  assert.match(main, /viewerOpeningViewport\?\.alignment\(/)
+  assert.match(main, /pinchGeneration = wall\.generation/)
+  assert.match(main, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\)/)
+  assert.match(main, /pinchReturnViewport = nil/)
+  assert.match(shared, /if !id\.isEmpty/)
+})
+test('backward place paging restores only a unique current-window tile', () => {
+  assert.match(source, /backfillViewportAnchor\?\.alignment\(/)
+  assert.match(source, /backfillViewportAnchor = visibleTileFrames\[oldAnchor\]\.map/)
+  assert.match(source, /backfillViewportAnchor = visibleTileFrames\[anchor\]\.map/)
+  assert.match(source, /filter\(\{ \$0\.id == anchor \}\)\.count == 1/)
+})
+
+test('chronological headers share one presentation policy without guessing missing ranges', () => {
+  assert.match(shared, /func xdriveIOSNativePhotoWallHeading\(/)
+  assert.match(shared, /firstSection && verifiedContinuation/)
+  for (const n of ['NativeOwnerMapClusterAlbum','NativeUnifiedSourcePhotoMap',
+                   'NativeUnifiedPhotoWall','NativeServerMediaGallery'])
+    assert.match(swift(n), /xdriveIOSNativePhotoWallHeading\(/)
+  assert.match(swift('NativeServerMediaGallery'), /precedingBoundary\?\.continues\(/)
+  assert.match(swift('NativeUnifiedPhotoWall'), /wall\.continuesPreviousDate\(/)
+})
+test('shared place empty, skeleton and horizontal metrics stay permission-free', () => {
+  assert.match(shared, /struct XDriveIOSNativePhotoWallEmptyState: View/)
+  assert.match(owner, /page\?\.items\.isEmpty == true/)
+  assert.match(source, /ended && error == nil/)
+  assert.match(owner, /XDriveIOSNativePhotoWallLayout\.horizontalInset/)
+  assert.match(source, /XDriveIOSNativePhotoWallLayout\.horizontalInset/)
+  assert.match(swift('NativeUnifiedPhotoGallery'), /\.padding\(\.horizontal, XDriveIOSNativePhotoWallLayout\.horizontalInset\)/)
+  assert.match(swift('NativeServerMediaGallery'), /\.padding\(\.horizontal, XDriveIOSNativePhotoWallLayout\.horizontalInset\)/)
+})
+test('legacy local Gallery is not dispatched by production native Dashboard', () => {
+  const dashboard = swift('NativePhotosDashboard')
+  assert.match(dashboard, /XDriveIOSNativeLocalPhotoTimelineContainer\(/)
+  assert.doesNotMatch(dashboard, /XDriveIOSNativeLocalGalleryScreen\(/)
+  const dir = path.join(__dirname, '../../ios/XDriveIOS')
+  const stale = fs.readdirSync(dir).filter(n => n.endsWith('.swift')).filter(n =>
+    fs.readFileSync(path.join(dir, n), 'utf8').includes('XDriveIOSNativeLocalGalleryScreen('))
+  assert.deepEqual(stale, [], 'legacy screen has regained a production call site')
+})
+
+
+test('source place Viewer return retires its pixel anchor on every exit path', () => {
+  const begin = source.indexOf('.onChange(of: shouldRestoreViewerTile)')
+  const end = source.indexOf('private func photoButton(', begin)
+  assert.ok(begin >= 0 && end > begin, 'actual bounded Viewer return handler required')
+  const restore = source.slice(begin, end)
+  assert.match(restore, /defer \{[\s\S]*?viewerReturnID = nil[\s\S]*?viewerOpeningWindow = -1\s*viewerReturnViewport = nil/)
+  assert.match(restore, /guard active, viewing == nil, let id = viewerReturnID/)
+  assert.match(restore, /XDriveIOSNativePhotoWallWindowPolicy\.canRestore\(/)
+  assert.match(restore, /viewerReturnViewport\?\.alignment\(/)
+  assert.match(source, /private func invalidate\(\) \{[\s\S]*?viewerReturnViewport = nil/)
+})
+
+
+test('Owner place rejects stale Viewer anchor and retires its full transient state', () => {
+  const begin = owner.indexOf('guard let anchor = viewerReturn, activeOwner,')
+  const end = owner.indexOf('// Same-revision Viewer return must not re-center.', begin)
+  assert.ok(begin >= 0 && end > begin, 'Owner-verified Viewer-return guard required')
+  const rejection = owner.slice(begin, end)
+  assert.match(rejection, /XDriveIOSNativePhotoWallWindowPolicy\.canRestore\(/)
+  assert.match(rejection, /sameVisibleRevision\(as: \$1\)/)
+  assert.match(rejection, /else \{[\s\S]*?viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*return/)
+})
+
+
+test('Owner place paging and recoverable failures clear stale Viewer return geometry', () => {
+  assert.match(owner, /if autoAdvance \|\| target != cursor \{\s*viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*\}/)
+  assert.match(owner, /Do not promote an unverified next cursor[\s\S]*?viewerReturn = nil\s*viewerOpeningItem = nil\s*viewerOpeningCursor = nil\s*viewerReturnViewport = nil\s*self\.error = "地点照片或 Owner 授权已变化/)
+  assert.match(owner, /case \.response\(let status\) where status == 401 \|\| status == 403:[\s\S]*?invalidate\(\)/)
+})

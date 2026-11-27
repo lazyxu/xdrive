@@ -29,7 +29,7 @@ test('old local-map callback is rejected when login/Owner changes', () => {
   assert.match(local, /if let expectedOwner \{\s*guard XDriveIOSNativePhotoOwnerScope\.matches\(/)
   assert.match(local, /login\.owner, expectedOwner/)
   assert.match(local, /guard login\.owner == nil else \{ return \}/)
-  assert.match(screen, /onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
+  assert.match(screen, /onChange\(of: source\) \{ _ in onFocusChange\?\(true\) \}/)
 })
 
 test('cloud camera is still strictly bound to an authorized Server Owner', () => {

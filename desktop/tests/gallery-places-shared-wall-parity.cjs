@@ -158,7 +158,13 @@ test('Places pinch shares Gallery column policy and retains a numeric visible an
 
 test('short Owner Cell scrolls continuously without manual load-more controls',()=>{
   assert.match(drawer,/if \(sparse \|\| phase!=='ready' \|\| !expanded \|\| loadingMore \|\|/)
-  assert.match(drawer,/list.scrollHeight-list.clientHeight < 180\) onLoadMore\(\)/)
+  // Autoload now goes through the common bounded UI policy, not an
+  // independently reimplemented threshold in the Places component.
+  assert.match(visualState,/phase === 'ready' && expanded && !loading && !failed &&/)
+  assert.match(visualState,/loaded < total && Number\.isFinite\(remaining\) && remaining < 180/)
+  assert.match(drawer,/if \(xDriveMediaGalleryShouldLoadVisibleTail\(\{[\s\S]*?loaded: loadedDepth, total, remaining,[\s\S]*?\}\)\) onLoadMore\(\)/)
+  assert.match(drawer,/requestAutoLoad\(list\.scrollHeight-list\.clientHeight\)/)
+  assert.match(drawer,/requestAutoLoad\(list\.scrollHeight-list\.scrollTop-list\.clientHeight\)/)
   assert.match(drawer,/onScroll=\{event => \{/)
   assert.match(drawer,/onLoadMore\(\)/)
   assert.match(drawer,/data-xdrive-places-photo-drawer-auto-more/)

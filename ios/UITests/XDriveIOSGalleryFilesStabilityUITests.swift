@@ -37,6 +37,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
             app.launchArguments.append("-xdrive-ui-navigation-synthetic-owner")
         }
         app.launch()
+        XDriveIOSNativePhotosTestNavigator.acceptInitialFullPhotosForNavigation(in: app)
         XCTAssertEqual(app.state, .runningForeground, "Native app exited during launch")
         return app
     }
@@ -46,13 +47,87 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     private func select(_ id: String, in app: XCUIApplication) {
-        let control = target(id, in: app)
+        // SwiftUI's Gallery More exposes menuItems on iOS 18.5, not always
+        // Buttons. Share the same exact visible-menu route as Files recovery
+        // and frame-continuity UITests; never tap hidden TabView destinations.
+        let nativeMenuRoutes: Set<String> = [
+            "native-ios-tab-files", "native-ios-tab-mine",
+            "native-ios-tab-launcher", "native-ios-tab-gallery",
+            "native-ios-gallery-source-originals",
+            "native-ios-gallery-source-local",
+            "native-ios-gallery-source-cloud",
+            "native-ios-gallery-source-menu",
+            "native-ios-gallery-open-filters",
+            "native-ios-gallery-people"
+        ]
+        if nativeMenuRoutes.contains(id) {
+            navigationStarted = Date()
+            navigationID = id
+            print("IOS_NATIVE_NAV_TAP_START route=\(id)")
+            XCTAssertTrue(XDriveIOSNativePhotosTestNavigator.tap(id, in: app),
+                          "Native Gallery More route was not genuinely tappable: \(id)")
+            XCTAssertEqual(app.state, .runningForeground,
+                           "App exited after \(id)")
+            return
+        }
+        var control = target(id, in: app)
+        // The Gallery now follows iOS 26 Photos: Library / Collections /
+        // Search are visible; xDrive routes and sources live inside a menu.
+        // Exercise those real menus rather than resurrect hidden test buttons.
+        if id == "native-ios-gallery-open-filters" {
+            XCTAssertTrue(control.waitForExistence(timeout: 15))
+            control.tap()
+            control = app.buttons["搜索与筛选"].firstMatch
+        } else if id == "native-ios-gallery-people" ||
+                  id == "native-ios-gallery-source-both" {
+            let menu = target("native-ios-gallery-open-filters", in: app)
+            XCTAssertTrue(menu.waitForExistence(timeout: 15))
+            menu.tap()
+            if id == "native-ios-gallery-source-both" {
+                let source = app.buttons["照片来源"].firstMatch
+                XCTAssertTrue(source.waitForExistence(timeout: 10))
+                source.tap()
+                control = app.buttons["两端都有"].firstMatch
+            } else {
+                control = app.buttons["人物与宠物"].firstMatch
+            }
+        } else if id == "native-ios-gallery-source-menu" {
+            control = target("native-ios-gallery-more-menu", in: app)
+        } else if id == "native-ios-gallery-source-albums" {
+            control = target("native-ios-photos-collections-tab", in: app)
+        } else if id == "native-ios-gallery-source-unified" {
+            control = target("native-ios-photos-library-tab", in: app)
+        } else if id == "native-ios-gallery-source-originals" ||
+                  id == "native-ios-gallery-source-local" ||
+                  id == "native-ios-gallery-source-cloud" {
+            let menu = target("native-ios-gallery-more-menu", in: app)
+            XCTAssertTrue(menu.waitForExistence(timeout: 15))
+            menu.tap()
+            let title = id == "native-ios-gallery-source-originals" ? "备份原件" :
+                        id == "native-ios-gallery-source-local" ? "本机照片" : "云端图库"
+            control = app.buttons[title].firstMatch
+        } else if !control.exists {
+            let route: String?
+            switch id {
+            case "native-ios-tab-files": route = "文件"
+            case "native-ios-tab-mine": route = "我的"
+            case "native-ios-tab-launcher": route = "全部功能"
+            case "native-ios-tab-gallery":
+                control = target("native-ios-photos-library-tab", in: app)
+                route = nil
+            default: route = nil
+            }
+            if let route {
+                let menu = target("native-ios-gallery-more-menu", in: app)
+                XCTAssertTrue(menu.waitForExistence(timeout: 15))
+                menu.tap()
+                control = app.buttons[route].firstMatch
+            }
+        }
         XCTAssertTrue(control.waitForExistence(timeout: 15),
-                      "Missing native navigation control: \(id)")
+                      "Missing real native navigation control: \(id)")
         navigationStarted = Date()
         navigationID = id
-        // Live CI screenshot observer can sample near the actual route switch,
-        // rather than only 0.5s after the XCTest case itself started.
         print("IOS_NATIVE_NAV_TAP_START route=\(id)")
         control.tap()
         XCTAssertEqual(app.state, .runningForeground, "App exited after \(id)")
@@ -66,8 +141,8 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     private func checkGallery(_ app: XCUIApplication) {
-        XCTAssertTrue(target("native-ios-gallery-source-unified", in: app)
-            .waitForExistence(timeout: 15), "Gallery source rail disappeared")
+        XCTAssertTrue(target("native-ios-photos-bottom-bar", in: app)
+            .waitForExistence(timeout: 15), "Photos-native Gallery navigation disappeared")
         XCTAssertEqual(app.state, .runningForeground)
         reportNavigationReady("gallery")
     }
@@ -95,14 +170,222 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         assertNotSolidScreen(app, label)
     }
 
+    // Newly actionable unified filter sheet: actual Simulator hit targets,
+    // real selection/dismissal and unchanged Owner-scoped Gallery generation.
+    // These are no-session Owner fixture routes: protected media never passes.
+    private func openUnifiedOptions(_ app: XCUIApplication) {
+        let open = app.buttons.matching(
+            identifier: "native-ios-gallery-open-filters").firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 20) && open.isHittable,
+                      "Unified filter button did not mount as tappable")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-open-filters")
+        open.tap()
+        let done = app.buttons.matching(
+            identifier: "native-ios-unified-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15) && done.isHittable,
+                      "Native unified options sheet did not mount")
+    }
+
+    private func chooseUnifiedOption(_ id: String, in app: XCUIApplication) {
+        let row = app.buttons.matching(identifier: id).firstMatch
+        for _ in 0..<7 {
+            if row.exists && row.isHittable { break }
+            let list = app.collectionViews.firstMatch.exists
+                ? app.collectionViews.firstMatch : app.scrollViews.firstMatch
+            guard list.exists else { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(row.exists && row.isHittable,
+                      "Unified option cannot be tapped: " + id)
+        print("IOS_NATIVE_NAV_TAP_START route=" + id)
+        row.tap()
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    private func closeUnifiedOptions(_ app: XCUIApplication) {
+        let done = app.buttons.matching(
+            identifier: "native-ios-unified-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 12) && done.isHittable)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-unified-options-done")
+        done.tap()
+    }
+
+    func testUnifiedOptionsSearchCancelThenFilesReturnKeepsWall() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        let generation = verifiedUnifiedGeneration(app)
+        openUnifiedOptions(app)
+        chooseUnifiedOption("native-ios-unified-options-search", in: app)
+        let cancel = app.navigationBars["搜索与筛选"].buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15) && cancel.isHittable,
+                      "Search editor did not mount after options dismissal")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-unified-options-search-cancel")
+        cancel.tap()
+        assertUnchangedUnifiedWall(app, before: generation, label: "filter-cancel")
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        assertUnchangedUnifiedWall(app, before: generation, label: "filter-cancel-files-return")
+    }
+
+    func testUnifiedOptionsPeoplePushBackKeepsWallGeneration() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        let generation = verifiedUnifiedGeneration(app)
+        openUnifiedOptions(app)
+        chooseUnifiedOption("native-ios-unified-options-people", in: app)
+        XCTAssertTrue(target("native-ios-gallery-people-page", in: app)
+            .waitForExistence(timeout: 15),
+                      "People child did not mount after options dismissal")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 15) && back.isHittable,
+                      "People child lost native Back")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-people-back")
+        back.tap()
+        assertUnchangedUnifiedWall(app, before: generation, label: "people-child-return")
+    }
+
+    func testUnifiedOptionsForegroundDismissThenFilesReturn() {
+        let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
+        let generation = verifiedUnifiedGeneration(app)
+        openUnifiedOptions(app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertEqual(app.state, .runningForeground)
+        closeUnifiedOptions(app)
+        select("native-ios-tab-files", in: app)
+        checkFilesHome(app)
+        select("native-ios-tab-gallery", in: app)
+        assertUnchangedUnifiedWall(app, before: generation, label: "options-foreground-files-return")
+    }
+
+    func testUnifiedOptionsRepeatedOpenClosePreservesPhotosNavigation() {
+        let app = launch(syntheticOwner: true)
+        let generation = verifiedUnifiedGeneration(app)
+        for cycle in 0..<3 {
+            openUnifiedOptions(app)
+            closeUnifiedOptions(app)
+            assertUnchangedUnifiedWall(app, before: generation,
+                                       label: "options-dismiss-cycle-\(cycle)")
+            XCTAssertFalse(target("native-ios-five-slot-bar", in: app).exists,
+                           "xDrive five-slot bar appeared over native Photos")
+        }
+    }
+
+    func testUnifiedOptionsSourceMenuRemainsRealAndDismissible() {
+        let app = launch(syntheticOwner: true)
+        let generation = verifiedUnifiedGeneration(app)
+        openUnifiedOptions(app)
+        let source = app.buttons.matching(
+            NSPredicate(format: "label == %@", "照片来源")).firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 15) && source.isHittable,
+                      "Actual presence filter source Menu disappeared")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-unified-options-presence")
+        source.tap()
+        // iOS 18/26 expose Menu actions as either MenuItems or Buttons.
+        let menuItem = app.menuItems.matching(
+            NSPredicate(format: "label == %@", "全部")).firstMatch
+        let button = app.buttons.matching(
+            NSPredicate(format: "label == %@", "全部")).firstMatch
+        let all = menuItem.exists && menuItem.isHittable ? menuItem : button
+        XCTAssertTrue(all.waitForExistence(timeout: 12) && all.isHittable,
+                      "Native all-sources Menu action is not tappable")
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-unified-options-presence-all")
+        all.tap()
+        closeUnifiedOptions(app)
+        assertUnchangedUnifiedWall(app, before: generation, label: "presence-all")
+    }
+
+    /// iOS 26 Photos visual/navigation audit: use the *actual* native
+    /// Library / Collections / Search controls. Screenshot attachments are
+    /// comparison evidence, not fabricated proof of pixel-level parity.
+    func testPhotosLibraryCollectionsSearchSelectionAndNoStackedTabBars() {
+        let app = launch(syntheticOwner: true)
+        checkGallery(app)
+        let photosBar = target("native-ios-photos-bottom-bar", in: app)
+        XCTAssertTrue(photosBar.waitForExistence(timeout: 15))
+        XCTAssertFalse(target("native-ios-five-slot-bar", in: app).exists,
+                       "iOS Photos and xDrive navigation must not stack")
+        XCTAssertFalse(app.tabBars.firstMatch.exists,
+                       "Native TabView must not overlay the Photos floating bar")
+        // The independent accessibility controls, not just the bar's
+        // container, must remain tappable after hiding the system TabBar.
+        for key in ["native-ios-photos-library-tab",
+                    "native-ios-photos-collections-tab",
+                    "native-ios-photos-search"] {
+            let button = app.buttons.matching(identifier: key).firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 12) && button.isHittable,
+                          "Native Photos control missing or blocked by system TabBar: \(key)")
+        }
+        let library = XCTAttachment(screenshot: app.screenshot())
+        library.name = "native-photos-26-library-initial"
+        library.lifetime = .keepAlways
+        add(library)
+
+        let selecting = target("native-ios-gallery-select", in: app)
+        XCTAssertTrue(selecting.waitForExistence(timeout: 15))
+        selecting.tap()
+        XCTAssertTrue(target("native-ios-gallery-selection-summary", in: app)
+            .waitForExistence(timeout: 10))
+        selecting.tap()
+        XCTAssertFalse(target("native-ios-gallery-selection-summary", in: app).exists)
+
+        select("native-ios-gallery-source-albums", in: app)
+        XCTAssertTrue(target("native-ios-photos-collections", in: app)
+            .waitForExistence(timeout: 15))
+        XCTAssertTrue(target("native-ios-collections-recent-days", in: app).exists)
+        XCTAssertTrue(target("native-ios-collections-people", in: app).exists)
+        XCTAssertTrue(target("native-ios-collections-albums", in: app).exists)
+        let collections = XCTAttachment(screenshot: app.screenshot())
+        collections.name = "native-photos-26-collections-initial"
+        collections.lifetime = .keepAlways
+        add(collections)
+
+        select("native-ios-gallery-source-unified", in: app)
+        select("native-ios-photos-search", in: app)
+        XCTAssertTrue(app.navigationBars["搜索与筛选"].firstMatch
+            .waitForExistence(timeout: 15),
+            "Photos bottom Search must open the real Owner/PhotoKit query editor")
+        app.buttons["取消"].firstMatch.tap()
+        checkGallery(app)
+
+        select("native-ios-gallery-source-menu", in: app)
+        let backup = app.buttons["备份设置"].firstMatch
+        for _ in 0..<8 {
+            if backup.exists && backup.isHittable { break }
+            let list = app.collectionViews.firstMatch
+            guard list.exists else { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(backup.exists && backup.isHittable,
+                      "Native Gallery options did not retain the backup settings action")
+        // A large native sheet does not necessarily dismiss on a swipe of
+        // its inner List. Use the explicit, genuinely tappable Done action.
+        let done = app.buttons.matching(
+            identifier: "native-ios-gallery-options-done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 12) && done.isHittable)
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-gallery-options-done")
+        done.tap()
+        checkGallery(app)
+    }
+
     func testRapidGalleryFilesTabOscillationPreservesBothShells() {
         let app = launch()
         waitForRealH264RecordingPrelude()
         for _ in 0..<8 {
             select("native-ios-tab-files", in: app)
             checkFilesHome(app)
+            XCTAssertFalse(app.tabBars.firstMatch.exists,
+                           "System TabBar must not cover Files quick rail or xDrive navigation")
+            XCTAssertTrue(target("native-ios-five-slot-bar", in: app).exists,
+                          "Files must keep its own usable xDrive bar")
             select("native-ios-tab-gallery", in: app)
             checkGallery(app)
+            XCTAssertFalse(app.tabBars.firstMatch.exists,
+                           "System TabBar must not reappear over Photos on return")
+            XCTAssertFalse(target("native-ios-five-slot-bar", in: app).exists,
+                           "Photos must not stack a second xDrive bar")
         }
         // Settled child pixels, not just the persistent Gallery/Files rail.
         assertNotSolidScreen(app, "Gallery after eight rapid Files/Gallery tab changes")
@@ -136,7 +419,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testRepeatedFilterDismissalRestoresSameGallery() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         waitForRealH264RecordingPrelude()
         for _ in 0..<3 {
             select("native-ios-gallery-open-filters", in: app)
@@ -153,7 +438,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         checkGallery(app)
         select("native-ios-gallery-open-filters", in: app)
         let open = target("native-ios-unified-gallery-show-map", in: app)
@@ -164,7 +451,7 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         // The filter sheet fully dismisses before presenting the existing
         // MapKit route. The local permission screen may still be denied:
         // never pretend this UI-navigation smoke proves PhotoKit Full Access.
-        XCTAssertTrue(target("native-ios-map-source-selector", in: app)
+        XCTAssertTrue(target("native-ios-local-map-actions", in: app)
             .waitForExistence(timeout: 25),
             "Unified Gallery did not present the real local/cloud map")
         XCTAssertTrue(target("native-ios-map-dismiss", in: app)
@@ -179,15 +466,11 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         checkGallery(app)
-        let paired = app.buttons["两端都有"].firstMatch
-        XCTAssertTrue(paired.waitForExistence(timeout: 15),
-                      "Unified Gallery source filter is unavailable")
-        if !paired.isHittable {
-            target("native-ios-unified-gallery-filters", in: app).swipeLeft()
-        }
-        paired.tap()
+        select("native-ios-gallery-source-both", in: app)
         select("native-ios-gallery-open-filters", in: app)
         let open = target("native-ios-unified-gallery-show-map", in: app)
         XCTAssertTrue(open.waitForExistence(timeout: 15))
@@ -289,7 +572,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testGalleryFilterCancelAfterTabAndSourceRoundTrips() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         waitForRealH264RecordingPrelude()
         for _ in 0..<3 {
             select("native-ios-gallery-source-albums", in: app)
@@ -328,7 +613,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testGalleryUnchangedForegroundRetainsVerifiedWallGeneration() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let gallery = target("native-ios-unified-photo-gallery", in: app)
         XCTAssertTrue(gallery.waitForExistence(timeout: 15),
                       "Unified Gallery did not mount before foreground transition")
@@ -379,7 +666,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testGalleryDismissedFilterThenForegroundDoesNotRebuildWall() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         select("native-ios-gallery-open-filters", in: app)
         let cancel = app.buttons["取消"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 15))
@@ -665,14 +954,14 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
         XCTAssertTrue(local.waitForExistence(timeout: 15),
                       "Native local Photos source is missing from source Menu")
         local.tap()
-        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+        XCTAssertTrue(app.navigationBars["本机照片"].firstMatch
             .waitForExistence(timeout: 15),
                       "Native local PhotoKit source did not become selected")
         assertNotSolidScreen(app, "Local PhotoKit source")
         select("native-ios-tab-files", in: app)
         checkFilesHome(app)
         select("native-ios-tab-gallery", in: app)
-        XCTAssertTrue(target("native-ios-gallery-source-local", in: app)
+        XCTAssertTrue(app.navigationBars["本机照片"].firstMatch
             .waitForExistence(timeout: 15))
         select("native-ios-gallery-source-unified", in: app)
         checkGallery(app)
@@ -944,7 +1233,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testFilesSearchThenGalleryFilterAndBackKeepsBothRoutes() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         waitForRealH264RecordingPrelude()
         select("native-ios-tab-files", in: app)
         let search = app.searchFields["搜索全部文件"].firstMatch
@@ -975,7 +1266,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     // Independent real Simulator routes on the *same unchanged* Gallery
     // source. No fake cloud token, seeded private photos, or FPS claims.
     func testUnifiedWallGenerationPersistsThroughSixFilesTabRoundTrips() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let before = verifiedUnifiedGeneration(app)
         for cycle in 0..<6 {
             select("native-ios-tab-files", in: app)
@@ -998,7 +1291,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedWallGenerationPersistsAfterFilterCancelAndFilesReturn() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let before = verifiedUnifiedGeneration(app)
         select("native-ios-gallery-open-filters", in: app)
         let cancel = app.buttons["取消"].firstMatch
@@ -1027,7 +1322,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedWallGenerationPersistsAfterBackgroundAndFilesReturn() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let before = verifiedUnifiedGeneration(app)
         for cycle in 0..<3 {
             XCUIDevice.shared.press(.home)
@@ -1042,7 +1339,9 @@ final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
     }
 
     func testUnifiedWallGenerationPersistsAfterFilesSearchSubmitAndReturn() {
-        let app = launch()
+        // Synthetic Owner mounts the UI but carries no authenticated Server Session.
+        // Cloud reads remain fail-closed; this tests only navigation continuity.
+        let app = launch(syntheticOwner: true)
         let before = verifiedUnifiedGeneration(app)
         select("native-ios-tab-files", in: app)
         let search = app.searchFields["搜索全部文件"].firstMatch

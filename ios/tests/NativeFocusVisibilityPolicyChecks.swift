@@ -16,8 +16,11 @@ struct XDriveIOSNativeFocusVisibilityPolicyChecks {
         verify("gallery", "originals", true, true, true)
         verify("gallery", "albums", true, true, true)
         verify("gallery", "local", true, true, true)
-        verify("gallery", "map", true, true, false)
+        verify("gallery", "map", true, true, true)
         verify("gallery", "map", false, true, true)
+        // Signed-out local PhotoKit keeps the same visible Photos bar.
+        verify("gallery", "map", true, false, true)
+        verify("gallery", "map", false, false, true)
         verify("files", "cloud", true, true, true)
         verify("dynamic", "cloud", true, true, true)
         // Rotation is intentionally not an input and must not change L2.
@@ -38,6 +41,7 @@ struct XDriveIOSNativeFocusVisibilityPolicyChecks {
         // or the Gallery tab must fence its delayed onDisappear(false/true).
         accept("gallery", "cloud", "cloud", true, true)
         accept("gallery", "map", "map", true, true)
+        accept("gallery", "map", "map", false, true)
         accept("gallery", "map", "cloud", true, false)
         accept("gallery", "cloud", "map", true, false)
         accept("gallery", "local", "cloud", true, false)

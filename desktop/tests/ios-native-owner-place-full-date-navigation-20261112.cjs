@@ -32,7 +32,7 @@ test('full date indices are validated once per first Range, not on each SwiftUI 
 });
 
 test('Owner switches and revocation fail closed, without reusing stale date or thumbnail identity', () => {
-  assert.match(map, /if activeOwner \{[\s\S]*?XDriveIOSNativePhotoWallGrid/);
+  assert.match(map, /if activeOwner \{[\s\S]*?XDriveIOSNativePhotoWallSectionList/);
   assert.match(map, /if target\.placeIndex != departingCursor\.placeIndex \{[\s\S]*?verifiedDateIndex = nil/);
   const invalidate = map.slice(map.indexOf('private func invalidate()'), map.indexOf('private func load('));
   assert.match(invalidate, /verifiedDateIndex = nil/);
@@ -63,6 +63,6 @@ test('historical date jump restores the exact reverified day tile, not page top'
   assert.match(map, /fetched.items.indices.contains\(dayIndex\)/);
   assert.match(map, /dateJumpReturn = fetched.items\[dayIndex\]/);
   assert.match(map, /XDriveIOSNativePhotoWallWindowPolicy.canRestore\([\s\S]*?anchor, in: page\?\.items \?\? \[\]/);
-  assert.match(map, /returnScroll.scrollTo\(anchor.id, anchor: \.top\)/);
+  assert.match(map, /xdrivePhotoWallFocusVerifiedTile\(\s*anchor.id, scroll: returnScroll,[\s\S]*?anchor: \.top/);
   assert.match(map, /dateJumpReturn = nil/);
 });

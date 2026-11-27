@@ -32,7 +32,7 @@ test('local filename + media/date scan is the same live admission as its sheet',
  assert.match(u,/onShowMap\?\(selectedRange, selectedMedia, selectedFilename\)/)
 })
 test('unrepresentable Owner/source filters cannot silently broaden map access',()=>{
- assert.match(u,/if sourceFilter != nil \{/)
+ assert.match(u,/if let sourceFilter \{/)
  assert.match(d,/unifiedMapFilenameTerm = filename/)
  assert.match(d,/cloudSourceAllowed: true/)
  assert.match(m,/let ownerSelection = XDriveIOSNativeOwnerMapSelection\(\s*mediaFilter: mediaFilter, filenameTerm: filenameTerm\)/)
@@ -40,7 +40,10 @@ test('unrepresentable Owner/source filters cannot silently broaden map access',(
  assert.match(m,/mapSelection: ownerSelection/)
  assert.match(u,/openSourceMapAfterFilterDismiss = true/)
  assert.match(u,/XDriveIOSNativeUnifiedSourcePhotoMapScreen\(/)
- assert.match(m,/cloudAllowed \|\| \$0 == \.local/)
+ assert.match(m,/mapSource: animatedSource, canSelectCloudMap: cloudAllowed/)
+ assert.match(m,/guard next != source, next != \.cloud \|\| cloudAllowed/)
+ assert.match(m,/let cloudAllowed = cloudSourceAllowed && ownerSelection\.valid/)
+ assert.match(m,/if canSelectCloudMap \{[\s\S]*?tag\(XDriveIOSNativePhotoMapSource\.cloud\)/)
  assert.match(m,/native-ios-map-cloud-filter-unavailable/)
 })
 test('real simulator keeps fixture exact-two marker while reporting true library count',()=>{

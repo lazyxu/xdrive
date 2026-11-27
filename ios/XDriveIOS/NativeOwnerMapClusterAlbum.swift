@@ -54,6 +54,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let selection: XDriveIOSOwnerMapChosenCluster
 
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State private var generation = UUID()
     @State private var loadTask: Task<Void, Never>?
@@ -76,6 +77,16 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // Restore the last successfully viewed Node+revision in the bounded
     // Owner page after L3 closes, without persisting any photo identities.
     @State private var viewerReturn: XDriveIOSNativeMediaItem?
+    @State private var viewerOpeningItem: XDriveIOSNativeMediaItem?
+    @State private var viewerOpeningCursor: XDriveIOSOwnerClusterCursor?
+    @State private var viewerReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var autoScrollReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var visibleTileFrames: [String: CGRect] = [:]
+    @State private var photoWallViewportHeight: CGFloat = 0
+    @State private var pinchReturnViewport: XDriveIOSNativePhotoWallViewportAnchor?
+    @State private var pinchReturnCursor: XDriveIOSOwnerClusterCursor?
+    @State private var pinchReturnRevision: UUID?
+    @AccessibilityFocusState private var focusedTileID: UInt64?
     // During a verified automatic append, preserve the last visible tile
     // while the former two-window head rotates out of the LazyVGrid.
     @State private var autoScrollReturn: XDriveIOSNativeMediaItem?
@@ -83,7 +94,8 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
     // A Viewer may only promote an exact adjacent Range after verifying its
     // prior signed place page. No guessed place or cached media identities.
     @State private var pendingViewerCross: XDriveIOSOwnerClusterCursor?
-    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
@@ -128,35 +140,27 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         let origin: XDriveIOSNativeMediaRange
         var id: UInt64 { item.id }
     }
-    private struct VisibleSection: Identifiable {
-        let id: Int
-        let key: String
-        var tiles: [VisibleTile]
-    }
-
-    // Retain only the two current, Owner-signed 48-item windows; date headings
-    // describe exactly these loaded tiles, never a fabricated 100k-place index.
-    private var visibleSections: [VisibleSection] {
+    // One presentation-only chronology over the two currently signed windows.
+    // Never infer a whole-place date index from the visible 48-item ranges.
+    private var visibleSections: [XDriveIOSNativePhotoWallVisibleSection<VisibleTile>] {
         let tiles: [VisibleTile] =
             (priorWindow.map { range in range.items.map { VisibleTile(item: $0, origin: range) } } ?? []) +
             (page.map { range in range.items.map { VisibleTile(item: $0, origin: range) } } ?? [])
-        var sections: [VisibleSection] = []
-        for tile in tiles {
-            let key = wallTimeScale.key(forISO8601: tile.item.metadata.captured_at)
-            if !sections.isEmpty && sections[sections.count - 1].key == key {
-                sections[sections.count - 1].tiles.append(tile)
-            } else {
-                sections.append(VisibleSection(id: sections.count, key: key, tiles: [tile]))
-            }
-        }
-        return sections
+        return xdriveIOSNativePhotoWallVisibleSections(
+            tiles, scale: wallTimeScale
+        ) { wallTimeScale.key(forISO8601: $0.item.metadata.captured_at) }
     }
 
     var body: some View {
         VStack(spacing: 8) {
             if activeOwner {
-            Text("\(selection.places.count) 个位置 · \(selectedPhotoCount) 张已索引照片")
-                .font(.footnote).foregroundStyle(.secondary)
+            XDriveIOSNativePhotoMapPlaceHeader(
+                title: selection.places.count == 1
+                    ? (selection.places.first?.name ?? "此地点的照片")
+                    : "多个地点的照片",
+                count: selectedPhotoCount,
+                detail: selection.places.count > 1
+                    ? "\(selection.places.count) 个地点" : nil)
                 .accessibilityIdentifier("native-ios-owner-cluster-count")
                 // The signed 48-item transport is not a user-facing page:
                 // expose its progress to VoiceOver without a visible counter.
@@ -169,20 +173,21 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 XDriveIOSNativePhotoWallStatusMessage(
                     message: "正在核对当前账户的地点照片…")
             }
-            if activeOwner, let error {
-                XDriveIOSNativePhotoWallRetryMessage(
-                    message: error, buttonTitle: "重试读取照片",
+            if activeOwner {
+                XDriveIOSNativePhotoWallFeedback(
+                    isLoading: busy,
+                    loadingMessage: "核对当前 Owner 的地点照片…",
+                    error: error,
                     canRetry: !busy && activeOwner && viewing == nil,
-                    accessibilityID: "native-ios-owner-map-cluster-inline-retry"
+                    buttonTitle: "重试读取照片",
+                    retryAccessibilityID: "native-ios-owner-map-cluster-inline-retry"
                 ) {
                     load(cursor, history: earlier)
                 }
             }
-            if busy {
-                XDriveIOSNativePhotoWallLoadingMessage(message: "核对当前 Owner 的地点照片…")
-            }
             XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
-                .padding(.horizontal, 12)
+                .controlSize(.small)
+                .padding(.horizontal, 8)
                 .disabled(!activeOwner || busy || viewing != nil)
             if canJumpInCurrentPlace {
                 Button {
@@ -196,44 +201,36 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 .accessibilityIdentifier("native-ios-owner-place-full-date-jump")
                 .accessibilityHint("按当前 Owner 的完整日期索引定位，仍须重新验证照片访问权限")
             }
-            if wallTimeScale != .all {
-                Text("仅对当前已授权、已加载的照片分组；更远照片仍按需加载。")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-            }
             ScrollViewReader { returnScroll in
-            ScrollView {
-                XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                    // Fail closed during Owner switch *in body*, before the
-                    // onChange invalidation effect can clear the old UIImage.
+            XDriveIOSNativePhotoWallScrollContainer {
+                XDriveIOSNativePhotoWallCollectionStack {
+                    if activeOwner && busy && page == nil && priorWindow == nil {
+                        XDriveIOSNativePhotoWallSkeletonGrid(
+                            density: wallDensity, count: min(48, selectedPhotoCount)
+                        )
+                    }
+                    if activeOwner && !busy && error == nil &&
+                       page?.items.isEmpty == true && priorWindow == nil {
+                        XDriveIOSNativePhotoWallEmptyState(
+                            message: "此地点没有可访问的照片或视频")
+                    }
+                    // Render no stale Owner pixels even before onChange clears
+                    // thumbnail tasks and expired server revisions.
                     if activeOwner {
-                        if wallTimeScale == .all {
-                            if let priorWindow {
-                                ForEach(priorWindow.items) { item in
-                                    photoTile(item, from: priorWindow)
-                                }
-                            }
-                            if let page {
-                                ForEach(page.items) { item in
-                                    photoTile(item, from: page)
-                                }
-                            }
-                        } else {
-                            ForEach(visibleSections) { section in
-                                Section {
-                                    ForEach(section.tiles) { entry in
-                                        photoTile(entry.item, from: entry.origin)
-                                    }
-                                } header: {
-                                    XDriveIOSNativePhotoWallDayHeader(
-                                        title: wallTimeScale.label(for: section.key))
-                                }
-                            }
+                        XDriveIOSNativePhotoWallSectionList(
+                            sections: visibleSections, density: wallDensity,
+                            title: { section in
+                                xdriveIOSNativePhotoWallHeading(
+                                    scale: wallTimeScale, key: section.key,
+                                    firstSection: section.id == 0)
+                            },
+                            items: { $0.items }
+                        ) { entry in
+                            photoTile(entry.item, from: entry.origin)
                         }
                     }
-                    // The lazy-grid foot advances the verified Owner Range
-                    // when it approaches the viewport, like native Photos.
-                    // It remains guarded by Owner, busy, cover and error state.
+                    // The current page's verified paging sentinel remains
+                    // OUTSIDE the shared presentation-only Section List.
                     if activeOwner, let next {
                         Color.clear
                             .frame(height: 24)
@@ -246,7 +243,42 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, XDriveIOSNativePhotoWallLayout.horizontalInset)
+            }
+            .coordinateSpace(name: "xdrive-ios-owner-place-wall")
+            .background {
+                GeometryReader { viewport in
+                    Color.clear
+                        .onAppear { photoWallViewportHeight = viewport.size.height }
+                        .onChange(of: viewport.size.height) {
+                            photoWallViewportHeight = $0
+                        }
+                }
+            }
+            .onPreferenceChange(XDriveIOSNativePhotoWallTileFramesKey.self) { frames in
+                if visibleTileFrames != frames { visibleTileFrames = frames }
+            }
+            .onChange(of: wallDensity) { _ in
+                defer {
+                    pinchReturnViewport = nil
+                    pinchReturnCursor = nil
+                    pinchReturnRevision = nil
+                }
+                // Never re-anchor an old Owner place or a rotated signed
+                // 48-photo window after a concurrent page replacement.
+                guard activeOwner, viewing == nil,
+                      pinchReturnCursor == cursor,
+                      pinchReturnRevision == visiblePageRevision,
+                      let anchor = pinchReturnViewport,
+                      let id = UInt64(anchor.itemID),
+                      ((priorWindow?.items ?? []) + (page?.items ?? []))
+                          .filter({ $0.id == id }).count == 1,
+                      let alignment = anchor.alignment(
+                          for: String(id), window: cursor.offset,
+                          viewportHeight: photoWallViewportHeight)
+                else { return }
+                xdrivePhotoWallScrollVerifiedTile(
+                    id, scroll: returnScroll, anchor: alignment)
             }
             .onChange(of: visiblePageRevision) { _ in
                 // Auto paging replaces the previous pair of 48-photo windows.
@@ -259,9 +291,14 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                            scopeActive: activeOwner,
                            matches: { $0.sameVisibleRevision(as: $1) }
                        ) {
-                        returnScroll.scrollTo(anchor.id, anchor: .bottom)
+                        let restored = autoScrollReturnViewport?.alignment(
+                            for: String(anchor.id),
+                            window: priorWindowCursor?.offset ?? -1,
+                            viewportHeight: photoWallViewportHeight)
+                        returnScroll.scrollTo(anchor.id, anchor: restored ?? .bottom)
                     }
                     autoScrollReturn = nil
+                    autoScrollReturnViewport = nil
                 }
                 // Restore the exact first signed tile of a requested day,
                 // not merely the 48-item page's top or an old scroll offset.
@@ -272,7 +309,10 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                            scopeActive: activeOwner,
                            matches: { $0.sameVisibleRevision(as: $1) }
                        ) {
-                        returnScroll.scrollTo(anchor.id, anchor: .top)
+                        xdrivePhotoWallFocusVerifiedTile(
+                            anchor.id, scroll: returnScroll,
+                            focus: $focusedTileID, anchor: .top
+                        )
                     }
                     dateJumpReturn = nil
                 }
@@ -285,38 +325,61 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                           scopeActive: activeOwner,
                           matches: { $0.sameVisibleRevision(as: $1) }
                       ) else {
+                    // The old Owner Node/window is no longer admissible.
+                    // Retire all presentation-only Viewer geometry too.
                     viewerReturn = nil
+                    viewerOpeningItem = nil
+                    viewerOpeningCursor = nil
+                    viewerReturnViewport = nil
                     return
                 }
-                returnScroll.scrollTo(anchor.id, anchor: .center)
+                // Same-revision Viewer return must not re-center.
+                if viewerOpeningItem.map({
+                    !$0.sameVisibleRevision(as: anchor)
+                }) ?? true || viewerOpeningCursor != cursor {
+                    let restored = viewerReturnViewport?.alignment(
+                        for: String(anchor.id), window: cursor.offset,
+                        viewportHeight: photoWallViewportHeight)
+                    xdrivePhotoWallFocusVerifiedTile(
+                        anchor.id, scroll: returnScroll, focus: $focusedTileID,
+                        anchor: restored ?? .center
+                    )
+                } else {
+                    focusedTileID = anchor.id
+                }
                 viewerReturn = nil
+                viewerOpeningItem = nil
+                viewerOpeningCursor = nil
+                viewerReturnViewport = nil
             }
             .onChange(of: busy) { isBusy in
                 if !isBusy { advanceIfVisible() }
             }
             }
         }
-        .navigationTitle("位置照片")
+        // The shared visible place header contains the verified title.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("关闭地点照片")
+                .accessibilityIdentifier("native-ios-owner-cluster-dismiss")
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    // Paging is driven by the visible grid sentinels; expose
-                    // only an explicit refresh, not transport-page controls.
+                XDriveIOSNativePhotoWallDisplayMenu(
+                    density: $wallDensity, framing: $wallFraming,
+                    accessibilityID: "native-ios-owner-map-cluster-more"
+                ) {
                     Button("重新核对当前位置照片") {
                         load(cursor, history: earlier)
                     }
                     .disabled(busy || !activeOwner || viewing != nil)
-                    Section("照片网格") {
-                        xdrivePhotoWallDensityButtons($wallDensity)
-                    }
-                    Section("显示比例") {
-                        xdrivePhotoWallFramingButtons($wallFraming)
-                    }
-                } label: {
-                    Label("位置照片操作", systemImage: "ellipsis.circle")
                 }
-                .accessibilityIdentifier("native-ios-owner-map-cluster-more")
+                .accessibilityLabel("位置照片操作")
             }
         }
         .sheet(isPresented: $dateJumpVisible) {
@@ -346,7 +409,24 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         }
         .xdrivePhotoWallPinch(
             density: $wallDensity,
-            enabled: activeOwner && !busy && viewing == nil
+            enabled: activeOwner && !busy && viewing == nil,
+            onDensityChange: { _ in
+                pinchReturnCursor = cursor
+                pinchReturnRevision = visiblePageRevision
+                // Match the Gallery's measured fully-visible tile placement;
+                // never persist these presentation-only photo identifiers.
+                pinchReturnViewport = visibleTileFrames
+                    .filter { $0.value.minY >= 0 &&
+                              $0.value.maxY <= photoWallViewportHeight }
+                    .min(by: { $0.value.minY < $1.value.minY })
+                    .flatMap { entry -> XDriveIOSNativePhotoWallViewportAnchor? in
+                        guard UInt64(entry.key) != nil else { return nil }
+                        return XDriveIOSNativePhotoWallViewportAnchor(
+                            itemID: entry.key, windowIndex: cursor.offset,
+                            viewportOffset: entry.value.minY,
+                            tileHeight: entry.value.height)
+                    }
+            }
         )
         .fullScreenCover(item: $viewing, onDismiss: {
             pendingViewerCross = nil
@@ -369,6 +449,11 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                               $0.sameVisibleRevision(as: neighbor)
                           }) else { return false }
                     viewerReturn = neighbor
+                    viewerReturnViewport = visibleTileFrames[String(neighbor.id)].map {
+                        XDriveIOSNativePhotoWallViewportAnchor(
+                            itemID: String(neighbor.id), windowIndex: cursor.offset,
+                            viewportOffset: $0.minY, tileHeight: $0.height)
+                    }
                     return true
                 },
                 canCrossMapPlace: { previous, anchor, direction in
@@ -524,6 +609,7 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     cursor = admitted
                     page = verifiedRange
                     viewerReturn = opened
+                    viewerReturnViewport = nil
                     priorWindow = nil
                     priorWindowCursor = nil
                     coverTask?.cancel()
@@ -595,7 +681,14 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                 priorWindow = nil
                 priorWindowCursor = nil
             }
+            viewerOpeningItem = item
+            viewerOpeningCursor = cursor
             viewerReturn = item
+            viewerReturnViewport = visibleTileFrames[String(item.id)].map {
+                XDriveIOSNativePhotoWallViewportAnchor(
+                    itemID: String(item.id), windowIndex: cursor.offset,
+                    viewportOffset: $0.minY, tileHeight: $0.height)
+            }
             viewing = item
         } label: {
             XDriveIOSNativePhotoWallTileShell(isVideo: item.isVideo, isLive: item.isLive) {
@@ -622,6 +715,9 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         }
         .buttonStyle(.plain)
         .id(item.id)
+        .accessibilityIdentifier("native-ios-owner-map-cluster-tile-\(item.id)-\(item.node.revision)")
+        .accessibilityFocused($focusedTileID, equals: item.id)
+        .xdrivePhotoWallMeasureTile(String(item.id), in: "xdrive-ios-owner-place-wall")
         .accessibilityLabel(item.isLive ? "实况照片" :
                              item.isVideo ? "视频" : "照片")
     }
@@ -718,6 +814,16 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         coverLoading = false
         page = nil
         viewerReturn = nil
+        viewerOpeningItem = nil
+        viewerOpeningCursor = nil
+        viewerReturnViewport = nil
+        autoScrollReturnViewport = nil
+        visibleTileFrames = [:]
+        photoWallViewportHeight = 0
+        pinchReturnViewport = nil
+        pinchReturnCursor = nil
+        pinchReturnRevision = nil
+        focusedTileID = nil
         autoScrollReturn = nil
         priorWindow = nil
         priorWindowCursor = nil
@@ -759,8 +865,14 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         }
         // Ordinary pagination does not carry a stale Viewer anchor into a
         // different place or new 48-item Range. Dismissal reloads the SAME.
-        if autoAdvance || target != cursor { viewerReturn = nil }
+        if autoAdvance || target != cursor {
+            viewerReturn = nil
+            viewerOpeningItem = nil
+            viewerOpeningCursor = nil
+            viewerReturnViewport = nil
+        }
         autoScrollReturn = nil
+        autoScrollReturnViewport = nil
         scrollFootVisible = false
         loadTask?.cancel()
         coverTask?.cancel()
@@ -769,7 +881,16 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
         if !autoAdvance {
             priorWindow = nil
             priorWindowCursor = nil
-            coverImages = [:]
+            if target == departingCursor, let departingPage, activeOwner {
+                // Keep the already painted SAME Owner's bounded 48 covers
+                // while the Viewer-return Range is being reverified.
+                // Busy disables tile admission; a changed/revoked snapshot
+                // will clear these pixels before it becomes interactive.
+                let retainedIDs = Set(departingPage.items.map(\.id))
+                coverImages = coverImages.filter { retainedIDs.contains($0.key) }
+            } else {
+                coverImages = [:]
+            }
         }
         pendingViewerCross = nil
         error = nil
@@ -890,6 +1011,14 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     priorWindow = departingPage
                     priorWindowCursor = departingCursor
                     autoScrollReturn = departingPage.items.last
+                    autoScrollReturnViewport = autoScrollReturn.flatMap { lastItem in
+                        visibleTileFrames[String(lastItem.id)].map { frame in
+                            XDriveIOSNativePhotoWallViewportAnchor(
+                                itemID: String(lastItem.id),
+                                windowIndex: departingCursor.offset,
+                                viewportOffset: frame.minY, tileHeight: frame.height)
+                        }
+                    }
                     let admitted = Set(
                         departingPage.items.map(\.id) + fetched.items.map(\.id)
                     )
@@ -900,7 +1029,19 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     priorWindow = nil
                     priorWindowCursor = nil
                     autoScrollReturn = nil
-                    coverImages = [:]
+                    autoScrollReturnViewport = nil
+                    if target == departingCursor, let departingPage,
+                       departingPage.sameVisibleSnapshot(as: fetched), activeOwner {
+                        // Preserve only byte-identical visible revisions.
+                        // Same numeric Node ID with edited media/thumbnail
+                        // version is never permitted to display an old UIImage.
+                        let verifiedIDs = Set(fetched.items.map(\.id))
+                        coverImages = coverImages.filter {
+                            verifiedIDs.contains($0.key)
+                        }
+                    } else {
+                        coverImages = [:]
+                    }
                 }
                 if fetched.offset == 0 {
                     let index = fetched.timeline_group_sets ??
@@ -988,6 +1129,25 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
             } catch is CancellationError {
             } catch {
                 guard generation == ticket else { return }
+                if let failure = error as? XDriveIOSNativeMediaReadFailure {
+                    switch failure {
+                    case .response(let status) where status == 401 || status == 403:
+                        // A known Owner/ACL revoke is NOT a transient network
+                        // failure; retire the old pixels, Range and focus now.
+                        invalidate()
+                        self.error = "Owner 权限已失效，旧地点照片已清除。"
+                        return
+                    case .invalidScope, .invalidPage, .malformed,
+                         .unsupported, .tooLarge:
+                        // Reject a changed signed count, Node revision or
+                        // malformed Range without reusing the former wall.
+                        invalidate()
+                        self.error = "地点照片索引已变化，请返回地图重新核对。"
+                        return
+                    default:
+                        break
+                    }
+                }
                 if dateJump != nil {
                     // A failed fresh-index check invalidates any previously
                     // cached jump hint, even when the Owner is unchanged.
@@ -995,8 +1155,12 @@ struct XDriveIOSNativeOwnerMapClusterAlbum: View {
                     verifiedDatePlaceID = nil
                     verifiedDateTotal = 0
                 }
-                // Do not promote an unverified next cursor on failure.
+                // Do not promote an unverified next cursor or old Viewer
+                // geometry on a recoverable failure.
                 viewerReturn = nil
+                viewerOpeningItem = nil
+                viewerOpeningCursor = nil
+                viewerReturnViewport = nil
                 self.error = "地点照片或 Owner 授权已变化；可重试，必要时返回地图刷新。"
             }
         }

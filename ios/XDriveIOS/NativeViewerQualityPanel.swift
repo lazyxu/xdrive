@@ -67,6 +67,9 @@ struct XDriveIOSNativeViewerResourceDetail: Identifiable {
 struct XDriveIOSNativeViewerInfoSheet: View {
     let details: XDriveIOSNativeViewerMediaDetails
     var onOpenLocation: (() -> Void)? = nil
+    // Only writable local PhotoKit media supplies this action. Cloud images
+    // remain read-only; a map preview alone never grants mutation authority.
+    var onAdjustLocation: (() -> Void)? = nil
     var ocr: XDriveIOSNativeCloudOCRView? = nil
     @Environment(\.dismiss) private var dismiss
 
@@ -167,10 +170,26 @@ struct XDriveIOSNativeViewerInfoSheet: View {
                                     .frame(maxWidth: .infinity, minHeight: 44)
                             }
                         }
+                        if let onAdjustLocation {
+                            Button(action: onAdjustLocation) {
+                                Label("调整位置", systemImage: "mappin.and.ellipse")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                            .accessibilityIdentifier("native-ios-viewer-adjust-location")
+                        }
                     }
-                } else if let status = details.locationStatus {
+                } else if details.locationStatus != nil || onAdjustLocation != nil {
                     Section("拍摄位置") {
-                        Text(status).foregroundStyle(.secondary)
+                        if let status = details.locationStatus {
+                            Text(status).foregroundStyle(.secondary)
+                        }
+                        if let onAdjustLocation {
+                            Button(action: onAdjustLocation) {
+                                Label("添加或调整位置", systemImage: "mappin.and.ellipse")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                            .accessibilityIdentifier("native-ios-viewer-adjust-location")
+                        }
                     }
                 }
             }

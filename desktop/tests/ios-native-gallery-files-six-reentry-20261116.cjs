@@ -209,6 +209,21 @@ test("retained date sheet re-reads only authorized PhotoKit after foreground", (
     /Button\("完成"\) \{ showingDates = false \}/)
 })
 
+test("denied Files search never keeps the system search overlay above recovery", () => {
+  const start = browser.indexOf("private var filesChrome: some View {");
+  const end = browser.indexOf(".onSubmit(of: .search)", start);
+  assert.ok(start >= 0 && end > start);
+  const chrome = browser.slice(start, end);
+  assert.match(chrome, /if !isHome && !model\.loading && !model\.verifiedPage/);
+  assert.match(chrome, /Button\("清除搜索并返回浏览"\) \{ clearSearch\(\) \}/);
+  assert.match(chrome, /native-ios-files-error-clear-search/);
+  // Only the verified-list branch owns native searchable presentation.
+  assert.match(chrome, /\} else \{\s*filesList[\s\S]*?\.modifier\(XDriveIOSNativeFilesSearchPresentation\(/);
+  assert.doesNotMatch(chrome, /\}\s*\.modifier\(XDriveIOSNativeFilesSearchPresentation\(/);
+  assert.match(sixSubpage, /Denied Files search recovery is obscured by UIKit searchable/);
+  assert.match(sixSubpage, /Clearing denied search did not retire its native Error page/);
+});
+
 test("fixed Files tab forwards live selection without remounting its view", () => {
   assert.match(dashboard,
     /XDriveIOSNativeFilesBrowser\(login: login, isRootTabActive: tab == \.files\)/)
@@ -262,6 +277,6 @@ test("six more real native Gallery/Files cross-child transitions retain H264 fai
     "Files root search overlay retirement must remain protected")
   const workflow = fs.readFileSync(path.join(root,
     ".github/workflows/ios-native-navigation-runtime.yml"), "utf8")
-  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 56/,
-    "all 56 distinct real video clips must remain mandatory")
+  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 64/,
+    "all 64 distinct real video clips must remain mandatory")
 })

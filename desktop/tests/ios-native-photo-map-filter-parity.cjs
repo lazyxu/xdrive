@@ -19,7 +19,7 @@ test('local Gallery filter travels through both native map entry paths', () => {
   assert.match(maps, /var mediaFilter: XDriveIOSNativePhotoMediaFilter = \.all/)
   const route = maps.slice(maps.indexOf('struct XDriveIOSNativePhotoMapsScreen'),
     maps.indexOf('private final class XDriveIOSOwnerPlaceAnnotation'))
-  assert.match(route, /case \.local:[\s\S]*?onFocusChange: onFocusChange,\s*mediaFilter: mediaFilter/)
+  assert.match(route, /case \.local:[\s\S]*?onFocusChange: onFocusChange,\s*mapSource: animatedSource, canSelectCloudMap: cloudAllowed,\s*mediaFilter: mediaFilter/)
   assert.doesNotMatch(route.slice(route.indexOf('case .cloud:')), /XDriveIOSNativeOwnerPhotoMapScreen\([\s\S]*?mediaFilter:/)
 })
 
@@ -57,7 +57,8 @@ test('map Cells and their location photo wall use the same frozen filtered snaps
 test('changing the Gallery filter discards earlier map Cells and camera hints', () => {
   const screen = local.slice(local.indexOf('struct XDriveIOSNativeLocalPhotoMapScreen: View'))
   assert.match(screen, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?onLibraryCameraChange\?\(nil\)[\s\S]*?scanFullLibrary\(\)[\s\S]*?refresh\(at: 0\)[\s\S]*?invalidate\(\)/)
-  assert.match(screen, /\.navigationTitle\(album\.map[\s\S]*?mediaFilter\.isAll \? "地图" : "地图 · /)
+  assert.match(screen, /\.navigationTitle\("地图"\)/)
+  assert.match(screen, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?scanFullLibrary\(\)/)
   assert.match(screen, /guard globalComplete, !busy else \{ return false \}/)
 })
 

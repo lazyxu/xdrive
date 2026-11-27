@@ -1,4 +1,5 @@
 import Combine
+import CoreLocation
 import MapKit
 import Photos
 import SwiftUI
@@ -136,6 +137,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
 
     private func setup() {
         frame = XDriveIOSNativeMapMarkerVisualPolicy.frame
+        XDriveIOSNativeMapMarkerVisualPolicy.decorate(self)
         centerOffset = XDriveIOSNativeMapMarkerVisualPolicy.centerOffset
         clipsToBounds = false
         collisionMode = .circle
@@ -159,7 +161,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         badge.textAlignment = .center
         badge.font = XDriveIOSNativeMapMarkerVisualPolicy.badgeFont
         badge.textColor = .white
-        badge.backgroundColor = .systemBlue
+        badge.backgroundColor = XDriveIOSNativeMapMarkerVisualPolicy.badgeBackgroundColor
         badge.layer.cornerRadius = XDriveIOSNativeMapMarkerVisualPolicy.badgeCornerRadius
         badge.layer.borderColor = UIColor.white.cgColor
         badge.layer.borderWidth = XDriveIOSNativeMapMarkerVisualPolicy.badgeBorderWidth
@@ -174,6 +176,7 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         // nor permission to open a PhotoKit location album.
         badge.isHidden = provisional || count <= 1
         badge.text = provisional ? nil : XDriveIOSNativeMapMarkerVisualPolicy.badgeText(count: count)
+        XDriveIOSNativeMapMarkerVisualPolicy.resizeBadge(badge)
         isAccessibilityElement = !provisional
         accessibilityTraits = provisional ? [] : .button
         accessibilityLabel = provisional ?
@@ -246,11 +249,23 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
         placeholder.isHidden = false
     }
 
+    override func setSelected(_ selected: Bool, animated: Bool) {
+        super.setSelected(selected, animated: animated)
+        XDriveIOSNativeMapMarkerVisualPolicy.updateSelection(
+            selected, view: self, animated: animated)
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
+        XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(self)
         cancel()
         badge.text = nil
+        isEnabled = false
+        isAccessibilityElement = false
+        accessibilityElementsHidden = true
+        accessibilityTraits = []
         accessibilityLabel = nil
+        accessibilityIdentifier = nil
     }
 
     override func didMoveToSuperview() {
@@ -273,8 +288,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     var showsUserDot = false
     var provisional = false
     var canSelectCells = true
-    // Only previously viewport-filtered cells need instant gesture revocation.
-    // All-library overview and normal photo page remain directly selectable.
+    // Every full-library GPS Cell needs synchronous gesture revocation,
+    // including the initial world overview before the first viewport scan.
+    // Plain 64-photo pages use a separate membership lease.
     var cameraBoundCells = false
     var onCells: (([Cell], MKCoordinateRegion) -> Void)? = nil
     var onCamera: ((MKCoordinateRegion) -> Void)? = nil
@@ -332,6 +348,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         for annotation in map.annotations {
             if let cover = map.view(for: annotation) as? XDriveIOSMapPhotoCover {
                 cover.isEnabled = canSelectCells
+                if !canSelectCells {
+                    XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(cover)
+                }
                 cover.isAccessibilityElement = canSelectCells
                 cover.accessibilityElementsHidden = !canSelectCells
                 cover.accessibilityTraits = canSelectCells ? .button : []
@@ -435,6 +454,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+#if DEBUG
+            XDriveIOSMapRealPerformanceProbe.shared.beginFrameWindow("map_pan_zoom")
+#endif
             // Preview auto-fit runs without a delegate; only subsequent
             // native camera changes preserve the user's chosen viewport.
             if showingProvisional && provisionalPresented {
@@ -449,6 +471,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
                     guard let cover = mapView.view(for: annotation) as? XDriveIOSMapPhotoCover
                     else { continue }
                     cover.isEnabled = false
+                    XDriveIOSNativeMapMarkerVisualPolicy.resetSelection(cover)
                     cover.isAccessibilityElement = false
                     cover.accessibilityElementsHidden = true
                     cover.accessibilityTraits = []
@@ -459,6 +482,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             onCamera?(mapView.region)
+#if DEBUG
+            XDriveIOSMapRealPerformanceProbe.shared.endFrameWindow("map_pan_zoom")
+#endif
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
@@ -594,7 +620,9 @@ private struct XDriveIOSMapPhotoAlbum: View {
     @Environment(\.scenePhase) private var phase
     @State private var selected: XDrivePhotoKitScanCandidate?
     @State private var viewerReturnID: String?
-    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @State private var viewerOpeningID: String?
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
@@ -616,53 +644,51 @@ private struct XDriveIOSMapPhotoAlbum: View {
     var body: some View {
         ScrollViewReader { returnScroll in
         NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+            XDriveIOSNativePhotoWallScrollContainer {
+                VStack(alignment: .leading, spacing: 10) {
                     XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
-                    ForEach(previewSections) { section in
-                        if wallTimeScale != .all {
-                            XDriveIOSNativePhotoWallDayHeader(
-                                title: wallTimeScale.label(for: section.key)
-                            )
-                        }
-                        XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                            ForEach(section.items) { item in
-                        Button {
-                            guard XDriveIOSNativeMapViewerAdmission.allows(
-                                item, in: previewItems, sceneActive: phase == .active
-                            ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
-                                item, filter: mediaFilter, filenameTerm: filenameTerm
-                            ) else { return }
-                            viewerReturnID = item.id
-                            focusedTileID = nil
-                            selected = item
-                        } label: {
-                            XDriveIOSNativeSquarePhotoTile(candidate: item, framing: wallFraming)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!XDriveIOSNativeMapViewerAdmission.supported(item) ||
-                                  phase != .active)
-                        .id(item.id)
-                        .accessibilityFocused($focusedTileID, equals: item.id)
-                            }
-                        }
+                    XDriveIOSNativePhotoWallSectionList(
+                    sections: previewSections, density: wallDensity,
+                    title: { wallTimeScale == .all ? nil :
+                        wallTimeScale.label(for: $0.key) },
+                    items: { $0.items }
+                ) { item in
+                    Button {
+                        guard XDriveIOSNativeMapViewerAdmission.allows(
+                            item, in: previewItems, sceneActive: phase == .active
+                        ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                            item, filter: mediaFilter, filenameTerm: filenameTerm
+                        ) else { return }
+                        viewerOpeningID = item.id
+                        viewerReturnID = item.id
+                        focusedTileID = nil
+                        selected = item
+                    } label: {
+                        XDriveIOSNativeSquarePhotoTile(
+                            candidate: item, framing: wallFraming
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!XDriveIOSNativeMapViewerAdmission.supported(item) ||
+                              phase != .active)
+                    .id(item.id)
+                    .accessibilityFocused($focusedTileID, equals: item.id)
                     }
                 }
                 .padding(8)
             }
-            .navigationTitle("此处照片 · 当前页")
+            .navigationTitle("此地点的照片")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Section("照片网格") { xdrivePhotoWallDensityButtons($wallDensity) }
-                        Section("显示比例") { xdrivePhotoWallFramingButtons($wallFraming) }
-                    } label: {
-                        Label("缩略图大小", systemImage: "square.grid.3x3")
-                    }
-                    .accessibilityIdentifier("native-ios-map-page-wall-density")
+                    XDriveIOSNativePhotoWallDisplayMenu(
+                        density: $wallDensity, framing: $wallFraming,
+                        accessibilityID: "native-ios-map-page-wall-density"
+                    ) { EmptyView() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
+                        .frame(minWidth: 44, minHeight: 44)
                 }
             }
             .xdrivePhotoWallPinch(
@@ -689,14 +715,25 @@ private struct XDriveIOSMapPhotoAlbum: View {
     }
 
     private func restoreViewerTile(using scroll: ScrollViewProxy) {
-        defer { viewerReturnID = nil }
-        guard let id = viewerReturnID,
+        defer { viewerReturnID = nil; viewerOpeningID = nil }
+        guard let id = XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+                  viewerReturnID, in: previewItems.map(\.id),
+                  authorized: phase == .active
+              ),
               let target = previewItems.first(where: { $0.id == id }),
               XDriveIOSNativeMapViewerAdmission.allows(
                   target, in: previewItems, sceneActive: phase == .active
+              ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                  target, filter: mediaFilter, filenameTerm: filenameTerm
               ) else { return }
-        scroll.scrollTo(id, anchor: .center)
-        focusedTileID = id
+        // A same-photo Viewer return must keep the original visible offset.
+        if viewerOpeningID != id {
+            xdrivePhotoWallFocusVerifiedTile(
+                id, scroll: scroll, focus: $focusedTileID
+            )
+        } else {
+            focusedTileID = id
+        }
     }
 }
 
@@ -751,7 +788,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @State private var viewer: XDrivePhotoKitScanCandidate?
     @State private var viewerItems: [XDrivePhotoKitScanCandidate] = []
     @State private var viewerReturnID: String?
-    @State private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
+    @State private var viewerOpeningID: String?
+    @AppStorage("xdrive.ios.gallery.photo-wall-density.v1")
+    private var wallDensity: XDriveIOSNativePhotoWallDensity = .standard
     @AppStorage("xdrive.ios.gallery.photo-wall-framing.v1")
     private var wallFraming: XDriveIOSNativePhotoWallFraming = .square
     @State private var wallTimeScale: XDriveIOSNativePhotoWallTimeScale = .all
@@ -772,6 +811,53 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @State private var visibleWindowRevision = UUID()
     @State private var windowNumber = 0
     @State private var error: String?
+    // A single, currently authorized PhotoKit GPS representative is only
+    // used for a temporary display label. Reverse geocoding never changes
+    // the Cell member set, authorizes Viewer access or stores private GPS.
+    @State private var placeName: String?
+    @State private var placeNameTask: Task<Void, Never>?
+    @State private var placeGeocoder = CLGeocoder()
+
+    private func resolvePlaceName() {
+        guard !isNearbyExpansion, album == nil,
+              selection.cells.count == 1,
+              let cell = selection.cells.first,
+              placeName == nil, placeNameTask == nil,
+              phase == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+              XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                  latitude: cell.latitude, longitude: cell.longitude)
+        else { return }
+        let ticket = generation
+        let geocoder = placeGeocoder
+        placeNameTask = Task { @MainActor in
+            defer { if generation == ticket { placeNameTask = nil } }
+            do {
+                let places = try await geocoder.reverseGeocodeLocation(
+                    CLLocation(latitude: cell.latitude, longitude: cell.longitude)
+                )
+                guard !Task.isCancelled, generation == ticket, phase == .active,
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      let place = places.first else { return }
+                let components = [place.locality, place.subLocality,
+                                  place.administrativeArea]
+                    .compactMap { $0 }.filter { !$0.isEmpty }
+                if !components.isEmpty {
+                    placeName = components.prefix(2).joined(separator: " · ")
+                }
+            } catch is CancellationError {
+            } catch {
+                // A failed geocoder must not block the real location album.
+            }
+        }
+    }
+
+    private func cancelPlaceName() {
+        placeNameTask?.cancel()
+        placeNameTask = nil
+        placeGeocoder.cancelGeocode()
+        placeName = nil
+    }
 
     private struct WindowRead {
         let items: [XDrivePhotoKitScanCandidate]
@@ -805,15 +891,26 @@ private struct XDriveIOSMapSpatialAlbum: View {
     }
 
     private func restoreViewerTile(using scroll: ScrollViewProxy) {
-        defer { viewerReturnID = nil }
+        defer { viewerReturnID = nil; viewerOpeningID = nil }
         guard let id = viewerReturnID,
               let target = visibleItems.first(where: { $0.id == id }) else { return }
         let loaded = loadedWindow(containing: id)
-        guard XDriveIOSNativeMapViewerAdmission.allows(
-            target, in: loaded, sceneActive: phase == .active
-        ) else { return }
-        scroll.scrollTo(id, anchor: .center)
-        focusedTileID = id
+        guard let checkedID = XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+                  id, in: loaded.map(\.id), authorized: phase == .active
+              ),
+              XDriveIOSNativeMapViewerAdmission.allows(
+                  target, in: loaded, sceneActive: phase == .active
+              ), XDriveIOSMapCurrentPhotoKitAdmission.allows(
+                  target, filter: selection.mediaFilter,
+                  filenameTerm: selection.filenameTerm
+              ) else { return }
+        if viewerOpeningID != checkedID {
+            xdrivePhotoWallFocusVerifiedTile(
+                checkedID, scroll: scroll, focus: $focusedTileID
+            )
+        } else {
+            focusedTileID = checkedID
+        }
         viewerItems = []
     }
 
@@ -828,6 +925,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     filenameTerm: selection.filenameTerm,
                     tripScope: selection.tripScope
                   ) else { return }
+            viewerOpeningID = item.id
             viewerReturnID = item.id
             viewerItems = loaded
             focusedTileID = nil
@@ -837,6 +935,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("native-ios-map-photo-wall-tile")
+        // No raw PhotoKit ID leaves the device; this process-local hash only
+        // lets the real XCTest prove the same item returned after rapid L3.
+        .accessibilityValue("return-anchor-\(item.id.hashValue)")
         .disabled(busy || !XDriveIOSNativeMapViewerAdmission.supported(item))
         .id(item.id)
         .accessibilityFocused($focusedTileID, equals: item.id)
@@ -846,40 +947,52 @@ private struct XDriveIOSMapSpatialAlbum: View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             VStack(spacing: 8) {
-                Text(isNearbyExpansion ?
-                     "附近照片 · 已加载 \(visibleItems.count) 张" :
-                     "此处照片 · \(selectedPhotoCount) 张")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityValue(
-                        busy ? "正在读取位置照片" :
-                        (hasNext ? "可继续向下滚动浏览" : "已显示全部可访问照片")
-                    )
-                if busy { XDriveIOSNativePhotoWallLoadingMessage(message: "正在读取位置照片…") }
-                if let error {
-                    XDriveIOSNativePhotoWallRetryMessage(
-                        message: error, buttonTitle: "重试读取照片",
-                        canRetry: !busy && phase == .active,
-                        accessibilityID: "native-ios-map-cluster-inline-retry"
-                    ) {
-                        if worker != nil { loadNext() } else { loadInitial() }
+                XDriveIOSNativePhotoMapPlaceHeader(
+                    title: isNearbyExpansion ? "附近照片" :
+                        (album?.name ?? (selection.cells.count > 1
+                            ? "多个地点的照片" : (placeName ?? "此地点的照片"))),
+                    count: isNearbyExpansion ? nil : selectedPhotoCount,
+                    detail: isNearbyExpansion ? "按位置浏览" :
+                        (selection.cells.count > 1
+                            ? "\(selection.cells.count) 个地点" : nil)
+                )
+                .accessibilityValue(busy ? "正在读取位置照片" :
+                    (hasNext ? "可继续滚动浏览" : "已显示全部可访问照片"))
+                if album != nil, onShowNearby != nil {
+                    Button {
+                        onShowNearby?()
+                        dismiss()
+                    } label: {
+                        Label("显示附近照片", systemImage: "mappin.and.ellipse")
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .padding(.horizontal, 14)
+                    .disabled(busy || viewer != nil || phase != .active)
+                    .accessibilityIdentifier("native-ios-local-map-nearby")
+                }
+                XDriveIOSNativePhotoWallFeedback(
+                    isLoading: busy, loadingMessage: "正在读取位置照片…",
+                    error: error, canRetry: !busy && phase == .active,
+                    buttonTitle: "重试读取照片",
+                    retryAccessibilityID: "native-ios-map-cluster-inline-retry"
+                ) {
+                    if worker != nil { loadNext() } else { loadInitial() }
                 }
                 if !busy && items.isEmpty && priorWindow.isEmpty && error == nil {
                     XDriveIOSNativePhotoWallStatusMessage(message: "此位置没有可访问的照片或视频。")
                 }
-                ScrollView {
+                XDriveIOSNativePhotoWallScrollContainer {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         XDriveIOSNativePhotoWallTimeScaleControls(scale: $wallTimeScale)
-                        ForEach(visibleSections) { section in
-                            if wallTimeScale != .all {
-                                XDriveIOSNativePhotoWallDayHeader(
-                                    title: wallTimeScale.label(for: section.key)
-                                )
-                            }
-                            XDriveIOSNativePhotoWallGrid(density: wallDensity) {
-                                ForEach(section.items) { item in photoTile(item) }
-                            }
-                        }
+                            .controlSize(.small)
+                            .padding(.horizontal, 6)
+                        XDriveIOSNativePhotoWallSectionList(
+                            sections: visibleSections, density: wallDensity,
+                            title: { wallTimeScale == .all ? nil :
+                                wallTimeScale.label(for: $0.key) },
+                            items: { $0.items }
+                        ) { item in photoTile(item) }
                         // The lazy-grid sentinel is the native infinite-scroll
                         // trigger. It advances only as the last visible window
                         // approaches the viewport; busy/error guards prevent repeats.
@@ -897,6 +1010,25 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     }
                     .padding(8)
                 }
+                .accessibilityIdentifier("native-ios-map-place-scroll")
+                // This measures actual touch-driven scrolling, not an idle
+                // photo wall waiting for image/PhotoKit data. The display
+                // link is closed on gesture end and again at page teardown.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { _ in
+#if DEBUG
+                            XDriveIOSMapRealPerformanceProbe.shared
+                                .beginFrameWindow("place_wall_scroll")
+#endif
+                        }
+                        .onEnded { _ in
+#if DEBUG
+                            XDriveIOSMapRealPerformanceProbe.shared
+                                .endFrameWindow("place_wall_scroll")
+#endif
+                        }
+                )
                 .onChange(of: visibleWindowRevision) { _ in
                     if let anchor = autoScrollReturnID,
                        XDriveIOSNativePhotoWallWindowPolicy.canRestore(
@@ -911,30 +1043,20 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     if !isBusy { advanceIfVisible() }
                 }
             }
-            .navigationTitle(isNearbyExpansion ? "附近照片" :
-                (album.map { "\($0.name) · 此处照片" } ?? "此处照片"))
+            // The photo-first location header already names the place.
+            // Avoid a duplicate inline title in the medium/large Sheet.
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        if album != nil, onShowNearby != nil {
-                            Button("显示附近照片") {
-                                onShowNearby?()
-                                dismiss()
-                            }
-                            .disabled(busy || viewer != nil || phase != .active)
-                        }
+                    XDriveIOSNativePhotoWallDisplayMenu(
+                        density: $wallDensity, framing: $wallFraming,
+                        accessibilityID: "native-ios-map-cluster-more"
+                    ) {
+                        // Nearby is a visible place-header action.
                         Button("重新核对当前位置照片") { loadInitial() }
                             .disabled(busy || viewer != nil || phase != .active)
-                        Section("照片网格") {
-                            xdrivePhotoWallDensityButtons($wallDensity)
-                        }
-                        Section("显示比例") {
-                            xdrivePhotoWallFramingButtons($wallFraming)
-                        }
-                    } label: {
-                        Label("位置照片操作", systemImage: "ellipsis.circle")
                     }
-                    .accessibilityIdentifier("native-ios-map-cluster-more")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
@@ -966,8 +1088,12 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     started = true
                     loadInitial()
                 }
+                // loadInitial() advances the PhotoKit generation. Resolve
+                // AFTER it, so the returned locality is not spuriously stale.
+                resolvePlaceName()
             }
             .onChange(of: changes.revision) { _ in
+                cancelPlaceName()
                 retire()
                 viewerReturnID = nil
                 viewerItems = []
@@ -979,6 +1105,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
             }
             .onChange(of: phase) { state in
                 if state != .active {
+                    cancelPlaceName()
                     retire()
                     viewerReturnID = nil
                     viewerItems = []
@@ -990,7 +1117,11 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 }
             }
             .onDisappear {
+#if DEBUG
+                XDriveIOSMapRealPerformanceProbe.shared.endFrameWindow("place_wall_scroll")
+#endif
                 if viewer == nil {
+                    cancelPlaceName()
                     retire()
                     viewerReturnID = nil
                     viewerItems = []
@@ -1264,10 +1395,13 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     var cameraOnEntry: MKCoordinateRegion? = nil
     var onLibraryCameraChange: ((MKCoordinateRegion?) -> Void)? = nil
     var onFocusChange: ((Bool) -> Void)?
+    var mapSource: Binding<XDriveIOSNativePhotoMapSource>? = nil
+    var canSelectCloudMap = true
     // The local map is a projection of the calling Gallery's exact media scope.
     var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     var filenameTerm: String = ""
     var inheritedCaptureRange: XDriveIOSNativePhotoMapCaptureRange? = nil
+    var inheritedTripScope: XDriveIOSNativeLocalTripScope? = nil
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
@@ -1298,6 +1432,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var selection: XDriveIOSMapPhotoSelection?
     @State private var singleViewer: XDrivePhotoKitScanCandidate?
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    // Only an explicit tap on "打开 iOS 设置" permits one post-Settings
+    // PhotoKit reauthorization request. Never silently prompt on map entry.
+    @State private var explicitSettingsAuthorizationRecheck = false
     @State private var globalCells: [
         XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
     ] = []
@@ -1323,6 +1460,20 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     // Bounded, non-sensitive in-session performance samples for debugging.
     @State private var recentScanMilliseconds: [Double] = []
     @State private var globalCameraMoving = false
+    // A failed authoritative rescan must not be undone by the next camera
+    // callback or by a still-cached snapshot from before the failure.
+    @State private var refinementFailureRequiresRefresh = false
+    #if DEBUG
+    // Test-only, independent, metadata-only PhotoKit inventory: no ID/cache
+    // persistence, no thumbnails, no bypass of Full Photos authorization.
+    // Numeric count of the FULL, current-authority verified PhotoKit scan.
+    // A visible-viewport reindex may not overwrite this count. Never cache
+    // 100k media IDs/coordinates or use this Debug value as Viewer authority.
+    @State private var p0WholeLibraryGPSCount: Int?
+    @State private var p0IndependentGPSAuditRunning = false
+    @State private var p0IndependentGPSAuditTask: Task<Int?, Never>?
+    @State private var p0IndependentGPSAuditResult: String?
+    #endif
     @State private var autoRefineTask: Task<Void, Never>?
     @State private var handledMapJumpID: UUID?
 
@@ -1352,17 +1503,53 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         // Scanned-incomplete cells must never become tappable, even before
         // MapKit receives its first fully verified PhotoKit snapshot.
         guard globalComplete, !busy else { return false }
+        guard !refinementFailureRequiresRefresh else { return false }
+        // A failed or in-flight refinement keeps the old MapKit canvas, but
+        // never reactivates the old Cell/VoiceOver selection lease.
+        guard !globalCameraMoving, let current = globalCamera else {
+            // The initial full-library overview precedes the first camera
+            // delegate callback; this is not a viewport-bound refinement.
+            return !globalCameraMoving && globalCamera == nil &&
+                globalViewport == nil
+        }
+        guard let visible = XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
+            latitude: current.center.latitude,
+            longitude: current.center.longitude,
+            latitudeSpan: current.span.latitudeDelta,
+            longitudeSpan: current.span.longitudeDelta
+        ) else { return false }
+        // Even when the old overscan contains the new camera, a >=4x zoom
+        // needs finer Cell counts. Until that PhotoKit scan completes, do not
+        // let an old aggregate open the wrong set of photos.
+        guard !XDriveIOSNativeLocalMapAutoRefinePolicy.shouldRefine(
+            visible, scanned: globalViewport
+        ) else { return false }
         guard let scanned = globalViewport else { return true }
-        guard !globalCameraMoving, let current = globalCamera else { return false }
         return XDriveIOSNativeLocalMapSpatialPolicy.containsViewport(
-            scanned,
-            current: XDriveIOSNativeLocalMapSpatialPolicy.viewportBounds(
-                latitude: current.center.latitude,
-                longitude: current.center.longitude,
-                latitudeSpan: current.span.latitudeDelta,
-                longitudeSpan: current.span.longitudeDelta
-            )
+            scanned, current: visible
         )
+    }
+
+
+    private var canOpenCurrentMapGrid: Bool {
+        mapScope == .library && authorization == .authorized &&
+        phase == .active && !busy && refinedViewportIsCurrent &&
+        !globalCells.isEmpty &&
+        PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+    }
+
+    private func openCurrentMapGrid() {
+        guard canOpenCurrentMapGrid else { return }
+        // This is the SAME verified Cell membership used by a MapKit tap:
+        // no new PhotoKit reader, all-library substitution, or unproved ID.
+        guard XDriveIOSNativeLocalMapSpatialPolicy.acceptsCellSelection(
+            selectedIDs: globalCells.map(\.id),
+            currentCellIDs: globalCells.map(\.id)
+        ) else { return }
+        globalSelection = XDriveIOSMapSpatialSelection(
+            cells: globalCells, viewport: globalViewport,
+            mediaFilter: mediaFilter, captureRange: activeCaptureRange,
+            filenameTerm: filenameTerm, tripScope: chosenLocalTrip)
     }
 
     var body: some View {
@@ -1443,6 +1630,46 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         "此相册没有可显示位置的照片或视频。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                // A real PhotoKit audit must own finite, hittable layout.
+                // The prior MapKit .overlay produced an AX button with an
+                // invalid activation point on iOS 18.5 despite a 44pt label.
+                // Reserve a fixed-height, high-priority DEBUG-only sibling
+                // ABOVE the flexible MapKit canvas; never bypass real taps.
+#if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-xdrive-ui-navigation-smoke"),
+                   album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
+                   activeCaptureRange == nil,
+                   p0WholeLibraryGPSCount != nil,
+                   !refinementFailureRequiresRefresh,
+                   globalComplete && !busy {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        VStack(alignment: .trailing, spacing: 6) {
+                            Button {
+                                runP0IndependentGPSAudit()
+                            } label: {
+                                Text("独立核对 PhotoKit GPS")
+                                    .frame(minWidth: 190, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(p0IndependentGPSAuditRunning)
+                            .accessibilityIdentifier("native-ios-map-p0-audit-trigger")
+                            if let p0IndependentGPSAuditResult {
+                                Text(p0IndependentGPSAuditResult)
+                                    .font(.caption).monospacedDigit()
+                                    .accessibilityIdentifier("native-ios-map-p0-independent-count")
+                            }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(10)
+                }
+#endif
                 // Keep MapKit mounted through the full 64-cell bounded scan.
                 // Early representative covers are inert and hide partial counts
                 // until the PhotoKit snapshot is fully verified.
@@ -1454,7 +1681,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         showsUserDot: currentLocation.showsUserDot,
                         provisional: !globalComplete && !provisionalCells.isEmpty,
                         canSelectCells: refinedViewportIsCurrent,
-                        cameraBoundCells: globalViewport != nil,
+                        cameraBoundCells: mapScope == .library,
                         onCells: { cells, _ in
                             // A MapKit cluster may contain several spatial cells.
                             // Admit only the exact complete set still held by
@@ -1531,51 +1758,117 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                                 // scan before the next settled viewport wins.
                                 suspendForSheet()
                             }
-                            if globalViewport != nil { globalCameraMoving = true }
+                            // Revoke all world/viewport cells *before* the
+                            // first UIKit gesture callback can select an
+                            // old aggregate from the previous camera.
+                            globalCameraMoving = true
                         },
                         onBasemapStatus: { basemapUnavailable = $0 },
                         onOpen: { _, _ in }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier(album == nil ? "native-ios-full-library-gps-map" : "native-ios-album-gps-map")
-                if globalComplete && !globalCells.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "mappin.and.ellipse")
-                            .accessibilityHidden(true)
-                        Text(refinedViewportIsCurrent ?
-                             "\(globalLocated) 张有位置照片 · \(globalCells.count) 个地图位置" :
-                             "地图已移动，位置照片数量正在重新核对")
-                            .monospacedDigit()
+                    .overlay(alignment: .topTrailing) {
+                        XDriveIOSNativePhotoMapFloatingTools(
+                            satellite: mapType == .satellite,
+                            locateEnabled: !currentLocation.isLocating && phase == .active &&
+                                authorization == .authorized,
+                            locateID: "native-ios-local-map-locate",
+                            styleID: "native-ios-local-map-basemap",
+                            onLocate: { currentLocation.locate() },
+                            onToggleStyle: {
+                                mapType = mapType == .satellite ? .standard : .satellite
+                            }
+                        )
+                        .padding(12)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("native-ios-map-verified-count")
-                }
-                if busy {
-                    ProgressView(album == nil ? "正在读取照片位置…" : "正在读取相册位置…")
-                        .accessibilityIdentifier(album == nil ? "native-ios-map-full-library-scan-progress" : "native-ios-map-album-scan-progress")
-                }
-                if !globalComplete && !provisionalCells.isEmpty && !compactMap {
-                    Text("位置封面正在核对，完整数量确认前暂不可打开。")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-map-provisional-covers")
-                }
-                // The authorized full-library scan starts on entry. Retain
-                // an explicit retry before any map exists, then give its
-                // verified photo covers the space occupied by these controls.
-                if !globalComplete && !busy {
-                    Button(album == nil ? "扫描已授权图库位置" : "扫描此相册位置") {
-                        scanFullLibrary()
+                    .overlay(alignment: .bottomTrailing) {
+                        XDriveIOSNativePhotoMapGridAction(
+                            enabled: canOpenCurrentMapGrid,
+                            accessibilityID: "native-ios-local-map-current-grid",
+                            verifiedSummary: globalComplete && refinedViewportIsCurrent
+                                ? "\(globalLocated) 张照片，\(globalCells.count) 个位置"
+                                : nil
+                        ) { openCurrentMapGrid() }
+                        // The map canvas extends behind the Photos floating
+                        // Library/Collections/Search bar. Its 44pt grid
+                        // control used to overlap Search at x=329..379,
+                        // y=761..811 in real Simulator AX; taps were swallowed.
+                        // Reserve the same bottom zone as the left Map menu,
+                        // with extra separation above the Photos pill.
+                        .padding(.trailing, 12)
+                        .padding(.bottom, 74)
                     }
-                        .frame(minHeight: 44)
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier(album == nil ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
+                    .overlay(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            if let activeCaptureRange {
+                                XDriveIOSNativePhotoMapStatusPill(
+                                    message: activeCaptureRange.label,
+                                    accessibilityID: "native-ios-local-map-capture-range")
+                            }
+                            if basemapUnavailable {
+                                XDriveIOSNativePhotoMapStatusPill(
+                                    message: "地图暂时无法加载，请检查网络后重试。",
+                                    accessibilityID: "native-ios-local-map-basemap-unavailable",
+                                    systemImage: "wifi.exclamationmark")
+                            }
+                            if let error {
+                                XDriveIOSNativePhotoMapStatusPill(
+                                    message: error,
+                                    accessibilityID: "native-ios-local-map-error",
+                                    systemImage: "exclamationmark.triangle")
+                            }
+                            if !globalComplete && !provisionalCells.isEmpty && !compactMap {
+                                Text("位置封面正在核对，完整数量确认前暂不可打开。")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .padding(8)
+                                    .background(.regularMaterial, in: Capsule())
+                                    .accessibilityIdentifier("native-ios-map-provisional-covers")
+                            }
+                            if !globalComplete && !busy {
+                                Button(album == nil ? "扫描已授权图库位置" : "扫描此相册位置") {
+                                    scanFullLibrary()
+                                }
+                                .frame(minHeight: 44)
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifier(album == nil
+                                    ? "native-ios-map-scan-full-library"
+                                    : "native-ios-map-scan-album")
+                            }
+                        }
+                        .frame(maxWidth: 240, alignment: .leading)
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        // Apple Photos keeps the verified count in the opened
+                        // location grid; never leave a permanent count capsule
+                        // covering the photograph markers or map attribution.
+                        // During a scan the transient progress remains visible.
+                        if busy {
+                            ProgressView(album == nil ? "正在加载照片位置…" : "正在加载相册位置…")
+                                .font(.caption).padding(10)
+                                .background(.regularMaterial, in: Capsule())
+                                .padding(10)
+                                .accessibilityIdentifier(
+                                    album == nil ? "native-ios-map-full-library-scan-progress"
+                                                 : "native-ios-map-album-scan-progress")
+                        }
+                    }
+#if DEBUG
+                if XDriveIOSMapRealPerformanceProbe.enabled {
+                    // Real target PhotoKit snapshot inventory, never fixture-supplied.
+                    Text("total=\(globalTotal) scanned=\(globalScanned) completed=\(XDriveIOSMapRealPerformanceProbe.shared.completedScanCount) cache=\(XDriveIOSMapRealPerformanceProbe.shared.cacheHits)")
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("total=\(globalTotal) scanned=\(globalScanned) completed=\(XDriveIOSMapRealPerformanceProbe.shared.completedScanCount) cache=\(XDriveIOSMapRealPerformanceProbe.shared.cacheHits)")
+                        .accessibilityIdentifier("native-ios-map-perf-inventory")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
+#endif
+
+                // Status and explicit recovery remain visible in map overlays.
             } else if let page {
-                Text("已检查 \(page.page.startOffset)–\(page.page.nextOffset) / \(page.page.totalAccessibleAssets)，当前页有 \(page.items.count) 张带位置照片")
-                    .font(.footnote).monospacedDigit()
+                // Keep this legacy, bounded 64-photo route usable without
+                // shrinking its native MapKit surface for a pagination footer.
                 XDriveIOSMapKitPhotoPage(
                     items: page.items, revision: mapRevision, mapType: mapType, cameraReturn: cameraReturn
                 ) { selected, region in
@@ -1613,80 +1906,165 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("native-ios-local-photo-map")
-                if page.items.isEmpty {
-                    Text("当前页暂无有效 GPS 照片，可以切换下一页。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if gpsFindPagesScanned > 0 {
-                    Text("本次连续检查了 \(gpsFindPagesScanned) 个分页（每页最多 64 张），仅显示最后一页的定位照片；不代表全库已完成扫描。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-map-gps-find-progress")
-                }
-                HStack {
-                    Button("上一页") { refresh(at: max(0, page.page.startOffset - 64)) }
-                        .disabled(busy || page.page.startOffset == 0)
-                    Spacer()
-                    Button("下一页") { refresh(at: page.page.nextOffset) }
-                        .disabled(busy || page.page.finished)
-                }.buttonStyle(.bordered)
-                Button("查找下一批有定位照片") {
-                    refresh(at: page.page.nextOffset, findNextGPS: true)
-                }
-                .disabled(busy || page.page.finished)
-                .frame(minHeight: 44)
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("native-ios-map-find-next-gps-page")
-                if !compactMap {
-                    Text("每次最多连续检查 16 页（1,024 张照片元数据），可重复查找；不自动读取 iCloud 原件。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                .overlay(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        if page.items.isEmpty {
+                            XDriveIOSNativePhotoMapStatusPill(
+                                message: "当前页暂无有效定位照片",
+                                accessibilityID: "native-ios-map-page-empty")
+                        }
+                        if let activeCaptureRange {
+                            XDriveIOSNativePhotoMapStatusPill(
+                                message: activeCaptureRange.label,
+                                accessibilityID: "native-ios-map-page-capture-range")
+                        }
+                        if basemapUnavailable {
+                            XDriveIOSNativePhotoMapStatusPill(
+                                message: "地图暂时无法加载，请检查网络后重试。",
+                                accessibilityID: "native-ios-map-page-basemap-error",
+                                systemImage: "wifi.exclamationmark")
+                        }
+                        if let error {
+                            XDriveIOSNativePhotoMapStatusPill(
+                                message: error,
+                                accessibilityID: "native-ios-map-page-error",
+                                systemImage: "exclamationmark.triangle")
+                        }
+                    }
+                    .frame(maxWidth: 240, alignment: .leading)
                 }
             } else if busy {
                 ProgressView("读取授权照片位置…")
             }
-            if let activeCaptureRange {
-                Text("位置时间范围：\(activeCaptureRange.label)")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("native-ios-local-map-capture-range")
-            }
-            if basemapUnavailable {
-                Text("地图底图暂时无法加载。已核对的本机位置照片仍受 Full Access 保护；联网后平移地图或切换底图样式重试。")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("native-ios-local-map-basemap-unavailable")
-            }
-            if let error { Text(error).foregroundStyle(.secondary).font(.footnote) }
-            if mapScope == .page {
-                Button("刷新当前页") { refresh(at: offset) }
-                    .frame(minHeight: CGFloat(XDriveIOSNativePhotoMapPolicy.minimumInteractiveTarget))
-                    .disabled(busy || authorization == .denied || authorization == .restricted)
-            }
+            // Page-only status uses transient in-map overlays. Pagination
+            // and refresh remain available in the map's accessible More menu.
             if !compactMap && dynamicTypeSize.isAccessibilitySize {
-                Text("地图只使用本机授权照片，缩略图不下载 iCloud 原件，照片 ID 和位置不会上传。")
+                Text("仅显示已授权的照片位置。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
         }
-        .padding(.horizontal, 8)
-        .navigationTitle(album.map { "\($0.name) · 地图" } ??
-            (mediaFilter.isAll ? "地图" : "地图 · \(mediaFilter.title)"))
+        // Keep the MapKit canvas edge-to-edge in the permitted state. Only
+        // permission/recovery content needs a readable horizontal inset.
+        .padding(.horizontal, authorization == .authorized ? 0 : 12)
+        .navigationTitle("地图")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if album != nil || onClose != nil {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("完成") {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
                         if onClose != nil { onClose?() }
                         else { dismiss() }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .frame(minWidth: 44, minHeight: 44)
                     }
+                    .accessibilityLabel("关闭地图")
                     .accessibilityIdentifier(
-                        album != nil ? "native-ios-album-map-dismiss" : "native-ios-map-dismiss"
-                    )
+                        album != nil ? "native-ios-album-map-dismiss" : "native-ios-map-dismiss")
                 }
             }
-            if mapScope == .library && globalComplete {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            // The primary Photos map toolbar retains only the native Close.
+        }
+        // xDrive-only date/source/retry actions remain discoverable but are
+        // secondary canvas chrome, not a third top-right system control.
+        // Keep the same accessible menu paths used by runtime navigation.
+        .overlay(alignment: .bottomLeading) {
+            if authorization == .authorized || mapSource != nil {
+                Menu {
+                    if let mapSource {
+                        // SwiftUI can flatten a Picker directly within an
+                        // enclosing Menu, hiding its AX identifier on iOS.
+                        // Give source selection a real, tappable submenu.
+                        Menu {
+                            Picker("地图照片来源", selection: mapSource) {
+                                Text(XDriveIOSNativePhotoMapSource.local.label)
+                                    .tag(XDriveIOSNativePhotoMapSource.local)
+                                if canSelectCloudMap {
+                                    Text(XDriveIOSNativePhotoMapSource.cloud.label)
+                                        .tag(XDriveIOSNativePhotoMapSource.cloud)
+                                }
+                            }
+                        } label: {
+                            Label("照片来源", systemImage: "photo.on.rectangle")
+                        }
+                        .accessibilityIdentifier("native-ios-map-source-selector")
+                    }
+                    // iOS 18.5 may flatten the next nested Menu into an
+                    // AX list containing only year buttons. Keep the exact
+                    // date picker a directly actionable item in Map actions,
+                    // independent of the long year sub-menu.
+                    Button("按指定日期") { datePickerOpen = true }
+                        .accessibilityIdentifier("native-ios-local-map-select-date")
                     Menu {
-                        // Refresh a failed iCloud/HEIC/Live poster on exactly
-                        // the currently authorized GPS Cells. No second 100k
-                        // metadata scan and no change to membership authority.
+                        Button("全部日期") { setCaptureRange(nil) }
+                        Button("最近的日子与旅行") {
+                            showingRecentDaysAndTrips = true
+                        }
+                        .accessibilityIdentifier("native-ios-local-map-recent-trips")
+                        Button("最近 7 天") {
+                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
+                        }
+                        Button("最近 30 天") {
+                            setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
+                        }
+                        Section("按年份") {
+                            ForEach(recentMapYears, id: \.self) { year in
+                                Button("\(year) 年") {
+                                    setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(year))
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("地图日期", systemImage: "calendar")
+                    }
+                    .accessibilityIdentifier("native-ios-local-map-capture-menu")
+                    // The normal full-library basemap is controlled by
+                    // its 44pt floating MapKit tool. The legacy 64-slot page
+                    // cannot use that user's location camera, so it keeps a
+                    // scoped fallback basemap menu until migrated.
+                    if mapScope == .page {
+                        // Keep the historical bounded PhotoKit reader; only
+                        // its navigation actions leave the visible map canvas.
+                        Section("当前页 · \(page?.items.count ?? 0) 张照片") {
+                            if gpsFindPagesScanned > 0 {
+                                Text("已检查 \(gpsFindPagesScanned) 页")
+                                    .accessibilityIdentifier("native-ios-map-gps-find-progress")
+                            }
+                            Button("上一页") {
+                                guard let page else { return }
+                                refresh(at: max(0, page.page.startOffset - 64))
+                            }
+                            .disabled(busy || page?.page.startOffset == 0 || page == nil)
+                            Button("下一页") {
+                                guard let page else { return }
+                                refresh(at: page.page.nextOffset)
+                            }
+                            .disabled(busy || page?.page.finished != false)
+                            Button("查找下一批有定位照片") {
+                                guard let page else { return }
+                                refresh(at: page.page.nextOffset, findNextGPS: true)
+                            }
+                            .disabled(busy || page?.page.finished != false)
+                            .accessibilityIdentifier("native-ios-map-find-next-gps-page")
+                            .accessibilityHint("最多读取 16 页；不代表全库已完成扫描。")
+                            Button("刷新当前页") { refresh(at: offset) }
+                                .disabled(busy || authorization == .denied ||
+                                          authorization == .restricted)
+                        }
+                    }
+                    if mapScope == .page {
+                    Menu {
+                        Picker("底图样式", selection: $mapType) {
+                            Text("标准地图").tag(MKMapType.standard)
+                            Text("卫星地图").tag(MKMapType.satellite)
+                        }
+                    } label: {
+                        Label("底图样式", systemImage: "square.3.layers.3d")
+                    }
+                        .accessibilityIdentifier("native-ios-local-page-map-basemap")
+                    }
+                    if mapScope == .library && globalComplete {
                         Button("重新加载位置封面") {
                             guard phase == .active, !busy, globalComplete,
                                   PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
@@ -1698,75 +2076,23 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         Button(album == nil ? "重新扫描已授权图库位置" : "重新扫描此相册位置") {
                             scanFullLibrary()
                         }
-                            .disabled(busy)
-                            .accessibilityIdentifier(album == nil ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
-                    } label: {
-                        Label("地图操作", systemImage: "ellipsis.circle")
+                        .disabled(busy)
+                        .accessibilityIdentifier(album == nil
+                            ? "native-ios-map-scan-full-library" : "native-ios-map-scan-album")
                     }
-                    .accessibilityIdentifier("native-ios-local-map-actions")
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button("全部日期") { setCaptureRange(nil) }
-                    Button("最近的日子与旅行") {
-                        showingRecentDaysAndTrips = true
-                    }
-                    .accessibilityIdentifier("native-ios-local-map-recent-trips")
-                    Button("最近 7 天") {
-                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(7))
-                    }
-                    Button("最近 30 天") {
-                        setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.recentDays(30))
-                    }
-                    // Keep the explicit date picker above a potentially long
-                    // PhotoKit year list. iOS 18.5 renders Menu children in
-                    // scroll order; a trailing item can become unreachable
-                    // by accessibility after decades of photo timestamps.
-                    Button("按指定日期") { datePickerOpen = true }
-                        .accessibilityIdentifier("native-ios-local-map-select-date")
-                    Section("按年份") {
-                        ForEach(recentMapYears, id: \.self) { year in
-                            Button("\(year) 年") {
-                                setCaptureRange(XDriveIOSNativePhotoMapCaptureRange.year(year))
-                            }
-                        }
-                    }
+                    // Photos-native navigation remains visible over MapKit.
+                    // Do not expose the old action that revealed xDrive's
+                    // unrelated five-slot bar over the system Photos layout.
                 } label: {
-                    Label("地图日期", systemImage: "calendar")
+                    Label("地图操作", systemImage: "ellipsis.circle")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
+                        .background(.regularMaterial, in: Circle())
+                        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
                 }
-                .accessibilityIdentifier("native-ios-local-map-capture-menu")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Picker("底图样式", selection: $mapType) {
-                        Text("标准地图").tag(MKMapType.standard)
-                        Text("卫星地图").tag(MKMapType.satellite)
-                    }
-                } label: {
-                    Label("底图样式", systemImage: "square.3.layers.3d")
-                }
-                .accessibilityIdentifier("native-ios-local-map-basemap")
-            }
-            if mapScope == .library && authorization == .authorized {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        currentLocation.locate()
-                    } label: {
-                        Label("我的位置", systemImage: "location")
-                    }
-                    .disabled(currentLocation.isLocating || phase != .active)
-                    .accessibilityIdentifier("native-ios-local-map-locate")
-                }
-            }
-            if album == nil && onFocusChange != nil {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(focused ? "显示底部导航" : "专注地图") {
-                        focused.toggle()
-                        onFocusChange?(focused)
-                    }
-                    .accessibilityIdentifier("native-ios-map-focus-toggle")
-                }
+                .accessibilityIdentifier("native-ios-local-map-actions")
+                .padding(.leading, 12)
+                .padding(.bottom, 62)
             }
         }
         .sheet(isPresented: $datePickerOpen) {
@@ -1919,7 +2245,28 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             )
         }
         .onAppear {
+            if onFocusChange != nil {
+                focused = true
+                onFocusChange?(true)
+            }
             authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            // Collections may open the SAME MapKit reader with an exact
+            // candidate trip's GPS day+cell set. Reject stale generations
+            // instead of silently broadening to the entire local library.
+            if let trip = inheritedTripScope {
+                guard authorization == .authorized, trip.valid,
+                      XDriveIOSNativePhotoFingerprintIndex.isCurrent(trip.libraryEpoch)
+                else {
+                    onLibraryCameraChange?(nil)
+                    clearReturnCamera()
+                    invalidate()
+                    error = "该精选集的照片位置已变化，请返回精选集重新核对。"
+                    return
+                }
+                chosenLocalTrip = trip
+                usingCaptureOverride = false
+                captureOverride = nil
+            }
             changes.start()
             guard authorization == .authorized else {
                 onLibraryCameraChange?(nil)
@@ -1941,6 +2288,27 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 }
             }
         }
+        .onChange(of: inheritedTripScope?.id) { _ in
+            guard phase == .active else { return }
+            if let trip = inheritedTripScope {
+                guard trip.valid,
+                      PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                      XDriveIOSNativePhotoFingerprintIndex.isCurrent(trip.libraryEpoch)
+                else {
+                    onLibraryCameraChange?(nil)
+                    clearReturnCamera()
+                    invalidate()
+                    error = "该精选集的照片位置已变化，请返回精选集重新核对。"
+                    return
+                }
+                chosenLocalTrip = trip
+                usingCaptureOverride = false
+                captureOverride = nil
+            } else {
+                chosenLocalTrip = nil
+            }
+            // activeMapMembership owns cancellation and re-scanning.
+        }
         .onChange(of: incomingMapJump?.id) { _ in
             _ = focusOnRequestedPhotoLocation()
         }
@@ -1950,7 +2318,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                   let target = currentLocation.camera else { return }
             // Before MapKit's animated camera callback, disable any prior
             // viewport-bound Cell lease; the normal settled scan revalidates.
-            if globalViewport != nil { globalCameraMoving = true }
+            globalCameraMoving = true
             globalCamera = target
             onLibraryCameraChange?(target)
         }
@@ -2017,8 +2385,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     onLibraryCameraChange?(nil)
                     clearReturnCamera()
                     invalidate()
+                    recheckExplicitSettingsAuthorization()
                     return
                 }
+                explicitSettingsAuthorizationRecheck = false
                 if mapScope == .page { refresh(at: offset) }
                 else { scanFullLibrary() } // A new PhotoKit generation must re-scan.
             } else {
@@ -2039,13 +2409,21 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // grant must revoke the displayed cells before another tap.
             let live = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             print("IOS_MAP_PHOTO_AUTH_REENTRY cached=\(authorization.rawValue) live=\(live.rawValue) scene=\(phase)")
-            guard phase == .active, live != authorization else { return }
+            guard phase == .active else { return }
+            if live == authorization {
+                if live != .authorized { recheckExplicitSettingsAuthorization() }
+                return
+            }
             let returningCamera = globalCamera
             authorization = live
             onLibraryCameraChange?(nil)
             clearReturnCamera()
             invalidate()
-            guard live == .authorized else { return }
+            guard live == .authorized else {
+                recheckExplicitSettingsAuthorization()
+                return
+            }
+            explicitSettingsAuthorizationRecheck = false
             changes.start()
             if mapScope == .page {
                 refresh(at: offset)
@@ -2054,6 +2432,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             }
         }
         .onDisappear {
+            // A calendar or recent-trip chooser covers the MapKit surface;
+            // it is not a route departure. Keep camera, GPS count, observer
+            // and scan generation mounted until the user commits a new scope.
+            guard !datePickerOpen && !showingRecentDaysAndTrips else { return }
             currentLocation.cancel()
             // A presented cluster sheet may hide its map presenter. Keep
             // PhotoKit change observation active until the sheet is dismissed,
@@ -2063,7 +2445,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 changes.stop()
                 clearReturnCamera()
                 focused = false
-                onFocusChange?(false)
+                // Parent Gallery route owns chrome reset. A local -> Owner
+                // MapKit swap must not reveal stale Dashboard bars mid-frame.
                 invalidate()
             } else { suspendForSheet() }
         }
@@ -2087,6 +2470,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     /// camera quiet and a significant zoom / exit from the last overscan.
     /// Each subsequent gesture cancels the timer; no persistent GPS index.
     private func scheduleAutomaticRefinement(_ current: MKCoordinateRegion) {
+#if DEBUG
+        // A real full-library GPS audit and a MapKit viewport refinement must
+        // not race for the same in-memory generation. Library/permission changes
+        // still call invalidate() and retire both, without publishing stale GPS.
+        guard !p0IndependentGPSAuditRunning else { return }
+#endif
         autoRefineTask?.cancel()
         autoRefineTask = nil
         guard mapScope == .library, globalComplete, !busy,
@@ -2142,11 +2531,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // Navigating back to a previously verified same-session viewport
             // must not re-enumerate 100k PhotoKit rows. Scope-changing events
             // always call invalidate(), which discards these snapshots.
-            if let cached = recentVerifiedWindows.first(where: { item in
+            if !refinementFailureRequiresRefresh,
+               let cached = recentVerifiedWindows.first(where: { item in
                 XDriveIOSNativeLocalMapAutoRefinePolicy.canReuse(
                     cached: item.viewport, camera: finalViewport
                 )
             }) {
+#if DEBUG
+                let cacheStartUptime = ProcessInfo.processInfo.systemUptime
+#endif
                 suspendForSheet()
                 guard phase == .active, mapScope == .library,
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
@@ -2159,9 +2552,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 globalLocated = cached.located
                 globalComplete = true
                 globalCameraMoving = false
+                refinementFailureRequiresRefresh = false
                 error = nil
                 mapRevision = UUID()
                 #if DEBUG
+                XDriveIOSMapRealPerformanceProbe.shared.recordCacheHit(
+                    elapsedMilliseconds: max(0,
+                        (ProcessInfo.processInfo.systemUptime - cacheStartUptime) * 1_000),
+                    total: cached.total, located: cached.located)
                 print("IOS_MAP_PERF cache_hit=1 metadata_pages=0")
                 #endif
                 return
@@ -2170,9 +2568,100 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
     }
 
+    #if DEBUG
+    /// A second *independent* real PhotoKit enumeration runs only when a
+    /// user/test explicitly taps the debug audit action. The production map
+    /// remains bounded and does not persist full-library GPS or identifiers.
+    /// This checks actual PHAsset.location for every accessible image/video
+    /// against the separately completed MapKit streaming-index count.
+    private func runP0IndependentGPSAudit() {
+        guard !p0IndependentGPSAuditRunning, mapScope == .library,
+              album == nil, mediaFilter.isAll, filenameTerm.isEmpty,
+              activeCaptureRange == nil, !refinementFailureRequiresRefresh,
+              let expected = p0WholeLibraryGPSCount,
+              globalComplete, !busy, phase == .active,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+        else { return }
+        // Cancel a settled-camera timer before opening the independent audit:
+        // a later viewport scan calls suspendForSheet() and rotates generation.
+        // Never let that cancel a valid full-library count merely because the
+        // MKMapView automatically centered itself after importing GPS photos.
+        autoRefineTask?.cancel()
+        autoRefineTask = nil
+        let ticket = generation
+        p0IndependentGPSAuditRunning = true
+        p0IndependentGPSAuditResult = nil
+        // The independent PHFetchResult must be enumerated off MainActor:
+        // PhotoKit can temporarily block as simctl imports 65/100k EXIF assets.
+        // The task transports only a count (never IDs or coordinates) to UI.
+        print("IOS_MAP_P0_REAL_AUDIT_START expected=\(expected)")
+        let audit = Task.detached(priority: .userInitiated) { () -> Int? in
+            let assets = PHAsset.fetchAssets(with: PHFetchOptions())
+            var located = 0
+            for index in 0..<assets.count {
+                if index % 256 == 0 {
+                    if Task.isCancelled { return nil }
+                    await Task.yield()
+                }
+                let asset = assets.object(at: index)
+                guard asset.mediaType == .image || asset.mediaType == .video,
+                      let coordinate = asset.location?.coordinate,
+                      XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                          latitude: coordinate.latitude, longitude: coordinate.longitude
+                      )
+                else { continue }
+                located += 1
+            }
+            return Task.isCancelled ? nil : located
+        }
+        p0IndependentGPSAuditTask = audit
+        Task { @MainActor in
+            let observed = await audit.value
+            guard generation == ticket else { return }
+            p0IndependentGPSAuditTask = nil
+            p0IndependentGPSAuditRunning = false
+            guard let independentlyLocated = observed, phase == .active,
+                  PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+            else { return }
+            // This remains a genuine second PhotoKit enumeration, independent
+            // of the MapKit scanner. A mismatch is always reported as such.
+            p0IndependentGPSAuditResult = "独立 GPS \(independentlyLocated) 地图 GPS \(expected) \(independentlyLocated == expected ? "一致" : "不一致")"
+            print("IOS_MAP_P0_REAL_PHOTOKIT_COUNT independent=\(independentlyLocated) map=\(expected) match=\(independentlyLocated == expected)")
+        }
+    }
+    #endif
+
     private func openPhotoSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        // This flag is only set by the visible, user-initiated Settings button.
+        // A background foreground-transition, retry, or Owner change cannot
+        // trigger a Photo Library consent prompt by itself.
+        explicitSettingsAuthorizationRecheck = true
         UIApplication.shared.open(url)
+    }
+
+    private func recheckExplicitSettingsAuthorization() {
+        guard explicitSettingsAuthorizationRecheck, phase == .active else { return }
+        explicitSettingsAuthorizationRecheck = false
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        // A system Settings transition may still expose the old .denied TCC
+        // snapshot until PhotoKit explicitly re-reads authorization. Limited
+        // and Restricted are NEVER widened into a full-library map.
+        guard status == .denied || status == .notDetermined else { return }
+        let ticket = generation
+        Task {
+            _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            guard phase == .active, generation == ticket else { return }
+            let live = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            authorization = live
+            guard live == .authorized else {
+                invalidate()
+                return
+            }
+            changes.start()
+            if mapScope == .page { refresh(at: offset) }
+            else { scanFullLibrary() }
+        }
     }
 
     private func scanFullLibrary(
@@ -2216,6 +2705,19 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         busy = true
         task = Task { @MainActor in
             let scanStartUptime = ProcessInfo.processInfo.systemUptime
+#if DEBUG
+            var perfToken = XDriveIOSMapRealPerformanceProbe.shared.beginScan(
+                stage: viewport == nil ? "full_library" : "viewport_refinement")
+            defer {
+                // Covers cancellation, permission changes and early exits.
+                if let pending = perfToken {
+                    XDriveIOSMapRealPerformanceProbe.shared.finishScan(
+                        pending, succeeded: false, total: globalTotal,
+                        metadataItems: globalScanned, metadataPages: 0,
+                        located: globalLocated)
+                }
+            }
+#endif
             do {
                 let total = try await worker.startMap(
                     atOffset: 0, album: album, mediaFilter: mediaFilter,
@@ -2264,6 +2766,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         guard generation == ticket, phase == .active else { return }
                         globalScanned = scanned
                         globalLocated = index.locatedCount
+#if DEBUG
+                        XDriveIOSMapRealPerformanceProbe.shared.sampleScan(&perfToken)
+#endif
                         await Task.yield()
                     }
                     if next.page.finished { break }
@@ -2284,7 +2789,13 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 globalLocated = index.locatedCount
                 globalViewport = viewport
                 globalComplete = true
+                #if DEBUG
+                // Only this completed unrestricted scan proves the whole
+                // library count. Viewport-only scans are not global audits.
+                if viewport == nil { p0WholeLibraryGPSCount = index.locatedCount }
+                #endif
                 globalCameraMoving = false
+                refinementFailureRequiresRefresh = false
                 if let viewport {
                     // Keep only two exact, completed windows in the current
                     // active PhotoKit generation. Never cache a provisional
@@ -2313,6 +2824,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         recentScanMilliseconds.count - sampleLimit)
                 }
                 #if DEBUG
+                XDriveIOSMapRealPerformanceProbe.shared.finishScan(
+                    perfToken, succeeded: true, total: total,
+                    metadataItems: scanned, metadataPages: pages,
+                    located: index.locatedCount)
+                perfToken = nil
                 if let percentiles = XDriveIOSNativeLocalMapAutoRefinePolicy
                     .scanPercentiles(recentScanMilliseconds) {
                     print("IOS_MAP_PERF cache_hit=0 elapsed_ms=\(Int(elapsedMilliseconds)) metadata_pages=\(pages) metadata_items=\(scanned) p50_ms=\(Int(percentiles.p50)) p95_ms=\(Int(percentiles.p95))")
@@ -2322,10 +2838,24 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             } catch is CancellationError {
             } catch {
                 if generation == ticket {
+                    let live = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                    if live != .authorized {
+                        // A permission loss during a bounded rescan must
+                        // remove old GPS covers, not only disable their taps.
+                        authorization = live
+                        onLibraryCameraChange?(nil)
+                        clearReturnCamera()
+                        invalidate()
+                        return
+                    }
                     if keepOldMap {
-                        // Preserve only inert older pins until another settled
-                        // viewport or explicit retry; do not claim fresh data.
-                        globalCameraMoving = false
+                        // Retain the same MapKit view and camera, without
+                        // reauthorizing old Cell counts or VoiceOver pins.
+                        // updateUIView disables covers *before* its revision
+                        // guard, so no remove/add or auto-fit is needed here.
+                        // The user can retry via the existing Map actions.
+                        globalCameraMoving = true
+                        refinementFailureRequiresRefresh = true
                     } else {
                         globalCells = []
                         provisionalCells = []
@@ -2410,6 +2940,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         autoRefineTask?.cancel()
         autoRefineTask = nil
         generation = UUID()
+#if DEBUG
+        // A retired generation may never publish or leave a forever-disabled
+        // GPS audit button. Cancel the independent enumeration too; its
+        // MainActor completion still checks the original generation/Full grant.
+        p0IndependentGPSAuditTask?.cancel()
+        p0IndependentGPSAuditTask = nil
+        p0IndependentGPSAuditRunning = false
+        p0IndependentGPSAuditResult = nil
+#endif
         task?.cancel()
         task = nil
         if let scanner { Task { await scanner.reset() } }
@@ -2442,6 +2981,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         recentVerifiedWindows = []
         recentScanMilliseconds = []
         globalCameraMoving = false
+        refinementFailureRequiresRefresh = false
+        #if DEBUG
+        p0WholeLibraryGPSCount = nil
+        p0IndependentGPSAuditTask?.cancel()
+        p0IndependentGPSAuditTask = nil
+        p0IndependentGPSAuditRunning = false
+        p0IndependentGPSAuditResult = nil
+        #endif
         error = nil
         mapRevision = UUID()
     }
