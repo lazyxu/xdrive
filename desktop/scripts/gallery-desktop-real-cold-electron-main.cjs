@@ -28,9 +28,12 @@ function gallerySafeCpuFailure(error) {
     return 'first_party_sourcemap_unresolved'
   if (message.includes('actual sampled V8 CPUProfile missing'))
     return 'v8_sample_count_missing'
-  if (message.includes('invalid V8 CPUProfile') ||
-      message.includes('invalid actual V8 CPU sample'))
-    return 'v8_profile_invalid'
+  if (message.includes('invalid V8 CPUProfile duration'))
+    return 'v8_profile_clock_invalid'
+  if (message.includes('invalid V8 CPUProfile call tree'))
+    return 'v8_call_tree_invalid'
+  if (message.includes('invalid actual V8 CPU sample'))
+    return 'v8_sample_reference_invalid'
   if (message.includes('invalid local Vite sourcemap JSON') ||
       message.includes('invalid Vite sourcemap') ||
       message.includes('sourcemap VLQ') ||
@@ -43,6 +46,26 @@ function gallerySafeCpuFailure(error) {
   if (message.includes('sidebar diagnosis'))
     return 'desktop_login_or_navigation'
   return 'unclassified_test_error'
+}
+// These are the only diagnostics forwarded outside the ephemeral Electron
+// renderer. Never pass call frames, scripts, sample node IDs or URLs.
+function gallerySafeV8Shape(profile) {
+  const nodes = Array.isArray(profile?.nodes) ? profile.nodes : []
+  const samples = Array.isArray(profile?.samples) ? profile.samples : []
+  const intervals = Array.isArray(profile?.timeDeltas) ? profile.timeDeltas : []
+  const ids = new Set(nodes.map(x => x?.id))
+  return {
+    nodeCount: nodes.length, sampleCount: samples.length,
+    intervalCount: intervals.length,
+    duplicateNodeCount: nodes.length - ids.size,
+    missingSampleNodeCount: samples.filter(id => !ids.has(id)).length,
+    nonFiniteIntervalCount: intervals.filter(x => !Number.isFinite(x)).length,
+    negativeIntervalCount: intervals.filter(x => Number.isFinite(x) && x < 0).length,
+    longerThan120sIntervalCount: intervals.filter(x => Number.isFinite(x) && x > 120000000).length,
+    longestIntervalMs: intervals.reduce((a, x) => Number.isFinite(x) ? Math.max(a, x/1000) : a, 0),
+    clockValid: Number.isFinite(profile?.startTime) &&
+      Number.isFinite(profile?.endTime) && profile.endTime > profile.startTime,
+  }
 }
 function nativeProcessMetrics(pid) {
   if (process.platform !== 'linux' || !Number.isSafeInteger(pid) || pid <= 0) return null
@@ -312,6 +335,7 @@ async function run(win) {
   let chromiumTracePath = null
   let cpuProfilingStarted = false
   let cpuDebuggerAttached = false
+  let safeV8Shape = null
   try {
     win.setContentSize(1440, 900)
     let lastRendererState = null
@@ -408,8 +432,13 @@ async function run(win) {
       // function names. Source maps are read privately, not uploaded.
       win.webContents.debugger.detach()
       cpuDebuggerAttached = false
-      cpuProfileSummary = summariseCPUProfile(profile,
-        path.join(expectedAppRoot, 'dist', 'renderer', 'assets'))
+      try {
+        cpuProfileSummary = summariseCPUProfile(profile,
+          path.join(expectedAppRoot, 'dist', 'renderer', 'assets'))
+      } catch (profileError) {
+        safeV8Shape = gallerySafeV8Shape(profile)
+        throw profileError
+      }
       if (cpuProfileSummary.sampleCount < 100 ||
           cpuProfileSummary.sourceMappedSampleFrames < 1 ||
           cpuProfileSummary.firstPartySampleCount < 1 ||
@@ -531,7 +560,8 @@ async function run(win) {
     if (chromiumTracePath) fs.rmSync(chromiumTracePath, { force: true })
     if (process.env.XD_GALLERY_DESKTOP_COLD_CPU_PROFILE === '1') {
       console.log('GALLERY_REAL_DESKTOP_ELECTRON_SAFE_FAILURE ' +
-        JSON.stringify({ reason: gallerySafeCpuFailure(error) }))
+        JSON.stringify({ reason: gallerySafeCpuFailure(error),
+          profileShape: safeV8Shape }))
     }
     console.error('GALLERY_REAL_DESKTOP_ELECTRON_ERROR ' + (error?.stack || String(error)))
     app.exit(1)
