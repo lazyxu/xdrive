@@ -6,6 +6,7 @@ success. Individual entries remain not_verified until real owner-bound iOS
 metrics, first pixels / frame traces and original raw evidence exist.
 """
 import json
+import math
 import re
 from pathlib import Path
 import sys
@@ -102,7 +103,7 @@ def audit(catalog, root=ROOT):
             evidence = entry.get("evidence")
             if not isinstance(evidence, dict) or evidence.get("runtime") != "ios-native":
                 raise ValueError("Chromium evidence cannot verify native iOS workflow")
-            if not evidence.get("owner_verified"):
+            if evidence.get("owner_verified") is not True or evidence.get("synthetic_owner"):
                 raise ValueError("Real authorized Owner provenance is missing")
             sha, fixture = evidence.get("source_sha", ""), evidence.get("fixture_sha256", "")
             if (not re.fullmatch(r"[a-f0-9]{40}", sha)
@@ -114,6 +115,15 @@ def audit(catalog, root=ROOT):
             samples = evidence.get("samples", {})
             if not isinstance(samples, dict) or set(samples) != set(families[family]["required_metrics"]):
                 raise ValueError("Missing required native metric samples")
+            for metric, series in samples.items():
+                if not isinstance(series, list) or len(series) < 3:
+                    raise ValueError("Native workflow metric requires >=3 samples: " + metric)
+                if metric in ("sha256_verified", "resumed_verified"):
+                    if any(value is not True for value in series):
+                        raise ValueError("Unverified native workflow byte integrity: " + metric)
+                elif any(isinstance(value, bool) or not isinstance(value, (int, float))
+                         or not math.isfinite(value) or value < 0 for value in series):
+                    raise ValueError("Invalid native workflow metric sample: " + metric)
             verified += 1
         else:
             raise ValueError("Unknown native evidence status: " + name)
