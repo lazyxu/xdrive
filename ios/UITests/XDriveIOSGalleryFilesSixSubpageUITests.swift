@@ -334,7 +334,15 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         if denial.waitForExistence(timeout: 8) {
             XCTAssertFalse(control("native-ios-files-grid", app).exists,
                            "Unverified Owner search exposed private file tiles")
+            let clear = control("native-ios-files-error-clear-search", app)
+            XCTAssertTrue(clear.waitForExistence(timeout: 10) && clear.isHittable,
+                          "Denied Files search recovery is obscured by UIKit searchable")
             tap("native-ios-files-error-clear-search", app)
+            let retired = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"), object: denial
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [retired], timeout: 12), .completed,
+                           "Clearing denied search did not retire its native Error page")
         } else {
             let clear = control("native-ios-files-clear-search", app)
             if clear.waitForExistence(timeout: 5) {

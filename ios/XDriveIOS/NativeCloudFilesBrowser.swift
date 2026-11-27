@@ -2835,11 +2835,14 @@ struct XDriveIOSNativeFilesBrowser: View {
                 filesList
                     .listStyle(.plain)
                     .overlay(alignment: .bottom) { filesQuickFeedback }
+                    // A denied search must expose a real hittable recovery
+                    // button. Do not retain UIKit's searchable overlay above
+                    // the fail-closed Error page when returning from Gallery.
+                    .modifier(XDriveIOSNativeFilesSearchPresentation(
+                        text: $queryDraft, presented: $searchPresented
+                    ))
             }
         }
-        .modifier(XDriveIOSNativeFilesSearchPresentation(
-            text: $queryDraft, presented: $searchPresented
-        ))
         .onSubmit(of: .search) {
             let submitted = queryDraft
             submitSearch()
