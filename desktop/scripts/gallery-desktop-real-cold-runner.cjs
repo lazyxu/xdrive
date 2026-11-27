@@ -85,7 +85,9 @@ async function fixture(sample, dir) {
 }
 async function electronSample(sample, env) {
   let received = null
+  let safeFailure = null
   const label = 'GALLERY_REAL_DESKTOP_ELECTRON_SAMPLE '
+  const safeFailureLabel = 'GALLERY_REAL_DESKTOP_ELECTRON_SAFE_FAILURE '
   // Entry lives at the REAL Desktop package root, so Electron app.getAppPath()
   // resolves the same assets/tray icon locations as production packaging.
   const desktopRoot = path.join(root, 'desktop')
@@ -97,13 +99,26 @@ async function electronSample(sample, env) {
   }, 'electron-' + sample, line => {
     const pos = line.indexOf(label)
     if (pos >= 0) received = JSON.parse(line.slice(pos + label.length))
+    const safePos = line.indexOf(safeFailureLabel)
+    if (safePos >= 0) {
+      const reason = JSON.parse(line.slice(safePos + safeFailureLabel.length))?.reason
+      const accepted = new Set([
+        'first_party_sourcemap_unresolved', 'v8_sample_count_missing',
+        'v8_profile_invalid', 'sourcemap_parse_invalid',
+        'devtools_protocol_error', 'gallery_decode_timeout',
+        'desktop_login_or_navigation', 'unclassified_test_error',
+      ])
+      safeFailure = accepted.has(reason) ? reason : 'unclassified_test_error'
+    }
   }, desktopRoot)
   try {
     const end = await Promise.race([
       proc.exited, delay(100000).then(() => ({ code: 'timeout' })),
     ])
     assert(end.code === 0 && received?.realProductionDesktop,
-      'real Electron did not produce a valid decoded 100k result: ' + JSON.stringify(end))
+      'real Electron did not produce a valid decoded 100k result: ' +
+      JSON.stringify({ code: end.code, signal: end.signal || null,
+        safeReason: safeFailure || 'no_safe_reason_reported' }))
     return received
   } finally {
     await stop(proc)
