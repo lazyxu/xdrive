@@ -92,12 +92,21 @@ test('F5 real video and decoded-frame audit, not screenshot-only', () => {
   assert.match(video, /suspected_solid_white_transition/)
   assert.match(video, /physical_60_120_hz_verified": False/)
 })
-test('F6 Browse/Recent/Favorites/Viewer share typography tokens', () => {
-  assert.match(browse, /XDriveIOSNativeFilesUIStyle\.rowName/)
-  assert.match(collection, /XDriveIOSNativeFilesUIStyle\.rowName/)
-  assert.match(collection, /XDriveIOSNativeFilesUIStyle\.tileName/)
-  assert.match(viewer, /XDriveIOSNativeFilesUIStyle\.metadataFont/)
+test('F6 Browse, Recent, Favorites share real native rows, tiles and picker', () => {
+  for (const src of [browse, collection]) {
+    assert.match(src, /XDriveIOSNativeFilesRowContent\(/)
+    assert.match(src, /XDriveIOSNativeFilesGridContent\(/)
+    assert.match(src, /XDriveIOSNativeFilesViewModePicker\(/)
+    assert.match(src, /XDriveIOSNativeFilesUIStyle\.gridColumns/)
+    assert.match(src, /XDriveIOSNativeFilesUIStyle\.gridHorizontalInset/)
+  }
+  assert.match(tokens, /struct XDriveIOSNativeFilesRowContent: View/)
+  assert.match(tokens, /struct XDriveIOSNativeFilesGridContent: View/)
+  assert.match(tokens, /struct XDriveIOSNativeFilesViewModePicker: View/)
+  assert.match(tokens, /XDriveIOSNativeFilesUIStyle\.rowName\(node\.name\)/)
+  assert.match(tokens, /XDriveIOSNativeFilesUIStyle\.tileName\(node\.name\)/)
   assert.match(tokens, /static func metadata\(_ value: String\) -> some View/)
+  assert.match(viewer, /XDriveIOSNativeFilesUIStyle\.metadataFont/)
 })
 
 
@@ -143,9 +152,28 @@ test('F9 extension icons and metadata reuse existing bounded thumbnails', () => 
   // real media thumbnails still pass the same Owner/revision and MIME gates.
   assert.match(thumbnail, /XDriveIOSNativeFilesFallbackIcon/)
   assert.match(tokens, /XDriveIOSNativeFilesUIStyle\.fileAppearance\(node\)\.label/)
-  assert.match(browse, /XDriveIOSNativeFilesUIStyle\.typeBadge\(entry\.node\)/)
-  assert.match(collection, /XDriveIOSNativeFilesUIStyle\.typeBadge\(item\.node\)/)
+  assert.match(tokens, /static func typeBadge\(/)
+  assert.match(tokens, /XDriveIOSNativeFilesUIStyle\.gridMetadata\(node, path: path\)/)
+  // Compact grid has one metadata line; detailed file type remains in Properties.
+  assert.match(tokens, /XDriveIOSNativeFilesUIStyle\.fileAppearance\(node\)\.symbol/)
+  assert.match(browse, /private func gridLabel\(/)
+  assert.match(collection, /private func gridEntryLabel\(/)
   assert.match(thumbnail, /XDriveIOSNativeFilesThumbnailPolicy\.canRequest\(node\)/)
+})
+
+test('F9b actual screenshot provenance is exported from the real XCTest session', () => {
+  const screenshots = source('ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift')
+  assert.match(screenshots, /testFilesUnifiedNativePresentationCapturesOneContinuousSequence/)
+  assert.match(screenshots, /testFilesSignedDevicePopulatedListGridAndViewerSnapshots/)
+  assert.match(screenshots, /XDRIVE_FILES_SIGNED_DEVICE_CAPTURE/)
+  assert.match(screenshots, /XCTAttachment\(screenshot: image\)/)
+  assert.match(screenshots, /auth: "signed-owner"/)
+  assert.match(workflow, /xcresulttool export attachments/)
+  assert.match(workflow, /ios-files-native-08-browse-restored/)
+  assert.match(workflow, /test -s "\$out\/manifest\.json"/)
+  assert.match(viewer, /native-ios-files-viewer-done/)
+  assert.match(viewer, /native-ios-files-viewer-previous/)
+  assert.match(viewer, /native-ios-files-viewer-next/)
 })
 
 test('F10 Viewer first displayed frame and all-file subroute gate remain explicit', () => {
