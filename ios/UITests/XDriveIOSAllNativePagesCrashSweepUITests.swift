@@ -74,6 +74,22 @@ final class XDriveIOSAllNativePagesCrashSweepUITests: XCTestCase {
 
     private func tap(_ id: String, _ app: XCUIApplication) {
         if id == "native-ios-tab-files" { denyFirstRunPhotoLibraryPromptIfPresent(app) }
+        // The candidate Photos Library deliberately hides the old five-slot
+        // tabs. Reuse the visible Photos/More navigation rather than requiring
+        // a hidden legacy AX destination. Keep every child assertion intact.
+        if id.hasPrefix("native-ios-tab-") {
+            print("IOS_NATIVE_NAV_TAP_START route=" + id)
+            var reached = XDriveIOSNativePhotosTestNavigator.tap(id, in: app)
+            if !reached && id == "native-ios-tab-files" {
+                denyFirstRunPhotoLibraryPromptIfPresent(app)
+                reached = XDriveIOSNativePhotosTestNavigator.tap(id, in: app)
+            }
+            if !reached { capture(app, "missing-action-" + id) }
+            XCTAssertTrue(reached, "Visible native tab route missing: " + id)
+            if id == "native-ios-tab-files" { denyFirstRunPhotoLibraryPromptIfPresent(app) }
+            XCTAssertEqual(app.state, .runningForeground, "Native process exited after " + id)
+            return
+        }
         let target = element(id, app)
         if !target.waitForExistence(timeout: 15) { capture(app, "missing-action-" + id) }
         XCTAssertTrue(target.exists, "Native action missing: " + id)

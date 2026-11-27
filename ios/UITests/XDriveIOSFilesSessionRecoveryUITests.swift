@@ -229,11 +229,12 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
         tap("native-ios-files-trash-error-return", app)
         tap("native-ios-tab-gallery", app)
         tap("native-ios-gallery-open-filters", app)
-        // Signed-out PhotoKit Search closes with Done; verified Owner
-        // source/filter editor closes with Cancel.
-        let cancel = app.buttons["取消"].firstMatch.exists
-            ? app.buttons["取消"].firstMatch : app.buttons["完成"].firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 15) && cancel.isHittable)
+        // This journey launches the synthetic Owner, not signed-out local
+        // PhotoKit search. Wait for the actual filter editor after the
+        // options sheet dismisses instead of probing Cancel only once.
+        let cancel = app.navigationBars["搜索与筛选"].buttons["取消"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15) && cancel.isHittable,
+                      "The actual Owner-scope search/filter editor did not open")
         cancel.tap()
         expect("native-ios-gallery-source-unified", app)
     }
