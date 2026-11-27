@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { app, contentTracing } = require('electron')
 const { readAndSummariseTrace } = require('./gallery-desktop-chromium-trace-analyze.cjs')
+const { summariseCPUProfile } = require('./gallery-desktop-cpu-profile-analyze.cjs')
 
 const expectedAppRoot = path.resolve(__dirname, '..')
 const actualAppRoot = path.resolve(app.getAppPath())
@@ -285,6 +286,8 @@ let attached = false
 async function run(win) {
   let tracingStarted = false
   let chromiumTracePath = null
+  let cpuProfilingStarted = false
+  let cpuDebuggerAttached = false
   try {
     win.setContentSize(1440, 900)
     let lastRendererState = null
@@ -352,6 +355,20 @@ async function run(win) {
       })
       tracingStarted = true
     }
+    // CPU profiling is a distinct opt-in diagnostics arm, not a synthetic
+    // renderer or a production App modification. Keep it separate from full
+    // Chromium Timeline recording to avoid compounded observer overhead.
+    const cpuEnabled = process.env.XD_GALLERY_DESKTOP_COLD_CPU_PROFILE === '1'
+    if (cpuEnabled) {
+      if (traceEnabled || win.webContents.debugger.isAttached())
+        throw new Error('independent Desktop CPU profile target required')
+      win.webContents.debugger.attach('1.3')
+      cpuDebuggerAttached = true
+      await win.webContents.debugger.sendCommand('Profiler.enable')
+      await win.webContents.debugger.sendCommand('Profiler.setSamplingInterval', { interval: 1000 })
+      await win.webContents.debugger.sendCommand('Profiler.start')
+      cpuProfilingStarted = true
+    }
     const beforeRangeRows = galleryFirstRangeTimings(app.getPath('logs')).length
     const armed = await win.webContents.executeJavaScript('(' + activateGalleryAndMeasure.toString() + ')()')
     if (!armed?.started) throw new Error('production Gallery navigation unavailable')
@@ -359,6 +376,22 @@ async function run(win) {
       () => win.webContents.executeJavaScript('window.__xdriveDesktopRealColdResult || null'),
       60000, '12 actual Gallery JPEG decodes and two animation frames',
     )
+    let cpuProfileSummary = null
+    if (cpuProfilingStarted) {
+      const { profile } = await win.webContents.debugger.sendCommand('Profiler.stop')
+      cpuProfilingStarted = false
+      // Never log/serialize/save raw CPUProfile. It contains script URLs and
+      // function names. Source maps are read privately, not uploaded.
+      win.webContents.debugger.detach()
+      cpuDebuggerAttached = false
+      cpuProfileSummary = summariseCPUProfile(profile,
+        path.join(expectedAppRoot, 'dist', 'renderer', 'assets'))
+      if (cpuProfileSummary.sampleCount < 100 ||
+          cpuProfileSummary.sourceMappedSampleFrames < 1 ||
+          cpuProfileSummary.firstPartySampleCount < 1 ||
+          cpuProfileSummary.rawProfileArgsPathsOrURLsIncluded !== false)
+        throw new Error('real first-party Renderer V8 sampled CPU attribution unavailable')
+    }
     let chromiumTimeline = null
     if (tracingStarted) {
       await contentTracing.stopRecording(chromiumTracePath)
@@ -451,6 +484,7 @@ async function run(win) {
       renderer: result,
       firstRangeTimings,
       chromiumTimeline,
+      cpuProfileSummary,
       beforeCAS, afterCAS,
       sourceExactMediaProgress,
       sourceProgressResources,
@@ -461,6 +495,12 @@ async function run(win) {
     }))
     app.exit(0)
   } catch (error) {
+    if (cpuProfilingStarted) {
+      try { await win.webContents.debugger.sendCommand('Profiler.stop') } catch {}
+    }
+    if (cpuDebuggerAttached) {
+      try { win.webContents.debugger.detach() } catch {}
+    }
     if (tracingStarted) {
       try { await contentTracing.stopRecording(chromiumTracePath) } catch {}
     }
