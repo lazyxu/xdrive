@@ -13,10 +13,20 @@ const router = read('internal/api/router.go')
 const server = read('internal/api/media.go')
 
 test('Files list, grid and collection rows render only visible source-revision thumbnail tiles', () => {
-  assert.match(browser, /XDriveIOSNativeFilesThumbnailTile\(/)
-  assert.match(browser, /height: 72, viewerActive: selectedFile != nil/)
-  assert.match(browser, /height: 40, width: 40, viewerActive: selectedFile != nil/)
-  assert.match(collections, /XDriveIOSNativeFilesThumbnailTile\(/)
+  const style = read('ios/XDriveIOS/NativeFilesUIStyle.swift')
+  for (const [source, item] of [[browser, 'entry'], [collections, 'item']]) {
+    for (const renderer of ['RowContent', 'GridContent']) {
+      assert.match(source, new RegExp('XDriveIOSNativeFiles' + renderer +
+        '\\(\\s*node: ' + item + '\\.node, path: ' + item +
+        '\\.path, login: login,\\s*viewerActive: selectedFile != nil'))
+    }
+  }
+  assert.match(style, /static let listThumbnailEdge: CGFloat = 40\b/)
+  assert.match(style, /static let gridThumbnailHeight: CGFloat = 72\b/)
+  const row = style.slice(style.indexOf('struct XDriveIOSNativeFilesRowContent:'), style.indexOf('struct XDriveIOSNativeFilesGridContent:'))
+  const grid = style.slice(style.indexOf('struct XDriveIOSNativeFilesGridContent:'), style.indexOf('struct XDriveIOSNativeFilesViewModePicker:'))
+  assert.match(row, /XDriveIOSNativeFilesThumbnailTile\(\s*node: node, login: login,\s*height: XDriveIOSNativeFilesUIStyle.listThumbnailEdge,\s*width: XDriveIOSNativeFilesUIStyle.listThumbnailEdge,\s*viewerActive: viewerActive/)
+  assert.match(grid, /XDriveIOSNativeFilesThumbnailTile\(\s*node: node, login: login,\s*height: XDriveIOSNativeFilesUIStyle.gridThumbnailHeight,\s*viewerActive: viewerActive/)
   assert.match(runtime, /\.task\(id: identity\)/)
   assert.match(runtime, /visible: !viewerActive && phase == \.active/)
   assert.doesNotMatch(runtime, /\.onDisappear \{ bitmap = nil \}/)

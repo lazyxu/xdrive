@@ -62,6 +62,7 @@ TARGETS = frozenset({
     "testGalleryPeopleChildReturnRepeatsWithoutLosingGallerySource",
     "testFilesBackgroundResumeKeepsQuickRailAndPixels",
     "testLocalPhotoGalleryForegroundAndFilesReturnRemainNonBlank",
+    "testFilesUnifiedNativePresentationCapturesOneContinuousSequence",
     "testFilesMoreOrganizerGalleryReturnPreservesBrowseHome",
     "testFilesQuickRailRotationPeopleReturnKeepsNativeShell",
     "testGalleryFilterFilesHistoryForegroundKeepsWallGeneration",

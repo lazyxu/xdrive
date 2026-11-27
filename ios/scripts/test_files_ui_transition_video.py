@@ -16,7 +16,8 @@ from files_ui_transition_video import (
 
 class FilesUITransitionVideoTests(unittest.TestCase):
     def test_real_targets_are_distinct(self):
-        self.assertEqual(len(TARGETS), 56)
+        self.assertEqual(len(TARGETS), 57)
+        self.assertIn("testFilesUnifiedNativePresentationCapturesOneContinuousSequence", TARGETS)
         self.assertTrue({
             "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
             "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",

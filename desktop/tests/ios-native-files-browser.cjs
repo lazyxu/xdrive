@@ -54,9 +54,11 @@ test('native Files decodes and displays Server modification timestamps in list a
   assert.match(page, /fractionDigits\.utf8\.count <= 9/)
   // Grid now uses one compact metadata line; List and Owner-bound Properties
   // retain the full modification date and version.
-  assert.match(view, /XDriveIOSNativeFilesUIStyle\.gridMetadata\(entry\.node, path: entry\.path\)/)
+  assert.match(view, /XDriveIOSNativeFilesGridContent\(/)
+  assert.match(filesStyle, /XDriveIOSNativeFilesUIStyle\.gridMetadata\(node, path: path\)/)
   assert.match(filesStyle, /if let date = node\.modifiedDate/)
-  assert.match(view, /XDriveIOSNativeFilesUIStyle\.compactMetadata\(entry\.node, path: entry\.path\)/)
+  assert.match(view, /XDriveIOSNativeFilesRowContent\(/)
+  assert.match(filesStyle, /XDriveIOSNativeFilesUIStyle\.compactMetadata\(node, path: path\)/)
   assert.match(filesStyle, /static func compactMetadata\(/)
   assert.match(filesStyle, /if let date = node\.modifiedDate/)
   assert.match(filesStyle, /XDriveIOSNativeFilesDatePolicy\.display\(date\)/)
@@ -121,7 +123,11 @@ test('native SwiftUI search collapses in the toolbar and restores directory on c
 
 
 test('native Files More menu keeps real sort, view and upload actions with bounded list model', () => {
-  assert.match(view, /Menu \{[\s\S]*?Picker\("显示方式", selection: Binding\(/)
+  const sharedStyle = read('ios/XDriveIOS/NativeFilesUIStyle.swift');
+  // More still binds the real persisted view mode and reanchoring callback;
+  // the native Picker itself is now shared by Browse and the collections.
+  assert.match(view, /Menu \{\s*XDriveIOSNativeFilesViewModePicker\(selection: Binding\(\s*get: \{ viewMode \}, set: \{ chooseFilesViewMode\(\$0\) \}\s*\)\)\s*\.accessibilityIdentifier\("native-ios-files-view-mode"\)/)
+  assert.match(sharedStyle, /struct XDriveIOSNativeFilesViewModePicker: View \{\s*let selection: Binding<String>\s*var body: some View \{\s*Picker\("显示方式", selection: selection\) \{\s*Label\("列表", systemImage: "list.bullet"\)\.tag\("list"\)\s*Label\("图标", systemImage: "square.grid.2x2"\)\.tag\("grid"\)/)
   assert.match(view, /Picker\("排序", selection: \$sort\)/)
   assert.match(view, /Picker\("顺序", selection: \$order\)/)
   assert.match(view, /native-ios-files-more-options/)
